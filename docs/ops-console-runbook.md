@@ -13,7 +13,7 @@
 - Kubernetes 生产清单独立部署 `merchant-ops-ui`，访问域名为 `https://ops.merchant.example.com`；API 同时配置 `OPS_AUTH_MODE=oidc`，签名密钥由 `merchant-runtime-secrets` 的 `OIDC_PROXY_SIGNING_SECRET` 注入。商家演示站 `merchant-ui` 与运营台镜像不是同一个应用。
 - 本地/演示环境可在页面输入工作区 ID、操作员 ID 和 Bearer token；token 仅保存在当前浏览器 localStorage，不写入构建产物。生产环境必须由 OIDC/SSO 网关建立短时、httpOnly、secure 会话，禁止让运营人员在页面输入或持久化长期 Bearer token。
 - 网关下发的 Bearer token 必须包含目标工作区 grant，生产环境不能使用 `*` wildcard。
-- OIDC 模式下 API 不信任浏览器直接提交的身份头；SSO 网关必须使用 `OIDC_PROXY_SIGNING_SECRET` 对以下换行分隔字段做 HMAC-SHA256（hex）签名：`HTTP 方法`、`URL path`、`workspace_id`、`subject`、逗号分隔且稳定排序的角色、Unix 秒时间戳。请求携带 `X-OIDC-Sub`、`X-OIDC-Workspace`、`X-OIDC-Roles`、`X-OIDC-Timestamp`、`X-OIDC-Signature`，时间戳容差为 60 秒。首次 `workspace.bootstrap` 是唯一例外：请求必须携带 `X-Workspace-Bootstrap: true`，此时 `workspace_id` 与 `X-OIDC-Workspace` 为空，并将空值纳入签名；创建成功后所有请求都必须携带已绑定 workspace。API 生产配置需同时设置 `OPS_AUTH_MODE=oidc` 和该密钥；缺少任一项会拒绝请求。
+- OIDC 模式下 API 不信任浏览器直接提交的身份头。SSO 网关必须使用 `OIDC_PROXY_SIGNING_SECRET` 对以下 11 个换行分隔字段做 HMAC-SHA256（hex）签名，顺序不可改变：`HTTP 方法`、不含 query 的 `URL path`、`workspace_id`、`issuer`、`subject`、`session_id`、逗号分隔且稳定排序的角色、逗号分隔且稳定排序的 AMR、认证 Unix 秒、会话过期 Unix 秒、请求 Unix 秒。请求必须携带 `X-OIDC-Issuer`、`X-OIDC-Sub`、`X-OIDC-Sid`、`X-OIDC-Workspace`、`X-OIDC-Roles`、`X-OIDC-Amr`、`X-OIDC-Auth-Time`、`X-OIDC-Session-Expires-At`、`X-OIDC-Timestamp`、`X-OIDC-Signature`；请求时间戳容差为 60 秒，会话必须尚未过期。首次 `workspace.bootstrap` 是唯一例外：请求必须携带 `X-Workspace-Bootstrap: true`，此时 `workspace_id` 与 `X-OIDC-Workspace` 为空，并将空值纳入签名。创建成功后所有请求都必须携带已绑定 workspace。API 生产配置需同时设置 `OPS_AUTH_MODE=oidc` 和该密钥；缺少任一项会拒绝请求。
 - 当商家 UI 与运营台共用 API Service 时，必须额外设置 `MERCHANT_BEARER_HOSTNAME=merchant.example.com`，并在渲染生产配置中声明 `merchant_bearer_hostname`；只有精确匹配该 Host 的生产请求才允许进入商家 Bearer 授权分支，`ops.merchant.example.com` 仍只接受 OIDC 网关断言。该配置不能使用通配符，也不能替代 API token 的工作区授权。
 
 ## 运营能力
@@ -44,7 +44,7 @@
 
 1. API 使用生产 `NODE_ENV=production`，并配置真实 Bearer token 验证和 workspace grants。
 2. `VITE_API_BASE` 使用 HTTPS，CORS 允许运营台域名但不允许任意来源。
-3. 支付使用 provider 模式，回调地址和验签密钥引用通过生产配置门禁。
+3. 支付使用独立支付网关 provider 模式：本服务只调用统一的 checkout/query/refund HTTPS 合同；支付宝证书签名、微信支付 v3 签名、平台回调验签和商户私钥全部由支付网关负责。生产配置必须提供网关地址、网关 API key、商户 ID、回调地址和本服务与网关之间的回调验签密钥，并通过真实支付/查单/退款证据门禁。
 4. 运营台构建产物只包含 API 地址，不包含 token、支付密钥、OAuth secret 或平台凭证。
 5. 发布前确认运营台 API 已开放知识治理和任务队列所需 MCP 方法，并完成角色矩阵测试；前端不能通过隐藏按钮绕过服务端权限。
 6. 生产环境验证规则、资产和竞品数据在 API 重启后仍可从业务快照/outbox 恢复；不能依赖浏览器缓存或单进程内存。

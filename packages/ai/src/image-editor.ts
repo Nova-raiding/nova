@@ -45,7 +45,7 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 120_000)
     try {
-      const response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}/images/generations`, {
+      const response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}/images/edits`, {
         method: 'POST',
         headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
         body: JSON.stringify({ model: this.options.model, prompt: input.prompt, image: sourceImages, image_mode: 'optimize', edit_region: input.region, n: 1, response_format: 'b64_json' }),

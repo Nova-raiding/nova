@@ -78,8 +78,17 @@ export class PostgresBillingRepository {
   async listOrders(workspaceId: string, states: BillingOrderState[] = ['pending'], limit = 100) {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
       const safeStates = states.length ? states : ['pending' as const]
-      const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state = ANY($2::text[]) ORDER BY created_at ASC,id ASC LIMIT $3', [workspaceId, safeStates, Math.min(100, Math.max(1, limit))])
+      const result = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND state = ANY($2::text[]) ORDER BY created_at DESC,id DESC LIMIT $3', [workspaceId, safeStates, Math.min(100, Math.max(1, limit))])
       return result.rows.map(order)
+    })
+  }
+
+  async countOrdersByState(workspaceId: string): Promise<Record<BillingOrderState, number>> {
+    return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
+      const result = await client.query<{ state: BillingOrderState; count: string | number }>('SELECT state, COUNT(*)::bigint AS count FROM billing_orders WHERE workspace_id=$1 GROUP BY state', [workspaceId])
+      const counts: Record<BillingOrderState, number> = { pending: 0, paid: 0, closed: 0, failed: 0 }
+      for (const row of result.rows) if (row.state in counts) counts[row.state] = Number(row.count)
+      return counts
     })
   }
 

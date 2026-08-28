@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REQUIRED_CAPABILITIES, REQUIRED_PLATFORMS } from './capability-evidence-gate.js'
-import { signProductionEvidence } from './production-evidence-gate.js'
 
 function run(script: string, args: string[] = [], env: Record<string, string> = {}) {
   return execFileSync('sh', [script, ...args], { encoding: 'utf8', env: { ...process.env, ...env }, stdio: 'pipe' })
@@ -85,7 +84,6 @@ describe('deployment operation scripts', () => {
     const restoreEvidence = join(directory, 'restore-evidence.json')
     const manifest = join(directory, 'rendered.yaml')
     const digest = 'sha256:' + 'a'.repeat(64)
-    const attestationKey = 'operations-test-attestation-key-32-characters'
     writeFileSync(config, [
       'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'OPS_AUTH_MODE: oidc',
       'auth_enforcement: strict', 'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
@@ -95,7 +93,7 @@ describe('deployment operation scripts', () => {
       'xiaohongshu_auth_enabled: true', 'xiaohongshu_read_enabled: true', 'xiaohongshu_write_enabled: true',
       'douyin_auth_enabled: true', 'douyin_read_enabled: true', 'douyin_write_enabled: true',
       'payment_provider_query_api_url: https://payments.example.com/v1/query',
-      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_signing_secret: vault://worker-api-signing', 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"',
+      'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_signing_secret: vault://worker-api-signing', 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
       'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_kms_key: vault://kms', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_channel_secret_ref: vault://merchant-alert-channel',
     ].join('\n'))
     writeFileSync(evidence, JSON.stringify({
@@ -111,19 +109,18 @@ describe('deployment operation scripts', () => {
     }))
     const commonEvidence = { schema_version: '1', release_id: 'release-1', image_digest: digest, environment: 'production', status: 'pass', generated_at: new Date().toISOString(), simulated: false, verified_by: 'release-manager@example.com', verified_at: new Date(Date.now() - 60_000).toISOString() }
     const paymentDocument: Record<string, unknown> = { ...commonEvidence, kind: 'payment', provider: 'alipay', amount_cny: 0.01, provider_trade_id_sha256: 'b'.repeat(64), checks: Object.fromEntries(['checkout', 'callback', 'callback_replay', 'provider_query', 'reconciliation', 'refund'].map(name => [name, { status: 'pass', evidence_ref: `artifact://production/payment/${name}` }])) }
-    paymentDocument.attestation_hmac_sha256 = signProductionEvidence(paymentDocument, attestationKey)
     writeFileSync(paymentEvidence, JSON.stringify(paymentDocument))
     const restoreDocument: Record<string, unknown> = { ...commonEvidence, kind: 'restore', recovery_target_isolated: true, backup_sha256: 'c'.repeat(64), source_backup_created_at: new Date(Date.now() - 3_600_000).toISOString(), recovery_point_at: new Date(Date.now() - 1_800_000).toISOString(), checks: Object.fromEntries(['backup_checksum', 'isolated_restore', 'migrations', 'data_integrity', 'application_smoke'].map(name => [name, { status: 'pass', evidence_ref: `artifact://production/restore/${name}` }])) }
-    restoreDocument.attestation_hmac_sha256 = signProductionEvidence(restoreDocument, attestationKey)
     writeFileSync(restoreEvidence, JSON.stringify(restoreDocument))
     writeFileSync(manifest, [
-      `image: registry.example.com/merchant-api@${digest}`,
-      `image: registry.example.com/merchant-worker@${digest}`,
-      `image: registry.example.com/merchant-ui@${digest}`,
+      'apiVersion: apps/v1', 'kind: Deployment', 'metadata: {name: merchant-runtime}', 'spec:', '  template:', '    spec:', '      containers:',
+      `        - {name: api, image: registry.example.com/merchant-api@${digest}}`,
+      `        - {name: worker, image: registry.example.com/merchant-worker@${digest}}`,
+      `        - {name: ui, image: registry.example.com/merchant-ui@${digest}}`,
     ].join('\n'))
     const script = 'infra/scripts/deploy-preflight.sh'
-    const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, EVIDENCE_ATTESTATION_KEY: attestationKey, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGEST: digest, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
-    expect(run(script, [config], base)).toContain('deploy preflight passed')
+    const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGEST: digest, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
+    expect(() => run(script, [config], base)).toThrow(/trust anchor is not provisioned/)
     writeFileSync(config, readFileSync(config, 'utf8').replace('xiaohongshu_write_enabled: true', '# xiaohongshu_write_enabled: true'))
     expect(() => run(script, [config], base)).toThrow(/xiaohongshu/)
     writeFileSync(config, readFileSync(config, 'utf8').replace('# xiaohongshu_write_enabled: true', 'xiaohongshu_write_enabled: true'))
@@ -146,6 +143,14 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('production-ops-gate.ts')
     expect(readFileSync('infra/scripts/launch-preflight.sh', 'utf8')).toContain('deploy-preflight.sh')
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found' })).toThrow()
+  })
+
+  it('deploys the exact verified manifest bytes instead of re-rendering kustomize', () => {
+    const script = readFileSync('infra/scripts/deploy-verified-manifest.sh', 'utf8')
+    expect(script).toContain('kubectl apply -f "$RENDERED_MANIFEST_PATH"')
+    expect(script).not.toContain('kubectl apply -k')
+    expect(script).toContain('[ "$before" = "$after" ]')
+    expect(execFileSync('sh', ['-n', 'infra/scripts/deploy-verified-manifest.sh'], { encoding: 'utf8' })).toBe('')
   })
 
   it('keeps the Merchant Studio API proxy resolvable in both Compose and Kubernetes', () => {
@@ -250,11 +255,12 @@ describe('deployment operation scripts', () => {
     const directory = mkdtempSync(join(tmpdir(), 'merchant-image-gate-'))
     const manifest = join(directory, 'rendered.yaml')
     const digest = 'sha256:' + 'b'.repeat(64)
-    writeFileSync(manifest, `containers: [{name: api, image: registry.example.com/merchant-api@${digest}}]`)
+    const deployment = (image: string) => ['apiVersion: apps/v1', 'kind: Deployment', 'metadata: {name: api}', 'spec:', '  template:', '    spec:', `      containers: [{name: api, image: ${image}}]`].join('\n')
+    writeFileSync(manifest, deployment(`registry.example.com/merchant-api@${digest}`))
     expect(run('infra/scripts/validate-kubernetes-release.sh', [manifest, digest])).toContain('manifest gate passed')
-    writeFileSync(manifest, 'containers: [{name: api, image: registry.example.com/merchant-api:0.1.0}]')
+    writeFileSync(manifest, deployment('registry.example.com/merchant-api:0.1.0'))
     expect(() => run('infra/scripts/validate-kubernetes-release.sh', [manifest, digest])).toThrow()
-    writeFileSync(manifest, `# containers: [{name: api, image: registry.example.com/merchant-api@${digest}}]`)
-    expect(() => run('infra/scripts/validate-kubernetes-release.sh', [manifest, digest])).toThrow(/no container image/)
+    writeFileSync(manifest, `# ${deployment(`registry.example.com/merchant-api@${digest}`).replaceAll('\n', '\n# ')}`)
+    expect(() => run('infra/scripts/validate-kubernetes-release.sh', [manifest, digest])).toThrow(/no resources|no supported workload container image/)
   })
 })

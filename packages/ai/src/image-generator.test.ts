@@ -33,8 +33,10 @@ describe('image generator', () => {
 
   it('sends approved source image bytes to the relay image-to-image endpoint', async () => {
     let body: Record<string, unknown> | undefined
-    const generator = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', fetch: async (_url, init) => { body = JSON.parse(String(init?.body)) as Record<string, unknown>; return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
+    let endpoint = ''
+    const generator = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', fetch: async (url, init) => { endpoint = String(url); body = JSON.parse(String(init?.body)) as Record<string, unknown>; return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
     await expect(generator.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' }], region: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 } })).resolves.toHaveLength(1)
+    expect(endpoint).toBe('https://relay.example/images/edits')
     expect(body).toMatchObject({ image: ['data:image/png;base64,AQID'], image_mode: 'optimize', edit_region: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 } })
   })
 

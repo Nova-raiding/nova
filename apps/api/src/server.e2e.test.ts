@@ -135,7 +135,7 @@ describe('API HTTP vertical slice', () => {
     const workspaceId = `ws_brand_campaign_${Date.now()}`
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `golden-store-${workspaceId}`, credentialRef: `fixture://${workspaceId}` })
-    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: `golden-product-${workspaceId}`, title: '黄金路径商品', stock: 3 })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, remoteId: 'tb-golden-1', localProductKey: `golden-product-${workspaceId}`, title: '黄金路径商品', stock: 3 })
     const secondTaobaoProduct = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: `golden-product-2-${workspaceId}`, title: '黄金路径商品二', stock: 2 })
     async function call(id: number, method: string, params: Record<string, unknown>) {
       return await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
@@ -162,7 +162,7 @@ describe('API HTTP vertical slice', () => {
     expect(duplicateListing.error?.code).toBe('LISTING_CONFLICT')
     const listings = await call(2.5, 'brand-unit.listing.list', { brand_id: `brand_${workspaceId}`, canonical_product_id: canonicalId })
     expect(listings.data).toMatchObject({ result: { count: 2, items: expect.arrayContaining([expect.objectContaining({ platform: 'taobao', accountId: account.id }), expect.objectContaining({ platform: 'jd', accountId: jdAccount.id })]) } })
-    const jdProduct = service.importProduct({ workspaceId, platform: 'jd', accountId: jdAccount.id, localProductKey: `golden-jd-product-${workspaceId}`, title: '京东黄金路径商品', stock: 2 })
+    const jdProduct = service.importProduct({ workspaceId, platform: 'jd', accountId: jdAccount.id, remoteId: 'jd-golden-1', localProductKey: `golden-jd-product-${workspaceId}`, title: '京东黄金路径商品', stock: 2 })
     const multiTarget = await call(2.6, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, targets_json: JSON.stringify([{ product_id: product.id, platform: 'taobao', account_id: account.id }, { product_id: jdProduct.id, platform: 'jd', account_id: jdAccount.id }]) })
     expect(multiTarget.error).toBeNull()
     expect(multiTarget.data).toMatchObject({ result: { targets: [{ productId: product.id, platform: 'taobao', accountId: account.id }, { productId: jdProduct.id, platform: 'jd', accountId: jdAccount.id }], productIds: [product.id, jdProduct.id] } })
@@ -174,6 +174,11 @@ describe('API HTTP vertical slice', () => {
     const canonicalTargetResult = (canonicalTarget.data as { result: { id: string } }).result
     const canonicalGenerated = await call(2.9, 'campaign.batch.generate', { campaign_id: canonicalTargetResult.id })
     expect(canonicalGenerated.data).toMatchObject({ result: { count: 1, taskIds: [expect.any(String)] } })
+    const crossPlatformCanonical = await call(2.91, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, targets_json: JSON.stringify([{ canonical_product_id: canonicalId, listing_id: (jdListing.data as { result: { id: string } }).result.id, platform: 'jd', account_id: jdAccount.id }]) })
+    expect(crossPlatformCanonical.error).toBeNull()
+    expect(crossPlatformCanonical.data).toMatchObject({ result: { targets: [{ productId: jdProduct.id, canonicalProductId: canonicalId, listingId: (jdListing.data as { result: { id: string } }).result.id, platform: 'jd', accountId: jdAccount.id }] } })
+    const crossPlatformGenerated = await call(2.92, 'campaign.batch.generate', { campaign_id: (crossPlatformCanonical.data as { result: { id: string } }).result.id })
+    expect(crossPlatformGenerated.data).toMatchObject({ result: { count: 1, taskIds: [expect.any(String)] } })
     const mismatchedListing = await call(2.95, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, targets_json: JSON.stringify([{ canonical_product_id: canonicalId, listing_id: (taobaoListing.data as { result: { id: string } }).result.id, platform: 'jd', account_id: jdAccount.id }]) })
     expect(mismatchedListing.error?.code).toBe('LISTING_TARGET_MISMATCH')
     const campaign = await call(3, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, platform: 'taobao', account_id: account.id, product_ids_json: JSON.stringify([product.id]) })
@@ -189,12 +194,25 @@ describe('API HTTP vertical slice', () => {
     expect(conflictingIdempotent.error?.code).toBe('CAMPAIGN_IDEMPOTENCY_CONFLICT')
     const read = await call(4, 'campaign.batch.get', { campaign_id: campaignResult.id })
     expect(read.error).toBeNull()
-    expect(read.data).toMatchObject({ result: { id: campaignResult.id, brandId: `brand_${workspaceId}`, platform: 'taobao', accountId: account.id, productIds: [product.id], execution: 'plan_only' } })
+    expect(read.data).toMatchObject({ result: { id: campaignResult.id, brandId: `brand_${workspaceId}`, platform: 'taobao', accountId: account.id, productIds: [product.id], state: 'draft', execution: 'plan_only', summary: { total: 1, planned: 1, in_progress: 0 } } })
     const generate = await call(4.5, 'campaign.batch.generate', { campaign_id: campaignResult.id })
     expect(generate.error).toBeNull()
-    expect(generate.data).toMatchObject({ result: { campaignId: campaignResult.id, count: 1, state: 'generating', execution: 'tasks_created', taskIds: [expect.any(String)] } })
+    expect(generate.data).toMatchObject({ result: { campaignId: campaignResult.id, count: 1, state: 'manual_attention', execution: 'workflow_active', taskIds: [expect.any(String)], items: [expect.objectContaining({ state: 'blocked', blocker: expect.objectContaining({ code: 'PRODUCT_FACTS_CONFIRMATION_REQUIRED', nextAction: 'catalog.facts.confirm' }) })] } })
+    const generatedTaskId = (generate.data as { result: { taskIds: string[] } }).result.taskIds[0]!
+    const facts = await call(4.55, 'catalog.facts.confirm', { product_id: product.id })
+    expect(facts.data).toMatchObject({ result: { resumed_task_ids: expect.arrayContaining([generatedTaskId]) } })
     const resumed = await call(4.6, 'campaign.batch.get', { campaign_id: campaignResult.id })
-    expect(resumed.data).toMatchObject({ result: { id: campaignResult.id, state: 'generating', taskIds: (generate.data as { result: { taskIds: string[] } }).result.taskIds } })
+    expect(resumed.data).toMatchObject({ result: { id: campaignResult.id, state: 'manual_attention', taskIds: [generatedTaskId], items: [expect.objectContaining({ state: 'manual_attention', next_action: 'task.select_direction' })] } })
+    const selectedDirection = await call(4.65, 'task.select_direction', { task_id: generatedTaskId, direction_id: 'A' })
+    expect(selectedDirection.error).toBeNull()
+    const confirmedPlan = await call(4.7, 'task.plan.confirm', { task_id: generatedTaskId, actor_id: 'batch-test' })
+    expect(confirmedPlan.error).toBeNull()
+    const readyToGenerate = await call(4.75, 'campaign.batch.get', { campaign_id: campaignResult.id })
+    expect(readyToGenerate.data).toMatchObject({ result: { state: 'generating', items: [expect.objectContaining({ state: 'generating', next_action: 'content.generate' })] } })
+    const generatedContent = await call(4.8, 'content.generate', { task_id: generatedTaskId })
+    expect(generatedContent.error).toBeNull()
+    const awaitingReview = await call(4.85, 'campaign.batch.get', { campaign_id: campaignResult.id })
+    expect(awaitingReview.data).toMatchObject({ result: { state: 'review_required', items: [expect.objectContaining({ state: 'review_required', next_action: 'content.review' })] } })
     const tooMany = await call(5, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, platform: 'taobao', account_id: account.id, product_ids_json: JSON.stringify(Array.from({ length: 51 }, (_, index) => `product_${index}`)) })
     expect(tooMany.error?.code).toBe('CAMPAIGN_PRODUCT_LIMIT')
   })
@@ -223,8 +241,27 @@ describe('API HTTP vertical slice', () => {
     const unlockedCards = (unlockedStart.data as { result: { wallet: { unlocked: boolean }; cards: Array<{ id: string; capabilityGate?: { unlocked: boolean; method: string } }> } }).result
     expect(unlockedCards.wallet).toMatchObject({ unlocked: true })
     for (const cardId of ['content', 'visuals', 'review-publish', 'bulk-publish']) expect(unlockedCards.cards.find(card => card.id === cardId)?.capabilityGate).toMatchObject({ unlocked: true, method: 'billing.status' })
+    const orderList = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'x-actor-id': 'finance_1' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.8, method: 'billing.recharge.list', params: { workspace_id: workspaceId, states: 'paid', limit: '10' } }) }).then(json)
+    expect(orderList.error).toBeNull()
+    expect(orderList.data?.result).toMatchObject({ summary: { pending: 0, paid: 1, closed: 0, failed: 0 }, returned: 1, total: 1, orders: [{ id: order.id, workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', state: 'paid', provider_trade_id: callbackBody.provider_trade_id }] })
     const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
     expect((transactions.data as { result: { transactions: unknown[] } }).result.transactions).toHaveLength(1)
+  })
+
+  it('reports exact recharge totals beyond the 100-row display limit', async () => {
+    const base = await start()
+    const workspaceId = `ws_billing_volume_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_volume' }
+    for (const index of Array.from({ length: 101 }, (_, value) => value)) {
+      await fetch(`${base}/mcp`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '1.00', idempotency_key: `volume-${workspaceId}-${index}` } }),
+      }).then(json)
+    }
+    const listed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 200, method: 'billing.recharge.list', params: { workspace_id: workspaceId, states: 'pending', limit: '10' } }) }).then(json)
+    expect(listed.error).toBeNull()
+    expect(listed.data?.result).toMatchObject({ summary: { pending: 101, paid: 0, closed: 0, failed: 0 }, returned: 10, total: 101 })
+    expect((listed.data as { result: { orders: unknown[] } }).result.orders).toHaveLength(10)
   })
 
   it('serializes concurrent provider checkout creation for one idempotency key', async () => {
@@ -490,13 +527,17 @@ describe('API HTTP vertical slice', () => {
     const member = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'ops.member.upsert', params: { workspace_id: workspaceId, external_subject: 'user_1', display_name: '运营一号', role: 'operator', status: 'active' } }) }).then(json)
     expect((member.data as { result: { externalSubject: string; status: string } }).result).toMatchObject({ externalSubject: 'user_1', status: 'active' })
     const users = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3.1, method: 'ops.users.list', params: { workspace_id: workspaceId, query: '运营一号', limit: '20' } }) }).then(json)
-    expect((users.data as { result: { total: number; identityCount: number; items: Array<{ workspaceId: string; externalSubject: string; status: string }> } }).result).toMatchObject({ total: 1, identityCount: 1, items: [expect.objectContaining({ workspaceId, externalSubject: 'user_1', status: 'active' })] })
+    expect((users.data as { result: { total: number; identityCount: number; items: Array<{ workspaceId: string; externalSubject: string; status: string; commercial: { planCode: string; planName: string; subscriptionStatus: string; usedTasks: number; includedTasks: number; remainingTasks: number; walletBalanceCny: string } }> } }).result).toMatchObject({ total: 1, identityCount: 1, items: [expect.objectContaining({ workspaceId, externalSubject: 'user_1', status: 'active', commercial: { planCode: 'growth', planName: 'Growth', subscriptionStatus: 'active', usedTasks: 0, includedTasks: 150, remainingTasks: 150, walletBalanceCny: '0.00' } })] })
     const invalidUserFilter = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3.2, method: 'ops.users.list', params: { workspace_id: workspaceId, status: 'deleted' } }) }).then(json)
     expect(invalidUserFilter.error?.code).toBe('INVALID_REQUEST')
     const suspendedUser = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3.3, method: 'ops.user.suspend', params: { workspace_id: workspaceId, external_subject: 'user_1', reason: '离职访问撤销测试' } }) }).then(json)
     expect((suspendedUser.data as { result: { status: string } }).result.status).toBe('suspended')
     const audit = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'ops.audit.list', params: { workspace_id: workspaceId } }) }).then(json)
     expect((audit.data as { result: Array<{ action: string }> }).result.map(item => item.action)).toEqual(expect.arrayContaining(['subscription.order.create', 'subscription.order.paid', 'member.upsert', 'user.suspend']))
+    const invalidAuditLimit = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4.1, method: 'ops.audit.list', params: { workspace_id: workspaceId, limit: '0' } }) }).then(json)
+    expect(invalidAuditLimit.error?.code).toBe('INVALID_REQUEST')
+    const invalidAuditFormat = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4.2, method: 'ops.audit.export', params: { workspace_id: workspaceId, format: 'xml' } }) }).then(json)
+    expect(invalidAuditFormat.error?.code).toBe('INVALID_REQUEST')
     const offer = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ops.commercial.offer.upsert', params: { workspace_id: workspaceId, code: 'pro', name: 'Pro', billing_cycle: 'monthly', price_cny: '1499.00', included_stores: '10', included_tasks: '500', reason: '首发套餐' } }) }).then(json)
     expect(offer.error).toBeNull()
     const addon = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'ops.commercial.addon.upsert', params: { workspace_id: workspaceId, code: 'image_pack_100', name: '图片生成包', kind: 'image_generation', price_cny: '99.00', units: '100', reason: '高成本能力加购' } }) }).then(json)
@@ -685,6 +726,13 @@ describe('API HTTP vertical slice', () => {
       expect.objectContaining({ taskId: first.task.id, contentVersionId: first.version.id, confirmationHash: first.confirmationHash, remoteSnapshotHash: first.remoteSnapshotHash }),
       expect.objectContaining({ taskId: second.task.id, contentVersionId: second.version.id, confirmationHash: second.confirmationHash, remoteSnapshotHash: second.remoteSnapshotHash }),
     ]))
+    const audit = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'x-actor-id': 'operator_batch_audit' }, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'ops.audit.list', params: { workspace_id: workspaceId, limit: '20' } }) }).then(json)
+    expect(audit.error).toBeNull()
+    expect((audit.data as { result: Array<{ action: string; resourceId: string }> }).result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'publish.batch.pause', resourceId: preparedResult.batchId }),
+      expect.objectContaining({ action: 'publish.batch.resume', resourceId: preparedResult.batchId }),
+      expect.objectContaining({ action: 'publish.batch.retry_failed', resourceId: preparedResult.batchId }),
+    ]))
   })
 
   it('exposes module-level content regeneration without replacing sibling modules', async () => {
@@ -855,6 +903,7 @@ describe('API HTTP vertical slice', () => {
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers, body: JSON.stringify({ direction_id: 'A' }) })
     await fetch(`${base}/v1/tasks/${taskId}/plan/confirm`, { method: 'POST', headers, body: JSON.stringify({ expected_version: 2 }) })
     const queued = await fetch(`${base}/v1/tasks/${taskId}/content-jobs`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'async-generation-1' } }).then(json)
+    expect(queued.error).toBeNull()
     expect((queued.data as { state: string; queue_position: number; estimated_wait_seconds: number }).state).toBe('queued')
     expect((queued.data as { queue_position: number; estimated_wait_seconds: number }).queue_position).toBe(1)
     expect((queued.data as { estimated_wait_seconds: number }).estimated_wait_seconds).toBeGreaterThan(0)
@@ -1118,6 +1167,28 @@ describe('API HTTP vertical slice', () => {
     else expect(settledResult.state).toBe('queued')
     const crossTenant = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'x-workspace-id': 'ws_other' }, body: JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'content.review', params: { content_version_id: versionId } }) }).then(json)
     expect(crossTenant.error?.code).toBe('WORKSPACE_SCOPE_MISMATCH')
+  })
+
+  it('rechecks approved content against the latest platform rules before publish preparation', async () => {
+    const base = await start()
+    const workspaceId = `ws_publish_rule_refresh_${Date.now()}`
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `rule-refresh-${Date.now()}`, credentialRef: 'fixture://rule-refresh' })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: '规则变更测试商品', stock: 10 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    service.approveContent(task.id, draft.id)
+    const packId = `publish-refresh-${Date.now()}`
+    service.publishRuleVersion({ packId, name: '发布前最新规则', version: '1.0.0', scope: 'platform', targetId: 'taobao', source: { kind: 'internal', reference: 'test://publish-refresh', checkedAt: new Date().toISOString() }, checks: { forbiddenTerms: ['规则变更测试商品'] }, actorId: 'rules-test', reason: '发布前复检回归' })
+    service.setRuleStatus({ packId, version: '1.0.0', status: 'active', actorId: 'rules-test', reason: '发布前复检回归' })
+    try {
+      const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'publish.prepare', params: { task_id: task.id } }) }).then(json)
+      expect(response.error).toMatchObject({ code: 'PUBLISH_RULE_REVIEW_BLOCKED' })
+      expect(service.getTask(task.id).state).toBe('approved')
+    } finally {
+      service.setRuleStatus({ packId, version: '1.0.0', status: 'inactive', actorId: 'rules-test', reason: '清理发布前复检回归规则' })
+    }
   })
 
   it('binds OAuth callback state to platform/workspace and rejects replay', async () => {

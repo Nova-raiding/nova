@@ -3,6 +3,9 @@ import {
   Button,
   Card,
   Col,
+  Form,
+  Input,
+  Modal,
   Row,
   Space,
   Statistic,
@@ -14,7 +17,7 @@ import {
 import { DownloadOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
-import type { ModelUsageSettlementRecord } from "../../types/ops";
+import type { ModelUsageSettlementDecision, ModelUsageSettlementRecord } from "../../types/ops";
 import {
   modelUsageSettlementStatus,
   settlementActions,
@@ -27,8 +30,13 @@ interface ReconciliationSectionProps {
 }
 
 export function ReconciliationSection({ model }: ReconciliationSectionProps) {
-  const { reconciliation, canPaymentReconciliation, canModelSettlement, runReconciliation, runModelUsageReconciliation, retryModelUsageSettlement, waiveModelUsageSettlement, exportBilling } = model;
+  const { reconciliation, canPaymentReconciliation, canModelSettlement, canBillingExport, runReconciliation, runModelUsageReconciliation, retryModelUsageSettlement, waiveModelUsageSettlement, markModelUsageForManualAttention, exportBilling } = model;
+  const [settlementForm] = Form.useForm<{ reason: string; evidenceRef: string }>();
   const [settlementAction, setSettlementAction] = useState<string>();
+  const [settlementDialog, setSettlementDialog] = useState<{
+    decision: ModelUsageSettlementDecision;
+    record: ModelUsageSettlementRecord;
+  }>();
   const [settlementFeedback, setSettlementFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -36,47 +44,45 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
   const unsettled = reconciliation?.model_usage?.unsettled ?? [];
   const settlementCounts = summarizeModelUsageSettlements(unsettled);
   const disabledActionReason = (
-    action: "retry" | "waive",
-    statusAllowed: boolean,
+    action: ModelUsageSettlementDecision,
     callbackAvailable: boolean,
   ) => {
     if (!canModelSettlement) return "当前账号没有模型结算权限。";
-    if (!statusAllowed)
-      return action === "retry"
-        ? "当前结算状态不能重试。"
-        : "只有需要人工处理的记录才能申请豁免。";
     if (!callbackAvailable) return "模型结算操作暂不可用。";
-    return undefined;
+    return action === "retry" ? "填写原因和证据后幂等重试当前结算步骤。" : action === "waive" ? "填写核对原因和证据后留痕豁免。" : "填写原因和证据后转入人工关注。";
   };
 
-  const runSettlementAction = async (
-    action: "retry" | "waive",
-    record: ModelUsageSettlementRecord,
-  ) => {
+  const openSettlementDialog = (decision: ModelUsageSettlementDecision, record: ModelUsageSettlementRecord) => {
+    settlementForm.resetFields();
+    setSettlementDialog({ decision, record });
+  };
+
+  const runSettlementAction = async (values: { reason: string; evidenceRef: string }) => {
+    if (!settlementDialog) return;
+    const { decision, record } = settlementDialog;
     const callback =
-      action === "retry"
+      decision === "retry"
         ? retryModelUsageSettlement
-        : waiveModelUsageSettlement;
+        : decision === "waive"
+          ? waiveModelUsageSettlement
+          : markModelUsageForManualAttention;
     if (!callback) return;
-    if (
-      action === "waive" &&
-      !window.confirm(
-        "确认豁免该笔模型用量？豁免必须已完成人工核对，并由后端保留原因和证据。",
-      )
-    )
-      return;
-    const actionKey = `${action}:${record.id}`;
+    const actionKey = `${decision}:${record.id}`;
     setSettlementAction(actionKey);
     setSettlementFeedback(undefined);
     try {
-      await callback(record);
+      await callback(record, values.reason.trim(), values.evidenceRef.trim());
       setSettlementFeedback({
         type: "success",
         message:
-          action === "retry"
+          decision === "retry"
             ? "结算重试已提交，列表将在后端确认后刷新。"
-            : "豁免已提交并等待后端审计结果。",
+            : decision === "waive"
+              ? "豁免已提交，原因和证据已进入后端审计。"
+              : "记录已转入人工关注，原因和证据已保存。",
       });
+      setSettlementDialog(undefined);
+      settlementForm.resetFields();
     } catch (error) {
       setSettlementFeedback({
         type: "error",
@@ -106,13 +112,15 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           <Button size="small" disabled={!canModelSettlement} onClick={() => void runModelUsageReconciliation()}>
             重试模型结算
           </Button>
-          <Button
-            size="small"
-            icon={<DownloadOutlined />}
-            onClick={() => void exportBilling()}
-          >
-            导出账单
-          </Button>
+          {canBillingExport && (
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              onClick={() => void exportBilling()}
+            >
+              导出账单
+            </Button>
+          )}
         </Space>
       }
     >
@@ -193,6 +201,35 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           onClose={() => setSettlementFeedback(undefined)}
         />
       )}
+      <Modal
+        title={settlementDialog?.decision === "retry" ? "重试模型用量结算" : settlementDialog?.decision === "waive" ? "豁免模型用量结算" : "转入人工关注"}
+        open={Boolean(settlementDialog)}
+        okText="确认提交"
+        cancelText="取消"
+        confirmLoading={Boolean(settlementAction)}
+        okButtonProps={{ danger: settlementDialog?.decision === "waive" }}
+        onCancel={() => { if (!settlementAction) { setSettlementDialog(undefined); settlementForm.resetFields(); } }}
+        onOk={() => settlementForm.submit()}
+      >
+        <Form
+          form={settlementForm}
+          layout="vertical"
+          requiredMark
+          onFinish={(values) => void runSettlementAction(values)}
+          onFinishFailed={({ errorFields }) => {
+            const first = errorFields[0]?.name;
+            if (first) settlementForm.scrollToField(first, { block: "center", focus: true });
+          }}
+          aria-label="模型用量人工处理审计信息"
+        >
+          <Form.Item name="reason" label="处理原因" rules={[{ required: true, whitespace: true, message: "请填写本次人工处理原因" }, { min: 4, message: "处理原因至少填写 4 个字符" }]}>
+            <Input.TextArea rows={3} placeholder="说明核对结果、异常原因和处理依据" autoFocus />
+          </Form.Item>
+          <Form.Item name="evidenceRef" label="Evidence 引用" extra="填写工单、对账记录或中转站回执的可追溯引用。" rules={[{ required: true, whitespace: true, message: "请填写可追溯的 evidence 引用" }]}>
+            <Input placeholder="例如 ticket://OPS-123 或 relay://request-id" />
+          </Form.Item>
+        </Form>
+      </Modal>
       <Table
         rowKey="id"
         size="small"
@@ -234,32 +271,31 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
             title: "操作",
             key: "actions",
             fixed: "right",
-            width: 180,
+            width: 260,
             render: (_value, record: ModelUsageSettlementRecord) => {
-              const status = modelUsageSettlementStatus(record);
-              const available = settlementActions(status);
+              const available = settlementActions(record);
               const retryAvailable = Boolean(retryModelUsageSettlement);
               const waiveAvailable = Boolean(waiveModelUsageSettlement);
-              const retryDisabled = !canModelSettlement || !available.retry || !retryAvailable;
-              const waiveDisabled = !canModelSettlement || !available.waive || !waiveAvailable;
-              const retryDisabledReason = disabledActionReason("retry", available.retry, retryAvailable);
-              const waiveDisabledReason = disabledActionReason("waive", available.waive, waiveAvailable);
+              const manualAttentionAvailable = Boolean(markModelUsageForManualAttention);
+              const retryDisabled = !canModelSettlement || !retryAvailable;
+              const waiveDisabled = !canModelSettlement || !waiveAvailable;
+              const manualAttentionDisabled = !canModelSettlement || !manualAttentionAvailable;
               return (
                 <Space wrap>
-                  <Tooltip title={retryDisabled ? retryDisabledReason : "幂等重试当前结算步骤"}>
+                  {available.retry && <Tooltip title={disabledActionReason("retry", retryAvailable)}>
                     <span>
                       <Button
                         size="small"
                         disabled={retryDisabled}
                         loading={settlementAction === `retry:${record.id}`}
                         aria-label={`重试模型用量结算 ${record.id}`}
-                        onClick={() => void runSettlementAction("retry", record)}
+                        onClick={() => openSettlementDialog("retry", record)}
                       >
                         重试
                       </Button>
                     </span>
-                  </Tooltip>
-                  <Tooltip title={waiveDisabled ? waiveDisabledReason : "人工核对后留痕豁免"}>
+                  </Tooltip>}
+                  {available.waive && <Tooltip title={disabledActionReason("waive", waiveAvailable)}>
                     <span>
                       <Button
                         size="small"
@@ -267,12 +303,26 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
                         disabled={waiveDisabled}
                         loading={settlementAction === `waive:${record.id}`}
                         aria-label={`豁免模型用量结算 ${record.id}`}
-                        onClick={() => void runSettlementAction("waive", record)}
+                        onClick={() => openSettlementDialog("waive", record)}
                       >
                         豁免
                       </Button>
                     </span>
-                  </Tooltip>
+                  </Tooltip>}
+                  {available.manualAttention && <Tooltip title={disabledActionReason("manual_attention", manualAttentionAvailable)}>
+                    <span>
+                      <Button
+                        size="small"
+                        disabled={manualAttentionDisabled}
+                        loading={settlementAction === `manual_attention:${record.id}`}
+                        aria-label={`将模型用量结算转入人工关注 ${record.id}`}
+                        onClick={() => openSettlementDialog("manual_attention", record)}
+                      >
+                        人工关注
+                      </Button>
+                    </span>
+                  </Tooltip>}
+                  {!available.retry && !available.waive && !available.manualAttention && <Typography.Text type="secondary">暂无合法动作</Typography.Text>}
                 </Space>
               );
             },

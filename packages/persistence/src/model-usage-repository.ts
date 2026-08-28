@@ -3,6 +3,7 @@ import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from '.
 
 export type ModelUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
 export type ModelSettlementStatus = 'pending_cost' | 'pending_wallet' | 'settled' | 'manual_attention' | 'waived'
+export type ModelUsageSettlementDecision = 'retry' | 'waive' | 'manual_attention'
 export interface ModelUsageRecord {
   id: string
   workspaceId: string
@@ -48,6 +49,14 @@ export interface ModelUsageRepository {
   list(workspaceId: string, limit?: number): Promise<ModelUsageRecord[]>
   claimPending(input: { workspaceId: string; owner: string; limit?: number; leaseSeconds?: number; now?: string }): Promise<ModelUsageRecord[]>
   resolve(input: { workspaceId: string; id: string; expectedRevision: number; status: ModelSettlementStatus; actorId: string; reason: string; evidenceRef?: string; costCny?: number; markupMultiplier?: number; customerChargeCny?: number; pricingPolicyRevision?: number; lastError?: Record<string, unknown>; nextAttemptAt?: string }): Promise<ModelUsageRecord>
+}
+
+export function allowedModelUsageSettlementDecisions(record: Pick<ModelUsageRecord, 'settlementStatus' | 'costCny' | 'customerChargeCny'>): ModelUsageSettlementDecision[] {
+  const retryable = record.costCny !== undefined && record.customerChargeCny !== undefined
+  if (record.settlementStatus === 'pending_cost') return [...(retryable ? ['retry' as const] : []), ...(record.costCny === undefined ? ['waive' as const] : []), 'manual_attention']
+  if (record.settlementStatus === 'pending_wallet') return [...(retryable ? ['retry' as const] : []), 'manual_attention']
+  if (record.settlementStatus === 'manual_attention') return retryable ? ['retry'] : record.costCny === undefined ? ['waive'] : []
+  return []
 }
 
 const now = () => new Date().toISOString()

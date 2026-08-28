@@ -106,4 +106,40 @@ describe('PostgresBusinessRepository', () => {
     client.enqueue() // ROLLBACK from the transaction wrapper
     await expect(new PostgresBusinessRepository(new RecordingPool(client)).save({ ...input, payload: { ...input.payload, state: 'approved_by_other_replica' } })).rejects.toBeInstanceOf(BusinessSnapshotVersionConflictError)
   })
+
+  it('projects the complete Route B task scope into normalized columns', async () => {
+    const client = new RecordingClient()
+    const scopedInput: SaveBusinessSnapshotInput = {
+      ...input,
+      payload: {
+        ...input.payload,
+        productId: 'legacy_product_1',
+        platform: 'taobao',
+        accountId: 'store_1',
+        brandId: 'brand_1',
+        canonicalProductId: 'canonical_1',
+        listingId: 'listing_1',
+        campaignId: 'campaign_1',
+        campaignItemId: 'item_1',
+        contentVersionId: 'content_2',
+      },
+    }
+    client.enqueue() // BEGIN
+    client.enqueue() // set_config
+    client.enqueue({ ...row, payload: scopedInput.payload }) // snapshot INSERT RETURNING
+    client.enqueue() // normalized task projection
+    client.enqueue() // COMMIT
+
+    await new PostgresBusinessRepository(new RecordingPool(client), { normalizedProjection: true }).save(scopedInput)
+
+    const projection = client.calls[3]
+    expect(projection?.text).toContain('brand_id, canonical_product_id, listing_id, campaign_id, campaign_item_id')
+    expect(projection?.text).toContain('brand_id=EXCLUDED.brand_id')
+    expect(projection?.text).toContain('campaign_item_id=EXCLUDED.campaign_item_id')
+    expect(projection?.values).toEqual([
+      'task_1', 'ws_one', 'legacy_product_1', 'taobao', 'store_1',
+      'brand_1', 'canonical_1', 'listing_1', 'campaign_1', 'item_1',
+      'approved', null, 'content_2', 2, JSON.stringify(scopedInput.payload),
+    ])
+  })
 })

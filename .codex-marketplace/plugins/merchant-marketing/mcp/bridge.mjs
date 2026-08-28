@@ -15,7 +15,7 @@ const MERCHANT_CONTEXT_METHODS = new Set([
   'task.group.create', 'publish.batch.prepare', 'publish.batch.get',
 ])
 const RECHARGE_UI_METHODS = new Set([
-  'billing.status', 'billing.recharge.create', 'billing.recharge.get',
+  'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.recharge.list',
   'content.generate', 'catalog.image.generate', 'catalog.title.optimize',
   'multimodal.generate', 'multimodal.image.edit', 'multimodal.video.request',
 ])
@@ -35,8 +35,8 @@ const READ_ONLY_METHODS = new Set([
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
-  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list', 'ops.users.list', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get',
-  'billing.status', 'billing.recharge.get', 'billing.transactions', 'billing.export', 'catalog.sync.get',
+  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list', 'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get',
+  'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'feedback.list', 'generation.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
@@ -78,7 +78,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' } }, additionalProperties: false },
   },
   'brand-unit.create': {
-    description: '创建品；当前先保存在 API 进程内，不代表已持久化。',
+    description: '创建可持久化的品，作为多平台、多店铺和跨店商品事实的归属单元。',
     inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, name: { type: 'string' } }, required: ['name'], additionalProperties: false },
   },
   'brand-unit.bind-store': {
@@ -102,15 +102,15 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, external_subject: { type: 'string' }, role: { type: 'string', enum: ['viewer', 'editor', 'publisher', 'admin'] }, reason: { type: 'string' } }, required: ['brand_id', 'external_subject', 'role'], additionalProperties: false },
   },
   'campaign.batch.create': {
-    description: '为一个品、一个平台店铺和最多 50 个商品创建批量运营计划；不会自动生成或发布。',
+    description: '为一个品和最多 50 个跨平台、跨店商品创建可恢复的批量运营计划；不会自动发布。',
     inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_ids_json: { type: 'string', description: '兼容单店铺模式：1 至 50 个商品 ID 的 JSON 数组' }, targets_json: { type: 'string', description: '多目标模式：每项含 product_id 或 canonical_product_id、platform、account_id，可选 listing_id' }, idempotency_key: { type: 'string', description: '重试同一批量计划时保持不变' } }, required: ['brand_id'], additionalProperties: false },
   },
   'campaign.batch.get': {
-    description: '查看批量运营计划的范围和状态；只读。',
+    description: '刷新并查看批量计划逐商品状态、汇总、阻断项和下一步；只读。',
     inputSchema: { type: 'object', properties: { campaign_id: { type: 'string' } }, required: ['campaign_id'], additionalProperties: false },
   },
   'campaign.batch.generate': {
-    description: '为批量计划创建逐商品内容任务；每项仍需事实确认、规则审核和人工批准。',
+    description: '启动可恢复的逐商品内容工作流；事实确认后自动续跑到待审核，每项仍需规则审核和人工批准。',
     inputSchema: { type: 'object', properties: { campaign_id: { type: 'string' }, request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['campaign_id'], additionalProperties: false },
   },
   'workspace.health': {
@@ -150,6 +150,8 @@ const METHODS = {
   'ops.session': { description: '查看当前运营会话身份、角色和工作区授权范围；不返回凭据。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'ops.workspaces.list': { description: '查看当前运营者授权工作区的汇总。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'ops.users.list': { description: '跨工作区查询用户成员关系；仅平台运营可用。只读。', inputSchema: { type: 'object', properties: { query: { type: 'string' }, status: { type: 'string', enum: ['invited', 'active', 'suspended'] }, workspace_id: { type: 'string' }, offset: { type: 'string' }, limit: { type: 'string' } }, additionalProperties: false } },
+  'ops.users.export': { description: '按筛选条件导出跨工作区用户成员关系；仅平台运营可用，最多 5000 条。只读。', inputSchema: { type: 'object', properties: { query: { type: 'string' }, status: { type: 'string', enum: ['invited', 'active', 'suspended'] }, workspace_id: { type: 'string' }, limit: { type: 'string' }, format: { type: 'string', enum: ['csv', 'json'] } }, additionalProperties: false } },
+  'ops.commercial.export': { description: '导出平台套餐、加购、优惠券和灰度规则；仅平台运营可用，不包含支付密钥。只读。', inputSchema: { type: 'object', properties: { format: { type: 'string', enum: ['csv', 'json'] } }, additionalProperties: false } },
   'ops.user.detail': { description: '查看持久平台身份、脱敏会话、生命周期事件和成员关系；仅平台运营可用。只读。', inputSchema: { type: 'object', properties: { identity_id: { type: 'string' }, issuer: { type: 'string' }, external_subject: { type: 'string' } }, additionalProperties: false } },
   'ops.user.suspend': { description: '停用单个成员关系，或全局停用平台身份并撤销其会话；仅平台运营可用。', inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: ['membership', 'identity'] }, workspace_id: { type: 'string' }, external_subject: { type: 'string' }, identity_id: { type: 'string' }, expected_revision: { type: 'string' }, idempotency_key: { type: 'string' }, reason: { type: 'string' } }, required: ['reason'], additionalProperties: false } },
   'ops.user.activate': { description: '恢复单个成员关系，或恢复平台身份但不复活旧会话；仅平台运营可用。', inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: ['membership', 'identity'] }, workspace_id: { type: 'string' }, external_subject: { type: 'string' }, identity_id: { type: 'string' }, expected_revision: { type: 'string' }, idempotency_key: { type: 'string' }, reason: { type: 'string' } }, required: ['reason'], additionalProperties: false } },
@@ -210,6 +212,10 @@ const METHODS = {
   'billing.recharge.get': {
     description: '查询充值订单状态；正式订单只接受支付服务商回调。只读。',
     inputSchema: { type: 'object', properties: { order_id: { type: 'string' } }, required: ['order_id'], additionalProperties: false },
+  },
+  'billing.recharge.list': {
+    description: '查看当前工作区充值订单，可按逗号分隔的状态筛选。只读。',
+    inputSchema: { type: 'object', properties: { states: { type: 'string' }, limit: { type: 'string' } }, additionalProperties: false },
   },
   'billing.transactions': {
     description: '查看当前工作区充值和消费流水。只读。',
@@ -380,7 +386,7 @@ const METHODS = {
     description: '从已授权平台同步商品事实、SKU、库存和平台字段；部分失败不会伪装成全量成功。',
     inputSchema: {
       type: 'object',
-      properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' } },
+      properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, cursor: { type: 'string' } },
       required: ['platform'],
       additionalProperties: false,
     },
@@ -404,7 +410,7 @@ const METHODS = {
   },
   'task.history': {
     description: '搜索当前工作区的历史营销任务。只读。',
-    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, state: { type: 'string' }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string' }, date_from: { type: 'string' }, date_to: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, state: { type: 'string' }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' } }, additionalProperties: false },
   },
   'task.resume': {
     description: '恢复任务并展示持久化的待回答/暂缓问题卡；只读，不会自动回答或生成。',
@@ -467,7 +473,7 @@ const METHODS = {
   },
   'task.group.create': {
     description: '批量生成入口：为多个平台/店铺/SKU 创建彼此独立的营销子任务；同一平台同一店铺仅允许不同 sku_id 分别出现，每项可提供 region 以匹配素材权益地区。必须先从当前品和商品列表多选，不能跨品复用选择。',
-    inputSchema: { type: 'object', properties: { entries_json: { type: 'string' }, request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['entries_json'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { entries_json: { type: 'string' }, request_text: { type: 'string' } }, required: ['entries_json'], additionalProperties: false },
   },
   'creative.directions': {
     description: '为任务返回三个可审阅的创意方向。',
@@ -496,7 +502,7 @@ const METHODS = {
   },
   'task.plan.confirm': {
     description: '确认制作方案；返回冻结的促销快照和逐 SKU 价格 diff。商家确认价格影响后才能继续生成正式内容。',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, actor_id: { type: 'string' }, expected_version: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, actor_id: { type: 'string' }, expected_version: { type: 'string' }, price_impact_confirmed: { type: 'string', enum: ['true', 'false'] } }, required: ['task_id'], additionalProperties: false },
   },
   'content.generate': {
     description: '基于任务和已确认商品事实生成新的可审阅内容版本。',
@@ -641,7 +647,7 @@ const METHODS = {
   },
   'multimodal.video.request': {
     description: '用一句话生成视频脚本、分镜或通过平台自有中转站渲染成片；返回结果区分计划请求与 provider 实际执行。',
-    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, output: { type: 'string', enum: ['script', 'storyboard', 'rendering'] }, context_json: { type: 'string' } }, required: ['prompt', 'output', 'context_json'], additionalProperties: false },
   },
   'multimodal.video.get': {
     description: '查询排队中的视频 provider job；未完成时明确返回排队状态，不伪造成片。',

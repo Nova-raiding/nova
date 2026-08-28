@@ -106,6 +106,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const platformWorkspaceDirectory = await readFile(new URL('./migrations/044_platform_workspace_directory.sql', import.meta.url), 'utf8')
   const platformIdentityLifecycle = await readFile(new URL('./migrations/045_platform_identity_lifecycle.sql', import.meta.url), 'utf8')
   const modelUsageSettlement = await readFile(new URL('./migrations/046_model_usage_settlement.sql', import.meta.url), 'utf8')
+  const routeBTaskProjection = await readFile(new URL('./migrations/047_route_b_task_projection.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -153,6 +154,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 44, name: 'platform_workspace_directory', sql: platformWorkspaceDirectory },
     { version: 45, name: 'platform_identity_lifecycle', sql: platformIdentityLifecycle },
     { version: 46, name: 'model_usage_settlement', sql: modelUsageSettlement },
+    { version: 47, name: 'route_b_task_projection', sql: routeBTaskProjection },
   ]
 }
 

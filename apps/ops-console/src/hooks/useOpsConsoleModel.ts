@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Form } from "antd";
-import { describeOpsError, managedOpsSession, rpc, rpcForWorkspace } from "../api/opsClient.js";
+import { describeOpsError, hasOpsConnection, managedOpsSession, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type {
   Platform,
   Settings,
@@ -37,19 +37,154 @@ import type {
   EvidenceReadiness,
   DataDeletionRequest,
   Reconciliation,
+  RechargeOrderList,
+  RechargeOrderState,
   ModelUsageSettlementRecord,
   AutomationPolicy,
   AutomationScan,
   OpsSession,
+  OpsDataSource,
   RpcErrorPayload,
   Rpc,
   OpsRequestError,
 } from "../types/ops.js";
 import { canViewModelMarkup } from "../components/finance/modelMarkupVisibility.js";
-import { financePermissions } from "../components/finance/financePermissions.js";
+import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
+import { rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
+import { applyLoadedValue, OpsLoadCoordinator } from "./opsLoadCoordinator.js";
+import { submitRevisionCreation, type RevisionCreationValues } from "../components/tasks/knowledge/revisionCreation.js";
+
+export interface OpsLoadFilterOverrides {
+  queueFilters?: QueueFilters;
+  alertFilters?: AlertFilters;
+}
+
+export type DataDeletionDecision = "approve" | "cancel";
+
+export const DATA_DELETION_REASON_MIN_LENGTH = 4;
+
+export const PUBLISH_BATCH_REASON_MIN_LENGTH = 4;
+
+export function normalizePublishBatchPauseReason(reason: string): string {
+  const normalized = reason.trim();
+  if (normalized.length < PUBLISH_BATCH_REASON_MIN_LENGTH)
+    throw new Error(`暂停原因至少填写 ${PUBLISH_BATCH_REASON_MIN_LENGTH} 个字符`);
+  return normalized;
+}
+
+export function normalizePublishBatchConfirmations(value: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("失败项确认必须是有效 JSON");
+  }
+  if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 50)
+    throw new Error("失败项确认必须包含 1 至 50 个项目");
+  const required = ["task_id", "content_version_id", "confirmation_hash", "remote_snapshot_hash", "idempotency_key"] as const;
+  if (parsed.some((item) => !item || typeof item !== "object" || required.some((key) => typeof (item as Record<string, unknown>)[key] !== "string" || !(item as Record<string, string>)[key].trim())))
+    throw new Error(`每个失败项都必须包含 ${required.join("、")}`);
+  return JSON.stringify(parsed);
+}
+
+export function normalizeDataDeletionReason(reason: string): string {
+  const normalized = reason.trim();
+  if (normalized.length < DATA_DELETION_REASON_MIN_LENGTH)
+    throw new Error(`请填写至少 ${DATA_DELETION_REASON_MIN_LENGTH} 个字符的具体原因`);
+  return normalized;
+}
+
+export async function submitDataDeletionDecision(input: {
+  decision: DataDeletionDecision;
+  requestId: string;
+  reason: string;
+  request?: (method: string, params: Record<string, string>) => Promise<unknown>;
+  refresh: () => Promise<unknown>;
+}): Promise<void> {
+  const reason = normalizeDataDeletionReason(input.reason);
+  await (input.request ?? rpc)(`ops.data.delete.${input.decision}`, {
+    request_id: input.requestId,
+    reason,
+  });
+  await input.refresh();
+}
+
+export function alertListParams(filters: AlertFilters): Record<string, string> {
+  return {
+    status: "open",
+    limit: "100",
+    ...(filters.platform ? { platform: filters.platform } : {}),
+    ...(filters.accountId ? { account_id: filters.accountId } : {}),
+    ...(filters.code ? { code: filters.code } : {}),
+    ...(filters.entityType ? { entity_type: filters.entityType } : {}),
+    ...(filters.entityId ? { entity_id: filters.entityId } : {}),
+  };
+}
+
+export function marketingQueueParams(filters: QueueFilters): Record<string, string> {
+  return {
+    limit: "50",
+    ...(filters.platform ? { platform: filters.platform } : {}),
+    ...(filters.accountId ? { account_id: filters.accountId } : {}),
+    ...(filters.productId ? { product_id: filters.productId } : {}),
+    ...(filters.taskId ? { task_id: filters.taskId } : {}),
+    ...(filters.state ? { state: filters.state } : {}),
+  };
+}
+
+export function prepareAutomationScopeLoad(
+  scope: string,
+  stores: readonly StoreDirectory[],
+  clear: {
+    setScope: (value: string) => void;
+    setPolicy: (value: AutomationPolicy | undefined) => void;
+    setScan: (value: AutomationScan | undefined) => void;
+  },
+): Record<string, string> {
+  clear.setScope(scope);
+  clear.setPolicy(undefined);
+  clear.setScan(undefined);
+  const row = stores.find((item) => `${item.platform}:${item.accountId}` === scope);
+  return row ? { platform: row.platform, account_id: row.accountId } : {};
+}
+
+export class IdempotencyOperationKeys {
+  private readonly keys = new Map<string, string>();
+
+  constructor(private readonly createKey: () => string = () => crypto.randomUUID()) {}
+
+  keyFor(operation: string) {
+    const existing = this.keys.get(operation);
+    if (existing) return existing;
+    const created = this.createKey();
+    this.keys.set(operation, created);
+    return created;
+  }
+
+  release(operation: string) {
+    this.keys.delete(operation);
+  }
+}
+
+export async function runIdempotentOperation<T>(
+  keys: IdempotencyOperationKeys,
+  operation: string,
+  request: (idempotencyKey: string) => Promise<T>,
+): Promise<T> {
+  const idempotencyKey = keys.keyFor(operation);
+  try {
+    const result = await request(idempotencyKey);
+    keys.release(operation);
+    return result;
+  } catch (cause) {
+    if ((cause as OpsRequestError | undefined)?.code !== "API_REQUEST_TIMEOUT")
+      keys.release(operation);
+    throw cause;
+  }
+}
 
 export function useOpsConsoleModel() {
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const [settings, setSettings] = useState<Settings>();
   const [platformRows, setPlatformRows] = useState<PlatformSetting[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
@@ -74,6 +209,12 @@ export function useOpsConsoleModel() {
   const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number }>({});
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceSummary[]>([]);
   const [reconciliation, setReconciliation] = useState<Reconciliation>();
+  const [rechargeOrders, setRechargeOrders] = useState<RechargeOrderList>();
+  const [rechargeOrdersLoading, setRechargeOrdersLoading] = useState(false);
+  const [rechargeOrdersError, setRechargeOrdersError] = useState("");
+  const [rechargeOrderStateFilter, setRechargeOrderStateFilter] = useState<RechargeOrderState>();
+  const [queryingRechargeOrderId, setQueryingRechargeOrderId] = useState<string>();
+  const rechargeOrdersRequestRef = useRef(0);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [addons, setAddons] = useState<Addon[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -135,10 +276,14 @@ export function useOpsConsoleModel() {
   const [automationScope, setAutomationScope] = useState("");
   const [selectedStoreScope, setSelectedStoreScope] = useState("");
   const [opsSession, setOpsSession] = useState<OpsSession>();
+  const [dataSource, setDataSource] = useState<OpsDataSource>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const loadCoordinatorRef = useRef(new OpsLoadCoordinator());
+  const automationScopeRequestRef = useRef(0);
+  const identityOperationKeysRef = useRef(new IdempotencyOperationKeys());
   const [memberForm] = Form.useForm();
   const [refundForm] = Form.useForm();
   const [ruleForm] = Form.useForm();
@@ -146,11 +291,18 @@ export function useOpsConsoleModel() {
   const [knowledgeAssetForm] = Form.useForm();
   const [competitorForm] = Form.useForm();
 
-  const load = async () => {
+  const load = async (filterOverrides: OpsLoadFilterOverrides = {}) => {
+    const activeQueueFilters = filterOverrides.queueFilters ?? queueFilters;
+    const activeAlertFilters = filterOverrides.alertFilters ?? alertFilters;
+    const loadRequest = loadCoordinatorRef.current.begin();
     setLoading(true);
-    setModelStatus(undefined);
     setModelStatusLoading(true);
     setError("");
+    if (!hasOpsConnection()) {
+      setLoading(false);
+      setModelStatusLoading(false);
+      return;
+    }
     try {
       let firstOptionalError: unknown;
       let activeLoads = 0;
@@ -213,21 +365,7 @@ export function useOpsConsoleModel() {
         optional("ops.commercial.rollouts.list"),
         optional("ops.growth.funnel"),
         optional("workspace.health"),
-        optional("ops.alerts.list", {
-          status: "open",
-          limit: "100",
-          ...(alertFilters.platform ? { platform: alertFilters.platform } : {}),
-          ...(alertFilters.accountId
-            ? { account_id: alertFilters.accountId }
-            : {}),
-          ...(alertFilters.code ? { code: alertFilters.code } : {}),
-          ...(alertFilters.entityType
-            ? { entity_type: alertFilters.entityType }
-            : {}),
-          ...(alertFilters.entityId
-            ? { entity_id: alertFilters.entityId }
-            : {}),
-        }),
+        optional("ops.alerts.list", alertListParams(activeAlertFilters)),
         optional("ops.data.delete.list", { limit: "50" }),
         (async () => {
           try {
@@ -238,7 +376,7 @@ export function useOpsConsoleModel() {
             firstOptionalError ??= cause;
             return undefined;
           } finally {
-            setModelStatusLoading(false);
+            loadCoordinatorRef.current.commit(loadRequest, () => setModelStatusLoading(false));
           }
         })(),
         optional("workspace.metrics"),
@@ -246,53 +384,34 @@ export function useOpsConsoleModel() {
         optional("knowledge.asset.list"),
         optional("knowledge.learning.list", { status: "pending" }),
         optional("knowledge.competitor.list"),
-        optional("ops.marketing.queue", {
-          limit: "50",
-          ...(queueFilters.platform ? { platform: queueFilters.platform } : {}),
-          ...(queueFilters.accountId
-            ? { account_id: queueFilters.accountId }
-            : {}),
-          ...(queueFilters.productId
-            ? { product_id: queueFilters.productId }
-            : {}),
-          ...(queueFilters.taskId ? { task_id: queueFilters.taskId } : {}),
-          ...(queueFilters.state ? { state: queueFilters.state } : {}),
-        }),
+        optional("ops.marketing.queue", marketingQueueParams(activeQueueFilters)),
         optional("automation.policy.get"),
         optional("automation.policy.list"),
         optional("automation.scan"),
         optional("ops.session"),
       ]);
+      if (!loadCoordinatorRef.current.isCurrent(loadRequest)) return;
       if (firstOptionalError) setError(describeOpsError(firstOptionalError));
-      setSettings(result?.settings);
-      setPlatformRows(result?.platforms ?? []);
-      setSubscription(result?.subscription);
-      setOrders(result?.orders ?? []);
-      setAudits((auditResult ?? []) as unknown as Audit[]);
-      setMembers((membersResult ?? []) as unknown as Member[]);
-      setWorkspaceRows(
-        (workspacesResult ?? []) as unknown as WorkspaceSummary[],
-      );
-      setReconciliation(financeResult as unknown as Reconciliation);
-      setOffers((offerResult ?? []) as unknown as Offer[]);
-      setAddons((addonResult ?? []) as unknown as Addon[]);
-      setCoupons((couponResult ?? []) as unknown as Coupon[]);
-      setRollouts((rolloutResult ?? []) as unknown as Rollout[]);
-      setFunnel(
-        (funnelResult ?? {
-          counts: {},
-          totalEvents: 0,
-        }) as unknown as GrowthFunnel,
-      );
-      setWorkspaceMetrics(metricsResult as unknown as WorkspaceMetrics);
-      setKnowledgeAssets((assetResult ?? []) as unknown as KnowledgeAsset[]);
-      setLearningSuggestions(
-        (learningResult ?? []) as unknown as LearningSuggestion[],
-      );
-      setCompetitors(
-        (competitorResult ?? []) as unknown as CompetitorAnalysis[],
-      );
-      setKnowledgeRules((knowledgeRuleResult ?? []) as unknown as Rule[]);
+      applyLoadedValue(result, (value) => {
+        setSettings(value?.settings);
+        setPlatformRows(value?.platforms ?? []);
+        setSubscription(value?.subscription);
+        setOrders(value?.orders ?? []);
+      });
+      applyLoadedValue(auditResult, (value) => setAudits((value ?? []) as unknown as Audit[]));
+      applyLoadedValue(membersResult, (value) => setMembers((value ?? []) as unknown as Member[]));
+      applyLoadedValue(workspacesResult, (value) => setWorkspaceRows((value ?? []) as unknown as WorkspaceSummary[]));
+      applyLoadedValue(financeResult, (value) => setReconciliation(value as unknown as Reconciliation));
+      applyLoadedValue(offerResult, (value) => setOffers((value ?? []) as unknown as Offer[]));
+      applyLoadedValue(addonResult, (value) => setAddons((value ?? []) as unknown as Addon[]));
+      applyLoadedValue(couponResult, (value) => setCoupons((value ?? []) as unknown as Coupon[]));
+      applyLoadedValue(rolloutResult, (value) => setRollouts((value ?? []) as unknown as Rollout[]));
+      applyLoadedValue(funnelResult, (value) => setFunnel(value as unknown as GrowthFunnel));
+      applyLoadedValue(metricsResult, (value) => setWorkspaceMetrics(value as unknown as WorkspaceMetrics));
+      applyLoadedValue(assetResult, (value) => setKnowledgeAssets((value ?? []) as unknown as KnowledgeAsset[]));
+      applyLoadedValue(learningResult, (value) => setLearningSuggestions((value ?? []) as unknown as LearningSuggestion[]));
+      applyLoadedValue(competitorResult, (value) => setCompetitors((value ?? []) as unknown as CompetitorAnalysis[]));
+      applyLoadedValue(knowledgeRuleResult, (value) => setKnowledgeRules((value ?? []) as unknown as Rule[]));
       if (queueResult && typeof queueResult === "object")
         setMarketingQueue({
           generation: [],
@@ -331,6 +450,9 @@ export function useOpsConsoleModel() {
       )
         setOpsSession(sessionResult as unknown as OpsSession);
       const health = healthResult as unknown as {
+        environment?: string;
+        persistence?: { mode?: string };
+        plugin?: { name?: string };
         connectorReadiness?: Record<string, PlatformHealth>;
         platforms?: PlatformOperation[];
         storeDirectory?: StoreDirectory[];
@@ -343,33 +465,37 @@ export function useOpsConsoleModel() {
           };
         };
       };
-      setPlatformHealth(
-        (health?.connectorReadiness ?? {}) as Record<string, PlatformHealth>,
-      );
-      setPlatformOperations(health?.platforms ?? []);
-      setStoreDirectory(health?.storeDirectory ?? []);
-      setBrandNavigation(health?.capabilityCards?.brandNavigation?.items ?? []);
-      setDataLifecycle(
-        health?.setup?.dataLifecycle ?? { state: "not_required" },
-      );
-      setProductionEvidence(
-        health?.setup?.productionEvidence ?? {
-          capability: { state: "not_required" },
-          capacity: { state: "not_required" },
-        },
-      );
-      setAlerts((alertResult ?? []) as unknown as OperationalAlert[]);
-      setDeletionRequests(
-        (deletionResult ?? []) as unknown as DataDeletionRequest[],
-      );
-      setModelStatus(modelResult as unknown as ModelStatus);
+      const metrics = metricsResult as unknown as {
+        dataCoverage?: { fixtureDataPresent?: boolean };
+      } | undefined;
+      const stores = health?.storeDirectory ?? [];
+      if (healthResult !== undefined) {
+        setDataSource({
+          environment: health?.environment,
+          persistence: health?.persistence?.mode,
+          plugin: health?.plugin?.name,
+          fixtureDataPresent: metrics?.dataCoverage?.fixtureDataPresent === true || stores.some((store) => store.dataMode === "fixture"),
+          officialStoreCount: stores.filter((store) => store.dataMode === "official_api").length,
+          fixtureStoreCount: stores.filter((store) => store.dataMode === "fixture").length,
+        });
+        setPlatformHealth((health?.connectorReadiness ?? {}) as Record<string, PlatformHealth>);
+        setPlatformOperations(health?.platforms ?? []);
+        setStoreDirectory(health?.storeDirectory ?? []);
+        setBrandNavigation(health?.capabilityCards?.brandNavigation?.items ?? []);
+        setDataLifecycle(health?.setup?.dataLifecycle ?? { state: "not_required" });
+        setProductionEvidence(health?.setup?.productionEvidence ?? { capability: { state: "not_required" }, capacity: { state: "not_required" } });
+      }
+      applyLoadedValue(alertResult, (value) => setAlerts((value ?? []) as unknown as OperationalAlert[]));
+      applyLoadedValue(deletionResult, (value) => setDeletionRequests((value ?? []) as unknown as DataDeletionRequest[]));
+      applyLoadedValue(modelResult, (value) => setModelStatus(value as unknown as ModelStatus));
     } catch (cause) {
-      setError(describeOpsError(cause));
+      loadCoordinatorRef.current.commit(loadRequest, () => setError(describeOpsError(cause)));
     } finally {
-      setLoading(false);
+      loadCoordinatorRef.current.commit(loadRequest, () => setLoading(false));
     }
   };
   const loadRules = async () => {
+    if (!hasOpsConnection()) return;
     try {
       const result = await rpc("rule.list");
       setRules((result ?? []) as unknown as Rule[]);
@@ -379,8 +505,14 @@ export function useOpsConsoleModel() {
   };
   const opsRoleKey = opsSession?.roles.join("|") ?? "";
   useEffect(() => {
+    if (!hasOpsConnection()) {
+      setLoading(false);
+      setModelStatusLoading(false);
+      return;
+    }
     void load();
     void loadRules();
+    void loadRechargeOrders();
     if (canViewModelMarkup(opsSession?.roles ?? [])) {
       void rpc("ops.commercial.model-markup.get")
         .then((value: unknown) => setModelMarkup(value as ModelMarkupPolicy))
@@ -400,6 +532,7 @@ export function useOpsConsoleModel() {
   const canFinance = financeAccess.refund;
   const canPaymentReconciliation = financeAccess.paymentReconciliation;
   const canModelSettlement = financeAccess.modelSettlement;
+  const canBillingExport = financeAccess.billingExport;
   const canPlatformOps = can([
     "workspace_owner",
     "merchant_admin",
@@ -555,28 +688,28 @@ export function useOpsConsoleModel() {
       await load();
     }
   };
-  const saveStoreAlias = async (row: StoreDirectory) => {
+  const saveStoreAlias = async (row: StoreDirectory, alias: string) => {
     if (!canPlatformOps) {
       message.error("当前会话为只读，缺少平台运营权限");
-      return;
+      return false;
     }
-    const alias = window
-      .prompt("输入店铺展示别名", row.alias ?? row.label)
-      ?.trim();
-    if (!alias || alias === row.alias) return;
+    const normalizedAlias = alias.trim();
+    if (!normalizedAlias || normalizedAlias === row.alias) return false;
     try {
       await rpc("platform.store.alias.set", {
         platform: row.platform,
         account_id: row.accountId,
-        alias,
+        alias: normalizedAlias,
         expected_revision: String(row.revision),
       });
       message.success("店铺别名已保存");
       await load();
+      return true;
     } catch (cause) {
       message.error(
         cause instanceof Error ? cause.message : "店铺别名保存失败",
       );
+      return false;
     }
   };
   const revokeStore = async (row: StoreDirectory) => {
@@ -584,12 +717,18 @@ export function useOpsConsoleModel() {
       message.error("当前会话为只读，缺少平台运营权限");
       return;
     }
-    if (
-      !window.confirm(
-        `确认撤销 ${row.label} 的本地授权状态？撤销后不会再执行同步或发布。`,
-      )
-    )
-      return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      modal.confirm({
+        title: `确认撤销 ${row.label} 的本地授权状态？`,
+        content: "撤销后不会再执行同步或发布，可重新完成官方授权后恢复。",
+        okText: "确认撤销",
+        cancelText: "取消",
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
     try {
       await rpc("platform.revoke", {
         platform: row.platform,
@@ -627,6 +766,7 @@ export function useOpsConsoleModel() {
     }
   };
   const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number } = {}) => {
+    if (!hasOpsConnection()) return false;
     const requestId = ++userDirectoryRequestRef.current;
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 20;
@@ -647,6 +787,74 @@ export function useOpsConsoleModel() {
     } finally {
       if (requestId === userDirectoryRequestRef.current) setUserDirectoryLoading(false);
     }
+  };
+  const exportUsers = async (filters: { query?: string; status?: string; workspaceId?: string } = {}) => {
+    if (!canUserGovernance) {
+      message.error("当前会话为只读，缺少平台用户导出权限");
+      return false;
+    }
+    try {
+      const result = (await rpc("ops.users.export", {
+        format: "csv",
+        limit: "5000",
+        ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.workspaceId?.trim() ? { workspace_id: filters.workspaceId.trim() } : {}),
+      })) as unknown as { filename: string; content: string; truncated?: boolean };
+      const blob = new Blob([result.content], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      message.success(result.truncated ? "已导出前 5000 条用户成员关系，请继续缩小筛选范围" : "用户目录已导出");
+      return true;
+    } catch (cause) {
+      message.error(describeOpsError(cause));
+      return false;
+    }
+  };
+  const exportCommercial = async () => {
+    if (!canGlobalCommercial) {
+      message.error("当前会话为只读，缺少商业配置导出权限");
+      return false;
+    }
+    try {
+      const result = (await rpc("ops.commercial.export", { format: "csv" })) as unknown as { filename: string; content: string };
+      const blob = new Blob([result.content], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      message.success("商业配置已导出，不包含支付密钥");
+      return true;
+    } catch (cause) {
+      message.error(describeOpsError(cause));
+      return false;
+    }
+  };
+  const suspendUsers = async (targets: Array<{ workspaceId: string; externalSubject: string }>, reason: string) => {
+    if (!canUserGovernance) {
+      message.error("当前会话为只读，缺少平台用户治理权限");
+      return { succeeded: 0, failed: targets.length };
+    }
+    let succeeded = 0;
+    let failed = 0;
+    for (const target of targets) {
+      try {
+        await rpc("ops.user.suspend", { workspace_id: target.workspaceId, external_subject: target.externalSubject, reason });
+        succeeded += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    await loadUsers(userDirectoryFilters);
+    if (failed) message.warning(`已停用 ${succeeded} 个成员，${failed} 个失败，请查看刷新后的状态并单独处理`);
+    else message.success(`已停用 ${succeeded} 个成员`);
+    return { succeeded, failed };
   };
   const suspendUser = async (workspaceId: string, externalSubject: string, reason: string) => {
     if (!canUserGovernance) {
@@ -687,30 +895,42 @@ export function useOpsConsoleModel() {
   const changeIdentityAccess = async (target: "active" | "suspended", reason: string) => {
     const identity = userDetail?.identity;
     if (!canUserGovernance || !identity?.id || !identity.revision) { message.error("当前详情没有可治理的持久平台身份"); return false; }
+    const identityId = identity.id;
+    const operation = JSON.stringify(["identity-access", identityId, identity.revision, target, reason]);
     try {
-      await rpc(target === "suspended" ? "ops.user.suspend" : "ops.user.activate", { scope: "identity", identity_id: identity.id, expected_revision: String(identity.revision), idempotency_key: crypto.randomUUID(), reason });
+      await runIdempotentOperation(identityOperationKeysRef.current, operation, (idempotencyKey) =>
+        rpc(target === "suspended" ? "ops.user.suspend" : "ops.user.activate", { scope: "identity", identity_id: identityId, expected_revision: String(identity.revision), idempotency_key: idempotencyKey, reason }),
+      );
       message.success(target === "suspended" ? "平台身份已全局停用，活动会话已撤销" : "平台身份已恢复；旧会话不会自动复活");
-      await loadUserDetail(identity.externalSubject, identity.id);
+      await loadUserDetail(identity.externalSubject, identityId);
       return true;
     } catch (cause) { message.error(describeOpsError(cause)); return false; }
   };
   const transitionIdentityRisk = async (level: "low" | "medium" | "high" | "critical", decision: "allow" | "step_up" | "block", reason: string) => {
     const identity = userDetail?.identity;
     if (!canUserGovernance || !identity?.id || !identity.revision) { message.error("当前详情没有可治理的持久平台身份"); return false; }
+    const identityId = identity.id;
+    const operation = JSON.stringify(["identity-risk", identityId, identity.revision, level, decision, reason]);
     try {
-      await rpc("ops.user.risk.transition", { identity_id: identity.id, risk_level: level, risk_decision: decision, expected_revision: String(identity.revision), idempotency_key: crypto.randomUUID(), reason, evidence_json: JSON.stringify({ source: "ops_console" }) });
+      await runIdempotentOperation(identityOperationKeysRef.current, operation, (idempotencyKey) =>
+        rpc("ops.user.risk.transition", { identity_id: identityId, risk_level: level, risk_decision: decision, expected_revision: String(identity.revision), idempotency_key: idempotencyKey, reason, evidence_json: JSON.stringify({ source: "ops_console" }) }),
+      );
       message.success(decision === "block" ? "身份已阻断，活动会话已撤销" : "身份风险策略已更新");
-      await loadUserDetail(identity.externalSubject, identity.id);
+      await loadUserDetail(identity.externalSubject, identityId);
       return true;
     } catch (cause) { message.error(describeOpsError(cause)); return false; }
   };
   const revokeIdentitySession = async (sessionId: string, expectedRevision: number, reason: string) => {
     const identity = userDetail?.identity;
     if (!canUserGovernance || !identity?.id) { message.error("当前详情没有可治理的持久平台身份"); return false; }
+    const identityId = identity.id;
+    const operation = JSON.stringify(["identity-session-revoke", identityId, sessionId, expectedRevision, reason]);
     try {
-      await rpc("ops.user.session.revoke", { identity_id: identity.id, session_id: sessionId, expected_revision: String(expectedRevision), idempotency_key: crypto.randomUUID(), reason });
+      await runIdempotentOperation(identityOperationKeysRef.current, operation, (idempotencyKey) =>
+        rpc("ops.user.session.revoke", { identity_id: identityId, session_id: sessionId, expected_revision: String(expectedRevision), idempotency_key: idempotencyKey, reason }),
+      );
       message.success("会话已撤销");
-      await loadUserDetail(identity.externalSubject, identity.id);
+      await loadUserDetail(identity.externalSubject, identityId);
       return true;
     } catch (cause) { message.error(describeOpsError(cause)); return false; }
   };
@@ -724,6 +944,7 @@ export function useOpsConsoleModel() {
     } catch (cause) { message.error(describeOpsError(cause)); return false; }
   };
   const loadUserDetail = async (externalSubject: string, identityId?: string) => {
+    if (!hasOpsConnection()) return false;
     if (!canUserGovernance) {
       message.error("当前会话缺少平台用户治理权限");
       return false;
@@ -748,7 +969,18 @@ export function useOpsConsoleModel() {
       message.error("当前会话为只读，缺少账务权限");
       return;
     }
-    if (!window.confirm(`确认对订单 ${values.orderId} 创建退款？\n\n原因：${values.reason}\n\n退款会产生真实账务流水，提交后不能通过此页面撤销。`)) return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      modal.confirm({
+        title: `确认对订单 ${values.orderId} 创建退款？`,
+        content: `原因：${values.reason}。退款会产生真实账务流水，提交后不能通过此页面撤销。`,
+        okText: "确认退款",
+        cancelText: "取消",
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
     setRefundSubmitting(true);
     try {
       await rpc("billing.refund", {
@@ -769,12 +1001,17 @@ export function useOpsConsoleModel() {
       message.error("当前会话为只读，缺少账务权限");
       return;
     }
-    if (
-      !window.confirm(
-        "确认查询支付服务商的待支付订单？已确认支付的订单会幂等入账，金额或交易号异常只会进入失败列表。",
-      )
-    )
-      return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      modal.confirm({
+        title: "确认查询支付服务商的待支付订单？",
+        content: "已确认支付的订单会幂等入账，金额或交易号异常只会进入失败列表。",
+        okText: "确认查单",
+        cancelText: "取消",
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
     try {
       const report = (await rpc("billing.reconciliation.run", {
         limit: "50",
@@ -791,47 +1028,102 @@ export function useOpsConsoleModel() {
       message.error(cause instanceof Error ? cause.message : "支付对账失败");
     }
   };
-  const runModelUsageReconciliation = async () => {
-    if (!canFinance) {
-      message.error("当前会话为只读，缺少模型结算权限");
-      return;
-    }
+  const loadRechargeOrders = async (state = rechargeOrderStateFilter) => {
+    if (!hasOpsConnection()) return false;
+    const requestId = ++rechargeOrdersRequestRef.current;
+    setRechargeOrderStateFilter(state);
+    setRechargeOrdersLoading(true);
+    setRechargeOrdersError("");
     try {
-      const report = (await rpc("billing.model-usage.reconciliation.run", { limit: "50" })) as unknown as { settled?: string[]; pending?: Array<unknown> };
-      message.success(`模型结算完成：成功 ${report.settled?.length ?? 0}，仍待处理 ${report.pending?.length ?? 0}`);
-      await load();
+      const result = await rpc("billing.recharge.list", rechargeOrderListParams(state));
+      if (requestId === rechargeOrdersRequestRef.current)
+        setRechargeOrders(result as unknown as RechargeOrderList);
+      return true;
+    } catch (cause) {
+      if (requestId === rechargeOrdersRequestRef.current) {
+        setRechargeOrdersError(describeOpsError(cause));
+        setRechargeOrders({ orders: [] });
+      }
+      return false;
+    } finally {
+      if (requestId === rechargeOrdersRequestRef.current)
+        setRechargeOrdersLoading(false);
+    }
+  };
+  const queryRechargeOrder = async (orderId: string) => {
+    if (!canPaymentReconciliation) {
+      message.error("当前会话缺少支付查单权限");
+      return false;
+    }
+    setQueryingRechargeOrderId(orderId);
+    try {
+      await rpc("billing.recharge.get", { order_id: orderId });
+      message.success("订单状态已更新");
+      await loadRechargeOrders(rechargeOrderStateFilter);
+      return true;
+    } catch (cause) {
+      message.error(describeOpsError(cause));
+      return false;
+    } finally {
+      setQueryingRechargeOrderId(undefined);
+    }
+  };
+  const runModelUsageReconciliation = async () => {
+    try {
+      return await runAuthorizedFinanceAction(
+        canModelSettlement,
+        async () => {
+          const report = (await rpc("billing.model-usage.reconciliation.run", { limit: "50" })) as unknown as { settled?: string[]; pending?: Array<unknown> };
+          message.success(`模型结算完成：成功 ${report.settled?.length ?? 0}，仍待处理 ${report.pending?.length ?? 0}`);
+          await load();
+        },
+        () => message.error("当前会话为只读，缺少模型结算权限"),
+      );
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "模型用量对账失败");
+      return false;
     }
   };
-  const retryModelUsageSettlement = async (record: ModelUsageSettlementRecord) => {
+  const retryModelUsageSettlement = async (record: ModelUsageSettlementRecord, reason: string, evidenceRef: string) => {
     if (!canModelSettlement || record.revision === undefined) throw new Error(record.revision === undefined ? "缺少记录 revision，请刷新后重试" : "当前会话缺少模型结算权限");
-    await rpc("billing.model-usage.resolve", { usage_id: record.id, revision: String(record.revision), decision: "retry", reason: "运营后台人工触发幂等重试" });
+    await rpc("billing.model-usage.resolve", { usage_id: record.id, revision: String(record.revision), decision: "retry", reason, evidence_ref: evidenceRef });
     await load();
   };
-  const waiveModelUsageSettlement = async (record: ModelUsageSettlementRecord) => {
+  const waiveModelUsageSettlement = async (record: ModelUsageSettlementRecord, reason: string, evidenceRef: string) => {
     if (!canModelSettlement || record.revision === undefined) throw new Error(record.revision === undefined ? "缺少记录 revision，请刷新后重试" : "当前会话缺少模型结算权限");
-    await rpc("billing.model-usage.resolve", { usage_id: record.id, revision: String(record.revision), decision: "waive", reason: "运营人员已核对成本、扣款与审计证据并确认豁免" });
+    await rpc("billing.model-usage.resolve", { usage_id: record.id, revision: String(record.revision), decision: "waive", reason, evidence_ref: evidenceRef });
+    await load();
+  };
+  const markModelUsageForManualAttention = async (record: ModelUsageSettlementRecord, reason: string, evidenceRef: string) => {
+    if (!canModelSettlement || record.revision === undefined) throw new Error(record.revision === undefined ? "缺少记录 revision，请刷新后重试" : "当前会话缺少模型结算权限");
+    await rpc("billing.model-usage.resolve", { usage_id: record.id, revision: String(record.revision), decision: "manual_attention", reason, evidence_ref: evidenceRef });
     await load();
   };
   const exportBilling = async () => {
     try {
-      const result = (await rpc("billing.export", {
-        format: "csv",
-        limit: "1000",
-      })) as unknown as { filename: string; content: string };
-      const blob = new Blob([result.content], {
-        type: "text/csv;charset=utf-8",
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = result.filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      message.success("账单已导出");
+      return await runAuthorizedFinanceAction(
+        canBillingExport,
+        async () => {
+          const result = (await rpc("billing.export", {
+            format: "csv",
+            limit: "1000",
+          })) as unknown as { filename: string; content: string };
+          const blob = new Blob([result.content], {
+            type: "text/csv;charset=utf-8",
+          });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = result.filename;
+          anchor.click();
+          URL.revokeObjectURL(url);
+          message.success("账单已导出");
+        },
+        () => message.error("当前会话为只读，缺少账单导出权限"),
+      );
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "账单导出失败");
+      return false;
     }
   };
   const exportOperations = async () => {
@@ -983,86 +1275,76 @@ export function useOpsConsoleModel() {
       );
     }
   };
-  const dismissLearning = async (suggestion: LearningSuggestion) => {
+  const dismissLearning = async (suggestion: LearningSuggestion, note: string) => {
     if (!canKnowledge) {
       message.error("当前会话为只读，缺少知识治理权限");
-      return;
+      return false;
     }
-    const note = window
-      .prompt("请输入驳回原因", "当前证据不足，不沉淀为规则")
-      ?.trim();
-    if (!note) return;
+    const normalizedNote = note.trim();
+    if (!normalizedNote) return false;
     try {
       await rpc("knowledge.learning.dismiss", {
         suggestion_id: suggestion.id,
-        note,
+        note: normalizedNote,
       });
       message.success("学习建议已驳回");
       await load();
+      return true;
     } catch (cause) {
       message.error(
         cause instanceof Error ? cause.message : "学习建议驳回失败",
       );
+      return false;
     }
   };
-  const governUploadedAsset = async (asset: UploadedAssetRisk) => {
+  const governUploadedAsset = async (asset: UploadedAssetRisk, input: { evidence?: string; rightsStatus?: string; rightsScope?: string; factsJson?: string; reason?: string } = {}) => {
     if (!canKnowledge) {
       message.error("当前会话为只读，缺少素材治理权限");
-      return;
+      return false;
     }
     const method = asset.nextAction?.method;
     if (!method) {
       message.info(asset.nextStep ?? "该素材当前没有可执行的运营动作");
-      return;
+      return false;
     }
     try {
       if (method === "asset.scan") {
-        const evidence = window
-          .prompt("输入安全扫描证据引用（不能填写示例值）", "")
-          ?.trim();
-        if (!evidence) return;
+        const evidence = input.evidence?.trim();
+        if (!evidence) return false;
         await rpc(method, { asset_id: asset.id, scan_evidence_ref: evidence });
       } else if (method === "asset.rights.update") {
-        const rightsStatus = window
-          .prompt("输入权益状态：approved / rejected / pending", "approved")
-          ?.trim();
+        const rightsStatus = input.rightsStatus?.trim();
         if (
           !rightsStatus ||
           !["approved", "rejected", "pending"].includes(rightsStatus)
-        )
-          return;
-        const rightsScope = window
-          .prompt(
-            "输入权益范围：owned / commercial_authorized / limited_use / internal_only / unknown / unusable",
-            "commercial_authorized",
-          )
-          ?.trim();
-        if (!rightsScope) return;
+        ) return false;
+        const rightsScope = input.rightsScope?.trim();
+        if (!rightsScope || !["owned", "commercial_authorized", "limited_use", "internal_only", "unknown", "unusable"].includes(rightsScope)) return false;
         await rpc(method, {
           asset_id: asset.id,
           rights_status: rightsStatus,
           rights_scope: rightsScope,
         });
       } else if (method === "asset.facts.confirm") {
-        const facts = window.prompt("输入人工确认事实 JSON", "{}")?.trim();
-        const reason = window
-          .prompt("输入人工确认原因", "运营审核补录")
-          ?.trim();
-        if (!facts || !reason) return;
-        JSON.parse(facts);
+        const facts = input.factsJson?.trim();
+        const reason = input.reason?.trim();
+        if (!facts || !reason) return false;
+        try { JSON.parse(facts); } catch { message.error("事实 JSON 格式无效"); return false; }
         await rpc(method, { asset_id: asset.id, facts_json: facts, reason });
       } else {
         message.info(`请在商家交互会话中执行 ${method}`);
-        return;
+        return false;
       }
       message.success(
         `${asset.name}：${asset.nextAction?.label ?? method}已提交`,
       );
       await load();
+      return true;
     } catch (cause) {
       message.error(
         cause instanceof Error ? cause.message : "素材治理操作失败",
       );
+      return false;
     }
   };
   const createCompetitor = async (values: {
@@ -1101,42 +1383,48 @@ export function useOpsConsoleModel() {
       );
     }
   };
-  const cancelDeletion = async (request: DataDeletionRequest) => {
+  const cancelDeletion = async (request: DataDeletionRequest, reason: string) => {
     if (!canPlatformOps) {
       message.error("当前会话为只读，缺少数据治理权限");
-      return;
+      return false;
     }
     try {
-      await rpc("ops.data.delete.cancel", {
-        request_id: request.id,
-        reason: "运营后台取消删除申请",
+      await submitDataDeletionDecision({
+        decision: "cancel",
+        requestId: request.id,
+        reason,
+        refresh: load,
       });
       message.success("删除申请已取消");
-      await load();
+      return true;
     } catch (cause) {
       message.error(
         cause instanceof Error ? cause.message : "取消删除申请失败",
       );
+      return false;
     }
   };
-  const approveDeletion = async (request: DataDeletionRequest) => {
+  const approveDeletion = async (request: DataDeletionRequest, reason: string) => {
     if (!canPlatformOps) {
       message.error("当前会话为只读，缺少数据治理权限");
-      return;
+      return false;
     }
     try {
-      await rpc("ops.data.delete.approve", {
-        request_id: request.id,
-        reason: "运营后台独立审批删除申请",
+      await submitDataDeletionDecision({
+        decision: "approve",
+        requestId: request.id,
+        reason,
+        refresh: load,
       });
       message.success(
         request.approvals.length
           ? "第二次审批已记录，等待外部执行证明"
           : "第一次审批已记录",
       );
-      await load();
+      return true;
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "删除审批失败");
+      return false;
     }
   };
   const saveOffer = async (row: Offer) => {
@@ -1281,26 +1569,27 @@ export function useOpsConsoleModel() {
     }
   };
   const loadAutomationScope = async (scope: string) => {
-    setAutomationScope(scope);
-    const row = storeDirectory.find(
-      (item) => `${item.platform}:${item.accountId}` === scope,
-    );
+    const requestId = ++automationScopeRequestRef.current;
+    const params = prepareAutomationScopeLoad(scope, storeDirectory, {
+      setScope: setAutomationScope,
+      setPolicy: setAutomationPolicy,
+      setScan: setAutomationScan,
+    });
     try {
-      const params: Record<string, string> = row
-        ? { platform: row.platform, account_id: row.accountId }
-        : {};
       const [policy, scan] = await Promise.all([
         rpc("automation.policy.get", params),
         rpc("automation.scan", params),
       ]);
+      if (requestId !== automationScopeRequestRef.current) return;
       if (policy && typeof policy === "object" && !Array.isArray(policy))
         setAutomationPolicy((policy as { policy: AutomationPolicy }).policy);
       if (scan && typeof scan === "object" && !Array.isArray(scan))
         setAutomationScan(scan as unknown as AutomationScan);
     } catch (cause) {
-      message.error(
-        cause instanceof Error ? cause.message : "店铺自动化策略加载失败",
-      );
+      if (requestId === automationScopeRequestRef.current)
+        message.error(
+          cause instanceof Error ? cause.message : "店铺自动化策略加载失败",
+        );
     }
   };
   const updateAutomation = async (
@@ -1361,28 +1650,85 @@ export function useOpsConsoleModel() {
     itemType: "generation" | "publish",
     itemId: string,
     revision: number,
-    currentOperator?: string | null,
+    operatorId: string,
   ) => {
     if (!canQueue) {
       message.error("当前会话为只读，缺少队列权限");
-      return;
+      return false;
     }
-    const operatorId = window
-      .prompt("输入队列负责人 ID", currentOperator ?? "")
-      ?.trim();
-    if (!operatorId) return;
+    const normalizedOperatorId = operatorId.trim();
+    if (!normalizedOperatorId) return false;
     try {
       await rpc("ops.marketing.queue.assign", {
         item_type: itemType,
         item_id: itemId,
-        operator_id: operatorId,
+        operator_id: normalizedOperatorId,
         expected_revision: String(revision),
         reason: "运营台分配队列负责人",
       });
       message.success("队列负责人已分配");
       await load();
+      return true;
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "队列分配失败");
+      return false;
+    }
+  };
+  const pausePublishBatch = async (
+    batch: MarketingQueue["batches"][number],
+    reason: string,
+  ) => {
+    if (!canQueue) {
+      message.error("当前会话为只读，缺少批量发布治理权限");
+      return false;
+    }
+    try {
+      await rpc("publish.batch.pause", {
+        batch_id: batch.id,
+        reason: normalizePublishBatchPauseReason(reason),
+      });
+      message.success("批量发布已暂停；已进入平台队列的项目仍会继续观测");
+      window.setTimeout(() => void load(), 0);
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "暂停批量发布失败");
+      return false;
+    }
+  };
+  const resumePublishBatch = async (batch: MarketingQueue["batches"][number]) => {
+    if (!canQueue) {
+      message.error("当前会话为只读，缺少批量发布治理权限");
+      return false;
+    }
+    try {
+      await rpc("publish.batch.resume", { batch_id: batch.id });
+      message.success("批量发布已恢复；失败项仍需提供新的逐项确认后重试");
+      window.setTimeout(() => void load(), 0);
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "恢复批量发布失败");
+      return false;
+    }
+  };
+  const retryFailedPublishBatch = async (
+    batch: MarketingQueue["batches"][number],
+    confirmationsJson: string,
+  ) => {
+    if (!canQueue) {
+      message.error("当前会话为只读，缺少批量发布治理权限");
+      return false;
+    }
+    try {
+      await rpc("publish.batch.retry_failed", {
+        batch_id: batch.id,
+        confirmations_json: normalizePublishBatchConfirmations(confirmationsJson),
+      });
+      message.success("批量失败项已按新的逐项确认提交；请继续观测平台回执");
+      window.setTimeout(() => void load(), 0);
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "批量失败项重试失败");
+      return false;
     }
   };
   const retryGeneration = async (job: MarketingQueue["generation"][number]) => {
@@ -1421,25 +1767,23 @@ export function useOpsConsoleModel() {
       );
     }
   };
-  const createRevision = async (job: MarketingQueue["publish"][number]) => {
+  const createRevision = async (job: MarketingQueue["publish"][number], values: RevisionCreationValues) => {
     if (!canQueue) {
-      message.error("当前会话为只读，缺少队列权限");
-      return;
+      const error = "当前会话为只读，缺少队列权限";
+      message.error(error);
+      return { ok: false as const, error };
     }
-    const changes = window.prompt(
-      '输入修正版变更 JSON（例如 {"title":"新标题"}）',
-    );
-    if (!changes) return;
     try {
-      await rpc("ops.marketing.revision.create", {
-        publish_job_id: job.id,
-        changes_json: changes,
-        reason: "运营台根据平台驳回创建修正版",
+      await submitRevisionCreation({ publishJobId: job.id, ...values }, {
+        request: (params) => rpc("ops.marketing.revision.create", params),
+        refresh: load,
       });
       message.success("修正版已创建，等待重新审核");
-      await load();
+      return { ok: true as const };
     } catch (cause) {
-      message.error(cause instanceof Error ? cause.message : "创建修正版失败");
+      const error = cause instanceof Error ? cause.message : "创建修正版失败";
+      message.error(error);
+      return { ok: false as const, error };
     }
   };
   const reviewVisual = async (
@@ -1495,6 +1839,11 @@ export function useOpsConsoleModel() {
     setWorkspaceRows,
     reconciliation,
     setReconciliation,
+    rechargeOrders,
+    rechargeOrdersLoading,
+    rechargeOrdersError,
+    rechargeOrderStateFilter,
+    queryingRechargeOrderId,
     offers,
     setOffers,
     addons,
@@ -1558,6 +1907,7 @@ export function useOpsConsoleModel() {
     setSelectedStoreScope,
     opsSession,
     setOpsSession,
+    dataSource,
     loading,
     setLoading,
     saving,
@@ -1573,12 +1923,15 @@ export function useOpsConsoleModel() {
     competitorForm,
     load,
     loadRules,
+    loadRechargeOrders,
+    queryRechargeOrder,
     enabledCount,
     sessionRoles,
     can,
     canFinance,
     canPaymentReconciliation,
     canModelSettlement,
+    canBillingExport,
     canPlatformOps,
     canGlobalCommercial,
     canUserGovernance,
@@ -1598,6 +1951,9 @@ export function useOpsConsoleModel() {
     revokeStore,
     saveMember,
     loadUsers,
+    exportUsers,
+    exportCommercial,
+    suspendUsers,
     loadUserDetail,
     suspendUser,
     activateUser,
@@ -1610,6 +1966,7 @@ export function useOpsConsoleModel() {
     runModelUsageReconciliation,
     retryModelUsageSettlement,
     waiveModelUsageSettlement,
+    markModelUsageForManualAttention,
     exportBilling,
     exportOperations,
     acknowledgeAlert,
@@ -1633,6 +1990,9 @@ export function useOpsConsoleModel() {
     updateAutomationSync,
     scanAutomation,
     assignQueueItem,
+    pausePublishBatch,
+    resumePublishBatch,
+    retryFailedPublishBatch,
     retryGeneration,
     acknowledgePublish,
     createRevision,

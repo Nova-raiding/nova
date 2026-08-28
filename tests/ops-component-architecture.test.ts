@@ -53,13 +53,14 @@ describe("ops console component architecture", () => {
       "OverviewPage",
       "TasksPage",
       "StoresPage",
+      "ModelsPage",
       "FinancePage",
     ]) {
       expect(registry).toContain(`import(\"../pages/${pageName}.js\")`);
     }
     expect(registry).toContain('import { UsersPage } from "../pages/UsersPage.js"');
     expect(registry).toContain("users: lazy(async () => ({ default: UsersPage }))");
-    expect(registry.match(/lazy\(/gu)).toHaveLength(5);
+    expect(registry.match(/lazy\(/gu)).toHaveLength(6);
   });
 
   it("separates transport and domain types from React page files", () => {

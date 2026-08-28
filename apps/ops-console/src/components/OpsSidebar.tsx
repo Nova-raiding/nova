@@ -2,6 +2,7 @@ import {
   CloudSyncOutlined,
   DollarOutlined,
   GlobalOutlined,
+  RobotOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
@@ -22,15 +23,26 @@ interface OpsSidebarProps {
   platformLabels: Record<string, string>;
   selectedStoreScope: string;
   onNavigate: (domain: OpsDomain) => void;
-  onSelectStore: (scope: string) => void;
+  onSelectStore: (scope: string) => void | Promise<unknown>;
 }
 
-const mainItems: Array<{ domain: OpsDomain; label: string; icon: ReactNode }> =
+export function selectStoreAndNavigate(
+  scope: string,
+  onSelectStore: OpsSidebarProps["onSelectStore"],
+  navigate: (domain: OpsDomain) => void,
+) {
+  const selection = onSelectStore(scope);
+  navigate("stores");
+  return selection;
+}
+
+export const mainItems: Array<{ domain: OpsDomain; label: string; icon: ReactNode }> =
   [
     { domain: "overview", label: "总览", icon: <SafetyCertificateOutlined /> },
     { domain: "users", label: "用户与租户", icon: <TeamOutlined /> },
     { domain: "tasks", label: "任务与内容", icon: <CloudSyncOutlined /> },
-    { domain: "stores", label: "店铺管理", icon: <GlobalOutlined /> },
+    { domain: "stores", label: "商家与店铺", icon: <GlobalOutlined /> },
+    { domain: "models", label: "模型服务", icon: <RobotOutlined /> },
     { domain: "finance", label: "账务与退款", icon: <DollarOutlined /> },
   ];
 
@@ -63,16 +75,17 @@ export function OpsSidebar({
       <div className="brand-mark">
         <span>大麦</span>
         <div>
-          <strong>大麦商家中心</strong>
-          <small>店铺与营销工作台</small>
+          <strong>大麦运营中心</strong>
+          <small>平台运营与商家服务</small>
         </div>
       </div>
       <div className="sider-caption">WORKSPACE</div>
-      {mainItems.slice(0, 4).map((item) => (
+      {mainItems.slice(0, 5).map((item) => (
         <button
           key={item.domain}
           className={`sider-item${activeDomain === item.domain ? " active" : ""}`}
           type="button"
+          aria-label={item.label}
           aria-current={activeDomain === item.domain ? "page" : undefined}
           onClick={() => navigate(item.domain)}
         >
@@ -81,17 +94,16 @@ export function OpsSidebar({
         </button>
       ))}
       <div className="sider-caption store-tree-caption">
-        我的店铺 <span>{stores.length}</span>
+        租户店铺 <span>{stores.length}</span>
       </div>
       <button
         className={`sider-subitem${activeDomain === "stores" && !selectedStoreScope ? " selected" : ""}`}
         type="button"
         onClick={() => {
-          onSelectStore("");
-          navigate("stores");
+          void selectStoreAndNavigate("", onSelectStore, navigate);
         }}
       >
-        全部店铺
+        全部租户店铺
       </button>
       {groupedStores.map(([platform, rows]) => (
         <div className="store-tree-group" key={platform}>
@@ -108,8 +120,7 @@ export function OpsSidebar({
                 key={scope}
                 title={`${store.label} · ${platformLabels[store.platform] ?? store.platform}`}
                 onClick={() => {
-                  onSelectStore(scope);
-                  navigate("stores");
+                  void selectStoreAndNavigate(scope, onSelectStore, navigate);
                 }}
               >
                 <span
@@ -124,11 +135,12 @@ export function OpsSidebar({
       <button
         className={`sider-item${activeDomain === "finance" ? " active" : ""}`}
         type="button"
+        aria-label={mainItems[5].label}
         aria-current={activeDomain === "finance" ? "page" : undefined}
         onClick={() => navigate("finance")}
       >
-        {mainItems[4].icon}
-        {mainItems[4].label}
+        {mainItems[5].icon}
+        {mainItems[5].label}
       </button>
     </Layout.Sider>
   </>);

@@ -6,6 +6,13 @@ interface MarketingQueueFiltersSectionProps {
   model: OpsConsoleModel;
 }
 
+export async function clearMarketingQueueFilters(
+  model: Pick<OpsConsoleModel, "setQueueFilters" | "load">,
+) {
+  model.setQueueFilters({});
+  await model.load({ queueFilters: {} });
+}
+
 export function MarketingQueueFiltersSection({
   model,
 }: MarketingQueueFiltersSectionProps) {
@@ -91,10 +98,7 @@ export function MarketingQueueFiltersSection({
           应用筛选
         </Button>
         <Button
-          onClick={() => {
-            setQueueFilters({});
-            window.setTimeout(() => void load(), 0);
-          }}
+          onClick={() => void clearMarketingQueueFilters(model)}
         >
           清除筛选
         </Button>

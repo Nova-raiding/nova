@@ -5,6 +5,7 @@ import { UsersPage } from "../pages/UsersPage.js";
 
 export interface OpsDomainPageProps {
   model: OpsConsoleModel;
+  onNavigate: (domain: OpsDomain) => void;
 }
 
 type OpsDomainPage = LazyExoticComponent<ComponentType<OpsDomainPageProps>>;
@@ -21,6 +22,9 @@ export const opsPageRegistry: Record<OpsDomain, OpsDomainPage> = {
   ),
   stores: lazy(() =>
     import("../pages/StoresPage.js").then(({ StoresPage }) => ({ default: StoresPage })),
+  ),
+  models: lazy(() =>
+    import("../pages/ModelsPage.js").then(({ ModelsPage }) => ({ default: ModelsPage })),
   ),
   finance: lazy(() =>
     import("../pages/FinancePage.js").then(({ FinancePage }) => ({ default: FinancePage })),

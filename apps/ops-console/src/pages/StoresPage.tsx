@@ -16,8 +16,8 @@ export function StoresPage({ model }: StoresPageProps) {
   return (
     <OpsPage
       eyebrow="STORE OPERATIONS"
-      title="店铺管理"
-      description="按平台和店铺管理授权、同步与自动化策略。"
+      title="商家与店铺"
+      description="按租户、平台和店铺处理授权状态、同步策略与运营支持。"
     >
       <OpsPageError error={model.error} onRetry={() => void model.load()} />
       <BrandTreeSection brands={model.brandNavigation} />

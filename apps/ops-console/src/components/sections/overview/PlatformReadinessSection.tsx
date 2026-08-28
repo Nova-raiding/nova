@@ -249,24 +249,22 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
             {
               title: "店铺授权",
               dataIndex: "state",
-              render: (value: string | undefined) => (
-                <Tag
-                  color={
-                    value === "connected" || value === "fixture_ready"
-                      ? "green"
-                      : "orange"
-                  }
-                >
-                  {value || "unknown"}
-                </Tag>
-              ),
+              render: (value: string | undefined) => {
+                const simulated = value === "fixture_ready";
+                const connected = value === "connected";
+                return (
+                  <Tag color={simulated ? "gold" : connected ? "green" : "orange"}>
+                    {simulated ? "演示授权" : connected ? "真实授权" : value || "未知"}
+                  </Tag>
+                );
+              },
             },
             {
               title: "读取",
               dataIndex: "readEnabled",
               render: (value: boolean | undefined) => (
                 <Tag color={value ? "green" : "default"}>
-                  {value ? "enabled" : "off"}
+                  {value ? "已开启" : "未开启"}
                 </Tag>
               ),
             },
@@ -275,7 +273,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
               dataIndex: "writeEnabled",
               render: (value: boolean | undefined) => (
                 <Tag color={value ? "green" : "red"}>
-                  {value ? "enabled" : "blocked"}
+                  {value ? "已开启" : "已阻断"}
                 </Tag>
               ),
             },
@@ -288,7 +286,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
                 ).length;
                 return (
                   <Typography.Text>
-                    {canary}/{capabilities.length || 8} production_canary
+                    {canary}/{capabilities.length || 8} 生产 canary
                   </Typography.Text>
                 );
               },
@@ -297,7 +295,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
               title: "连接器",
               render: (_: unknown, row: PlatformOperation) => (
                 <Tag color={row.readiness?.ready ? "green" : "red"}>
-                  {row.readiness?.ready ? "ready" : "blocked"}
+                  {row.readiness?.ready ? "连接器已就绪" : "连接器阻断"}
                 </Tag>
               ),
             },
@@ -307,7 +305,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
                 const media = row.readiness?.mediaUpload;
                 return (
                   <Tag color={media?.ready ? "green" : "orange"}>
-                    {media?.ready ? "可上传" : "媒体门禁"}
+                    {media?.ready ? "可上传" : "媒体阻断"}
                   </Tag>
                 );
               },

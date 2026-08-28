@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { MemoryModelUsageRepository } from './model-usage-repository.js'
+import { allowedModelUsageSettlementDecisions, MemoryModelUsageRepository } from './model-usage-repository.js'
 
 describe('MemoryModelUsageRepository', () => {
+  it('defines the authoritative operations decisions for each settlement state', () => {
+    expect(allowedModelUsageSettlementDecisions({ settlementStatus: 'pending_cost' })).toEqual(['waive', 'manual_attention'])
+    expect(allowedModelUsageSettlementDecisions({ settlementStatus: 'pending_wallet', costCny: 0.02, customerChargeCny: 0.05 })).toEqual(['retry', 'manual_attention'])
+    expect(allowedModelUsageSettlementDecisions({ settlementStatus: 'pending_wallet', costCny: 0.02 })).toEqual(['manual_attention'])
+    expect(allowedModelUsageSettlementDecisions({ settlementStatus: 'manual_attention' })).toEqual(['waive'])
+    expect(allowedModelUsageSettlementDecisions({ settlementStatus: 'manual_attention', costCny: 0.02, customerChargeCny: 0.05 })).toEqual(['retry'])
+    expect(allowedModelUsageSettlementDecisions({ settlementStatus: 'settled', costCny: 0.02, customerChargeCny: 0.05 })).toEqual([])
+    expect(allowedModelUsageSettlementDecisions({ settlementStatus: 'waived' })).toEqual([])
+  })
+
   it('deduplicates exact callbacks, rejects conflicting receipts, and scopes records by workspace', async () => {
     const repository = new MemoryModelUsageRepository()
     const first = await repository.record({ workspaceId: 'ws_usage', actionId: 'task_1', modality: 'text', model: 'relay-text', providerRequestId: 'req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.01, markupMultiplier: 2.5, customerChargeCny: 0.025, pricingPolicyRevision: 1 })

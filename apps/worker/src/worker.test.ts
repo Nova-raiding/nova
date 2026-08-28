@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
-import { assertPublishExecution, fetchPublishMedia, pollOnce, postAutomationTick, readWorkerConfig } from './main.js'
+import { assertPublishExecution, fetchPublishMedia, pollOnce, postAutomationTick, postModelUsage, readWorkerConfig } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -155,6 +155,19 @@ describe('worker production entry', () => {
     expect(requests[0]?.headers.get('x-workspace-id')).toBe('ws_a')
     expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
     expect(readWorkerConfig({ ...baseEnv, WORKER_ROLE: 'automation', WORKER_API_BASE_URL: 'https://api.test', WORKER_API_TOKEN: 'worker-token', WORKER_API_SIGNING_SECRET: 'worker-secret' }).automationIntervalMs).toBe(30_000)
+  })
+
+  it('submits signed relay usage to the API before generated content is accepted', async () => {
+    const requests: Array<{ url: string; body: string; headers: Headers }> = []
+    await postModelUsage({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret',
+      usage: { workspaceId: 'ws_a', actionId: 'model:generation:idem_1', modality: 'text', model: 'relay-text', providerRequestId: 'relay_req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.02, observedAt: '2026-08-28T00:00:00.000Z' },
+      fetcher: async (input, init) => { requests.push({ url: String(input), body: String(init?.body), headers: new Headers(init?.headers) }); return new Response('{}', { status: 200 }) },
+    })
+    expect(requests[0]?.url).toBe('https://api.test/v1/internal/model-usage')
+    expect(JSON.parse(requests[0]!.body)).toMatchObject({ workspaceId: 'ws_a', actionId: 'model:generation:idem_1', providerRequestId: 'relay_req_1', totalTokens: 15, costCny: 0.02 })
+    expect(requests[0]?.headers.get('x-workspace-id')).toBe('ws_a')
+    expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
   })
 
   it('requires the execution gate to return the frozen publish payload hash', async () => {

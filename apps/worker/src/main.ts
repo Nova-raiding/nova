@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url'
 import { createHash, createHmac } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { Pool } from 'pg'
-import { PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
+import { contextEnvelopeHash, PostgresOutboxRepository, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport } from '../../../packages/workers/src/durable.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
 import { connectRedisQueue } from './redis-transport.js'
@@ -12,6 +12,7 @@ import { readBoundedResponseText } from '../../../packages/connectors/src/bounde
 import type { PublishHandlerResult } from '../../../packages/workers/src/publish-adapter.js'
 import { buildPublishObservationRequest, PublishObservationReportError } from '../../../packages/workers/src/publish-observation.js'
 import { createContentGeneratorFromEnv, type ContentGenerationInput, type GeneratedContent } from '../../../packages/ai/src/generator.js'
+import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { FixedWindowQuotaAdmission } from '../../../packages/quotas/src/admission.js'
 import { DistributedLockBusyError } from '../../../packages/quotas/src/lock.js'
 import { createQuotaCounterStore } from './quota-transport.js'
@@ -193,6 +194,22 @@ export async function postGenerationResult(input: {
   if (!response.ok) throw new Error(`generation result API returned ${response.status}`)
 }
 
+export async function postModelUsage(input: { apiBaseUrl: string; apiToken: string; usage: RelayUsageRecord; fetcher?: typeof fetch; signingSecret?: string }) {
+  const workspaceId = input.usage.workspaceId?.trim()
+  if (!workspaceId) throw new Error('model usage callback requires workspaceId')
+  const path = '/v1/internal/model-usage'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/, '')}${path}`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': workspaceId, ...(input.signingSecret ? { 'x-worker-workspace-signature': workerSignature(input.signingSecret, 'POST', path, workspaceId) } : {}) },
+    body: JSON.stringify(input.usage),
+    redirect: 'error',
+  })
+  if (!response.ok) {
+    const error = Object.assign(new Error(`model usage API returned ${response.status}`), { code: response.status === 409 || response.status === 503 ? 'MODEL_USAGE_SETTLEMENT_PENDING' : 'MODEL_USAGE_CALLBACK_REJECTED' })
+    throw error
+  }
+}
+
 export async function postGenerationDeferred(input: {
   apiBaseUrl: string
   apiToken: string
@@ -306,7 +323,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     ? (workspaceId: string) => new RedisQueueAdapter<DurableOutboxEvent>(redisConnection.transport, `merchant:outbox:${workspaceId}`)
     : undefined
   const runtime = new ConnectorRuntime({ configSource: process.env, credentialProvider: createVaultCredentialProviderFromEnv() })
-  const contentGenerator = createContentGeneratorFromEnv()
+  const generationUsageContexts = new Map<string, { contextHash: string; contextLinkId?: string; taskId: string; campaignItemId?: string }>()
+  const contentGenerator = createContentGeneratorFromEnv(process.env, async usage => {
+    if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage settlement')
+    const execution = usage.actionId ? generationUsageContexts.get(usage.actionId) : undefined
+    const enriched = execution ? { ...usage, metadata: { ...(usage.metadata ?? {}), context_hash: execution.contextHash, context_link_id: execution.contextLinkId ?? null, task_id: execution.taskId, campaign_item_id: execution.campaignItemId ?? null } } : usage
+    await postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })
+  })
   const publishRequested = async (event: DurableOutboxEvent): Promise<PublishHandlerResult> => {
     const payload = event.payload
     const platform = payload.platform
@@ -365,9 +388,18 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!contentGenerator) throw new Error('AI generation provider is not configured')
     const input = event.payload.input
     if (!isObject(input)) throw new Error('generation event is missing input')
+    const contextHash = event.payload.context_hash
+    const actionId = event.payload.action_id
+    if (typeof contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contextHash)) throw new Error('generation event is missing context_hash')
+    if (contextEnvelopeHash(input) !== contextHash) throw new Error('generation event context hash mismatch')
+    if (typeof actionId !== 'string' || !actionId || !isObject(input.usageContext) || input.usageContext.workspaceId !== event.workspaceId || input.usageContext.actionId !== actionId) throw new Error('generation event usage context mismatch')
+    const taskId = event.payload.task_id
+    if (typeof taskId !== 'string' || !taskId) throw new Error('generation event is missing task_id')
     const modelKey = process.env.AI_MODEL?.trim() ?? process.env.MODEL_ID?.trim() ?? 'configured-model'
     await quotaAdmission.admit({ namespace: 'model', key: modelKey, limitPerWindow: config.modelQuotaPerMinute })
-    return contentGenerator.generate(input as unknown as ContentGenerationInput)
+    generationUsageContexts.set(actionId, { contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}) })
+    try { return await contentGenerator.generate(input as unknown as ContentGenerationInput) }
+    finally { generationUsageContexts.delete(actionId) }
   }
   const syncRequested = async (event: DurableOutboxEvent): Promise<unknown> => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for sync result callbacks')

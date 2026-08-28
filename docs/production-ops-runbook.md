@@ -32,10 +32,25 @@ SECRET_PROVIDER="managed-secret-store" \
 CAPACITY_PROFILE="pilot_50" \
 CAPABILITY_EVIDENCE_PATH=/secure/evidence/platform-capability-evidence.json \
 CAPACITY_REPORT_PATH=/secure/evidence/pilot-50-capacity-report.json \
-MODEL_RELAY_EVIDENCE_PATH=/secure/evidence/model-relay-release-1.json sh infra/scripts/deploy-preflight.sh
+MODEL_RELAY_EVIDENCE_PATH=/secure/evidence/model-relay-release-1.json \
+PAYMENT_EVIDENCE_PATH=/secure/evidence/payment-release-1.json \
+RESTORE_EVIDENCE_PATH=/secure/evidence/restore-release-1.json \
+PRODUCTION_EVIDENCE_ARTIFACT_ROOT=/secure/evidence/artifacts \
+PRODUCTION_EVIDENCE_TRUST_DIR=/run/release-security/evidence-trust \
+DEPLOYMENT_NONCE="$DEPLOYMENT_NONCE" \
+sh infra/scripts/deploy-preflight.sh
 ```
 
-其中 `RENDERED_MANIFEST_PATH` 必须是实际将要执行 `kubectl apply` 的渲染结果（例如 `kubectl kustomize infra/kubernetes/overlays/pilot-50 > /secure/release/rendered.yaml`）。门禁会逐个检查容器镜像：不得含 `REPLACE_ME`、`latest` 或 tag-only 引用，必须带 64 位 `@sha256:` digest，且必须与 `IMAGE_DIGEST` 完全一致。该命令只检查配置、渲染清单和元数据，不执行迁移、扩容、发布或回滚；失败时不得继续部署。
+其中 `RENDERED_MANIFEST_PATH` 必须是实际部署的渲染结果（例如 `kubectl kustomize infra/kubernetes/overlays/pilot-50 > /secure/release/rendered.yaml`）。最终发布必须调用 `infra/scripts/deploy-verified-manifest.sh`，它会在门禁前后校验清单 SHA-256，并只执行 `kubectl apply -f "$RENDERED_MANIFEST_PATH"`；不得在门禁后重新 `apply -k`。
+
+生产证据额外遵循以下 fail-closed 契约：
+
+1. `artifact://production/<relative-path>#<sha256>` 映射到 `PRODUCTION_EVIDENCE_ARTIFACT_ROOT/<relative-path>`。门禁要求目标是根目录内存在的普通非符号链接文件，并重新计算 SHA-256；只有字符串格式正确不能通过。
+2. `PRODUCTION_EVIDENCE_TRUST_DIR` 必须是工作树外由发布安全控制面只读挂载的目录，包含 Ed25519 `production-evidence-public.pem` 和 `production-evidence-key-id`。仓库内 `infra/trust` 只有不可用 sentinel，不能作为生产信任锚；部署 runner 不得持有私钥。
+3. 部署编排器必须生成至少 128 bit 熵、22-128 位 URL-safe 的 `DEPLOYMENT_NONCE`。payment 与 restore attestation 都必须签入同一个 nonce；preflight 只校验绑定，不消费 nonce。
+4. 真正执行部署时必须设置绝对路径 `PRODUCTION_EVIDENCE_NONCE_CONSUMER`。该可执行文件必须由发布控制面安装在工作树外且不能是符号链接。`deploy-verified-manifest.sh` 在 `kubectl apply` 前调用它；缺失、不可执行、已消费或存储错误均拒绝部署。consumer 必须对命名空间和 nonce 做跨 runner、持久化、原子 put-if-absent，并把 release ID、镜像 digest、manifest SHA-256 与 Git SHA 作为审计绑定。返回码 `0` 仅表示首次成功消费，任何非零值都表示拒绝。部署在消费后失败时不得复用 nonce，必须重新签发证据和 nonce。
+
+仓库只实现并测试上述校验与接口，不能替代外部只读 trust mount 和共享 nonce store。两者未由生产控制面实际配置、演练并留存审计记录前，仍是外部门禁 blocker。
 
 ## 2. 标准部署顺序
 

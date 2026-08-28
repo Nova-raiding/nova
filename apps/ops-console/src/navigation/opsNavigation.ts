@@ -1,4 +1,11 @@
-export const opsDomains = ["overview", "users", "tasks", "stores", "finance"] as const;
+export const opsDomains = [
+  "overview",
+  "users",
+  "tasks",
+  "stores",
+  "models",
+  "finance",
+] as const;
 
 export type OpsDomain = (typeof opsDomains)[number];
 
@@ -10,7 +17,7 @@ export function domainFromLocation(
   location: Pick<Location, "hash" | "pathname">,
 ): OpsDomain {
   const pathDomain = location.pathname
-    .match(/\/ops\/(?:governance|overview|users|tasks|stores|finance)\/?$/u)?.[0]
+    .match(/\/ops\/(?:governance|overview|users|tasks|stores|models|finance)\/?$/u)?.[0]
     .split("/")
     .filter(Boolean)
     .at(-1);
@@ -27,7 +34,8 @@ export function urlForDomain(
   location: Pick<Location, "pathname" | "search">,
   domain: OpsDomain,
 ): string {
-  const currentOpsRoute = /\/ops\/(?:governance|overview|users|tasks|stores|finance)\/?$/u;
+  const currentOpsRoute =
+    /\/ops\/(?:governance|overview|users|tasks|stores|models|finance)\/?$/u;
   const basePath = currentOpsRoute.test(location.pathname)
     ? location.pathname.replace(currentOpsRoute, "")
     : location.pathname.replace(/\/$/u, "");

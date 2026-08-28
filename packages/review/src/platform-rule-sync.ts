@@ -39,11 +39,11 @@ function validDate(value: string | undefined): string | null {
 
 export function platformRuleSyncStatus(
   rules: readonly RulePack[],
-  options: { now?: string; intervalHours?: number; manifestUrl?: string } = {},
+  options: { now?: string; intervalHours?: number; manifestUrl?: string; signingSecretConfigured?: boolean } = {},
 ): PlatformRuleSyncStatus[] {
   const now = Date.parse(options.now ?? new Date().toISOString())
   const intervalHours = Number.isFinite(options.intervalHours) && (options.intervalHours ?? 0) > 0 ? options.intervalHours! : 24
-  const configured = Boolean(options.manifestUrl?.trim())
+  const configured = Boolean(options.manifestUrl?.trim()) && options.signingSecretConfigured === true
   return PLATFORM_RULE_SOURCES.map(source => {
     const platformRules = rules.filter(rule => rule.scope === 'platform' && rule.targetId === source.platform)
     const latest = [...platformRules].sort((a, b) => Date.parse(b.source.checkedAt) - Date.parse(a.source.checkedAt))[0]
@@ -55,7 +55,7 @@ export function platformRuleSyncStatus(
       platform: source.platform, label: source.label, officialUrl: source.officialUrl,
       configured, machineReadable: source.machineReadable, latestVersion: latest?.version ?? null,
       sourceCheckedAt: checkedAt, ageHours, stale, state,
-      reason: !configured ? '未配置签名规则清单地址，系统不会自动导入平台规则' : stale ? `规则来源已超过 ${intervalHours} 小时未检查` : '规则来源在检查窗口内',
+      reason: !configured ? '签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则' : stale ? `规则来源已超过 ${intervalHours} 小时未检查` : '规则来源在检查窗口内',
     }
   })
 }

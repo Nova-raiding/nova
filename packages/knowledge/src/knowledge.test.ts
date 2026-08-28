@@ -50,11 +50,15 @@ describe('knowledge module', () => {
 
   it('isolates workspace-scoped knowledge rules', () => {
     const knowledge = createModule()
+    const shared = knowledge.createRule({ name: '平台公共规则', content: '所有工作区都适用', scope: 'global', source, version: '1', status: 'active' })
     const first = knowledge.createRule({ workspaceId: 'ws-a', name: 'A 规则', content: '仅 A 可见', scope: 'global', source, version: '1', status: 'active' })
     const second = knowledge.createRule({ workspaceId: 'ws-b', name: 'B 规则', content: '仅 B 可见', scope: 'global', source, version: '1', status: 'active' })
     expect(knowledge.queryRules({ workspaceId: 'ws-a' })).toEqual([first])
     expect(knowledge.queryRules({ workspaceId: 'ws-b' })).toEqual([second])
     expect(knowledge.queryRules({ workspaceId: 'ws-a', text: 'B' })).toEqual([])
+    expect(knowledge.findApplicableRules({}, '2026-08-25T00:00:00.000Z', 'ws-a').map(rule => rule.id)).toEqual([shared.id, first.id])
+    expect(knowledge.findApplicableRules({}, '2026-08-25T00:00:00.000Z', 'ws-b').map(rule => rule.id)).toEqual([shared.id, second.id])
+    expect(() => knowledge.findApplicableRules({}, '2026-08-25T00:00:00.000Z', ' ')).toThrowError(new KnowledgeError('WORKSPACE_REQUIRED'))
   })
 
   it('isolates brand and customer assets by workspace across CRUD and queries', () => {

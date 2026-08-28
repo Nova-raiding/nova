@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
+import { MCP_METHODS, validateMcpRequest } from '../../../packages/contracts/src/mcp.js'
 
 const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.model-usage.reconciliation.run',
@@ -325,7 +325,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'brand-unit.bind-store').inputSchema.required).toEqual(['brand_id', 'platform', 'account_id'])
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.competitor.reference').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.create').inputSchema.properties.source_kind.enum).toEqual(['official', 'internal', 'merchant', 'observed', 'legal_review'])
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.video.request').inputSchema.properties.idempotency_key).toBeDefined()
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.video.request').inputSchema.properties.idempotency_key).toBeUndefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm').annotations).toBeUndefined()
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
@@ -345,6 +345,44 @@ describe('Codex stdio MCP bridge', () => {
       child.kill()
       server.close()
       await once(server, 'close').catch(() => undefined)
+    }
+  })
+
+  it('forwards the five corrected tool schemas as requests accepted by the authoritative contract', async () => {
+    const requests: any[] = []
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      requests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, ['apps/plugin/mcp/bridge.mjs'], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const calls = [
+      ['catalog.sync', { platform: 'taobao', account_id: 'acct_1', cursor: 'cursor_2' }],
+      ['task.history', { publish_status: 'reconciling' }],
+      ['task.group.create', { entries_json: '[]', request_text: '批量生成' }],
+      ['task.plan.confirm', { task_id: 'task_1', expected_version: '2', price_impact_confirmed: 'true' }],
+      ['multimodal.video.request', { prompt: '生成分镜', output: 'storyboard', context_json: '{}' }],
+    ] as const
+    try {
+      for (const [index, [name, args]] of calls.entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: args } })}\n`)
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
+      }
+      expect(requests).toHaveLength(calls.length)
+      for (const [index, request] of requests.entries()) {
+        expect(request).toMatchObject({ jsonrpc: '2.0', method: calls[index]![0], params: { ...calls[index]![1], workspace_id: 'ws_test' } })
+        expect(validateMcpRequest(request), `${request.method} bridge request must satisfy the authoritative contract`).toEqual({ valid: true, errors: [] })
+      }
+    } finally {
+      child.kill()
+      await close(server)
     }
   })
 

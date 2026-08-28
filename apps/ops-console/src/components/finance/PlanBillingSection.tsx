@@ -1,4 +1,5 @@
-import { Card, Tabs, Tag } from "antd";
+import { Button, Card, Space, Tabs, Tag } from "antd";
+import { DownloadOutlined } from "@ant-design/icons";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { AddonTable } from "./AddonTable";
 import { CouponTable } from "./CouponTable";
@@ -12,7 +13,7 @@ interface PlanBillingSectionProps {
 
 export function PlanBillingSection({ model }: PlanBillingSectionProps) {
   return (
-    <Card title="套餐、加购与增长规则" extra={<Tag color="blue">运营目录</Tag>}>
+    <Card title="套餐、加购与增长规则" extra={<Space><Tag color="blue">运营目录</Tag><Button size="small" icon={<DownloadOutlined />} disabled={!model.canGlobalCommercial} onClick={() => void model.exportCommercial()}>导出商业配置</Button></Space>}>
       <Tabs
         items={[
           ...(model.canModelMarkup

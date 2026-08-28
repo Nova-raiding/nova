@@ -52,10 +52,9 @@ describe("model usage settlement presentation", () => {
     ).toEqual({ pending_cost: 1, pending_wallet: 1, manual_attention: 1 });
   });
 
-  it("only exposes retry and waive for their valid state transitions", () => {
-    expect(settlementActions("pending_cost")).toEqual({ retry: true, waive: false });
-    expect(settlementActions("pending_wallet")).toEqual({ retry: true, waive: false });
-    expect(settlementActions("manual_attention")).toEqual({ retry: false, waive: true });
-    expect(settlementActions("settled")).toEqual({ retry: false, waive: false });
+  it("only exposes decisions explicitly authorized by the API", () => {
+    expect(settlementActions(record({ settlement_status: "pending_cost", allowed_decisions: ["waive", "manual_attention"] }))).toEqual({ retry: false, waive: true, manualAttention: true });
+    expect(settlementActions(record({ settlement_status: "manual_attention", allowed_decisions: ["retry"] }))).toEqual({ retry: true, waive: false, manualAttention: false });
+    expect(settlementActions(record({ settlement_status: "pending_wallet" }))).toEqual({ retry: false, waive: false, manualAttention: false });
   });
 });

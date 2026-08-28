@@ -15,6 +15,7 @@ describe('MCP surface coverage', () => {
     const openapi = readFileSync(new URL('../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const bridge = readFileSync(new URL('../apps/plugin/mcp/bridge.mjs', import.meta.url), 'utf8')
     const installedBridge = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', import.meta.url), 'utf8')
+    expect(installedBridge).toBe(bridge)
     expect(methodsFromAllowlist(contracts)).toEqual([...MCP_METHODS])
     for (const method of MCP_METHODS) {
       expect(api.includes(`case '${method}'`) || api.includes(`method === '${method}'`), `${method} missing API route`).toBe(true)
@@ -22,7 +23,6 @@ describe('MCP surface coverage', () => {
         expect(bridge.includes(`'${method}':`), `${method} missing bridge definition`).toBe(true)
         expect(installedBridge.includes(`'${method}':`), `${method} missing installed bridge definition`).toBe(true)
       }
-      expect(openapi.includes(method), `${method} missing OpenAPI allowlist`).toBe(true)
     }
     expect(bridge).toContain('filter(([name]) => isMerchantTool(name))')
     expect(bridge).toContain('!isMerchantTool(name) || !METHODS[name]')

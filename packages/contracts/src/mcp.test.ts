@@ -91,7 +91,7 @@ describe('MCP method contract', () => {
     expect(MCP_METHOD_SCHEMAS['ops.user.session.revoke'].required).toEqual(['identity_id', 'session_id', 'expected_revision', 'idempotency_key', 'reason'])
     expect(MCP_METHOD_SCHEMAS['billing.model-usage.reconciliation.run']).toMatchObject({ properties: { limit: { type: 'string' } } })
     expect(MCP_METHOD_SCHEMAS['billing.model-usage.resolve']).toMatchObject({
-      required: ['usage_id', 'revision', 'decision', 'reason'],
+      required: ['usage_id', 'revision', 'decision', 'reason', 'evidence_ref'],
       properties: {
         decision: { type: 'string', enum: ['retry', 'waive', 'manual_attention'] },
         evidence_ref: { type: 'string' },
@@ -148,6 +148,10 @@ describe('MCP method contract', () => {
       jsonrpc: '2.0', id: 1, method: 'billing.model-usage.resolve',
       params: { usage_id: 'usage_1', revision: '4', decision: 'waive', reason: 'approved service credit', evidence_ref: 'evidence://case/1' },
     })).toEqual({ valid: true, errors: [] })
+    expect(validateMcpRequest({
+      jsonrpc: '2.0', id: 1, method: 'billing.model-usage.resolve',
+      params: { usage_id: 'usage_1', revision: '4', decision: 'waive', reason: 'approved service credit' },
+    }).errors).toContain('params.evidence_ref is required')
     expect(validateMcpRequest({
       jsonrpc: '2.0', id: 1, method: 'billing.model-usage.resolve',
       params: { usage_id: 'usage_1', revision: '4', decision: 'settled', reason: 'unsupported decision', actor_id: 'caller-controlled' },

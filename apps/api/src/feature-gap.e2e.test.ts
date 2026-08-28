@@ -74,6 +74,12 @@ describe('new commercial and operations capabilities', () => {
     const imported = await call(base, workspaceId, 'catalog.import', { platform: 'taobao', title: '轻云防晒外套', category: '女装外套', price: '199', stock: '100', attributes_json: JSON.stringify({ material: '锦纶', color: '雾蓝' }), selling_points_json: JSON.stringify([{ id: 'sp1', text: '轻量透气', proof_status: 'confirmed', source_ids: ['asset-1'] }]) })
     const productId = imported.data.result.product_id
     await call(base, workspaceId, 'catalog.facts.confirm', { product_id: productId })
+    const wrongPlatform = await call(base, workspaceId, 'catalog.title.optimize', { product_id: productId, platform: 'jd', keyword: '通勤防晒' })
+    expect(wrongPlatform.error).toMatchObject({ code: 'TITLE_PLATFORM_SCOPE_MISMATCH' })
+    const forbiddenTitle = await call(base, workspaceId, 'catalog.title.optimize', { product_id: productId, keyword: '绝对化防晒' })
+    expect(forbiddenTitle.error).toMatchObject({ code: 'PLATFORM_RULE_CONTENT_BLOCKED' })
+    const forbiddenImage = await call(base, workspaceId, 'catalog.image.generate', { product_id: productId, direction: '绝对化主图表达', count: '1' })
+    expect(forbiddenImage.error).toMatchObject({ code: 'PLATFORM_RULE_CONTENT_BLOCKED' })
     const optimized = await call(base, workspaceId, 'catalog.title.optimize', { product_id: productId, keyword: '通勤防晒' })
     expect(optimized.error).toBeNull()
     expect(optimized.data.result).toMatchObject({ humanConfirmationRequired: true, rankingGuarantee: false })
@@ -101,6 +107,8 @@ describe('new commercial and operations capabilities', () => {
     const storyboard = await call(base, workspaceId, 'multimodal.video.request', { prompt: '突出轻量透气和通勤场景', output: 'storyboard', context_json: JSON.stringify({ brand: { id: 'brand-1', version: '1' }, product: { id: productId, version: String(imported.data.result.version) }, rules: [{ id: 'rule-1', version: '1' }] }) })
     expect(storyboard.error).toBeNull()
     expect(storyboard.data.result).toMatchObject({ execution: { status: 'completed', mode: 'simulated', simulated: true, providerExecuted: false }, plan: { title: expect.any(String) }, rule_preflight: { blocking: false, rule_hits: expect.any(Array) } })
+    const forbiddenVideo = await call(base, workspaceId, 'multimodal.video.request', { prompt: '制作绝对化效果承诺视频', output: 'storyboard', context_json: JSON.stringify({ brand: { id: 'brand-1', version: '1' }, product: { id: productId, version: String(imported.data.result.version) }, rules: [{ id: 'rule-1', version: '1' }] }) })
+    expect(forbiddenVideo.error).toMatchObject({ code: 'PLATFORM_RULE_CONTENT_BLOCKED' })
   })
 
   it('rejects an invalid video output before wallet debit or generation', async () => {

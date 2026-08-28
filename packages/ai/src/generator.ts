@@ -173,7 +173,21 @@ function prompt(input: ContentGenerationInput) {
 
 export function estimateContentGenerationTokens(value: unknown) { return Math.ceil(Buffer.byteLength(JSON.stringify(value), 'utf8') / 3) }
 
+const REPAIR_MESSAGE_TOKEN_RESERVE = 800
+export function estimateContentGenerationRequestTokens(input: ContentGenerationInput) {
+  return Math.ceil(Buffer.byteLength(prompt(input), 'utf8') / 3) + REPAIR_MESSAGE_TOKEN_RESERVE
+}
+
+export function resolveTokenBudget(value: unknown, fallback: number, name: 'input' | 'output') {
+  const candidate = value === undefined || value === null || value === '' ? fallback : Number(value)
+  if (!Number.isSafeInteger(candidate) || candidate < 1 || candidate > 1_000_000) {
+    throw new Error(`TOKEN_BUDGET_INVALID: ${name} token budget 必须是 1 至 1000000 的整数`)
+  }
+  return candidate
+}
+
 export function budgetContentGenerationInput(input: ContentGenerationInput, maxInputTokens = 12_000): ContentGenerationInput {
+  maxInputTokens = resolveTokenBudget(maxInputTokens, 12_000, 'input')
   const hardContext: ContentGenerationInput = {
     platform: input.platform,
     product: input.product,
@@ -183,10 +197,10 @@ export function budgetContentGenerationInput(input: ContentGenerationInput, maxI
     ...(input.knowledgeContext ? { knowledgeContext: { rules: input.knowledgeContext.rules, assets: [], confirmedLearningSuggestions: [] } } : {}),
     ...(input.usageContext ? { usageContext: input.usageContext } : {}),
   }
-  if (estimateContentGenerationTokens(hardContext) > maxInputTokens) throw new Error(`CONTEXT_BUDGET_EXCEEDED: 商品硬事实和适用规则超过 ${maxInputTokens} 输入 Token 预算`)
+  if (estimateContentGenerationRequestTokens(hardContext) > maxInputTokens) throw new Error(`CONTEXT_BUDGET_EXCEEDED: 固定指令、商品硬事实和适用规则超过 ${maxInputTokens} 输入 Token 预算`)
 
   const bounded: ContentGenerationInput = structuredClone(hardContext)
-  const addIfFits = (mutate: () => void, rollback: () => void) => { mutate(); if (estimateContentGenerationTokens(bounded) > maxInputTokens) rollback() }
+  const addIfFits = (mutate: () => void, rollback: () => void) => { mutate(); if (estimateContentGenerationRequestTokens(bounded) > maxInputTokens) rollback() }
   if (input.referenceAssets?.length) addIfFits(() => { bounded.referenceAssets = input.referenceAssets!.slice(0, 50) }, () => { delete bounded.referenceAssets })
   if (input.knowledgeContext) {
     const context = bounded.knowledgeContext!
@@ -241,5 +255,5 @@ export function createContentGeneratorFromEnv(source: Record<string, string | un
   const model = source.AI_MODEL?.trim() ?? source.MODEL_ID?.trim()
   if (!relayUrl || !apiKey || !model) return undefined
   if (!/^https:\/\//u.test(relayUrl) || inspectOutboundUrl(relayUrl, { environment: source.NODE_ENV, resolveDns: false })) return undefined
-  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens: Number(source.AI_MAX_INPUT_TOKENS ?? 12_000), maxOutputTokens: Number(source.AI_MAX_OUTPUT_TOKENS ?? 2_500), ...(usageSink ? { usageSink } : {}) })
+  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens: resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 12_000, 'input'), maxOutputTokens: resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output'), ...(usageSink ? { usageSink } : {}) })
 }

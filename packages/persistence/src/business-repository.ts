@@ -119,10 +119,10 @@ export class PostgresBusinessRepository {
       return
     }
     if (input.entityType === 'task') {
-      await client.query(`INSERT INTO tasks (id, workspace_id, product_id, platform, platform_account_id, state, selected_direction_id, current_content_version_id, version, data)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
-        ON CONFLICT (workspace_id,id) DO UPDATE SET product_id=EXCLUDED.product_id, platform=EXCLUDED.platform, platform_account_id=EXCLUDED.platform_account_id, state=EXCLUDED.state, selected_direction_id=EXCLUDED.selected_direction_id, current_content_version_id=EXCLUDED.current_content_version_id, version=EXCLUDED.version, data=EXCLUDED.data, updated_at=now()
-        WHERE tasks.version < EXCLUDED.version`, [input.entityId, input.workspaceId, string(payload.productId), string(payload.platform), stringOrNull(payload.accountId), string(payload.state) || 'draft', stringOrNull(payload.selectedDirectionId), stringOrNull(payload.contentVersionId), input.entityVersion, json])
+      await client.query(`INSERT INTO tasks (id, workspace_id, product_id, platform, platform_account_id, brand_id, canonical_product_id, listing_id, campaign_id, campaign_item_id, state, selected_direction_id, current_content_version_id, version, data)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb)
+        ON CONFLICT (workspace_id,id) DO UPDATE SET product_id=EXCLUDED.product_id, platform=EXCLUDED.platform, platform_account_id=EXCLUDED.platform_account_id, brand_id=EXCLUDED.brand_id, canonical_product_id=EXCLUDED.canonical_product_id, listing_id=EXCLUDED.listing_id, campaign_id=EXCLUDED.campaign_id, campaign_item_id=EXCLUDED.campaign_item_id, state=EXCLUDED.state, selected_direction_id=EXCLUDED.selected_direction_id, current_content_version_id=EXCLUDED.current_content_version_id, version=EXCLUDED.version, data=EXCLUDED.data, updated_at=now()
+        WHERE tasks.version < EXCLUDED.version`, [input.entityId, input.workspaceId, string(payload.productId), string(payload.platform), stringOrNull(payload.accountId), stringOrNull(payload.brandId), stringOrNull(payload.canonicalProductId), stringOrNull(payload.listingId), stringOrNull(payload.campaignId), stringOrNull(payload.campaignItemId), string(payload.state) || 'draft', stringOrNull(payload.selectedDirectionId), stringOrNull(payload.contentVersionId), input.entityVersion, json])
       return
     }
     if (input.entityType === 'content_version') {

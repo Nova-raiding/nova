@@ -6,6 +6,13 @@ interface AlertFiltersSectionProps {
   model: OpsConsoleModel;
 }
 
+export async function clearAlertFilters(
+  model: Pick<OpsConsoleModel, "setAlertFilters" | "load">,
+) {
+  model.setAlertFilters({});
+  await model.load({ alertFilters: {} });
+}
+
 export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
   const { alertFilters, load, setAlertFilters, storeDirectory } = model;
 
@@ -78,10 +85,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
           应用告警筛选
         </Button>
         <Button
-          onClick={() => {
-            setAlertFilters({});
-            window.setTimeout(() => void load(), 0);
-          }}
+          onClick={() => void clearAlertFilters(model)}
         >
           清除告警筛选
         </Button>

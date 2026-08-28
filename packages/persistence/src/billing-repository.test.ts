@@ -118,3 +118,18 @@ describe('PostgresBillingRepository recharge order idempotency', () => {
     expect(client.calls.some(call => call.text.includes('INSERT INTO billing_transactions'))).toBe(false)
   })
 })
+
+describe('PostgresBillingRepository recharge order reporting', () => {
+  it('returns newest orders and exact state counts independently of the page limit', async () => {
+    const client = new RecordingClient()
+    const newest = { id: 'recharge_newest', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }
+    client.enqueue(); client.enqueue(); client.enqueue(newest); client.enqueue()
+    const repository = new PostgresBillingRepository(new RecordingPool(client))
+    expect(await repository.listOrders('ws_wallet', ['pending'], 10)).toMatchObject([{ id: 'recharge_newest' }])
+    const listCall = client.calls.find(call => call.text.includes('FROM billing_orders') && call.text.includes('LIMIT $3'))
+    expect(listCall?.text).toContain('ORDER BY created_at DESC,id DESC')
+
+    client.enqueue(); client.enqueue(); client.enqueue({ state: 'pending', count: '101' }, { state: 'paid', count: '7' }); client.enqueue()
+    await expect(repository.countOrdersByState('ws_wallet')).resolves.toEqual({ pending: 101, paid: 7, closed: 0, failed: 0 })
+  })
+})

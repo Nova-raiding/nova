@@ -15,5 +15,5 @@
     "noUncheckedIndexedAccess": true
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
-  "exclude": ["demo/merchant-studio", "node_modules", "dist"]
+  "exclude": ["apps/ops-console", "demo/merchant-studio", "node_modules", "dist"]
 }

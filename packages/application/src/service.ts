@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { buildReviewReport, isReviewBlocking, reviewDeterministic, reviewProductImages, REVIEW_EVIDENCE_BOUNDARY, type ReviewFinding } from '../../../packages/review/src/review.js'
-import { budgetContentGenerationInput, estimateContentGenerationTokens, validateContentSchema, type ContentGenerationInput, type ContentGenerator, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
+import { budgetContentGenerationInput, estimateContentGenerationRequestTokens, resolveTokenBudget, validateContentSchema, type ContentGenerationInput, type ContentGenerator, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
 import type { ImageGenerator } from '../../../packages/ai/src/image-generator.js'
 import { defaultRuleCenterSeeds, RuleCenter, type RuleHit } from '../../../packages/review/src/rule-center.js'
 import { extractBrandCandidates, type BrandExtraction } from './brand-extractor.js'
@@ -1172,7 +1172,7 @@ export class MerchantService {
     return extracted
   }
 
-  constructor(private readonly options: { fixtureMode?: boolean; seedFixture?: boolean; contentGenerator?: ContentGenerator; imageGenerator?: ImageGenerator; maxActiveJobsPerWorkspace?: number; contextSnapshotSink?: (input: { task: Task; envelope: ContentGenerationInput; inputTokensEstimate: number; maxInputTokens: number; versions: Record<string, unknown> }) => Promise<void>; knowledgeContextProvider?: (input: { workspaceId: string; platform: Platform; category?: string; brand?: string; store?: string; competitorReference?: CompetitorReferenceSnapshot; asOf: string }) => KnowledgeGenerationContext | undefined } = {}) {
+  constructor(private readonly options: { fixtureMode?: boolean; seedFixture?: boolean; contentGenerator?: ContentGenerator; imageGenerator?: ImageGenerator; maxActiveJobsPerWorkspace?: number; contextSnapshotSink?: (input: { task: Task; envelope: ContentGenerationInput; inputTokensEstimate: number; maxInputTokens: number; versions: Record<string, unknown> }) => Promise<{ id: string; contextHash: string } | void>; knowledgeContextProvider?: (input: { workspaceId: string; platform: Platform; category?: string; brand?: string; store?: string; competitorReference?: CompetitorReferenceSnapshot; asOf: string }) => KnowledgeGenerationContext | undefined } = {}) {
     const product: Product = { id: 'prod_fixture_1', workspaceId: 'ws_demo', platform: 'taobao', storeName: '云朵轻户外', remoteId: 'TB-738204915', title: '轻云防晒外套 2026', skuCount: 8, stock: 1286, factsConfirmed: true, source: 'fixture', updatedAt: now(), version: 1 }
     if (options.seedFixture ?? true) this.products.set(product.id, product)
   }
@@ -1371,6 +1371,22 @@ export class MerchantService {
     product.version = (product.version ?? 0) + 1
     product.updatedAt = now()
     return product
+  }
+  refreshTasksAfterProductFacts(workspaceId: string, productId: string) {
+    const product = this.products.get(productId)
+    if (!product || product.workspaceId !== workspaceId || !product.factsConfirmed) return []
+    const changed: Task[] = []
+    for (const task of this.tasks.values()) {
+      if (task.workspaceId !== workspaceId || task.productId !== productId || task.state !== 'draft') continue
+      const previousState = task.state
+      this.refreshTaskQuestions(task, product)
+      if (task.state !== previousState) {
+        task.inputSnapshotId = `task:${task.id}:v${task.version + 1}`
+        task.version += 1
+        changed.push(task)
+      }
+    }
+    return changed
   }
   importProduct(input: { workspaceId: string; platform: Platform; accountId?: string; remoteId?: string; localProductKey?: string; title: string; skuCount?: number; skus?: ProductSku[]; stock?: number; price?: number; category?: string; images?: string[]; sourceAssetIds?: string[]; attributes?: Record<string, string>; sellingPoints?: ProductSellingPoint[]; storeName?: string; storeDifferentiation?: string }) {
     const remoteId = input.remoteId?.trim()
@@ -2280,7 +2296,7 @@ export class MerchantService {
         createdAtSource: version.versionVector?.createdAt ? 'version_vector' : 'legacy_task_fallback',
         createdBy: version.versionVector?.createdBy ?? 'unknown',
         isCurrentVersion: task.contentVersionId === version.id,
-        task: { state: task.state, createdAt: task.createdAt, requestSummary: task.requestText ? safeDisplay(task.requestText, '未提供任务目的').slice(0, 160) : null },
+        task: { id: task.id, state: task.state, createdAt: task.createdAt, requestSummary: task.requestText ? safeDisplay(task.requestText, '未提供任务目的').slice(0, 160) : null },
         product: { title: safeDisplay(product.title, '未命名商品'), category: product.category ? safeDisplay(product.category, '未分类') : null },
         store: { platform: task.platform, accountId: task.accountId ?? null, alias: account?.workspaceId === workspaceId && account.storeAlias ? safeDisplay(account.storeAlias, '未命名店铺') : null, name: safeDisplay(product.storeName, '未命名店铺') },
         feedback: {
@@ -2673,7 +2689,7 @@ export class MerchantService {
     const inferredAnswers = input.requestText ? this.extractTaskFields(input.requestText, product) : {}
     const brand = this.getBrandProfile(input.workspaceId)
     if ((input.campaignId === undefined) !== (input.campaignItemId === undefined)) throw new DomainError('TASK_CAMPAIGN_SCOPE_INVALID', '批次任务必须同时绑定 campaignId 和 campaignItemId', 400)
-    const task: Task = { id: taskId, workspaceId: input.workspaceId, productId: input.productId, platform: input.platform, ...(accountId ? { accountId } : {}), ...(input.brandId ? { brandId: input.brandId } : {}), ...(input.canonicalProductId ? { canonicalProductId: input.canonicalProductId } : {}), ...(input.listingId ? { listingId: input.listingId } : {}), ...(input.campaignId ? { campaignId: input.campaignId, campaignItemId: input.campaignItemId! } : {}), ...(region ? { region } : {}), ...(input.requestText ? { requestText: input.requestText.trim() } : {}), inputSnapshotId: `task:${taskId}:v1`, answers: { ...inferredAnswers, ...(input.brandId ? { brand_id: input.brandId } : brand ? { brand_id: brand.id } : {}) }, missingQuestions: [], deferredQuestionIds: [], deferredQuestions: [], state: product.factsConfirmed ? 'ready_for_direction' : 'draft', version: 1, createdAt: now() }
+    const task: Task = { id: taskId, workspaceId: input.workspaceId, productId: input.productId, platform: input.platform, ...(accountId ? { accountId } : {}), ...(input.brandId ? { brandId: input.brandId } : {}), ...(input.canonicalProductId ? { canonicalProductId: input.canonicalProductId } : {}), ...(input.listingId ? { listingId: input.listingId } : {}), ...(input.campaignId ? { campaignId: input.campaignId, campaignItemId: input.campaignItemId! } : {}), ...(region ? { region } : {}), ...(input.requestText ? { requestText: input.requestText.trim() } : {}), inputSnapshotId: `task:${taskId}:v1`, answers: { ...inferredAnswers, ...(brand ? { brand_id: brand.id } : {}) }, missingQuestions: [], deferredQuestionIds: [], deferredQuestions: [], state: product.factsConfirmed ? 'ready_for_direction' : 'draft', version: 1, createdAt: now() }
     this.refreshTaskQuestions(task, product)
     this.tasks.set(task.id, task)
     return task
@@ -3019,15 +3035,14 @@ export class MerchantService {
     try { return await generation } finally { if (this.contentGenerationInFlight.get(scope)?.promise === generation) this.contentGenerationInFlight.delete(scope) }
   }
 
-  private async generateDraftInternal(taskId: string, usageActionId?: string) {
+  /** Freeze, budget and durably link the exact input used by both synchronous
+   * and queued generation paths. Callers must enqueue this returned envelope,
+   * never reconstruct a smaller worker-only prompt. */
+  async prepareGenerationContext(taskId: string, usageActionId?: string) {
     const task = this.mustTask(taskId)
     this.assertTaskState(task, ['plan_confirmed'])
     this.assertBrandVisualGenerationReady(task.workspaceId, task.platform, task.region)
     assertProductionReleaseMetadata()
-    if (!this.options.contentGenerator) {
-      if (process.env.NODE_ENV === 'production') throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '生产环境未配置内容生成模型', 503)
-      return this.createDraft(taskId)
-    }
     const snapshot = this.taskSnapshot(task)
     const product = snapshot.product
     const generationInput: ContentGenerationInput = {
@@ -3040,15 +3055,37 @@ export class MerchantService {
       ...(snapshot.knowledgeContext ? { knowledgeContext: snapshot.knowledgeContext } : {}),
       usageContext: { workspaceId: task.workspaceId, actionId: usageActionId ?? task.id },
     }
-    const maxInputTokens = Number(process.env.AI_MAX_INPUT_TOKENS ?? 12_000)
-    const boundedInput = budgetContentGenerationInput(generationInput, maxInputTokens)
+    let maxInputTokens: number
+    let input: ContentGenerationInput
+    try {
+      maxInputTokens = resolveTokenBudget(process.env.AI_MAX_INPUT_TOKENS, 12_000, 'input')
+      input = budgetContentGenerationInput(generationInput, maxInputTokens)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const configurationError = message.startsWith('TOKEN_BUDGET_INVALID')
+      throw new DomainError(configurationError ? 'TOKEN_BUDGET_INVALID' : 'CONTEXT_BUDGET_EXCEEDED', configurationError ? '模型上下文限额配置无效，已停止调用以避免无上限消耗' : '商品硬事实和适用规则超过上下文限额，请缩小本次商品、规则或素材范围', configurationError ? 503 : 413, { max_input_tokens: configurationError ? null : maxInputTokens! })
+    }
+    const versions = { taskInputSnapshotId: snapshot.id, productVersion: product.version ?? 1, ruleVersionIds: [...snapshot.ruleVersionIds], assetRevisions: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision })) }
+    let contextRef: { id: string; contextHash: string } | undefined
     if (this.options.contextSnapshotSink && task.brandId) {
       try {
-        await this.options.contextSnapshotSink({ task, envelope: boundedInput, inputTokensEstimate: estimateContentGenerationTokens(boundedInput), maxInputTokens, versions: { taskInputSnapshotId: snapshot.id, productVersion: product.version ?? 1, ruleVersionIds: [...snapshot.ruleVersionIds], assetRevisions: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision })) } })
+        const persistedContext = await this.options.contextSnapshotSink({ task, envelope: input, inputTokensEstimate: estimateContentGenerationRequestTokens(input), maxInputTokens, versions })
+        if (persistedContext) contextRef = persistedContext
       } catch {
         throw new DomainError('CONTEXT_SNAPSHOT_FAILED', '生成上下文无法持久化，已停止模型调用以避免失去审计证据', 503)
       }
     }
+    return { task, snapshot, product, input, inputTokensEstimate: estimateContentGenerationRequestTokens(input), maxInputTokens, versions, ...(contextRef ? { contextRef } : {}) }
+  }
+
+  private async generateDraftInternal(taskId: string, usageActionId?: string) {
+    const task = this.mustTask(taskId)
+    const prepared = await this.prepareGenerationContext(taskId, usageActionId)
+    if (!this.options.contentGenerator) {
+      if (process.env.NODE_ENV === 'production') throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '生产环境未配置内容生成模型', 503)
+      return this.createDraft(taskId)
+    }
+    const { snapshot, product, input: boundedInput } = prepared
     let generated
     try {
       generated = await this.options.contentGenerator.generate(boundedInput)

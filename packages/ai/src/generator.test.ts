@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { budgetContentGenerationInput, OpenAICompatibleContentGenerator, createContentGeneratorFromEnv } from './generator.js'
+import { budgetContentGenerationInput, OpenAICompatibleContentGenerator, createContentGeneratorFromEnv, resolveTokenBudget } from './generator.js'
 
 describe('content generator', () => {
   it('calls an OpenAI-compatible provider and validates structured output', async () => {
@@ -83,7 +83,7 @@ describe('content generator', () => {
   })
 
   it('keeps hard facts and rules while dropping oversized optional knowledge context', () => {
-    const bounded = budgetContentGenerationInput({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 }, knowledgeContext: { rules: [{ id: 'rule_1', content: '禁止虚假宣传', version: '1', sourceReference: 'official' }], assets: Array.from({ length: 20 }, (_, index) => ({ id: `asset_${index}`, kind: 'brand' as const, name: '资料', content: '可选内容'.repeat(2_000), revision: 1, confirmed: false as const })), confirmedLearningSuggestions: [] } }, 600)
+    const bounded = budgetContentGenerationInput({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 }, knowledgeContext: { rules: [{ id: 'rule_1', content: '禁止虚假宣传', version: '1', sourceReference: 'official' }], assets: Array.from({ length: 20 }, (_, index) => ({ id: `asset_${index}`, kind: 'brand' as const, name: '资料', content: '可选内容'.repeat(2_000), revision: 1, confirmed: false as const })), confirmedLearningSuggestions: [] } }, 3_000)
     expect(bounded.product.title).toBe('商品')
     expect(bounded.knowledgeContext?.rules).toHaveLength(1)
     expect(bounded.knowledgeContext?.assets.length).toBeLessThan(20)
@@ -91,6 +91,13 @@ describe('content generator', () => {
 
   it('fails closed when hard facts and blocking rules alone exceed the budget', () => {
     expect(() => budgetContentGenerationInput({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 }, knowledgeContext: { rules: [{ id: 'rule_1', content: '硬规则'.repeat(10_000), version: '1', sourceReference: 'official' }], assets: [], confirmedLearningSuggestions: [] } }, 200)).toThrow('CONTEXT_BUDGET_EXCEEDED')
+  })
+
+  it('rejects invalid token-budget configuration instead of silently disabling limits', () => {
+    expect(() => resolveTokenBudget('NaN', 12_000, 'input')).toThrow('TOKEN_BUDGET_INVALID')
+    expect(() => resolveTokenBudget('0', 12_000, 'input')).toThrow('TOKEN_BUDGET_INVALID')
+    expect(resolveTokenBudget('2500', 12_000, 'output')).toBe(2500)
+    expect(() => createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example.com/v1', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'text-model', AI_MAX_INPUT_TOKENS: 'unbounded' })).toThrow('TOKEN_BUDGET_INVALID')
   })
 
   it('stops after the initial response and two failed repair attempts', async () => {

@@ -25,6 +25,8 @@ export function describeOpsError(error: unknown): string {
       return "运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。";
     case "API_NOT_CONFIGURED":
       return "运营 API 未配置。请设置 VITE_API_BASE 后重新启动运营台；当前页面不会把演示页面误当作 API。";
+    case "OPS_WORKSPACE_REQUIRED":
+      return "请先输入真实工作区 ID，再读取运营数据。页面不会默认使用演示工作区。";
     case "API_INVALID_RESPONSE":
       return "运营 API 返回了无法识别的响应。请检查 VITE_API_BASE 是否指向 API 网关，而不是前端页面地址。";
     default:
@@ -41,6 +43,32 @@ export const managedOpsSession =
   import.meta.env.PROD || import.meta.env.VITE_OPS_AUTH_MODE === "oidc";
 export const OPS_REQUEST_TIMEOUT_MS = 10_000;
 export const MAX_OPS_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+export function opsApiBase(): string {
+  return (
+    localStorage.getItem("ops_api_base")?.trim() ||
+    String(import.meta.env.VITE_API_BASE ?? "").trim()
+  );
+}
+
+/**
+ * The console must never manufacture a workspace or operator identity. In
+ * local development the token is intentionally entered by the operator and
+ * kept only in browser storage; production uses the OIDC gateway session.
+ */
+export function hasOpsCredentials(): boolean {
+  return (
+    managedOpsSession ||
+    Boolean(localStorage.getItem("ops_api_token")?.trim())
+  );
+}
+
+export function hasOpsConnection(): boolean {
+  const storage = managedOpsSession ? sessionStorage : localStorage;
+  return (
+    hasOpsCredentials() && Boolean(storage.getItem("ops_workspace_id")?.trim())
+  );
+}
 
 async function readBoundedResponseText(
   response: Response,
@@ -82,7 +110,7 @@ async function rpcAtWorkspace(
   method: string,
   params: Record<string, string> = {},
 ): Promise<Rpc["result"]> {
-  const apiBase = String(import.meta.env.VITE_API_BASE ?? "").trim();
+  const apiBase = opsApiBase();
   if (!apiBase) {
     const error = new Error("运营 API 未配置") as OpsRequestError;
     error.code = "API_NOT_CONFIGURED";
@@ -91,14 +119,19 @@ async function rpcAtWorkspace(
   const workspaceId = workspaceOverride ??
     ((managedOpsSession
       ? sessionStorage.getItem("ops_workspace_id")
-      : localStorage.getItem("ops_workspace_id")) ?? "workspace_demo");
+      : localStorage.getItem("ops_workspace_id")) ?? "").trim();
+  if (!workspaceId) {
+    const error = new Error("请先配置真实工作区 ID") as OpsRequestError;
+    error.code = "OPS_WORKSPACE_REQUIRED";
+    throw error;
+  }
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-workspace-id": workspaceId,
   };
   if (!managedOpsSession) {
     headers["x-actor-id"] =
-      localStorage.getItem("ops_actor_id") ?? "operator_demo";
+      localStorage.getItem("ops_actor_id") ?? "";
     const token = localStorage.getItem("ops_api_token")?.trim();
     if (token) headers.authorization = `Bearer ${token}`;
   }

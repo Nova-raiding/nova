@@ -28,6 +28,10 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [riskLevel, setRiskLevel] = useState<"low" | "medium" | "high" | "critical">("low");
   const [sessionTarget, setSessionTarget] = useState<{ id: string; revision: number }>();
   const [sessionReason, setSessionReason] = useState("");
+  const [selectedUserKeys, setSelectedUserKeys] = useState<string[]>([]);
+  const [bulkSuspendOpen, setBulkSuspendOpen] = useState(false);
+  const [bulkSuspendReason, setBulkSuspendReason] = useState("");
+  const [bulkSuspending, setBulkSuspending] = useState(false);
   const detailTriggerSubjectRef = useRef<string | undefined>(undefined);
   const detailButtonRefs = useRef(new Map<string, HTMLElement>());
 
@@ -50,6 +54,20 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       if (triggerSubject) detailButtonRefs.current.get(triggerSubject)?.focus({ preventScroll: true });
     }, 400);
   };
+  const selectedUsers = model.userDirectory.items
+    .filter((row) => selectedUserKeys.includes(`${row.workspaceId}:${row.externalSubject}`))
+    .map((row) => ({ workspaceId: row.workspaceId, externalSubject: row.externalSubject }));
+  const submitBulkSuspend = async () => {
+    if (bulkSuspendReason.trim().length < 4 || !selectedUsers.length) return;
+    setBulkSuspending(true);
+    const result = await model.suspendUsers(selectedUsers, bulkSuspendReason.trim());
+    setBulkSuspending(false);
+    if (result.failed === 0) {
+      setSelectedUserKeys([]);
+      setBulkSuspendOpen(false);
+      setBulkSuspendReason("");
+    }
+  };
 
   return <>
     {!model.canUserGovernance && <Alert showIcon type="warning" title="当前账号只有工作区权限" description="跨租户用户成员目录仅向 platform_ops 开放；工作区成员仍可在账务与商业配置中管理。" />}
@@ -70,6 +88,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
           <Button onClick={() => { form.resetFields(); void model.loadUsers({ page: 1 }); }}>清空</Button>
+          <Button onClick={() => void model.exportUsers(form.getFieldsValue())} disabled={!model.canUserGovernance}>导出当前筛选</Button>
+          <Button danger onClick={() => setBulkSuspendOpen(true)} disabled={!model.canUserGovernance || !selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
       {model.userDirectory.truncated && <Alert className="ops-inline-alert" showIcon type="info" title="结果超过 500 条，请增加筛选条件。" />}
@@ -78,6 +98,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
         loading={model.userDirectoryLoading}
         dataSource={model.userDirectory.items}
         locale={{ emptyText: "没有符合条件的用户成员关系" }}
+        rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
         pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: model.userDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条成员关系` }}
         onChange={(pagination) => void model.loadUsers({ ...form.getFieldsValue(), page: pagination.current ?? 1, pageSize: pagination.pageSize ?? 20 })}
         scroll={{ x: 980 }}
@@ -86,6 +107,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           { title: "显示名", dataIndex: "displayName", width: 140, render: (value: string) => value || "—" },
           { title: "租户", dataIndex: "workspaceId", width: 180 },
           { title: "角色", dataIndex: "role", width: 140, render: (value: string) => <Tag color="blue">{roleLabels[value] ?? value}</Tag> },
+          { title: "数据来源", key: "dataOrigin", width: 140, render: (_: unknown, row: PlatformUser) => row.invitedBy === "local_compose_seed" ? <Tag color="gold">本地种子</Tag> : <Tag color="green">业务成员记录</Tag> },
+          { title: "套餐 / 消耗", key: "commercial", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? <Space orientation="vertical" size={0}><Typography.Text>{row.commercial.planName} · {row.commercial.subscriptionStatus}</Typography.Text><Typography.Text type="secondary">任务 {row.commercial.usedTasks}/{row.commercial.includedTasks} · 余额 ¥{row.commercial.walletBalanceCny}</Typography.Text></Space> : <Typography.Text type="secondary">暂无账务快照</Typography.Text> },
           { title: "成员状态", dataIndex: "status", width: 110, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
           { title: "租户状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{workspaceStatusLabels[value] ?? value}</Tag> },
           { title: "更新时间", dataIndex: "updatedAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
@@ -154,5 +177,11 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       <Space orientation="vertical" className="full-width"><Select value={riskLevel} onChange={setRiskLevel} options={[{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "critical" }]} /><Select value={riskDecision} onChange={setRiskDecision} options={[{ value: "allow", label: "允许" }, { value: "step_up", label: "要求 MFA" }, { value: "block", label: "阻断并撤销会话" }]} /><Input.TextArea aria-label="风险策略原因" rows={4} value={identityReason} onChange={(event) => setIdentityReason(event.target.value)} placeholder="填写风险证据或工单原因" /></Space>
     </Modal>
     <Modal title="撤销认证会话" open={Boolean(sessionTarget)} okText="确认撤销" okButtonProps={{ danger: true, disabled: sessionReason.trim().length < 4 }} onCancel={() => { setSessionTarget(undefined); setSessionReason(""); }} onOk={async () => { if (sessionTarget && await model.revokeIdentitySession(sessionTarget.id, sessionTarget.revision, sessionReason.trim())) { setSessionTarget(undefined); setSessionReason(""); } }}><Input.TextArea aria-label="会话撤销原因" rows={4} value={sessionReason} onChange={(event) => setSessionReason(event.target.value)} placeholder="填写会话撤销原因或工单号" /></Modal>
+    <Modal title={`批量停用用户（${selectedUsers.length}）`} open={bulkSuspendOpen} okText="逐条执行停用" cancelText="取消" confirmLoading={bulkSuspending} okButtonProps={{ danger: true, disabled: bulkSuspendReason.trim().length < 4 || !selectedUsers.length }} onCancel={() => { if (!bulkSuspending) { setBulkSuspendOpen(false); setBulkSuspendReason(""); } }} onOk={() => void submitBulkSuspend()}>
+      <Alert showIcon type="warning" title="操作会逐条写入真实成员状态和审计记录" description="系统不会把部分成功伪装成全部成功；失败成员会保留在刷新后的目录中，需要单独处理。当前登录账号和已停用成员不可勾选。" />
+      <Typography.Paragraph>将停用当前筛选结果中已勾选的 {selectedUsers.length} 个成员关系。</Typography.Paragraph>
+      <label htmlFor="bulk-suspend-reason">操作原因（至少 4 个字符）</label>
+      <Input.TextArea id="bulk-suspend-reason" autoFocus rows={4} maxLength={500} showCount value={bulkSuspendReason} onChange={(event) => setBulkSuspendReason(event.target.value)} placeholder="填写工单号、风险证据或客户请求" />
+    </Modal>
   </>;
 }

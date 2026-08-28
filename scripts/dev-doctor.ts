@@ -31,12 +31,15 @@ add('docker_buildx', buildxReady ? 'pass' : production ? 'fail' : 'warn', buildx
 const requiredFiles = ['package-lock.json', 'infra/local/docker-compose.yml', 'apps/ops-console/vite.config.ts', 'apps/plugin/.codex-plugin/plugin.json']
 for (const file of requiredFiles) add(`file:${file}`, existsSync(resolve(root, file)) ? 'pass' : 'fail', existsSync(resolve(root, file)) ? `${file} 存在` : `${file} 缺失`)
 
-const playwrightPackage = resolve(root, 'dogfood/chatgpt-all-functions/node_modules/@playwright/test/package.json')
+const playwrightReady = [
+  resolve(root, 'node_modules/@playwright/test/package.json'),
+  resolve(root, 'dogfood/chatgpt-all-functions/node_modules/@playwright/test/package.json'),
+].some(existsSync)
 let chromeReady = false
 for (const path of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium']) {
   try { accessSync(path, constants.X_OK); chromeReady = true; break } catch { /* try next known path */ }
 }
-add('browser_runner', existsSync(playwrightPackage) && chromeReady ? 'pass' : 'warn', existsSync(playwrightPackage) && chromeReady ? 'Playwright QA runner 与 Chrome 可用' : '浏览器 QA runner 或 Chrome 未就绪', '安装受控浏览器 runner 后再执行真实 UI 验收。')
+add('browser_runner', playwrightReady && chromeReady ? 'pass' : 'warn', playwrightReady && chromeReady ? 'Playwright QA runner 与 Chrome 可用' : '浏览器 QA runner 或 Chrome 未就绪', '安装受控浏览器 runner 后再执行真实 UI 验收。')
 
 let containerEnv = new Set<string>()
 if (dockerReady) {

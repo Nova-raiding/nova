@@ -22,6 +22,7 @@
     "test:distributed-rate-limit": "tsx tests/distributed-rate-limit-smoke.ts",
     "test:summary": "tsx tests/test-summary.ts",
     "test:merchant-studio-smoke": "tsx tests/merchant-studio-smoke.ts",
+    "test:browser:all": "npm exec --workspace chatgpt-all-functions-dogfood playwright -- test merchant-all.spec.js merchant-interactions.spec.js merchant.spec.js merchant-data-safety.spec.js merchant-publish-refresh.spec.js merchant-task-auxiliary.spec.js merchant-finding-waiver.spec.js merchant-accessibility.spec.js ops-all.spec.js ops-users.spec.js ops.spec.js ops-deeplink.spec.js ops-data-deletion.spec.js ops-publish-batch.spec.js --workers=1",
     "test:backup-restore": "sh tests/backup-restore-acceptance.sh",
     "test:redis-loss-recovery": "tsx tests/redis-loss-recovery-smoke.ts",
     "test:fault-acceptance": "tsx tests/fault-acceptance.ts",
@@ -34,19 +35,21 @@
     "infra:validate": "sh infra/scripts/validate-config.sh",
     "infra:production-gate": "sh infra/scripts/validate-production-config.sh",
     "infra:launch-preflight": "sh infra/scripts/launch-preflight.sh",
+    "launch-preflight": "npm run infra:launch-preflight",
     "codex:relay:validate": "tsx scripts/validate-codex-relay.ts",
     "test:model-relay-canary": "tsx scripts/model-relay-canary.ts --probe",
     "codex:relay:configure": "tsx scripts/configure-codex-relay.ts",
     "release:manifest": "tsx scripts/release-manifest.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false",
     "build:ops-console": "npm run build --workspace merchant-ops-console",
     "build:merchant-studio": "npm run build --prefix demo/merchant-studio",
     "check": "npm run typecheck && npm test && npm run build:ops-console && npm run build:merchant-studio"
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "dogfood/chatgpt-all-functions"
   ],
   "devDependencies": {
     "@types/node": "^22.10.2",

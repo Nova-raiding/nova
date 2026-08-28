@@ -32,11 +32,12 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('if (!taskContext?.task || !taskContext.version)')
     expect(app).toContain('preparePublish(apiBaseUrl, taskContext.task.id)')
     expect(app).toContain('fetchPublishJobs(baseUrl)')
-    expect(app).toContain('disabled={!confirmed || loading || !preview}')
+    expect(app).toContain('disabled={!confirmed || loading || !preview || Boolean(identityError)}')
   })
 
   it('restores existing tasks without creating duplicates or auto-generating content', () => {
-    expect(app).toContain("target.taskId ? fetchTask(baseUrl, target.taskId) : createTask")
+    expect(app).toContain('? await fetchTask(baseUrl, target.taskId)')
+    expect(app).toContain(': await createTask(baseUrl, { product_id: targetProductId, platform: targetPlatform, account_id: target.accountId })')
     expect(app).toContain('taskId: item.id')
     expect(app).toContain('只有从商品页点击“创建任务”才会新建任务')
     expect(app).toContain('确认制作方案并生成')

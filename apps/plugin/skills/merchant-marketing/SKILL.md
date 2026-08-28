@@ -125,9 +125,9 @@ description: 商家营销内容助手入口。用于同步商品事实、生成�
 - API/MCP 请求必须使用宿主身份提供的 `Authorization: Bearer` 与 `X-Workspace-Id`；请求体中的 `workspace_id` 只能用于一致性校验，不能改变工作区范围。缺少 MCP 地址或工作区时默认阻断；仅本地 fixture 开发可显式设置 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true` 使用 `ws_demo`，Automation 与生产环境禁止使用该 fallback。
 - 知识资产审批/权益调整使用 `knowledge.asset.update`，学习建议驳回使用 `knowledge.learning.dismiss`；两者均需运营角色并保留审计事件。
 - 生产边界：`fixture_ready`、本地扫描、示例价格、未验证的 OAuth/canary、云容量或对象存储策略只能标记为演示/待验收，不能在商家回复中表述为真实平台能力或上线凭据。运营台显示的 production canary、生命周期和告警通道状态缺少证据时必须保持阻断。
-- 当前商家运行态提供 134 个 MCP 工具，覆盖完整商家主流程，并包含只读的 `merchant.start`、`merchant.first_value`、平台规则状态、任务恢复和 SEO/GEO 标题人工确认。平台模型成本/readiness、财务对账、退款、用量冲正和平台设置等运营入口只保留在运营后台，不得出现在商家 `tools/list` 或被 `tools/call` 绕过。素材自动解析失败或不支持图片 OCR、扫描 PDF、AI/EPS 时，调用 `asset.facts.confirm` 让商家在 Codex 内人工补录并确认事实；结果必须展示“人工确认”来源，不得宣称为 OCR 或自动解析成功。
-- 当前源码运行态 `tools/list` 应返回 134 个 MCP 工具，且不得包含任何 `ops.*` 或运营敏感工具；安装缓存更新后必须重新验证，以运行态清单为准。
-- 当前商家运行态清单为 134 个 MCP 工具（包含 `merchant.start` 和 `merchant.first_value`）；运营敏感入口不进入商家清单。
+- 当前商家运行态提供 135 个 MCP 工具，覆盖完整商家主流程，并包含只读的 `merchant.start`、`merchant.first_value`、平台规则状态、任务恢复和 SEO/GEO 标题人工确认。平台模型成本/readiness、财务对账、退款、用量冲正和平台设置等运营入口只保留在运营后台，不得出现在商家 `tools/list` 或被 `tools/call` 绕过。素材自动解析失败或不支持图片 OCR、扫描 PDF、AI/EPS 时，调用 `asset.facts.confirm` 让商家在 Codex 内人工补录并确认事实；结果必须展示“人工确认”来源，不得宣称为 OCR 或自动解析成功。
+- 当前源码运行态 `tools/list` 应返回 135 个 MCP 工具，且不得包含任何 `ops.*` 或运营敏感工具；安装缓存更新后必须重新验证，以运行态清单为准。
+- 当前商家运行态清单为 135 个 MCP 工具（包含 `merchant.start` 和 `merchant.first_value`）；运营敏感入口不进入商家清单。
 - bridge 默认在 API 转发前拒绝所有非只读工具并返回 `INTERACTIVE_WRITE_DISABLED`。商家明确要求生成、编辑、批准或发布时先调用 `workspace.interactive.confirm`，当前 bridge 开启 15 分钟交互写会话；不需要手工设置 `MERCHANT_MCP_WRITE_ENABLED`。Automation 不调用该确认工具并保持只读。交互会话不替代钱包、事实确认、发布确认哈希、幂等键、平台权限或服务端审批。
 - 商家操作完全在 Codex App 对话中执行：Merchant Studio 仅是开发调试控制台，不是商家使用前置条件。涉及主图时按 `catalog.image.generate` → `catalog.image.get` → `catalog.image.review` → 商家明确选择 → `content.visual.select` → `content.review` → `content.approve` 执行；涉及发布时必须对最新版本重新预览、独立人工确认和哈希校验。
 - `workspace.health`、目录/版本/状态查询等只读 MCP 工具带有 `readOnlyHint`；发布、规则激活、权益确认等写操作仍必须经过人工确认。

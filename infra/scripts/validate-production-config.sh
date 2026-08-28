@@ -35,7 +35,8 @@ for required_key in \
   payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref \
   text_model image_model image_edit_model ocr_model video_model approved_requests_per_minute \
   approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region \
-  object_storage_endpoint object_storage_kms_key; do
+  object_storage_endpoint object_storage_kms_key platform_rule_sync_manifest_url \
+  platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours; do
   grep -Eq "^[[:space:]]*${required_key}:" "$config_path" || {
     echo "required production config key is missing: ${required_key}" >&2
     exit 1
@@ -138,6 +139,9 @@ fi
 grep -Eq 'approved_requests_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_requests_per_minute must be a positive approved limit' >&2; exit 1; }
 grep -Eq 'approved_tokens_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_tokens_per_minute must be a positive approved limit' >&2; exit 1; }
 grep -Eq 'maximum_task_cost_cny:[[:space:]]*"?[0-9]+(\.[0-9]{1,2})?\"?$' "$config_path" || { echo 'maximum_task_cost_cny must be a non-negative CNY amount' >&2; exit 1; }
+grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?https://' "$config_path" || { echo 'platform rule sync manifest URL must be HTTPS' >&2; exit 1; }
+grep -Eq "platform_rule_sync_signing_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'platform rule sync signing secret ref must be configured' >&2; exit 1; }
+grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'platform rule sync interval must be a positive number of hours' >&2; exit 1; }
 for storage_field in object_storage_bucket object_storage_region object_storage_endpoint object_storage_kms_key; do
   grep -Eq "${storage_field}:[[:space:]]*\"?[^\"[:space:]]+\"?$" "$config_path" || { echo "${storage_field} must be configured" >&2; exit 1; }
 done

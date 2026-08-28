@@ -316,6 +316,8 @@ models:
   model_relay_base_url: "https://model-relay.example.com/v1"
   model_relay_api_key_ref: "vault://merchant-model/relay-api-key"
   text_model: "SET_PINNED_TEXT_MODEL_ID"
+  max_input_tokens_per_request: 12000
+  max_output_tokens_per_request: 2500
   image_model: "SET_PINNED_IMAGE_MODEL_ID"
   image_edit_model: "SET_PINNED_IMAGE_EDIT_MODEL_ID"
   ocr_model: "SET_PINNED_OCR_MODEL_ID"
@@ -335,6 +337,9 @@ rules_and_mappings:
   fail_closed_on_missing_p0_rule: true
   fail_closed_on_unknown_mapping: true
   rule_refresh_owner: "SET_BUSINESS_OWNER"
+  platform_rule_sync_manifest_url: "https://SET_RULE_MANIFEST_HOST/platform-rules/v1/manifest.json"
+  platform_rule_sync_signing_secret_ref: "vault://merchant-rules/manifest-signing-secret"
+  platform_rule_sync_interval_hours: 24
   rule_revalidation_interval_days: 30
 
 feature_flags:

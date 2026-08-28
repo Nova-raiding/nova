@@ -12,7 +12,7 @@ describe('platform rule sync status', () => {
 
   it('detects stale platform packs individually', () => {
     const rules = new RuleCenter(() => '2026-08-26T00:00:00.000Z', defaultRuleCenterSeeds).list()
-    const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json' })
+    const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json', signingSecretConfigured: true })
     expect(result.find(item => item.platform === 'douyin')).toMatchObject({ state: 'ready', latestVersion: 'douyin-content-1.0.0' })
     expect(result.find(item => item.platform === 'jd')).toMatchObject({ state: 'stale', stale: true })
   })

@@ -4,7 +4,7 @@ import { loadMigrations } from './migration.js'
 describe('migration 039 multi-brand batch schema', () => {
   it('loads after every prior migration and declares the additive schema', async () => {
     const migrations = await loadMigrations()
-    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 46 }, (_, index) => index + 1))
+    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 47 }, (_, index) => index + 1))
     const migration = migrations.find(item => item.version === 39)
     expect(migration?.name).toBe('multi_brand_batch')
     expect(migration?.sql).toContain('CREATE TABLE IF NOT EXISTS brands')

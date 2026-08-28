@@ -329,6 +329,72 @@ describe('security and access-control acceptance gates', () => {
     expect((await call('ops.user.suspend', { external_subject: 'target-only-user', reason: '跨租户停用验证' })).data?.result).toMatchObject({ workspaceId: targetWorkspace, status: 'suspended' })
   })
 
+  it('restricts platform account administration and billing exports to their explicit workspace roles', async () => {
+    const workspaceId = `ws_sensitive_ops_${Date.now()}`
+    const otherWorkspaceId = `${workspaceId}_other`
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([
+      { token: 'sensitive-owner-token', workspaceId, actorId: 'sensitive-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
+      { token: 'sensitive-admin-token', workspaceId, actorId: 'sensitive-admin', role: 'merchant_admin', gatewayRoles: ['merchant_admin'] },
+      { token: 'sensitive-operator-token', workspaceId, actorId: 'sensitive-operator', role: 'operator', gatewayRoles: ['operator'] },
+      { token: 'sensitive-support-token', workspaceId, actorId: 'sensitive-support', role: 'support', gatewayRoles: ['support'] },
+      { token: 'sensitive-finance-token', workspaceId, actorId: 'sensitive-finance', role: 'finance', gatewayRoles: ['finance'] },
+      { token: 'sensitive-platform-token', workspaceId, actorId: 'sensitive-platform', role: 'platform_ops', gatewayRoles: ['platform_ops'] },
+      { token: 'other-owner-token', workspaceId: otherWorkspaceId, actorId: 'other-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
+    ])
+    const aliasAccount = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `alias-${Date.now()}`, credentialRef: 'vault://sensitive/alias' })
+    const foreignAccount = service.registerPlatformAccount({ workspaceId: otherWorkspaceId, platform: 'taobao', remoteAccountId: `foreign-${Date.now()}`, credentialRef: 'vault://sensitive/foreign' })
+    const revokeAccounts = new Map([
+      ['sensitive-owner-token', service.registerPlatformAccount({ workspaceId, platform: 'jd', remoteAccountId: `revoke-owner-${Date.now()}`, credentialRef: 'vault://sensitive/revoke-owner' })],
+      ['sensitive-admin-token', service.registerPlatformAccount({ workspaceId, platform: 'jd', remoteAccountId: `revoke-admin-${Date.now()}`, credentialRef: 'vault://sensitive/revoke-admin' })],
+      ['sensitive-platform-token', service.registerPlatformAccount({ workspaceId, platform: 'jd', remoteAccountId: `revoke-platform-${Date.now()}`, credentialRef: 'vault://sensitive/revoke-platform' })],
+    ])
+    const deniedRevokeAccount = service.registerPlatformAccount({ workspaceId, platform: 'jd', remoteAccountId: `revoke-denied-${Date.now()}`, credentialRef: 'vault://sensitive/revoke-denied' })
+    const base = await start()
+    const call = (token: string, method: string, params: Record<string, string> = {}, routedWorkspaceId = workspaceId, bodyWorkspaceId = routedWorkspaceId) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': routedWorkspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `${method}-${token}`, method, params: { workspace_id: bodyWorkspaceId, ...params } }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    for (const token of ['sensitive-operator-token', 'sensitive-support-token', 'sensitive-finance-token']) {
+      expect((await call(token, 'platform.store.alias.set', { platform: 'taobao', account_id: aliasAccount.id, alias: '越权别名', expected_revision: String(aliasAccount.revision) })).error?.code).toBe('FORBIDDEN')
+      expect((await call(token, 'platform.revoke', { platform: 'jd', account_id: deniedRevokeAccount.id })).error?.code).toBe('FORBIDDEN')
+    }
+    expect(service.getPlatformAccount(workspaceId, deniedRevokeAccount.id, 'jd').tokenState).toBe('connected')
+
+    let expectedRevision = aliasAccount.revision
+    for (const [token, alias] of [['sensitive-owner-token', '所有者店铺'], ['sensitive-admin-token', '管理员店铺'], ['sensitive-platform-token', '平台运营店铺']] as const) {
+      const renamed = await call(token, 'platform.store.alias.set', { platform: 'taobao', account_id: aliasAccount.id, alias, expected_revision: String(expectedRevision) })
+      expect(renamed.error).toBeNull()
+      expect(renamed.data?.result.store).toMatchObject({ accountId: aliasAccount.id, alias })
+      expectedRevision += 1
+    }
+
+    for (const [token, account] of revokeAccounts) {
+      const revoked = await call(token, 'platform.revoke', { platform: 'jd', account_id: account.id })
+      expect(revoked.error?.code).toBe('PLATFORM_REVOKE_REMOTE_FAILED')
+      expect(service.getPlatformAccount(workspaceId, account.id, 'jd').tokenState).toBe('revoked')
+    }
+
+    for (const token of ['sensitive-owner-token', 'sensitive-admin-token', 'sensitive-finance-token', 'sensitive-platform-token']) {
+      const exported = await call(token, 'billing.export', { format: 'json', limit: '10' })
+      expect(exported.error).toBeNull()
+      expect(exported.data?.result).toMatchObject({ filename: `billing-${workspaceId}.json`, contentType: 'application/json' })
+    }
+    for (const token of ['sensitive-operator-token', 'sensitive-support-token']) {
+      expect((await call(token, 'billing.export', { format: 'json' })).error?.code).toBe('FORBIDDEN')
+    }
+
+    expect((await call('sensitive-owner-token', 'platform.store.alias.set', { platform: 'taobao', account_id: foreignAccount.id, alias: '跨租户修改', expected_revision: String(foreignAccount.revision) })).error?.code).toBe('PLATFORM_ACCOUNT_NOT_FOUND')
+    expect((await call('sensitive-owner-token', 'platform.revoke', { platform: 'taobao', account_id: foreignAccount.id })).error?.code).toBe('PLATFORM_ACCOUNT_NOT_FOUND')
+    const unchangedForeignAccount = service.getPlatformAccount(otherWorkspaceId, foreignAccount.id, 'taobao')
+    expect(unchangedForeignAccount.tokenState).toBe('connected')
+    expect(unchangedForeignAccount).not.toHaveProperty('storeAlias')
+    expect((await call('sensitive-owner-token', 'billing.export', { format: 'json' }, workspaceId, otherWorkspaceId)).error?.code).toBe('WORKSPACE_SCOPE_MISMATCH')
+    expect((await call('sensitive-owner-token', 'billing.export', { format: 'json' }, otherWorkspaceId, otherWorkspaceId)).error?.code).toBe('FORBIDDEN')
+  })
+
   it('prevents removing the last active workspace owner', async () => {
     const workspaceId = `ws_last_owner_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'production')
@@ -366,9 +432,13 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 6, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 1 })
     expect((await mcp(editorHeaders, 6.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation.items).toEqual([expect.objectContaining({ id: 'brand_access', title: '权限品', platforms: [expect.objectContaining({ platform: 'taobao', stores: [expect.objectContaining({ accountId: account.id })] })] })])
     expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
+    const protectedTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
+    expect((await mcp(editorHeaders, 7.1, 'task.history', {})).data?.result.items).toEqual([expect.objectContaining({ id: protectedTask.id })])
+    expect((await mcp(editorHeaders, 7.2, 'task.resume', { task_id: protectedTask.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
 
     expect((await mcp(ownerHeaders, 8, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'editor' })).error).toBeNull()
     expect((await mcp(editorHeaders, 9, 'brand-unit.product.create', { brand_id: 'brand_access', title: '可编辑商品', source_product_id: source.id })).error).toBeNull()
+    expect((await mcp(editorHeaders, 9.1, 'task.resume', { task_id: protectedTask.id })).error).toBeNull()
   })
 
   it('resolves an independent OAuth callback for every platform', () => {
@@ -418,8 +488,10 @@ describe('security and access-control acceptance gates', () => {
     const base = await start()
     const denied = await fetch(`${base}/v1/products`, { headers: { origin: 'https://evil.example', 'x-workspace-id': 'ws_cors' } })
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
+    expect(denied.headers.get('access-control-allow-credentials')).toBeNull()
     const allowed = await fetch(`${base}/v1/products`, { headers: { origin: 'https://merchant.example', 'x-workspace-id': 'ws_cors' } })
     expect(allowed.headers.get('access-control-allow-origin')).toBe('https://merchant.example')
+    expect(allowed.headers.get('access-control-allow-credentials')).toBe('true')
     const preflight = await fetch(`${base}/v1/tasks`, { method: 'OPTIONS', headers: { origin: 'https://merchant.example', 'access-control-request-method': 'POST' } })
     expect(preflight.status).toBe(204)
     expect(preflight.headers.get('access-control-allow-methods')).toContain('POST')

@@ -1,8 +1,12 @@
+import { useRef, useState } from "react";
 import {
   Alert,
   Button,
   Card,
   Col,
+  Form,
+  Input,
+  Modal,
   Row,
   Space,
   Statistic,
@@ -17,7 +21,11 @@ import {
   GlobalOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
-import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
+import {
+  DATA_DELETION_REASON_MIN_LENGTH,
+  type DataDeletionDecision,
+  type OpsConsoleModel,
+} from "../../../hooks/useOpsConsoleModel";
 import type {
   DataDeletionRequest,
   EvidenceReadiness,
@@ -30,6 +38,16 @@ interface OverviewSectionProps {
 }
 
 export function DataReadinessSection({ model }: OverviewSectionProps) {
+  const [deletionDecision, setDeletionDecision] = useState<{
+    decision: DataDeletionDecision;
+    request: DataDeletionRequest;
+  }>();
+  const [deletionReason, setDeletionReason] = useState("");
+  const [deletionReasonTouched, setDeletionReasonTouched] = useState(false);
+  const [deletionActionLoading, setDeletionActionLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const deletionActionLocksRef = useRef(new Set<string>());
   const {
     settings,
     setSettings,
@@ -171,6 +189,65 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
     createRevision,
     reviewVisual,
   } = model;
+  const deletionActionKey = (
+    requestId: string,
+    decision: DataDeletionDecision,
+  ) => `${requestId}:${decision}`;
+  const activeDeletionActionKey = deletionDecision
+    ? deletionActionKey(
+        deletionDecision.request.id,
+        deletionDecision.decision,
+      )
+    : undefined;
+  const deletionSubmitting = activeDeletionActionKey
+    ? Boolean(deletionActionLoading[activeDeletionActionKey])
+    : false;
+  const deletionReasonInvalid =
+    deletionReason.trim().length < DATA_DELETION_REASON_MIN_LENGTH;
+
+  const openDeletionDecision = (
+    request: DataDeletionRequest,
+    decision: DataDeletionDecision,
+  ) => {
+    setDeletionDecision({ request, decision });
+    setDeletionReason("");
+    setDeletionReasonTouched(false);
+  };
+
+  const closeDeletionDecision = () => {
+    if (deletionSubmitting) return;
+    setDeletionDecision(undefined);
+    setDeletionReason("");
+    setDeletionReasonTouched(false);
+  };
+
+  const confirmDeletionDecision = async () => {
+    if (!deletionDecision || deletionReasonInvalid) {
+      setDeletionReasonTouched(true);
+      return;
+    }
+    const key = deletionActionKey(
+      deletionDecision.request.id,
+      deletionDecision.decision,
+    );
+    if (deletionActionLocksRef.current.has(key)) return;
+    deletionActionLocksRef.current.add(key);
+    setDeletionActionLoading((current) => ({ ...current, [key]: true }));
+    try {
+      const succeeded =
+        deletionDecision.decision === "approve"
+          ? await approveDeletion(deletionDecision.request, deletionReason)
+          : await cancelDeletion(deletionDecision.request, deletionReason);
+      if (succeeded) closeDeletionDecision();
+    } finally {
+      deletionActionLocksRef.current.delete(key);
+      setDeletionActionLoading((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }
+  };
   return (
     <>
       <Card
@@ -359,19 +436,33 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
             { title: "状态", dataIndex: "status" },
             {
               title: "操作",
-              render: (_: unknown, row: DataDeletionRequest) =>
-                row.status === "pending" ? (
+              render: (_: unknown, row: DataDeletionRequest) => {
+                const approveLoading = Boolean(
+                  deletionActionLoading[
+                    deletionActionKey(row.id, "approve")
+                  ],
+                );
+                const cancelLoading = Boolean(
+                  deletionActionLoading[deletionActionKey(row.id, "cancel")],
+                );
+                return row.status === "pending" ? (
                   <Space>
                     <Button
                       type="link"
-                      onClick={() => void approveDeletion(row)}
+                      loading={approveLoading}
+                      disabled={cancelLoading}
+                      aria-label={`审批数据删除申请 ${row.id}`}
+                      onClick={() => openDeletionDecision(row, "approve")}
                     >
                       审批
                     </Button>
                     <Button
                       type="link"
                       danger
-                      onClick={() => void cancelDeletion(row)}
+                      loading={cancelLoading}
+                      disabled={approveLoading}
+                      aria-label={`取消数据删除申请 ${row.id}`}
+                      onClick={() => openDeletionDecision(row, "cancel")}
                     >
                       取消申请
                     </Button>
@@ -380,11 +471,78 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
                   <Typography.Text type="secondary">
                     外部执行/证明
                   </Typography.Text>
-                ),
+                );
+              },
             },
           ]}
         />
       </Card>
+      <Modal
+        open={Boolean(deletionDecision)}
+        title={
+          deletionDecision?.decision === "approve"
+            ? "审批数据删除申请"
+            : "取消数据删除申请"
+        }
+        okText={deletionDecision?.decision === "approve" ? "确认审批" : "确认取消"}
+        cancelText="返回"
+        confirmLoading={deletionSubmitting}
+        okButtonProps={{
+          danger: deletionDecision?.decision === "cancel",
+          disabled: deletionReasonInvalid || deletionSubmitting,
+          "aria-label":
+            deletionDecision?.decision === "approve"
+              ? "确认审批数据删除申请"
+              : "确认取消数据删除申请",
+        }}
+        cancelButtonProps={{ disabled: deletionSubmitting }}
+        closable={!deletionSubmitting}
+        keyboard={!deletionSubmitting}
+        mask={{ closable: !deletionSubmitting }}
+        onOk={() => void confirmDeletionDecision()}
+        onCancel={closeDeletionDecision}
+        destroyOnHidden
+      >
+        <Typography.Paragraph type="secondary">
+          {deletionDecision
+            ? `申请 ${deletionDecision.request.id} · 范围 ${deletionDecision.request.scope}`
+            : ""}
+        </Typography.Paragraph>
+        <Form layout="vertical">
+          <Form.Item
+            label="具体原因"
+            required
+            validateStatus={
+              deletionReasonTouched && deletionReasonInvalid
+                ? "error"
+                : undefined
+            }
+            help={
+              deletionReasonTouched && deletionReasonInvalid
+                ? `请填写至少 ${DATA_DELETION_REASON_MIN_LENGTH} 个字符的具体原因`
+                : `至少 ${DATA_DELETION_REASON_MIN_LENGTH} 个字符；将写入操作审计记录`
+            }
+          >
+            <Input.TextArea
+              autoFocus
+              value={deletionReason}
+              rows={4}
+              maxLength={500}
+              showCount
+              disabled={deletionSubmitting}
+              aria-label={
+                deletionDecision?.decision === "approve"
+                  ? "审批数据删除申请的具体原因"
+                  : "取消数据删除申请的具体原因"
+              }
+              aria-invalid={deletionReasonTouched && deletionReasonInvalid}
+              placeholder="说明核验依据、业务背景或取消原因"
+              onChange={(event) => setDeletionReason(event.target.value)}
+              onBlur={() => setDeletionReasonTouched(true)}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </>
   );
 }

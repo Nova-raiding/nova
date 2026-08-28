@@ -1,5 +1,6 @@
 import { ConfigurationCenterSection } from "../components/finance/ConfigurationCenterSection";
 import { PlanBillingSection } from "../components/finance/PlanBillingSection";
+import { RechargeOrdersSection } from "../components/finance/RechargeOrdersSection";
 import { ReconciliationSection } from "../components/finance/ReconciliationSection";
 import { RefundSection } from "../components/finance/RefundSection";
 import { OpsPage } from "../components/OpsPage";
@@ -20,6 +21,7 @@ export function FinancePage({ model }: FinancePageProps) {
       description="管理充值、账单、退款、套餐和模型计费策略。"
     >
       <OpsPageError error={error} onRetry={() => void load()} />
+      <RechargeOrdersSection model={model} />
       <ReconciliationSection model={model} />
       <RefundSection model={model} />
       <ConfigurationCenterSection model={model} />

@@ -69,6 +69,16 @@ export type Member = {
 export type PlatformUser = Member & {
   workspaceId: string;
   workspaceStatus: "active" | "disabled";
+  invitedBy?: string;
+  commercial?: {
+    planCode: string;
+    planName: string;
+    subscriptionStatus: string;
+    usedTasks: number;
+    includedTasks: number;
+    remainingTasks: number;
+    walletBalanceCny: string;
+  };
 };
 export type PlatformUserDirectory = {
   items: PlatformUser[];
@@ -363,6 +373,14 @@ export type PlatformHealth = {
     reason?: string;
   };
 };
+export type OpsDataSource = {
+  environment?: string;
+  persistence?: "postgres" | "memory" | string;
+  plugin?: string;
+  fixtureDataPresent?: boolean;
+  officialStoreCount?: number;
+  fixtureStoreCount?: number;
+};
 export type PlatformOperation = {
   platform: string;
   state?: string;
@@ -450,6 +468,10 @@ export type ModelUsageSettlementStatus =
   | "manual_attention"
   | "settled"
   | "waived";
+export type ModelUsageSettlementDecision =
+  | "retry"
+  | "waive"
+  | "manual_attention";
 
 export type ModelUsageSettlementRecord = {
   id: string;
@@ -459,6 +481,7 @@ export type ModelUsageSettlementRecord = {
   provider_request_id: string | null;
   observed_at: string;
   settlement_status?: ModelUsageSettlementStatus;
+  allowed_decisions?: ModelUsageSettlementDecision[];
   settlement_reason: string;
   attempt_count?: number;
   next_attempt_at?: string | null;
@@ -489,6 +512,39 @@ export type Reconciliation = {
     unsettled: ModelUsageSettlementRecord[];
   };
   provider?: { mode: string; ready: boolean; reasons: string[] };
+};
+
+export type RechargeOrderState = "pending" | "paid" | "closed" | "failed";
+
+export type RechargeOrder = {
+  id: string;
+  workspace_id: string;
+  channel: string;
+  amount_cny: string;
+  state: RechargeOrderState;
+  payment_url: string | null;
+  provider_trade_id: string | null;
+  expires_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+};
+
+export type RechargeOrderSummary = {
+  total?: number;
+  amount_cny?: string;
+  total_amount_cny?: string;
+  by_state?: Partial<Record<RechargeOrderState, number>>;
+  pending?: number;
+  paid?: number;
+  closed?: number;
+  failed?: number;
+};
+
+export type RechargeOrderList = {
+  orders: RechargeOrder[];
+  summary?: RechargeOrderSummary;
+  returned?: number;
+  total?: number;
 };
 export type AutomationPolicy = {
   id?: string;

@@ -20,7 +20,6 @@ sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//' "$config_path" > "$filtered_con
 : "${MODEL_RELAY_EVIDENCE_PATH:?MODEL_RELAY_EVIDENCE_PATH is required}"
 : "${PAYMENT_EVIDENCE_PATH:?PAYMENT_EVIDENCE_PATH is required}"
 : "${RESTORE_EVIDENCE_PATH:?RESTORE_EVIDENCE_PATH is required}"
-: "${EVIDENCE_ATTESTATION_KEY:?EVIDENCE_ATTESTATION_KEY is required}"
 : "${RENDERED_MANIFEST_PATH:?RENDERED_MANIFEST_PATH is required (rendered Kubernetes manifest)}"
 [ -f "$CAPABILITY_EVIDENCE_PATH" ] || { echo "capability evidence file not found: $CAPABILITY_EVIDENCE_PATH" >&2; exit 1; }
 [ -f "$CAPACITY_REPORT_PATH" ] || { echo "capacity report not found: $CAPACITY_REPORT_PATH" >&2; exit 1; }
@@ -69,11 +68,24 @@ for flag in \
   }
 done
 sh "$(dirname "$0")/validate-kubernetes-release.sh" "$RENDERED_MANIFEST_PATH" "$IMAGE_DIGEST"
+manifest_sha256=$(shasum -a 256 "$RENDERED_MANIFEST_PATH" | awk '{print $1}')
+repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd -P)
+release_git_sha=$(git -C "$repo_root" rev-parse HEAD)
 npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
 npx --no-install tsx "$(dirname "$0")/../../tests/capacity-evidence-gate.ts" --file "$CAPACITY_REPORT_PATH" --require-cloud-gate --release-id "$RELEASE_ID" --profile "$profile"
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 [ -n "$model_relay_url" ] || { echo "model_relay_base_url is required for relay evidence binding" >&2; exit 1; }
 npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url"
-npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-digest "$IMAGE_DIGEST"
-npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-digest "$IMAGE_DIGEST"
+trust_dir=${PRODUCTION_EVIDENCE_TRUST_DIR:-}
+sh "$(dirname "$0")/validate-production-evidence-trust.sh" "$repo_root" "$trust_dir"
+trust_dir=$(CDPATH= cd -- "$trust_dir" && pwd -P)
+trust_root="$trust_dir/production-evidence-public.pem"
+trust_key_id_path="$trust_dir/production-evidence-key-id"
+trusted_key_id=$(sed -n '1p' "$trust_key_id_path")
+: "${PRODUCTION_EVIDENCE_ARTIFACT_ROOT:?PRODUCTION_EVIDENCE_ARTIFACT_ROOT is required}"
+: "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
+[ -d "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" ] || { echo "production evidence artifact root not found: $PRODUCTION_EVIDENCE_ARTIFACT_ROOT" >&2; exit 1; }
+printf '%s\n' "$DEPLOYMENT_NONCE" | grep -Eq '^[A-Za-z0-9_-]{22,128}$' || { echo "DEPLOYMENT_NONCE must contain 22-128 URL-safe random characters" >&2; exit 1; }
+npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-digest "$IMAGE_DIGEST" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
+npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-digest "$IMAGE_DIGEST" --manifest-sha256 "$manifest_sha256" --release-git-sha "$release_git_sha" --deployment-nonce "$DEPLOYMENT_NONCE" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --public-key "$trust_root" --key-id "$trusted_key_id"
 echo "deploy preflight passed: release_id=$RELEASE_ID image_digest=$IMAGE_DIGEST profile=$profile secret_provider=$SECRET_PROVIDER capability_evidence=$CAPABILITY_EVIDENCE_PATH capacity_report=$CAPACITY_REPORT_PATH model_relay_evidence=$MODEL_RELAY_EVIDENCE_PATH payment_evidence=$PAYMENT_EVIDENCE_PATH restore_evidence=$RESTORE_EVIDENCE_PATH"

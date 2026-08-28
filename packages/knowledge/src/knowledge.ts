@@ -488,8 +488,14 @@ export class KnowledgeModule {
 
   listRules(query: RuleQuery = {}): RuleEntry[] { return this.queryRules(query) }
 
-  findApplicableRules(context: RuleContext, asOf: string): RuleEntry[] {
-    return this.queryRules({ asOf }).filter(rule => matchesContext(rule, context)).sort((left, right) => scopeRank[right.scope] - scopeRank[left.scope]).map(clone)
+  findApplicableRules(context: RuleContext, asOf: string, workspaceId?: string): RuleEntry[] {
+    const scope = workspaceId?.trim()
+    if (workspaceId !== undefined && !scope) throw new KnowledgeError('WORKSPACE_REQUIRED')
+    return this.queryRules({ asOf })
+      .filter(rule => !scope || rule.workspaceId === undefined || rule.workspaceId === scope)
+      .filter(rule => matchesContext(rule, context))
+      .sort((left, right) => scopeRank[right.scope] - scopeRank[left.scope])
+      .map(clone)
   }
 
   createAsset(input: AssetCreateInput): AssetEntry {

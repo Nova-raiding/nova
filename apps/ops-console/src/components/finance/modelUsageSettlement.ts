@@ -1,4 +1,5 @@
 import type {
+  ModelUsageSettlementDecision,
   ModelUsageSettlementRecord,
   ModelUsageSettlementStatus,
 } from "../../types/ops.js";
@@ -20,7 +21,7 @@ export const settlementPresentation: Record<
   manual_attention: {
     label: "需要人工处理",
     color: "red",
-    nextAction: "核对成本、扣款和审计证据后，由有权限的运营人员重试或豁免。",
+    nextAction: "核对成本、扣款和审计证据后，仅执行服务端允许的人工动作。",
   },
   settled: {
     label: "已结算",
@@ -60,9 +61,11 @@ export function summarizeModelUsageSettlements(
   return counts;
 }
 
-export function settlementActions(status: ModelUsageSettlementStatus) {
+export function settlementActions(record: ModelUsageSettlementRecord) {
+  const allowed = new Set<ModelUsageSettlementDecision>(record.allowed_decisions ?? []);
   return {
-    retry: status === "pending_cost" || status === "pending_wallet",
-    waive: status === "manual_attention",
+    retry: allowed.has("retry"),
+    waive: allowed.has("waive"),
+    manualAttention: allowed.has("manual_attention"),
   };
 }

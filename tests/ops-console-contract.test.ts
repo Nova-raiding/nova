@@ -63,10 +63,10 @@ describe("Ops console marketing governance contract", () => {
   it("keeps each operations domain failure-isolated", () => {
     expect(app).toContain("optional('workspace.commercial.get')");
     expect(app).toContain("optional('workspace.health')");
-    expect(app).toContain("optional('ops.marketing.queue', { limit: '50',");
-    expect(app).toContain(
-      "optional('ops.alerts.list', { status: 'open', limit: '100',",
-    );
+    expect(app).toContain("optional('ops.marketing.queue', marketingQueueParams(activeQueueFilters))");
+    expect(app).toContain("optional('ops.alerts.list', alertListParams(activeAlertFilters))");
+    expect(app).toContain('export function marketingQueueParams(filters: QueueFilters)');
+    expect(app).toContain('export function alertListParams(filters: AlertFilters)');
     expect(app).toContain("平台告警筛选");
     expect(app).toContain("alertFilters.entityId");
     expect(app).toContain("rpc('ops.marketing.generation.retry'");
@@ -124,8 +124,9 @@ describe("Ops console marketing governance contract", () => {
     expect(app).toContain("tasks: lazy(() => import('../pages/TasksPage.js')");
     expect(app).toContain("stores: lazy(() => import('../pages/StoresPage.js')");
     expect(app).toContain("finance: lazy(() => import('../pages/FinancePage.js')");
+    expect(app).toContain("models: lazy(() => import('../pages/ModelsPage.js')");
     expect(app).toContain("users: lazy(async () => ({ default: UsersPage }))");
-    expect(app).toContain("['overview', 'users', 'tasks', 'stores', 'finance']");
+    expect(app).toContain("const opsDomains = [ 'overview', 'users', 'tasks', 'stores', 'models', 'finance', ] as const");
     expect(app).toContain("activeDomain === 'finance'");
     expect(app).toContain("`${basePath}/ops/${domain}${location.search}`");
     expect(app).toContain(

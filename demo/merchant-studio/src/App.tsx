@@ -31,9 +31,12 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { answerTask, approveContent, authorizePlatform, completeFixtureAuthorization, confirmAssetFacts, confirmPublish, confirmTaskPlan, createRechargeOrder, createTask, createTaskGroup, decideReviewFinding, describeApiError, diffContentVersions, extractBrandProfile, fetchApiHealth, fetchAssetBlob, fetchAssets, fetchBillingStatus, fetchBrandProfile, fetchCatalogCategories, fetchContentVersions, fetchPlatformAccounts, fetchPlatformCapabilities, fetchProducts, fetchPublishJobs, fetchRulePacks, fetchRechargeOrder, fetchSyncJobs, fetchTask, fetchTaskFeedback, fetchTaskTimeline, fetchTasks, fetchWorkspaceMetrics, generateContent, importProduct, isNotConfigured, modifyContentVersion, parseAsset, preparePublish, reviewContent, reviewProductImages, retrySyncFailures, revokePlatform, saveAssetPreference, saveBrandProfile, selectDirection, submitTaskFeedback, syncPlatform, understandTask, updateAssetRights, uploadAsset, type AssetMetadata, type BrandCandidateFieldKey, type BrandExtraction, type BrandProfile, type BrandVisualRules, type BillingStatus, type CatalogCategory, type FeedbackRating, type Product as ApiProduct, type ContentVersion, type PlatformAccount, type PlatformCapability, type PlatformId, type PublishJob, type PublishPreview, type RechargeOrder, type ReviewCategory, type ReviewFinding, type RulePack, type SyncJob, type Task, type TaskFeedback, type TaskQuestion, type TaskTimelineEvent, type TaskUnderstanding, type WorkspaceMetrics } from './api'
+import { answerTask, approveContent, authorizePlatform, completeFixtureAuthorization, confirmAssetFacts, confirmPublish, confirmTaskPlan, createRechargeOrder, createTask, createTaskGroup, decideReviewFinding, describeApiError, diffContentVersions, extractBrandProfile, fetchApiHealth, fetchAssetBlob, fetchAssets, fetchBillingStatus, fetchBrandProfile, fetchCatalogCategories, fetchContentVersions, fetchPlatformAccounts, fetchPlatformCapabilities, fetchProducts, fetchPublishJobs, fetchRulePacks, fetchRechargeOrder, fetchSyncJobs, fetchTask, fetchTaskFeedback, fetchTaskTimeline, fetchTasks, fetchWorkspaceMetrics, generateContent, importProduct, isNotConfigured, modifyContentVersion, parseAsset, preparePublish, requestApi, reviewContent, reviewProductImages, retrySyncFailures, revokePlatform, saveAssetPreference, saveBrandProfile, selectDirection, submitTaskFeedback, syncPlatform, understandTask, updateAssetRights, uploadAsset, type AssetMetadata, type BrandCandidateFieldKey, type BrandExtraction, type BrandProfile, type BrandVisualRules, type BillingStatus, type CatalogCategory, type FeedbackRating, type Product as ApiProduct, type ContentVersion, type PlatformAccount, type PlatformCapability, type PlatformId, type PublishJob, type PublishPreview, type RechargeOrder, type ReviewCategory, type ReviewFinding, type RulePack, type SyncJob, type Task, type TaskFeedback, type TaskQuestion, type TaskTimelineEvent, type TaskUnderstanding, type WorkspaceMetrics } from './api'
 import { resolveStoreSyncTargets } from './store-sync'
 import { storeIdentityLabel, validateProductStoreIdentity, validateTargetStoreIdentity, validateTaskStoreIdentity } from './store-identity'
+import { resolveLibraryData } from './library-data'
+import { resolveTaskDirections, resolveTaskWorkflow, type TaskDirectionEvidence } from './task-evidence'
+import { createPublishSubmission, validatePublishPreview, validatePublishReceipt } from './publish-safety'
 
 type Page = 'overview' | 'products' | 'task' | 'publish' | 'rules'
 type Platform = '京东' | '淘宝' | '天猫' | '拼多多' | '小红书' | '抖音'
@@ -179,14 +182,31 @@ function Sidebar({ page, setPage, open, close, onOpenUtility }: { page: Page; se
   )
 }
 
-function UtilityPanel({ panel, apiOnline, apiBaseUrl, onClose }: { panel: UtilityPanel; apiOnline: boolean | null; apiBaseUrl?: string; onClose: () => void }) {
+function UtilityPanel({ panel, apiOnline, apiBaseUrl, onClose, returnFocus }: { panel: UtilityPanel; apiOnline: boolean | null; apiBaseUrl?: string; onClose: () => void; returnFocus: HTMLElement | null }) {
+  const modalRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
   const content = panel === 'help'
     ? { icon: CircleHelp, kicker: 'HELP & DIAGNOSTICS', title: '如何使用 Merchant Studio', body: '先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。', items: ['商品与资产：绑定平台店铺、同步商品和管理素材', '营销任务：确认事实、生成文案、查看规则和版本记录', '发布中心：只展示已审核任务，并在提交前再次确认'] }
     : panel === 'settings'
       ? { icon: Settings, kicker: 'WORKSPACE SETTINGS', title: '工作区设置', body: '当前页面展示本地工作区的连接信息；真实凭证、模型中转站和生产权限由服务端配置管理。', items: [`工作区：${import.meta.env.VITE_WORKSPACE_ID ?? 'ws_demo'}`, `API 地址：${apiBaseUrl ?? '未配置（离线演示）'}`, '数据范围：当前工作区隔离；不会跨店铺复用商品事实'] }
       : { icon: Gauge, kicker: 'SYSTEM HEALTH', title: '系统健康', body: apiOnline === true ? '已成功读取 API 健康检查。下面的状态只代表当前页面到 API 的连通性。' : apiOnline === false ? '当前页面无法读取 API。商品同步、生成和发布不会在离线状态下伪造成功。' : '尚未执行 API 健康检查。', items: [`API 连通：${apiOnline === true ? '正常' : apiOnline === false ? '失败' : '未读取'}`, `API 地址：${apiBaseUrl ?? '未配置'}`, '外部平台、模型和支付 provider 仍需在部署环境单独验收'] }
   const Icon = content.icon
-  return <div className="modal-layer" role="presentation"><div className="modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="utility-panel-title"><div className="modal-head"><div className="modal-icon"><Icon size={20} /></div><div><span className="section-kicker">{content.kicker}</span><h2 id="utility-panel-title">{content.title}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭面板"><X size={19} /></button></div><div className="modal-body"><p className="utility-body">{content.body}</p><div className="utility-list">{content.items.map(item => <div key={item}><CheckCircle2 size={15} /><span>{item}</span></div>)}</div></div><div className="modal-actions"><button className="primary" onClick={onClose}>知道了</button></div></div></div>
+  useEffect(() => {
+    closeRef.current?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(modalRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => { window.removeEventListener('keydown', handleKeyDown); returnFocus?.focus() }
+  }, [onClose, returnFocus])
+  return <div className="modal-layer" role="presentation"><div className="modal utility-modal" ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="utility-panel-title"><div className="modal-head"><div className="modal-icon"><Icon size={20} /></div><div><span className="section-kicker">{content.kicker}</span><h2 id="utility-panel-title">{content.title}</h2></div><button className="icon-button" ref={closeRef} onClick={onClose} aria-label="关闭面板"><X size={19} /></button></div><div className="modal-body"><p className="utility-body">{content.body}</p><div className="utility-list">{content.items.map(item => <div key={item}><CheckCircle2 size={15} /><span>{item}</span></div>)}</div></div><div className="modal-actions"><button className="primary" onClick={onClose}>知道了</button></div></div></div>
 }
 
 function MetricCard({ icon: Icon, label, value, detail, tone }: { icon: typeof Gauge; label: string; value: string; detail: string; tone: string }) {
@@ -656,6 +676,7 @@ function Products({ baseUrl, initialQuery = '', onSelectTarget }: { baseUrl?: st
     needsReview: rows.filter(product => product.issue > 0).length,
     syncIssues: rows.filter(product => product.status === '同步已过期').length,
   }), [rows])
+  const productListUnavailable = Boolean(baseUrl && !loading && remoteProducts === null)
   const sync = async () => {
     if (!baseUrl) return
     const resolution = resolveStoreSyncTargets(accounts)
@@ -664,7 +685,7 @@ function Products({ baseUrl, initialQuery = '', onSelectTarget }: { baseUrl?: st
     try {
       const results = await Promise.allSettled(resolution.targets.map(target => syncPlatform(baseUrl, target.platform, target.accountId)))
       const failures = results.flatMap((result, index) => result.status === 'rejected' ? [`${platformNames[resolution.targets[index].platform]} · ${resolution.targets[index].label}：${describeApiError(result.reason)}`] : [])
-      try { setRemoteProducts(await fetchProducts(baseUrl)) } catch (cause) { failures.push(`商品列表刷新失败：${describeApiError(cause)}`) }
+      try { setRemoteProducts(await fetchProducts(baseUrl)) } catch (cause) { setRemoteProducts(null); setSelectedTargets([]); failures.push(`商品列表刷新失败：${describeApiError(cause)}`) }
       if (failures.length) setError(`部分店铺同步失败；未自动改选其他店铺。${failures.join('；')}`)
     } finally { setSyncing(false) }
   }
@@ -710,7 +731,7 @@ function Products({ baseUrl, initialQuery = '', onSelectTarget }: { baseUrl?: st
     <section className="panel table-panel">
       <div className="table-toolbar"><label className="inline-search"><Search size={16} /><span className="sr-only">搜索商品</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索商品或平台" /></label><div className="filter-group"><button className={'filter ' + (productFilter === 'all' ? 'active' : '')} onClick={() => setProductFilter('all')}>全部 {productStats.total}</button><button className={'filter ' + (productFilter === 'needsReview' ? 'active' : '')} onClick={() => setProductFilter('needsReview')}>待确认 {productStats.needsReview}</button><button className={'filter ' + (productFilter === 'syncIssues' ? 'active' : '')} onClick={() => setProductFilter('syncIssues')}>同步异常 {productStats.syncIssues}</button></div></div>
       {selectedTargets.length > 0 && <div data-testid="task-group-selection" className="task-group-selection"><div><b>多平台任务组选择</b><small>每个平台只能选择一个商品；重新勾选同平台商品会替换原选择。</small></div>{selectedTargets.map(item => <span key={item.platform}><StatusChip tone="green">{platformNames[item.platform]}</StatusChip>{item.title} · {item.storeName}</span>)}</div>}
-      <div className="table-wrap">{loading ? <LoadingState label="正在读取商品事实…" /> : error && baseUrl ? <div className="empty-state" data-testid="products-unavailable"><AlertCircle size={22} /><b>商品列表暂不可用</b><span>当前未展示任何演示商品。请先重试并读取真实商品。</span></div> : visible.length ? <table><thead><tr><th>任务组</th><th>商品</th><th>平台</th><th>店铺</th><th>事实来源</th><th>可售库存</th><th>状态</th><th><span className="sr-only">操作</span></th></tr></thead><tbody>{visible.map(product => { const target = { productId: product.id, platform: product.platformId, title: product.title, remoteId: product.remoteId, accountId: product.accountId, storeName: product.storeName }; const identityError = validateTargetStoreIdentity(target); return <tr key={product.id}><td><input type="checkbox" aria-label={`选择${product.name}（${product.storeName}）加入任务组`} checked={selectedTargets.some(item => item.productId === product.id)} onChange={() => toggleTarget(target)} disabled={!baseUrl || Boolean(error) || Boolean(identityError)} /></td><td><div className="product-cell"><div className="product-thumb"><ShoppingBag size={20} /></div><div><b>{product.name}</b><span>{product.sku}</span></div></div></td><td>{product.platform}</td><td><div className="store-identity"><b>{product.storeName}</b><span>{product.accountId ? `账号 ${product.accountId}` : '缺少账号 ID'}</span></div></td><td><StatusChip tone="neutral"><Link2 size={12} />{product.source}</StatusChip></td><td>{product.stock.toLocaleString()}</td><td><StatusChip tone={identityError ? 'amber' : product.issue ? 'amber' : 'green'}>{identityError || (product.issue ? <><AlertCircle size={12} />{product.status}</> : <><Check size={12} />{product.status}</>)}</StatusChip></td><td><button className="text-button" onClick={() => checkImages(product.id)} disabled={!baseUrl || Boolean(error)}>主图检查</button><button className="text-button" onClick={() => onSelectTarget(target)} disabled={!baseUrl || Boolean(error) || Boolean(identityError)} title={identityError ?? (!baseUrl ? '配置 API 后可创建真实任务' : undefined)}>创建任务 <ArrowRight size={14} /></button></td></tr>})}</tbody></table> : <div className="empty-state"><PackageSearch size={22} /><b>没有匹配商品</b><span>调整搜索条件，或重新同步平台商品。</span></div>}</div>
+      <div className="table-wrap">{loading ? <LoadingState label="正在读取商品事实…" /> : productListUnavailable ? <div className="empty-state" data-testid="products-unavailable"><AlertCircle size={22} /><b>商品列表暂不可用</b><span>当前未展示任何演示商品。请先重试并读取真实商品。</span></div> : visible.length ? <table><thead><tr><th>任务组</th><th>商品</th><th>平台</th><th>店铺</th><th>事实来源</th><th>可售库存</th><th>状态</th><th><span className="sr-only">操作</span></th></tr></thead><tbody>{visible.map(product => { const target = { productId: product.id, platform: product.platformId, title: product.title, remoteId: product.remoteId, accountId: product.accountId, storeName: product.storeName }; const identityError = validateTargetStoreIdentity(target); return <tr key={product.id}><td><input type="checkbox" aria-label={`选择${product.name}（${product.storeName}）加入任务组`} checked={selectedTargets.some(item => item.productId === product.id)} onChange={() => toggleTarget(target)} disabled={!baseUrl || productListUnavailable || Boolean(identityError)} /></td><td><div className="product-cell"><div className="product-thumb"><ShoppingBag size={20} /></div><div><b>{product.name}</b><span>{product.sku}</span></div></div></td><td>{product.platform}</td><td><div className="store-identity"><b>{product.storeName}</b><span>{product.accountId ? `账号 ${product.accountId}` : '缺少账号 ID'}</span></div></td><td><StatusChip tone="neutral"><Link2 size={12} />{product.source}</StatusChip></td><td>{product.stock.toLocaleString()}</td><td><StatusChip tone={identityError ? 'amber' : product.issue ? 'amber' : 'green'}>{identityError || (product.issue ? <><AlertCircle size={12} />{product.status}</> : <><Check size={12} />{product.status}</>)}</StatusChip></td><td><button className="text-button" onClick={() => checkImages(product.id)} disabled={!baseUrl || productListUnavailable}>主图检查</button><button className="text-button" onClick={() => onSelectTarget(target)} disabled={!baseUrl || productListUnavailable || Boolean(identityError)} title={identityError ?? (!baseUrl ? '配置 API 后可创建真实任务' : undefined)}>创建任务 <ArrowRight size={14} /></button></td></tr>})}</tbody></table> : <div className="empty-state"><PackageSearch size={22} /><b>没有匹配商品</b><span>调整搜索条件，或重新同步平台商品。</span></div>}</div>
       <div className="table-footer"><span>显示 {visible.length} / {productStats.total} 个商品</span><div><button disabled>上一页</button><button disabled>下一页</button></div></div>
     </section>
   </div>
@@ -718,7 +739,7 @@ function Products({ baseUrl, initialQuery = '', onSelectTarget }: { baseUrl?: st
 
 type TaskContext = { task: Task; version: ContentVersion }
 
-function ProductDetailPreview({ content, title, product }: { content: ContentVersion | null; title: string; product: ApiProduct | null }) {
+function ProductDetailPreview({ content, title, product, demoMode }: { content: ContentVersion | null; title: string; product: ApiProduct | null; demoMode: boolean }) {
   const [imageIndex, setImageIndex] = useState(0)
   const [moduleFilter, setModuleFilter] = useState<'all' | 'fact' | 'creative' | 'pending'>('all')
   const images = product?.images?.filter(Boolean) ?? []
@@ -735,14 +756,16 @@ function ProductDetailPreview({ content, title, product }: { content: ContentVer
     <div className="preview-heading"><div><span className="section-kicker">STOREFRONT PREVIEW</span><h3>商品详情页预览</h3></div><StatusChip tone="blue">草稿 · 未发布</StatusChip></div>
     <div className="storefront-card">
       <div className="storefront-gallery"><div className="gallery-main">{images[imageIndex] ? <img src={images[imageIndex]} alt={`${title}商品主图`} /> : <div className="gallery-empty"><ShoppingBag size={36}/><span>尚未绑定商品图片</span></div>}</div>{images.length > 1 && <div className="gallery-thumbs">{images.slice(0, 5).map((image, index) => <button key={`${index}-${image.slice(0, 24)}`} className={imageIndex === index ? 'active' : ''} onClick={() => setImageIndex(index)} aria-label={`查看商品图 ${index + 1}`}><img src={image} alt={`商品图 ${index + 1} 缩略图`} /></button>)}</div>}</div>
-      <div className="storefront-info"><div className="storefront-tags"><span>{platformNames[product?.platform ?? ''] ?? '待选平台'} · {product?.category ?? '品类待确认'}</span><span>{product?.factsConfirmed ? '事实已确认' : '事实待确认'}</span></div><h4>{content?.body.title ?? title}</h4><p className="storefront-subtitle">{content?.body.detail ?? '内容尚未生成；当前只展示已保存的商品事实。'}</p><div className="storefront-price">{typeof product?.price === 'number' && product.price > 0 ? <><span>¥</span><strong>{product.price.toLocaleString()}</strong><em>起</em><small>来自商品事实</small></> : <strong className="price-pending">价格待确认</strong>}</div>{colors.length > 0 && <div className="storefront-spec"><b>颜色</b><div>{colors.map((color, index) => <button key={color} className={index === 0 ? 'selected' : ''}>{color}</button>)}</div></div>}{sizes.length > 0 && <div className="storefront-spec"><b>尺码</b><div>{sizes.map((size, index) => <button key={size} className={index === 0 ? 'selected' : ''}>{size}</button>)}</div></div>}<div className="storefront-benefits"><span>库存 {product?.stock?.toLocaleString() ?? '待确认'}</span><span>{product?.skuCount ?? 0} 个 SKU</span><span>发布前需人工审核</span></div></div>
+      <div className="storefront-info"><div className="storefront-tags"><span>{platformNames[product?.platform ?? ''] ?? '待选平台'} · {product?.category ?? '品类待确认'}</span><span>{product?.factsConfirmed ? '事实已确认' : '事实待确认'}</span></div><h4>{content?.body.title ?? title}</h4><p className="storefront-subtitle">{content?.body.detail ?? '内容尚未生成；当前只展示已保存的商品事实。'}</p>{!product?.factsConfirmed && <p className="fact-safety-note">标记为“待确认”的材质、性能和功效不得写成确定性卖点</p>}<div className="storefront-price">{typeof product?.price === 'number' && product.price > 0 ? <><span>¥</span><strong>{product.price.toLocaleString()}</strong><em>起</em><small>来自商品事实</small></> : <strong className="price-pending">价格待确认</strong>}</div>{colors.length > 0 && <div className="storefront-spec"><b>颜色</b><div>{colors.map((color, index) => <button key={color} className={index === 0 ? 'selected' : ''}>{color}</button>)}</div></div>}{sizes.length > 0 && <div className="storefront-spec"><b>尺码</b><div>{sizes.map((size, index) => <button key={size} className={index === 0 ? 'selected' : ''}>{size}</button>)}</div></div>}<div className="storefront-benefits"><span>库存 {product?.stock?.toLocaleString() ?? '待确认'}</span><span>{product?.skuCount ?? 0} 个 SKU</span><span>发布前需人工审核</span></div></div>
     </div>
-    <div className="detail-sections"><div className="detail-section-head"><span>商品卖点</span><small>{content ? '来自当前内容版本' : '生成后展示'}</small></div>{content ? <div className="selling-point-grid">{sellingPoints.slice(0, 3).map((point, index) => <article key={point}><b>0{index + 1}</b><span>{point}</span></article>)}</div> : <div className="empty-inline">尚未生成商品卖点</div>}<div className="detail-section-head"><span>规格参数</span><small>{product?.category ?? '品类待确认'}</small></div>{attributes.length ? <div className="spec-table">{attributes.map(([key, value]) => <span key={key}><b>{key}</b>{value}</span>)}</div> : <div className="empty-inline">尚未保存可展示参数</div>}{detailModules.length > 0 && <><div className="detail-section-head"><span>完整详情模块</span><small>{visibleModules.length} / {detailModules.length} 个可审阅模块</small></div><div className="module-filter" role="tablist" aria-label="详情模块类型筛选">{(Object.keys(moduleLabels) as Array<keyof typeof moduleLabels>).map(filter => <button key={filter} className={moduleFilter === filter ? 'active' : ''} onClick={() => setModuleFilter(filter)} role="tab" aria-selected={moduleFilter === filter}>{moduleLabels[filter]} <em>{filter === 'all' ? detailModules.length : detailModules.filter(module => moduleKind(module) === filter).length}</em></button>)}</div><div className="detail-module-grid">{visibleModules.map(module => { const kind = moduleKind(module); return <article className={kind === 'pending' ? 'pending' : kind === 'creative' ? 'creative' : ''} key={module.key}><div><b>{module.title}</b><span>{kind === 'pending' ? '待确认 · 待补资料' : kind === 'creative' ? '创意表达' : '已确认事实'}</span></div><p>{module.body}</p>{kind === 'pending' && module.pendingReason && <small>待确认原因：{module.pendingReason}</small>}{module.imageGuidance && <small>配图：{module.imageGuidance}</small>}</article>})}</div>{visibleModules.length === 0 && <div className="empty-inline">当前筛选没有对应模块</div>}</>}<div className="detail-section-head"><span>规则提示</span><small>发布前仍需人工确认</small></div><div className="detail-rule-note"><ShieldCheck size={15}/><span>仅使用上方已保存事实生成内容；标记为“待确认”的材质、性能和功效不得写成确定性卖点。</span></div></div>
+    <div className="detail-sections"><div className="detail-section-head"><span>商品卖点</span><small>{content ? '来自当前内容版本' : '生成后展示'}</small></div>{content ? <div className="selling-point-grid">{sellingPoints.slice(0, 3).map((point, index) => <article key={point}><b>0{index + 1}</b><span>{point}</span></article>)}</div> : <div className="empty-inline">尚未生成商品卖点</div>}<div className="detail-section-head"><span>规格参数</span><small>{product?.category ?? '品类待确认'}</small></div>{attributes.length ? <div className="spec-table">{attributes.map(([key, value]) => <span key={key}><b>{key}</b>{value}</span>)}</div> : <div className="empty-inline">尚未保存可展示参数</div>}{detailModules.length > 0 && <><div className="detail-section-head"><span>完整详情模块</span><small>{visibleModules.length} / {detailModules.length} 个可审阅模块</small></div><div className="module-filter" role="tablist" aria-label="详情模块类型筛选">{(Object.keys(moduleLabels) as Array<keyof typeof moduleLabels>).map(filter => <button key={filter} className={moduleFilter === filter ? 'active' : ''} onClick={() => setModuleFilter(filter)} role="tab" aria-selected={moduleFilter === filter}>{moduleLabels[filter]} <em>{filter === 'all' ? detailModules.length : detailModules.filter(module => moduleKind(module) === filter).length}</em></button>)}</div><div className="detail-module-grid">{visibleModules.map(module => { const kind = moduleKind(module); return <article className={kind === 'pending' ? 'pending' : kind === 'creative' ? 'creative' : ''} key={module.key}><div><b>{module.title}</b><span>{kind === 'pending' ? '待确认 · 待补资料' : kind === 'creative' ? '创意表达' : '已确认事实'}</span></div><p>{module.body}</p>{kind === 'pending' && module.pendingReason && <small>待确认原因：{module.pendingReason}</small>}{module.imageGuidance && <small>配图：{module.imageGuidance}</small>}</article>})}</div>{visibleModules.length === 0 && <div className="empty-inline">当前筛选没有对应模块</div>}</>}<div className="detail-section-head"><span>规则提示</span><small>发布前仍需人工确认</small></div><div className="detail-rule-note"><ShieldCheck size={15}/><span>{demoMode ? '离线演示规则：待确认事实不得写成确定性卖点；不可用于真实发布。' : content?.ruleVersionIds.length ? `服务端内容版本规则：${content.ruleVersionIds.join('、')}` : '服务端当前内容版本尚未返回规则版本。'}</span></div></div>
   </section>
 }
 
 function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget, onBack }: { openPublish: () => void; baseUrl?: string; target?: Target; onContext: (context: TaskContext | null) => void; onSelectTarget: (target: Target) => void; onBack: () => void }) {
   const taskListRequestId = useRef(0)
+  const taskProductsRequestId = useRef(0)
+  const taskDirectionsRequestId = useRef(0)
   const [direction, setDirection] = useState(0)
   const [version, setVersion] = useState<'v4' | 'diff'>('v4')
   const [approved, setApproved] = useState(false)
@@ -753,10 +776,19 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
   const [findings, setFindings] = useState<ReviewFinding[]>([])
   const [reviewCategories, setReviewCategories] = useState<ReviewCategory[]>([])
   const [feedback, setFeedback] = useState<TaskFeedback[]>([])
+  const [feedbackError, setFeedbackError] = useState('')
   const [feedbackReason, setFeedbackReason] = useState('')
   const [feedbackRating, setFeedbackRating] = useState<FeedbackRating | null>(null)
   const [timeline, setTimeline] = useState<TaskTimelineEvent[]>([])
+  const [timelineError, setTimelineError] = useState('')
   const [timelineOpen, setTimelineOpen] = useState(false)
+  const [findingDecision, setFindingDecision] = useState<ReviewFinding | null>(null)
+  const [findingDecisionReason, setFindingDecisionReason] = useState('')
+  const [findingDecisionError, setFindingDecisionError] = useState('')
+  const [findingDecisionSubmitting, setFindingDecisionSubmitting] = useState(false)
+  const timelineTriggerRef = useRef<HTMLButtonElement>(null)
+  const timelineModalRef = useRef<HTMLDivElement>(null)
+  const timelineCloseRef = useRef<HTMLButtonElement>(null)
   const [contextCollapsed, setContextCollapsed] = useState(false)
   const [diffChanges, setDiffChanges] = useState<Array<{ path: string; before: unknown; after: unknown }>>([])
   const [requestText, setRequestText] = useState('')
@@ -768,20 +800,24 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
   const [product, setProduct] = useState<ApiProduct | null>(null)
   const [taskListError, setTaskListError] = useState('')
   const [taskListLoading, setTaskListLoading] = useState(Boolean(baseUrl))
+  const [taskProductsError, setTaskProductsError] = useState('')
+  const [taskProductsLoading, setTaskProductsLoading] = useState(Boolean(baseUrl))
+  const [remoteDirections, setRemoteDirections] = useState<TaskDirectionEvidence[] | null>(null)
+  const [directionsError, setDirectionsError] = useState('')
+  const [directionsReloadKey, setDirectionsReloadKey] = useState(0)
   const [loading, setLoading] = useState(Boolean(baseUrl))
   const [operation, setOperation] = useState('')
   const [error, setError] = useState('')
   const targetProductId = target?.productId
   const targetPlatform = target?.platform ?? 'taobao'
   const targetTitle = target?.title ?? '轻云防晒外套 2026'
-  const directions = [
-    { id: 'A', title: '展示真实外观', tag: '商品呈现', desc: `突出${product?.attributes?.外观 ?? '已保存商品外观'}和${product?.attributes?.颜色 ?? '已确认配色'}，不扩展未确认性能。`, evidence: '外观事实' },
-    { id: 'B', title: '规格信息清晰', tag: '规格说明', desc: `清晰呈现 ${product?.skuCount ?? 0} 个 SKU、价格和库存，方便商家逐项核对。`, evidence: 'SKU 事实' },
-    { id: 'C', title: '守住事实边界', tag: '合规表达', desc: '对材质、性能和功效等待确认项保持克制，避免生成误导性卖点。', evidence: '风险最低' },
-  ]
+  const directionsData = resolveTaskDirections({ baseUrl, remote: remoteDirections, error: directionsError })
+  const directions = directionsData.items
+  const workflowSteps = resolveTaskWorkflow(task?.state, !baseUrl)
   const blockingFindings = findings.filter(item => item.severity === 'error').length
   const warningFindings = findings.filter(item => item.severity === 'warning').length
   const reviewScore = !content ? '—' : blockingFindings ? '—' : '100'
+  const taskRuleVersionIds = content?.ruleVersionIds ?? []
   const generateDraft = (created: Task) => {
     if (!baseUrl) return Promise.reject(new Error('API 未配置'))
     if (!['direction_selected', 'plan_confirmed'].includes(created.state)) return Promise.reject(new Error('请先选择创意方向并确认制作方案'))
@@ -794,7 +830,7 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
       return
     }
     let cancelled = false
-    setLoading(true); setError(''); setOperation(target.taskId ? '恢复原任务…' : '创建任务…'); setTask(null); setProduct(null); setApproved(false); setContent(null); setContentVersions([]); setFindings([]); setReviewCategories([]); setReviewTab('findings'); onContext(null)
+    setLoading(true); setError(''); setOperation(target.taskId ? '恢复原任务…' : '创建任务…'); setTask(null); setProduct(null); setRemoteDirections(null); setDirectionsError(''); setApproved(false); setContent(null); setContentVersions([]); setFindings([]); setReviewCategories([]); setReviewTab('findings'); setFeedback([]); setFeedbackError(''); setTimeline([]); setTimelineError(''); onContext(null)
     const restore = async () => {
       const targetIdentityError = validateTargetStoreIdentity(target)
       if (targetIdentityError) throw new Error(targetIdentityError)
@@ -819,9 +855,15 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
         setDirection(Math.max(0, directions.findIndex(item => item.id === current.selectedDirectionId)))
         if (current.missingQuestions?.length) setUnderstanding({ requestText: current.requestText ?? '', platformCandidates: [current.platform], productCandidates: [], extracted: {}, questions: current.missingQuestions, executionPlan: { mode: 'single_task', canCreate: true, reason: '当前任务已绑定单一平台商品', childTasks: [{ platform: current.platform, candidateProductIds: [current.productId], bindingState: 'ready' }] } })
         if (!target.taskId) return null
-        const [versions, nextFeedback, nextTimeline] = await Promise.all([fetchContentVersions(baseUrl, current.id), fetchTaskFeedback(baseUrl, current.id).catch(() => []), fetchTaskTimeline(baseUrl, current.id).catch(() => [])])
+        const [versions, feedbackResult, timelineResult] = await Promise.all([
+          fetchContentVersions(baseUrl, current.id),
+          fetchTaskFeedback(baseUrl, current.id).then(value => ({ ok: true as const, value })).catch(cause => ({ ok: false as const, error: describeApiError(cause) })),
+          fetchTaskTimeline(baseUrl, current.id).then(value => ({ ok: true as const, value })).catch(cause => ({ ok: false as const, error: describeApiError(cause) })),
+        ])
         if (cancelled) return null
-        setFeedback(nextFeedback); setTimeline(nextTimeline); setContentVersions(versions.slice().sort((left, right) => right.version - left.version))
+        if (feedbackResult.ok) { setFeedback(feedbackResult.value); setFeedbackError('') } else setFeedbackError(feedbackResult.error)
+        if (timelineResult.ok) { setTimeline(timelineResult.value); setTimelineError('') } else setTimelineError(timelineResult.error)
+        setContentVersions(versions.slice().sort((left, right) => right.version - left.version))
         const restored = versions.slice().sort((left, right) => right.version - left.version)[0] ?? null
         if (!restored) return null
         setContent(restored); onContext({ task: current, version: restored })
@@ -832,16 +874,38 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
       .finally(() => { if (!cancelled) { setLoading(false); setOperation('') } })
     return () => { cancelled = true }
   }, [baseUrl, targetProductId, targetPlatform, target])
+  useEffect(() => {
+    const requestId = ++taskDirectionsRequestId.current
+    if (!baseUrl || !task) { setRemoteDirections(null); setDirectionsError(''); return }
+    setRemoteDirections(null); setDirectionsError('')
+    requestApi<TaskDirectionEvidence[]>(baseUrl, `/v1/tasks/${encodeURIComponent(task.id)}/directions`)
+      .then(next => { if (requestId === taskDirectionsRequestId.current) setRemoteDirections(next) })
+      .catch(cause => { if (requestId === taskDirectionsRequestId.current) setDirectionsError(describeApiError(cause)) })
+  }, [baseUrl, task?.id, task?.version, directionsReloadKey])
+  useEffect(() => {
+    if (!task?.selectedDirectionId || !directions.length) return
+    const selectedIndex = directions.findIndex(item => item.id === task.selectedDirectionId)
+    if (selectedIndex >= 0) setDirection(selectedIndex)
+  }, [task?.selectedDirectionId, directions])
   const loadTaskList = () => {
     const requestId = ++taskListRequestId.current
     if (!baseUrl || target) { setTaskListLoading(false); return }
     setTaskListLoading(true); setTaskListError(''); setTaskList(null)
-    Promise.all([fetchTasks(baseUrl), fetchProducts(baseUrl)])
-      .then(([tasks, products]) => { if (requestId === taskListRequestId.current) { setTaskList(tasks.slice().sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))); setTaskProducts(products); setTaskPage(0) } })
+    fetchTasks(baseUrl)
+      .then(tasks => { if (requestId === taskListRequestId.current) { setTaskList(tasks.slice().sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))); setTaskPage(0) } })
       .catch(cause => { if (requestId === taskListRequestId.current) setTaskListError(describeApiError(cause)) })
       .finally(() => { if (requestId === taskListRequestId.current) setTaskListLoading(false) })
   }
-  useEffect(() => { loadTaskList() }, [baseUrl, target])
+  const loadTaskProducts = () => {
+    const requestId = ++taskProductsRequestId.current
+    if (!baseUrl || target) { setTaskProductsLoading(false); return }
+    setTaskProductsLoading(true); setTaskProductsError(''); setTaskProducts([])
+    fetchProducts(baseUrl)
+      .then(products => { if (requestId === taskProductsRequestId.current) setTaskProducts(products) })
+      .catch(cause => { if (requestId === taskProductsRequestId.current) setTaskProductsError(describeApiError(cause)) })
+      .finally(() => { if (requestId === taskProductsRequestId.current) setTaskProductsLoading(false) })
+  }
+  useEffect(() => { loadTaskList(); loadTaskProducts() }, [baseUrl, target])
   const chooseDirection = (index: number, id: string) => {
     setDirection(index)
     if (!baseUrl || !task) return
@@ -875,18 +939,42 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
     if (!baseUrl || !task) return
     setOperation('反馈提交中…'); setError('')
     submitTaskFeedback(baseUrl, task.id, { rating, ...(content?.id ? { content_version_id: content.id } : {}), ...(feedbackReason.trim() ? { reason: feedbackReason.trim() } : {}) })
-      .then(item => { setFeedback(current => [item, ...current]); fetchTaskTimeline(baseUrl, task.id).then(setTimeline).catch(() => undefined) })
+      .then(item => { setFeedback(current => [item, ...current]); setFeedbackError(''); fetchTaskTimeline(baseUrl, task.id).then(value => { setTimeline(value); setTimelineError('') }).catch(cause => setTimelineError(describeApiError(cause))) })
       .catch(cause => setError(describeApiError(cause)))
       .finally(() => setOperation(''))
   }
+  const reloadFeedback = () => {
+    if (!baseUrl || !task) return
+    fetchTaskFeedback(baseUrl, task.id).then(value => { setFeedback(value); setFeedbackError('') }).catch(cause => setFeedbackError(describeApiError(cause)))
+  }
+  const reloadTimeline = () => {
+    if (!baseUrl || !task) return
+    fetchTaskTimeline(baseUrl, task.id).then(value => { setTimeline(value); setTimelineError('') }).catch(cause => setTimelineError(describeApiError(cause)))
+  }
   const decideFinding = (finding: ReviewFinding, status: 'acknowledged' | 'waived') => {
     if (!baseUrl || !content || finding.priority === 'P0') return
-    const reason = status === 'waived' ? window.prompt('请说明接受该建议风险的原因；该原因会进入审核记录。', '')?.trim() : undefined
-    if (status === 'waived' && !reason) return
-    setOperation(status === 'waived' ? '保存接受理由中…' : '保存知悉状态中…'); setError('')
-    decideReviewFinding(baseUrl, content.id, { code: finding.code, field: finding.field, status, ...(reason ? { reason } : {}), expected_revision: content.revision })
+    if (status === 'waived') {
+      setFindingDecision(finding); setFindingDecisionReason(''); setFindingDecisionError('')
+      return
+    }
+    setOperation('保存知悉状态中…'); setError('')
+    decideReviewFinding(baseUrl, content.id, { code: finding.code, field: finding.field, status, expected_revision: content.revision })
       .then(result => { setContent(result.version); setFindings(result.report.findings); setReviewCategories(result.report.categories); if (task) onContext({ task, version: result.version }) })
       .catch(cause => setError(describeApiError(cause))).finally(() => setOperation(''))
+  }
+  const submitFindingWaiver = () => {
+    const reason = findingDecisionReason.trim()
+    if (!baseUrl || !content || !findingDecision || findingDecisionSubmitting) return
+    if (reason.length < 4) { setFindingDecisionError('请填写至少 4 个字符的具体风险接受原因。'); return }
+    setFindingDecisionSubmitting(true); setFindingDecisionError('')
+    decideReviewFinding(baseUrl, content.id, { code: findingDecision.code, field: findingDecision.field, status: 'waived', reason, expected_revision: content.revision })
+      .then(result => {
+        setContent(result.version); setFindings(result.report.findings); setReviewCategories(result.report.categories)
+        if (task) onContext({ task, version: result.version })
+        setFindingDecision(null); setFindingDecisionReason(''); setFindingDecisionError('')
+      })
+      .catch(cause => setFindingDecisionError(describeApiError(cause)))
+      .finally(() => setFindingDecisionSubmitting(false))
   }
   const understand = () => {
     if (!baseUrl || !requestText.trim()) return
@@ -922,31 +1010,48 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
   const taskPageSize = 12
   const taskPageCount = Math.max(1, Math.ceil((taskList?.length ?? 0) / taskPageSize))
   const visibleTasks = taskList?.slice(taskPage * taskPageSize, (taskPage + 1) * taskPageSize) ?? []
-  if (!target) return <div className="page-stack"><section className="page-intro"><div><span className="section-kicker">TASK QUEUE</span><h2>营销任务</h2><p>从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。</p></div><StatusChip tone="blue">{taskListLoading ? '读取中…' : taskListError ? '读取失败' : `${taskList?.length ?? 0} 个任务`}</StatusChip></section>{taskListLoading && <LoadingState label="正在读取营销任务…" />}{taskListError && !taskListLoading && <ErrorNotice message={taskListError} onRetry={loadTaskList} />}{!baseUrl && <div className="info-notice"><CircleHelp size={16} />配置 API 后可读取真实任务列表。</div>}{!taskListLoading && !taskListError && Boolean(taskList?.length) && <section className="panel task-list-panel">{visibleTasks.map(item => { const itemProduct = taskProducts.find(candidate => candidate.id === item.productId); const identityTarget = { accountId: item.accountId, storeName: itemProduct?.storeName }; const identityError = itemProduct ? validateProductStoreIdentity(identityTarget, itemProduct) ?? validateTaskStoreIdentity(identityTarget, item) : '商品及店铺信息尚未恢复，已阻止恢复任务。'; const label = item.missingQuestions?.length ? '待补充信息' : taskStateLabel(item.state); return <div className="task-list-row" key={item.id}><div><b>{itemProduct?.title ?? '商品信息待恢复'} · {platformNames[item.platform]} · {itemProduct?.storeName ?? '店铺待恢复'}</b><span>{item.accountId ? `账号 ${item.accountId} · ` : ''}{new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })} · 内容版本 v{item.version}</span></div><StatusChip tone={identityError || ['failed_recoverable', 'failed_terminal'].includes(item.state) || item.missingQuestions?.length ? 'amber' : ['approved', 'delivered'].includes(item.state) ? 'green' : 'blue'}>{identityError ? '店铺身份异常' : label}</StatusChip><button className="text-button" onClick={() => itemProduct && onSelectTarget({ productId: item.productId, platform: item.platform, title: itemProduct.title, accountId: item.accountId, storeName: itemProduct.storeName, taskId: item.id })} disabled={Boolean(identityError)} title={identityError ?? undefined}>恢复任务 <ArrowRight size={14} /></button></div>})}<div className="task-list-pagination"><span>第 {taskPage + 1} / {taskPageCount} 页</span><div><button onClick={() => setTaskPage(page => Math.max(0, page - 1))} disabled={taskPage === 0}>上一页</button><button onClick={() => setTaskPage(page => Math.min(taskPageCount - 1, page + 1))} disabled={taskPage >= taskPageCount - 1}>下一页</button></div></div></section>}{!taskListLoading && !taskListError && taskList !== null && taskList.length === 0 && <div className="empty-state"><Sparkles size={22} /><b>暂无营销任务</b><span>从商品与资产选择商品即可创建任务。</span></div>}</div>
+  useEffect(() => {
+    if (!timelineOpen) return
+    timelineCloseRef.current?.focus()
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTimelineOpen(false)
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(timelineModalRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => { window.removeEventListener('keydown', handleKeyDown); timelineTriggerRef.current?.focus() }
+  }, [timelineOpen])
+  if (!target) return <div className="page-stack"><section className="page-intro"><div><span className="section-kicker">TASK QUEUE</span><h2>营销任务</h2><p>从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。</p></div><StatusChip tone="blue">{taskListLoading ? '读取中…' : taskListError ? '读取失败' : `${taskList?.length ?? 0} 个任务`}</StatusChip></section>{taskListLoading && <LoadingState label="正在读取营销任务…" />}{taskListError && !taskListLoading && <ErrorNotice message={taskListError} onRetry={loadTaskList} />}{taskList !== null && taskProductsLoading && <div className="info-notice" role="status"><RefreshCw className="spin" size={16} />任务列表已读取，正在补充商品与店铺身份；恢复操作暂时不可用。</div>}{taskList !== null && taskProductsError && !taskProductsLoading && <ErrorNotice message={`商品与店铺身份读取失败：${taskProductsError}。任务列表仍可浏览，恢复操作已暂停。`} onRetry={loadTaskProducts} />}{!baseUrl && <div className="info-notice"><CircleHelp size={16} />配置 API 后可读取真实任务列表。</div>}{!taskListLoading && !taskListError && Boolean(taskList?.length) && <section className="panel task-list-panel">{visibleTasks.map(item => { const itemProduct = taskProducts.find(candidate => candidate.id === item.productId); const identityTarget = { accountId: item.accountId, storeName: itemProduct?.storeName }; const identityError = taskProductsLoading ? '商品与店铺身份正在读取，恢复任务暂不可用。' : taskProductsError ? '商品与店铺身份读取失败，恢复任务暂不可用。请先重试身份读取。' : itemProduct ? validateProductStoreIdentity(identityTarget, itemProduct) ?? validateTaskStoreIdentity(identityTarget, item) : '商品及店铺信息尚未恢复，已阻止恢复任务。'; const label = item.missingQuestions?.length ? '待补充信息' : taskStateLabel(item.state); return <div className="task-list-row" key={item.id}><div><b>{itemProduct?.title ?? `任务 ${item.id}`} · {platformNames[item.platform]} · {itemProduct?.storeName ?? '店铺身份待恢复'}</b><span>{item.accountId ? `账号 ${item.accountId} · ` : ''}{new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })} · 内容版本 v{item.version}</span></div><StatusChip tone={identityError || ['failed_recoverable', 'failed_terminal'].includes(item.state) || item.missingQuestions?.length ? 'amber' : ['approved', 'delivered'].includes(item.state) ? 'green' : 'blue'}>{taskProductsLoading ? '身份读取中' : taskProductsError ? '身份读取失败' : identityError ? '店铺身份异常' : label}</StatusChip><button className="text-button" onClick={() => itemProduct && onSelectTarget({ productId: item.productId, platform: item.platform, title: itemProduct.title, accountId: item.accountId, storeName: itemProduct.storeName, taskId: item.id })} disabled={Boolean(identityError)} title={identityError ?? undefined}>恢复任务 <ArrowRight size={14} /></button></div>})}<div className="task-list-pagination"><span>第 {taskPage + 1} / {taskPageCount} 页</span><div><button onClick={() => setTaskPage(page => Math.max(0, page - 1))} disabled={taskPage === 0}>上一页</button><button onClick={() => setTaskPage(page => Math.min(taskPageCount - 1, page + 1))} disabled={taskPage >= taskPageCount - 1}>下一页</button></div></div></section>}{!taskListLoading && !taskListError && taskList !== null && taskList.length === 0 && <div className="empty-state"><Sparkles size={22} /><b>暂无营销任务</b><span>从商品与资产选择商品即可创建任务。</span></div>}</div>
   return <div className="task-shell">
-    {timelineOpen && <div className="modal-layer" role="dialog" aria-modal="true" aria-label="任务历史"><div className="modal timeline-modal"><div className="modal-head"><div className="modal-icon"><History size={18} /></div><div><span className="section-kicker">AUDIT TRAIL</span><h2>任务历史</h2></div><button className="icon-button" onClick={() => setTimelineOpen(false)} aria-label="关闭任务历史"><X size={18} /></button></div><div className="modal-body timeline-list">{timeline.length ? timeline.slice().reverse().map(event => <div className="timeline-row" key={event.id}><span className={`timeline-dot ${event.delivery === 'unknown' ? 'unknown' : event.delivery === 'delivered' ? 'delivered' : ''}`} /><div><b>{event.event_type}</b><span>序列 {event.sequence} · {event.delivery === 'unknown' ? '待对账' : event.delivery === 'delivered' ? '已记录' : '处理中'}</span></div><time>{new Date(event.occurred_at).toLocaleString('zh-CN', { hour12: false })}</time></div>) : <div className="empty-state"><History size={18} />暂无可用历史事件</div>}</div></div></div>}
-    <div className="task-titlebar"><div><button className="back-link" onClick={onBack}><ArrowRight size={16} />所有任务</button><h2>{targetTitle} · {platformNames[targetPlatform]} · {target.storeName ?? '店铺身份缺失'}</h2><div className="task-meta"><StatusChip tone={approved ? 'green' : 'blue'}>{approved ? '已批准' : loading ? '准备中' : taskStateLabel(task?.state ?? '')}</StatusChip><span>{target.accountId ? `账号 ${target.accountId}` : '账号 ID 缺失'}</span><span>内容版本 v{content?.version ?? 0}</span><span>{operation || '已保存'}</span></div></div><div className="button-row compact"><button className="secondary" onClick={() => { if (baseUrl && task) fetchTaskTimeline(baseUrl, task.id).then(setTimeline).catch(() => undefined); setTimelineOpen(true) }} disabled={!task}><History size={16} />历史</button><button className="primary" disabled={!approved || Boolean(operation) || Boolean(error)} onClick={openPublish}><Rocket size={16} />进入发布</button></div></div>
+    {timelineOpen && <div className="modal-layer" role="presentation"><div className="modal timeline-modal" ref={timelineModalRef} role="dialog" aria-modal="true" aria-label="任务历史"><div className="modal-head"><div className="modal-icon"><History size={18} /></div><div><span className="section-kicker">AUDIT TRAIL</span><h2>任务历史</h2></div><button className="icon-button" ref={timelineCloseRef} onClick={() => setTimelineOpen(false)} aria-label="关闭任务历史"><X size={18} /></button></div><div className="modal-body timeline-list">{timelineError && <ErrorNotice message={`任务历史读取失败：${timelineError}。已保留上次成功记录。`} onRetry={reloadTimeline} />}{timeline.length ? timeline.slice().reverse().map(event => <div className="timeline-row" key={event.id}><span className={`timeline-dot ${event.delivery === 'unknown' ? 'unknown' : event.delivery === 'delivered' ? 'delivered' : ''}`} /><div><b>{event.event_type}</b><span>序列 {event.sequence} · {event.delivery === 'unknown' ? '待对账' : event.delivery === 'delivered' ? '已记录' : '处理中'}</span></div><time>{new Date(event.occurred_at).toLocaleString('zh-CN', { hour12: false })}</time></div>) : !timelineError && <div className="empty-state"><History size={18} />暂无可用历史事件</div>}</div></div></div>}
+    {findingDecision && <div className="modal-layer" role="presentation"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="finding-waiver-title"><div className="modal-head"><div className="modal-icon"><ShieldCheck size={18} /></div><div><span className="section-kicker">REVIEW DECISION</span><h2 id="finding-waiver-title">带理由接受审核建议</h2></div><button className="icon-button" onClick={() => setFindingDecision(null)} aria-label="关闭风险接受弹窗" disabled={findingDecisionSubmitting}><X size={18} /></button></div><div className="modal-body finding-decision-form"><p>{findingDecision.message}</p><label htmlFor="finding-waiver-reason">风险接受原因</label><textarea id="finding-waiver-reason" autoFocus value={findingDecisionReason} onChange={event => { setFindingDecisionReason(event.target.value); if (findingDecisionError) setFindingDecisionError('') }} maxLength={2000} rows={5} disabled={findingDecisionSubmitting} aria-describedby="finding-waiver-help" /><small id="finding-waiver-help">至少 4 个字符；原因会进入审核记录，不会自动发布内容。</small>{findingDecisionError && <ErrorNotice message={findingDecisionError} compact />}</div><div className="modal-actions"><button className="secondary" onClick={() => setFindingDecision(null)} disabled={findingDecisionSubmitting}>取消</button><button className="primary" onClick={submitFindingWaiver} disabled={findingDecisionSubmitting}>{findingDecisionSubmitting ? '保存中…' : '确认接受'}</button></div></div></div>}
+    <div className="task-titlebar" inert={timelineOpen || Boolean(findingDecision)}><div><button className="back-link" onClick={onBack}><ArrowRight size={16} />所有任务</button><h2>{targetTitle} · {platformNames[targetPlatform]} · {target.storeName ?? '店铺身份缺失'}</h2><div className="task-meta"><StatusChip tone={approved ? 'green' : 'blue'}>{approved ? '已批准' : loading ? '准备中' : taskStateLabel(task?.state ?? '')}</StatusChip><span>{target.accountId ? `账号 ${target.accountId}` : '账号 ID 缺失'}</span><span>内容版本 v{content?.version ?? 0}</span><span>{operation || '已保存'}</span></div></div><div className="button-row compact"><button className="secondary" ref={timelineTriggerRef} onClick={() => { reloadTimeline(); setTimelineOpen(true) }} disabled={!task}><History size={16} />历史</button><button className="primary" disabled={!approved || Boolean(operation) || Boolean(error)} onClick={openPublish}><Rocket size={16} />进入发布</button></div></div>
     {loading && <LoadingState label={operation || '正在创建任务…'} />}
     {error && <ErrorNotice message={error} onRetry={() => window.location.reload()} />}
-    <section className="panel task-understanding-panel">
+    <section className="panel task-understanding-panel" inert={timelineOpen || Boolean(findingDecision)}>
       <div className="panel-heading"><div><span className="section-kicker">TASK UNDERSTANDING</span><h3>先确认需求与阻断问题</h3></div><StatusChip tone={understanding?.questions.length ? 'amber' : 'green'}>{understanding?.questions.length ? `${understanding.questions.length} 项待补充` : '可继续执行'}</StatusChip></div>
       <div className="understanding-form"><input value={requestText} onChange={event => setRequestText(event.target.value)} placeholder="例如：把这件商品同步到淘宝和拼多多，主推防晒卖点" disabled={Boolean(operation)} /><button className="secondary" onClick={understand} disabled={!baseUrl || !requestText.trim() || Boolean(operation)}>分析需求</button></div>
       {understanding && <div className="understanding-result"><span>识别平台：{understanding.platformCandidates.map(platform => platformNames[platform]).join('、') || '待确认'} · 目标：{understanding.extracted.goal ?? '待补充'}</span><div data-testid="task-execution-plan" className="task-execution-plan"><div><b>{understanding.executionPlan.mode === 'split_by_platform' ? `将拆成 ${understanding.executionPlan.childTasks.length} 个独立平台子任务` : understanding.executionPlan.mode === 'single_task' ? '单平台独立任务' : '等待明确平台'}</b><small>{understanding.executionPlan.reason}</small></div><div className="execution-child-grid">{understanding.executionPlan.childTasks.map(child => <article key={child.platform}><StatusChip tone={child.bindingState === 'ready' ? 'green' : 'amber'}>{platformNames[child.platform]}</StatusChip><b>{child.bindingState === 'ready' ? '商品已唯一绑定' : child.bindingState === 'ambiguous' ? `${child.candidateProductIds.length} 个候选，需选择` : '缺少该平台商品'}</b><small>{child.bindingState === 'ready' ? child.candidateProductIds[0] : '不会复用其他平台商品'}</small></article>)}</div></div>{understanding.productCandidates.length > 0 && <div className="understanding-candidates" aria-label="商品候选"><small>检测到多个候选时，请直接选择一个稳定商品：</small>{understanding.productCandidates.map(candidate => <article key={candidate.id}><button data-testid={`task-product-candidate-${candidate.id}`} className="candidate-choice" onClick={() => setQuestionAnswers(current => ({ ...current, product_id: candidate.id }))}><b>{candidate.title}</b><span>{platformNames[candidate.platform]} · {candidate.id}</span></button></article>)}</div>}{understanding.questions.map(question => <div className="question-row" key={question.id}><div><b>{question.prompt}</b><small>{question.kind === 'blocking' ? '阻断项，完成前不能继续' : question.kind === 'recommended' ? '建议补充，可使用默认值' : '可选信息'}</small><small>为什么问：{question.why}</small><small>不回答：{question.ifSkipped}</small></div><div className="question-answer">{question.id === 'platform_product_bindings' ? <button className="secondary" onClick={onBack}>返回商品列表分别选择</button> : question.id === 'confirm_facts' ? <button className="secondary" onClick={() => submitAnswer(question)} disabled={Boolean(operation)}>确认商品事实准确</button> : <><input value={questionAnswers[question.id] ?? ''} onChange={event => setQuestionAnswers(current => ({ ...current, [question.id]: event.target.value }))} placeholder="请输入答案" /><button className="text-button" onClick={() => submitAnswer(question)} disabled={Boolean(operation) || !(questionAnswers[question.id]?.trim())}>保存</button>{question.kind !== 'blocking' && <button className="text-button" onClick={() => deferQuestion(question)} disabled={Boolean(operation)}>稍后补充</button>}</>}</div></div>)}</div>}
     </section>
-    <div className="workflow-stepper" aria-label="任务进度"><div className="complete"><span><Check size={13} /></span><b>事实确认</b></div><i /><div className="complete"><span><Check size={13} /></span><b>方向选择</b></div><i /><div className="current"><span>3</span><b>内容审核</b></div><i /><div><span>4</span><b>确认发布</b></div></div>
-    <div className="workspace-grid">
+    <div className="workflow-stepper" aria-label={`任务进度 · 服务端状态 ${task?.state ?? '尚未返回'}`} data-testid="task-workflow-stepper">{workflowSteps.map((step, index) => <div key={step.label} className={step.status === 'pending' ? undefined : step.status} data-step-status={step.status}><span>{step.status === 'complete' ? <Check size={13} /> : index + 1}</span><b>{step.label}</b></div>).flatMap((step, index) => index < workflowSteps.length - 1 ? [step, <i key={`divider-${index}`} />] : [step])}</div>
+    <div className="workspace-grid" inert={timelineOpen || Boolean(findingDecision)}>
       <aside className={`context-panel ${contextCollapsed ? 'collapsed' : ''}`}>
         <div className="context-head"><span className="section-kicker">SOURCE OF TRUTH</span><h3>任务事实</h3><button className="icon-button" onClick={() => setContextCollapsed(current => !current)} aria-expanded={!contextCollapsed} aria-label={contextCollapsed ? '展开事实面板' : '收起事实面板'}><PanelLeftClose size={17} /></button></div>
         <div className="context-product"><div className="product-visual"><ShoppingBag size={32} /></div><div><StatusChip tone={platformTone[targetPlatform]}>{platformNames[targetPlatform]}</StatusChip><b>{targetTitle}</b><span>{target.storeName && target.accountId ? storeIdentityLabel(target) : '店铺身份缺失，已阻止继续操作'}</span><span>{target?.remoteId ? `远端商品 ${target.remoteId}` : '等待平台商品标识'}</span></div></div>
         <div className="context-section"><div className="subhead"><b>关键事实</b><StatusChip tone={product?.factsConfirmed ? 'green' : 'amber'}>{product?.factsConfirmed ? '已确认' : '待确认'}</StatusChip></div>{Object.entries(product?.attributes ?? {}).slice(0, 6).map(([key, value]) => <div className="fact-row" key={key}><span>{key}</span><b>{value}</b><small><Link2 size={11} />商品事实库</small></div>)}{!Object.keys(product?.attributes ?? {}).length && <div className="empty-inline">尚未读取商品属性</div>}</div>
-        <div className="context-section"><div className="subhead"><b>约束与规则</b><span>4 条</span></div><div className="constraint"><ShieldCheck size={16} /><div><b>不得表述“100% 防晒”</b><span>广告法规则包 · v1.2</span></div></div><div className="constraint"><PackageSearch size={16} /><div><b>不修改价格与库存</b><span>本次任务锁定范围</span></div></div></div>
+        <div className="context-section" data-testid="task-rule-evidence"><div className="subhead"><b>约束与规则</b><span>{baseUrl ? `${taskRuleVersionIds.length} 个服务端版本` : '2 条 · 离线演示'}</span></div>{baseUrl ? taskRuleVersionIds.length ? taskRuleVersionIds.map(ruleVersionId => <div className="constraint" key={ruleVersionId}><ShieldCheck size={16} /><div><b>{ruleVersionId}</b><span>服务端内容版本规则证据</span></div></div>) : <div className="empty-inline" data-testid="task-rules-empty">服务端当前任务尚未返回规则版本；未展示任何演示规则。</div> : <><div className="constraint"><ShieldCheck size={16} /><div><b>演示规则：不得表述“100% 防晒”</b><span>离线演示规则包 · 不可用于真实发布</span></div></div><div className="constraint"><PackageSearch size={16} /><div><b>演示约束：不修改价格与库存</b><span>离线演示任务范围</span></div></div></>}</div>
       </aside>
 
       <main className="editor-panel">
-        <section className="direction-section"><div className="section-heading-inline"><div><span className="section-kicker">CREATIVE DIRECTIONS</span><h3>3 个事实安全方向</h3></div><button className="text-button" onClick={regenerate} disabled={Boolean(operation) || !baseUrl || Boolean(content) || !task?.selectedDirectionId || !['direction_selected', 'plan_confirmed'].includes(task.state)}><RefreshCw size={14} className={operation === '生成内容中…' ? 'spin' : undefined} />{operation === '生成内容中…' ? '生成中…' : content ? '内容已生成' : '确认制作方案并生成'}</button></div><div className="direction-grid">{directions.map((item, index) => <button key={item.id} className={`direction-card ${direction === index && task?.selectedDirectionId === item.id ? 'selected' : ''}`} onClick={() => chooseDirection(index, item.id)} aria-pressed={direction === index && task?.selectedDirectionId === item.id} disabled={Boolean(operation) || Boolean(content)}><div><span className="direction-letter">{item.id}</span><StatusChip tone="neutral">{item.tag}</StatusChip>{direction === index && task?.selectedDirectionId === item.id && <span className="selected-check"><Check size={13} /></span>}</div><h4>{item.title}</h4><p>{item.desc}</p><small>依据 <b>{item.evidence}</b></small></button>)}</div>{task?.selectedDirectionId && !content && <div className="plan-confirmation-note"><ShieldCheck size={16}/><span>制作方案：生成当前平台详情页和静态素材 Brief；锁定价格、库存与 SKU。点击“确认制作方案并生成”后才会产生生成任务。</span></div>}</section>
+        <section className="direction-section" aria-busy={directionsData.mode === 'loading'}><div className="section-heading-inline"><div><span className="section-kicker">CREATIVE DIRECTIONS</span><h3>{directionsData.mode === 'offline_demo' ? `${directions.length} 个离线演示方向` : directionsData.mode === 'api_ready' ? `${directions.length} 个服务端方向` : '服务端创意方向'}</h3></div><button className="text-button" onClick={regenerate} disabled={Boolean(operation) || !baseUrl || Boolean(content) || !task?.selectedDirectionId || !['direction_selected', 'plan_confirmed'].includes(task.state)}><RefreshCw size={14} className={operation === '生成内容中…' ? 'spin' : undefined} />{operation === '生成内容中…' ? '生成中…' : content ? '内容已生成' : '确认制作方案并生成'}</button></div>{directionsData.mode === 'loading' && <LoadingState label="正在读取服务端创意方向…" />}{directionsData.mode === 'api_error' && <ErrorNotice message={`创意方向读取失败：${directionsError}`} onRetry={() => setDirectionsReloadKey(key => key + 1)} />}{directionsData.mode === 'api_empty' && <div className="empty-state" data-testid="task-directions-empty"><Sparkles size={20}/><b>服务端尚未生成创意方向</b><span>当前未展示任何演示方向；请先完成服务端要求的任务步骤。</span></div>}{directions.length > 0 && <div className="direction-grid">{directions.map((item, index) => <button key={item.id} className={`direction-card ${direction === index && task?.selectedDirectionId === item.id ? 'selected' : ''}`} onClick={() => chooseDirection(index, item.id)} aria-pressed={direction === index && task?.selectedDirectionId === item.id} disabled={Boolean(operation) || Boolean(content) || directionsData.mode === 'offline_demo'}><div><span className="direction-letter">{item.id}</span><StatusChip tone="neutral">{item.structure}</StatusChip>{direction === index && task?.selectedDirectionId === item.id && <span className="selected-check"><Check size={13} /></span>}</div><h4>{item.name}</h4><p>{item.coreIdea}</p><small>适配依据 <b>{item.fitReason}</b>{item.risk ? ` · 风险：${item.risk}` : ''}</small></button>)}</div>}{task?.selectedDirectionId && !content && <div className="plan-confirmation-note"><ShieldCheck size={16}/><span>服务端已选择方向 {task.selectedDirectionId}。确认制作方案后才会产生生成任务；价格、库存与 SKU 保持锁定。</span></div>}</section>
         <section className="content-document">
           <div className="document-toolbar"><div><span className="section-kicker">CONTENT DRAFT</span><h3>详情页内容草稿</h3></div><div className="segmented"><button className={version === 'v4' ? 'active' : ''} onClick={() => setVersion('v4')}>v{content?.version ?? 0} 当前版</button><button className="text-button" onClick={editTitle} disabled={!content || Boolean(operation)}>局部修改</button><button className={version === 'diff' ? 'active' : ''} onClick={showDiff} disabled={!content || Boolean(operation)}><ArrowLeftRight size={13} />与上一版比较</button></div></div>
-          <ProductDetailPreview content={content} title={targetTitle} product={product} />
+          <ProductDetailPreview content={content} title={targetTitle} product={product} demoMode={!baseUrl} />
           {version === 'v4' ? <div className="document-body"><div className="doc-label">首屏标题</div><h4>{content?.body.title ?? '等待内容版本'}</h4><p>{content?.body.detail ?? '选择商品并生成内容版本后，这里显示真实草稿。'}</p><div className="source-note"><Link2 size={13} />引用 {content?.factVersionIds.length ?? 0} 条已确认事实 · 未使用推断值</div><div className="doc-label">核心卖点</div><ul>{(content?.body.sellingPoints ?? []).map(point => <li key={point}><span>{point}</span></li>)}</ul>{content?.body.brief && <div className="brief-card"><div className="doc-label">静态素材 Brief</div><p><b>{content.body.brief.placement}</b> · {content.body.brief.targetDimensions}</p><p>{content.body.brief.headline}｜{content.body.brief.subheadline}</p><p>核心卖点：{content.body.brief.coreSellingPoint} · CTA：{content.body.brief.cta}</p><small>安全区：{content.body.brief.safeArea} · 禁止修改：{content.body.brief.protectedAreas.join('、')}</small></div>}</div> : <div className="diff-view">{diffChanges.length ? diffChanges.map(change => <div className="diff-line added" key={change.path}><span>+</span><p><b>{change.path}</b>：{String(change.after ?? '')}</p></div>) : <div className="diff-line"><span>·</span><p>暂无服务端差异或没有上一版本</p></div>}<div className="diff-summary"><CheckCircle2 size={17} />版本差异来自服务端内容版本 API</div></div>}
         </section>
       </main>
@@ -956,7 +1061,7 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
         <div className="review-category-list">{reviewCategories.map(category => <div className={`review-category ${category.status}`} key={category.id}><span>{category.status === 'passed' ? <CheckCircle2 size={14}/> : category.status === 'blocking' ? <AlertCircle size={14}/> : <CircleHelp size={14}/>}</span><div><b>{category.name}</b><small>{category.summary}</small></div></div>)}</div>
         <div className="review-tabs"><button className={reviewTab === 'findings' ? 'active' : ''} onClick={() => setReviewTab('findings')}>检查结果 <em>{findings.length}</em></button><button className={reviewTab === 'versions' ? 'active' : ''} onClick={() => setReviewTab('versions')}>版本记录 <em>{contentVersions.length}</em></button></div>
         {reviewTab === 'findings' ? <div className="finding-list">{findings.length ? findings.map(finding => { const evidenceLabel = reviewEvidenceLabel(finding); return <article className={`finding ${finding.severity === 'error' ? 'warning' : 'info'}`} key={`${finding.code}-${finding.field}`}><div><AlertCircle size={17} /><b>{finding.priority} · {finding.severity === 'error' ? '阻断' : finding.status === 'waived' ? '已接受' : finding.status === 'acknowledged' ? '已知悉' : '建议'} · {reviewFieldLabel(finding.field)}</b></div><p>{finding.message}</p>{evidenceLabel && <small>{evidenceLabel}</small>}<small>建议：{finding.repairSuggestion}</small>{finding.decision && <small>处理记录：{finding.decision.reason}</small>}{finding.severity === 'warning' && finding.status === 'open' && <div className="finding-actions"><button onClick={() => decideFinding(finding, 'acknowledged')} disabled={Boolean(operation)}>标记已知悉</button><button onClick={() => decideFinding(finding, 'waived')} disabled={Boolean(operation)}>带理由接受</button></div>}</article> }) : <div className="empty-state"><CheckCircle2 size={18} />{content ? '服务端检查通过，暂无发现项' : '生成内容后显示检查结果'}</div>}</div> : <div className="version-list">{contentVersions.length ? contentVersions.map(item => <article className={`version-row ${item.id === content?.id ? 'current' : ''}`} key={item.id}><div><b>内容版本 v{item.version}</b><span>{item.id === content?.id ? '当前版本' : '历史版本'} · {item.state} · 引用事实 {item.factVersionIds.length} 条 · 规则 {item.ruleVersionIds.length} 条</span></div><button className="text-button" onClick={() => viewVersion(item)}>查看版本</button></article>) : <div className="empty-state"><History size={18} />当前任务暂无内容版本</div>}</div>}
-        <div className="feedback-section"><div className="subhead"><b>交付反馈</b><span>仅用于当前任务分析</span></div><p className="feedback-hint">内容交付后告诉我们效果，不会自动修改全局规则。</p><div className="feedback-actions"><button className={feedbackRating === 'liked' ? 'selected' : ''} onClick={() => sendFeedback('liked')} disabled={Boolean(operation) || !task || !content}>满意</button><button className={feedbackRating === 'neutral' ? 'selected' : ''} onClick={() => sendFeedback('neutral')} disabled={Boolean(operation) || !task || !content}>一般</button><button className={feedbackRating === 'needs_improvement' ? 'selected' : ''} onClick={() => sendFeedback('needs_improvement')} disabled={Boolean(operation) || !task || !content}>需改进</button></div><input className="feedback-input" value={feedbackReason} onChange={event => setFeedbackReason(event.target.value)} placeholder="可选：补充原因" maxLength={2000} disabled={!content} />{feedback.length > 0 && <small className="feedback-count">已记录 {feedback.length} 条任务反馈</small>}</div>
+        <div className="feedback-section"><div className="subhead"><b>交付反馈</b><span>仅用于当前任务分析</span></div><p className="feedback-hint">内容交付后告诉我们效果，不会自动修改全局规则。</p>{feedbackError && <ErrorNotice message={`反馈记录读取失败：${feedbackError}。已保留上次成功记录。`} onRetry={reloadFeedback} compact />}<div className="feedback-actions"><button className={feedbackRating === 'liked' ? 'selected' : ''} onClick={() => sendFeedback('liked')} disabled={Boolean(operation) || !task || !content}>满意</button><button className={feedbackRating === 'neutral' ? 'selected' : ''} onClick={() => sendFeedback('neutral')} disabled={Boolean(operation) || !task || !content}>一般</button><button className={feedbackRating === 'needs_improvement' ? 'selected' : ''} onClick={() => sendFeedback('needs_improvement')} disabled={Boolean(operation) || !task || !content}>需改进</button></div><input className="feedback-input" value={feedbackReason} onChange={event => setFeedbackReason(event.target.value)} placeholder="可选：补充原因" maxLength={2000} disabled={!content} />{feedback.length > 0 && <small className="feedback-count">已记录 {feedback.length} 条任务反馈</small>}</div>
         <div className="approval-box"><label><input type="checkbox" checked={approved} onChange={e => approve(e.target.checked)} disabled={Boolean(operation) || loading || approved || !content} /><span><b>我已核对事实、规则和最终内容</b><small>{content ? `批准后会锁定内容 v${content.version}；发布仍需二次确认。` : '生成并检查内容后才可批准。'}</small></span></label><button className="primary wide" disabled={!approved || Boolean(operation) || !content} onClick={openPublish}>{operation === '批准中…' ? '批准中…' : approved ? '继续确认发布' : '勾选后批准内容'}<ArrowRight size={16} /></button></div>
       </aside>
     </div>
@@ -965,21 +1070,28 @@ function TaskWorkspace({ openPublish, baseUrl, target, onContext, onSelectTarget
 
 function PublishCenter({ openPublish, openCorrection, baseUrl, canOpenPublish }: { openPublish: () => void; openCorrection: (job: PublishJob) => void; baseUrl?: string; canOpenPublish: boolean }) {
   const [jobs, setJobs] = useState<PublishJob[] | null>(null)
-  const [error, setError] = useState('')
+  const [initialError, setInitialError] = useState('')
+  const [refreshError, setRefreshError] = useState('')
   const [loading, setLoading] = useState(Boolean(baseUrl))
   const [reloadKey, setReloadKey] = useState(0)
+  const jobsSourceRef = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (!baseUrl) { setLoading(false); setJobs(null); setError(''); return }
+    if (!baseUrl) { jobsSourceRef.current = undefined; setLoading(false); setJobs(null); setInitialError(''); setRefreshError(''); return }
     let cancelled = false
     let inFlight = false
+    const hasCachedJobs = jobsSourceRef.current === baseUrl && jobs !== null
+    let hasLoadedJobs = hasCachedJobs
+    if (!hasCachedJobs) setJobs(null)
+    jobsSourceRef.current = baseUrl
     const load = (showLoading: boolean) => {
       if (inFlight) return
       inFlight = true
-      if (showLoading) { setLoading(true); setJobs(null) }
-      setError('')
+      if (showLoading && !hasLoadedJobs) setLoading(true)
+      setInitialError('')
+      setRefreshError('')
       fetchPublishJobs(baseUrl)
-        .then(next => { if (!cancelled) setJobs(next.slice().sort((left, right) => Number(right.state === 'rejected') - Number(left.state === 'rejected') || Date.parse(right.createdAt) - Date.parse(left.createdAt))) })
-        .catch(cause => { if (!cancelled) setError(describeApiError(cause)) })
+        .then(next => { if (!cancelled) { hasLoadedJobs = true; setJobs(next.slice().sort((left, right) => Number(right.state === 'rejected') - Number(left.state === 'rejected') || Date.parse(right.createdAt) - Date.parse(left.createdAt))); setInitialError(''); setRefreshError('') } })
+        .catch(cause => { if (!cancelled) { const message = describeApiError(cause); if (hasLoadedJobs) setRefreshError(message); else setInitialError(message) } })
         .finally(() => { inFlight = false; if (!cancelled && showLoading) setLoading(false) })
     }
     load(true)
@@ -988,41 +1100,92 @@ function PublishCenter({ openPublish, openCorrection, baseUrl, canOpenPublish }:
   }, [baseUrl, reloadKey])
   const statusLabel = (state: string) => ({ queued: '排队中', submitted: '平台已受理', reviewing: '平台审核中', published: '已生效', rejected: '平台驳回', unknown: '待对账', manual_attention: '需人工处理' }[state] ?? state)
   const statusTone = (state: string) => state === 'published' ? 'green' : ['rejected', 'unknown', 'manual_attention'].includes(state) ? 'amber' : 'blue'
-  const listReady = !loading && !error && jobs !== null
-  return <div className="page-stack"><section className="page-intro"><div><span className="section-kicker">CONTROLLED WRITES</span><h2>每一次线上变更都有确认和回执</h2><p>“平台已受理”不等于“已生效”。未知状态先对账，不盲目重复提交。</p></div><button className="primary" onClick={openPublish} disabled={!baseUrl || !canOpenPublish}><Rocket size={17} />进入已审核任务发布</button></section>{error && !loading && <ErrorNotice message={error} onRetry={() => setReloadKey(key => key + 1)} />}{!baseUrl && <div className="info-notice" role="status"><CircleHelp size={16} />离线演示不会伪造真实平台回执。</div>}{baseUrl && !canOpenPublish && <div className="info-notice" role="status"><CircleHelp size={16} />请先在商品与资产中选择商品并完成内容审核。</div>}<section className="publish-board" aria-busy={loading}><div className="panel"><div className="panel-heading"><div><span className="section-kicker">IN FLIGHT</span><h3>进行中的发布</h3></div><StatusChip tone="blue">{loading ? '读取中…' : error ? '读取失败' : `${jobs?.length ?? 0} 个任务`}</StatusChip></div>{loading && <LoadingState label="正在读取发布任务…" />}{listReady && Boolean(jobs.length) && jobs.map(job => <div className={`publish-job ${job.state === 'rejected' ? 'has-rejection' : ''}`} key={job.id}><div className={`platform-logo ${platformTone[job.platform] ?? 'blue'}`}>{(platformNames[job.platform] ?? job.platform).slice(0, 1)}</div><div><b>{platformNames[job.platform] ?? job.platform} · 发布任务</b><span>{new Date(job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span></div><StatusChip tone={statusTone(job.state)}>{job.state === 'published' ? <Check size={12} /> : job.state === 'rejected' ? <X size={12}/> : <Clock3 size={12} />}{statusLabel(job.state)}</StatusChip>{job.state === 'rejected' && <div className="publish-rejection"><div><b>平台拒绝码：{job.rejection?.rawCode ?? '平台未返回代码'}</b><p>{job.rejection?.message ?? '平台未返回可读原因，请联系平台支持并提供发布任务时间。'}</p>{job.rejection?.fields.map(field => <span key={`${field.path}-${field.rawCode ?? ''}`}>需修改：{platformFieldLabel(field.path)} · {field.message}{field.rawCode ? `（${field.rawCode}）` : ''}</span>)}</div><button className="secondary correction-button" onClick={() => openCorrection(job)}>定位并修正 <ArrowRight size={14}/></button><small>修正后会生成新版本，必须重新审核、批准并确认发布；系统不会自动重发。</small></div>}</div>)}{listReady && jobs.length === 0 && <div className="empty-state"><PackageSearch size={22} /><b>暂无真实发布任务</b><span>完成内容审核后，发布任务会显示在这里。</span></div>}</div><div className="panel receipt-panel"><div className="panel-heading"><div><span className="section-kicker">RECEIPTS</span><h3>最近回执</h3></div></div>{loading && <LoadingState label="正在读取平台回执…" />}{listReady && Boolean(jobs.length) && jobs.slice(0, 5).map(job => <div className="receipt-row" key={`receipt-${job.id}`}><span className={`receipt-icon ${job.state === 'rejected' ? 'fail' : ''}`}>{job.state === 'rejected' ? <X size={14}/> : <Check size={14}/>}</span><b>{platformNames[job.platform] ?? job.platform} · {statusLabel(job.state)}</b><span>{job.rejection?.rawCode ?? job.remoteState ?? '等待观测'}</span></div>)}{listReady && jobs.length === 0 && <div className="empty-state"><span>暂无回执</span></div>}</div></section></div>
+  const listReady = !loading && jobs !== null
+  return <div className="page-stack"><section className="page-intro"><div><span className="section-kicker">CONTROLLED WRITES</span><h2>每一次线上变更都有确认和回执</h2><p>“平台已受理”不等于“已生效”。未知状态先对账，不盲目重复提交。</p></div><button className="primary" onClick={openPublish} disabled={!baseUrl || !canOpenPublish}><Rocket size={17} />进入已审核任务发布</button></section>{initialError && !loading && <ErrorNotice message={initialError} onRetry={() => setReloadKey(key => key + 1)} />}{refreshError && listReady && <ErrorNotice message={`发布任务自动刷新失败：${refreshError}。已保留上次成功数据。`} onRetry={() => setReloadKey(key => key + 1)} />}{!baseUrl && <div className="info-notice" role="status"><CircleHelp size={16} />离线演示不会伪造真实平台回执。</div>}{baseUrl && !canOpenPublish && <div className="info-notice" role="status"><CircleHelp size={16} />请先在商品与资产中选择商品并完成内容审核。</div>}<section className="publish-board" aria-busy={loading}><div className="panel"><div className="panel-heading"><div><span className="section-kicker">IN FLIGHT</span><h3>进行中的发布</h3></div><StatusChip tone={refreshError ? 'amber' : 'blue'}>{loading ? '读取中…' : initialError ? '读取失败' : refreshError ? `${jobs?.length ?? 0} 个任务 · 刷新失败` : `${jobs?.length ?? 0} 个任务`}</StatusChip></div>{loading && <LoadingState label="正在读取发布任务…" />}{listReady && Boolean(jobs.length) && jobs.map(job => <div className={`publish-job ${job.state === 'rejected' ? 'has-rejection' : ''}`} key={job.id}><div className={`platform-logo ${platformTone[job.platform] ?? 'blue'}`}>{(platformNames[job.platform] ?? job.platform).slice(0, 1)}</div><div><b>{platformNames[job.platform] ?? job.platform} · 发布任务</b><span>任务 {job.id} · {new Date(job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span></div><StatusChip tone={statusTone(job.state)}>{job.state === 'published' ? <Check size={12} /> : job.state === 'rejected' ? <X size={12}/> : <Clock3 size={12} />}{statusLabel(job.state)}</StatusChip>{job.state === 'rejected' && <div className="publish-rejection"><div><b>平台拒绝码：{job.rejection?.rawCode ?? '平台未返回代码'}</b><p>{job.rejection?.message ?? '平台未返回可读原因，请联系平台支持并提供发布任务时间。'}</p>{job.rejection?.fields.map(field => <span key={`${field.path}-${field.rawCode ?? ''}`}>需修改：{platformFieldLabel(field.path)} · {field.message}{field.rawCode ? `（${field.rawCode}）` : ''}</span>)}</div><button className="secondary correction-button" onClick={() => openCorrection(job)}>定位并修正 <ArrowRight size={14}/></button><small>修正后会生成新版本，必须重新审核、批准并确认发布；系统不会自动重发。</small></div>}</div>)}{listReady && jobs.length === 0 && <div className="empty-state"><PackageSearch size={22} /><b>暂无真实发布任务</b><span>完成内容审核后，发布任务会显示在这里。</span></div>}</div><div className="panel receipt-panel"><div className="panel-heading"><div><span className="section-kicker">RECEIPTS</span><h3>最近回执</h3></div></div>{loading && <LoadingState label="正在读取平台回执…" />}{listReady && Boolean(jobs.length) && jobs.slice(0, 5).map(job => <div className="receipt-row" key={`receipt-${job.id}`}><span className={`receipt-icon ${job.state === 'rejected' ? 'fail' : ''}`}>{job.state === 'rejected' ? <X size={14}/> : <Check size={14}/>}</span><b>{platformNames[job.platform] ?? job.platform} · {statusLabel(job.state)}</b><span>{job.id} · {job.rejection?.rawCode ?? job.remoteState ?? '等待观测'}</span></div>)}{listReady && jobs.length === 0 && <div className="empty-state"><span>暂无回执</span></div>}</div></section></div>
 }
 
 function Rules({ baseUrl }: { baseUrl?: string }) {
-  const [rulePacks, setRulePacks] = useState<RulePack[]>([])
-  const [remoteCategories, setRemoteCategories] = useState<CatalogCategory[]>([])
+  const [rulePacks, setRulePacks] = useState<RulePack[] | null>(null)
+  const [remoteCategories, setRemoteCategories] = useState<CatalogCategory[] | null>(null)
+  const [rulesError, setRulesError] = useState('')
+  const [categoriesError, setCategoriesError] = useState('')
+  const [rulesReloadKey, setRulesReloadKey] = useState(0)
+  const [categoriesReloadKey, setCategoriesReloadKey] = useState(0)
   const [tab, setTab] = useState<'rules' | 'categories'>('rules')
   const [query, setQuery] = useState('')
   const [platform, setPlatform] = useState<PlatformId | 'all'>('all')
   const [selectedCategory, setSelectedCategory] = useState<CatalogCategory | null>(null)
-  useEffect(() => { if (baseUrl) fetchRulePacks(baseUrl, platform === 'all' ? undefined : platform).then(setRulePacks).catch(() => setRulePacks([])) }, [baseUrl, platform])
-  useEffect(() => { if (baseUrl) fetchCatalogCategories(baseUrl).then(setRemoteCategories).catch(() => setRemoteCategories([])) }, [baseUrl])
+  useEffect(() => {
+    if (!baseUrl) { setRulePacks(null); setRulesError(''); return }
+    let cancelled = false
+    setRulePacks(null)
+    setRulesError('')
+    fetchRulePacks(baseUrl, platform === 'all' ? undefined : platform)
+      .then(next => { if (!cancelled) setRulePacks(next) })
+      .catch(cause => { if (!cancelled) setRulesError(describeApiError(cause)) })
+    return () => { cancelled = true }
+  }, [baseUrl, platform, rulesReloadKey])
+  useEffect(() => {
+    if (!baseUrl) { setRemoteCategories(null); setCategoriesError(''); return }
+    let cancelled = false
+    setRemoteCategories(null)
+    setCategoriesError('')
+    setSelectedCategory(null)
+    fetchCatalogCategories(baseUrl)
+      .then(next => { if (!cancelled) setRemoteCategories(next) })
+      .catch(cause => { if (!cancelled) setCategoriesError(describeApiError(cause)) })
+    return () => { cancelled = true }
+  }, [baseUrl, categoriesReloadKey])
   const fallbackRows: RulePack[] = [['中国电商广告表达','cn-commerce-1.0.0','全平台','今天'],['服装鞋包事实完整性','apparel-1.0.0','全平台','2 天前'],['淘宝/天猫字段映射','tmall-apparel-1.0.0','淘宝/天猫','5 天前'],['京东商品写入策略','jd-apparel-write-1.0.0','京东','7 天前']].map((row, index) => ({ id: String(index), name: row[0], version: row[1], scope: row[2], status: 'active', updatedAt: row[3] }))
-  const rows: RulePack[] = rulePacks.length ? rulePacks : fallbackRows
-  const categories: CatalogCategory[] = remoteCategories.length ? remoteCategories : [
+  const fallbackCategories: CatalogCategory[] = [
     { name: '服装 / 防晒外套', code: '1312', fields: ['材质、成分、重量、尺码、颜色、功能依据'], platforms: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], status: 'active', updatedAt: '今天' },
     { name: '鞋靴 / 户外鞋', code: '1408', fields: ['鞋面材质、闭合方式、适用场景、尺码'], platforms: ['jd', 'taobao', 'pinduoduo'], status: 'active', updatedAt: '昨天' },
     { name: '运动 / 速干裤装', code: '1503', fields: ['面料、版型、弹性、洗护、尺码'], platforms: ['taobao', 'tmall'], status: 'active', updatedAt: '3 天前' },
   ]
-  const categorySource = remoteCategories.length ? '已连接 API · 管理员发布数据' : baseUrl ? 'API 暂无数据 · 当前展示安全演示类目' : '离线演示类目'
+  const rulesData = resolveLibraryData({ baseUrl, remote: rulePacks, error: rulesError, fixtures: fallbackRows })
+  const categoriesData = resolveLibraryData({ baseUrl, remote: remoteCategories, error: categoriesError, fixtures: fallbackCategories })
+  const rows = rulesData.items
+  const categories = categoriesData.items
+  const ruleSource = ({ offline_demo: '离线演示规则', loading: '正在读取 API 规则', api_error: 'API 规则读取失败', api_empty: 'API 已连接 · 暂无规则数据', api_ready: '已连接 API · 管理员发布数据' } as const)[rulesData.mode]
+  const categorySource = ({ offline_demo: '离线演示类目', loading: '正在读取 API 类目', api_error: 'API 类目读取失败', api_empty: 'API 已连接 · 暂无类目数据', api_ready: '已连接 API · 管理员发布数据' } as const)[categoriesData.mode]
   const platformRows = platform === 'all' ? rows : rows.filter(row => row.scope.includes('全平台') || row.scope.includes(platformNames[platform]))
   const filteredRules = platformRows.filter(row => `${row.name}${row.scope}${row.version}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
   const filteredCategories = categories.filter(row => `${row.name}${row.code}${row.fields.join('')}`.includes(query))
   const attributeTemplateCount = new Set(categories.flatMap(category => category.fields)).size
-  const mappingStatus = baseUrl ? '实时读取' : '未读取'
-  return <div className="page-stack"><section className="page-intro"><div><span className="section-kicker">POLICY & TAXONOMY</span><h2>规则库与品类库</h2><p>先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。</p></div><StatusChip tone="neutral"><ShieldCheck size={15}/>只读证据中心</StatusChip></section><div className="info-notice" role="status"><ShieldCheck size={16}/>规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。</div><section className="metric-grid"><MetricCard icon={ShieldCheck} label="生效规则包" value={String(rows.filter(row => row.status === 'active').length)} detail="跨平台可追溯" tone="green"/><MetricCard icon={Boxes} label="已覆盖品类" value={String(categories.length)} detail={categorySource} tone="blue"/><MetricCard icon={AlertCircle} label="属性模板字段" value={String(attributeTemplateCount)} detail="来自当前类目目录" tone="amber"/><MetricCard icon={CheckCircle2} label="字段映射" value={mappingStatus} detail="不伪造校验比例" tone="violet"/></section><section className="library-toolbar"><div className="library-tabs" role="tablist" aria-label="规则与品类库"><button className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')} role="tab" aria-selected={tab === 'rules'}><ShieldCheck size={15}/>规则库 <span>{rows.length}</span></button><button className={tab === 'categories' ? 'active' : ''} onClick={() => setTab('categories')} role="tab" aria-selected={tab === 'categories'}><Boxes size={15}/>品类库 <span>{categories.length}</span></button></div><label className="library-platform-filter"><span>规则平台</span><select value={platform} onChange={event => setPlatform(event.target.value as PlatformId | 'all')}><option value="all">全部平台</option>{(Object.entries(platformNames) as Array<[PlatformId, string]>).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label><label className="library-search"><Search size={15}/><span className="sr-only">搜索规则或品类</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder={tab === 'rules' ? '搜索规则名称、平台或版本' : '搜索品类、类目编码或属性'} /></label></section>{tab === 'rules' ? <section className="panel rules-list"><div className="panel-heading"><div><span className="section-kicker">ACTIVE RULE PACKS</span><h3>生效规则包</h3></div><StatusChip tone="green">{filteredRules.length} 个结果</StatusChip></div>{filteredRules.map(row => <div className="rule-row" key={row.id}><div className="rule-symbol"><ShieldCheck size={17}/></div><div><b>{row.name}</b><span>{row.version} · 修订 {row.revision ?? 1}</span></div><StatusChip tone="neutral">{row.scope}</StatusChip><span>{row.status === 'active' ? '生效中' : row.status}</span><span className="rule-audit-meta">{row.source?.reference ?? '演示数据'} · {row.source?.checkedAt ?? row.updatedAt}</span></div>)}{!filteredRules.length && <div className="empty-state"><Search size={20}/><b>没有匹配规则</b><span>请调整关键词。</span></div>}</section> : <><div className="info-notice" role="status"><Boxes size={16}/>{categorySource}。类目状态仅代表本地目录状态，提交平台前仍需做字段校验。</div><section className="category-grid">{filteredCategories.map(category => <article className="category-card" key={category.code}><div className="category-card-head"><div className="category-icon"><Boxes size={18}/></div><div><span className="section-kicker">CATALOG {category.code}</span><h3>{category.name}</h3></div><StatusChip tone="green">{category.status === 'active' ? '已生效' : category.status}</StatusChip></div><div className="category-meta"><span><b>平台范围</b>{category.platforms.map(platform => platformNames[platform] ?? platform).join(' · ')}</span><span><b>属性模板</b>{category.fields.join('、')}</span></div><div className="category-card-foot"><span>最近更新：{category.updatedAt}</span><button className="text-button" onClick={() => setSelectedCategory(category)}>查看字段映射 <ArrowRight size={14}/></button></div></article>)}{!filteredCategories.length && <div className="empty-state"><Search size={20}/><b>没有匹配品类</b><span>请调整关键词。</span></div>}</section></>}{selectedCategory && <section className="panel category-mapping-detail" data-testid="category-mapping-detail" aria-label="字段映射详情"><div className="panel-heading"><div><span className="section-kicker">FIELD MAPPING</span><h3>{selectedCategory.name} · 字段映射</h3><p className="panel-subtitle">当前展示平台类目模板字段；提交前仍需以目标平台实时校验为准。</p></div><button className="text-button" onClick={() => setSelectedCategory(null)}>关闭</button></div><div className="category-meta"><span><b>类目编码</b>{selectedCategory.code}</span><span><b>平台范围</b>{selectedCategory.platforms.map(platform => platformNames[platform] ?? platform).join(" · ")}</span></div><div className="mapping-field-list">{selectedCategory.fields.map(field => <span key={field}><CheckCircle2 size={14}/>{field}</span>)}</div></section>}</div>
+  const mappingStatus = ({ offline_demo: '离线演示', loading: '读取中', api_error: '读取失败', api_empty: '暂无数据', api_ready: '实时读取' } as const)[categoriesData.mode]
+  const ruleMetric = ['loading', 'api_error'].includes(rulesData.mode) ? '—' : String(rows.filter(row => row.status === 'active').length)
+  const categoryMetric = ['loading', 'api_error'].includes(categoriesData.mode) ? '—' : String(categories.length)
+  const attributeMetric = ['loading', 'api_error'].includes(categoriesData.mode) ? '—' : String(attributeTemplateCount)
+  const rulesContent = rulesData.mode === 'loading'
+    ? <LoadingState label="正在读取规则库…" />
+    : rulesData.mode === 'api_error'
+      ? <ErrorNotice message={`规则库读取失败：${rulesError}`} onRetry={() => setRulesReloadKey(key => key + 1)} />
+      : rulesData.mode === 'api_empty'
+        ? <div className="empty-state" data-testid="rules-api-empty"><ShieldCheck size={20}/><b>API 暂无生效规则包</b><span>服务已成功返回空数据；未混入任何演示规则。</span></div>
+        : filteredRules.length
+          ? filteredRules.map(row => <div className="rule-row" key={row.id}><div className="rule-symbol"><ShieldCheck size={17}/></div><div><b>{row.name}</b><span>{row.version} · 修订 {row.revision ?? 1}</span></div><StatusChip tone="neutral">{row.scope}</StatusChip><span>{row.status === 'active' ? '生效中' : row.status}</span><span className="rule-audit-meta">{row.source?.reference ?? (rulesData.mode === 'offline_demo' ? '演示数据' : 'API 规则包')} · {row.source?.checkedAt ?? row.updatedAt}</span></div>)
+          : <div className="empty-state"><Search size={20}/><b>没有匹配规则</b><span>请调整关键词。</span></div>
+  const categoriesContent = categoriesData.mode === 'loading'
+    ? <LoadingState label="正在读取品类库…" />
+    : categoriesData.mode === 'api_error'
+      ? <ErrorNotice message={`品类库读取失败：${categoriesError}`} onRetry={() => setCategoriesReloadKey(key => key + 1)} />
+      : categoriesData.mode === 'api_empty'
+        ? <div className="empty-state" data-testid="categories-api-empty"><Boxes size={20}/><b>API 暂无类目数据</b><span>服务已成功返回空数据；未混入任何演示类目。</span></div>
+        : filteredCategories.length
+          ? filteredCategories.map(category => <article className="category-card" key={category.code}><div className="category-card-head"><div className="category-icon"><Boxes size={18}/></div><div><span className="section-kicker">CATALOG {category.code}</span><h3>{category.name}</h3></div><StatusChip tone="green">{category.status === 'active' ? '已生效' : category.status}</StatusChip></div><div className="category-meta"><span><b>平台范围</b>{category.platforms.map(platform => platformNames[platform] ?? platform).join(' · ')}</span><span><b>属性模板</b>{category.fields.join('、')}</span></div><div className="category-card-foot"><span>最近更新：{category.updatedAt}</span><button className="text-button" onClick={() => setSelectedCategory(category)}>查看字段映射 <ArrowRight size={14}/></button></div></article>)
+          : <div className="empty-state"><Search size={20}/><b>没有匹配品类</b><span>请调整关键词。</span></div>
+  return <div className="page-stack"><section className="page-intro"><div><span className="section-kicker">POLICY & TAXONOMY</span><h2>规则库与品类库</h2><p>先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。</p></div><StatusChip tone="neutral"><ShieldCheck size={15}/>只读证据中心</StatusChip></section><div className="info-notice" role="status"><ShieldCheck size={16}/>规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。</div><section className="metric-grid"><MetricCard icon={ShieldCheck} label="生效规则包" value={ruleMetric} detail={ruleSource} tone="green"/><MetricCard icon={Boxes} label="已覆盖品类" value={categoryMetric} detail={categorySource} tone="blue"/><MetricCard icon={AlertCircle} label="属性模板字段" value={attributeMetric} detail="来自当前类目目录" tone="amber"/><MetricCard icon={CheckCircle2} label="字段映射" value={mappingStatus} detail="不伪造校验比例" tone="violet"/></section><section className="library-toolbar"><div className="library-tabs" role="tablist" aria-label="规则与品类库"><button className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')} role="tab" aria-selected={tab === 'rules'}><ShieldCheck size={15}/>规则库 <span>{rows.length}</span></button><button className={tab === 'categories' ? 'active' : ''} onClick={() => setTab('categories')} role="tab" aria-selected={tab === 'categories'}><Boxes size={15}/>品类库 <span>{categories.length}</span></button></div><label className="library-platform-filter"><span>规则平台</span><select value={platform} onChange={event => setPlatform(event.target.value as PlatformId | 'all')}><option value="all">全部平台</option>{(Object.entries(platformNames) as Array<[PlatformId, string]>).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label><label className="library-search"><Search size={15}/><span className="sr-only">搜索规则或品类</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder={tab === 'rules' ? '搜索规则名称、平台或版本' : '搜索品类、类目编码或属性'} /></label></section>{tab === 'rules' ? <section className="panel rules-list" aria-busy={rulesData.mode === 'loading'}><div className="panel-heading"><div><span className="section-kicker">ACTIVE RULE PACKS</span><h3>生效规则包</h3></div><StatusChip tone={rulesData.mode === 'api_error' ? 'amber' : 'green'}>{rulesData.mode === 'loading' ? '读取中…' : rulesData.mode === 'api_error' ? '读取失败' : `${filteredRules.length} 个结果`}</StatusChip></div>{rulesContent}</section> : <><div className="info-notice" role="status"><Boxes size={16}/>{categorySource}。类目状态仅代表当前数据源状态，提交平台前仍需做字段校验。</div><section className="category-grid" aria-busy={categoriesData.mode === 'loading'}>{categoriesContent}</section></>}{selectedCategory && categoriesData.mode !== 'api_error' && <section className="panel category-mapping-detail" data-testid="category-mapping-detail" aria-label="字段映射详情"><div className="panel-heading"><div><span className="section-kicker">FIELD MAPPING</span><h3>{selectedCategory.name} · 字段映射</h3><p className="panel-subtitle">当前展示平台类目模板字段；提交前仍需以目标平台实时校验为准。</p></div><button className="text-button" onClick={() => setSelectedCategory(null)}>关闭</button></div><div className="category-meta"><span><b>类目编码</b>{selectedCategory.code}</span><span><b>平台范围</b>{selectedCategory.platforms.map(platform => platformNames[platform] ?? platform).join(" · ")}</span></div><div className="mapping-field-list">{selectedCategory.fields.map(field => <span key={field}><CheckCircle2 size={14}/>{field}</span>)}</div></section>}</div>
 }
 
-function PublishModal({ close, onComplete, onSubmit, returnFocus, target, preview }: { close: () => void; onComplete: (jobId?: string) => void; onSubmit?: () => Promise<string>; returnFocus: HTMLElement | null; target?: Target; preview?: PublishPreview | null }) {
+function PublishModal({ close, onComplete, onSubmit, returnFocus, target, preview }: { close: () => void; onComplete: (jobId: string) => void; onSubmit: () => Promise<string>; returnFocus: HTMLElement | null; target?: Target; preview?: PublishPreview | null }) {
   const [confirmed, setConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const cancelRef = useRef<HTMLButtonElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
+  const errorRef = useRef<HTMLDivElement>(null)
   const loadingRef = useRef(false)
+  const submitLockRef = useRef(false)
   useEffect(() => { loadingRef.current = loading }, [loading])
   useEffect(() => {
     cancelRef.current?.focus()
@@ -1040,10 +1203,20 @@ function PublishModal({ close, onComplete, onSubmit, returnFocus, target, previe
     window.addEventListener('keydown', handler)
     return () => { window.removeEventListener('keydown', handler); returnFocus?.focus() }
   }, [close, returnFocus])
-  const submit = () => {
+  const submit = async () => {
+    if (submitLockRef.current) return
+    submitLockRef.current = true
+    setSubmitError('')
     setLoading(true)
-    const operation = onSubmit ? onSubmit() : new Promise<string>(resolve => window.setTimeout(() => resolve('REQ-88214'), 1100))
-    operation.then(jobId => onComplete(jobId)).catch((cause: Error) => { setLoading(false); window.alert(`发布未受理：${cause.message}`) })
+    try {
+      const jobId = await onSubmit()
+      onComplete(jobId)
+    } catch (cause) {
+      submitLockRef.current = false
+      setLoading(false)
+      setSubmitError(`发布未受理：${describeApiError(cause)} 请保留当前确认状态并重试；系统会复用同一幂等键。`)
+      window.requestAnimationFrame(() => errorRef.current?.focus())
+    }
   }
   const platform = target ? platformNames[target.platform] : preview ? platformNames[preview.task.platform] : '目标平台'
   const tone = target ? platformTone[target.platform] : preview ? platformTone[preview.task.platform] : 'orange'
@@ -1051,7 +1224,7 @@ function PublishModal({ close, onComplete, onSubmit, returnFocus, target, previe
   const changes = preview?.changes ?? []
   const actionLabel = preview?.operation === 'create' ? '创建' : '更新'
   const identityError = !target ? '发布目标缺少店铺身份，已阻止发布。' : validateTargetStoreIdentity(target) ?? (preview ? validateTaskStoreIdentity(target, preview.task) : null)
-  return <div className="modal-layer" role="presentation"><div className="modal" ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="publish-title"><div className="modal-head"><div className="modal-icon"><Rocket size={21}/></div><div><span className="section-kicker">SECOND CONFIRMATION</span><h2 id="publish-title">确认{actionLabel}{platform}商品</h2></div><button className="icon-button" onClick={close} disabled={loading} aria-label="关闭发布确认"><X size={19}/></button></div><div className="modal-body"><div className="publish-target"><div className={`platform-logo ${tone}`}>{platform.slice(0, 1)}</div><div><b>{title}</b><span>{target?.storeName && target.accountId ? storeIdentityLabel(target) : '店铺身份缺失'}</span><span>{preview ? `服务端快照 ${preview.remoteSnapshotHash.slice(0, 12)}…` : '正在等待服务端发布预览'}</span></div><StatusChip tone={preview && !identityError ? 'green' : 'amber'}>{preview && !identityError ? <><Check size={12}/>快照最新</> : '不可确认'}</StatusChip></div>{identityError && <ErrorNotice message={identityError} compact />}<div className="change-summary"><h3>本次将{actionLabel}并写入 {changes.length || 0} 个字段</h3>{changes.length ? changes.map(change => <div key={change}><span>{change}</span><b>{actionLabel}</b></div>) : <div><span>等待服务端 diff</span><b>不可确认</b></div>}<div className="unchanged"><span>价格、库存、SKU、上下架状态</span><b>不会修改</b></div></div><div className="safety-note"><ShieldCheck size={18}/><div><b>发布保护已开启</b><span>请求使用一次性确认令牌和幂等键。若平台超时，系统将先查询状态再决定是否重试。</span></div></div><label className="confirm-check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={loading || !preview || Boolean(identityError)}/><span>我确认将审核后的内容写入{target?.storeName ?? '目标店铺'}（账号 {target?.accountId ?? '缺失'}）的上述{platform}商品，并理解平台可能进入审核。</span></label></div><div className="modal-actions"><button className="secondary" onClick={close} ref={cancelRef} disabled={loading}>返回检查</button><button className="danger-action" disabled={!confirmed || loading || !preview || Boolean(identityError)} onClick={submit}>{loading ? <><RefreshCw className="spin" size={16}/>正在安全提交…</> : <><Rocket size={16}/>确认{actionLabel}{platform}商品</>}</button></div></div></div>
+  return <div className="modal-layer" role="presentation"><div className="modal" ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="publish-title" aria-busy={loading}><div className="modal-head"><div className="modal-icon"><Rocket size={21}/></div><div><span className="section-kicker">SECOND CONFIRMATION</span><h2 id="publish-title">确认{actionLabel}{platform}商品</h2></div><button className="icon-button" onClick={close} disabled={loading} aria-label="关闭发布确认"><X size={19}/></button></div><div className="modal-body"><div className="publish-target"><div className={`platform-logo ${tone}`}>{platform.slice(0, 1)}</div><div><b>{title}</b><span>{target?.storeName && target.accountId ? storeIdentityLabel(target) : '店铺身份缺失'}</span><span>{preview ? `服务端快照 ${preview.remoteSnapshotHash.slice(0, 12)}…` : '正在等待服务端发布预览'}</span></div><StatusChip tone={preview && !identityError ? 'green' : 'amber'}>{preview && !identityError ? <><Check size={12}/>快照最新</> : '不可确认'}</StatusChip></div>{identityError && <ErrorNotice message={identityError} compact />}<div className="change-summary"><h3>本次将{actionLabel}并写入 {changes.length || 0} 个字段</h3>{changes.length ? changes.map(change => <div key={change}><span>{change}</span><b>{actionLabel}</b></div>) : <div><span>等待服务端 diff</span><b>不可确认</b></div>}<div className="unchanged"><span>价格、库存、SKU、上下架状态</span><b>不会修改</b></div></div><div className="safety-note"><ShieldCheck size={18}/><div><b>发布保护已开启</b><span>请求使用一次性确认令牌和幂等键。若平台超时，系统将保留确认状态并使用同一幂等键重试。</span></div></div>{submitError && <div className="inline-error" id="publish-submit-error" ref={errorRef} role="alert" aria-live="assertive" tabIndex={-1}><AlertCircle size={16}/><span>{submitError}</span></div>}<label className="confirm-check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={loading || !preview || Boolean(identityError)}/><span>我确认将审核后的内容写入{target?.storeName ?? '目标店铺'}（账号 {target?.accountId ?? '缺失'}）的上述{platform}商品，并理解平台可能进入审核。</span></label></div><div className="modal-actions"><button className="secondary" onClick={close} ref={cancelRef} disabled={loading}>返回检查</button><button className="danger-action" disabled={!confirmed || loading || !preview || Boolean(identityError)} aria-describedby={submitError ? 'publish-submit-error' : undefined} onClick={() => void submit()}>{loading ? <><RefreshCw className="spin" size={16}/>正在安全提交…</> : <><Rocket size={16}/>{submitError ? '重新安全提交' : `确认${actionLabel}${platform}商品`}</>}</button></div></div></div>
 }
 
 export default function App() {
@@ -1066,6 +1239,8 @@ export default function App() {
   const [utilityPanel, setUtilityPanel] = useState<UtilityPanel | null>(null)
   const [globalSearch, setGlobalSearch] = useState('')
   const publishTrigger = useRef<HTMLElement | null>(null)
+  const utilityTrigger = useRef<HTMLElement | null>(null)
+  const publishPreviewLock = useRef(false)
   useEffect(() => {
     const closeNav = (event: KeyboardEvent) => { if (event.key === 'Escape') setMobileNav(false); if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); document.querySelector<HTMLInputElement>('.search-box input')?.focus() } }
     window.addEventListener('keydown', closeNav)
@@ -1077,32 +1252,60 @@ export default function App() {
     fetchApiHealth(baseUrl).then(() => setApiOnline(true)).catch(() => setApiOnline(false))
   }, [])
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined
+  const openUtility = (panel: UtilityPanel) => {
+    utilityTrigger.current = document.activeElement as HTMLElement | null
+    setUtilityPanel(panel)
+  }
   const openPublish = async () => {
+    if (publishPreviewLock.current) return
     if (!taskContext?.task || !taskContext.version) { setToast('请先选择商品并完成内容审核'); return }
     if (!target) { setToast('发布目标缺少店铺身份，已阻止发布。请返回商品列表重新选择。'); return }
+    if (!apiBaseUrl) { setToast('未配置 API，离线演示不会创建或伪造发布任务。'); return }
     const currentIdentityError = validateTargetStoreIdentity(target) ?? validateTaskStoreIdentity(target, taskContext.task)
     if (currentIdentityError) { setToast(currentIdentityError); return }
+    const accountId = target.accountId
+    if (!accountId) { setToast('发布目标缺少店铺账号，已阻止发布。'); return }
     publishTrigger.current = document.activeElement as HTMLElement | null
+    publishPreviewLock.current = true
+    setPublishPreview(null)
     try {
-      const preview = apiBaseUrl ? await preparePublish(apiBaseUrl, taskContext.task.id) : null
-      const previewIdentityError = preview ? validateTaskStoreIdentity(target, preview.task) : null
+      const preview = await preparePublish(apiBaseUrl, taskContext.task.id)
+      const previewIdentityError = validateTaskStoreIdentity(target, preview.task) ?? validatePublishPreview({
+        expectedTaskId: taskContext.task.id,
+        expectedContentVersionId: taskContext.version.id,
+        expectedAccountId: accountId,
+        previewTaskId: preview.task.id,
+        previewContentVersionId: preview.version.id,
+        previewAccountId: preview.task.accountId,
+        confirmationHash: preview.confirmationHash,
+        remoteSnapshotHash: preview.remoteSnapshotHash,
+      })
       if (previewIdentityError) { setToast(previewIdentityError); return }
       setPublishPreview(preview); setPublishModal(true)
     }
     catch (cause) { setToast(`发布预览失败：${describeApiError(cause)}`); window.setTimeout(() => setToast(''), 5000) }
+    finally { publishPreviewLock.current = false }
   }
   const submitPublish = async () => {
-    if (!apiBaseUrl) return 'REQ-88214'
+    if (!apiBaseUrl) throw new Error('未配置 API，离线演示不会创建或伪造发布任务。')
     if (!taskContext?.task || !taskContext.version || !target) throw new Error('请先完成目标商品的内容审核，并确认完整店铺身份后再进入发布。')
     const task = taskContext.task
     const draft = taskContext.version
-    const preview = publishPreview ?? await preparePublish(apiBaseUrl, task.id)
+    const preview = publishPreview
+    if (!preview) throw new Error('发布预览已失效，请返回检查并重新进入发布确认。')
     const identityError = validateTargetStoreIdentity(target) ?? validateTaskStoreIdentity(target, task) ?? validateTaskStoreIdentity(target, preview.task)
     if (identityError) throw new Error(identityError)
-    const job = await confirmPublish(apiBaseUrl, { task_id: task.id, content_version_id: draft.id, confirmation_hash: preview.confirmationHash, remote_snapshot_hash: preview.remoteSnapshotHash, account_id: target.accountId }, `ui-${task.id}-${draft.id}`)
+    const accountId = target.accountId
+    if (!accountId) throw new Error('发布目标缺少店铺账号，已阻止发布。')
+    const previewError = validatePublishPreview({ expectedTaskId: task.id, expectedContentVersionId: draft.id, expectedAccountId: accountId, previewTaskId: preview.task.id, previewContentVersionId: preview.version.id, previewAccountId: preview.task.accountId, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash })
+    if (previewError) throw new Error(previewError)
+    const submission = createPublishSubmission({ taskId: task.id, contentVersionId: draft.id, accountId, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash })
+    const job = await confirmPublish(apiBaseUrl, submission.body, submission.idempotencyKey)
+    const receiptError = validatePublishReceipt(submission, job)
+    if (receiptError) throw new Error(receiptError)
     return job.id
   }
-  const completePublish = (jobId = 'REQ-88214') => { setPublishModal(false); setPage('publish'); setToast(`发布请求已受理：${jobId}。平台生效前会持续显示为“审核中”。`); window.setTimeout(() => setToast(''), 5000) }
+  const completePublish = (jobId: string) => { setPublishModal(false); setPublishPreview(null); setPage('publish'); setToast(`发布请求已受理：${jobId}。平台生效前会持续显示为“审核中”。`); window.setTimeout(() => setToast(''), 5000) }
   const openCorrection = async (job: PublishJob) => {
     if (!apiBaseUrl) return
     try {
@@ -1127,12 +1330,12 @@ export default function App() {
     setPage('products')
   }
   return <div className="app-shell">
-    <div className="app-content" inert={publishModal}>
-      <Sidebar page={page} setPage={setPage} open={mobileNav} close={() => setMobileNav(false)} onOpenUtility={setUtilityPanel} />
-      <div className="main-shell"><Topbar page={page} openMenu={() => setMobileNav(true)} apiOnline={apiOnline} onOpenUtility={setUtilityPanel} searchQuery={globalSearch} onSearchQuery={setGlobalSearch} onSearch={searchProducts} /><div className={`page ${page === 'task' ? 'task-page' : ''}`}>{page === 'overview' && <Overview goTask={() => { setTarget(undefined); setTaskContext(null); setPage('products') }} goProducts={() => setPage('products')} goTasks={() => setPage('task')} baseUrl={apiBaseUrl} onOpenUtility={setUtilityPanel} />}{page === 'products' && <Products baseUrl={apiBaseUrl} initialQuery={globalSearch} onSelectTarget={next => { setTarget(next); setTaskContext(null); setPage('task') }} />}{page === 'task' && <TaskWorkspace openPublish={openPublish} baseUrl={apiBaseUrl} target={target} onContext={setTaskContext} onSelectTarget={next => { setTarget(next); setTaskContext(null) }} onBack={() => { setTarget(undefined); setTaskContext(null) }} />}{page === 'publish' && <PublishCenter openPublish={openPublish} openCorrection={openCorrection} baseUrl={apiBaseUrl} canOpenPublish={Boolean(taskContext?.task && taskContext.version)} />}{page === 'rules' && <Rules baseUrl={apiBaseUrl} />}</div></div>
+    <div className="app-content" inert={publishModal || Boolean(utilityPanel)}>
+      <Sidebar page={page} setPage={setPage} open={mobileNav} close={() => setMobileNav(false)} onOpenUtility={openUtility} />
+      <div className="main-shell"><Topbar page={page} openMenu={() => setMobileNav(true)} apiOnline={apiOnline} onOpenUtility={openUtility} searchQuery={globalSearch} onSearchQuery={setGlobalSearch} onSearch={searchProducts} /><div className={`page ${page === 'task' ? 'task-page' : ''}`}>{page === 'overview' && <Overview goTask={() => { setTarget(undefined); setTaskContext(null); setPage('products') }} goProducts={() => setPage('products')} goTasks={() => setPage('task')} baseUrl={apiBaseUrl} onOpenUtility={openUtility} />}{page === 'products' && <Products baseUrl={apiBaseUrl} initialQuery={globalSearch} onSelectTarget={next => { setTarget(next); setTaskContext(null); setPage('task') }} />}{page === 'task' && <TaskWorkspace openPublish={openPublish} baseUrl={apiBaseUrl} target={target} onContext={setTaskContext} onSelectTarget={next => { setTarget(next); setTaskContext(null) }} onBack={() => { setTarget(undefined); setTaskContext(null) }} />}{page === 'publish' && <PublishCenter openPublish={openPublish} openCorrection={openCorrection} baseUrl={apiBaseUrl} canOpenPublish={Boolean(taskContext?.task && taskContext.version)} />}{page === 'rules' && <Rules baseUrl={apiBaseUrl} />}</div></div>
     </div>
     {publishModal && target && <PublishModal close={() => setPublishModal(false)} preview={publishPreview} target={target} onSubmit={submitPublish} onComplete={completePublish} returnFocus={publishTrigger.current} />}
-    {utilityPanel && <UtilityPanel panel={utilityPanel} apiOnline={apiOnline} apiBaseUrl={apiBaseUrl} onClose={() => setUtilityPanel(null)} />}
+    {utilityPanel && <UtilityPanel panel={utilityPanel} apiOnline={apiOnline} apiBaseUrl={apiBaseUrl} onClose={() => setUtilityPanel(null)} returnFocus={utilityTrigger.current} />}
     <div className={`toast ${toast ? 'visible' : ''}`} role="status" aria-live="polite"><CheckCircle2 size={18}/>{toast}</div>
   </div>
 }
