@@ -16,6 +16,8 @@ describe('release manifest', () => {
       capabilityEvidenceRef: 'artifact://capability/rc-20260826',
       capacityEvidenceRef: 'artifact://capacity/rc-20260826',
       paymentEvidenceRef: 'artifact://payment/rc-20260826',
+      modelRelayEvidenceRef: 'artifact://relay/rc-20260826',
+      restoreEvidenceRef: 'artifact://restore/rc-20260826',
     })
     expect(manifest).toMatchObject({
       schemaVersion: 1,
@@ -32,7 +34,9 @@ describe('release manifest', () => {
       productionEvidence: {
         capability: 'artifact://capability/rc-20260826',
         capacity: 'artifact://capacity/rc-20260826',
+        modelRelay: 'artifact://relay/rc-20260826',
         payment: 'artifact://payment/rc-20260826',
+        restore: 'artifact://restore/rc-20260826',
       },
     })
     expect(manifest.artifacts).toHaveLength(4)
@@ -44,7 +48,9 @@ describe('release manifest', () => {
     expect(manifest.productionEvidence).toEqual({
       capability: 'not-provided',
       capacity: 'not-provided',
+      modelRelay: 'not-provided',
       payment: 'not-provided',
+      restore: 'not-provided',
     })
   })
 })

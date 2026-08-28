@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REQUIRED_CAPABILITIES, REQUIRED_PLATFORMS } from './capability-evidence-gate.js'
+import { signProductionEvidence } from './production-evidence-gate.js'
 
 function run(script: string, args: string[] = [], env: Record<string, string> = {}) {
   return execFileSync('sh', [script, ...args], { encoding: 'utf8', env: { ...process.env, ...env }, stdio: 'pipe' })
@@ -80,8 +81,11 @@ describe('deployment operation scripts', () => {
     const evidence = join(directory, 'capability-evidence.json')
     const capacity = join(directory, 'capacity-evidence.json')
     const relayEvidence = join(directory, 'model-relay-evidence.json')
+    const paymentEvidence = join(directory, 'payment-evidence.json')
+    const restoreEvidence = join(directory, 'restore-evidence.json')
     const manifest = join(directory, 'rendered.yaml')
     const digest = 'sha256:' + 'a'.repeat(64)
+    const attestationKey = 'operations-test-attestation-key-32-characters'
     writeFileSync(config, [
       'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'OPS_AUTH_MODE: oidc',
       'auth_enforcement: strict', 'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
@@ -105,13 +109,20 @@ describe('deployment operation scripts', () => {
       schema_version: '1', release_id: 'release-1', generated_at: '2026-08-23T06:00:00Z', relay: 'https://relay.example.com',
       results: ['text', 'image', 'image_edit', 'ocr', 'video'].map(modality => ({ modality, state: 'ready', endpoint: '/probe', model: `merchant-${modality}-v1`, providerRequestId: `req-${modality}`, usageObserved: true, costObserved: true })),
     }))
+    const commonEvidence = { schema_version: '1', release_id: 'release-1', image_digest: digest, environment: 'production', status: 'pass', generated_at: new Date().toISOString(), simulated: false, verified_by: 'release-manager@example.com', verified_at: new Date(Date.now() - 60_000).toISOString() }
+    const paymentDocument: Record<string, unknown> = { ...commonEvidence, kind: 'payment', provider: 'alipay', amount_cny: 0.01, provider_trade_id_sha256: 'b'.repeat(64), checks: Object.fromEntries(['checkout', 'callback', 'callback_replay', 'provider_query', 'reconciliation', 'refund'].map(name => [name, { status: 'pass', evidence_ref: `artifact://production/payment/${name}` }])) }
+    paymentDocument.attestation_hmac_sha256 = signProductionEvidence(paymentDocument, attestationKey)
+    writeFileSync(paymentEvidence, JSON.stringify(paymentDocument))
+    const restoreDocument: Record<string, unknown> = { ...commonEvidence, kind: 'restore', recovery_target_isolated: true, backup_sha256: 'c'.repeat(64), source_backup_created_at: new Date(Date.now() - 3_600_000).toISOString(), recovery_point_at: new Date(Date.now() - 1_800_000).toISOString(), checks: Object.fromEntries(['backup_checksum', 'isolated_restore', 'migrations', 'data_integrity', 'application_smoke'].map(name => [name, { status: 'pass', evidence_ref: `artifact://production/restore/${name}` }])) }
+    restoreDocument.attestation_hmac_sha256 = signProductionEvidence(restoreDocument, attestationKey)
+    writeFileSync(restoreEvidence, JSON.stringify(restoreDocument))
     writeFileSync(manifest, [
       `image: registry.example.com/merchant-api@${digest}`,
       `image: registry.example.com/merchant-worker@${digest}`,
       `image: registry.example.com/merchant-ui@${digest}`,
     ].join('\n'))
     const script = 'infra/scripts/deploy-preflight.sh'
-    const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGEST: digest, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
+    const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, EVIDENCE_ATTESTATION_KEY: attestationKey, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGEST: digest, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
     expect(run(script, [config], base)).toContain('deploy preflight passed')
     writeFileSync(config, readFileSync(config, 'utf8').replace('xiaohongshu_write_enabled: true', '# xiaohongshu_write_enabled: true'))
     expect(() => run(script, [config], base)).toThrow(/xiaohongshu/)

@@ -97,12 +97,11 @@ test('same-platform same-name selection preserves store identity through task fa
 })
 
 test('missing or changed store identity blocks same-name task creation', async ({ page }) => {
-  let productReads = 0
+  let productMode = 'initial'
   let createRequests = 0
   const missingIdentity = { ...sameNameProducts[0], id: 'prod-missing', accountId: undefined }
   await page.route('**/api/v1/products', route => {
-    productReads += 1
-    if (productReads === 1) return fulfillJson(route, [missingIdentity, sameNameProducts[1]])
+    if (productMode === 'initial') return fulfillJson(route, [missingIdentity, sameNameProducts[1]])
     return fulfillJson(route, [missingIdentity, { ...sameNameProducts[1], accountId: 'store-a', storeName: '淘宝 A 店' }])
   })
   await page.route('**/api/v1/tasks', route => {
@@ -116,6 +115,8 @@ test('missing or changed store identity blocks same-name task creation', async (
   await expect(missingRow.getByRole('button', { name: /创建任务/ })).toBeDisabled()
 
   const storeBRow = page.locator('tbody tr').filter({ hasText: '淘宝 B 店' })
+  await expect(storeBRow).toBeVisible()
+  productMode = 'mismatch'
   await storeBRow.getByRole('button', { name: /创建任务/ }).click()
   await expect(page.getByRole('alert').filter({ hasText: '店铺身份与最新商品事实不一致' })).toBeVisible()
   await expect.poll(() => createRequests).toBe(0)

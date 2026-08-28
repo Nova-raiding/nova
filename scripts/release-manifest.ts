@@ -17,7 +17,7 @@ export interface ReleaseManifest {
   }
   mcp: { methodCount: number; methodListSha256: string; bridgeSha256: string }
   artifacts: Array<{ path: string; sha256: string; bytes: number }>
-  productionEvidence: { capability: string; capacity: string; payment: string }
+  productionEvidence: { capability: string; capacity: string; modelRelay: string; payment: string; restore: string }
 }
 
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -36,6 +36,8 @@ export function buildReleaseManifest(input: {
   capabilityEvidenceRef?: string
   capacityEvidenceRef?: string
   paymentEvidenceRef?: string
+  modelRelayEvidenceRef?: string
+  restoreEvidenceRef?: string
 }): ReleaseManifest {
   const root = resolve(input.root ?? process.cwd())
   const pluginManifestPath = resolve(root, 'apps/plugin/.codex-plugin/plugin.json')
@@ -69,7 +71,9 @@ export function buildReleaseManifest(input: {
     productionEvidence: {
       capability: input.capabilityEvidenceRef ?? (process.env.CAPABILITY_EVIDENCE_REF?.trim() || 'not-provided'),
       capacity: input.capacityEvidenceRef ?? (process.env.CAPACITY_EVIDENCE_REF?.trim() || 'not-provided'),
+      modelRelay: input.modelRelayEvidenceRef ?? (process.env.MODEL_RELAY_EVIDENCE_REF?.trim() || 'not-provided'),
       payment: input.paymentEvidenceRef ?? (process.env.PAYMENT_EVIDENCE_REF?.trim() || 'not-provided'),
+      restore: input.restoreEvidenceRef ?? (process.env.RESTORE_EVIDENCE_REF?.trim() || 'not-provided'),
     },
   }
 }
