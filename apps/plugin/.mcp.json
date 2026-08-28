@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "merchant-marketing": {
+      "command": "sh",
+      "args": ["./mcp/bridge.sh"],
+      "cwd": ".",
+      "env": {
+        "MERCHANT_MCP_BASE_URL": "${MERCHANT_MCP_BASE_URL}",
+        "MERCHANT_WORKSPACE_ID": "${MERCHANT_WORKSPACE_ID}",
+        "MERCHANT_MCP_TOKEN": "${MERCHANT_MCP_TOKEN}",
+        "MERCHANT_ALLOW_FIXTURE_FALLBACK": "${MERCHANT_ALLOW_FIXTURE_FALLBACK}",
+        "MERCHANT_MCP_WRITE_ENABLED": "${MERCHANT_MCP_WRITE_ENABLED}",
+        "MERCHANT_MCP_ROLE": "viewer",
+        "MERCHANT_ACTOR_ID": "codex-app-user",
+        "MERCHANT_RULE_APPROVAL_TOKEN": "",
+        "MERCHANT_ARTIFACT_DIR": ""
+      }
+    }
+  }
+}

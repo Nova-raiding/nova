@@ -1,0 +1,66 @@
+{
+  "name": "merchant-marketing-codex",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "npm@10.9.8",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:doctor": "tsx scripts/dev-doctor.ts",
+    "dev:doctor:production": "tsx scripts/dev-doctor.ts --production",
+    "dev:ops-console": "VITE_API_BASE=/api npm run dev --workspace merchant-ops-console -- --host 127.0.0.1 --port 18082",
+    "dev:stack": "docker compose -f infra/local/docker-compose.yml up -d && npm run dev:ops-console",
+    "dev:stack:relay": "sh scripts/start-local-with-relay.sh",
+    "dev:api": "tsx apps/api/src/server.ts",
+    "build": "tsc -b --force && npm run build:packages",
+    "build:packages": "npm run build --workspace @merchant-marketing/config && npm run build --workspace @merchant-marketing/contracts && npm run build --workspace @merchant-marketing/domain && npm run build --workspace @merchant-marketing/connectors && npm run build --workspace @merchant-marketing/application && npm run build --workspace @merchant-marketing/knowledge && npm run build --workspace @merchant-marketing/multimodal && npm run build --workspace @merchant-marketing/persistence && npm run build --workspace @merchant-marketing/security && npm run build --workspace @merchant-marketing/storage && npm run build --workspace @merchant-marketing/workers",
+    "test": "vitest run",
+    "test:load": "tsx tests/load-smoke.ts",
+    "test:replica-consistency": "tsx tests/replica-consistency-smoke.ts",
+    "test:distributed-rate-limit": "tsx tests/distributed-rate-limit-smoke.ts",
+    "test:summary": "tsx tests/test-summary.ts",
+    "test:merchant-studio-smoke": "tsx tests/merchant-studio-smoke.ts",
+    "test:backup-restore": "sh tests/backup-restore-acceptance.sh",
+    "test:redis-loss-recovery": "tsx tests/redis-loss-recovery-smoke.ts",
+    "test:fault-acceptance": "tsx tests/fault-acceptance.ts",
+    "test:capacity-workload": "tsx tests/capacity-workload.ts",
+    "test:platform-canary": "tsx tests/platform-canary.ts",
+    "test:production-canary": "sh infra/scripts/run-production-canary.sh",
+    "evidence:validate": "tsx tests/capability-evidence-gate.ts",
+    "capacity:evidence:validate": "tsx tests/capacity-evidence-gate.ts",
+    "test:normalized-projection": "tsx tests/normalized-projection-acceptance.ts",
+    "infra:validate": "sh infra/scripts/validate-config.sh",
+    "infra:production-gate": "sh infra/scripts/validate-production-config.sh",
+    "infra:launch-preflight": "sh infra/scripts/launch-preflight.sh",
+    "codex:relay:validate": "tsx scripts/validate-codex-relay.ts",
+    "test:model-relay-canary": "tsx scripts/model-relay-canary.ts --probe",
+    "codex:relay:configure": "tsx scripts/configure-codex-relay.ts",
+    "release:manifest": "tsx scripts/release-manifest.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b --pretty false",
+    "build:ops-console": "npm run build --workspace merchant-ops-console",
+    "build:merchant-studio": "npm run build --prefix demo/merchant-studio",
+    "check": "npm run typecheck && npm test && npm run build:ops-console && npm run build:merchant-studio"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.1",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.23.0",
+    "redis": "^5.12.1"
+  }
+}

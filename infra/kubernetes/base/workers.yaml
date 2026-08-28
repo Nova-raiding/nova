@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: merchant-worker-sync, labels: {app.kubernetes.io/name: merchant-worker-sync, app.kubernetes.io/part-of: merchant-marketing-codex}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-sync}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-sync, app.kubernetes.io/part-of: merchant-marketing-codex}}
+    spec:
+      terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers: [{name: worker, image: "merchant-worker:0.1.0", envFrom: [{configMapRef: {name: merchant-runtime}}, {secretRef: {name: merchant-runtime-secrets}}], env: [{name: WORKER_ROLE, value: sync}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-sync-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-sync}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-sync-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 4Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: merchant-worker-generation, labels: {app.kubernetes.io/name: merchant-worker-generation, app.kubernetes.io/part-of: merchant-marketing-codex}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-generation}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-generation, app.kubernetes.io/part-of: merchant-marketing-codex}}
+    spec:
+      terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers: [{name: worker, image: "merchant-worker:0.1.0", envFrom: [{configMapRef: {name: merchant-runtime}}, {secretRef: {name: merchant-runtime-secrets}}], env: [{name: WORKER_ROLE, value: generation}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-generation-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-generation}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-generation-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 4Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: merchant-worker-publish, labels: {app.kubernetes.io/name: merchant-worker-publish, app.kubernetes.io/part-of: merchant-marketing-codex}}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-publish}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-publish, app.kubernetes.io/part-of: merchant-marketing-codex}}
+    spec:
+      terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers: [{name: worker, image: "merchant-worker:0.1.0", envFrom: [{configMapRef: {name: merchant-runtime}}, {secretRef: {name: merchant-runtime-secrets}}], env: [{name: WORKER_ROLE, value: publish}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-publish-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-publish}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-publish-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: merchant-worker-reconcile, labels: {app.kubernetes.io/name: merchant-worker-reconcile, app.kubernetes.io/part-of: merchant-marketing-codex}}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-reconcile}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-reconcile, app.kubernetes.io/part-of: merchant-marketing-codex}}
+    spec:
+      terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers: [{name: worker, image: "merchant-worker:0.1.0", envFrom: [{configMapRef: {name: merchant-runtime}}, {secretRef: {name: merchant-runtime-secrets}}], env: [{name: WORKER_ROLE, value: reconcile}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-reconcile-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-reconcile}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-reconcile-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-worker-sync}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-sync}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: merchant-worker-automation, labels: {app.kubernetes.io/name: merchant-worker-automation, app.kubernetes.io/part-of: merchant-marketing-codex}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-automation}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: merchant-worker-automation, app.kubernetes.io/part-of: merchant-marketing-codex}}
+    spec:
+      terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers: [{name: worker, image: "merchant-worker:0.1.0", envFrom: [{configMapRef: {name: merchant-runtime}}, {secretRef: {name: merchant-runtime-secrets}}], env: [{name: WORKER_ROLE, value: automation}, {name: WORKER_AUTOMATION_INTERVAL_MS, value: "30000"}, {name: WORKER_READY_FILE, value: /tmp/merchant-worker-automation-ready}, {name: OTEL_SERVICE_NAME, value: merchant-worker-automation}], volumeMounts: [{name: tmp, mountPath: /tmp}], readinessProbe: {exec: {command: ["/bin/sh", "-c", "test -s /tmp/merchant-worker-automation-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 6}, livenessProbe: {exec: {command: ["/bin/sh", "-c", "node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}, resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}, securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-worker-automation}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-automation}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-worker-generation}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-generation}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-worker-publish}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-publish}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-worker-reconcile}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-worker-reconcile}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: merchant-worker-publish}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: merchant-worker-publish}
+  minReplicas: 2
+  maxReplicas: 8
+  behavior: {scaleUp: {stabilizationWindowSeconds: 30}, scaleDown: {stabilizationWindowSeconds: 300}}
+  metrics: [{type: Resource, resource: {name: cpu, target: {type: Utilization, averageUtilization: 60}}}, {type: Resource, resource: {name: memory, target: {type: Utilization, averageUtilization: 75}}}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: merchant-worker-reconcile}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: merchant-worker-reconcile}
+  minReplicas: 2
+  maxReplicas: 4
+  behavior: {scaleUp: {stabilizationWindowSeconds: 30}, scaleDown: {stabilizationWindowSeconds: 300}}
+  metrics: [{type: Resource, resource: {name: cpu, target: {type: Utilization, averageUtilization: 60}}}, {type: Resource, resource: {name: memory, target: {type: Utilization, averageUtilization: 75}}}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: merchant-worker-sync}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: merchant-worker-sync}
+  minReplicas: 1
+  maxReplicas: 12
+  behavior: {scaleUp: {stabilizationWindowSeconds: 30}, scaleDown: {stabilizationWindowSeconds: 300}}
+  metrics: [{type: Resource, resource: {name: cpu, target: {type: Utilization, averageUtilization: 60}}}, {type: Resource, resource: {name: memory, target: {type: Utilization, averageUtilization: 75}}}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: merchant-worker-generation}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: merchant-worker-generation}
+  minReplicas: 1
+  maxReplicas: 16
+  behavior: {scaleUp: {stabilizationWindowSeconds: 30}, scaleDown: {stabilizationWindowSeconds: 300}}
+  metrics: [{type: Resource, resource: {name: cpu, target: {type: Utilization, averageUtilization: 60}}}, {type: Resource, resource: {name: memory, target: {type: Utilization, averageUtilization: 75}}}]

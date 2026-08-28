@@ -1,0 +1,21 @@
+graph TB
+    U[500 家并发商家] --> C[Codex App]
+    C --> P[Merchant Plugin 与 Skills]
+    P --> E[HTTPS Edge WAF 与负载均衡]
+    E --> M[无状态 MCP 模块化单体 3 至 12 副本]
+    M --> I[工作区 身份 OAuth 凭证]
+    M --> T[任务 内容 版本服务]
+    M --> R[规则与确定性检查]
+    M --> O[Outbox 调度与隔离 Worker 池]
+    M <--> K[(Redis HA 限流与短缓存)]
+    O <--> Q[(同步 生成 发布 对账队列)]
+    T <--> A[模型适配器]
+    T --> D[(HA PostgreSQL 连接池 审计与 Outbox)]
+    T --> F[(对象存储)]
+    R --> D
+    I --> G[平台连接器网关]
+    O <--> G
+    O --> D
+    G --> J[京东开放平台]
+    G --> B[淘宝 天猫开放平台]
+    G --> Q[拼多多开放平台]

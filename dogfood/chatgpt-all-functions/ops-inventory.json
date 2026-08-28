@@ -1,0 +1,133 @@
+{
+  "status": 200,
+  "inventory": {
+    "title": "Merchant Operations Console",
+    "text": "大麦\n大麦商家中心\n店铺与营销工作台\nWORKSPACE\n总览\n任务与内容\n店铺管理\n我的店铺\n5\n全部店铺\n京东\n1\njd 店铺\n拼多多\n1\npinduoduo 店铺\n淘宝\n2\ntaobao 店铺 等 2 个店铺名\ntaobao 店铺\n天猫\n1\ntmall 店铺\n账务与退款\nWORKSPACE OPERATIONS\n商业与平台控制台\n角色：workspace_owner、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\n刷新数据\nOVERVIEW\n运营总览\n查看套餐、模型、平台告警和上线状态。\n当前套餐\nStarter\n订阅状态\ntrialing\n平台已启用\n6 / 6\n钱包余额\n¥0.00\n工作区与财务总览\n工作区\t状态\t套餐\t订阅\t任务用量\t成员数\nws_demo\tactive\tStarter\ttrialing\t0 / 30\t1\n1\n渠道转化漏斗\n仅统计业务事件\n事件总数\n0\n平台模型服务\ncost_gate_blocked\n模型归属\n平台统一\n自有中转站\n已配置\n文案模型\ndeepseek-v4-pro\n图片模型\nagnes-image-2.1-flash\nOCR 模型\nqwen3.8-max\n视频模型\nhappyhorse-1.1-t2v\n用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站 ai.wormholexyz.xyz。模型状态：文案 可用、图片 可用、局部编辑 可用、OCR 可用、视频 可渲染。RPM -，TPM -，日成本上限 - 元。发布元数据 已就绪。\n模型上线门禁\n配置并审批平台模型 RPM、TPM 和每日人民币成本上限；完成平台模型供应商额度、成本和数据处理条款审批\n待处理平台告警\n46 条未确认\n导出运营审计\n刷新告警\n级别\t平台\t告警\t对象\t下一步\t操作\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_ffb051d0-7d94-4c7f-8cb6-901db2302de8\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_f7d387ee-d0d8-4e7b-98f3-22318ef895cd\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n中\tJD\t商品事实尚未确认\tproduct / prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001\t在交互会话中查看详情，修正后再执行人工确认或重试。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_eb1e21ee-f858-4121-b41d-a9eec4ca8445\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_cc99d8a5-d863-41a5-9e1b-02dd9710fff0\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_cc47c054-ce9b-4ba4-9585-622b44cc3dee\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n1\n2\n3\n4\n5\n8\n平台上线 readiness\n真实 canary 前保持只读\n平台\t店铺授权\t读取\t写入\t能力证据\t连接器\t主/副图媒体\t阻断原因\nJD\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTAOBAO\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTAOBAO\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTMALL\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nPINDUODUO\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nXIAOHONGSHU\tnot_configured\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nDOUYIN\tnot_configured\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\n数据生命周期 readiness\n阻断\n业务保留\n-1天\n隔离区\n-1天\nClean\n-1天\n删除宽限\n-1天\n备份保留\n-1天\n对象版本化\n未开启\n上线阻断原因\nDATA_RETENTION_DAYS must be at least 90；ASSET_QUARANTINE_RETENTION_DAYS must be at least 7；ASSET_CLEAN_RETENTION_DAYS must be at least 30；DELETION_REQUEST_GRACE_DAYS must be between 7 and 30；BACKUP_RETENTION_DAYS must be at least 30；OBJECT_STORAGE_VERSIONING must be true；LIFECYCLE_POLICY_REF is not configured；ALERT_CHANNEL_SECRET_REF is not configured\n生产证据 readiness\n未通过门禁\n证据类型\t状态\t环境\tRelease\t版本/Profile\t核验人/时间\t阻断原因\n六平台 capability\tblocked\t-\t-\t-\t-\tCAPABILITY_EVIDENCE_PATH is not configured\n容量压测\tblocked\t-\t-\t-\t-\tCAPACITY_REPORT_PATH is not configured\n仅显示脱敏元数据；示例、fixture、test_e2e 或本地容量结果不会被计为生产通过。\n数据删除申请\n双人审批后仍需外部删除证明\n范围\t原因\t申请人\t审批数\t计划执行\t状态\t操作\n\nNo data",
+    "headings": [
+      "商业与平台控制台",
+      "运营总览"
+    ],
+    "buttons": [
+      {
+        "text": "总览",
+        "disabled": false
+      },
+      {
+        "text": "任务与内容",
+        "disabled": false
+      },
+      {
+        "text": "店铺管理",
+        "disabled": false
+      },
+      {
+        "text": "全部店铺",
+        "disabled": false
+      },
+      {
+        "text": "jd 店铺",
+        "disabled": false
+      },
+      {
+        "text": "pinduoduo 店铺",
+        "disabled": false
+      },
+      {
+        "text": "taobao 店铺 等 2 个店铺名",
+        "disabled": false
+      },
+      {
+        "text": "taobao 店铺",
+        "disabled": false
+      },
+      {
+        "text": "tmall 店铺",
+        "disabled": false
+      },
+      {
+        "text": "账务与退款",
+        "disabled": false
+      },
+      {
+        "text": "刷新数据",
+        "disabled": false
+      },
+      {
+        "text": "导出运营审计",
+        "disabled": false
+      },
+      {
+        "text": "刷新告警",
+        "disabled": false
+      },
+      {
+        "text": "确认",
+        "disabled": false
+      },
+      {
+        "text": "确认",
+        "disabled": false
+      },
+      {
+        "text": "确认",
+        "disabled": false
+      },
+      {
+        "text": "确认",
+        "disabled": false
+      },
+      {
+        "text": "确认",
+        "disabled": false
+      },
+      {
+        "text": "确认",
+        "disabled": false
+      }
+    ],
+    "inputs": [
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "placeholder": "工作区 ID",
+        "label": "工作区 ID",
+        "value": "ws_demo"
+      },
+      {
+        "tag": "INPUT",
+        "type": "text",
+        "placeholder": "操作员 ID",
+        "label": "操作员 ID",
+        "value": "actor_demo"
+      },
+      {
+        "tag": "INPUT",
+        "type": "password",
+        "placeholder": "运营 Bearer token（仅存本机）",
+        "label": "运营 API Token",
+        "value": ""
+      }
+    ],
+    "tabs": []
+  },
+  "consoleMessages": [
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "verbose",
+      "text": "[DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o"
+    }
+  ],
+  "requestFailures": [],
+  "badResponses": []
+}

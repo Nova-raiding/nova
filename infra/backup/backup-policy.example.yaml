@@ -1,0 +1,20 @@
+database:
+  provider: managed-postgresql
+  point_in_time_recovery: true
+  full_backup_schedule: "0 2 * * *"
+  retention_days: 30
+  cross_zone_copy: true
+  encryption_key: "${SECRET:BACKUP_KMS_KEY_ID}"
+  restore_drill_schedule: quarterly
+  restore_rto_minutes: 60
+  restore_rpo_minutes: 15
+object_storage:
+  versioning: true
+  delete_marker_retention_days: 30
+  lifecycle_review_days: 90
+  replication: same_region_secondary_bucket
+redis:
+  persistence: enabled
+  backup_schedule: daily
+  retention_days: 7
+  note: "Redis 不是业务事实来源；队列从 PostgreSQL outbox 恢复"

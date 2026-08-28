@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest'
+import { OAuthStateError, OAuthStateStore, hashPkceVerifier, redactSecrets } from './oauth.js'
+import { RedisOAuthStateStore, type OAuthRedisPort } from './redis-oauth.js'
+
+describe('OAuth security', () => {
+  it('binds callback state to workspace/platform and consumes it once', () => {
+    let time = 1000
+    const store = new OAuthStateStore(600, () => time)
+    const state = store.issue({ workspaceId: 'ws_1', actorId: 'actor_1', platform: 'taobao' })
+    expect(() => store.consume(state, { workspaceId: 'ws_2', platform: 'taobao' })).toThrowError(OAuthStateError)
+    expect(store.consume(state, { workspaceId: 'ws_1', platform: 'taobao' }).actorId).toBe('actor_1')
+    expect(() => store.consume(state, { workspaceId: 'ws_1', platform: 'taobao' })).toThrowError(/consumed/)
+    const expired = store.issue({ workspaceId: 'ws_1', actorId: 'actor_1', platform: 'jd' })
+    time = 2000
+    expect(() => store.consume(expired, { workspaceId: 'ws_1', platform: 'jd' })).toThrowError(/expired/)
+    const callbackState = store.issue({ workspaceId: 'ws_1', actorId: 'actor_1', platform: 'pinduoduo' })
+    expect(store.consumeCallback(callbackState, 'pinduoduo').workspaceId).toBe('ws_1')
+    const wrongPlatform = store.issue({ workspaceId: 'ws_1', actorId: 'actor_1', platform: 'jd' })
+    expect(() => store.consumeCallback(wrongPlatform, 'taobao')).toThrowError(/scope/)
+  })
+
+  it('redacts secret-shaped keys recursively', () => {
+    expect(redactSecrets({ access_token: 'a', nested: { client_secret: 'b', ok: 'c' } })).toEqual({ access_token: '[REDACTED]', nested: { client_secret: '[REDACTED]', ok: 'c' } })
+    expect(hashPkceVerifier('verifier')).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+
+  it('uses TTL-backed Redis state with one-time atomic consumption semantics', async () => {
+    const data = new Map<string, string>()
+    const redis: OAuthRedisPort = {
+      async set(key, value) { data.set(key, value) },
+      async get(key) { return data.get(key) ?? null },
+      async eval(_script, keys, args) {
+        const raw = data.get(keys[0]!)
+        if (!raw) return ['missing', '']
+        const record = JSON.parse(raw) as { workspaceId: string; platform: string }
+        if (record.workspaceId !== args[0] || record.platform !== args[1]) return ['scope', '']
+        data.delete(keys[0]!)
+        return ['ok', raw]
+      },
+    }
+    const store = new RedisOAuthStateStore(redis, 'test:oauth', 60)
+    const state = await store.issue({ workspaceId: 'ws_redis', actorId: 'actor', platform: 'jd', codeVerifier: 'verifier' })
+    await expect(store.consume(state, { workspaceId: 'ws_other', platform: 'jd' })).rejects.toThrow(/scope/)
+    await expect(store.consume(state, { workspaceId: 'ws_redis', platform: 'jd' })).resolves.toMatchObject({ codeVerifier: 'verifier', consumed: true })
+    await expect(store.consume(state, { workspaceId: 'ws_redis', platform: 'jd' })).rejects.toThrow(/invalid/)
+  })
+})

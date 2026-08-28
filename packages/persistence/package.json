@@ -1,0 +1,9 @@
+{
+  "name": "@merchant-marketing/persistence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && mkdir -p dist/migrations && cp src/migrations/*.sql dist/migrations/"
+  }
+}

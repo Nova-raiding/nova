@@ -1,0 +1,38 @@
+groups:
+  - name: merchant-marketing-api
+    rules:
+      - alert: MerchantApiHigh5xx
+        expr: sum(rate(merchant_http_requests_total{status=~"5.."}[5m])) / sum(rate(merchant_http_requests_total[5m])) > 0.005
+        for: 10m
+        labels: { severity: page }
+        annotations: { summary: "Merchant API 5xx exceeds 0.5%" }
+      - alert: MerchantPublishUnknown
+        expr: max(merchant_publish_unknown_age_seconds) > 600
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: "Publish job remains unknown for more than 10 minutes" }
+      - alert: MerchantDatabaseConnectionsHigh
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 10m
+        labels: { severity: ticket }
+        annotations: { summary: "PostgreSQL connection utilization exceeds 80%" }
+      - alert: MerchantQueueBacklog
+        expr: max(merchant_queue_oldest_job_age_seconds{queue=~"sync|generation|publish|reconcile"}) > 600
+        for: 10m
+        labels: { severity: ticket }
+        annotations: { summary: "Merchant queue backlog is not converging" }
+      - alert: MerchantConnectorRateLimited
+        expr: sum(rate(merchant_connector_errors_total{code="RATE_LIMITED"}[5m])) > 1
+        for: 5m
+        labels: { severity: ticket }
+        annotations: { summary: "Connector rate-limit responses exceed one per second" }
+      - alert: MerchantConnectorTimeouts
+        expr: sum(rate(merchant_connector_errors_total{code="TIMEOUT"}[5m])) > 0.1
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: "Connector timeouts are producing unknown outcomes" }
+      - alert: MerchantOutboxPending
+        expr: max(merchant_outbox_pending_events) > 100
+        for: 10m
+        labels: { severity: ticket }
+        annotations: { summary: "Postgres outbox backlog exceeds replay threshold" }

@@ -1,0 +1,3 @@
+-- The executable baseline was split into a versioned migration.
+-- Use MigrationRunner with migrations/001_initial.sql so the applied version
+-- is recorded in schema_migrations.

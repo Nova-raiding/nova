@@ -1,0 +1,174 @@
+{
+  "status": 200,
+  "messages": [],
+  "failedRequests": [],
+  "badResponses": [],
+  "inventory": {
+    "title": "Merchant Studio · 商家营销工作台",
+    "url": "http://127.0.0.1:18081/",
+    "bodyText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n今日工作流正常\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n创建营销任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\n已连接店铺\n5\n1 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n37\n其中 37 项高风险\nPLUGIN WALLET\n插件钱包与能力解锁\n已解锁\n¥160.00\n\n当前套餐剩余 30 次模型行动额度，优先消耗套餐额度\n\n充值后开放内容、图片、视频生成及发布确认；店铺和商品查看不受影响。\n充值并解锁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺 等 2 个店铺名\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺\n已连接\n需授权\n撤销\n天\n天猫\ntmall 店铺\n已连接\n需授权\n撤销\n拼\n拼多多\npinduoduo 店铺\n已连接\n需授权\n撤销\n小\n小红书\n尚未绑定店铺\n未配置\n需授权\n连接\n抖\n抖音\n尚未绑定店铺\n未配置\n需授权\n连接\nRECENT\n最近动态\n查看全部\n演示发布状态\n轻云防晒外套 · 淘宝\n演示数据\n演示规则检查\n山系多袋冲锋衣 · 发现 3 项\n演示数据\n演示商品同步\n京东 · 更新 24 件商品\n演示数据\n演示版本状态\n轻云防晒外套 · 内容 v4\n演示数据\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证",
+    "buttons": [
+      {
+        "index": 0,
+        "text": "运营概览",
+        "disabled": false
+      },
+      {
+        "index": 1,
+        "text": "商品与资产",
+        "disabled": false
+      },
+      {
+        "index": 2,
+        "text": "营销任务",
+        "disabled": false
+      },
+      {
+        "index": 3,
+        "text": "发布中心",
+        "disabled": false
+      },
+      {
+        "index": 4,
+        "text": "规则与检查",
+        "disabled": false
+      },
+      {
+        "index": 5,
+        "text": "帮助与诊断",
+        "disabled": false
+      },
+      {
+        "index": 6,
+        "text": "工作区设置",
+        "disabled": false
+      },
+      {
+        "index": 7,
+        "text": "打开主菜单",
+        "disabled": false
+      },
+      {
+        "index": 8,
+        "text": "系统健康 在线",
+        "disabled": false
+      },
+      {
+        "index": 9,
+        "text": "林",
+        "disabled": false
+      },
+      {
+        "index": 10,
+        "text": "创建营销任务",
+        "disabled": false
+      },
+      {
+        "index": 11,
+        "text": "同步全部店铺",
+        "disabled": false
+      },
+      {
+        "index": 12,
+        "text": "充值并解锁",
+        "disabled": false
+      },
+      {
+        "index": 13,
+        "text": "管理连接",
+        "disabled": false
+      },
+      {
+        "index": 14,
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "index": 15,
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "index": 16,
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "index": 17,
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "index": 18,
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "index": 19,
+        "text": "连接",
+        "disabled": false
+      },
+      {
+        "index": 20,
+        "text": "连接",
+        "disabled": false
+      },
+      {
+        "index": 21,
+        "text": "查看全部",
+        "disabled": false
+      },
+      {
+        "index": 22,
+        "text": "刷新",
+        "disabled": false
+      },
+      {
+        "index": 23,
+        "text": "刷新证据",
+        "disabled": false
+      }
+    ],
+    "links": [],
+    "inputs": [
+      {
+        "index": 0,
+        "tag": "INPUT",
+        "type": null,
+        "placeholder": "搜索商品",
+        "label": "搜索商品",
+        "value": ""
+      }
+    ],
+    "headings": [
+      {
+        "level": "H1",
+        "text": "运营概览"
+      },
+      {
+        "level": "H2",
+        "text": "把商品事实变成可放心发布的内容"
+      },
+      {
+        "level": "H3",
+        "text": "插件钱包与能力解锁"
+      },
+      {
+        "level": "H3",
+        "text": "平台连接"
+      },
+      {
+        "level": "H3",
+        "text": "最近动态"
+      },
+      {
+        "level": "H3",
+        "text": "同步任务与失败项"
+      },
+      {
+        "level": "H3",
+        "text": "平台能力证据"
+      }
+    ]
+  }
+}

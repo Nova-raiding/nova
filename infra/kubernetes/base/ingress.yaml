@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: merchant
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [merchant.example.com]
+      secretName: merchant-tls
+  rules:
+    - host: merchant.example.com
+      http:
+        paths:
+          - path: /v1
+            pathType: Prefix
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /mcp
+            pathType: Exact
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /oauth
+            pathType: Prefix
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /healthz
+            pathType: Exact
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: merchant-ui, port: {name: http}}}
+    - host: ops.merchant.example.com
+      http:
+        paths:
+          - path: /v1
+            pathType: Prefix
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /mcp
+            pathType: Exact
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /oauth
+            pathType: Prefix
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /healthz
+            pathType: Exact
+            backend: {service: {name: merchant-api, port: {name: http}}}
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: merchant-ops-ui, port: {name: http}}}

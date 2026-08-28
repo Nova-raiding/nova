@@ -1,0 +1,929 @@
+{
+  "pages": [
+    {
+      "section": "总览",
+      "headings": [
+        "商业与平台控制台",
+        "运营总览"
+      ],
+      "text": "大麦\n大麦商家中心\n店铺与营销工作台\nWORKSPACE\n总览\n用户与租户\n任务与内容\n店铺管理\n我的店铺\n5\n全部店铺\n京东\n1\njd 店铺\n拼多多\n1\npinduoduo 店铺\n淘宝\n2\ntaobao 店铺 等 2 个店铺名\ntaobao 店铺\n天猫\n1\ntmall 店铺\n账务与退款\nWORKSPACE OPERATIONS\n商业与平台控制台\n角色：workspace_owner、platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\n刷新数据\nOVERVIEW\n运营总览\n查看套餐、模型、平台告警和上线状态。\n当前套餐\nStarter\n订阅状态\ntrialing\n平台已启用\n6 / 6\n钱包余额\n¥160.00\n工作区与财务总览\n工作区\t状态\t套餐\t订阅\t任务用量\t成员数\nws_demo\tactive\tStarter\ttrialing\t0 / 30\t2\n1\n渠道转化漏斗\n仅统计业务事件\n事件总数\n0\n平台模型服务\nmodel_relay_blocked\n模型归属\n平台统一\n自有中转站\n未配置\n文案模型\n-\n图片模型\n-\nOCR 模型\n-\n视频模型\n-\n用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站 -。模型状态：文案 阻断、图片 阻断、局部编辑 阻断、OCR 人工兜底、视频 仅分镜。RPM 30，TPM 100000，日成本上限 10.00 元。发布元数据 已就绪。\n模型上线门禁\n配置平台模型中转站：model_relay_endpoint_missing；配置平台文案模型：endpoint_missing、api_key_missing、model_missing；配置平台图片模型：endpoint_missing、api_key_missing、model_missing；配置图片编辑模型和中转 provider：endpoint_missing、api_key_missing、model_missing；配置 OCR_MODEL 和 OCR 中转 provider：endpoint_missing、api_key_missing、model_missing；配置 VIDEO_MODEL 和视频中转 provider：endpoint_missing、api_key_missing、model_missing；验证中转站 cost_cny，或验证价格快照、实际计费分组和人民币汇率后，再开启成本证据开关；完成平台模型供应商额度、成本和数据处理条款审批\n待处理平台告警\n46 条未确认\n导出运营审计\n刷新告警\n级别\t平台\t告警\t对象\t下一步\t操作\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_ffb051d0-7d94-4c7f-8cb6-901db2302de8\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_f7d387ee-d0d8-4e7b-98f3-22318ef895cd\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_eb1e21ee-f858-4121-b41d-a9eec4ca8445\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_cc99d8a5-d863-41a5-9e1b-02dd9710fff0\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_cc47c054-ce9b-4ba4-9585-622b44cc3dee\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n\n高\tTAOBAO\t内容版本存在 P0 审核阻断\tcontent_version / cv_cb92776a-496b-4830-9880-bcd93ddebc52\t修正事实、价格或品牌规则冲突后创建修正版，重新审核并批准。\t\n确认\n1\n2\n3\n4\n5\n8\n平台上线 readiness\n真实 canary 前保持只读\n平台\t店铺授权\t读取\t写入\t能力证据\t连接器\t主/副图媒体\t阻断原因\nJD\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTAOBAO\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTAOBAO\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTMALL\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nPINDUODUO\tconnected\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nXIAOHONGSHU\tnot_configured\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nDOUYIN\tnot_configured\toff\tblocked\t0/9 production_canary\tblocked\t媒体门禁\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\n数据生命周期 readiness\n阻断\n业务保留\n-1天\n隔离区\n-1天\nClean\n-1天\n删除宽限\n-1天\n备份保留\n-1天\n对象版本化\n未开启\n上线阻断原因\nDATA_RETENTION_DAYS must be at least 90；ASSET_QUARANTINE_RETENTION_DAYS must be at least 7；ASSET_CLEAN_RETENTION_DAYS must be at least 30；DELETION_REQUEST_GRACE_DAYS must be between 7 and 30；BACKUP_RETENTION_DAYS must be at least 30；OBJECT_STORAGE_VERSIONING must be true；LIFECYCLE_POLICY_REF is not configured；ALERT_CHANNEL_SECRET_REF is not configured\n生产证据 readiness\n未通过门禁\n证据类型\t状态\t环境\tRelease\t版本/Profile\t核验人/时间\t阻断原因\n六平台 capability\tblocked\t-\t-\t-\t-\tCAPABILITY_EVIDENCE_PATH is not configured\n容量压测\tblocked\t-\t-\t-\t-\tCAPACITY_REPORT_PATH is not configured\n仅显示脱敏元数据；示例、fixture、test_e2e 或本地容量结果不会被计为生产通过。\n数据删除申请\n双人审批后仍需外部删除证明\n范围\t原因\t申请人\t审批数\t计划执行\t状态\t操作\n\nNo data",
+      "buttons": [
+        {
+          "text": "☰",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "用户与租户",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "店铺管理",
+          "disabled": false
+        },
+        {
+          "text": "全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "jd 店铺",
+          "disabled": false
+        },
+        {
+          "text": "pinduoduo 店铺",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺 等 2 个店铺名",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺",
+          "disabled": false
+        },
+        {
+          "text": "tmall 店铺",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "刷新数据",
+          "disabled": false
+        },
+        {
+          "text": "导出运营审计",
+          "disabled": false
+        },
+        {
+          "text": "刷新告警",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "工作区 ID",
+          "label": "工作区 ID",
+          "value": "ws_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "操作员 ID",
+          "label": "操作员 ID",
+          "value": "actor_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "placeholder": "运营 Bearer token（仅存本机）",
+          "label": "运营 API Token",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "section": "用户与租户",
+      "headings": [
+        "商业与平台控制台",
+        "用户与租户"
+      ],
+      "text": "大麦\n大麦商家中心\n店铺与营销工作台\nWORKSPACE\n总览\n用户与租户\n任务与内容\n店铺管理\n我的店铺\n5\n全部店铺\n京东\n1\njd 店铺\n拼多多\n1\npinduoduo 店铺\n淘宝\n2\ntaobao 店铺 等 2 个店铺名\ntaobao 店铺\n天猫\n1\ntmall 店铺\n账务与退款\nWORKSPACE OPERATIONS\n商业与平台控制台\n角色：workspace_owner、platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\n刷新数据\nPLATFORM GOVERNANCE\n用户与租户\n跨工作区查询用户身份和成员关系，定位账号状态并执行可审计的访问停用。\n用户身份\n2\n成员关系\n2\n涉及租户\n1\n用户目录\n关键词\n状态\n全部状态\n租户\n查 询\n清 空\n身份标识\t显示名\t租户\t角色\t成员状态\t租户状态\t更新时间\t操作\n\n身份标识\n\t\n显示名\n\t\n租户\n\t\n角色\n\t\n成员状态\n\t\n租户状态\n\t\n更新时间\n\t\n操作\n\nactor_demo\t本地演示平台运营\tws_demo\t平台运营\t已激活\t正常\t2026/08/28 13:55\t\n详 情\n停 用\n\nsupport_demo\t本地演示支持专员\tws_demo\t支持\t已激活\t正常\t2026/08/28 13:55\t\n详 情\n停 用\n共 2 条成员关系\n1\n20 / page\n当前租户成员\nws_demo\n用户 ID\n显示名\n角色\n请选择角色\n保存成员\n身份标识\t显示名\t角色\t状态\t更新时间\n\n身份标识\n\t\n显示名\n\t\n角色\n\t\n状态\n\t\n更新时间\n\nactor_demo\t本地演示平台运营\t平台运营\t已激活\t2026/8/28 13:55:57\nsupport_demo\t本地演示支持专员\t支持\t已激活\t2026/8/28 13:55:57\n共 2 位成员\n1",
+      "buttons": [
+        {
+          "text": "☰",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "用户与租户",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "店铺管理",
+          "disabled": false
+        },
+        {
+          "text": "全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "jd 店铺",
+          "disabled": false
+        },
+        {
+          "text": "pinduoduo 店铺",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺 等 2 个店铺名",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺",
+          "disabled": false
+        },
+        {
+          "text": "tmall 店铺",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "刷新数据",
+          "disabled": false
+        },
+        {
+          "text": "查 询",
+          "disabled": false
+        },
+        {
+          "text": "清 空",
+          "disabled": false
+        },
+        {
+          "text": "详 情",
+          "disabled": false
+        },
+        {
+          "text": "停 用",
+          "disabled": true
+        },
+        {
+          "text": "详 情",
+          "disabled": false
+        },
+        {
+          "text": "停 用",
+          "disabled": false
+        },
+        {
+          "text": "保存成员",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "工作区 ID",
+          "label": "工作区 ID",
+          "value": "ws_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "操作员 ID",
+          "label": "操作员 ID",
+          "value": "actor_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "placeholder": "运营 Bearer token（仅存本机）",
+          "label": "运营 API Token",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "身份、姓名、角色或工作区",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "工作区 ID",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": "Page Size",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "例如 user_123",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "用户姓名或称呼",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        }
+      ]
+    },
+    {
+      "section": "任务与内容",
+      "headings": [
+        "商业与平台控制台",
+        "任务与内容"
+      ],
+      "text": "大麦\n大麦商家中心\n店铺与营销工作台\nWORKSPACE\n总览\n用户与租户\n任务与内容\n店铺管理\n我的店铺\n5\n全部店铺\n京东\n1\njd 店铺\n拼多多\n1\npinduoduo 店铺\n淘宝\n2\ntaobao 店铺 等 2 个店铺名\ntaobao 店铺\n天猫\n1\ntmall 店铺\n账务与退款\nWORKSPACE OPERATIONS\n商业与平台控制台\n角色：workspace_owner、platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\n刷新数据\nCONTENT OPERATIONS\n任务与内容\n治理知识、素材、生成任务、平台规则和发布异常。\n营销队列筛选\n平台\n店铺\n状态\n应用筛选\n清除筛选\n平台告警筛选\n平台\n店铺\n应用告警筛选\n清除告警筛选\n营销能力运营治理\n0 条待处理建议\n知识规则\n0\n待审核资产\n0\n竞品参考\n0\n生成失败\n1\n知识规则\n资产权益\n学习建议（0）\n竞品参考\n任务队列（22）\nglobal\ndraft\n录入知识规则\n规则\t版本\t作用域\t来源\t状态\n\nNo data\n上传素材治理动作\n素材\t安全/解析/权益\t就绪状态\t下一步\t操作\ncodex-final.txt\tclean / succeeded / approved\tdraft\t确认素材事实\t\n执行治理动作\n\nprompt-injection-proof-20260825.txt\tclean / succeeded / pending\tdraft\t确认素材商用权益\t\n执行治理动作\n\npersist-note.txt\tquarantined / pending / pending\tdraft\t提交安全扫描结果\t\n执行治理动作\n\ntaobao-codex-banner-preview.svg\tquarantined / pending / pending\tdraft\t提交安全扫描结果\t\n执行治理动作\n\npersist-final.txt\tclean / succeeded / approved\tdraft\t确认素材事实\t\n执行治理动作\n\nfacts.txt\tclean / succeeded / approved\tdraft\t确认素材事实\t\n执行治理动作\n1\n2\n3\n运营确认学习建议只记录人工判断，不会自动激活全局规则；未确认资产和权利不明竞品不得进入商家正式发布链路。\n规则中心\n4 条生效规则\n创建规则草稿\n规则包\t名称\t版本\t生命周期\t来源\t有效期\t操作\n\t服装鞋包事实完整性\tapparel-1.0.0\tactive\tinternal / manual://apparel-facts\t- 至 -\t\n标记过期\n停用\n\n\t中国电商广告表达\tcn-commerce-1.0.0\tactive\tofficial / manual://cn-commerce-advertising\t- 至 -\t\n标记过期\n停用\n\n\t京东商品写入策略\tjd-apparel-write-1.0.0\tactive\tofficial / manual://jd-write\t- 至 -\t\n标记过期\n停用\n\n\t淘宝/天猫字段映射\ttmall-apparel-1.0.0\tactive\tofficial / manual://tmall-mapping\t- 至 -\t\n标记过期\n停用\n1\n草稿发布不代表已生效；规则激活必须由服务端规则管理员提供审批凭证，所有状态变更写入审计。",
+      "buttons": [
+        {
+          "text": "☰",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "用户与租户",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "店铺管理",
+          "disabled": false
+        },
+        {
+          "text": "全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "jd 店铺",
+          "disabled": false
+        },
+        {
+          "text": "pinduoduo 店铺",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺 等 2 个店铺名",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺",
+          "disabled": false
+        },
+        {
+          "text": "tmall 店铺",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "刷新数据",
+          "disabled": false
+        },
+        {
+          "text": "应用筛选",
+          "disabled": false
+        },
+        {
+          "text": "清除筛选",
+          "disabled": false
+        },
+        {
+          "text": "应用告警筛选",
+          "disabled": false
+        },
+        {
+          "text": "清除告警筛选",
+          "disabled": false
+        },
+        {
+          "text": "录入知识规则",
+          "disabled": false
+        },
+        {
+          "text": "执行治理动作",
+          "disabled": false
+        },
+        {
+          "text": "执行治理动作",
+          "disabled": false
+        },
+        {
+          "text": "执行治理动作",
+          "disabled": false
+        },
+        {
+          "text": "执行治理动作",
+          "disabled": false
+        },
+        {
+          "text": "执行治理动作",
+          "disabled": false
+        },
+        {
+          "text": "执行治理动作",
+          "disabled": false
+        },
+        {
+          "text": "创建规则草稿",
+          "disabled": false
+        },
+        {
+          "text": "标记过期",
+          "disabled": false
+        },
+        {
+          "text": "停用",
+          "disabled": false
+        },
+        {
+          "text": "标记过期",
+          "disabled": false
+        },
+        {
+          "text": "停用",
+          "disabled": false
+        },
+        {
+          "text": "标记过期",
+          "disabled": false
+        },
+        {
+          "text": "停用",
+          "disabled": false
+        },
+        {
+          "text": "标记过期",
+          "disabled": false
+        },
+        {
+          "text": "停用",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "工作区 ID",
+          "label": "工作区 ID",
+          "value": "ws_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "操作员 ID",
+          "label": "操作员 ID",
+          "value": "actor_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "placeholder": "运营 Bearer token（仅存本机）",
+          "label": "运营 API Token",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "商品 ID",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "任务 ID",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "告警编码",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "对象类型",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "对象 ID",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则名称",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则内容",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "作用域值（可选）",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "来源链接/工单",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "核验时间 ISO",
+          "label": null,
+          "value": "2026-08-28T06:06:14.992Z"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "版本",
+          "label": null,
+          "value": "v1"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则包 ID",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则名称",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "版本",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "来源链接/工单",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "checks JSON",
+          "label": null,
+          "value": "{\"forbiddenTerms\":[]}"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "发布原因",
+          "label": null,
+          "value": ""
+        }
+      ]
+    },
+    {
+      "section": "店铺管理",
+      "headings": [
+        "商业与平台控制台",
+        "店铺管理"
+      ],
+      "text": "大麦\n大麦商家中心\n店铺与营销工作台\nWORKSPACE\n总览\n用户与租户\n任务与内容\n店铺管理\n我的店铺\n5\n全部店铺\n京东\n1\njd 店铺\n拼多多\n1\npinduoduo 店铺\n淘宝\n2\ntaobao 店铺 等 2 个店铺名\ntaobao 店铺\n天猫\n1\ntmall 店铺\n账务与退款\nWORKSPACE OPERATIONS\n商业与平台控制台\n角色：workspace_owner、platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\n刷新数据\nSTORE OPERATIONS\n店铺管理\n按平台和店铺管理授权、同步与自动化策略。\n品、平台与店铺\n当前工作区还没有可访问的品\n绑定店铺与授权状态\n5 个已登记店铺\n平台\t店铺\t授权\t数据模式\t同步\t读/写\t操作\nJD\t\njd 店铺\nfixture-store-ws_demo-jd\n\tconnected\tfixture\t最近成功：8/24/2026, 3:29:05 AM\t读 / —\t\n改别名\n撤销\n\nPINDUODUO\t\npinduoduo 店铺\nfixture-store-ws_demo-pinduoduo\n\tconnected\tfixture\t最近成功：8/24/2026, 3:29:13 AM\t读 / —\t\n改别名\n撤销\n\nTAOBAO\t\ntaobao 店铺 等 2 个店铺名\nfixture-store-ws_demo-taobao\n\tconnected\tfixture\t最近成功：8/24/2026, 3:29:08 AM\t读 / —\t\n改别名\n撤销\n\nTAOBAO\t\ntaobao 店铺\nfixture_ws_demo_taobao\n\tconnected\tfixture\t最近成功：8/23/2026, 9:29:31 PM\t读 / —\t\n改别名\n撤销\n\nTMALL\t\ntmall 店铺\nfixture-store-ws_demo-tmall\n\tconnected\tfixture\t最近成功：8/24/2026, 12:21:14 AM\t读 / —\t\n改别名\n撤销\n1\n店铺以 platform + account_id 隔离；别名只用于展示，撤销或重新授权都会留下审计记录。\n自动化运营作用域\n全工作区\n选择店铺：\n全工作区\n策略、扫描、暂停均按所选 platform + account_id 隔离；未选择时才操作全工作区。\n已配置的店铺自动化策略\n0 条\n店铺\t状态\t模式\t频率\t下次执行\t暂停原因\n\nNo data\n店铺优化建议\n23 条\n优先级\t建议\t下一步\t入口\t边界\nhigh\t确认商品事实\t核对价格、库存、SKU、图片和属性后确认\tcatalog.facts.confirm\t需交互确认\nhigh\t确认商品事实\t核对价格、库存、SKU、图片和属性后确认\tcatalog.facts.confirm\t需交互确认\nhigh\t确认商品事实\t核对价格、库存、SKU、图片和属性后确认\tcatalog.facts.confirm\t需交互确认\nhigh\t确认商品事实\t核对价格、库存、SKU、图片和属性后确认\tcatalog.facts.confirm\t需交互确认\nhigh\t确认商品事实\t核对价格、库存、SKU、图片和属性后确认\tcatalog.facts.confirm\t需交互确认\nhigh\t确认商品事实\t核对价格、库存、SKU、图片和属性后确认\tcatalog.facts.confirm\t需交互确认\n1\n2\n3\n4\n店铺自动化运营\n已暂停\n立即扫描\n保存策略\n扫描商品\n28\n发布任务\n0\n风险项\n23\n模式：同步扫描 + 风险告警 + 人工重试\n不会无人值守自动重发\n执行频率（分钟）\n重试上限\n执行窗口\n至\n留空表示全天；窗口外仅延期并记录审计。\n默认关闭，需商家明确开启\n风险类型\t对象\t说明\nunconfirmed_facts\tprod_jd_f66d3fe3ee3d_JD-FIXTURE-1001\t商品事实尚未确认\nunconfirmed_facts\tprod_pinduoduo_5c81d991456b_PDD-FIXTURE-4001\t商品事实尚未确认\nunconfirmed_facts\tprod_taobao_ASYNC-RUNTIME-1\t商品事实尚未确认\nunconfirmed_facts\tprod_taobao_e132c3d468e5_TB-COMPOSE-1\t商品事实尚未确认\nunconfirmed_facts\tprod_taobao_e132c3d468e5_TB-FIXTURE-2001\t商品事实尚未确认\nunconfirmed_facts\tprod_taobao_local_7108daf516a21f0c3504\t商品事实尚未确认\n1\n2\n3\n4\n自动商品同步\n未启用\n仅允许对已选定的单个店铺开启：\n保存同步策略\n自动化 Worker 只创建商品同步任务并写入风险告警，不会自动发布、自动重发或绕过人工确认。请先在上方选择具体店铺。",
+      "buttons": [
+        {
+          "text": "☰",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "用户与租户",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "店铺管理",
+          "disabled": false
+        },
+        {
+          "text": "全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "jd 店铺",
+          "disabled": false
+        },
+        {
+          "text": "pinduoduo 店铺",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺 等 2 个店铺名",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺",
+          "disabled": false
+        },
+        {
+          "text": "tmall 店铺",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "刷新数据",
+          "disabled": false
+        },
+        {
+          "text": "改别名",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "改别名",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "改别名",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "改别名",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "改别名",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "立即扫描",
+          "disabled": false
+        },
+        {
+          "text": "保存策略",
+          "disabled": false
+        },
+        {
+          "text": "自动商品同步",
+          "disabled": true
+        },
+        {
+          "text": "保存同步策略",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "工作区 ID",
+          "label": "工作区 ID",
+          "value": "ws_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "操作员 ID",
+          "label": "操作员 ID",
+          "value": "actor_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "placeholder": "运营 Bearer token（仅存本机）",
+          "label": "运营 API Token",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": "自动化店铺作用域",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": null,
+          "label": "自动化执行频率",
+          "value": "60"
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": null,
+          "label": "自动化重试上限",
+          "value": "2"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "09:00",
+          "label": "自动化执行窗口开始",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "18:00",
+          "label": "自动化执行窗口结束",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "section": "账务与退款",
+      "headings": [
+        "商业与平台控制台",
+        "账务与商业配置"
+      ],
+      "text": "大麦\n大麦商家中心\n店铺与营销工作台\nWORKSPACE\n总览\n用户与租户\n任务与内容\n店铺管理\n我的店铺\n5\n全部店铺\n京东\n1\njd 店铺\n拼多多\n1\npinduoduo 店铺\n淘宝\n2\ntaobao 店铺 等 2 个店铺名\ntaobao 店铺\n天猫\n1\ntmall 店铺\n账务与退款\nWORKSPACE OPERATIONS\n商业与平台控制台\n角色：workspace_owner、platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\n刷新数据\nBILLING OPERATIONS\n账务与商业配置\n管理充值、账单、退款、套餐和模型计费策略。\n财务流水与对账\n金额：元（两位小数）\n运行支付查单\n重试模型结算\n导出账单\n余额\n¥160.00\n充值\n¥50,001,000,010.00\n消费\n¥0.01\n退款\n¥0.01\n支付 provider：当前为 fixture\nprovider_adapters_incomplete、checkout_endpoint_must_use_https、provider_checkout_api_must_use_https、provider_query_api_must_use_https、provider_api_key_missing、provider_merchant_id_missing、provider_refund_api_must_use_https、callback_endpoint_must_use_https、callback_secret_missing、reconciliation_disabled、refund_disabled\n模型调用\n0\n模型 Tokens\n0\n模型实际成本\n¥0.000000\n待结算记录\n0\n结算状态\t发现时间\t模态\t模型\tProvider Request ID\t原因与下一步\t操作\n\n结算状态\n\t\n发现时间\n\t\n模态\n\t\n模型\n\t\nProvider Request ID\n\t\n原因与下一步\n\t\n操作\n\n\n没有模型待结算记录\n时间\t类型\t金额\t说明\n8/28/2026, 1:46:08 PM\trefund\t¥0.01\t模型失败退款（platform_ops_local_cleanup）：真实中转验收后释放缺成本测试预授权\n8/28/2026, 12:57:40 PM\tdebit\t¥0.01\ttext生成调用（actor_demo）\n8/28/2026, 11:12:03 AM\trecharge\t¥50.00\t充值到账（alipay）\n8/28/2026, 10:31:10 AM\trecharge\t¥100.00\t充值到账（alipay）\n8/28/2026, 10:05:53 AM\trecharge\t¥10.00\t充值到账（alipay）\n1\n退款操作\n需要 finance 或 merchant_admin 权限\n创建退款\n配置中心\nRevision 1\n套餐、加购与增长规则\n运营目录\n模型计费\n套餐目录\n加购能力\n优惠券\n灰度规则\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。",
+      "buttons": [
+        {
+          "text": "☰",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "用户与租户",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "店铺管理",
+          "disabled": false
+        },
+        {
+          "text": "全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "jd 店铺",
+          "disabled": false
+        },
+        {
+          "text": "pinduoduo 店铺",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺 等 2 个店铺名",
+          "disabled": false
+        },
+        {
+          "text": "taobao 店铺",
+          "disabled": false
+        },
+        {
+          "text": "tmall 店铺",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "刷新数据",
+          "disabled": false
+        },
+        {
+          "text": "运行支付查单",
+          "disabled": true
+        },
+        {
+          "text": "重试模型结算",
+          "disabled": false
+        },
+        {
+          "text": "导出账单",
+          "disabled": false
+        },
+        {
+          "text": "创建退款",
+          "disabled": false
+        },
+        {
+          "text": "保存并生效",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "工作区 ID",
+          "label": "工作区 ID",
+          "value": "ws_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "操作员 ID",
+          "label": "操作员 ID",
+          "value": "actor_demo"
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "placeholder": "运营 Bearer token（仅存本机）",
+          "label": "运营 API Token",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "已到账充值订单 ID",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "退款原因",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": null,
+          "label": "Token 计费倍率",
+          "value": "2.500"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "必填，写入审计",
+          "label": "Token 计费倍率变更原因",
+          "value": ""
+        }
+      ]
+    }
+  ],
+  "badResponses": [],
+  "rpcErrors": [],
+  "requestFailures": [],
+  "consoleErrors": []
+}

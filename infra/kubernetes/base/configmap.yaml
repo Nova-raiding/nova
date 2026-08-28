@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: merchant-runtime
+data:
+  NODE_ENV: production
+  OPS_AUTH_MODE: oidc
+  # The merchant host uses the bearer boundary; ops.merchant.example.com
+  # remains OIDC-gateway-only. The API compares this exact host value.
+  MERCHANT_BEARER_HOSTNAME: merchant.example.com
+  PORT: "8787"
+  # Target profile: 12 API replicas x 12 + 40 Worker replicas x 3 = 264;
+  # leaves headroom below the 300 backend connection budget.
+  DB_POOL_MAX: "12"
+  MAX_ACTIVE_JOBS_PER_WORKSPACE: "3"
+  WORKER_API_BASE_URL: http://merchant-api:8787
+  WORKER_DB_POOL_MAX: "3"
+  WORKER_DB_CONNECTION_TIMEOUT_MS: "3000"
+  WORKER_WORKSPACES: auto
+  WORKER_POLL_INTERVAL_MS: "500"
+  WORKER_BATCH_SIZE: "100"
+  WORKER_WORKSPACE_BATCH_SIZE: "10"
+  WORKER_LEASE_MS: "30000"
+  # Admission limits are provider-approved values, not server capacity claims.
+  # Override per environment after the platform/model quota evidence is signed.
+  WORKER_PLATFORM_QUOTA_PER_MINUTE: "60"
+  WORKER_MODEL_QUOTA_PER_MINUTE: "60"
+  REQUEST_BODY_LIMIT_BYTES: "52428800"
+  ASSET_STORAGE_BUCKET: merchant-production-assets
+  ASSET_STORAGE_REGION: cn
+  ASSET_STORAGE_ENDPOINT: https://s3.cn.example-provider.com
+  ASSET_STORAGE_PREFIX: merchant-assets
+  ASSET_UPLOAD_MAX_BYTES: "52428800"
+  OBJECT_STORAGE_VERSIONING: "true"
+  DATA_RETENTION_DAYS: "90"
+  ASSET_QUARANTINE_RETENTION_DAYS: "7"
+  ASSET_CLEAN_RETENTION_DAYS: "90"
+  DELETION_REQUEST_GRACE_DAYS: "7"
+  BACKUP_RETENTION_DAYS: "30"
+  LIFECYCLE_POLICY_REF: vault://merchant-asset-lifecycle-policy
+  ALERT_CHANNEL_SECRET_REF: vault://merchant-alert-channel
+  MODEL_RELAY_BASE_URL: https://model-relay.example.com/v1
+  IMAGE_MODEL: merchant-main-image
+  IMAGE_EDIT_MODEL: merchant-main-image-edit
+  OCR_MODEL: merchant-vision-ocr
+  VIDEO_MODEL: merchant-video
+  # Platform-owned model settings only. API keys are injected from the Secret
+  # Manager contract; zero limits intentionally keep traffic fail-closed until
+  # provider quota and cost approval are attached to the release.
+  AI_MODEL: merchant-main-text
+  MODEL_RPM_LIMIT: "0"
+  MODEL_TPM_LIMIT: "0"
+  MODEL_DAILY_CNY_LIMIT: "0.00"
+  VAULT_KV_MOUNT: secret
+  VAULT_CREDENTIAL_PATH_PREFIX: merchant-marketing
+  PLUGIN_WRITE_ENABLED: "false"
+  PUBLIC_OAUTH_REDIRECT_URI: "https://merchant.example.com/v1/oauth/callback/{platform}"
+  OTEL_SERVICE_NAME: merchant-api

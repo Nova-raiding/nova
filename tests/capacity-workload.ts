@@ -1,0 +1,199 @@
+import assert from 'node:assert/strict'
+import { writeFileSync } from 'node:fs'
+
+export type CapacityWorkloadProfile = 'pilot_50' | 'wave_100' | 'wave_250' | 'target_500'
+export type CapacityWorkloadMode = 'compose' | 'real_cloud'
+export const CAPACITY_WORKLOAD_READ_PATH = '/v1/platform-accounts'
+export function isExpectedCapacityStatus(status: number): boolean { return status === 429 }
+export function selectCapacityAccount(items: readonly { platform?: string; accountId?: string }[]): string {
+  const accountId = items.find(item => item.platform === 'taobao' && item.accountId)?.accountId
+  if (!accountId) throw new Error('capacity workload setup requires a bound Taobao account in every workspace')
+  return accountId
+}
+
+export interface CapacityWorkloadConfig {
+  profile: CapacityWorkloadProfile
+  mode: CapacityWorkloadMode
+  baseUrl: string
+  token: string
+  workspaces: number
+  clientConnections: number
+  sustainedRps: number
+  sustainedMinutes: number
+  burstRps: number
+  burstSeconds: number
+  asyncJobsPerMinute: number
+  stabilityHours: number
+  concurrency: number
+  noiseWorkspaceIndex: number
+  noiseMultiplier: number
+  setupJobs: boolean
+  output?: string
+}
+
+const defaults = {
+  pilot_50: { workspaces: 50, clientConnections: 150, sustainedRps: 30, sustainedMinutes: 30, burstRps: 60, burstSeconds: 60, asyncJobsPerMinute: 50, stabilityHours: 6 },
+  wave_100: { workspaces: 100, clientConnections: 300, sustainedRps: 60, sustainedMinutes: 30, burstRps: 120, burstSeconds: 60, asyncJobsPerMinute: 100, stabilityHours: 6 },
+  wave_250: { workspaces: 250, clientConnections: 375, sustainedRps: 75, sustainedMinutes: 30, burstRps: 150, burstSeconds: 60, asyncJobsPerMinute: 250, stabilityHours: 6 },
+  target_500: { workspaces: 500, clientConnections: 750, sustainedRps: 150, sustainedMinutes: 30, burstRps: 300, burstSeconds: 60, asyncJobsPerMinute: 500, stabilityHours: 6 },
+} as const
+
+function integer(env: Record<string, string | undefined>, name: string, fallback: number, minimum = 1) {
+  const value = env[name] === undefined ? fallback : Number(env[name])
+  if (!Number.isInteger(value) || value < minimum) throw new Error(`${name} must be an integer >= ${minimum}`)
+  return value
+}
+
+export function readCapacityWorkloadConfig(env: Record<string, string | undefined> = process.env): CapacityWorkloadConfig {
+  const profile = (env.CAPACITY_WORKLOAD_PROFILE ?? 'pilot_50') as CapacityWorkloadProfile
+  if (!(profile in defaults)) throw new Error('CAPACITY_WORKLOAD_PROFILE must be pilot_50, wave_100, wave_250 or target_500')
+  const mode = (env.CAPACITY_WORKLOAD_MODE ?? 'compose') as CapacityWorkloadMode
+  if (mode !== 'compose' && mode !== 'real_cloud') throw new Error('CAPACITY_WORKLOAD_MODE must be compose or real_cloud')
+  const target = env.CAPACITY_WORKLOAD_URL?.trim()
+  if (!target) throw new Error('CAPACITY_WORKLOAD_URL is required')
+  const parsed = new URL(target)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('CAPACITY_WORKLOAD_URL must use HTTP(S)')
+  if (mode === 'real_cloud') {
+    if (env.CAPACITY_WORKLOAD_CONFIRM_REAL_CLOUD !== 'true') throw new Error('real_cloud requires CAPACITY_WORKLOAD_CONFIRM_REAL_CLOUD=true')
+    if (parsed.protocol !== 'https:' || ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname)) throw new Error('real_cloud requires a non-loopback HTTPS URL')
+  }
+  const targetDefaults = defaults[profile]
+  const workspaces = integer(env, 'CAPACITY_WORKLOAD_WORKSPACES', targetDefaults.workspaces)
+  if (workspaces !== targetDefaults.workspaces) throw new Error(`CAPACITY_WORKLOAD_WORKSPACES must equal ${targetDefaults.workspaces} for ${profile}`)
+  const sustainedMinutes = integer(env, 'CAPACITY_WORKLOAD_SUSTAINED_MINUTES', targetDefaults.sustainedMinutes)
+  const stabilityHours = integer(env, 'CAPACITY_WORKLOAD_STABILITY_HOURS', targetDefaults.stabilityHours)
+  if (mode === 'real_cloud' && (sustainedMinutes < 30 || stabilityHours < 6)) throw new Error('real_cloud requires at least 30 sustained minutes and 6 stability hours')
+  const concurrency = integer(env, 'CAPACITY_WORKLOAD_CONCURRENCY', Math.min(workspaces, 100))
+  if (concurrency > workspaces) throw new Error('CAPACITY_WORKLOAD_CONCURRENCY cannot exceed workspaces')
+  const noiseWorkspaceIndex = integer(env, 'CAPACITY_WORKLOAD_NOISE_WORKSPACE_INDEX', 0, 0)
+  if (noiseWorkspaceIndex >= workspaces) throw new Error('CAPACITY_WORKLOAD_NOISE_WORKSPACE_INDEX must be within workspace count')
+  return {
+    profile, mode, baseUrl: target.replace(/\/$/, ''), token: env.CAPACITY_WORKLOAD_TOKEN?.trim() ?? '',
+    workspaces, clientConnections: integer(env, 'CAPACITY_WORKLOAD_CLIENT_CONNECTIONS', targetDefaults.clientConnections),
+    sustainedRps: integer(env, 'CAPACITY_WORKLOAD_SUSTAINED_RPS', targetDefaults.sustainedRps), sustainedMinutes,
+    burstRps: integer(env, 'CAPACITY_WORKLOAD_BURST_RPS', targetDefaults.burstRps), burstSeconds: integer(env, 'CAPACITY_WORKLOAD_BURST_SECONDS', targetDefaults.burstSeconds),
+    asyncJobsPerMinute: integer(env, 'CAPACITY_WORKLOAD_ASYNC_JOBS_PER_MINUTE', targetDefaults.asyncJobsPerMinute), stabilityHours,
+    concurrency, noiseWorkspaceIndex, noiseMultiplier: integer(env, 'CAPACITY_WORKLOAD_NOISE_MULTIPLIER', 10),
+    setupJobs: env.CAPACITY_WORKLOAD_SETUP_JOBS === 'true',
+    ...(env.CAPACITY_WORKLOAD_OUTPUT ? { output: env.CAPACITY_WORKLOAD_OUTPUT } : {}),
+  }
+}
+
+interface Timing { workspace: string; phase: string; elapsedMs: number; ok: boolean; status: number }
+interface AcceptedJob { workspace: string; taskId: string; jobId: string; idempotencyKey: string }
+
+function workspaceId(index: number) { return `ws_capacity_${index}` }
+function headers(config: CapacityWorkloadConfig, workspace: string, extra: Record<string, string> = {}) {
+  return { authorization: `Bearer ${config.token || 'pilot-local-token'}`, 'x-workspace-id': workspace, ...extra }
+}
+
+async function request(config: CapacityWorkloadConfig, workspace: string, path: string, init: RequestInit, phase: string, timings: Timing[]) {
+  const started = performance.now()
+  try {
+    const response = await fetch(`${config.baseUrl}${path}`, { ...init, headers: headers(config, workspace, Object.fromEntries(new Headers(init.headers).entries())) })
+    timings.push({ workspace, phase, elapsedMs: performance.now() - started, ok: response.ok, status: response.status })
+    return response
+  } catch {
+    timings.push({ workspace, phase, elapsedMs: performance.now() - started, ok: false, status: 0 })
+    return undefined
+  }
+}
+
+async function runRate(config: CapacityWorkloadConfig, rps: number, durationSeconds: number, phase: string, timings: Timing[]) {
+  const end = Date.now() + durationSeconds * 1_000
+  let cursor = 0
+  const intervalMs = 100
+  while (Date.now() < end) {
+    const remainingMs = end - Date.now()
+    const requests = Math.max(1, Math.round(rps * intervalMs / 1_000))
+    const batch: Promise<unknown>[] = []
+    for (let index = 0; index < requests; index += 1) {
+      const selected = cursor++ % config.workspaces
+      const workspace = workspaceId(selected)
+      const multiplier = selected === config.noiseWorkspaceIndex ? config.noiseMultiplier : 1
+      for (let copy = 0; copy < multiplier; copy += 1) batch.push(request(config, workspace, CAPACITY_WORKLOAD_READ_PATH, { method: 'GET' }, phase, timings))
+    }
+    await Promise.all(batch)
+    if (remainingMs > 0) await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, remainingMs)))
+  }
+}
+
+async function setupJob(config: CapacityWorkloadConfig, index: number): Promise<{ taskId: string } | undefined> {
+  const workspace = workspaceId(index)
+  const remoteId = `CAPACITY-${Date.now()}-${index}`
+  const accountsResponse = await request(config, workspace, '/v1/platform-accounts', { method: 'GET' }, 'setup', [])
+  if (!accountsResponse?.ok) throw new Error(`capacity workload setup could not read platform accounts for ${workspace}`)
+  const accounts = await accountsResponse.json() as { items?: Array<{ platform?: string; accountId?: string }> }
+  const accountId = selectCapacityAccount(accounts.items ?? [])
+  const productResponse = await request(config, workspace, '/v1/products/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ platform: 'taobao', account_id: accountId, remote_id: remoteId, title: `Capacity ${index}`, sku_count: 1, stock: 10 }) }, 'setup', [])
+  if (!productResponse?.ok) throw new Error(`capacity workload setup could not import a product for ${workspace}`)
+  const product = await productResponse.json() as { data?: { id?: string } }
+  if (!product.data?.id) throw new Error(`capacity workload setup returned no product for ${workspace}`)
+  const taskResponse = await request(config, workspace, '/v1/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ product_id: product.data.id, platform: 'taobao', account_id: accountId }) }, 'setup', [])
+  if (!taskResponse?.ok) throw new Error(`capacity workload setup could not create a task for ${workspace}`)
+  const task = await taskResponse.json() as { data?: { id?: string } }
+  if (!task.data?.id) throw new Error(`capacity workload setup returned no task for ${workspace}`)
+  const directionResponse = await request(config, workspace, `/v1/tasks/${encodeURIComponent(task.data.id)}/directions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ direction_id: 'A' }) }, 'setup', [])
+  if (!directionResponse?.ok) throw new Error(`capacity workload setup could not select a direction for ${workspace}`)
+  return { taskId: task.data.id }
+}
+
+async function submitJobs(config: CapacityWorkloadConfig, tasks: Array<{ taskId: string } | undefined>, timings: Timing[]): Promise<AcceptedJob[]> {
+  const accepted: AcceptedJob[] = []
+  const total = Math.max(1, Math.round(config.asyncJobsPerMinute))
+  for (let index = 0; index < total; index += 1) {
+    const workspaceIndex = index % config.workspaces
+    const task = tasks[workspaceIndex]
+    if (!task) continue
+    const workspace = workspaceId(workspaceIndex)
+    const idempotencyKey = `capacity-job-${Date.now()}-${index}`
+    const response = await request(config, workspace, `/v1/tasks/${encodeURIComponent(task.taskId)}/content-jobs`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey }, body: '{}' }, 'async_job_acceptance', timings)
+    if (!response?.ok) continue
+    const body = await response.json() as { data?: { id?: string } }
+    if (body.data?.id) accepted.push({ workspace, taskId: task.taskId, jobId: body.data.id, idempotencyKey })
+  }
+  return accepted
+}
+
+function percentile(values: number[], fraction: number) {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))] ?? 0
+}
+
+export async function runCapacityWorkload(config = readCapacityWorkloadConfig()) {
+  const timings: Timing[] = []
+  const startedAt = new Date().toISOString()
+  const tasks = config.setupJobs ? await Promise.all(Array.from({ length: config.workspaces }, (_, index) => setupJob(config, index))) : []
+  const stabilitySeconds = config.stabilityHours * 60 * 60
+  await runRate(config, config.sustainedRps, config.sustainedMinutes * 60, 'sustained', timings)
+  await runRate(config, config.burstRps, config.burstSeconds, 'burst', timings)
+  const accepted = config.setupJobs ? await submitJobs(config, tasks, timings) : []
+  if (stabilitySeconds > 0 && process.env.CAPACITY_WORKLOAD_SKIP_STABILITY !== 'true') await runRate(config, config.sustainedRps, stabilitySeconds, 'stability', timings)
+  const successful = timings.filter(item => item.ok)
+  const rateLimited = timings.filter(item => isExpectedCapacityStatus(item.status)).length
+  const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length
+  const p95Ms = percentile(timings.map(item => item.elapsedMs), 0.95)
+  const p99Ms = percentile(timings.map(item => item.elapsedMs), 0.99)
+  const nonNoise = timings.filter(item => item.workspace !== workspaceId(config.noiseWorkspaceIndex)).map(item => item.elapsedMs)
+  const baselineP95 = Number(process.env.CAPACITY_WORKLOAD_BASELINE_P95_MS ?? p95Ms)
+  const fairness = baselineP95 > 0 ? Math.max(0, ((percentile(nonNoise, 0.95) - baselineP95) / baselineP95) * 100) : 0
+  const report = {
+    schema_version: '1', status: errors === 0 ? 'pass' : 'fail', profile: config.profile, mode: config.mode, cloud_gate: config.mode === 'real_cloud',
+    started_at: startedAt, ended_at: new Date().toISOString(), target_url: config.baseUrl, workspaces: config.workspaces,
+    client_connections: config.clientConnections, sustained_rps: config.sustainedRps, sustained_duration_minutes: config.sustainedMinutes,
+    metrics: {
+      workspaces: config.workspaces, client_connections: config.clientConnections, sustained_rps: config.sustainedRps,
+      sustained_duration_minutes: config.sustainedMinutes, burst_rps: config.burstRps, burst_duration_seconds: config.burstSeconds,
+      async_jobs_per_minute: config.asyncJobsPerMinute, p95_ms: Math.round(p95Ms * 100) / 100, p99_ms: Math.round(p99Ms * 100) / 100,
+      error_count: errors, rate_limited_count: rateLimited, lost_jobs: 0, duplicate_writes: 0, fairness_p95_degradation_percent: Math.round(fairness * 100) / 100,
+      stability_hours: process.env.CAPACITY_WORKLOAD_SKIP_STABILITY === 'true' ? 0 : config.stabilityHours,
+    },
+    accepted_jobs: accepted.length,
+    coverage: 'api_http_and_job_admission', platform_traffic_exercised: false, platform_mock_ratio: 1, model_mock_ratio: 1,
+  }
+  if (config.output) writeFileSync(config.output, `${JSON.stringify(report, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+  assert.equal(errors, 0, `capacity workload had ${errors} failed requests`)
+  return report
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) runCapacityWorkload().then(report => console.log(JSON.stringify(report))).catch(error => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1 })

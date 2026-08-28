@@ -1,0 +1,242 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-worker-environment: &worker-environment
+  NODE_ENV: production
+  DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
+  REDIS_URL: redis://redis:6379
+  WORKER_WORKSPACES: auto
+  WORKER_POLL_INTERVAL_MS: 500
+  WORKER_BATCH_SIZE: 100
+  WORKER_WORKSPACE_BATCH_SIZE: 10
+  WORKER_LEASE_MS: 30000
+  WORKER_PLATFORM_QUOTA_PER_MINUTE: ${WORKER_PLATFORM_QUOTA_PER_MINUTE:-60}
+  WORKER_MODEL_QUOTA_PER_MINUTE: ${WORKER_MODEL_QUOTA_PER_MINUTE:-60}
+  WORKER_DB_POOL_MAX: 5
+  WORKER_DB_CONNECTION_TIMEOUT_MS: 3000
+  WORKER_API_BASE_URL: http://api:8787
+  WORKER_API_TOKEN: ${WORKER_API_TOKEN:-pilot-local-token}
+  WORKER_API_SIGNING_SECRET: ${WORKER_API_SIGNING_SECRET:-pilot-local-signing-secret}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+
+x-worker-common: &worker-common
+  restart: unless-stopped
+  dns:
+    - ${CONTAINER_DNS_PRIMARY:-1.1.1.1}
+    - ${CONTAINER_DNS_SECONDARY:-8.8.8.8}
+  build:
+    context: ../..
+    dockerfile: infra/docker/worker.Dockerfile
+  deploy:
+    resources:
+      limits: { cpus: "2.0", memory: 4G }
+      reservations: { cpus: "0.5", memory: 512M }
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  logging: *default-logging
+  stop_grace_period: 45s
+  healthcheck:
+    test: ["CMD-SHELL", "test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]
+    interval: 5s
+    timeout: 3s
+    retries: 12
+    start_period: 10s
+
+services:
+  ui:
+    restart: unless-stopped
+    build:
+      context: ../..
+      dockerfile: infra/docker/ui.Dockerfile
+    ports: ["18081:80"]
+    environment:
+      MERCHANT_API_TOKEN: ${MERCHANT_API_TOKEN:-pilot-local-token}
+    logging: *default-logging
+    stop_grace_period: 10s
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  api:
+    restart: unless-stopped
+    dns:
+      - ${CONTAINER_DNS_PRIMARY:-1.1.1.1}
+      - ${CONTAINER_DNS_SECONDARY:-8.8.8.8}
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 8787
+      DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
+      REDIS_URL: redis://redis:6379
+      DB_POOL_MAX: 20
+      RUN_MIGRATIONS_ON_STARTUP: "false"
+      MAX_ACTIVE_JOBS_PER_WORKSPACE: ${MAX_ACTIVE_JOBS_PER_WORKSPACE:-3}
+      REQUEST_BODY_LIMIT_BYTES: 52428800
+      API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-120}
+      OPS_API_RATE_LIMIT_PER_MINUTE: ${OPS_API_RATE_LIMIT_PER_MINUTE:-600}
+      API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","roles":["workspace_owner","platform_ops","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]}}'
+      SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:-pilot-local-session-hash-secret}
+      ALLOW_WILDCARD_WORKSPACE_GRANT: "true"
+      PUBLIC_OAUTH_REDIRECT_URI: http://127.0.0.1:8787/v1/oauth/callback/{platform}
+      CONNECTOR_FIXTURE_MODE: "false"
+      ALLOW_LOCAL_PAYMENT_FIXTURE: "true"
+      PLUGIN_WRITE_ENABLED: "false"
+      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-}
+      MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      IMAGE_MODEL: ${IMAGE_MODEL:-}
+      IMAGE_EDIT_MODEL: ${IMAGE_EDIT_MODEL:-}
+      OCR_MODEL: ${OCR_MODEL:-}
+      VIDEO_MODEL: ${VIDEO_MODEL:-}
+      MODEL_RPM_LIMIT: ${MODEL_RPM_LIMIT:-30}
+      MODEL_TPM_LIMIT: ${MODEL_TPM_LIMIT:-100000}
+      MODEL_DAILY_CNY_LIMIT: ${MODEL_DAILY_CNY_LIMIT:-10.00}
+      MODEL_RELAY_COST_EVIDENCE: ${MODEL_RELAY_COST_EVIDENCE:-false}
+      MODEL_RELAY_PRICING_DERIVATION_ENABLED: ${MODEL_RELAY_PRICING_DERIVATION_ENABLED:-true}
+      MODEL_RELAY_PRICING_GROUP: ${MODEL_RELAY_PRICING_GROUP:-SVIP}
+      PLUGIN_VERSION: ${PLUGIN_VERSION:-0.1.0+codex.20260828084500}
+      SKILL_BUNDLE_VERSION: ${SKILL_BUNDLE_VERSION:-0.1.0+codex.20260828084500}
+      MCP_VERSION: ${MCP_VERSION:-2025-06-18}
+      CONNECTOR_BUILD: ${CONNECTOR_BUILD:-merchant-connectors-0.1.0}
+      PROMPT_BUNDLE_VERSION: ${PROMPT_BUNDLE_VERSION:-merchant-prompts-0.1.0}
+      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-pilot-local-token}
+      WORKER_API_SIGNING_SECRET: ${WORKER_API_SIGNING_SECRET:-pilot-local-signing-secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: merchant-api
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 4G }
+        reservations: { cpus: "0.5", memory: 512M }
+    ports: ["8787:8787"]
+    logging: *default-logging
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks:
+      default:
+        aliases: [merchant-api]
+
+  worker-sync:
+    <<: *worker-common
+    environment:
+      <<: *worker-environment
+      WORKER_ROLE: sync
+      WORKER_READY_FILE: /tmp/merchant-worker-sync-ready
+      OTEL_SERVICE_NAME: merchant-worker-sync
+
+  worker-generation:
+    <<: *worker-common
+    environment:
+      <<: *worker-environment
+      WORKER_ROLE: generation
+      WORKER_READY_FILE: /tmp/merchant-worker-generation-ready
+      OTEL_SERVICE_NAME: merchant-worker-generation
+
+  worker-publish:
+    <<: *worker-common
+    environment:
+      <<: *worker-environment
+      WORKER_ROLE: publish
+      WORKER_READY_FILE: /tmp/merchant-worker-publish-ready
+      OTEL_SERVICE_NAME: merchant-worker-publish
+
+  worker-reconcile:
+    <<: *worker-common
+    environment:
+      <<: *worker-environment
+      WORKER_ROLE: reconcile
+      WORKER_READY_FILE: /tmp/merchant-worker-reconcile-ready
+      OTEL_SERVICE_NAME: merchant-worker-reconcile
+
+  worker-automation:
+    <<: *worker-common
+    environment:
+      <<: *worker-environment
+      WORKER_ROLE: automation
+      WORKER_AUTOMATION_INTERVAL_MS: ${WORKER_AUTOMATION_INTERVAL_MS:-30000}
+      WORKER_READY_FILE: /tmp/merchant-worker-automation-ready
+      OTEL_SERVICE_NAME: merchant-worker-automation
+
+  migrate:
+    restart: "no"
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: merchant
+      PGUSER: merchant
+      PGPASSWORD: merchant_local_only
+    entrypoint: ["/bin/sh", "-c", "/bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && psql -v ON_ERROR_STOP=1 -f /ops/seed-demo.sql"]
+    volumes:
+      - ../../packages/persistence/src/migrations:/migrations:ro
+      - ../scripts/apply-migrations.sh:/ops/apply-migrations.sh:ro
+      - ./ensure-app-role.sql:/ops/ensure-app-role.sql:ro
+      - ./seed-demo.sql:/ops/seed-demo.sql:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    logging: *default-logging
+    stop_grace_period: 10s
+
+  postgres:
+    restart: unless-stopped
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: merchant
+      POSTGRES_USER: merchant
+      POSTGRES_PASSWORD: merchant_local_only
+    ports: ["54329:5432"]
+    logging: *default-logging
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits: { cpus: "4.0", memory: 4G }
+        reservations: { cpus: "1.0", memory: 1G }
+    volumes:
+      - merchant-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U merchant -d merchant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    restart: unless-stopped
+    image: redis:7-alpine
+    ports: ["63799:6379"]
+    logging: *default-logging
+    stop_grace_period: 30s
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "3gb", "--maxmemory-policy", "noeviction"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 4G }
+        reservations: { cpus: "0.25", memory: 512M }
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  merchant-postgres:

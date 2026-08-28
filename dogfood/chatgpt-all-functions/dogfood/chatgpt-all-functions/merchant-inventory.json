@@ -1,0 +1,163 @@
+{
+  "status": 200,
+  "messages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+    }
+  ],
+  "failedRequests": [],
+  "inventory": {
+    "title": "Merchant Studio · 商家营销工作台",
+    "url": "http://127.0.0.1:18081/",
+    "bodyText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n3\n发布中心\n2\n规则与检查\n5\n帮助与诊断\n工作区设置\nRelease 1 容量\n23 / 50\n可横向扩展至 500 家商家\n云朵轻户外 · 生产工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n离线\n林\n今日工作流正常\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n创建营销任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\n已连接店铺\n3\n2 正常 · 1 需处理\n本周已批准\n18\n较上周 +28%\n平均首稿耗时\n6m 42s\n目标 ≤ 15 分钟\n需处理问题\n5\n其中 2 项阻断发布\nCONNECTIONS\n平台连接\n管理连接\nAPI request failed: 502\n重试\n京\n京东\n云朵轻户外旗舰店\n已连接\n8 分钟前\n同步\n淘\n淘宝\n云朵轻户外\n已连接\n12 分钟前\n同步\n天\n天猫\n云朵轻户外旗舰店\n需授权\n尚未同步\n连接\n拼\n拼多多\n云朵户外专营店\n需重新授权\n2 天前\n重新授权\nRECENT\n最近动态\n查看全部\n发布已生效\n轻云防晒外套 · 淘宝\n今天 10:24\n规则检查完成\n山系多袋冲锋衣 · 发现 3 项\n今天 09:48\n商品增量同步\n京东 · 更新 24 件商品\n今天 09:12\n版本已批准\n轻云防晒外套 · 内容 v4\n昨天 18:32\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\nAPI request failed: 502\n重试",
+    "buttons": [
+      {
+        "index": 0,
+        "text": "运营概览",
+        "disabled": false
+      },
+      {
+        "index": 1,
+        "text": "商品与资产",
+        "disabled": false
+      },
+      {
+        "index": 2,
+        "text": "营销任务 3",
+        "disabled": false
+      },
+      {
+        "index": 3,
+        "text": "发布中心 2",
+        "disabled": false
+      },
+      {
+        "index": 4,
+        "text": "规则与检查 5",
+        "disabled": false
+      },
+      {
+        "index": 5,
+        "text": "帮助与诊断",
+        "disabled": false
+      },
+      {
+        "index": 6,
+        "text": "工作区设置",
+        "disabled": false
+      },
+      {
+        "index": 7,
+        "text": "打开主菜单",
+        "disabled": false
+      },
+      {
+        "index": 8,
+        "text": "系统健康 离线",
+        "disabled": false
+      },
+      {
+        "index": 9,
+        "text": "林",
+        "disabled": false
+      },
+      {
+        "index": 10,
+        "text": "创建营销任务",
+        "disabled": false
+      },
+      {
+        "index": 11,
+        "text": "同步全部店铺",
+        "disabled": false
+      },
+      {
+        "index": 12,
+        "text": "管理连接",
+        "disabled": false
+      },
+      {
+        "index": 13,
+        "text": "重试",
+        "disabled": false
+      },
+      {
+        "index": 14,
+        "text": "同步",
+        "disabled": false
+      },
+      {
+        "index": 15,
+        "text": "同步",
+        "disabled": false
+      },
+      {
+        "index": 16,
+        "text": "连接",
+        "disabled": false
+      },
+      {
+        "index": 17,
+        "text": "重新授权",
+        "disabled": false
+      },
+      {
+        "index": 18,
+        "text": "查看全部",
+        "disabled": false
+      },
+      {
+        "index": 19,
+        "text": "刷新证据",
+        "disabled": false
+      },
+      {
+        "index": 20,
+        "text": "重试",
+        "disabled": false
+      }
+    ],
+    "links": [],
+    "inputs": [
+      {
+        "index": 0,
+        "tag": "INPUT",
+        "type": null,
+        "placeholder": "搜索商品、任务或版本",
+        "label": null,
+        "value": ""
+      }
+    ],
+    "headings": [
+      {
+        "level": "H1",
+        "text": "运营概览"
+      },
+      {
+        "level": "H2",
+        "text": "把商品事实变成可放心发布的内容"
+      },
+      {
+        "level": "H3",
+        "text": "平台连接"
+      },
+      {
+        "level": "H3",
+        "text": "最近动态"
+      },
+      {
+        "level": "H3",
+        "text": "平台能力证据"
+      }
+    ]
+  }
+}

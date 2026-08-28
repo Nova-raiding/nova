@@ -1,0 +1,1088 @@
+openapi: 3.0.3
+info:
+  title: Merchant Marketing MCP/API
+  version: 0.1.0
+  description: |
+    Codex merchant marketing API. Every response, including errors and MCP
+    results, is an ApiEnvelope. Production merchant requests must carry a
+    Bearer token authorized for the selected X-Workspace-Id; local
+    non-production requests retain the ws_demo fallback. External
+    platform writes are disabled by default and remain confirmation-gated.
+servers:
+  - url: http://127.0.0.1:8787
+tags:
+  - name: Runtime
+  - name: Rules
+  - name: Catalog
+  - name: Tasks
+  - name: Versioning
+  - name: OAuth
+  - name: MCP
+paths:
+  /v1/platform-capabilities:
+    get:
+      summary: Read the six-platform capability evidence matrix
+      parameters:
+        - in: header
+          name: X-Workspace-Id
+          required: true
+          schema: { type: string }
+        - in: header
+          name: Authorization
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Capability matrix }
+        '401': { description: Unauthenticated }
+        '403': { description: Workspace forbidden }
+  /v1/rules:
+    get:
+      tags: [Rules]
+      operationId: listRulePacks
+      description: Production reads are served from the tenant-scoped PostgreSQL rule repository. Fixture mode may use seeded rules when no repository is configured.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: pack_id, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/rules/audit:
+    get:
+      tags: [Rules]
+      operationId: listRuleAudit
+      description: Reads append-only lifecycle audit events. Requires the rules_admin role from the server-side token grant.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: pack_id, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/rules/{packId}/versions:
+    post:
+      tags: [Rules]
+      operationId: createRuleVersion
+      description: |
+        Creates an immutable draft or directly approved active version and appends its audit event.
+        Requires rules_admin. Active versions additionally require two-person approval; in production
+        X-Rule-Approval-Token must identify the approved_by actor for this workspace.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: packId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9._:-]{1,128}$' } }
+        - { name: X-Rule-Approval-Token, in: header, required: false, description: Required when status is active in production., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRuleVersionRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/rules/{packId}/versions/{version}/status:
+    post:
+      tags: [Rules]
+      operationId: setRuleVersionStatus
+      description: |
+        Changes a persisted version to active, inactive, or expired and appends an audit event.
+        Activation requires two-person approval. If another version is active, it must first be
+        explicitly deactivated; the API never performs a non-atomic implicit replacement.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: packId, in: path, required: true, schema: { type: string } }
+        - { name: version, in: path, required: true, schema: { type: string } }
+        - { name: X-Rule-Approval-Token, in: header, required: false, description: Required when status is active in production., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetRuleVersionStatusRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/brand-profile:
+    get:
+      tags: [Catalog]
+      operationId: getBrandProfile
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses: { '200': { $ref: '#/components/responses/Envelope' } }
+    put:
+      tags: [Catalog]
+      operationId: upsertBrandProfile
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], additionalProperties: false, properties: { name: { type: string }, positioning: { type: string }, audience: { type: string }, tone: { type: array, items: { type: string } }, forbidden_terms: { type: array, items: { type: string } }, details: { type: object, additionalProperties: true }, visual_rules: { $ref: '#/components/schemas/BrandVisualRules' }, source: { type: string }, conflict_resolutions: { type: object, additionalProperties: { type: string, enum: [existing, candidate] } } } } } }
+      responses: { '200': { $ref: '#/components/responses/Envelope' }, '400': { $ref: '#/components/responses/ErrorEnvelope' } }
+  /v1/brand-profile/extract:
+    post:
+      tags: [Catalog]
+      operationId: extractBrandProfile
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: false, properties: { asset_ids: { type: array, minItems: 1, maxItems: 50, items: { type: string } } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets:
+    get:
+      tags: [Catalog]
+      operationId: listAssets
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses: { '200': { $ref: '#/components/responses/Envelope' } }
+    post:
+      tags: [Catalog]
+      operationId: registerAssetMetadata
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name, mime_type, size_bytes, sha256, storage_key], additionalProperties: false, properties: { name: { type: string }, mime_type: { type: string }, size_bytes: { type: integer, minimum: 0 }, sha256: { type: string }, storage_key: { type: string }, rights_status: { type: string, enum: [pending, approved, rejected] } } } } }
+      responses: { '201': { $ref: '#/components/responses/Envelope' }, '400': { $ref: '#/components/responses/ErrorEnvelope' } }
+  /v1/assets/{assetId}/preference:
+    put:
+      tags: [Catalog]
+      operationId: updateAssetPreference
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verdict]
+              additionalProperties: false
+              properties:
+                verdict: { type: string, enum: [excellent, disliked, unrated] }
+                reasons: { type: array, minItems: 1, maxItems: 5, items: { type: string, maxLength: 100 } }
+                note: { type: string, maxLength: 500 }
+                expected_revision: { type: integer, minimum: 1 }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/upload:
+    post:
+      tags: [Catalog]
+      operationId: uploadAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: X-Asset-Name, in: header, required: true, schema: { type: string } }
+        - { name: X-Asset-SHA256, in: header, required: false, schema: { type: string, pattern: '^[a-fA-F0-9]{64}$' } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream: { schema: { type: string, format: binary } }
+          text/plain: { schema: { type: string, format: binary } }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '413': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/{assetId}/scan:
+    post:
+      tags: [Catalog]
+      operationId: promoteScannedAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [scan_evidence_ref], additionalProperties: false, properties: { scan_evidence_ref: { type: string } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/{assetId}/parse:
+    post:
+      tags: [Assets]
+      operationId: parseAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      description: Parses a clean JSON/CSV/TXT/Markdown/PDF text/DOCX/XLSX asset into auditable facts. Scanned PDFs, image OCR and unsupported formats return a visible failed parse state.
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/assets/{assetId}/download:
+    get:
+      tags: [Catalog]
+      operationId: downloadAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Clean binary asset }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /healthz:
+    get:
+      tags: [Runtime]
+      operationId: workspaceHealth
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+  /metrics:
+    get:
+      tags: [Runtime]
+      summary: Prometheus metrics endpoint for internal scraping
+      responses:
+        '200': { description: Prometheus text exposition, content: { text/plain: { schema: { type: string } } } }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/platform-accounts:
+    get:
+      tags: [OAuth]
+      operationId: listPlatformAccounts
+      description: Returns the merchant-safe store directory with last-known, non-secret OAuth metadata and per-store sync timestamps. Access-token expiry is not the merchant authorization expiry; missing provider metadata remains unknown. Credential references and tokens are never returned.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+  /v1/platform-accounts/{platform}/authorize:
+    post:
+      tags: [OAuth]
+      operationId: authorizePlatform
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: platform, in: path, required: true, schema: { $ref: '#/components/schemas/Platform' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AuthorizeRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '413': { $ref: '#/components/responses/ErrorEnvelope' }
+        '429': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/platform-accounts/{platform}:
+    delete:
+      tags: [OAuth]
+      operationId: revokePlatformAccount
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: platform, in: path, required: true, schema: { $ref: '#/components/schemas/Platform' } }
+        - { name: X-Account-Id, in: header, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/platform-accounts/{platform}/sync:
+    post:
+      tags: [Catalog]
+      operationId: syncPlatformProducts
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: platform, in: path, required: true, schema: { $ref: '#/components/schemas/Platform' } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, additionalProperties: false, properties: { account_id: { type: string }, cursor: { type: string, description: Cursor returned by the previous page. } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/sync-jobs:
+    get:
+      tags: [Catalog]
+      operationId: listSyncJobs
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+    post:
+      tags: [Catalog]
+      operationId: createSyncJob
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [platform]
+              properties:
+                platform: { $ref: '#/components/schemas/Platform' }
+                account_id: { type: string }
+                mode: { type: string, enum: [full, incremental] }
+                cursor: { type: string }
+      responses:
+        '202': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/sync-jobs/{jobId}:
+    get:
+      tags: [Catalog]
+      operationId: getSyncJob
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/sync-jobs/{jobId}/progress:
+    post:
+      summary: Internal worker progress callback
+      description: Worker-only endpoint; records one idempotent sync page.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [page_number, items], properties: { page_number: { type: integer, minimum: 1 }, next_cursor: { type: string }, items: { type: array, items: { type: object, additionalProperties: true } } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/sync-jobs/{jobId}/execution-context:
+    get:
+      summary: Internal worker credential-location gate
+      description: Worker-token protected endpoint that revalidates the store account and returns an opaque credential locator in memory. It is never exposed through MCP or persisted in the outbox.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/sync-jobs/{jobId}/result:
+    post:
+      summary: Internal worker sync result callback
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [state], properties: { state: { type: string, enum: [succeeded, partial, failed] }, error_message: { type: string } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/sync-jobs/{jobId}/retry-failed:
+    post:
+      summary: Retry selected retryable sync failures by replaying their source page cursor
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, additionalProperties: false, properties: { failure_ids: { type: array, items: { type: string } } } } } }
+      responses:
+        '202': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/oauth/callback/{platform}:
+    get:
+      tags: [OAuth]
+      operationId: oauthCallback
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: platform, in: path, required: true, schema: { $ref: '#/components/schemas/Platform' } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: code, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/products:
+    get:
+      tags: [Catalog]
+      operationId: catalogSearch
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: workspace_id, in: query, description: Optional local compatibility value; must equal server scope, schema: { type: string } }
+        - { name: query, in: query, required: false, schema: { type: string } }
+        - { name: platform, in: query, required: false, schema: { $ref: '#/components/schemas/Platform' } }
+        - { name: account_id, in: query, required: false, schema: { type: string } }
+        - { name: store_name, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/products/{productId}/image-review:
+    get:
+      tags: [Catalog]
+      operationId: reviewProductImages
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/products/import/batch:
+    post:
+      tags: [Catalog]
+      summary: Atomically import up to 50 products across explicitly selected stores
+      operationId: importProductsBatch
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [products]
+              properties:
+                products:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  items:
+                    type: object
+                    additionalProperties: true
+                    required: [platform, title]
+                    properties:
+                      platform: { $ref: '#/components/schemas/Platform' }
+                      account_id: { type: string, description: Explicit authorized store account. Required in production. }
+                      remote_id: { type: string }
+                      local_product_key: { type: string }
+                      title: { type: string, minLength: 1 }
+                      sku_count: { type: integer, minimum: 0 }
+                      stock: { type: integer, minimum: 0 }
+                      price: { type: number, minimum: 0 }
+                      category: { type: string }
+                      images: { type: array, items: { type: string } }
+                      skus: { type: array, items: { type: object } }
+                      attributes: { type: object, additionalProperties: { type: string } }
+                      selling_points: { type: array, maxItems: 3, items: { type: object } }
+                      store_name: { type: string }
+                      store_differentiation: { type: string }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/products/import:
+    post:
+      tags: [Catalog]
+      summary: Import a confirmed local product or bind an existing platform product
+      operationId: importProduct
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [platform, title]
+              properties:
+                platform: { $ref: '#/components/schemas/Platform' }
+                remote_id: { type: string, description: Existing platform product ID; omit for a local product to be created after confirmation. }
+                local_product_key: { type: string, description: Stable caller-provided key for an unbound local product. }
+                title: { type: string, minLength: 1 }
+                sku_count: { type: integer, minimum: 0 }
+                stock: { type: integer, minimum: 0 }
+                price: { type: number, minimum: 0 }
+                category: { type: string }
+                images: { type: array, items: { type: string } }
+                attributes: { type: object, additionalProperties: { type: string } }
+                selling_points:
+                  type: array
+                  maxItems: 3
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [text, proof_status, source_ids]
+                    properties:
+                      id: { type: string }
+                      text: { type: string, minLength: 1 }
+                      proof_status: { type: string, enum: [pending, confirmed, rejected] }
+                      source_ids: { type: array, minItems: 1, items: { type: string } }
+                store_name: { type: string }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks:
+    get:
+      tags: [Tasks]
+      operationId: searchTasks
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: workspace_id, in: query, required: false, schema: { type: string } }
+        - { name: query, in: query, required: false, schema: { type: string } }
+        - { name: platform, in: query, required: false, schema: { $ref: '#/components/schemas/Platform' } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: product_id, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+    post:
+      tags: [Tasks]
+      operationId: createTask
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTaskRequest' } } }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/task-groups:
+    post:
+      tags: [Tasks]
+      operationId: createTaskGroup
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              additionalProperties: false
+              properties:
+                request_text: { type: string }
+                entries:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [product_id, platform]
+                    additionalProperties: false
+                    properties:
+                      product_id: { type: string }
+                      platform: { $ref: '#/components/schemas/Platform' }
+                      account_id: { type: string }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks/understand:
+    post:
+      tags: [Tasks]
+      operationId: understandTaskRequest
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [request_text], additionalProperties: false, properties: { request_text: { type: string, minLength: 1 } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks/{taskId}/directions:
+    get:
+      tags: [Tasks]
+      operationId: listCreativeDirections
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+    post:
+      tags: [Tasks]
+      operationId: selectDirection
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/TaskId' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [direction_id], additionalProperties: false, properties: { direction_id: { type: string }, expected_version: { type: integer, minimum: 1 } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks/{taskId}/content:
+    post:
+      tags: [Tasks]
+      operationId: generateContent
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      description: Production requests require an Idempotency-Key. Local and test fixture calls may omit it.
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+  /v1/tasks/{taskId}/content-versions:
+    get:
+      tags: [Versioning]
+      operationId: listContentVersions
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks/{taskId}/timeline:
+    get:
+      tags: [Tasks]
+      operationId: getTaskTimeline
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/TaskId' }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+      description: Durable task event timeline scoped to one workspace; includes version, confirmation, failure and delivery events.
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks/{taskId}/feedback:
+    get:
+      tags: [Tasks]
+      operationId: listTaskFeedback
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      description: Lists feedback attached to the task only; it does not alter global rules.
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+    post:
+      tags: [Tasks]
+      operationId: submitTaskFeedback
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              additionalProperties: false
+              properties:
+                content_version_id: { type: string }
+                rating: { type: string, enum: [liked, neutral, needs_improvement] }
+                reason: { type: string }
+                comment: { type: string, maxLength: 2000 }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks/{taskId}/approve:
+    post:
+      tags: [Tasks]
+      operationId: approveContent
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [content_version_id], additionalProperties: false, properties: { content_version_id: { type: string }, expected_version: { type: integer, minimum: 1 } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/content-versions/{contentVersionId}/diff:
+    get:
+      tags: [Versioning]
+      operationId: diffContentVersions
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: contentVersionId, in: path, required: true, schema: { type: string } }
+        - { name: against, in: query, required: false, description: Optional same-task baseline version ID; omitted means compare with an empty baseline., schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/content-versions/{contentVersionId}/review:
+    get:
+      tags: [Review]
+      operationId: reviewContentVersion
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: contentVersionId, in: path, required: true, schema: { type: string } }
+      description: Runs deterministic P0 checks. It does not represent legal or platform approval.
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/content-versions/{contentVersionId}/review-decisions:
+    post:
+      tags: [Review]
+      operationId: decideContentReviewFinding
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/ActorId' }
+        - { name: contentVersionId, in: path, required: true, schema: { type: string } }
+      description: Marks a P1/P2 finding as acknowledged or waived with an audit reason. P0 findings cannot be bypassed and must be repaired.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, field, status]
+              additionalProperties: false
+              properties:
+                code: { type: string, minLength: 1 }
+                field: { type: string, minLength: 1 }
+                status: { type: string, enum: [acknowledged, waived] }
+                reason: { type: string }
+                expected_revision: { type: integer, minimum: 1 }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/content-versions/{contentVersionId}/modify:
+    post:
+      tags: [Versioning]
+      operationId: modifyContentVersion
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: contentVersionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [changes, reason]
+              additionalProperties: false
+              properties:
+                changes: { type: object, additionalProperties: true }
+                locked_fields: { type: array, items: { type: string } }
+                expected_revision: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 1 }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/content-versions/{contentVersionId}/restore:
+    post:
+      tags: [Versioning]
+      operationId: restoreContentVersion
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: contentVersionId, in: path, required: true, schema: { type: string } }
+      description: Restores by creating a new review_required child version. The source version is never overwritten, including approved/delivered versions.
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, additionalProperties: false, properties: { expected_version: { type: integer, minimum: 1 } } } } }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/content-versions/{contentVersionId}/export:
+    get:
+      tags: [Versioning]
+      operationId: exportContentVersion
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: contentVersionId, in: path, required: true, schema: { type: string } }
+        - { name: format, in: query, required: false, schema: { type: string, enum: [manifest, json, markdown, bundle], default: bundle } }
+      description: Returns a downloadable manifest, content JSON, Markdown, or ZIP bundle. No platform publish receipt is fabricated; a receipt is only present when supplied by a real connector.
+      responses:
+        '200':
+          description: Downloadable content (raw JSON/Markdown, not an ApiEnvelope).
+          content:
+            application/json: { schema: { type: object } }
+            text/markdown: { schema: { type: string } }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/tasks/{taskId}/publish-preview:
+    post:
+      tags: [Tasks]
+      operationId: preparePublish
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/publish-jobs:
+    post:
+      tags: [Tasks]
+      operationId: confirmPublish
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PublishConfirmRequest' } } }
+      responses:
+        '202': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/publish-jobs/{jobId}:
+    get:
+      tags: [Tasks]
+      operationId: getPublishJob
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { name: jobId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/publish-jobs/{jobId}/execution-check:
+    get:
+      tags: [Tasks]
+      operationId: checkPublishExecution
+      description: Worker-token protected authorization gate immediately before connector execution; returns the opaque credential locator only to the worker and never through MCP or outbox.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { name: jobId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/publish-jobs/{jobId}/observation:
+    post:
+      tags: [Tasks]
+      operationId: recordPublishObservation
+      description: Worker-only status projection. A durable outbox acknowledgement is not a publication acknowledgement.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { name: jobId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PublishObservationRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /mcp:
+    post:
+      tags: [MCP]
+      operationId: mcpJsonRpc
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/IdempotencyKeyOptional' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/McpRequest' } } }
+      description: |
+        rule.sync.status is included in the MCP allowlist and exposes read-only rule freshness.
+        Allowlist: workspace.bootstrap, workspace.health, workspace.interactive.confirm, workspace.metrics, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.get, catalog.image.review,
+        sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.answer,
+        task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, generation.get, content.review, content.review.decide, content.versions, content.diff, content.export, content.approve,
+        content.modify, content.restore, publish.prepare, publish.confirm and publish.get. The last method requires Idempotency-Key and fresh
+        confirmation hashes. No raw platform write method is exposed.
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Production gateway/API token. The token grant, not X-Workspace-Id, is the identity source.
+  x-error-codes: [UNAUTHENTICATED, FORBIDDEN, REQUEST_BODY_TOO_LARGE, RATE_LIMITED, WORKSPACE_JOB_QUOTA_EXCEEDED, WORKSPACE_SCOPE_REQUIRED, WORKSPACE_SCOPE_MISMATCH, TENANT_SCOPE_DENIED, CONTENT_VERSION_SCOPE_MISMATCH, IDEMPOTENCY_CONFLICT]
+  parameters:
+    WorkspaceId:
+      name: X-Workspace-Id
+      in: header
+      required: true
+      description: Server identity workspace scope. Local non-production may omit it and use ws_demo; production must not.
+      schema: { type: string, minLength: 1 }
+    ActorId:
+      name: X-Actor-Id
+      in: header
+      required: false
+      description: Merchant or reviewer identity recorded in the audit trail; defaults to merchant in local mode.
+      schema: { type: string, minLength: 1 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 256 }
+    IdempotencyKeyOptional:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Required only for MCP publish.confirm.
+      schema: { type: string, minLength: 8, maxLength: 256 }
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    BrandVisualRules:
+      type: object
+      additionalProperties: false
+      properties:
+        logo:
+          type: object
+          required: [assetIds]
+          additionalProperties: false
+          properties:
+            assetIds: { type: array, minItems: 1, maxItems: 10, items: { type: string } }
+            allowRecolor: { type: boolean, default: false }
+            allowDistortion: { type: boolean, default: false }
+            allowRedraw: { type: boolean, default: false }
+            clearSpace: { type: string }
+        colors:
+          type: object
+          additionalProperties: false
+          properties:
+            primary: { type: array, maxItems: 20, items: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' } }
+            secondary: { type: array, maxItems: 20, items: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' } }
+            forbidden: { type: array, maxItems: 20, items: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' } }
+        fonts:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [family, licenseStatus]
+            additionalProperties: false
+            properties:
+              family: { type: string }
+              assetId: { type: string }
+              licenseStatus: { type: string, enum: [approved, restricted, unknown] }
+        styleKeywords: { type: array, maxItems: 20, items: { type: string } }
+        restrictedSubjects:
+          type: object
+          additionalProperties: false
+          properties:
+            people: { type: array, maxItems: 30, items: { type: string } }
+            spokespersons: { type: array, maxItems: 30, items: { type: string } }
+            intellectualProperties: { type: array, maxItems: 30, items: { type: string } }
+            prohibitedContent: { type: array, maxItems: 30, items: { type: string } }
+    RuleApproval:
+      type: object
+      required: [approval_ref, approved_at, approved_by]
+      additionalProperties: false
+      properties:
+        approval_ref: { type: string, minLength: 1 }
+        approved_at: { type: string, format: date-time }
+        approved_by: { type: string, minLength: 1 }
+    CreateRuleVersionRequest:
+      type: object
+      required: [name, version, scope, source_kind, source_reference, source_checked_at, checks, reason]
+      additionalProperties: false
+      properties:
+        workspace_id: { type: string, description: Compatibility field; must equal X-Workspace-Id when supplied. }
+        pack_id: { type: string, description: Optional consistency field; must equal packId. }
+        name: { type: string, minLength: 1 }
+        version: { type: string, minLength: 1 }
+        scope: { type: string, enum: [global, platform, category, brand, store, campaign] }
+        status: { type: string, enum: [draft, active], default: draft }
+        source_kind: { type: string, enum: [official, internal, legal_review] }
+        source_reference: { type: string, minLength: 1 }
+        source_checked_at: { type: string, format: date-time }
+        effective_from: { type: string, format: date-time }
+        effective_to: { type: string, format: date-time }
+        severity: { type: string, enum: [error, warning], default: error }
+        action: { type: string, enum: [block, warn, review, allow], default: block }
+        target_id: { type: string }
+        scope_value: { type: string }
+        checks: { type: object, additionalProperties: true }
+        checksum: { type: string, pattern: '^[a-f0-9]{64}$', description: Optional client assertion; the server always recomputes it from canonical checks JSON. }
+        reason: { type: string, minLength: 1 }
+        approval: { $ref: '#/components/schemas/RuleApproval' }
+    SetRuleVersionStatusRequest:
+      type: object
+      required: [status, reason]
+      additionalProperties: false
+      properties:
+        workspace_id: { type: string, description: Compatibility field; must equal X-Workspace-Id when supplied. }
+        status: { type: string, enum: [active, inactive, expired] }
+        reason: { type: string, minLength: 1 }
+        approval: { $ref: '#/components/schemas/RuleApproval' }
+    Platform:
+      type: string
+      enum: [jd, taobao, tmall, pinduoduo, xiaohongshu, douyin]
+    AuthorizeRequest:
+      type: object
+      properties:
+        workspace_id: { type: string, description: Compatibility field; must equal X-Workspace-Id when supplied. }
+        actor_id: { type: string }
+        redirect_uri: { type: string, format: uri }
+      additionalProperties: false
+    CreateTaskRequest:
+      type: object
+      required: [product_id, platform]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        product_id: { type: string }
+        platform: { $ref: '#/components/schemas/Platform' }
+        account_id: { type: string, description: Authorized platform account bound to this task. }
+      additionalProperties: false
+    PublishConfirmRequest:
+      type: object
+      required: [task_id, content_version_id, confirmation_hash, remote_snapshot_hash]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; must equal server scope when supplied. }
+        task_id: { type: string }
+        content_version_id: { type: string }
+        confirmation_hash: { type: string, minLength: 1 }
+        remote_snapshot_hash: { type: string, minLength: 1 }
+        account_id: { type: string, description: Authorized platform account used for this publish. }
+      additionalProperties: false
+    PublishObservationRequest:
+      type: object
+      required: [status]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; must equal server scope when supplied. }
+        source: { type: string, enum: [publish, reconcile] }
+        observed_at: { type: string, format: date-time }
+        status:
+          type: object
+          required: [found, state]
+          properties:
+            found: { type: boolean }
+            state: { type: string, enum: [submitted, published, rejected, unknown] }
+            remote_id: { type: string }
+            request_id: { type: string }
+            simulated: { type: boolean }
+            platform_rejection:
+              $ref: '#/components/schemas/PlatformRejection'
+          additionalProperties: false
+      additionalProperties: false
+    PlatformRejection:
+      type: object
+      required: [raw_code, fields]
+      properties:
+        raw_code: { type: string, minLength: 1, maxLength: 128, description: Raw platform rejection code safe for merchant support. }
+        message: { type: string, minLength: 1, maxLength: 2000 }
+        fields:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string, minLength: 1, maxLength: 256 }
+              raw_code: { type: string, minLength: 1, maxLength: 128 }
+              message: { type: string, minLength: 1, maxLength: 1000 }
+            additionalProperties: false
+      additionalProperties: false
+    McpRequest:
+      type: object
+      required: [jsonrpc, id, method]
+      properties:
+        jsonrpc: { type: string, enum: ['2.0'] }
+        id: { oneOf: [{ type: string }, { type: integer }, { type: 'null' }] }
+        method:
+          type: string
+        enum: [merchant.start, merchant.first_value, brand-unit.list, brand-unit.create, brand-unit.bind-store, brand-unit.product.create, brand-unit.listing.create, brand-unit.listing.list, brand-unit.access.grant, campaign.batch.create, campaign.batch.get, campaign.batch.generate, workspace.health, workspace.bootstrap, workspace.interactive.confirm, workspace.metrics, workspace.commercial.get, workspace.commercial.update, workspace.usage.get, ops.audit.list, ops.audit.export, ops.data.delete.list, ops.data.delete.cancel, ops.data.delete.approve, ops.members.list, ops.session, ops.workspaces.list, ops.users.list, ops.user.detail, ops.user.suspend, ops.user.activate, ops.user.risk.transition, ops.user.session.revoke, ops.commercial.offers.list, ops.commercial.offer.upsert, ops.commercial.addons.list, ops.commercial.addon.upsert, ops.commercial.coupons.list, ops.commercial.coupon.upsert, ops.commercial.rollouts.list, ops.commercial.rollout.upsert, ops.commercial.model-markup.get, ops.commercial.model-markup.update, ops.growth.funnel, ops.alerts.list, ops.alert.ack, ops.marketing.queue, ops.marketing.queue.assign, ops.marketing.visual.review, ops.marketing.generation.retry, ops.marketing.publish.acknowledge, ops.marketing.revision.create, ops.member.upsert, ops.member.suspend, subscription.get, subscription.orders.list, subscription.order.create, subscription.change, billing.usage.consume, billing.usage.refund, billing.refund, billing.reconciliation, billing.reconciliation.run, billing.model-usage.reconciliation.run, billing.model-usage.resolve, billing.export, platform.settings.get, platform.settings.update, platform.model.status, billing.status, billing.recharge.create, billing.recharge.get, billing.transactions, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.import.batch, catalog.sku.update, catalog.product.update, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.get, catalog.image.review, sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.answer, task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, content.codex.prepare, content.codex.commit, generation.get, content.review, content.review.decide, content.visual.select, content.versions, content.diff, content.export, content.approve, content.modify, content.restore, publish.prepare, publish.batch.prepare, publish.batch.confirm, publish.batch.get, publish.batch.pause, publish.batch.resume, publish.batch.retry_failed, automation.policy.get, automation.policy.list, automation.policy.update, automation.scan, automation.tick, automation.pause, publish.confirm, publish.get, knowledge.rule.create, knowledge.rule.list, knowledge.asset.create, knowledge.asset.update, knowledge.asset.list, knowledge.feedback.record, knowledge.learning.list, knowledge.learning.confirm, knowledge.learning.dismiss, knowledge.competitor.create, knowledge.competitor.list, knowledge.competitor.reference, multimodal.image.edit, multimodal.generate, multimodal.video.request, multimodal.video.get]
+        params:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    ApiWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        retryable: { type: boolean }
+        details: { type: object, additionalProperties: true }
+    ApiEnvelope:
+      type: object
+      required: [request_id, trace_id, workspace_id, data, warnings, next_actions, error]
+      properties:
+        request_id: { type: string }
+        trace_id: { type: string }
+        workspace_id: { type: string }
+        data: {}
+        warnings: { type: array, items: { $ref: '#/components/schemas/ApiWarning' } }
+        next_actions: { type: array, items: { type: object, additionalProperties: true } }
+        error: { oneOf: [{ $ref: '#/components/schemas/ApiError' }, { type: 'null' }] }
+  responses:
+    Envelope:
+      description: Successful response using ApiEnvelope.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiEnvelope' } } }
+    ErrorEnvelope:
+      description: Failed response using the same ApiEnvelope shape; data is null.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiEnvelope' } } }

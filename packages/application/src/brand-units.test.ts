@@ -1,0 +1,56 @@
+import { describe, expect, it } from 'vitest'
+import { BrandUnitError, BrandUnitService } from './brand-units.js'
+
+const setup = () => {
+  const service = new BrandUnitService()
+  const a = service.createBrandUnit({ workspaceId: 'ws_1', name: '户外品' })
+  const b = service.createBrandUnit({ workspaceId: 'ws_1', name: '家居品' })
+  const store = service.registerPlatformAccount({ workspaceId: 'ws_1', platform: 'taobao', remoteAccountId: 'tb-1', label: '淘宝旗舰店' })
+  return { service, a, b, store }
+}
+
+describe('BrandUnitService', () => {
+  it('creates, lists and updates brand units with workspace and revision guards', () => {
+    const { service, a } = setup()
+    expect(service.listBrandUnits('ws_1')).toHaveLength(2)
+    expect(service.updateBrandUnit({ workspaceId: 'ws_1', brandId: a.id, name: '户外生活', expectedRevision: 1 })).toMatchObject({ name: '户外生活', revision: 2 })
+    expect(() => service.updateBrandUnit({ workspaceId: 'ws_2', brandId: a.id })).toThrowError(expect.objectContaining({ code: 'BRAND_UNIT_NOT_FOUND' }))
+    expect(() => service.updateBrandUnit({ workspaceId: 'ws_1', brandId: a.id, expectedRevision: 1 })).toThrowError(expect.objectContaining({ code: 'BRAND_UNIT_VERSION_CONFLICT' }))
+  })
+
+  it('allows one store to bind multiple brands, but rejects cross-workspace binding', () => {
+    const { service, a, b, store } = setup()
+    expect(service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })).toMatchObject({ brandId: a.id })
+    expect(service.bindStore({ workspaceId: 'ws_1', brandId: b.id, accountId: store.id })).toMatchObject({ brandId: b.id })
+    expect(service.listStoreBindings('ws_1', a.id)).toHaveLength(1)
+    expect(() => service.bindStore({ workspaceId: 'ws_2', brandId: a.id, accountId: store.id })).toThrowError(expect.objectContaining({ code: 'BRAND_UNIT_NOT_FOUND' }))
+  })
+
+  it('requires explicit brand scope for products and listings', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, title: '轻量外套' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, remoteProductId: 'tb-p1' })
+    expect(listing).toMatchObject({ brandId: a.id, accountId: store.id })
+    expect(() => service.createListing({ workspaceId: 'ws_1', brandId: 'brand_other', canonicalProductId: product.id, platform: 'taobao', accountId: store.id })).toThrowError(expect.objectContaining({ code: 'BRAND_ID_MISMATCH' }))
+    expect(() => service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'jd', accountId: store.id })).toThrowError(expect.objectContaining({ code: 'PLATFORM_MISMATCH' }))
+  })
+
+  it('preflights up to 50 items, aggregates blocked scope and is idempotent', () => {
+    const { service, a, b, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, title: '外套' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id })
+    const input = { workspaceId: 'ws_1', idempotencyKey: 'campaign-1', items: [{ brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }, { brandId: b.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }] }
+    const first = service.preflightCampaign(input)
+    expect(first.aggregate).toEqual({ total: 2, ready: 1, blocked: 1, state: 'blocked' })
+    expect(first.items[1]?.blockers).toContain('BRAND_ID_MISMATCH')
+    expect(service.preflightCampaign(input)).toEqual(first)
+    expect(() => service.preflightCampaign({ ...input, idempotencyKey: 'campaign-1', items: [input.items[0]!] })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
+    expect(() => service.preflightCampaign({ workspaceId: 'ws_1', idempotencyKey: 'too-many', items: Array.from({ length: 51 }, () => input.items[0]!) })).toThrowError(expect.objectContaining({ code: 'CAMPAIGN_LIMIT_EXCEEDED' }))
+  })
+
+  it('rejects invalid input with a stable domain error', () => {
+    expect(() => new BrandUnitService().createBrandUnit({ workspaceId: 'ws_1', name: ' ' })).toThrowError(new BrandUnitError('INVALID_INPUT', 'name is required'))
+  })
+})

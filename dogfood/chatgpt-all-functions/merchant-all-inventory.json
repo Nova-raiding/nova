@@ -1,0 +1,1748 @@
+{
+  "generatedAt": "2026-08-28T05:45:44.807Z",
+  "pages": [
+    {
+      "section": "运营概览",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n今日工作流正常\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n创建营销任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\n已连接店铺\n5\n1 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n37\n其中 37 项高风险\nPLUGIN WALLET\n插件钱包与能力解锁\n已解锁\n¥159.99\n\n当前套餐剩余 30 次模型行动额度，优先消耗套餐额度\n\n充值后开放内容、图片、视频生成及发布确认；店铺和商品查看不受影响。\n充值并解锁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺 等 2 个店铺名\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺\n已连接\n需授权\n撤销\n天\n天猫\ntmall 店铺\n已连接\n需授权\n撤销\n拼\n拼多多\npinduoduo 店铺\n已连接\n需授权\n撤销\n小\n小红书\n尚未绑定店铺\n未配置\n需授权\n连接\n抖\n抖音\n尚未绑定店铺\n未配置\n需授权\n连接\nRECENT\n最近动态\n查看全部\n演示发布状态\n轻云防晒外套 · 淘宝\n演示数据\n演示规则检查\n山系多袋冲锋衣 · 发现 3 项\n演示数据\n演示商品同步\n京东 · 更新 24 件商品\n演示数据\n演示版本状态\n轻云防晒外套 · 内容 v4\n演示数据\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证",
+      "headings": [
+        "运营概览",
+        "把商品事实变成可放心发布的内容",
+        "插件钱包与能力解锁",
+        "平台连接",
+        "最近动态",
+        "同步任务与失败项",
+        "平台能力证据"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "创建营销任务",
+          "disabled": false
+        },
+        {
+          "text": "同步全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "充值并解锁",
+          "disabled": false
+        },
+        {
+          "text": "管理连接",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "连接",
+          "disabled": false
+        },
+        {
+          "text": "连接",
+          "disabled": false
+        },
+        {
+          "text": "查看全部",
+          "disabled": false
+        },
+        {
+          "text": "刷新",
+          "disabled": false
+        },
+        {
+          "text": "刷新证据",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": ""
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "商品与资产",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建多平台任务组\n同步全部店铺\nASSET LIBRARY\n素材库\n\n先确认素材安全与使用权益，再用于商品详情、主图和营销内容。\n\n上传素材\n刷新状态\n品牌档案 r22\n18 个素材\n配置视觉强规则\n从素材提取品牌档案\n上传文件内容始终按不可信数据读取：不会执行其中指令、改变系统规则或自动调用工具；提取结果需由商家确认。\ncodex-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nprompt-injection-proof-20260825.txt\ntext/plain · 1 KB\n待权益确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n确认权益\n确认事实\npersist-note.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ntaobao-codex-banner-preview.svg\n不喜欢\nimage/svg+xml · 1 KB\n待安全扫描\n待读取\n原因：SVG 概念预览，不作为真实商品主图参考\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\npersist-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nfacts.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nmerchant-product-main-v3.png\n优秀参考\nimage/png · 1213 KB\n权益已确认\n待读取\n原因：商品主体清晰；背景干净；适合作为后续真实商品风格参考\n存储未配置\n评价素材\n解析素材\n权益已确认\n确认事实\nnote.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbrand.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbatch-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-proof-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal-codex-proof.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nbatch-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nrights-batch.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-facts.json\napplication/json · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\ncodex-proof-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nFR05-origin.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n同一文件已有 2 个上传引用：FR05-origin.txt、FR05-alias.txt\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\n未发现已授权且可读取的店铺；不会发起同步。\n搜索商品\n全部 28\n待确认 9\n同步异常 0\n任务组\t商品\t平台\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n8 SKU\n\t淘宝\t\n演示数据\t1,286\t\n事实已确认\t主图检查创建任务\n\n\t\n京选轻量防晒外套\n1 SKU\n\t京东\t\n演示数据\t860\t\n待确认\t主图检查创建任务\n\n\t\n跨平台覆盖 jd\n1 SKU\n\t京东\t\n演示数据\t10\t\n事实已确认\t主图检查创建任务\n\n\t\n拼多多轻量防晒外套\n1 SKU\n\t拼多多\t\n演示数据\t2,400\t\n待确认\t主图检查创建任务\n\n\t\n跨平台覆盖 pinduoduo\n1 SKU\n\t拼多多\t\n演示数据\t10\t\n事实已确认\t主图检查创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\n演示数据\t1,286\t\n事实已确认\t主图检查创建任务\n\n\t\n异步运行验收商品\n1 SKU\n\t淘宝\t\n演示数据\t3\t\n待确认\t主图检查创建任务\n\n\t\n异步运行验收商品\n1 SKU\n\t淘宝\t\n演示数据\t3\t\n事实已确认\t主图检查创建任务\n\n\t\n异步运行验收商品\n1 SKU\n\t淘宝\t\n演示数据\t3\t\n事实已确认\t主图检查创建任务\n\n\t\nCompose 验收商品\n1 SKU\n\t淘宝\t\n演示数据\t10\t\n事实已确认\t主图检查创建任务\n\n\t\nCompose 验收商品\n1 SKU\n\t淘宝\t\n演示数据\t10\t\n待确认\t主图检查创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\n演示数据\t1,286\t\n待确认\t主图检查创建任务\n\n\t\nCodex 追问验证商品\n2 SKU\n\t淘宝\t\n演示数据\t20\t\n事实已确认\t主图检查创建任务\n\n\t\nCodex全链路商品\n1 SKU\n\t淘宝\t\n演示数据\t10\t\n事实已确认\t主图检查创建任务\n\n\t\nCodex主图验收商品 1787497950116\n0 SKU\n\t淘宝\t\n演示数据\t8\t\n事实已确认\t主图检查创建任务\n\n\t\n轻云防晒外套 2026\n3 SKU\n\t淘宝\t\n演示数据\t120\t\n事实已确认\t主图检查创建任务\n\n\t\nCodex跨重启恢复验收商品\n0 SKU\n\t淘宝\t\n演示数据\t6\t\n事实已确认\t主图检查创建任务\n\n\t\n品牌快照重启验证\n0 SKU\n\t淘宝\t\n演示数据\t12\t\n事实已确认\t主图检查创建任务\n\n\t\nCodex持久化验收商品\n1 SKU\n\t淘宝\t\n演示数据\t20\t\n事实已确认\t主图检查创建任务\n\n\t\nCodex持久化导入修复验收\n0 SKU\n\t淘宝\t\n演示数据\t6\t\n待确认\t主图检查创建任务\n\n\t\nCodex 覆盖测试商品\n1 SKU\n\t淘宝\t\n演示数据\t10\t\n待确认\t主图检查创建任务\n\n\t\n主图与审核完整演示\n0 SKU\n\t淘宝\t\n演示数据\t18\t\n事实已确认\t主图检查创建任务\n\n\t\n品牌规则审核演示外套\n0 SKU\n\t淘宝\t\n演示数据\t16\t\n事实已确认\t主图检查创建任务\n\n\t\nCodex主图验收商品 1787497985245\n0 SKU\n\t淘宝\t\n演示数据\t8\t\n事实已确认\t主图检查创建任务\n\n\t\nCodex最终持久化商品\n1 SKU\n\t淘宝\t\n演示数据\t20\t\n事实已确认\t主图检查创建任务\n\n\t\n待确认任务覆盖商品\n1 SKU\n\t淘宝\t\n演示数据\t3\t\n待确认\t主图检查创建任务\n\n\t\n审核交互可见演示\n0 SKU\n\t淘宝\t\n演示数据\t20\t\n事实已确认\t主图检查创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\n演示数据\t520\t\n待确认\t主图检查创建任务\n显示 28 / 28 个商品\n上一页下一页",
+      "headings": [
+        "商品与资产",
+        "一处管理商品事实与来源",
+        "素材库"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "导入待创建商品",
+          "disabled": false
+        },
+        {
+          "text": "创建多平台任务组",
+          "disabled": true
+        },
+        {
+          "text": "同步全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "上传素材",
+          "disabled": false
+        },
+        {
+          "text": "刷新状态",
+          "disabled": false
+        },
+        {
+          "text": "配置视觉强规则",
+          "disabled": false
+        },
+        {
+          "text": "从素材提取品牌档案",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "已完成解析",
+          "disabled": true
+        },
+        {
+          "text": "权益已确认",
+          "disabled": true
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "已完成解析",
+          "disabled": true
+        },
+        {
+          "text": "确认权益",
+          "disabled": false
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "已完成解析",
+          "disabled": true
+        },
+        {
+          "text": "权益已确认",
+          "disabled": true
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "已完成解析",
+          "disabled": true
+        },
+        {
+          "text": "权益已确认",
+          "disabled": true
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "解析素材",
+          "disabled": false
+        },
+        {
+          "text": "权益已确认",
+          "disabled": true
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "已完成解析",
+          "disabled": true
+        },
+        {
+          "text": "权益已确认",
+          "disabled": true
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "已完成解析",
+          "disabled": true
+        },
+        {
+          "text": "权益已确认",
+          "disabled": true
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "已完成解析",
+          "disabled": true
+        },
+        {
+          "text": "权益已确认",
+          "disabled": true
+        },
+        {
+          "text": "确认事实",
+          "disabled": false
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "存储未配置",
+          "disabled": true
+        },
+        {
+          "text": "评价素材",
+          "disabled": false
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "等待扫描",
+          "disabled": true
+        },
+        {
+          "text": "全部 28",
+          "disabled": false
+        },
+        {
+          "text": "待确认 9",
+          "disabled": false
+        },
+        {
+          "text": "同步异常 0",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "主图检查",
+          "disabled": false
+        },
+        {
+          "text": "创建任务",
+          "disabled": false
+        },
+        {
+          "text": "上一页",
+          "disabled": true
+        },
+        {
+          "text": "下一页",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品或平台",
+          "label": null,
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择轻云防晒外套 2026加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择京选轻量防晒外套加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择跨平台覆盖 jd加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择拼多多轻量防晒外套加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择跨平台覆盖 pinduoduo加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择轻云防晒外套 2026加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择异步运行验收商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择异步运行验收商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择异步运行验收商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Compose 验收商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Compose 验收商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择轻云防晒外套 2026加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex 追问验证商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex全链路商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex主图验收商品 1787497950116加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择轻云防晒外套 2026加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex跨重启恢复验收商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择品牌快照重启验证加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex持久化验收商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex持久化导入修复验收加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex 覆盖测试商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择主图与审核完整演示加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择品牌规则审核演示外套加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex主图验收商品 1787497985245加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择Codex最终持久化商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择待确认任务覆盖商品加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择审核交互可见演示加入任务组",
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "placeholder": null,
+          "label": "选择轻云防晒外套｜旗舰店加入任务组",
+          "value": "on"
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "营销任务",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n营销任务\n全局搜索\n⌘ K\n系统健康\n在线\n林\nTASK QUEUE\n营销任务\n\n从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。\n\n162 个任务\nCompose 验收商品 · 淘宝\n2026/8/27 13:09:33 · 内容版本 v1\n待补充信息\n恢复任务\n拼多多轻量防晒外套 · 拼多多\n2026/8/25 12:23:35 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝\n2026/8/25 12:23:35 · 内容版本 v1\n待补充信息\n恢复任务\n拼多多轻量防晒外套 · 拼多多\n2026/8/25 12:16:53 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝\n2026/8/25 12:16:53 · 内容版本 v1\n待补充信息\n恢复任务\n拼多多轻量防晒外套 · 拼多多\n2026/8/25 12:12:21 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝\n2026/8/25 12:12:21 · 内容版本 v1\n待补充信息\n恢复任务\n拼多多轻量防晒外套 · 拼多多\n2026/8/25 12:11:11 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝\n2026/8/25 12:11:11 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝\n2026/8/25 12:06:17 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝\n2026/8/25 12:06:17 · 内容版本 v1\n待补充信息\n恢复任务\n轻云防晒外套 2026 · 淘宝\n2026/8/25 11:07:44 · 内容版本 v4\n待补充信息\n恢复任务\n第 1 / 14 页\n上一页下一页",
+      "headings": [
+        "营销任务",
+        "营销任务"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "恢复任务",
+          "disabled": false
+        },
+        {
+          "text": "上一页",
+          "disabled": true
+        },
+        {
+          "text": "下一页",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": ""
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "发布中心",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n发布中心\n全局搜索\n⌘ K\n系统健康\n在线\n林\nCONTROLLED WRITES\n每一次线上变更都有确认和回执\n\n“平台已受理”不等于“已生效”。未知状态先对账，不盲目重复提交。\n\n进入已审核任务发布\n请先在商品与资产中选择商品并完成内容审核。\nIN FLIGHT\n进行中的发布\n0 个任务\n暂无真实发布任务完成内容审核后，发布任务会显示在这里。\nRECEIPTS\n最近回执\n暂无回执",
+      "headings": [
+        "发布中心",
+        "每一次线上变更都有确认和回执",
+        "进行中的发布",
+        "最近回执"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "进入已审核任务发布",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": ""
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "规则与检查",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n4\n跨平台可追溯\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n4\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\nACTIVE RULE PACKS\n生效规则包\n4 个结果\n服装鞋包事实完整性\napparel-1.0.0 · 修订 1\ncategory\n生效中\nmanual://apparel-facts · 2026-08-20T00:00:00.000Z\n中国电商广告表达\ncn-commerce-1.0.0 · 修订 1\nglobal\n生效中\nmanual://cn-commerce-advertising · 2026-08-22T00:00:00.000Z\n京东商品写入策略\njd-apparel-write-1.0.0 · 修订 1\nplatform\n生效中\nmanual://jd-write · 2026-08-15T00:00:00.000Z\n淘宝/天猫字段映射\ntmall-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://tmall-mapping · 2026-08-17T00:00:00.000Z",
+      "headings": [
+        "规则与检查",
+        "规则库与品类库",
+        "生效规则包"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "规则库 4",
+          "disabled": false
+        },
+        {
+          "text": "品类库 3",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": ""
+        },
+        {
+          "tag": "SELECT",
+          "type": null,
+          "placeholder": null,
+          "label": null,
+          "value": "all"
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索规则名称、平台或版本",
+          "label": null,
+          "value": ""
+        }
+      ],
+      "dialogs": []
+    },
+    {
+      "section": "帮助与诊断",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n4\n跨平台可追溯\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n4\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\nACTIVE RULE PACKS\n生效规则包\n4 个结果\n服装鞋包事实完整性\napparel-1.0.0 · 修订 1\ncategory\n生效中\nmanual://apparel-facts · 2026-08-20T00:00:00.000Z\n中国电商广告表达\ncn-commerce-1.0.0 · 修订 1\nglobal\n生效中\nmanual://cn-commerce-advertising · 2026-08-22T00:00:00.000Z\n京东商品写入策略\njd-apparel-write-1.0.0 · 修订 1\nplatform\n生效中\nmanual://jd-write · 2026-08-15T00:00:00.000Z\n淘宝/天猫字段映射\ntmall-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://tmall-mapping · 2026-08-17T00:00:00.000Z\nHELP & DIAGNOSTICS\n如何使用 Merchant Studio\n\n先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。\n\n商品与资产：绑定平台店铺、同步商品和管理素材\n营销任务：确认事实、生成文案、查看规则和版本记录\n发布中心：只展示已审核任务，并在提交前再次确认\n知道了",
+      "headings": [
+        "规则与检查",
+        "规则库与品类库",
+        "生效规则包",
+        "如何使用 Merchant Studio"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "规则库 4",
+          "disabled": false
+        },
+        {
+          "text": "品类库 3",
+          "disabled": false
+        },
+        {
+          "text": "关闭面板",
+          "disabled": false
+        },
+        {
+          "text": "知道了",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": ""
+        },
+        {
+          "tag": "SELECT",
+          "type": null,
+          "placeholder": null,
+          "label": null,
+          "value": "all"
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索规则名称、平台或版本",
+          "label": null,
+          "value": ""
+        }
+      ],
+      "dialogs": [
+        "HELP & DIAGNOSTICS如何使用 Merchant Studio先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。商品与资产：绑定平台店铺、同步商品和管理素材营销任务：确认事实、生成文案、查看规则和版本记录发布中心：只展示已审核任务，并在提交前再次确认知道了"
+      ]
+    },
+    {
+      "section": "工作区设置",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n4\n跨平台可追溯\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n4\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\nACTIVE RULE PACKS\n生效规则包\n4 个结果\n服装鞋包事实完整性\napparel-1.0.0 · 修订 1\ncategory\n生效中\nmanual://apparel-facts · 2026-08-20T00:00:00.000Z\n中国电商广告表达\ncn-commerce-1.0.0 · 修订 1\nglobal\n生效中\nmanual://cn-commerce-advertising · 2026-08-22T00:00:00.000Z\n京东商品写入策略\njd-apparel-write-1.0.0 · 修订 1\nplatform\n生效中\nmanual://jd-write · 2026-08-15T00:00:00.000Z\n淘宝/天猫字段映射\ntmall-apparel-1.0.0 · 修订 1\nplatform\n生效中\nmanual://tmall-mapping · 2026-08-17T00:00:00.000Z\nWORKSPACE SETTINGS\n工作区设置\n\n当前页面展示本地工作区的连接信息；真实凭证、模型中转站和生产权限由服务端配置管理。\n\n工作区：ws_demo\nAPI 地址：/api\n数据范围：当前工作区隔离；不会跨店铺复用商品事实\n知道了",
+      "headings": [
+        "规则与检查",
+        "规则库与品类库",
+        "生效规则包",
+        "工作区设置"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "规则库 4",
+          "disabled": false
+        },
+        {
+          "text": "品类库 3",
+          "disabled": false
+        },
+        {
+          "text": "关闭面板",
+          "disabled": false
+        },
+        {
+          "text": "知道了",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": ""
+        },
+        {
+          "tag": "SELECT",
+          "type": null,
+          "placeholder": null,
+          "label": null,
+          "value": "all"
+        },
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索规则名称、平台或版本",
+          "label": null,
+          "value": ""
+        }
+      ],
+      "dialogs": [
+        "WORKSPACE SETTINGS工作区设置当前页面展示本地工作区的连接信息；真实凭证、模型中转站和生产权限由服务端配置管理。工作区：ws_demoAPI 地址：/api数据范围：当前工作区隔离；不会跨店铺复用商品事实知道了"
+      ]
+    },
+    {
+      "section": "全局搜索",
+      "url": "http://127.0.0.1:18081/",
+      "title": "Merchant Studio · 商家营销工作台",
+      "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n今日工作流正常\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n创建营销任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\n已连接店铺\n5\n1 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n37\n其中 37 项高风险\nPLUGIN WALLET\n插件钱包与能力解锁\n已解锁\n¥159.99\n\n当前套餐剩余 30 次模型行动额度，优先消耗套餐额度\n\n充值后开放内容、图片、视频生成及发布确认；店铺和商品查看不受影响。\n充值并解锁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺 等 2 个店铺名\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺\n已连接\n需授权\n撤销\n天\n天猫\ntmall 店铺\n已连接\n需授权\n撤销\n拼\n拼多多\npinduoduo 店铺\n已连接\n需授权\n撤销\n小\n小红书\n尚未绑定店铺\n未配置\n需授权\n连接\n抖\n抖音\n尚未绑定店铺\n未配置\n需授权\n连接\nRECENT\n最近动态\n查看全部\n演示发布状态\n轻云防晒外套 · 淘宝\n演示数据\n演示规则检查\n山系多袋冲锋衣 · 发现 3 项\n演示数据\n演示商品同步\n京东 · 更新 24 件商品\n演示数据\n演示版本状态\n轻云防晒外套 · 内容 v4\n演示数据\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证",
+      "headings": [
+        "运营概览",
+        "把商品事实变成可放心发布的内容",
+        "插件钱包与能力解锁",
+        "平台连接",
+        "最近动态",
+        "同步任务与失败项",
+        "平台能力证据"
+      ],
+      "buttons": [
+        {
+          "text": "运营概览",
+          "disabled": false
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false
+        },
+        {
+          "text": "营销任务",
+          "disabled": false
+        },
+        {
+          "text": "发布中心",
+          "disabled": false
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false
+        },
+        {
+          "text": "工作区设置",
+          "disabled": false
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false
+        },
+        {
+          "text": "系统健康 在线",
+          "disabled": false
+        },
+        {
+          "text": "林",
+          "disabled": false
+        },
+        {
+          "text": "创建营销任务",
+          "disabled": false
+        },
+        {
+          "text": "同步全部店铺",
+          "disabled": false
+        },
+        {
+          "text": "充值并解锁",
+          "disabled": false
+        },
+        {
+          "text": "管理连接",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "撤销",
+          "disabled": false
+        },
+        {
+          "text": "连接",
+          "disabled": false
+        },
+        {
+          "text": "连接",
+          "disabled": false
+        },
+        {
+          "text": "查看全部",
+          "disabled": false
+        },
+        {
+          "text": "刷新",
+          "disabled": false
+        },
+        {
+          "text": "刷新证据",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": null,
+          "placeholder": "搜索商品",
+          "label": "搜索商品",
+          "value": "轻云"
+        }
+      ],
+      "dialogs": []
+    }
+  ],
+  "mobile": {
+    "url": "http://127.0.0.1:18081/",
+    "title": "Merchant Studio · 商家营销工作台",
+    "text": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n运营概览\n林\n今日工作流正常\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n创建营销任务\n同步全部店铺\n已连接店铺\n5\n1 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n37\n其中 37 项高风险\nPLUGIN WALLET\n插件钱包与能力解锁\n已解锁\n¥159.99\n\n当前套餐剩余 30 次模型行动额度，优先消耗套餐额度\n\n充值后开放内容、图片、视频生成及发布确认；店铺和商品查看不受影响。\n充值并解锁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n已连接\n撤销\n淘\n淘宝\ntaobao 店铺 等 2 个店铺名\n已连接\n撤销\n淘\n淘宝\ntaobao 店铺\n已连接\n撤销\n天\n天猫\ntmall 店铺\n已连接\n撤销\n拼\n拼多多\npinduoduo 店铺\n已连接\n撤销\n小\n小红书\n尚未绑定店铺\n未配置\n连接\n抖\n抖音\n尚未绑定店铺\n未配置\n连接\nRECENT\n最近动态\n查看全部\n演示发布状态\n轻云防晒外套 · 淘宝\n演示数据\n演示规则检查\n山系多袋冲锋衣 · 发现 3 项\n演示数据\n演示商品同步\n京东 · 更新 24 件商品\n演示数据\n演示版本状态\n轻云防晒外套 · 内容 v4\n演示数据\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证",
+    "headings": [
+      "运营概览",
+      "把商品事实变成可放心发布的内容",
+      "插件钱包与能力解锁",
+      "平台连接",
+      "最近动态",
+      "同步任务与失败项",
+      "平台能力证据"
+    ],
+    "buttons": [
+      {
+        "text": "关闭主菜单",
+        "disabled": false
+      },
+      {
+        "text": "运营概览",
+        "disabled": false
+      },
+      {
+        "text": "商品与资产",
+        "disabled": false
+      },
+      {
+        "text": "营销任务",
+        "disabled": false
+      },
+      {
+        "text": "发布中心",
+        "disabled": false
+      },
+      {
+        "text": "规则与检查",
+        "disabled": false
+      },
+      {
+        "text": "帮助与诊断",
+        "disabled": false
+      },
+      {
+        "text": "工作区设置",
+        "disabled": false
+      },
+      {
+        "text": "打开主菜单",
+        "disabled": false
+      },
+      {
+        "text": "系统健康 在线",
+        "disabled": false
+      },
+      {
+        "text": "林",
+        "disabled": false
+      },
+      {
+        "text": "创建营销任务",
+        "disabled": false
+      },
+      {
+        "text": "同步全部店铺",
+        "disabled": false
+      },
+      {
+        "text": "充值并解锁",
+        "disabled": false
+      },
+      {
+        "text": "管理连接",
+        "disabled": false
+      },
+      {
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "text": "撤销",
+        "disabled": false
+      },
+      {
+        "text": "连接",
+        "disabled": false
+      },
+      {
+        "text": "连接",
+        "disabled": false
+      },
+      {
+        "text": "查看全部",
+        "disabled": false
+      },
+      {
+        "text": "刷新",
+        "disabled": false
+      },
+      {
+        "text": "刷新证据",
+        "disabled": false
+      }
+    ],
+    "inputs": [
+      {
+        "tag": "INPUT",
+        "type": null,
+        "placeholder": "搜索商品",
+        "label": "搜索商品",
+        "value": ""
+      }
+    ],
+    "dialogs": []
+  },
+  "consoleMessages": [],
+  "requestFailures": [],
+  "badResponses": []
+}

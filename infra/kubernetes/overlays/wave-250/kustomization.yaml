@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+replicas:
+  - name: merchant-api
+    count: 6
+  - name: merchant-worker-sync
+    count: 4
+  - name: merchant-worker-generation
+    count: 6
+  - name: merchant-worker-publish
+    count: 5
+  - name: merchant-worker-reconcile
+    count: 3
+  - name: merchant-worker-automation
+    count: 1
+images:
+  - name: merchant-api
+    newName: REPLACE_ME/merchant-api
+    digest: SET_IMAGE_DIGEST
+  - name: merchant-worker
+    newName: REPLACE_ME/merchant-worker
+    digest: SET_IMAGE_DIGEST
+  - name: merchant-ui
+    newName: REPLACE_ME/merchant-ui
+    digest: SET_IMAGE_DIGEST

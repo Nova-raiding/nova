@@ -1,0 +1,8 @@
+node_modules
+demo/merchant-studio/node_modules
+demo/merchant-studio/dist
+dist
+.git
+.gstack
+coverage
+*.log

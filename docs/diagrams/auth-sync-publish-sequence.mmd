@@ -1,0 +1,71 @@
+sequenceDiagram
+    autonumber
+    actor U as 商家
+    participant C as Codex App
+    participant S as Plugin Skills
+    participant M as MCP 服务
+    participant W as 作业队列与 Worker
+    participant P as 平台开放 API
+    participant D as 数据与凭证库
+    participant L as 模型与检查器
+
+    U->>C: 安装插件并选择平台店铺
+    C->>S: 启动连接流程
+    S->>M: 创建 OAuth state 与回调会话
+    M-->>C: 返回官方授权地址
+    C-->>U: 跳转平台官方登录授权
+    U->>P: 登录并授予读写范围
+    P->>M: 回调 code 与 state
+    M->>P: 换取并校验 Token 与店铺
+    M->>D: 加密保存凭证引用和权限
+    M-->>C: 显示已连接及权限范围
+
+    U->>C: 选择商品同步
+    C->>S: 发起全量或增量同步
+    S->>M: sync(account, cursor)
+    M->>W: 创建可恢复同步作业
+    W->>P: 分页读取商品 SKU 价格库存
+    P-->>W: 平台原始数据与新游标
+    W->>D: 保存原值 映射版本 统一商品
+    W-->>M: 成功 失败 冲突与游标
+    M-->>C: 返回成功 失败 冲突清单
+    U->>C: 确认商品事实与来源
+    C->>M: 创建不可变事实版本
+
+    U->>C: 创建营销任务
+    C->>S: 解析意图并补齐阻断信息
+    S->>M: 冻结任务输入与规则快照
+    M->>L: 按快照生成与检查
+    L-->>M: 内容版本与检查结果
+    M->>D: 保存内容版本和差异
+    M-->>C: 展示方向 内容 来源与风险
+    U->>C: 批准内容
+
+    C->>M: 发布预检
+    M->>P: 回读当前平台商品
+    P-->>M: 当前远端快照
+    M-->>C: 展示字段差异和影响
+    U->>C: 二次确认创建或更新
+    C->>M: 创建幂等 PublishJob
+    M->>W: 入队并锁定内容版本
+    W->>P: create 或 update
+    alt 平台明确受理
+        P-->>W: requestId 与受理状态
+        W->>P: 查询或回读最终状态
+        P-->>W: 发布结果与远端版本
+        W->>D: 保存回执和发布后快照
+        W-->>M: 最终或审核中状态
+        M-->>C: published 或审核中
+    else 平台业务驳回
+        P-->>W: 错误码与字段路径
+        W->>D: 保存 publish_rejected
+        W-->>M: 归一化驳回结果
+        M-->>C: 显示可修正字段
+    else 网络超时 状态未知
+        W->>D: 保存 publish_unknown
+        W->>P: 用幂等键查询并对账
+        P-->>W: 最终状态
+        W-->>M: 对账结果
+        M-->>C: 对账结果 不重复创建
+    end
+    C-->>U: 回执 导出包与可恢复版本

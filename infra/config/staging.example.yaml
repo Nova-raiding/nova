@@ -1,0 +1,76 @@
+# 可复制的 staging 配置；真实值必须由环境变量或 Secret Manager 注入。
+schema_version: "1"
+release:
+  environment: staging
+  capacity_profile: pilot_50
+  region: cn
+  release_id: "merchant-plugin-staging-SET_RELEASE"
+  plugin_version: "SET_PLUGIN_VERSION"
+  config_version: "staging-1"
+public_endpoints:
+  app_base_url: "https://staging.merchant.example.com"
+  oauth_callback_base_url: "https://staging.merchant.example.com/oauth/callback"
+  webhook_base_url: "https://staging.merchant.example.com/webhooks/platform"
+  allowed_origins: ["https://staging.merchant.example.com"]
+runtime:
+  node_env: staging
+  auth_enforcement: strict
+  session_id_hash_secret_ref: "secret://merchant-staging/session-id-hash"
+  port: 8787
+  connector_fixture_mode: false
+  plugin_write_enabled: false
+  api_replicas: 2
+  run_migrations_on_startup: false
+  api_rate_limit_per_minute: 120
+  ops_api_rate_limit_per_minute: 600
+  worker_replicas: { sync: 1, generation: 1, publish: 1, reconcile: 1, automation: 1 }
+  request_body_limit_mb: 50
+data:
+  database_url: "${SECRET:STAGING_DATABASE_URL}"
+  worker_api_signing_secret: "${SECRET:STAGING_WORKER_API_SIGNING_SECRET}"
+  redis_url: "${SECRET:STAGING_REDIS_URL}"
+  object_storage_bucket: "merchant-staging-assets"
+  object_storage_region: "cn"
+  object_storage_endpoint: "https://s3.cn.example-provider.com"
+  object_storage_prefix: "merchant-assets"
+  object_storage_kms_key: "${SECRET:STAGING_OBJECT_STORAGE_KMS_KEY_ID}"
+  migration_source: "packages/persistence/src/migrations"
+  migration_lock_timeout_seconds: 60
+  backup_retention_days: 14
+security:
+  secret_provider: "${SECRET_PROVIDER:=managed-secret-store}"
+  credential_encryption_key: "${SECRET:STAGING_CREDENTIAL_ENCRYPTION_KEY_ID}"
+  webhook_signing_secret: "${SECRET:STAGING_WEBHOOK_SIGNING_SECRET}"
+  oauth_state_ttl_seconds: 600
+  callback_host_allowlist: ["staging.merchant.example.com"]
+  redact_fields: ["access_token", "refresh_token", "app_secret", "client_secret", "authorization_code"]
+feature_flags:
+  plugin_enabled: true
+  jd_auth_enabled: false
+  jd_read_enabled: false
+  jd_write_enabled: false
+  taobao_tmall_auth_enabled: false
+  taobao_tmall_read_enabled: false
+  taobao_tmall_write_enabled: false
+  pinduoduo_auth_enabled: false
+  pinduoduo_read_enabled: false
+  pinduoduo_write_enabled: false
+  xiaohongshu_auth_enabled: false
+  xiaohongshu_read_enabled: false
+  xiaohongshu_write_enabled: false
+  douyin_auth_enabled: false
+  douyin_read_enabled: false
+  douyin_write_enabled: false
+  unattended_publish_enabled: false
+observability:
+  otel_endpoint: "${SECRET:STAGING_OTEL_EXPORTER_OTLP_ENDPOINT}"
+  error_reporting_dsn: "${SECRET:STAGING_ERROR_REPORTING_DSN}"
+  log_level: info
+  metrics_environment: staging
+  alert_channel: "${SECRET:STAGING_ALERT_CHANNEL}"
+operations:
+  migration_command: "infra/scripts/apply-migrations.sh"
+  backup_command: "infra/scripts/backup-postgres.sh"
+  restore_command: "infra/scripts/restore-postgres.sh"
+  rollback_command: "infra/scripts/rollback.sh"
+  runbook_url: "https://runbooks.example.com/merchant/staging"

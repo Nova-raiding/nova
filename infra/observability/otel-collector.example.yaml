@@ -1,0 +1,21 @@
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: "0.0.0.0:4317" }
+      http: { endpoint: "0.0.0.0:4318" }
+processors:
+  memory_limiter: { check_interval: 1s, limit_mib: 512 }
+  batch: { send_batch_size: 1024, timeout: 5s }
+  attributes/redact:
+    actions:
+      - { key: http.request.header.authorization, action: delete }
+      - { key: access_token, action: delete }
+      - { key: refresh_token, action: delete }
+      - { key: app_secret, action: delete }
+exporters:
+  otlphttp/managed: { endpoint: "${OTEL_MANAGED_ENDPOINT}" }
+service:
+  pipelines:
+    traces: { receivers: [otlp], processors: [memory_limiter, attributes/redact, batch], exporters: [otlphttp/managed] }
+    metrics: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp/managed] }
+    logs: { receivers: [otlp], processors: [memory_limiter, attributes/redact, batch], exporters: [otlphttp/managed] }

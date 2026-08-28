@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.merchant.codex.api</string>
+  <key>WorkingDirectory</key><string>/Users/lixiaomei/Desktop/code/codexSkills</string>
+  <key>ProgramArguments</key>
+  <array><string>/opt/homebrew/opt/node@22/bin/node</string><string>/Users/lixiaomei/Desktop/code/codexSkills/node_modules/tsx/dist/cli.mjs</string><string>apps/api/src/server.ts</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/lixiaomei</string>
+    <key>USER</key><string>lixiaomei</string>
+    <key>NODE_ENV</key><string>development</string>
+    <key>CONNECTOR_FIXTURE_MODE</key><string>true</string>
+    <key>PLUGIN_WRITE_ENABLED</key><string>true</string>
+    <key>API_AUTH_TOKENS</key><string>{"local-dev-token":{"workspaces":["ws_demo"],"roles":["merchant"]}}</string>
+    <key>PORT</key><string>8790</string>
+    <key>PATH</key><string>/opt/homebrew/opt/node@22/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/merchant-codex-api.out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/merchant-codex-api.err.log</string>
+</dict>
+</plist>

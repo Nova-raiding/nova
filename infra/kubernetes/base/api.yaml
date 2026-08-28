@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: merchant-api
+  labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-api}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}}
+    spec:
+      terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: api
+          image: merchant-api:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 8787}]
+          envFrom:
+            - configMapRef: {name: merchant-runtime}
+            - secretRef: {name: merchant-runtime-secrets}
+          env:
+            - {name: OTEL_SERVICE_NAME, value: merchant-api}
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: "2", memory: 4Gi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: merchant-api
+  labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /metrics
+    prometheus.io/port: "8787"
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: merchant-api}
+  ports: [{name: http, port: 8787, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: merchant-api}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: merchant-api}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: merchant-api}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: merchant-api}
+  minReplicas: 2
+  maxReplicas: 12
+  behavior:
+    scaleUp: {stabilizationWindowSeconds: 30}
+    scaleDown: {stabilizationWindowSeconds: 300}
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 60}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: 75}}

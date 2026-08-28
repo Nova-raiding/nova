@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: merchant
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api.yaml
+  - workers.yaml
+  - ui.yaml
+  - ops-ui.yaml
+  - ingress.yaml
+images:
+  - name: merchant-api
+    newName: ghcr.io/example/merchant-api
+    newTag: 0.1.0
+  - name: merchant-worker
+    newName: ghcr.io/example/merchant-worker
+    newTag: 0.1.0
+  - name: merchant-ui
+    newName: ghcr.io/example/merchant-ui
+    newTag: 0.1.0
+  - name: merchant-ops-ui
+    newName: ghcr.io/example/merchant-ops-ui
+    newTag: 0.1.0

@@ -1,0 +1,455 @@
+# 商家营销内容助手生产配置参考（仅字段契约，不得填写或提交真实密钥）
+schema_version: "1"
+
+release:
+  environment: production
+  capacity_profile: pilot_50
+  capacity_profile_note: "首期按 50 个并发工作区采购；扩容到 100/250/500 时使用同一架构并调整副本、数据库、连接和配额"
+  region: cn
+  release_id: "merchant-plugin-1.4.0"
+  plugin_version: "1.4.0"
+  mcp_version: "1.4.0"
+  schema_version: "1.1.0"
+  connector_contract_version: "1.1.0"
+  minimum_codex_app_version: "SET_FROM_OFFICIAL_COMPATIBILITY_TEST"
+
+codex:
+  plugin_id: "SET_AT_PLUGIN_REGISTRATION"
+  manifest_path: ".codex-plugin/plugin.json"
+  entry_skill: "merchant-marketing"
+  skill_versions:
+    platform_connect: "1.0.0"
+    brand_profile: "1.0.0"
+    product_catalog: "1.0.0"
+    campaign_intake: "1.0.0"
+    creative_copy: "1.0.0"
+    review_delivery: "1.0.0"
+  mcp:
+    base_url: "https://mcp.example.com"
+    auth_audience: "merchant-marketing-mcp"
+    auth_mode: "oidc_gateway_hmac"
+    auth_grants_secret_ref: "secret/merchant-marketing/api-auth-tokens"
+    oidc_proxy_signing_secret_ref: "secret/merchant-marketing/oidc-proxy-signing-secret"
+    require_workspace_header: true
+    request_timeout_seconds: 30
+    health_path: "/healthz"
+
+auth:
+  merchant_bearer_hostname: "merchant.example.com"
+
+public_endpoints:
+  app_base_url: "https://merchant.example.com"
+  oauth_callback_base_url: "https://merchant.example.com/v1/oauth/callback"
+  webhook_base_url: "https://merchant.example.com/v1/webhooks/platform"
+  allowed_origins:
+    - "https://merchant.example.com"
+
+payments:
+  # The API maps these rendered values to the provider adapter, checkout URL,
+  # callback verifier, reconciliation and refund controls. Fixture payment is
+  # never allowed by the production gate.
+  payment_mode: "provider"
+  payment_provider_adapters: "alipay,wechat"
+  payment_checkout_base_url: "https://payments.example.com/checkout"
+  # Server-side checkout adapter. The API calls this endpoint to create the
+  # actual Alipay/WeChat order; it never constructs a fake payment URL.
+  payment_provider_checkout_api_url: "https://payments.example.com/v1/checkout"
+  payment_provider_query_api_url: "https://payments.example.com/v1/query"
+  payment_provider_refund_api_url: "https://payments.example.com/v1/refund"
+  payment_provider_api_key_ref: "vault://merchant-payment/provider-api-key"
+  payment_provider_merchant_id: "merchant-example"
+  payment_callback_base_url: "https://merchant.example.com/v1"
+  payment_callback_secret_ref: "vault://merchant-payment-callback"
+  payment_reconciliation_enabled: true
+  payment_refund_enabled: true
+
+runtime:
+  merchant_ui_api_token_ref: "vault://merchant-ui/api-token"
+  edge:
+    managed_dns_enabled: true
+    tls_enabled: true
+    waf_enabled: true
+    load_balancer_enabled: true
+    minimum_concurrent_connections: 150
+    request_body_limit_mb: 50
+  mcp_api:
+    stateless: true
+    sticky_sessions_enabled: false
+    cpu_cores_per_replica: 2
+    memory_gb_per_replica: 4
+    minimum_replicas: 3
+    maximum_replicas: 12
+    target_cpu_percent: 60
+    scale_out_p95_latency_ms: 800
+    scale_out_concurrent_connections_per_replica: 100
+  worker_pools:
+    sync:
+      cpu_cores_per_replica: 2
+      memory_gb_per_replica: 4
+      minimum_replicas: 2
+      maximum_replicas: 12
+      scale_metric: oldest_job_age_and_queue_depth
+    generation:
+      cpu_cores_per_replica: 2
+      memory_gb_per_replica: 4
+      minimum_replicas: 2
+      maximum_replicas: 16
+      scale_metric: oldest_job_age_and_provider_quota
+    publish:
+      cpu_cores_per_replica: 1
+      memory_gb_per_replica: 2
+      minimum_replicas: 3
+      maximum_replicas: 8
+      scale_metric: oldest_job_age_and_platform_quota
+    reconcile:
+      cpu_cores_per_replica: 1
+      memory_gb_per_replica: 2
+      minimum_replicas: 2
+      maximum_replicas: 4
+      scale_metric: unknown_job_age_and_queue_depth
+
+platforms:
+  jd:
+    auth_enabled: false
+    read_enabled: false
+    write_enabled: false
+    app_key: "${SECRET:JD_APP_KEY}"
+    app_secret: "${SECRET:JD_APP_SECRET}"
+    oauth_callback_url: "https://merchant.example.com/v1/oauth/callback/jd"
+    webhook_url: "https://merchant.example.com/v1/webhooks/platform/jd"
+    approved_scopes: ["SET_FROM_JD_APP_CONSOLE"]
+    test_store_ids: ["SET_TEST_STORE_ID"]
+    api_environment: production
+    requests_per_second: "SET_FROM_APPROVED_QUOTA"
+    aggregate_quota_capacity_status: "BLOCKED_UNTIL_VERIFIED_FOR_500_MERCHANT_MODEL"
+    aggregate_quota_evidence_url: "SET_FROM_CAPABILITY_EVIDENCE"
+    category_mapping_version: "jd-apparel-1.0.0"
+    rule_pack_version: "jd-apparel-1.0.0"
+    write_policy_version: "jd-apparel-write-1.0.0"
+    default_update_fields: ["title", "selling_points", "detail", "supported_image_references"]
+    prefer_draft_on_create: true
+    high_impact_fields_require_extra_confirmation: ["category", "sku", "price", "inventory", "listing_status"]
+
+  taobao_tmall:
+    auth_enabled: false
+    read_enabled: false
+    write_enabled: false
+    app_key: "${SECRET:TAOBAO_APP_KEY}"
+    app_secret: "${SECRET:TAOBAO_APP_SECRET}"
+    oauth_callback_url: "https://merchant.example.com/v1/oauth/callback/taobao"
+    webhook_url: "https://merchant.example.com/v1/webhooks/platform/taobao"
+    approved_scopes: ["SET_FROM_TAOBAO_APP_CONSOLE"]
+    test_store_ids: ["SET_TEST_STORE_ID"]
+    api_environment: production
+    requests_per_second: "SET_FROM_APPROVED_QUOTA"
+    aggregate_quota_capacity_status: "BLOCKED_UNTIL_VERIFIED_FOR_500_MERCHANT_MODEL"
+    aggregate_quota_evidence_url: "SET_FROM_CAPABILITY_EVIDENCE"
+    category_mapping_versions:
+      taobao: "taobao-apparel-1.0.0"
+      tmall: "tmall-apparel-1.0.0"
+    rule_pack_versions:
+      taobao: "taobao-apparel-1.0.0"
+      tmall: "tmall-apparel-1.0.0"
+    write_policy_versions:
+      taobao: "taobao-apparel-write-1.0.0"
+      tmall: "tmall-apparel-write-1.0.0"
+    default_update_fields: ["title", "selling_points", "detail", "supported_image_references"]
+    prefer_draft_on_create: true
+    high_impact_fields_require_extra_confirmation: ["category", "sku", "price", "inventory", "listing_status"]
+
+  tmall:
+    auth_enabled: false
+    read_enabled: false
+    write_enabled: false
+    app_key: "${SECRET:TMALL_APP_KEY}"
+    app_secret: "${SECRET:TMALL_APP_SECRET}"
+    oauth_callback_url: "https://merchant.example.com/v1/oauth/callback/tmall"
+    webhook_url: "https://merchant.example.com/v1/webhooks/platform/tmall"
+    approved_scopes: ["SET_FROM_TMALL_APP_CONSOLE"]
+    test_store_ids: ["SET_TEST_STORE_ID"]
+    api_environment: production
+    requests_per_second: "SET_FROM_APPROVED_QUOTA"
+    aggregate_quota_capacity_status: "BLOCKED_UNTIL_VERIFIED_FOR_500_MERCHANT_MODEL"
+    aggregate_quota_evidence_url: "SET_FROM_CAPABILITY_EVIDENCE"
+    category_mapping_version: "tmall-apparel-1.0.0"
+    rule_pack_version: "tmall-apparel-1.0.0"
+    write_policy_version: "tmall-apparel-write-1.0.0"
+    default_update_fields: ["title", "selling_points", "detail", "supported_image_references"]
+    prefer_draft_on_create: true
+    high_impact_fields_require_extra_confirmation: ["category", "sku", "price", "inventory", "listing_status"]
+
+  pinduoduo:
+    auth_enabled: false
+    read_enabled: false
+    write_enabled: false
+    client_id: "${SECRET:PDD_CLIENT_ID}"
+    client_secret: "${SECRET:PDD_CLIENT_SECRET}"
+    oauth_callback_url: "https://merchant.example.com/v1/oauth/callback/pinduoduo"
+    webhook_url: "https://merchant.example.com/v1/webhooks/platform/pinduoduo"
+    approved_scopes: ["SET_FROM_PDD_APP_CONSOLE"]
+    test_store_ids: ["SET_TEST_STORE_ID"]
+    api_environment: production
+    requests_per_second: "SET_FROM_APPROVED_QUOTA"
+    aggregate_quota_capacity_status: "BLOCKED_UNTIL_VERIFIED_FOR_500_MERCHANT_MODEL"
+    aggregate_quota_evidence_url: "SET_FROM_CAPABILITY_EVIDENCE"
+    category_mapping_version: "pdd-apparel-1.0.0"
+    rule_pack_version: "pdd-apparel-1.0.0"
+    write_policy_version: "pdd-apparel-write-1.0.0"
+    default_update_fields: ["title", "selling_points", "detail", "supported_image_references"]
+    prefer_draft_on_create: true
+    high_impact_fields_require_extra_confirmation: ["category", "sku", "price", "inventory", "listing_status"]
+
+  # 社交平台已纳入统一 profile/API/preflight；官方 signer、字段映射、应用审批和 canary 完成前保持关闭。
+  xiaohongshu:
+    auth_enabled: false
+    read_enabled: false
+    write_enabled: false
+    app_key: "${SECRET:XHS_APP_KEY}"
+    app_secret: "${SECRET:XHS_APP_SECRET}"
+    oauth_callback_url: "https://merchant.example.com/v1/oauth/callback/xiaohongshu"
+    webhook_url: "https://merchant.example.com/v1/webhooks/platform/xiaohongshu"
+    approved_scopes: ["SET_FROM_XHS_APP_CONSOLE"]
+    test_store_ids: ["SET_XHS_TEST_STORE_ID"]
+    api_environment: production
+    capability_evidence_status: blocked_until_production_canary
+    api_base_url: "SET_XHS_API_BASE_URL"
+    sync_path: "/documented/products"
+    create_path: "/documented/products/create"
+    update_path: "/documented/products/update"
+    query_path: "/documented/publish/status"
+    media_upload_path: "/documented/media/upload"
+    media_response_mapping: { media_id_path: "data.media_id", media_url_path: "data.url" }
+    media_upload_evidence_ref: "SET_XHS_MEDIA_UPLOAD_EVIDENCE"
+    category_mapping_version: "SET_XHS_MAPPING_VERSION"
+    rule_pack_version: "xhs-apparel-1.0.0"
+    write_policy_version: "xhs-write-1.0.0"
+
+  douyin:
+    auth_enabled: false
+    read_enabled: false
+    write_enabled: false
+    app_key: "${SECRET:DOUYIN_APP_KEY}"
+    app_secret: "${SECRET:DOUYIN_APP_SECRET}"
+    oauth_callback_url: "https://merchant.example.com/v1/oauth/callback/douyin"
+    webhook_url: "https://merchant.example.com/v1/webhooks/platform/douyin"
+    approved_scopes: ["SET_FROM_DOUYIN_APP_CONSOLE"]
+    test_store_ids: ["SET_DOUYIN_TEST_STORE_ID"]
+    api_environment: production
+    capability_evidence_status: blocked_until_production_canary
+    api_base_url: "SET_DOUYIN_API_BASE_URL"
+    sync_path: "/documented/products"
+    create_path: "/documented/products/create"
+    update_path: "/documented/products/update"
+    query_path: "/documented/publish/status"
+    media_upload_path: "/documented/media/upload"
+    media_response_mapping: { media_id_path: "data.media_id", media_url_path: "data.url" }
+    media_upload_evidence_ref: "SET_DOUYIN_MEDIA_UPLOAD_EVIDENCE"
+    category_mapping_version: "SET_DOUYIN_MAPPING_VERSION"
+    rule_pack_version: "douyin-apparel-1.0.0"
+    write_policy_version: "douyin-write-1.0.0"
+
+data:
+  database_url: "${SECRET:DATABASE_URL}"
+  worker_api_signing_secret: "${SECRET:WORKER_API_SIGNING_SECRET}"
+  worker_platform_quota_per_minute: "SET_FROM_APPROVED_PLATFORM_QUOTA"
+  worker_model_quota_per_minute: "SET_FROM_APPROVED_MODEL_QUOTA"
+  database_ha_enabled: true
+  database_recommended_vcpu: 4
+  database_recommended_memory_gb: 16
+  database_pooler_enabled: true
+  database_pool_size_per_api_replica: 12
+  database_pool_size_per_worker_replica: 3
+  database_max_backend_connections: 300
+  database_connection_budget_profiles:
+    pilot_50:
+      api_replicas_max: 3
+      worker_replicas_max: 11
+      client_pool_connections: 100
+    target_500:
+      api_replicas_max: 12
+      worker_replicas_max: 41
+      client_pool_connections: 267
+  database_connection_utilization_alert_percent: 80
+  object_storage_bucket: "merchant-production-assets"
+  object_storage_region: "cn"
+  object_storage_endpoint: "https://s3.cn.example-provider.com"
+  object_storage_prefix: "merchant-assets"
+  object_storage_kms_key: "${SECRET:OBJECT_STORAGE_KMS_KEY_ID}"
+  object_storage_versioning: true
+  lifecycle_policy_ref: "vault://merchant-asset-lifecycle-policy"
+  object_storage_logical_capacity_tb: 1
+  redis_url: "${SECRET:REDIS_URL}"
+  redis_ha_enabled: true
+  redis_recommended_memory_gb: 4
+  queue_name_sync: "merchant-product-sync"
+  queue_name_generation: "merchant-content-generation"
+  queue_name_publish: "merchant-product-publish"
+  queue_name_reconcile: "merchant-platform-reconcile"
+  transactional_outbox_enabled: true
+  retention_days: 90
+  backup_retention_days: 30
+  asset_quarantine_retention_days: 7
+  asset_clean_retention_days: 90
+  deletion_request_grace_days: 7
+  migration_source: "packages/persistence/src/migrations"
+  migration_lock_timeout_seconds: 60
+  backup_schedule_utc: "0 2 * * *"
+  point_in_time_recovery_enabled: true
+
+security:
+  secret_provider: "SET_TO_MANAGED_SECRET_STORE"
+  credential_encryption_key: "${SECRET:CREDENTIAL_ENCRYPTION_KEY_ID}"
+  webhook_signing_secret: "${SECRET:WEBHOOK_SIGNING_SECRET}"
+  oauth_state_ttl_seconds: 600
+  signed_download_ttl_seconds: 600
+  callback_host_allowlist:
+    - "merchant.example.com"
+  outbound_api_host_allowlist:
+    - "SET_JD_OFFICIAL_API_HOST"
+    - "SET_TAOBAO_OFFICIAL_API_HOST"
+    - "SET_PDD_OFFICIAL_API_HOST"
+  redact_fields: ["access_token", "refresh_token", "app_secret", "client_secret", "authorization_code"]
+
+models:
+  # All business-model requests use this single platform-owned HTTPS egress.
+  # The secret value is injected at runtime; this file contains only its ref.
+  model_relay_base_url: "https://model-relay.example.com/v1"
+  model_relay_api_key_ref: "vault://merchant-model/relay-api-key"
+  text_model: "SET_PINNED_TEXT_MODEL_ID"
+  image_model: "SET_PINNED_IMAGE_MODEL_ID"
+  image_edit_model: "SET_PINNED_IMAGE_EDIT_MODEL_ID"
+  ocr_model: "SET_PINNED_OCR_MODEL_ID"
+  video_model: "SET_PINNED_VIDEO_MODEL_ID"
+  prompt_bundle_version: "1.0.0"
+  timeout_seconds: 90
+  maximum_schema_repair_attempts: 2
+  approved_requests_per_minute: "SET_FROM_PROVIDER_QUOTA"
+  approved_tokens_per_minute: "SET_FROM_PROVIDER_QUOTA"
+  maximum_inflight_generation_jobs: "SET_FROM_LOAD_TEST_AND_PROVIDER_QUOTA"
+  maximum_task_cost_cny: "SET_AFTER_BENCHMARK"
+  content_logging_enabled: false
+
+rules_and_mappings:
+  legal_rule_pack_version: "cn-commerce-1.0.0"
+  category_rule_pack_version: "apparel-1.0.0"
+  fail_closed_on_missing_p0_rule: true
+  fail_closed_on_unknown_mapping: true
+  rule_refresh_owner: "SET_BUSINESS_OWNER"
+  rule_revalidation_interval_days: 30
+
+feature_flags:
+  plugin_enabled: false
+  jd_auth_enabled: false
+  jd_read_enabled: false
+  jd_write_enabled: false
+  taobao_tmall_auth_enabled: false
+  taobao_tmall_read_enabled: false
+  taobao_tmall_write_enabled: false
+  pinduoduo_auth_enabled: false
+  pinduoduo_read_enabled: false
+  pinduoduo_write_enabled: false
+  xiaohongshu_auth_enabled: false
+  xiaohongshu_read_enabled: false
+  xiaohongshu_write_enabled: false
+  douyin_auth_enabled: false
+  douyin_read_enabled: false
+  douyin_write_enabled: false
+  unattended_publish_enabled: false
+  visual_generation_enabled: false
+
+limits:
+  maximum_workspaces: 50
+  target_concurrent_merchant_sessions: 50
+  provisioned_concurrent_client_connections: 150
+  expansion_target_workspaces: 500
+  expansion_target_client_connections: 750
+  maximum_storage_gb_per_workspace: 10
+  maximum_tasks_per_workspace_per_day: 100
+  maximum_total_tasks_per_day_at_full_workspace_count: 5000
+  maximum_upload_mb_per_file: 50
+  maximum_upload_files_per_batch: 20
+  maximum_upload_mb_per_batch: 250
+  maximum_skus_per_task: 20
+  maximum_products_per_store_initial_sync: 5000
+  maximum_skus_per_product: 100
+  maximum_worker_share_percent_per_workspace: 10
+  same_store_same_product_publish_concurrency: 1
+
+capacity_acceptance:
+  profile_note: "当前为 pilot_50 验收口径；500 家目标容量仍需按 PRD 15.1 单独执行扩容压测"
+  sustained_api_rps: 30
+  sustained_duration_minutes: 30
+  burst_api_rps: 60
+  burst_duration_seconds: 60
+  asynchronous_jobs_submitted_per_minute: 50
+  query_p95_ms: 1000
+  query_p99_ms: 2000
+  job_acceptance_p95_ms: 2000
+  unexpected_5xx_max_percent: 0.5
+  maximum_other_tenant_p95_degradation_percent: 20
+  soak_concurrent_sessions: 50
+  soak_duration_hours: 6
+  api_scale_out_start_seconds: 120
+  accepted_job_loss_count: 0
+  duplicate_publish_count: 0
+  cross_workspace_leak_count: 0
+  load_test_tool: "k6_OR_EQUIVALENT"
+  load_test_report_url: "SET_AFTER_PREPRODUCTION_TEST"
+  platform_and_model_quota_evidence_url: "SET_FROM_CAPABILITY_EVIDENCE"
+
+observability:
+  otel_endpoint: "${SECRET:OTEL_EXPORTER_OTLP_ENDPOINT}"
+  error_reporting_dsn: "${SECRET:ERROR_REPORTING_DSN}"
+  metrics_environment: production
+  alert_channel_secret_ref: "vault://merchant-alert-channel"
+  log_level: info
+  structured_log_sink: "SET_MANAGED_LOG_SINK"
+  trace_sampling_ratio: 1.0
+  dashboard_url: "SET_INTERNAL_DASHBOARD_URL"
+  alertmanager_url: "SET_INTERNAL_ALERTMANAGER_URL"
+  alert_channel: "SET_ONCALL_CHANNEL"
+  alert_thresholds:
+    api_query_p95_ms: 1000
+    api_job_acceptance_p95_ms: 2000
+    unexpected_5xx_percent: 0.5
+    concurrent_sessions: 50
+    database_connection_utilization_percent: 80
+    redis_memory_utilization_percent: 75
+    worker_saturation_percent: 80
+    queue_oldest_job_seconds_interactive: 10
+    queue_oldest_job_seconds_generation: 60
+    tenant_p95_degradation_percent: 20
+    platform_error_rate_percent: 5
+    oauth_failure_rate_percent: 5
+    publish_unknown_minutes: 10
+    sync_cursor_stalled_minutes: 30
+    p0_fact_error_count: 1
+
+rollout:
+  internal_workspace_ids: ["SET_INTERNAL_WORKSPACE_ID"]
+  canary_workspace_ids:
+    jd: ["SET_JD_CANARY_WORKSPACE_ID"]
+    taobao_tmall: ["SET_TAOBAO_CANARY_WORKSPACE_ID"]
+    pinduoduo: ["SET_PDD_CANARY_WORKSPACE_ID"]
+    xiaohongshu: ["SET_XHS_CANARY_WORKSPACE_ID"]
+    douyin: ["SET_DOUYIN_CANARY_WORKSPACE_ID"]
+  observation_minutes_per_platform: 120
+  workspace_capacity_waves: [10, 50, 100, 250, 500]
+  minimum_observation_business_peaks_per_wave: 1
+  pause_next_wave_on_capacity_or_quota_alert: true
+  automatic_rollback_enabled: false
+  emergency_write_kill_switch: true
+
+operations:
+  oncall_owner: "SET_ENGINEERING_OWNER"
+  product_owner: "SET_PRODUCT_OWNER"
+  security_contact: "SET_SECURITY_CONTACT"
+  capacity_owner: "SET_CAPACITY_AND_LOAD_TEST_OWNER"
+  platform_contacts:
+    jd: "SET_OWNER"
+    taobao_tmall: "SET_OWNER"
+    pinduoduo: "SET_OWNER"
+    xiaohongshu: "SET_OWNER"
+    douyin: "SET_OWNER"
+  runbook_url: "SET_INTERNAL_RUNBOOK_URL"
+  incident_status_page: "SET_INTERNAL_STATUS_PAGE"

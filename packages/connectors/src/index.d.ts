@@ -1,0 +1,31 @@
+import { jdProfile } from './profiles/jd.js';
+import { taobaoProfile } from './profiles/taobao.js';
+import { tmallProfile } from './profiles/tmall.js';
+import { pinduoduoProfile } from './profiles/pinduoduo.js';
+import { xiaohongshuProfile } from './profiles/xiaohongshu.js';
+import { douyinProfile } from './profiles/douyin.js';
+import type { FakeConnectorOptions, Platform, PlatformConnector } from './types.js';
+export * from './types.js';
+export * from './fake-connector.js';
+export * from './http-connector.js';
+export * from './config.js';
+export * from './vault-provider.js';
+export * from './platform-adapters/alibaba-top.js';
+export * from './platform-adapters/jd.js';
+export * from './platform-adapters/pinduoduo.js';
+export * from './capability-evidence.js';
+export * from './readiness.js';
+export * from './platform-preflight.js';
+export * from './canary.js';
+export { jdProfile, taobaoProfile, tmallProfile, pinduoduoProfile, xiaohongshuProfile, douyinProfile };
+export declare const profiles: {
+    readonly jd: import("./types.js").PlatformProfile;
+    readonly taobao: import("./types.js").PlatformProfile;
+    readonly tmall: import("./types.js").PlatformProfile;
+    readonly pinduoduo: import("./types.js").PlatformProfile;
+    readonly xiaohongshu: import("./types.js").PlatformProfile;
+    readonly douyin: import("./types.js").PlatformProfile;
+};
+export declare function createFakeConnector(platform: Platform, options?: FakeConnectorOptions): PlatformConnector;
+export declare function createConfiguredConnector(platform: Platform, options: import('./http-connector.js').HttpPlatformConnectorOptions): PlatformConnector;
+//# sourceMappingURL=index.d.ts.map

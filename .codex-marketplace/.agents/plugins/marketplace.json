@@ -1,0 +1,20 @@
+{
+  "name": "merchant-local",
+  "interface": {
+    "displayName": "Merchant Local Development"
+  },
+  "plugins": [
+    {
+      "name": "merchant-marketing",
+      "source": {
+        "source": "local",
+        "path": "./plugins/merchant-marketing"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

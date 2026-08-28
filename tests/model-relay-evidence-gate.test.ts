@@ -1,0 +1,36 @@
+import { describe, expect, it } from 'vitest'
+import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
+
+const evidence = {
+  schema_version: '1', release_id: 'release-1', generated_at: '2026-08-26T01:00:00Z', relay: 'https://relay.example.com',
+  results: ['text', 'image', 'image_edit', 'ocr', 'video'].map(modality => ({ modality, state: 'ready', endpoint: '/probe', model: `merchant-${modality}-v1`, providerRequestId: `req-${modality}`, usageObserved: true, costObserved: true })),
+}
+
+describe('model relay evidence gate', () => {
+  it('requires a release-bound, five-modality real relay receipt', () => {
+    expect(validateModelRelayEvidence(evidence, { expectedReleaseId: 'release-1' })).toEqual([])
+  })
+
+  it('rejects skipped probes and missing accounting evidence', () => {
+    const invalid = structuredClone(evidence)
+    invalid.results[2]!.state = 'skipped_input'
+    invalid.results[0]!.providerRequestId = ''
+    invalid.results[1]!.usageObserved = false
+    invalid.results[3]!.costObserved = false
+    expect(validateModelRelayEvidence(invalid, { expectedReleaseId: 'release-1' })).toEqual(expect.arrayContaining([
+      'image_edit state must be ready',
+      'text.providerRequestId is required',
+      'image.usageObserved must be true',
+      'ocr.costObserved must be true',
+    ]))
+  })
+
+  it('rejects local or non-HTTPS relay evidence', () => {
+    expect(validateModelRelayEvidence({ ...evidence, relay: 'http://127.0.0.1:8790' })).toContain('relay must be a plain HTTPS origin')
+  })
+
+  it('binds relay evidence to the rendered production relay origin', () => {
+    expect(validateModelRelayEvidence(evidence, { expectedRelay: 'https://relay.example.com/v1' })).toEqual([])
+    expect(validateModelRelayEvidence(evidence, { expectedRelay: 'https://other-relay.example.com/v1' })).toContain('relay must match the rendered production model_relay_base_url origin')
+  })
+})
