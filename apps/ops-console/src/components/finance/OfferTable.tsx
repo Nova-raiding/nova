@@ -7,7 +7,7 @@ interface OfferTableProps {
 }
 
 export function OfferTable({ model }: OfferTableProps) {
-  const { offers, setOffers, canPlatformOps, saveOffer } = model;
+  const { offers, setOffers, canGlobalCommercial, saveOffer } = model;
 
   return (
     <Table
@@ -20,7 +20,7 @@ export function OfferTable({ model }: OfferTableProps) {
           title: "名称",
           render: (_: unknown, row: Offer) => (
             <Input
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               value={row.name}
               onChange={(event) =>
                 setOffers((current) =>
@@ -42,7 +42,7 @@ export function OfferTable({ model }: OfferTableProps) {
           title: "价格（元）",
           render: (_: unknown, row: Offer) => (
             <InputNumber
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               min={0}
               precision={2}
               value={row.priceCny}
@@ -65,7 +65,7 @@ export function OfferTable({ model }: OfferTableProps) {
           title: "店铺",
           render: (_: unknown, row: Offer) => (
             <InputNumber
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               min={0}
               value={row.includedStores}
               onChange={(value) =>
@@ -87,7 +87,7 @@ export function OfferTable({ model }: OfferTableProps) {
           title: "任务/月",
           render: (_: unknown, row: Offer) => (
             <InputNumber
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               min={0}
               value={row.includedTasks}
               onChange={(value) =>
@@ -109,7 +109,7 @@ export function OfferTable({ model }: OfferTableProps) {
           title: "启用",
           render: (_: unknown, row: Offer) => (
             <Switch
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               checked={row.active}
               onChange={(active) =>
                 setOffers((current) =>
@@ -125,7 +125,7 @@ export function OfferTable({ model }: OfferTableProps) {
           title: "操作",
           render: (_: unknown, row: Offer) => (
             <Button
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               type="link"
               onClick={() => void saveOffer(row)}
             >

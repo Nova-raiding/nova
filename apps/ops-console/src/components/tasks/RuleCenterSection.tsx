@@ -23,29 +23,35 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         form={ruleForm}
         layout="inline"
         onFinish={publishRuleDraft}
+        onFinishFailed={({ errorFields }) => {
+          const first = errorFields[0]?.name;
+          if (first) ruleForm.scrollToField(first, { block: "center", focus: true });
+        }}
         style={{ marginBottom: 16 }}
         disabled={!canRules}
+        aria-label="创建规则草稿"
       >
-        <Form.Item name="packId" rules={[{ required: true }]}>
+        <Form.Item name="packId" label="规则包 ID" rules={[{ required: true, message: "请输入规则包 ID" }]}> 
           <Input placeholder="规则包 ID" />
         </Form.Item>
-        <Form.Item name="name" rules={[{ required: true }]}>
+        <Form.Item name="name" label="规则名称" rules={[{ required: true, message: "请输入规则名称" }]}> 
           <Input placeholder="规则名称" />
         </Form.Item>
-        <Form.Item name="version" rules={[{ required: true }]}>
+        <Form.Item name="version" label="版本" rules={[{ required: true, message: "请输入规则版本" }]}> 
           <Input placeholder="版本" />
         </Form.Item>
-        <Form.Item name="sourceReference" rules={[{ required: true }]}>
+        <Form.Item name="sourceReference" label="来源" rules={[{ required: true, message: "请输入来源链接或工单号" }]}> 
           <Input placeholder="来源链接/工单" />
         </Form.Item>
         <Form.Item
           name="checksJson"
+          label="检查规则"
           initialValue='{"forbiddenTerms":[]}'
-          rules={[{ required: true }]}
+          rules={[{ required: true, message: "请输入检查规则 JSON" }]}
         >
           <Input placeholder="checks JSON" />
         </Form.Item>
-        <Form.Item name="reason" rules={[{ required: true }]}>
+        <Form.Item name="reason" label="创建原因" rules={[{ required: true, message: "请输入创建原因" }]}> 
           <Input placeholder="发布原因" />
         </Form.Item>
         <Button disabled={!canRules} type="primary" htmlType="submit">
@@ -56,6 +62,8 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         rowKey="id"
         pagination={{ pageSize: 8 }}
         dataSource={rules}
+        locale={{ emptyText: "尚无规则草稿；请先填写来源和检查规则后创建" }}
+        scroll={{ x: 900 }}
         columns={[
           { title: "规则包", dataIndex: "packId" },
           { title: "名称", dataIndex: "name" },

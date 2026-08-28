@@ -38,6 +38,8 @@ test('operates the platform user directory without destructive confirmation', as
   await page.keyboard.press('Enter')
   const detailDrawer = page.getByRole('dialog', { name: /用户详情.*support_demo/u })
   await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText('认证会话（已脱敏）')).toBeVisible()
+  await expect(detailDrawer.getByText('平台身份生命周期')).toBeVisible()
   await expect(detailDrawer.getByText('所属租户与角色')).toBeVisible()
   await expect(detailDrawer.getByText('暂无成员操作记录')).toBeVisible()
   await page.keyboard.press('Escape')

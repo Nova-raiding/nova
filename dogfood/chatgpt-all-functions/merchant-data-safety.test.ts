@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveStoreSyncTargets } from '../../demo/merchant-studio/src/store-sync'
+import { storeIdentityLabel, validateProductStoreIdentity, validateTargetStoreIdentity, validateTaskStoreIdentity } from '../../demo/merchant-studio/src/store-identity'
 
 describe('Merchant Studio store sync target resolution', () => {
   it('returns every readable store instead of selecting the first store on a platform', () => {
@@ -47,5 +48,28 @@ describe('Merchant Studio store sync target resolution', () => {
       ok: false,
       message: '没有发现已授权且可读取的店铺，未发起任何同步。',
     })
+  })
+})
+
+describe('Merchant Studio store identity safety', () => {
+  const target = { accountId: 'store-a', storeName: '淘宝 A 店' }
+
+  it('accepts a complete identity that remains consistent across product and task', () => {
+    expect(validateTargetStoreIdentity(target)).toBeNull()
+    expect(validateProductStoreIdentity(target, target)).toBeNull()
+    expect(validateTaskStoreIdentity(target, { accountId: 'store-a' })).toBeNull()
+    expect(storeIdentityLabel(target)).toBe('淘宝 A 店 · 账号 store-a')
+  })
+
+  it('fails closed for missing identity fields', () => {
+    expect(validateTargetStoreIdentity({ storeName: '淘宝 A 店' })).toContain('缺少完整店铺身份')
+    expect(validateProductStoreIdentity(target, { storeName: '淘宝 A 店' })).toContain('商品事实缺少完整店铺身份')
+    expect(validateTaskStoreIdentity(target, {})).toContain('任务缺少稳定的店铺账号 ID')
+  })
+
+  it('fails closed for product or task identity mismatches', () => {
+    expect(validateProductStoreIdentity(target, { accountId: 'store-b', storeName: '淘宝 B 店' })).toContain('店铺身份与最新商品事实不一致')
+    expect(validateProductStoreIdentity(target, { accountId: 'store-a', storeName: '淘宝 A 店（旧名）' })).toContain('店铺身份与最新商品事实不一致')
+    expect(validateTaskStoreIdentity(target, { accountId: 'store-b' })).toContain('任务店铺账号与所选商品不一致')
   })
 })

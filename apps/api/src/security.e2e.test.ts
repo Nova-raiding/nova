@@ -140,6 +140,40 @@ describe('security and access-control acceptance gates', () => {
     expect((await call('platform-ops-token', 'ops.user.activate', { external_subject: 'target-user', reason: '重复恢复尝试' })).error?.code).toBe('MEMBER_ALREADY_ACTIVE')
   })
 
+  it('keeps global commercial catalogs platform-owned while tenant admins only manage their own rollout', async () => {
+    const workspaceId = `ws_commercial_scope_${Date.now()}`
+    const otherWorkspaceId = `${workspaceId}_other`
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([
+      { token: 'commercial-admin-token', workspaceId, actorId: 'commercial-admin', role: 'merchant_admin', gatewayRoles: ['merchant_admin'] },
+      { token: 'commercial-platform-token', workspaceId, actorId: 'commercial-platform', role: 'platform_ops', gatewayRoles: ['platform_ops'], grantWorkspaces: [workspaceId, otherWorkspaceId] },
+    ])
+    const base = await start()
+    const call = (token: string, method: string, params: Record<string, string>) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { workspace_id: workspaceId, ...params } }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    const suffix = Date.now().toString(36)
+    const catalogWrites = [
+      ['ops.commercial.offer.upsert', { code: `offer-${suffix}`, name: 'Global Offer', billing_cycle: 'monthly', price_cny: '99.00', included_stores: '1', included_tasks: '10', reason: '权限边界回归' }],
+      ['ops.commercial.addon.upsert', { code: `addon-${suffix}`, name: 'Global Addon', kind: 'bulk_sync', price_cny: '19.00', units: '10', reason: '权限边界回归' }],
+      ['ops.commercial.coupon.upsert', { code: `coupon-${suffix}`, discount_type: 'percent', discount_value: '10.00', max_redemptions: '100', reason: '权限边界回归' }],
+    ] as const
+    for (const [method, params] of catalogWrites) {
+      expect((await call('commercial-admin-token', method, params)).error?.code).toBe('FORBIDDEN')
+      expect((await call('commercial-platform-token', method, params)).error).toBeNull()
+    }
+
+    const ownRollout = { offer_code: `offer-${suffix}`, target_workspace_id: workspaceId, percentage: '25', enabled: 'true', reason: '租户内灰度' }
+    expect((await call('commercial-admin-token', 'ops.commercial.rollout.upsert', ownRollout)).error).toBeNull()
+    expect((await call('commercial-admin-token', 'ops.commercial.rollout.upsert', { ...ownRollout, target_workspace_id: otherWorkspaceId })).error?.code).toBe('FORBIDDEN')
+    const { target_workspace_id: _targetWorkspaceId, ...globalRollout } = ownRollout
+    expect((await call('commercial-platform-token', 'ops.commercial.rollout.upsert', globalRollout)).data?.result).not.toHaveProperty('workspaceId')
+    expect((await call('commercial-platform-token', 'ops.commercial.rollout.upsert', { ...ownRollout, target_workspace_id: otherWorkspaceId })).error).toBeNull()
+  })
+
   it('globally suspends an identity, revokes its sessions, and does not revive old sessions on activation', async () => {
     const workspaceId = `ws_identity_lifecycle_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'production')
@@ -177,6 +211,55 @@ describe('security and access-control acceptance gates', () => {
     expect(activeSession).toMatchObject({ status: 'active', revision: 1 })
     expect((await call('identity-platform-token', 'ops.user.session.revoke', { identity_id: identityId, session_id: activeSession.id, expected_revision: String(activeSession.revision), idempotency_key: 'revoke-fresh-session-1', reason: '撤销可疑新会话' })).data?.result.session.status).toBe('revoked')
     expect((await call('identity-target-fresh-token', 'ops.session')).error?.code).toBe('SESSION_REVOKED')
+  })
+
+  it('applies role-protected identity risk transitions with step-up, optimistic concurrency, and session revocation', async () => {
+    const workspaceId = `ws_identity_risk_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([
+      { token: 'risk-target-token', workspaceId, actorId: 'risk-target', role: 'operator', gatewayRoles: ['operator'] },
+      { token: 'risk-target-fresh-token', workspaceId, actorId: 'risk-target', role: 'operator', gatewayRoles: ['operator'] },
+      { token: 'risk-admin-token', workspaceId, actorId: 'risk-admin', role: 'merchant_admin', gatewayRoles: ['merchant_admin'] },
+      { token: 'risk-platform-token', workspaceId, actorId: 'risk-platform', role: 'platform_ops', gatewayRoles: ['platform_ops'] },
+    ])
+    const base = await start()
+    const call = (token: string, method: string, params: Record<string, string> = {}) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    const targetSession = await call('risk-target-token', 'ops.session')
+    const identityId = targetSession.data?.result.identity_id as string
+    const detail = await call('risk-platform-token', 'ops.user.detail', { identity_id: identityId })
+    const initialRevision = detail.data?.result.identity.revision as number
+    const transition = (token: string, input: Record<string, string>) => call(token, 'ops.user.risk.transition', {
+      identity_id: identityId,
+      risk_level: 'high',
+      risk_decision: 'step_up',
+      expected_revision: String(initialRevision),
+      idempotency_key: 'risk-step-up-1',
+      reason: '检测到异地登录，需要二次验证',
+      evidence_json: '{"signal":"impossible_travel"}',
+      ...input,
+    })
+
+    expect((await transition('risk-admin-token', {})).error?.code).toBe('FORBIDDEN')
+    expect((await transition('risk-platform-token', { evidence_json: '[]' })).error?.code).toBe('INVALID_REQUEST')
+    const steppedUp = await transition('risk-platform-token', {})
+    expect(steppedUp.data?.result.identity).toMatchObject({ riskLevel: 'high', riskDecision: 'step_up', revision: initialRevision + 1 })
+    expect((await call('risk-target-token', 'ops.session')).error?.code).toBe('IDENTITY_STEP_UP_REQUIRED')
+
+    const stale = await transition('risk-platform-token', { risk_level: 'low', risk_decision: 'allow', idempotency_key: 'risk-allow-stale' })
+    expect(stale.error?.code).toBe('IDENTITY_REVISION_CONFLICT')
+    const allowed = await transition('risk-platform-token', { risk_level: 'low', risk_decision: 'allow', expected_revision: String(initialRevision + 1), idempotency_key: 'risk-allow-1', reason: '二次验证完成，解除风险限制' })
+    expect(allowed.data?.result.identity).toMatchObject({ riskLevel: 'low', riskDecision: 'allow', revision: initialRevision + 2 })
+    expect((await call('risk-target-token', 'ops.session')).error?.code).toBe('SESSION_REVOKED')
+    expect((await call('risk-target-fresh-token', 'ops.session')).error).toBeNull()
+
+    const blocked = await transition('risk-platform-token', { risk_level: 'critical', risk_decision: 'block', expected_revision: String(initialRevision + 2), idempotency_key: 'risk-block-1', reason: '确认凭证泄露，阻断身份并撤销会话' })
+    expect(blocked.data?.result).toMatchObject({ identity: { riskLevel: 'critical', riskDecision: 'block' }, revokedSessionIds: [expect.any(String)] })
+    expect((await call('risk-target-fresh-token', 'ops.session')).error?.code).toBe('IDENTITY_RISK_BLOCKED')
   })
 
   it('restricts the global model markup policy to platform operations', async () => {
@@ -237,6 +320,9 @@ describe('security and access-control acceptance gates', () => {
     const response = await call('ops.users.list', { query: 'target-only-user' })
     expect(response.error).toBeNull()
     expect(response.data?.result.items).toEqual([expect.objectContaining({ externalSubject: 'target-only-user', workspaceId: targetWorkspace })])
+    const workspaces = await call('ops.workspaces.list', { workspace_id: routingWorkspace })
+    expect(workspaces.error).toBeNull()
+    expect(workspaces.data?.result).toEqual(expect.arrayContaining([expect.objectContaining({ workspaceId: targetWorkspace, memberCount: 1 })]))
     const detail = await call('ops.user.detail', { external_subject: 'target-only-user' })
     expect(detail.error).toBeNull()
     expect(detail.data?.result.identity).toMatchObject({ externalSubject: 'target-only-user', membershipCount: 1 })
@@ -638,9 +724,11 @@ describe('security and access-control acceptance gates', () => {
     expect((await deniedCatalogAfterLastRevoke.json() as Envelope).error?.code).toBe('STORE_ONBOARDING_REQUIRED')
   })
 
-  it('protects worker-only generation result callbacks with a separate internal token', async () => {
+  it('keeps worker routes on bearer plus workspace HMAC when OIDC is enabled on the internal merchant-api host', async () => {
     vi.stubEnv('NODE_ENV', 'production')
-    await configureBearerMembers([{ token: 'api-token', workspaceId: 'ws_worker' }, { token: 'worker-token', workspaceId: 'ws_worker' }])
+    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
+    vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'merchant.example.com')
+    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'worker-oidc-secret')
     vi.stubEnv('WORKER_API_TOKEN', 'worker-token')
     vi.stubEnv('WORKER_API_SIGNING_SECRET', 'worker-signing-secret')
     const productId = `prod_worker_${Date.now()}`
@@ -650,16 +738,33 @@ describe('security and access-control acceptance gates', () => {
     service.confirmProductionPlan('ws_worker', task.id, 'test-worker')
     const job = service.enqueueGeneration({ workspaceId: 'ws_worker', taskId: task.id, idempotencyKey: `worker-${Date.now()}` })
     const base = await start()
+    const path = `/v1/generation-jobs/${job.id}/result`
     const body = JSON.stringify({ content: { title: 'worker', detail: 'worker', sellingPoints: ['fact'] } })
-    const denied = await fetch(`${base}/v1/generation-jobs/${job.id}/result`, { method: 'POST', headers: { authorization: 'Bearer api-token', 'x-workspace-id': 'ws_worker', 'content-type': 'application/json' }, body })
-    expect(denied.status).toBe(403)
-    const signWorkerRequest = (path: string) => createHmac('sha256', 'worker-signing-secret').update(`POST\n${path}\nws_worker`).digest('hex')
-    const deferredPath = `/v1/generation-jobs/${job.id}/defer`
-    const deferred = await fetch(`${base}${deferredPath}`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': 'ws_worker', 'x-worker-workspace-signature': signWorkerRequest(deferredPath), 'content-type': 'application/json' }, body: JSON.stringify({ code: 'QUOTA_EXHAUSTED', message: '额度窗口等待中', retry_after_seconds: 12 }) })
-    expect(deferred.status).toBe(200)
-    expect((await deferred.json() as Envelope<{ state: string; waitingReason: string; nextAttemptAt: string }>).data).toMatchObject({ state: 'queued', waitingReason: 'provider_quota' })
-    const resultPath = `/v1/generation-jobs/${job.id}/result`
-    const accepted = await fetch(`${base}${resultPath}`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': 'ws_worker', 'x-worker-workspace-signature': signWorkerRequest(resultPath), 'content-type': 'application/json' }, body })
+    const commonHeaders = { host: 'merchant-api', 'x-workspace-id': 'ws_worker', 'content-type': 'application/json' }
+    const missing = await fetch(`${base}${path}`, { method: 'POST', headers: commonHeaders, body })
+    expect(missing.status).toBe(403)
+    expect((await missing.json() as Envelope).error?.code).toBe('FORBIDDEN')
+
+    const invalid = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer invalid-worker-token', 'x-worker-workspace-signature': '0'.repeat(64) }, body })
+    expect(invalid.status).toBe(403)
+    expect((await invalid.json() as Envelope).error?.code).toBe('FORBIDDEN')
+
+    const missingSignature = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token' }, body })
+    expect(missingSignature.status).toBe(403)
+    const invalidSignature = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', 'x-worker-workspace-signature': 'f'.repeat(64) }, body })
+    expect(invalidSignature.status).toBe(403)
+
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const authTime = String(Number(timestamp) - 10)
+    const sessionExpiresAt = String(Number(timestamp) + 3600)
+    const oidcCanonical = ['POST', path, 'ws_worker', 'https://issuer.example.com', 'worker-oidc-user', 'worker-oidc-session', 'platform_ops', 'mfa', authTime, sessionExpiresAt, timestamp].join('\n')
+    const oidcSignature = createHmac('sha256', 'worker-oidc-secret').update(oidcCanonical).digest('hex')
+    const oidc = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, 'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'worker-oidc-user', 'x-oidc-sid': 'worker-oidc-session', 'x-oidc-workspace': 'ws_worker', 'x-oidc-roles': 'platform_ops', 'x-oidc-amr': 'mfa', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-signature': oidcSignature }, body })
+    expect(oidc.status).toBe(403)
+    expect((await oidc.json() as Envelope).error?.code).toBe('FORBIDDEN')
+
+    const signature = createHmac('sha256', 'worker-signing-secret').update(`POST\n${path}\nws_worker`).digest('hex')
+    const accepted = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', 'x-worker-workspace-signature': signature }, body })
     expect(accepted.status).toBe(200)
   })
 

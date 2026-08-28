@@ -6,10 +6,11 @@
 
 ## 结果摘要
 
-- Merchant Studio：7 个主入口、全局搜索、移动端菜单和 9 类安全交互均通过；最终 `badResponses=[]`、`requestFailures=[]`、`consoleMessages=[]`。
-- Ops Console：总览、任务与内容、店铺管理、账务与退款均读取真实 `ws_demo` 数据；最终无 HTTP 错误、无 JSON-RPC 业务错误、无非预期请求失败、无 console error。
-- 自动回归：105 个测试文件、725 项测试全部通过；Merchant Studio、Ops Console 构建和根 TypeScript 类型检查通过。
+- Merchant Studio：8 项浏览器用例覆盖 7 个主入口、全局搜索、移动端菜单和 9 类安全交互；最终 `badResponses=[]`、`requestFailures=[]`、`consoleMessages=[]`。
+- Ops Console：5 项浏览器用例覆盖总览、用户与租户、任务与内容、店铺管理、账务与退款、模型失败态及三种移动视口；最终无 HTTP 错误、无 JSON-RPC 业务错误、无非预期请求失败、无 console error。
+- 自动回归：111 个测试文件、767 项测试全部通过；Merchant Studio、Ops Console 构建和根 TypeScript 类型检查通过。
 - 容器：API、UI、PostgreSQL、Redis 和 5 个 Worker 均为 healthy。
+- Git：当前目录是 `main` 的唯一 worktree；代码与中转适配器位于同一工作树，但 Relay Secret 未随 worktree 恢复。
 
 ## 浏览器覆盖
 
@@ -23,6 +24,14 @@
 | 帮助与设置 | 两个面板的打开、内容和关闭 |
 | 移动端 | 390×844、375×812、844×390；原生菜单按钮、Escape 焦点返回、表单错误聚焦、页面无横向溢出 |
 | Ops Console | 总览、用户与租户、任务/内容、店铺自动化、财务/退款；用户详情与历史、跨租户成员治理、模型状态失败态 |
+
+## 本轮新增并验证的闭环
+
+- 平台身份中心持久化全局身份、认证会话与风险策略；支持封禁/解封、风险转换、会话撤销、revision 冲突和审计。
+- 模型账务新增持久结算状态机、批量重试、人工重试/豁免/转人工与对账接口；运行态返回 `completed` 且未结算记录为 0。
+- API/Worker 改用 `merchant_app` 非超级用户数据库角色；真实事务 RLS 探针在 workspace A 可见、切换 workspace B 后为 0 行。
+- Ops 首屏请求并发限制为 8，限流按 workspace + actor + surface 分桶；复测不再出现 429，交互请求不被后台加载饿死。
+- 修复 E2E 共享匿名限流桶污染：纵向套件隔离非目标限流副作用，限流本身继续由独立 security E2E 和分布式 smoke 验证。
 
 ## 已发现并修复
 

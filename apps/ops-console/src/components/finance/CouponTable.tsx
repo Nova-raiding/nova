@@ -7,7 +7,7 @@ interface CouponTableProps {
 }
 
 export function CouponTable({ model }: CouponTableProps) {
-  const { coupons, setCoupons, canPlatformOps, saveCoupon } = model;
+  const { coupons, setCoupons, canGlobalCommercial, saveCoupon } = model;
 
   return (
     <Table
@@ -21,7 +21,7 @@ export function CouponTable({ model }: CouponTableProps) {
           title: "折扣值",
           render: (_: unknown, row: Coupon) => (
             <InputNumber
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               min={0}
               precision={2}
               value={row.discountValue}
@@ -44,7 +44,7 @@ export function CouponTable({ model }: CouponTableProps) {
           title: "上限",
           render: (_: unknown, row: Coupon) => (
             <InputNumber
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               min={0}
               value={row.maxRedemptions}
               onChange={(value) =>
@@ -67,7 +67,7 @@ export function CouponTable({ model }: CouponTableProps) {
           title: "操作",
           render: (_: unknown, row: Coupon) => (
             <Button
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               type="link"
               onClick={() => void saveCoupon(row)}
             >

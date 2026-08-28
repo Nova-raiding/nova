@@ -6,7 +6,7 @@ interface RefundSectionProps {
 }
 
 export function RefundSection({ model }: RefundSectionProps) {
-  const { refundForm, refund, canFinance } = model;
+  const { refundForm, refund, canFinance, refundSubmitting } = model;
 
   return (
     <Card
@@ -17,15 +17,20 @@ export function RefundSection({ model }: RefundSectionProps) {
         form={refundForm}
         layout="inline"
         onFinish={refund}
+        onFinishFailed={({ errorFields }) => {
+          const first = errorFields[0]?.name;
+          if (first) refundForm.scrollToField(first, { block: "center", focus: true });
+        }}
         disabled={!canFinance}
+        aria-label="创建退款"
       >
-        <Form.Item name="orderId" rules={[{ required: true }]}>
-          <Input placeholder="已到账充值订单 ID" />
+        <Form.Item name="orderId" label="充值订单 ID" rules={[{ required: true, message: "请输入已到账的充值订单 ID" }]}>
+          <Input placeholder="例如 recharge_..." autoComplete="off" />
         </Form.Item>
-        <Form.Item name="reason" rules={[{ required: true }]}>
-          <Input placeholder="退款原因" />
+        <Form.Item name="reason" label="退款原因" rules={[{ required: true, message: "请输入退款原因" }, { min: 4, message: "退款原因至少 4 个字符" }]}>
+          <Input placeholder="填写工单号和退款依据" />
         </Form.Item>
-        <Button disabled={!canFinance} danger type="primary" htmlType="submit">
+        <Button disabled={!canFinance} loading={refundSubmitting} danger type="primary" htmlType="submit">
           创建退款
         </Button>
       </Form>

@@ -27,7 +27,7 @@ interface ReconciliationSectionProps {
 }
 
 export function ReconciliationSection({ model }: ReconciliationSectionProps) {
-  const { reconciliation, canFinance, runReconciliation, runModelUsageReconciliation, retryModelUsageSettlement, waiveModelUsageSettlement, exportBilling } = model;
+  const { reconciliation, canPaymentReconciliation, canModelSettlement, runReconciliation, runModelUsageReconciliation, retryModelUsageSettlement, waiveModelUsageSettlement, exportBilling } = model;
   const [settlementAction, setSettlementAction] = useState<string>();
   const [settlementFeedback, setSettlementFeedback] = useState<{
     type: "success" | "error";
@@ -40,7 +40,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
     statusAllowed: boolean,
     callbackAvailable: boolean,
   ) => {
-    if (!canFinance) return "当前账号没有财务结算权限。";
+    if (!canModelSettlement) return "当前账号没有模型结算权限。";
     if (!statusAllowed)
       return action === "retry"
         ? "当前结算状态不能重试。"
@@ -98,12 +98,12 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           <Tag color="green">金额：元（两位小数）</Tag>
           <Button
             size="small"
-            disabled={!canFinance || !reconciliation?.provider?.ready}
+            disabled={!canPaymentReconciliation || !reconciliation?.provider?.ready}
             onClick={() => void runReconciliation()}
           >
             运行支付查单
           </Button>
-          <Button size="small" disabled={!canFinance} onClick={() => void runModelUsageReconciliation()}>
+          <Button size="small" disabled={!canModelSettlement} onClick={() => void runModelUsageReconciliation()}>
             重试模型结算
           </Button>
           <Button
@@ -240,8 +240,8 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
               const available = settlementActions(status);
               const retryAvailable = Boolean(retryModelUsageSettlement);
               const waiveAvailable = Boolean(waiveModelUsageSettlement);
-              const retryDisabled = !canFinance || !available.retry || !retryAvailable;
-              const waiveDisabled = !canFinance || !available.waive || !waiveAvailable;
+              const retryDisabled = !canModelSettlement || !available.retry || !retryAvailable;
+              const waiveDisabled = !canModelSettlement || !available.waive || !waiveAvailable;
               const retryDisabledReason = disabledActionReason("retry", available.retry, retryAvailable);
               const waiveDisabledReason = disabledActionReason("waive", available.waive, waiveAvailable);
               return (

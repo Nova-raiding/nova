@@ -34,7 +34,7 @@ const READ_ONLY_METHODS = new Set([
   'merchant.start',
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'campaign.batch.get',
-  'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get', 'platform.model.status',
+  'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
   'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list', 'ops.users.list', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get',
   'billing.status', 'billing.recharge.get', 'billing.transactions', 'billing.export', 'catalog.sync.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
@@ -42,8 +42,18 @@ const READ_ONLY_METHODS = new Set([
   'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list', 'automation.scan',
 ])
-const INTERNAL_OPERATIONS_METHODS = new Set(['billing.model-usage.reconciliation.run', 'billing.model-usage.resolve'])
-const isMerchantTool = name => !name.startsWith('ops.') && !INTERNAL_OPERATIONS_METHODS.has(name)
+const MERCHANT_HIDDEN_METHODS = new Set([
+  'billing.model-usage.reconciliation.run',
+  'billing.model-usage.resolve',
+  'billing.usage.consume',
+  'billing.usage.refund',
+  'billing.refund',
+  'billing.reconciliation.run',
+  'platform.settings.update',
+  'platform.revoke',
+  'platform.model.status',
+])
+const isMerchantTool = name => !name.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(name)
 // These actions are explicitly part of first-run activation or read-only
 // catalog synchronization. They may create a pending order or a sync handle,
 // but do not consume wallet balance or publish content. Generation, editing,
@@ -198,8 +208,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { channel: { type: 'string', enum: ['alipay', 'wechat'] }, amount_cny: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['channel', 'amount_cny'], additionalProperties: false },
   },
   'billing.recharge.get': {
-    description: '查询充值订单状态；仅本地测试收银台可显式确认测试支付，正式订单仍只接受支付服务商回调。',
-    inputSchema: { type: 'object', properties: { order_id: { type: 'string' }, confirm_test_payment: { type: 'string', enum: ['true'] } }, required: ['order_id'], additionalProperties: false },
+    description: '查询充值订单状态；正式订单只接受支付服务商回调。只读。',
+    inputSchema: { type: 'object', properties: { order_id: { type: 'string' } }, required: ['order_id'], additionalProperties: false },
   },
   'billing.transactions': {
     description: '查看当前工作区充值和消费流水。只读。',
@@ -1126,6 +1136,9 @@ async function handle(request) {
     const args = request.params?.arguments
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `Unknown tool: ${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return jsonRpcError(id, -32602, 'Tool arguments must be an object')
+    if (name === 'billing.recharge.get' && Object.prototype.hasOwnProperty.call(args, 'confirm_test_payment')) {
+      return jsonRpcError(id, -32602, 'Unsupported tool argument: confirm_test_payment')
+    }
     if (name === 'workspace.interactive.confirm') {
       try {
         const result = confirmInteractiveWrites(args)

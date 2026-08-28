@@ -9,6 +9,18 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
 
+const MERCHANT_HIDDEN_METHODS = new Set([
+  'billing.model-usage.reconciliation.run',
+  'billing.model-usage.resolve',
+  'billing.usage.consume',
+  'billing.usage.refund',
+  'billing.refund',
+  'billing.reconciliation.run',
+  'platform.settings.update',
+  'platform.revoke',
+  'platform.model.status',
+])
+
 function nextLine(stream: NodeJS.ReadableStream): Promise<any> {
   return new Promise((resolve, reject) => {
     let buffer = ''
@@ -100,11 +112,11 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      for (const [index, name] of ['platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start', 'platform.model.status'].entries()) {
+      for (const [index, name] of ['platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
       }
-      expect(requests).toBe(5)
+      expect(requests).toBe(4)
     } finally {
       child.kill()
       await close(server)
@@ -215,7 +227,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('keeps wallet usage debit/refund behind the interactive write gate', async () => {
+  it('does not expose or invoke operator-sensitive methods from the merchant bridge', async () => {
     let requests = 0
     const server = createServer((_req, res) => {
       requests += 1
@@ -228,9 +240,12 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      for (const [index, name] of ['billing.usage.consume', 'billing.usage.refund'].entries()) {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listedNames = (await nextLine(child.stdout)).result.tools.map((tool: { name: string }) => tool.name)
+      for (const name of MERCHANT_HIDDEN_METHODS) expect(listedNames).not.toContain(name)
+      for (const [index, name] of [...MERCHANT_HIDDEN_METHODS].entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name, arguments: {} } })}\n`)
+        expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` })
       }
       expect(requests).toBe(0)
     } finally {
@@ -273,8 +288,9 @@ describe('Codex stdio MCP bridge', () => {
       expect(rechargeUi.result.contents[0].text).not.toMatch(/mock/iu)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
-      expect(listed.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual(MCP_METHODS.filter(method => !method.startsWith('ops.') && !['billing.model-usage.reconciliation.run', 'billing.model-usage.resolve'].includes(method)).sort())
+      expect(listed.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual(MCP_METHODS.filter(method => !method.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(method)).sort())
       expect(listed.result.tools.some((tool: { name: string }) => tool.name.startsWith('ops.'))).toBe(false)
+      for (const name of MERCHANT_HIDDEN_METHODS) expect(listed.result.tools.some((tool: { name: string }) => tool.name === name)).toBe(false)
       /*
         'workspace.health', 'workspace.bootstrap', 'workspace.metrics', 'workspace.commercial.get', 'workspace.commercial.update', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.export', 'ops.members.list', 'ops.workspaces.list', 'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert', 'ops.commercial.coupons.list', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list', 'ops.commercial.rollout.upsert', 'ops.growth.funnel', 'ops.alerts.list', 'ops.alert.ack', 'ops.marketing.queue', 'ops.marketing.generation.retry', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create', 'ops.member.upsert', 'ops.member.suspend', 'subscription.get', 'subscription.orders.list', 'subscription.order.create', 'subscription.change', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund', 'billing.reconciliation', 'billing.export', 'platform.settings.get', 'platform.settings.update', 'billing.status', 'billing.recharge.create', 'billing.recharge.get', 'billing.transactions', 'workspace.deactivate', 'workspace.activate', 'ops.data.delete.list', 'ops.data.delete.cancel', 'ops.data.delete.approve', 'workspace.data.delete.request', 'platform.connect', 'platform.store.alias.set', 'catalog.search', 'catalog.categories', 'catalog.title.optimize', 'publish.batch.prepare', 'publish.batch.confirm', 'publish.batch.get', 'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed', 'automation.policy.get', 'automation.policy.update', 'automation.scan', 'automation.pause', 'catalog.import', 'catalog.facts.confirm', 'catalog.product.disable', 'catalog.product.enable', 'catalog.image.generate', 'catalog.image.get', 'catalog.image.review', 'sync.retry_failed', 'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'rule.publish', 'rule.status', 'asset.list', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.get', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'catalog.sync.get', 'deliverable.list', 'task.history', 'task.clone', 'task.timeline', 'feedback.list', 'platform.revoke', 'task.create', 'task.answer',
         'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'creative.directions', 'creative.brief', 'creative.preview', 'creative.directions.update', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.codex.prepare', 'content.codex.commit', 'generation.get', 'content.review', 'content.review.decide', 'content.visual.select',
@@ -291,6 +307,9 @@ describe('Codex stdio MCP bridge', () => {
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'deliverable.list').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'content.export').annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'billing.status')._meta.ui.resourceUri).toBe('ui://merchant-marketing/recharge-v1.html')
+      const rechargeGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'billing.recharge.get')
+      expect(rechargeGet.inputSchema.properties).toEqual({ order_id: { type: 'string' } })
+      expect(rechargeGet.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'content.generate')._meta.ui.resourceUri).toBe('ui://merchant-marketing/recharge-v1.html')
       const workspaceMetrics = listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.metrics')
       expect(workspaceMetrics.inputSchema).toEqual({
@@ -308,6 +327,9 @@ describe('Codex stdio MCP bridge', () => {
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.create').inputSchema.properties.source_kind.enum).toEqual(['official', 'internal', 'merchant', 'observed', 'legal_review'])
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.video.request').inputSchema.properties.idempotency_key).toBeDefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm').annotations).toBeUndefined()
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
+      expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
+      expect(requests).toHaveLength(0)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'workspace.metrics', arguments: { date_from: '2026-08-18T00:00:00+08:00', date_to: '2026-08-25T23:59:59+08:00', risk_limit: '25' } } })}\n`)
       const called = await nextLine(child.stdout)
       expect(called.result.isError).toBe(false)
@@ -708,7 +730,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.refund', arguments: { order_id: 'order_1', reason: 'duplicate request' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'API_UNAVAILABLE' } })
       expect(attempts).toBe(1)

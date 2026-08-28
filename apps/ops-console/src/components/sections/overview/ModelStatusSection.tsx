@@ -1,175 +1,28 @@
 import {
   Alert,
-  Button,
   Card,
   Col,
   Row,
-  Space,
   Statistic,
   Table,
   Tag,
   Typography,
 } from "antd";
-import {
-  CloudSyncOutlined,
-  DollarOutlined,
-  DownloadOutlined,
-  GlobalOutlined,
-  SafetyCertificateOutlined,
-} from "@ant-design/icons";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
-import type {
-  DataDeletionRequest,
-  OperationalAlert,
-  WorkspaceSummary,
-} from "../../../types/ops";
+import {
+  modelCostReadiness,
+  modelReadinessRows,
+  type ModelReadinessRow,
+} from "./modelReadiness";
 
 interface OverviewSectionProps {
   model: OpsConsoleModel;
 }
 
 export function ModelStatusSection({ model }: OverviewSectionProps) {
-  const {
-    settings,
-    setSettings,
-    platformRows,
-    setPlatformRows,
-    audits,
-    setAudits,
-    subscription,
-    setSubscription,
-    orders,
-    setOrders,
-    members,
-    setMembers,
-    workspaceRows,
-    setWorkspaceRows,
-    reconciliation,
-    setReconciliation,
-    offers,
-    setOffers,
-    addons,
-    setAddons,
-    coupons,
-    setCoupons,
-    rollouts,
-    setRollouts,
-    modelMarkup,
-    setModelMarkup,
-    modelMarkupReason,
-    setModelMarkupReason,
-    funnel,
-    setFunnel,
-    platformHealth,
-    setPlatformHealth,
-    platformOperations,
-    setPlatformOperations,
-    storeDirectory,
-    setStoreDirectory,
-    dataLifecycle,
-    setDataLifecycle,
-    productionEvidence,
-    setProductionEvidence,
-    alerts,
-    setAlerts,
-    deletionRequests,
-    setDeletionRequests,
-    modelStatus,
-    setModelStatus,
-    rules,
-    setRules,
-    knowledgeRules,
-    setKnowledgeRules,
-    knowledgeAssets,
-    setKnowledgeAssets,
-    learningSuggestions,
-    setLearningSuggestions,
-    competitors,
-    setCompetitors,
-    workspaceMetrics,
-    setWorkspaceMetrics,
-    marketingQueue,
-    setMarketingQueue,
-    queueFilters,
-    setQueueFilters,
-    alertFilters,
-    setAlertFilters,
-    automationPolicy,
-    setAutomationPolicy,
-    automationPolicies,
-    setAutomationPolicies,
-    automationScan,
-    setAutomationScan,
-    automationScope,
-    setAutomationScope,
-    selectedStoreScope,
-    setSelectedStoreScope,
-    opsSession,
-    setOpsSession,
-    loading,
-    setLoading,
-    saving,
-    setSaving,
-    error,
-    setError,
-    memberForm,
-    refundForm,
-    ruleForm,
-    knowledgeRuleForm,
-    knowledgeAssetForm,
-    competitorForm,
-    load,
-    loadRules,
-    enabledCount,
-    sessionRoles,
-    can,
-    canFinance,
-    canPlatformOps,
-    canModelMarkup,
-    canKnowledge,
-    canCompetitor,
-    canRules,
-    canQueue,
-    canMembers,
-    selectedAutomationStore,
-    automationScopeParams,
-    updateRuleStatus,
-    publishRuleDraft,
-    saveCommercial,
-    savePlatform,
-    saveStoreAlias,
-    revokeStore,
-    saveMember,
-    refund,
-    runReconciliation,
-    exportBilling,
-    exportOperations,
-    acknowledgeAlert,
-    confirmLearning,
-    createKnowledgeRule,
-    createKnowledgeAsset,
-    updateKnowledgeAsset,
-    dismissLearning,
-    governUploadedAsset,
-    createCompetitor,
-    cancelDeletion,
-    approveDeletion,
-    saveOffer,
-    saveAddon,
-    saveCoupon,
-    saveRollout,
-    loadModelMarkup,
-    saveModelMarkup,
-    loadAutomationScope,
-    updateAutomation,
-    updateAutomationSync,
-    scanAutomation,
-    assignQueueItem,
-    retryGeneration,
-    acknowledgePublish,
-    createRevision,
-    reviewVisual,
-  } = model;
+  const { modelStatus, modelStatusLoading } = model;
+  const readinessRows = modelReadinessRows(modelStatus);
+  const costReadiness = modelCostReadiness(modelStatus);
   return (
     <>
       <Card
@@ -218,37 +71,65 @@ export function ModelStatusSection({ model }: OverviewSectionProps) {
         <Typography.Paragraph type="secondary">
           用户不能填写或绑定模型
           Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站{" "}
-          {modelStatus?.relay?.host ?? "-"}。模型状态：文案{" "}
-          {modelStatus?.model_readiness?.text?.provider_configured
-            ? "可用"
-            : "阻断"}
-          、图片{" "}
-          {modelStatus?.model_readiness?.image?.provider_configured
-            ? "可用"
-            : "阻断"}
-          、局部编辑{" "}
-          {modelStatus?.model_readiness?.image_edit?.provider_configured
-            ? "可用"
-            : "阻断"}
-          、OCR{" "}
-          {modelStatus?.model_readiness?.ocr?.provider_configured
-            ? "可用"
-            : "人工兜底"}
-          、视频{" "}
-          {modelStatus?.model_readiness?.video?.provider_configured
-            ? "可渲染"
-            : "仅分镜"}
-          。RPM {modelStatus?.quotas.rpm ?? "-"}，TPM{" "}
+          {modelStatus?.relay?.host ?? "-"}。RPM {modelStatus?.quotas.rpm ?? "-"}，TPM{" "}
           {modelStatus?.quotas.tpm ?? "-"}，日成本上限{" "}
           {modelStatus?.quotas.daily_cny_limit ?? "-"} 元。发布元数据{" "}
           {modelStatus?.release_metadata_ready ? "已就绪" : "未就绪"}。
         </Typography.Paragraph>
+        <Table<ModelReadinessRow>
+          rowKey="key"
+          size="small"
+          pagination={false}
+          dataSource={readinessRows}
+          columns={[
+            { title: "能力", dataIndex: "label" },
+            {
+              title: "Provider 配置",
+              dataIndex: "providerConfigured",
+              render: (configured: boolean) => (
+                <Tag color={configured ? "blue" : "default"}>
+                  {configured ? "已配置" : "未配置"}
+                </Tag>
+              ),
+            },
+            {
+              title: "最终 readiness",
+              dataIndex: "ready",
+              render: (ready: boolean) => (
+                <Tag color={ready ? "green" : "red"}>
+                  {ready ? "可用" : "阻断"}
+                </Tag>
+              ),
+            },
+            {
+              title: "阻断原因",
+              dataIndex: "reasons",
+              render: (reasons: string[], row: ModelReadinessRow) =>
+                row.ready
+                  ? "—"
+                  : reasons.join("；") || "尚未通过最终运行与商业门禁",
+            },
+          ]}
+        />
+        {modelStatus && (
+          <Alert
+            type={costReadiness.ready ? "success" : "error"}
+            showIcon
+            title={`成本与计费组：${costReadiness.ready ? "已就绪" : "阻断"}`}
+            description={
+              costReadiness.ready
+                ? "成本上限、实际成本证据和当前计费组均已通过门禁。"
+                : costReadiness.blockers.join("；") ||
+                  "实际成本证据、价格快照或当前计费组尚未通过验证。"
+            }
+          />
+        )}
         {!modelStatus ? (
           <Alert
             type="info"
             showIcon
-            title={model.modelStatusLoading ? "正在加载平台模型状态" : "平台模型状态不可用"}
-            description={model.modelStatusLoading ? "请稍候，正在读取中转站与成本门禁。" : "请检查页面顶部错误并重试，当前状态不能视为配置完成。"}
+            title={modelStatusLoading ? "正在加载平台模型状态" : "平台模型状态不可用"}
+            description={modelStatusLoading ? "请稍候，正在读取中转站与成本门禁。" : "请检查页面顶部错误并重试，当前状态不能视为配置完成。"}
           />
         ) : modelStatus.next_actions.length ? (
           <Alert

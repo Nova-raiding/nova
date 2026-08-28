@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Form } from "antd";
-import { describeOpsError, managedOpsSession, rpc } from "../api/opsClient.js";
+import { describeOpsError, managedOpsSession, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type {
   Platform,
   Settings,
@@ -45,6 +45,8 @@ import type {
   Rpc,
   OpsRequestError,
 } from "../types/ops.js";
+import { canViewModelMarkup } from "../components/finance/modelMarkupVisibility.js";
+import { financePermissions } from "../components/finance/financePermissions.js";
 
 export function useOpsConsoleModel() {
   const { message } = AntApp.useApp();
@@ -135,6 +137,7 @@ export function useOpsConsoleModel() {
   const [opsSession, setOpsSession] = useState<OpsSession>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [memberForm] = Form.useForm();
   const [refundForm] = Form.useForm();
@@ -374,15 +377,16 @@ export function useOpsConsoleModel() {
       message.error(describeOpsError(cause));
     }
   };
+  const opsRoleKey = opsSession?.roles.join("|") ?? "";
   useEffect(() => {
     void load();
     void loadRules();
-    if (!managedOpsSession || opsSession?.roles.includes("platform_ops")) {
+    if (canViewModelMarkup(opsSession?.roles ?? [])) {
       void rpc("ops.commercial.model-markup.get")
         .then((value: unknown) => setModelMarkup(value as ModelMarkupPolicy))
         .catch((cause: unknown) => setError(describeOpsError(cause)));
     }
-  }, [managedOpsSession, opsSession?.roles]);
+  }, [managedOpsSession, opsRoleKey]);
   const enabledCount = useMemo(
     () => platformRows.filter((row) => row.enabled).length,
     [platformRows],
@@ -392,14 +396,18 @@ export function useOpsConsoleModel() {
   const can = (allowed: readonly string[]) =>
     !managedOpsSession ||
     sessionRoles.some((role: string) => allowed.includes(role));
-  const canFinance = can(["workspace_owner", "merchant_admin", "finance"]);
+  const financeAccess = financePermissions(sessionRoles, managedOpsSession);
+  const canFinance = financeAccess.refund;
+  const canPaymentReconciliation = financeAccess.paymentReconciliation;
+  const canModelSettlement = financeAccess.modelSettlement;
   const canPlatformOps = can([
     "workspace_owner",
     "merchant_admin",
     "platform_ops",
   ]);
+  const canGlobalCommercial = !managedOpsSession || sessionRoles.includes("platform_ops");
   const canUserGovernance = !managedOpsSession || sessionRoles.includes("platform_ops");
-  const canModelMarkup = can(["platform_ops"]);
+  const canModelMarkup = canViewModelMarkup(sessionRoles);
   const canKnowledge = can([
     "workspace_owner",
     "merchant_admin",
@@ -422,6 +430,11 @@ export function useOpsConsoleModel() {
     "platform_ops",
   ]);
   const canMembers = can(["workspace_owner", "merchant_admin", "platform_ops"]);
+  useEffect(() => {
+    if (canModelMarkup) return;
+    setModelMarkup(undefined);
+    setModelMarkupReason("");
+  }, [canModelMarkup]);
   const selectedAutomationStore = storeDirectory.find(
     (row) => `${row.platform}:${row.accountId}` === automationScope,
   );
@@ -701,6 +714,15 @@ export function useOpsConsoleModel() {
       return true;
     } catch (cause) { message.error(describeOpsError(cause)); return false; }
   };
+  const changeWorkspaceStatus = async (targetWorkspaceId: string, target: "active" | "disabled", reason: string) => {
+    if (!canUserGovernance) { message.error("当前会话缺少跨租户治理权限"); return false; }
+    try {
+      await rpcForWorkspace(targetWorkspaceId, target === "disabled" ? "workspace.deactivate" : "workspace.activate", target === "disabled" ? { reason } : {});
+      message.success(target === "disabled" ? "租户已停用，业务数据仍保留" : "租户已恢复");
+      await load();
+      return true;
+    } catch (cause) { message.error(describeOpsError(cause)); return false; }
+  };
   const loadUserDetail = async (externalSubject: string, identityId?: string) => {
     if (!canUserGovernance) {
       message.error("当前会话缺少平台用户治理权限");
@@ -722,10 +744,12 @@ export function useOpsConsoleModel() {
     }
   };
   const refund = async (values: { orderId: string; reason: string }) => {
-    if (!canFinance) {
+    if (!canPaymentReconciliation) {
       message.error("当前会话为只读，缺少账务权限");
       return;
     }
+    if (!window.confirm(`确认对订单 ${values.orderId} 创建退款？\n\n原因：${values.reason}\n\n退款会产生真实账务流水，提交后不能通过此页面撤销。`)) return;
+    setRefundSubmitting(true);
     try {
       await rpc("billing.refund", {
         order_id: values.orderId,
@@ -736,10 +760,12 @@ export function useOpsConsoleModel() {
       await load();
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "退款失败");
+    } finally {
+      setRefundSubmitting(false);
     }
   };
   const runReconciliation = async () => {
-    if (!canFinance) {
+    if (!canModelSettlement) {
       message.error("当前会话为只读，缺少账务权限");
       return;
     }
@@ -779,12 +805,12 @@ export function useOpsConsoleModel() {
     }
   };
   const retryModelUsageSettlement = async (record: ModelUsageSettlementRecord) => {
-    if (!canFinance || record.revision === undefined) throw new Error(record.revision === undefined ? "缺少记录 revision，请刷新后重试" : "当前会话缺少模型结算权限");
+    if (!canModelSettlement || record.revision === undefined) throw new Error(record.revision === undefined ? "缺少记录 revision，请刷新后重试" : "当前会话缺少模型结算权限");
     await rpc("billing.model-usage.resolve", { usage_id: record.id, revision: String(record.revision), decision: "retry", reason: "运营后台人工触发幂等重试" });
     await load();
   };
   const waiveModelUsageSettlement = async (record: ModelUsageSettlementRecord) => {
-    if (!canFinance || record.revision === undefined) throw new Error(record.revision === undefined ? "缺少记录 revision，请刷新后重试" : "当前会话缺少模型结算权限");
+    if (!canModelSettlement || record.revision === undefined) throw new Error(record.revision === undefined ? "缺少记录 revision，请刷新后重试" : "当前会话缺少模型结算权限");
     await rpc("billing.model-usage.resolve", { usage_id: record.id, revision: String(record.revision), decision: "waive", reason: "运营人员已核对成本、扣款与审计证据并确认豁免" });
     await load();
   };
@@ -1114,7 +1140,7 @@ export function useOpsConsoleModel() {
     }
   };
   const saveOffer = async (row: Offer) => {
-    if (!canPlatformOps) {
+    if (!canGlobalCommercial) {
       message.error("当前会话为只读，缺少商业配置权限");
       return;
     }
@@ -1142,7 +1168,7 @@ export function useOpsConsoleModel() {
     }
   };
   const saveAddon = async (row: Addon) => {
-    if (!canPlatformOps) {
+    if (!canGlobalCommercial) {
       message.error("当前会话为只读，缺少商业配置权限");
       return;
     }
@@ -1169,7 +1195,7 @@ export function useOpsConsoleModel() {
     }
   };
   const saveCoupon = async (row: Coupon) => {
-    if (!canPlatformOps) {
+    if (!canGlobalCommercial) {
       message.error("当前会话为只读，缺少商业配置权限");
       return;
     }
@@ -1202,7 +1228,7 @@ export function useOpsConsoleModel() {
     try {
       const result = await rpc("ops.commercial.rollout.upsert", {
         offer_code: row.offerCode,
-        workspace_id: row.workspaceId ?? "",
+        ...(row.workspaceId ? { target_workspace_id: row.workspaceId } : {}),
         percentage: String(row.percentage),
         enabled: String(row.enabled),
         reason: row.reason || "运营台灰度调整",
@@ -1536,6 +1562,7 @@ export function useOpsConsoleModel() {
     setLoading,
     saving,
     setSaving,
+    refundSubmitting,
     error,
     setError,
     memberForm,
@@ -1550,7 +1577,10 @@ export function useOpsConsoleModel() {
     sessionRoles,
     can,
     canFinance,
+    canPaymentReconciliation,
+    canModelSettlement,
     canPlatformOps,
+    canGlobalCommercial,
     canUserGovernance,
     canModelMarkup,
     canKnowledge,
@@ -1574,6 +1604,7 @@ export function useOpsConsoleModel() {
     changeIdentityAccess,
     transitionIdentityRisk,
     revokeIdentitySession,
+    changeWorkspaceStatus,
     refund,
     runReconciliation,
     runModelUsageReconciliation,

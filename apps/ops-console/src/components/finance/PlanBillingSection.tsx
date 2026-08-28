@@ -15,11 +15,15 @@ export function PlanBillingSection({ model }: PlanBillingSectionProps) {
     <Card title="套餐、加购与增长规则" extra={<Tag color="blue">运营目录</Tag>}>
       <Tabs
         items={[
-          {
-            key: "model-markup",
-            label: "模型计费",
-            children: <ModelMarkupPanel model={model} />,
-          },
+          ...(model.canModelMarkup
+            ? [
+                {
+                  key: "model-markup",
+                  label: "模型计费",
+                  children: <ModelMarkupPanel model={model} />,
+                },
+              ]
+            : []),
           {
             key: "offers",
             label: "套餐目录",

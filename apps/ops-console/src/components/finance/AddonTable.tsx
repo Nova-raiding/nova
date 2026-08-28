@@ -7,7 +7,7 @@ interface AddonTableProps {
 }
 
 export function AddonTable({ model }: AddonTableProps) {
-  const { addons, setAddons, canPlatformOps, saveAddon } = model;
+  const { addons, setAddons, canGlobalCommercial, saveAddon } = model;
 
   return (
     <Table
@@ -20,7 +20,7 @@ export function AddonTable({ model }: AddonTableProps) {
           title: "名称",
           render: (_: unknown, row: Addon) => (
             <Input
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               value={row.name}
               onChange={(event) =>
                 setAddons((current) =>
@@ -42,7 +42,7 @@ export function AddonTable({ model }: AddonTableProps) {
           title: "价格（元）",
           render: (_: unknown, row: Addon) => (
             <InputNumber
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               min={0}
               precision={2}
               value={row.priceCny}
@@ -65,7 +65,7 @@ export function AddonTable({ model }: AddonTableProps) {
           title: "数量",
           render: (_: unknown, row: Addon) => (
             <InputNumber
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               min={0}
               value={row.units}
               onChange={(value) =>
@@ -87,7 +87,7 @@ export function AddonTable({ model }: AddonTableProps) {
           title: "启用",
           render: (_: unknown, row: Addon) => (
             <Switch
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               checked={row.active}
               onChange={(active) =>
                 setAddons((current) =>
@@ -103,7 +103,7 @@ export function AddonTable({ model }: AddonTableProps) {
           title: "操作",
           render: (_: unknown, row: Addon) => (
             <Button
-              disabled={!canPlatformOps}
+              disabled={!canGlobalCommercial}
               type="link"
               onClick={() => void saveAddon(row)}
             >

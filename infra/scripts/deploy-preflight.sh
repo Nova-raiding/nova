@@ -18,10 +18,15 @@ sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//' "$config_path" > "$filtered_con
 : "${CAPABILITY_EVIDENCE_PATH:?CAPABILITY_EVIDENCE_PATH is required}"
 : "${CAPACITY_REPORT_PATH:?CAPACITY_REPORT_PATH is required}"
 : "${MODEL_RELAY_EVIDENCE_PATH:?MODEL_RELAY_EVIDENCE_PATH is required}"
+: "${PAYMENT_EVIDENCE_PATH:?PAYMENT_EVIDENCE_PATH is required}"
+: "${RESTORE_EVIDENCE_PATH:?RESTORE_EVIDENCE_PATH is required}"
+: "${EVIDENCE_ATTESTATION_KEY:?EVIDENCE_ATTESTATION_KEY is required}"
 : "${RENDERED_MANIFEST_PATH:?RENDERED_MANIFEST_PATH is required (rendered Kubernetes manifest)}"
 [ -f "$CAPABILITY_EVIDENCE_PATH" ] || { echo "capability evidence file not found: $CAPABILITY_EVIDENCE_PATH" >&2; exit 1; }
 [ -f "$CAPACITY_REPORT_PATH" ] || { echo "capacity report not found: $CAPACITY_REPORT_PATH" >&2; exit 1; }
 [ -f "$MODEL_RELAY_EVIDENCE_PATH" ] || { echo "model relay evidence file not found: $MODEL_RELAY_EVIDENCE_PATH" >&2; exit 1; }
+[ -f "$PAYMENT_EVIDENCE_PATH" ] || { echo "payment evidence file not found: $PAYMENT_EVIDENCE_PATH" >&2; exit 1; }
+[ -f "$RESTORE_EVIDENCE_PATH" ] || { echo "restore evidence file not found: $RESTORE_EVIDENCE_PATH" >&2; exit 1; }
 
 case "$IMAGE_DIGEST" in
   sha256:*) ;;
@@ -69,4 +74,6 @@ npx --no-install tsx "$(dirname "$0")/../../tests/capacity-evidence-gate.ts" --f
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 [ -n "$model_relay_url" ] || { echo "model_relay_base_url is required for relay evidence binding" >&2; exit 1; }
 npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url"
-echo "deploy preflight passed: release_id=$RELEASE_ID image_digest=$IMAGE_DIGEST profile=$profile secret_provider=$SECRET_PROVIDER capability_evidence=$CAPABILITY_EVIDENCE_PATH capacity_report=$CAPACITY_REPORT_PATH model_relay_evidence=$MODEL_RELAY_EVIDENCE_PATH"
+npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind payment --file "$PAYMENT_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-digest "$IMAGE_DIGEST"
+npx --no-install tsx "$(dirname "$0")/../../tests/production-evidence-gate.ts" --kind restore --file "$RESTORE_EVIDENCE_PATH" --release-id "$RELEASE_ID" --image-digest "$IMAGE_DIGEST"
+echo "deploy preflight passed: release_id=$RELEASE_ID image_digest=$IMAGE_DIGEST profile=$profile secret_provider=$SECRET_PROVIDER capability_evidence=$CAPABILITY_EVIDENCE_PATH capacity_report=$CAPACITY_REPORT_PATH model_relay_evidence=$MODEL_RELAY_EVIDENCE_PATH payment_evidence=$PAYMENT_EVIDENCE_PATH restore_evidence=$RESTORE_EVIDENCE_PATH"

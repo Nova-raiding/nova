@@ -77,7 +77,8 @@ async function readBoundedResponseText(
   return chunks.join("");
 }
 
-export async function rpc(
+async function rpcAtWorkspace(
+  workspaceOverride: string | undefined,
   method: string,
   params: Record<string, string> = {},
 ): Promise<Rpc["result"]> {
@@ -87,10 +88,10 @@ export async function rpc(
     error.code = "API_NOT_CONFIGURED";
     throw error;
   }
-  const workspaceId =
-    (managedOpsSession
+  const workspaceId = workspaceOverride ??
+    ((managedOpsSession
       ? sessionStorage.getItem("ops_workspace_id")
-      : localStorage.getItem("ops_workspace_id")) ?? "workspace_demo";
+      : localStorage.getItem("ops_workspace_id")) ?? "workspace_demo");
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-workspace-id": workspaceId,
@@ -151,4 +152,19 @@ export async function rpc(
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+export async function rpc(
+  method: string,
+  params: Record<string, string> = {},
+): Promise<Rpc["result"]> {
+  return rpcAtWorkspace(undefined, method, params);
+}
+
+export async function rpcForWorkspace(
+  workspaceId: string,
+  method: string,
+  params: Record<string, string> = {},
+): Promise<Rpc["result"]> {
+  return rpcAtWorkspace(workspaceId, method, { workspace_id: workspaceId, ...params });
 }

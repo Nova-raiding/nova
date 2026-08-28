@@ -7,6 +7,13 @@ type UserFilters = { query?: string; status?: string; workspaceId?: string };
 const roleLabels: Record<string, string> = { workspace_owner: "工作区所有者", merchant_admin: "商家管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
 const memberStatusLabels: Record<string, string> = { active: "已激活", invited: "待激活", suspended: "已停用" };
 const workspaceStatusLabels: Record<string, string> = { active: "正常", disabled: "已停用" };
+const lifecycleEventLabels: Record<string, string> = {
+  "identity.observed": "身份首次识别",
+  "identity.suspended": "全局停用身份",
+  "identity.active": "恢复平台身份",
+  "identity.risk.transition": "调整风险策略",
+  "session.revoked": "撤销认证会话",
+};
 const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 
 export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
@@ -99,13 +106,21 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { key: "risk", label: "风险策略", children: model.userDetail.identity.riskDecision ? <Tag color={model.userDetail.identity.riskDecision === "allow" ? "green" : model.userDetail.identity.riskDecision === "step_up" ? "gold" : "red"}>{model.userDetail.identity.riskLevel} / {model.userDetail.identity.riskDecision}</Tag> : "—" },
           ]} />
           {model.userDetail.identity.id ? <Alert showIcon type="warning" title="平台身份操作会影响所有租户" description={<Space wrap><Button danger={model.userDetail.identity.accessStatus === "active"} onClick={() => setIdentityAction(model.userDetail!.identity.accessStatus === "active" ? "suspended" : "active")}>{model.userDetail.identity.accessStatus === "active" ? "全局停用并撤销会话" : "恢复平台身份"}</Button><Button onClick={() => { setRiskLevel(model.userDetail!.identity.riskLevel ?? "low"); setRiskDecision(model.userDetail!.identity.riskDecision ?? "allow"); }}>调整风险策略</Button></Space>} /> : <Alert showIcon type="info" title="该成员尚未绑定持久平台身份" description="用户下次通过严格认证登录后，系统会绑定身份和会话；当前只能治理单个工作区成员关系。" />}
-          {model.userDetail.sessions.length > 0 && <div><Typography.Title level={5}>认证会话（已脱敏）</Typography.Title><Table size="small" rowKey="id" pagination={false} scroll={{ x: 760 }} dataSource={model.userDetail.sessions} columns={[
+          <div><Typography.Title level={5}>认证会话（已脱敏）</Typography.Title><Table size="small" rowKey="id" pagination={false} locale={{ emptyText: "暂无认证会话；用户完成严格认证后会在此留痕" }} scroll={{ x: 1080 }} dataSource={model.userDetail.sessions} columns={[
             { title: "类型", dataIndex: "sessionKind", width: 100 },
-            { title: "状态", dataIndex: "status", width: 100, render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{value}</Tag> },
+            { title: "状态", dataIndex: "status", width: 100, render: (value: string) => <Tag color={value === "active" ? "green" : value === "revoked" ? "red" : "default"}>{({ active: "有效", revoked: "已撤销", expired: "已过期" } as Record<string, string>)[value] ?? value}</Tag> },
             { title: "MFA", dataIndex: "mfaVerified", width: 80, render: (value: boolean) => value ? "已验证" : "否" },
+            { title: "签发时间", dataIndex: "issuedAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
+            { title: "过期时间", dataIndex: "expiresAt", width: 180, render: (value?: string) => value ? dateTimeFormatter.format(new Date(value)) : "未提供" },
             { title: "最后访问", dataIndex: "lastSeenAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
             { title: "操作", key: "action", width: 110, render: (_: unknown, row: { id: string; revision: number; status: string }) => <Button danger size="small" disabled={row.status !== "active"} onClick={() => setSessionTarget({ id: row.id, revision: row.revision })}>撤销</Button> },
-          ]} /></div>}
+          ]} /></div>
+          <div><Typography.Title level={5}>平台身份生命周期</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 8 }} locale={{ emptyText: "暂无平台身份生命周期事件" }} scroll={{ x: 780 }} dataSource={model.userDetail.lifecycleEvents} columns={[
+            { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
+            { title: "事件", dataIndex: "eventType", width: 180, render: (value: string) => lifecycleEventLabels[value] ?? value },
+            { title: "操作者", dataIndex: "actorId", width: 160, render: (value: string) => value || "系统" },
+            { title: "原因与证据", dataIndex: "reason", width: 260, render: (value: string) => value || "系统观测" },
+          ]} /></div>
           <div><Typography.Title level={5}>所属租户与角色</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
             { title: "租户", dataIndex: "workspaceId", width: 180 },
             { title: "角色", dataIndex: "role", width: 140, render: (value: string) => roleLabels[value] ?? value },

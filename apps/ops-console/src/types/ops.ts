@@ -201,6 +201,8 @@ export type ModelStatus = {
     tpm: number | null;
     daily_cny_limit: string | null;
   };
+  cost_control_ready?: boolean;
+  cost_evidence_ready?: boolean;
   release_metadata_ready?: boolean;
   release_metadata_missing?: string[];
   next_actions: string[];

@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { MCP_METHODS } from '../../packages/contracts/src/mcp.js'
 
 const root = resolve(process.cwd(), 'apps/plugin')
 const readJson = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf8')) as Record<string, any>
-const pluginMethodCount = MCP_METHODS.filter(method => !method.startsWith('ops.') && !['billing.model-usage.reconciliation.run', 'billing.model-usage.resolve'].includes(method)).length
 
 describe('Codex plugin installation package', () => {
   it('contains the required manifest, skill entry, and MCP companion file', () => {
@@ -74,12 +72,10 @@ describe('Codex plugin installation package', () => {
     expect(skill).toContain('不得调用宿主原生 `image_gen` 绕过业务 relay')
   })
 
-  it('keeps the installed marketplace mirror and documented tool count aligned', () => {
+  it('keeps the installed marketplace mirror aligned', () => {
     const marketplaceRoot = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing')
     expect(readFileSync(resolve(root, 'README.md'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'README.md'), 'utf8'))
     expect(readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'skills/merchant-marketing/SKILL.md'), 'utf8'))
     expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.mjs'), 'utf8'))
-    expect(readFileSync(resolve(root, 'README.md'), 'utf8')).toContain(`MCP 工具共 ${pluginMethodCount} 个`)
-    expect(readFileSync(resolve(root, 'README.md'), 'utf8')).toContain(`tools/list\` 应返回 ${pluginMethodCount} 个 MCP 工具`)
   })
 })

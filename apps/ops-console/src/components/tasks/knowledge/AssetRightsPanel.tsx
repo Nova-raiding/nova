@@ -21,13 +21,19 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
         form={knowledgeAssetForm}
         layout="inline"
         onFinish={createKnowledgeAsset}
+        onFinishFailed={({ errorFields }) => {
+          const first = errorFields[0]?.name;
+          if (first) knowledgeAssetForm.scrollToField(first, { block: "center", focus: true });
+        }}
         disabled={!canKnowledge}
         style={{ marginBottom: 16 }}
+        aria-label="录入知识资产"
       >
         <Form.Item
           name="kind"
+          label="资产类型"
           initialValue="brand"
-          rules={[{ required: true }]}
+          rules={[{ required: true, message: "请选择资产类型" }]}
         >
           <Select
             style={{ width: 120 }}
@@ -37,13 +43,13 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
             ]}
           />
         </Form.Item>
-        <Form.Item name="name" rules={[{ required: true }]}>
+        <Form.Item name="name" label="资产名称" rules={[{ required: true, message: "请输入资产名称" }]}> 
           <Input placeholder="资产名称" />
         </Form.Item>
-        <Form.Item name="contentJson" rules={[{ required: true }]}>
+        <Form.Item name="contentJson" label="资产内容" rules={[{ required: true, message: "请输入资产内容 JSON" }]}> 
           <Input placeholder="内容 JSON" />
         </Form.Item>
-        <Form.Item name="source">
+        <Form.Item name="source" label="来源">
           <Input placeholder="来源" />
         </Form.Item>
         <Button disabled={!canKnowledge} type="primary" htmlType="submit">
@@ -54,6 +60,8 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
         rowKey="id"
         pagination={{ pageSize: 6 }}
         dataSource={knowledgeAssets}
+        locale={{ emptyText: "尚无知识资产；录入后仍需完成确认与版权状态审核" }}
+        scroll={{ x: 760 }}
         columns={[
           { title: "名称", dataIndex: "name" },
           { title: "类型", dataIndex: "kind" },

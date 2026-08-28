@@ -513,6 +513,13 @@ export function csvCell(value: string) {
   return `"${safe.replace(/"/gu, '""')}"`
 }
 
+export async function readWorkspaceStatusInTransaction(pool: SqlPool, workspaceId: string): Promise<'active' | 'disabled'> {
+  return withWorkspaceTransaction(pool, workspaceId, async client => {
+    const row = await client.query<{ status: 'active' | 'disabled' }>('SELECT status FROM workspaces WHERE id = $1', [workspaceId])
+    return row.rows[0]?.status ?? 'active'
+  })
+}
+
 function parseCnyToFen(value: unknown) {
   if (typeof value !== 'string' || !/^\d{1,8}(?:\.\d{1,2})?$/u.test(value.trim())) throw new DomainError('BILLING_AMOUNT_INVALID', '充值金额必须是合法的人民币金额', 400)
   const [yuan, fraction = ''] = value.trim().split('.')
@@ -1204,12 +1211,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     }
     const getWorkspaceStatus = async (workspaceId: string): Promise<'active' | 'disabled'> => {
       await ensureWorkspace(workspaceId)
-      const client = await pool.connect()
-      try {
-        await client.query(`SELECT set_config('app.workspace_id', $1, true)`, [workspaceId])
-        const row = await client.query<{ status: 'active' | 'disabled' }>('SELECT status FROM workspaces WHERE id = $1', [workspaceId])
-        return row.rows[0]?.status ?? 'active'
-      } finally { client.release() }
+      return readWorkspaceStatusInTransaction(sqlPool, workspaceId)
     }
     const setWorkspaceStatus = async (workspaceId: string, status: 'active' | 'disabled'): Promise<void> => {
       await ensureWorkspace(workspaceId)
@@ -3388,6 +3390,22 @@ function headerRequired(req: IncomingMessage, name: string): string {
   return value
 }
 
+function isWorkerRoute(method: string | undefined, path: string): boolean {
+  if (method === 'POST') {
+    return path === '/v1/internal/automation/tick'
+      || path === '/v1/ops/data-deletion/complete'
+      || path === '/v1/internal/storage/orphans/cleanup'
+      || /^\/v1\/sync-jobs\/[^/]+\/(?:progress|result)$/.test(path)
+      || /^\/v1\/generation-jobs\/[^/]+\/(?:defer|result)$/.test(path)
+      || /^\/v1\/publish-jobs\/[^/]+\/observation$/.test(path)
+  }
+  if (method === 'GET') {
+    return /^\/v1\/sync-jobs\/[^/]+\/execution-context$/.test(path)
+      || /^\/v1\/publish-jobs\/[^/]+\/(?:execution-check|media)$/.test(path)
+  }
+  return false
+}
+
 function requireWorkerAuthorization(req: IncomingMessage) {
   if (!requiresStrictAuth()) return
   const expected = process.env.WORKER_API_TOKEN?.trim()
@@ -3674,7 +3692,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   const request = input as unknown as McpRequest
   const method = typeof request.method === 'string' ? request.method : ''
   const params = paramsOf(input)
-  const isPlatformWideUserGovernance = method === 'ops.users.list' || method === 'ops.user.detail' || method === 'ops.user.suspend' || method === 'ops.user.activate' || method === 'ops.user.risk.transition' || method === 'ops.user.session.revoke'
+  const isPlatformWideUserGovernance = method === 'ops.workspaces.list' || method === 'ops.users.list' || method === 'ops.user.detail' || method === 'ops.user.suspend' || method === 'ops.user.activate' || method === 'ops.user.risk.transition' || method === 'ops.user.session.revoke'
   let workspaceId = method === 'workspace.bootstrap' ? '' : resolveWorkspace(req, isPlatformWideUserGovernance ? undefined : params.workspace_id)
   if (isPlatformWideUserGovernance && typeof params.workspace_id === 'string' && params.workspace_id.trim()) knownWorkspaces.add(params.workspace_id.trim())
   const id = request.id ?? null
@@ -4159,7 +4177,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'finance', 'platform_ops'])
       const principal = requestPrincipals.get(req)
       const granted = requiresStrictAuth() ? (principal?.workspaces.filter(id => id !== '*') ?? []) : [...knownWorkspaces]
-      const workspaceIds = granted.length ? [...new Set(granted)] : [workspaceId]
+      const platformWorkspaceIds = isPlatformOperations(req) && persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : []
+      const platformScopeIds = isPlatformOperations(req) ? [...new Set([...platformWorkspaceIds, ...knownWorkspaces])] : []
+      const workspaceIds = platformScopeIds.length ? platformScopeIds : granted.length ? [...new Set(granted)] : [workspaceId]
       const summaries = await Promise.all(workspaceIds.map(async id => { const [status, settings, usage, subscription, members] = await Promise.all([getWorkspaceStatus(id), (persistence.commercial ?? memoryCommercial).getSettings(id), (persistence.usage ?? memoryUsage).get(id), (persistence.subscriptions ?? memorySubscriptions).get(id), (persistence.members ?? memoryMembers).list(id)]); return { workspaceId: id, status, planName: settings.planName, monthlyPriceCny: settings.monthlyPriceCny, usedTasks: usage.usedTasks, includedTasks: usage.includedTasks, subscriptionStatus: subscription.status, memberCount: members.length } }))
       return result(summaries)
     }
@@ -4235,7 +4255,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'])
       return result(await (persistence.commercialExtensions ?? memoryCommercialExtensions).listOffers())
     case 'ops.commercial.offer.upsert': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['platform_ops'])
       const price = Number(required(params, 'price_cny'))
       const stores = Number(required(params, 'included_stores'))
       const tasks = Number(required(params, 'included_tasks'))
@@ -4248,7 +4268,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'])
       return result(await (persistence.commercialExtensions ?? memoryCommercialExtensions).listAddons())
     case 'ops.commercial.addon.upsert': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['platform_ops'])
       const price = Number(required(params, 'price_cny')); const units = Number(required(params, 'units'))
       if (!Number.isFinite(price) || price < 0 || !/^\d+(?:\.\d{1,2})?$/u.test(required(params, 'price_cny')) || !Number.isInteger(units) || units < 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '加购价格和数量参数无效', 400)
       const item = await (persistence.commercialExtensions ?? memoryCommercialExtensions).upsertAddon({ code: required(params, 'code'), name: required(params, 'name'), kind: required(params, 'kind') as 'platform' | 'image_generation' | 'bulk_sync', priceCny: Number(price.toFixed(2)), units, active: params.active !== 'false', updatedBy: actorId, expectedRevision: params.expected_revision ? Number(params.expected_revision) : undefined })
@@ -4258,7 +4278,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'])
       return result(await (persistence.commercialExtensions ?? memoryCommercialExtensions).listCoupons())
     case 'ops.commercial.coupon.upsert': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['platform_ops'])
       const value = Number(required(params, 'discount_value')); const max = Number(required(params, 'max_redemptions')); const type = required(params, 'discount_type') as 'fixed_cny' | 'percent'
       if (!Number.isFinite(value) || value < 0 || !/^\d+(?:\.\d{1,2})?$/u.test(required(params, 'discount_value')) || !Number.isInteger(max) || max < 0 || (type === 'percent' && value > 100)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '优惠券折扣参数无效', 400)
       const item = await (persistence.commercialExtensions ?? memoryCommercialExtensions).upsertCoupon({ code: required(params, 'code'), discountType: type, discountValue: Number(value.toFixed(2)), maxRedemptions: max, active: params.active !== 'false', validFrom: typeof params.valid_from === 'string' ? params.valid_from : new Date().toISOString(), validTo: typeof params.valid_to === 'string' ? params.valid_to : undefined, updatedBy: actorId, expectedRevision: params.expected_revision ? Number(params.expected_revision) : undefined })
@@ -4437,7 +4457,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'ops.commercial.rollout.upsert': {
       const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'platform_ops']); const percentage = Number(required(params, 'percentage'))
       if (!Number.isInteger(percentage) || percentage < 0 || percentage > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '灰度百分比必须在 0 到 100 之间', 400)
-      const targetWorkspaceId = scopeCommercialRolloutTarget(req, workspaceId, typeof params.workspace_id === 'string' ? params.workspace_id : undefined)
+      const requestedTarget = Object.hasOwn(params, 'target_workspace_id')
+        ? (typeof params.target_workspace_id === 'string' ? params.target_workspace_id : undefined)
+        : (isPlatformOperations(req) ? undefined : workspaceId)
+      const targetWorkspaceId = scopeCommercialRolloutTarget(req, workspaceId, requestedTarget)
       const item = await (persistence.commercialExtensions ?? memoryCommercialExtensions).upsertRollout({ offerCode: required(params, 'offer_code'), ...(targetWorkspaceId ? { workspaceId: targetWorkspaceId } : {}), percentage, enabled: params.enabled === 'true', reason: required(params, 'reason'), updatedBy: actorId, expectedRevision: params.expected_revision ? Number(params.expected_revision) : undefined })
       await recordOperationAudit({ workspaceId, actorId, action: 'commercial.rollout.upsert', resourceType: 'commercial_rollout', resourceId: item.id, before: {}, after: item as unknown as Record<string, unknown>, reason: item.reason }); return result(item)
     }
@@ -4530,8 +4553,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const alerts = await (persistence.alerts ?? memoryAlerts).list(workspaceId, undefined, limit)
       const rows = [...audits.map(item => ({ recordType: 'operation', id: item.id, createdAt: item.createdAt, actorId: item.actorId, action: item.action, resourceType: item.resourceType, resourceId: item.resourceId, status: '', reason: item.reason })), ...alerts.map(item => ({ recordType: 'alert', id: item.id, createdAt: item.updatedAt, actorId: item.acknowledgedBy ?? '', action: item.code, resourceType: item.entityType, resourceId: item.entityId, status: item.status, reason: item.acknowledgementReason ?? item.nextAction }))].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, limit)
       if (params.format === 'json') return result({ filename: `operations-${workspaceId}.json`, content: JSON.stringify(rows) })
-      const escapeCsv = (value: string) => `"${value.replaceAll('"', '""')}"`
-      const content = ['record_type,id,created_at,actor_id,action,resource_type,resource_id,status,reason', ...rows.map(row => [row.recordType, row.id, row.createdAt, row.actorId, row.action, row.resourceType, row.resourceId, row.status, row.reason].map(value => escapeCsv(String(value))).join(','))].join('\n')
+      const content = ['record_type,id,created_at,actor_id,action,resource_type,resource_id,status,reason', ...rows.map(row => [row.recordType, row.id, row.createdAt, row.actorId, row.action, row.resourceType, row.resourceId, row.status, row.reason].map(value => csvCell(String(value))).join(','))].join('\n')
       return result({ filename: `operations-${workspaceId}.csv`, content })
     }
     case 'ops.data.delete.list': {
@@ -7035,12 +7057,14 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   const isOAuthCallback = /^\/v1\/oauth\/callback\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)$/.test(path)
   const paymentCallbackMatch = path.match(/^\/v1\/(billing|subscriptions)\/callback\/(alipay|wechat)$/)
   const isWorkerAutomationTick = req.method === 'POST' && path === '/v1/internal/automation/tick'
+  const workerRoute = isWorkerRoute(req.method, path)
   // Health probes are infrastructure-scoped and intentionally unauthenticated;
   // all merchant and MCP routes still pass the production identity boundary.
   // OAuth callbacks are the exception: the platform redirects a browser and
   // cannot attach the merchant API Bearer token. The one-time state and PKCE
   // verifier are the callback's authentication boundary.
-  if (path !== '/healthz' && !isOAuthCallback && !paymentCallbackMatch && !isWorkerAutomationTick) await authenticate(req)
+  if (workerRoute) requireWorkerAuthorization(req)
+  else if (path !== '/healthz' && !isOAuthCallback && !paymentCallbackMatch) await authenticate(req)
   const hydrateRequestWorkspace = header(req, 'x-workspace-id')?.trim() || (!requiresStrictAuth() ? 'ws_demo' : undefined)
   if (hydrateRequestWorkspace && path !== '/healthz' && !isOAuthCallback && !paymentCallbackMatch && !isWorkerAutomationTick) await hydrateWorkspace(hydrateRequestWorkspace)
   // Health probes are infrastructure-scoped, not merchant-scoped. Requiring
@@ -7061,7 +7085,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   } catch {
     return fail(res, 503, 'system', ERROR_CODES.DATABASE_UNAVAILABLE, '数据库未就绪', req)
   }
-  if (hydrateRequestWorkspace && path !== '/mcp' && path !== '/healthz' && !isOAuthCallback && !paymentCallbackMatch && !isWorkerAutomationTick) {
+  if (hydrateRequestWorkspace && path !== '/mcp' && path !== '/healthz' && !isOAuthCallback && !paymentCallbackMatch && !workerRoute) {
     await enforceActiveWorkspaceMember(req, hydrateRequestWorkspace)
   }
   if (req.method === 'POST' && path === '/v1/internal/automation/tick') {
@@ -7952,8 +7976,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       await hydrateDurableIdempotentJob(task.workspaceId, 'generation_job', idempotencyKey)
       existing = [...service.generationJobs.values()].find(candidate => candidate.workspaceId === task.workspaceId && candidate.idempotencyKey === idempotencyKey)
     }
+    if (existing) return send(res, 202, task.workspaceId, { ...jobWithQueueMetadata(existing, task.workspaceId, 'generation'), rule_preflight: rulePreflight }, null, req)
     const reservationId = `generation:${idempotencyKey}`
-    const reserved = existing ? false : await reserveDistributedJobSlot(task.workspaceId, reservationId)
+    const reserved = await reserveDistributedJobSlot(task.workspaceId, reservationId)
     const usageKey = `generation:${idempotencyKey}`
     const usage = await consumeTaskUsage(task.workspaceId, task.id, usageKey, requestActor(req))
     try {

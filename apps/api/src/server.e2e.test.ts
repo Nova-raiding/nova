@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
 import { fixturePaymentAllowed, oauthStates, rollbackBatchProducts, server, service, setPaymentProviderForTests, workspaceMembers } from './server.js'
 
@@ -18,12 +18,37 @@ async function start() {
 async function json(response: Response) { return await response.json() as Envelope<any> }
 
 describe('API HTTP vertical slice', () => {
+  beforeEach(() => { vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000') })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setPaymentProviderForTests(); vi.unstubAllEnvs() })
 
   it('only enables fixture checkout when the local payment flag is explicit', () => {
     expect(fixturePaymentAllowed({})).toBe(false)
     expect(fixturePaymentAllowed({ ALLOW_LOCAL_PAYMENT_FIXTURE: 'true' })).toBe(true)
     expect(fixturePaymentAllowed({ ALLOW_LOCAL_PAYMENT_FIXTURE: 'false' })).toBe(false)
+  })
+
+  it('neutralizes formula-like audit fields in ops.audit.export CSV', async () => {
+    const base = await start()
+    const workspaceId = `ws_audit_csv_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'audit_export_operator' }
+    const call = (id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
+    const malicious = ['=', '+', '-', '@'].map((prefix, index) => ({
+      externalSubject: `${prefix}malicious-subject-${index}`,
+      reason: `${prefix}HYPERLINK("https://evil.example/${index}")`,
+    }))
+
+    for (const [index, item] of malicious.entries()) {
+      const created = await call(index + 1, 'ops.member.upsert', { external_subject: item.externalSubject, display_name: `恶意审计字段 ${index}`, role: 'operator', status: 'active', reason: item.reason })
+      expect(created.error).toBeNull()
+    }
+
+    const exported = await call(10, 'ops.audit.export', { format: 'csv', limit: '20' })
+    expect(exported.error).toBeNull()
+    const content = (exported.data as { result: { content: string } }).result.content
+    for (const item of malicious) {
+      expect(content).toContain(`"'${item.externalSubject}"`)
+      expect(content).toContain(`"'${item.reason.replaceAll('"', '""')}"`)
+    }
   })
 
   it('confirms a test checkout only when the explicit local fixture flag is enabled', async () => {

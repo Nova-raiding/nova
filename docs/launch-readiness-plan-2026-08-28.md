@@ -8,25 +8,25 @@
 
 ## 当前事实基线
 
-- `npm run check`：105 个测试文件、725 项测试通过；类型检查、Ops Console 和 Merchant Studio 生产构建通过。
+- `npm run check`：111 个测试文件、767 项测试通过；类型检查、Ops Console 和 Merchant Studio 生产构建通过。
 - 运行态：Merchant Studio `:18081`、API `:8787`、PostgreSQL、Redis、5 类 Worker 健康；Ops Console 测试实例 `:18082`。
-- 浏览器：8 项综合回归通过。商家端 7 个一级模块、8 个页面状态、9 组安全交互；运营台总览、用户、任务、店铺、账务 5 个页面均已真实加载。用户目录桌面、键盘、390px、375px 和 844×390 横屏通过；移动菜单、表单错误聚焦、详情焦点归还和模型状态失败态已覆盖；正确同源代理配置下为 0 console error、0 failed request、0 RPC error。
+- 浏览器：13 项综合回归通过。商家端 7 个一级模块、8 个页面状态、9 组安全交互；运营台总览、用户、任务、店铺、账务 5 个页面均已真实加载。用户目录桌面、键盘、390px、375px 和 844×390 横屏通过；移动菜单、表单错误聚焦、详情焦点归还、模型状态失败态和结算处置入口已覆盖；正确同源代理配置下为 0 console error、0 failed request、0 RPC error。
 - 运维：基础设施配置、Compose 资源门禁、生产运维合同、备份恢复、故障语义、标准化投影通过。
-- 模型：容器 DNS 修复后，真实文案与 OCR 请求返回 200，均有 usage；OCR canary 的 1×1 测试图缺陷已改为 16×16 并补回归。生产成本门禁已改为 fail-closed，当前因中转回执缺 `cost_cny` 显示 `cost_gate_blocked`。
-- 用户治理：已增加 `ops.users.list`、`ops.user.detail`、`ops.user.suspend`、`ops.user.activate`、服务端筛选/分页、跨工作区成员目录、身份摘要、成员历史、操作原因、自停用保护、角色层级门禁与审计；状态、角色变化和审计在 PostgreSQL 同一事务内提交，并增加 revision 冲突保护。迁移 044 提供事务内平台目录 RLS scope，非平台 scope 实测仍返回 0 行。成员治理已从账务页移到独立“用户与租户”导航。
-- 开发体验：增加 `dev:doctor`、`dev:doctor:production`、`dev:ops-console`、`dev:stack` 并固定 Node 22+；本地诊断 12 pass/6 warn/0 fail，生产诊断 12 pass/1 warn/5 fail，明确区分容器 Relay 与宿主 Relay，并对无 Git、无 buildx、无持久 Relay、无真实生产配置 fail-closed。
+- 模型：生产调用以稳定 relay receipt 建立持久结算账本，覆盖 `pending_cost`、`pending_wallet`、`settled`、`waived`、`manual_attention`，提供批量重试、人工处置、revision 冲突与审计；缺成本继续 fail-closed，也可在显式开关下从中转定价接口生成可审计 CNY 快照。运行态对账接口返回 `completed`、`unsettled_records=0`；当前容器仍因中转 Secret 缺失而不能形成真实 release evidence。
+- 用户治理：迁移 045 已提供持久全局身份、认证会话、风险状态和策略；运营台支持跨工作区查询、封禁/解封、风险策略转换、会话撤销、成员历史、角色层级、操作原因、revision 冲突与审计。迁移 044 提供平台目录 RLS，API/Worker 改用 `merchant_app` 非超级用户角色；真实事务探针证明 workspace A 可见、切换 workspace B 后为 0 行。剩余缺口收窄为付费生命周期、工单、批量治理和导出。
+- 运行安全：迁移服务保留 owner 权限，API/Worker 使用 `NOSUPERUSER NOBYPASSRLS` 的运行角色；Ops 请求并发限制为 8，认证会话观测增加安全的 60 秒只读快路径，限流键改为 workspace + actor + surface，运营角色独立 600/min，浏览器实测无 429。
+- 开发体验：增加 `dev:doctor`、`dev:doctor:production`、`dev:ops-console`、`dev:stack` 并固定 Node 22+；最终本地诊断 14 pass/5 warn/0 fail，生产诊断 14 pass/1 warn/4 fail，明确区分容器 Relay 与宿主 Relay，并对无 buildx、无持久 Relay、无真实生产配置 fail-closed。当前目录已恢复为 `main` 的唯一 Git worktree。
 
 ## 已证实的上线阻断
 
-1. 当前目录不是 Git 仓库或 worktree，无法形成可审计变更、提交、发布分支和回滚链路。
-2. 根目录没有 `.env` 或托管 Secret 注入证据；API 重建后 `MODEL_RELAY_BASE_URL` 与 `MODEL_RELAY_API_KEY` 已实际丢失，证明昨天配置只在旧容器临时存在；宿主 `codex:relay:validate` 同样失败。
-3. 模型中转不返回 `cost_cny` 或成本响应头，文案/OCR 的 `costObserved=false`；“实际成本 × 倍率”的账务规则不能闭环。
-4. 图片生成、图片编辑、视频生成尚未执行真实计费 canary，也没有 release-bound evidence。
-5. 平台运营后台现可跨工作区治理成员关系，但仍没有独立全局身份、登录会话、角色历史、风险与付费生命周期模型；当前目录不能冒充完整用户中心。
-6. 生产配置仍为占位模板；`infra:production-gate` 与 `launch-preflight` fail-closed。
-7. 六平台真实 canary 未运行；真实 OAuth、读、写、图片上传、写后回读和回执证据缺失。
-8. 真实支付商户、退款、查询和对账证据缺失。
-9. 真实云容量、6 小时稳定性、PITR/KMS/对象存储/OIDC/告警链路证据缺失。
+1. 根目录没有 `.env` 或托管 Secret 注入证据；API 重建后 `MODEL_RELAY_BASE_URL` 与 `MODEL_RELAY_API_KEY` 已实际丢失，证明昨天配置只在旧容器临时存在；宿主 `codex:relay:validate` 同样失败。
+2. 当前环境没有可重复注入的中转 Secret，也没有 release-bound 成本证据；虽然代码已支持中转 `cost_cny`、成本响应头及显式定价快照推导，但“实际成本 × 倍率”尚未用当前 release 的真实回执闭环。
+3. 图片生成、图片编辑、视频生成尚未执行真实计费 canary，也没有 release-bound evidence。
+4. 平台运营后台已有持久全局身份、登录会话、风险策略和跨工作区成员治理，但付费生命周期、工单、批量治理和导出仍未完成，不能宣称完整运营 CRM。
+5. 生产配置仍为占位模板；`infra:production-gate` 与 `launch-preflight` fail-closed。
+6. 六平台真实 canary 未运行；真实 OAuth、读、写、图片上传、写后回读和回执证据缺失。
+7. 真实支付商户、退款、查询和对账证据缺失。
+8. 真实云容量、6 小时稳定性、PITR/KMS/对象存储/OIDC/告警链路证据缺失。
 
 ## 产品与信息闭环要求
 
@@ -38,9 +38,9 @@
 
 ### 平台运营端
 
-- 新增平台级用户中心：`user_id/external_subject`、注册来源、状态、最后登录、风险状态、所属工作区、角色、付费状态和生命周期操作。
+- 平台级用户中心已覆盖 `user_id/external_subject`、注册来源、状态、最后登录、风险状态、所属工作区和角色；继续补齐付费状态及生命周期操作。
 - 用户、工作区、成员关系分层；平台管理员可跨租户检索，工作区管理员只能管理本工作区。
-- 补齐用户详情、封禁/解封、邀请/撤权、角色历史、登录会话撤销、工单、受审计代操作和数据导出。
+- 用户详情、封禁/解封、邀请/撤权、角色/成员历史、登录会话撤销和受审计操作已完成；继续补齐工单、批量操作和数据导出。
 - 将“成员管理”从财务配置中拆出，形成独立导航和深链接。
 
 ## 工程闭环要求
@@ -63,11 +63,11 @@
 | 领域 | 代码/组件 | 自动化 | 浏览器/运行态 | 外部证据 | 当前判断 |
 |---|---|---|---|---|---|
 | Merchant Studio | 有 | 通过 | 基础浏览/安全交互通过 | 六平台真实写入缺失 | 未上线 |
-| Ops Console | 有 | 通过 | 五页、用户交互、390px 通过 | 完整身份中心缺失 | 未上线 |
-| API/MCP | 172 个 MCP 工具 | 725 项测试含契约 | 健康 | 外部平台/支付缺失 | 部分完成 |
+| Ops Console | 有 | 通过 | 五页、身份/会话/风险/结算交互及三种移动视口通过 | 付费生命周期/工单/批量/导出缺失 | 未上线 |
+| API/MCP | 178 个 MCP 工具 | 767 项测试含契约 | 健康 | 外部平台/支付缺失 | 部分完成 |
 | Workers | 5 类 | 运维/故障测试通过 | 健康 | 长稳与真实队列缺失 | 部分完成 |
-| PostgreSQL/恢复 | 44 迁移 | 备份恢复与平台 RLS scope 通过 | PostgreSQL ready | 云 PITR 缺失 | 部分完成 |
-| 模型中转 | 五模态适配器 | 单测及 fail-closed 通过 | 文案/OCR 真实 200，状态阻断正确 | 成本、三类媒体缺失 | 未上线 |
+| PostgreSQL/恢复 | 46 迁移 | 备份恢复、平台 RLS 及非超级用户真实 scope 探针通过 | PostgreSQL ready | 云 PITR 缺失 | 部分完成 |
+| 模型中转 | 五模态适配器及持久结算账本 | 状态机、重试、人工处置、fail-closed 通过 | 本地对账 completed、未结算 0 | 当前 release 的成本/媒体 canary 缺失 | 未上线 |
 | 六平台连接器 | 有 | fixture/契约通过 | 未验证真实平台 | production canary 缺失 | 未上线 |
 | 支付商业化 | 有 | 本地合同通过 | 未验证真实商户 | 查询/退款/对账缺失 | 未上线 |
 | 部署运维 | Compose/K8s 有 | 本地门禁通过 | 本地健康 | 生产配置/DNS/TLS/OIDC/云证据缺失 | 未上线 |
@@ -98,25 +98,29 @@
 | 4 | Product | 先交付跨租户成员治理，不宣称完整身份中心 | auto | Scope honesty | 解决平台运营最急需的查询、停用、恢复，同时保留身份/会话模型缺口 | 用成员聚合冒充全局用户表 |
 | 5 | Eng | 中转站缺成本回执时阻断最终交付并告警 | auto | Financial correctness | usage 不能替代人民币实际成本，继续交付会造成不可核账损失 | 按估算成本静默结算 |
 | 6 | Design | 移动端宽表限制在自身滚动容器内 | auto | Responsive usability | 390px 实测发现整页横向溢出 | 放宽浏览器断言或隐藏字段 |
+| 7 | Eng | API/Worker 使用独立非超级用户数据库角色 | auto | Tenant isolation | owner/superuser 会绕过 FORCE RLS，无法证明运行态租户隔离 | 只保留 SQL policy 而继续用 owner 连接 |
+| 8 | Eng | 模型调用以 relay receipt 驱动持久结算状态机 | auto | Financial correctness | 钱包失败和缺成本必须可重试、可人工处置且不可重复扣款 | 仅写告警或依赖进程内状态 |
+| 9 | Eng | 限流按 workspace、actor 和 surface 分桶 | auto | Operability | workspace 单桶使 Ops 首屏并发拖垮同租户交互请求 | 单纯提高所有用户全局限额 |
+| 10 | QA | E2E 纵向套件隔离非目标限流副作用 | auto | Test fidelity | 共享匿名桶达到 120 后产生 429 并遗留排队任务，污染后续配额断言 | 把可复现失败标记为 flaky |
 
 ## GSTACK REVIEW REPORT
 
 | Review | Runs | Status | Score | Main findings |
 |---|---:|---|---:|---|
-| CEO | 1 | complete | 5/10 | 建议先完成一个主平台闭环；缺 Git、真实支付/平台证据与成本闭环时不可发布。 |
+| CEO | 1 | complete | 5/10 | 建议先完成一个主平台闭环；虽已恢复 Git worktree，但缺真实支付/平台证据与成本闭环时不可发布。 |
 | Codex / outside voice | 1 | complete | 5/10 | 本地工程质量已显著收口，但外部生产证据不能由测试替代。 |
-| Engineering | 3 | complete | 7/10 | 已修复 marketplace 漂移、跨租户操作 scope、平台目录 RLS、owner/platform 角色越权、成本 fail-closed、成员/审计原子事务与 revision 冲突；独立身份/会话模型仍缺。 |
-| Design | 3 | complete | 7/10 | 已增加独立用户导航、身份详情/历史、双层成员治理、筛选分页、状态文案、移动菜单、错误隔离、表单错误聚焦、详情焦点归还和三种移动视口；仍缺会话、风险、付费和批量治理。 |
-| DX | 2 | complete | 5/10 | 已固定 Node 22+ 并增加统一 doctor/stack/Ops 命令；仍无 Git、buildx、持久 Secret 和可渲染真实生产配置。 |
+| Engineering | 4 | complete | 8/10 | 已补持久身份/会话/风险、非超级用户运行角色、真实 RLS 探针、模型结算状态机及对账处置 API；外部中转、平台、支付和云证据仍缺。 |
+| Design | 4 | complete | 8/10 | 已覆盖身份详情/历史、会话撤销、风险策略、结算状态/批量重试/人工处置、错误隔离和三种移动视口；仍缺付费生命周期、工单、批量用户治理和导出。 |
+| DX | 3 | complete | 6/10 | 已固定 Node 22+、恢复唯一 Git worktree，并增加统一 doctor/stack/Ops 命令；仍无 buildx、持久 Secret 和可渲染真实生产配置。 |
 
 **VERDICT: NO-GO（本地可验证门禁通过，生产发布门禁未通过）**
 
-已验证的收口结果：`npm run check` 为 105/105 文件、725/725 用例；两个前端生产构建通过；8 项真实浏览器回归覆盖运营后台五页面、模型错误态、用户详情键盘流程、移动菜单、表单错误聚焦和 390px/375px/横屏；API 健康；跨租户成员治理、平台 RLS scope、角色层级和原子审计在最终容器生效。示例 capability/capacity JSON 能通过结构门禁，但生产运行时明确拒绝把 example 当作 release evidence。
+已验证的收口结果：`npm run check` 为 111/111 文件、767/767 用例；两个前端生产构建通过；13 项真实浏览器回归覆盖运营后台五页面、模型错误态、身份/会话/风险、结算处置、用户详情键盘流程、移动菜单、表单错误聚焦和 390px/375px/横屏。API 与全部 Worker 健康；非超级用户数据库角色下的跨租户 RLS 实测、平台治理、原子审计和模型结算对账接口均在最终容器生效。CodeGraph 最终索引为 359 文件、5,145 节点、21,562 边。示例 capability/capacity JSON 能通过结构门禁，但生产运行时明确拒绝把 example 当作 release evidence。
 
 **UNRESOLVED DECISIONS:**
 
 - 选择首个真实上线平台及其 OAuth、读写、上传、回读验收账号与责任人。
 - 确定真实支付宝/微信商户、退款、查询、对账沙箱和财务签署人。
 - 要求中转站返回 `cost_cny`（或可审计成本头），完成图片、编辑、视频 canary，并设置 release-bound `MODEL_RELAY_COST_EVIDENCE=true`。
-- 恢复 Git/worktree 与发布/回滚链路，确定 Secret Manager、云对象存储、KMS、OIDC、告警、PITR 和容量环境。
-- 决定完整身份中心的数据模型和范围：持久全局身份、会话撤销、角色历史、风险、付费、工单、批量治理和导出。
+- 基于已恢复的 Git worktree 建立提交/发布/回滚链路，并确定 Secret Manager、云对象存储、KMS、OIDC、告警、PITR 和容量环境。
+- 决定运营 CRM 剩余范围：付费生命周期、工单、批量治理和导出。

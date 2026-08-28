@@ -7,6 +7,7 @@ const harness = vi.hoisted(() => ({
   actionLedger: null as null | {
     record(input: Record<string, unknown>): Promise<Record<string, unknown>>
     get(workspaceId: string, actionKey: string): Promise<Record<string, unknown> | undefined>
+    refund(input: { workspaceId: string; actionKey: string; reason: string }): Promise<Record<string, unknown>>
   },
   providerRequestId: 'relay-request-default',
   costCny: undefined as number | undefined,
