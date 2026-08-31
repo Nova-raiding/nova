@@ -3715,7 +3715,7 @@ const workerEventOperations: Record<string, CriticalWorkerOperation> = {
   'asset.generation_continuations.ready': 'asset.continuation.execute',
 }
 
-export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthorizationSnapshot, workspaceId: string, resourceId: string) {
+export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthorizationSnapshot, workspaceId: string, resourceId: string, execution?: { eventId: string }) {
   const membershipMatch = /^membership:([^:]+):(\d+)$/u.exec(snapshot.grantRevision)
   const grantMatch = /^grant:([^:]+):(\d+):([^:]+):(\d+)$/u.exec(snapshot.grantRevision)
   if (!membershipMatch && !grantMatch) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '执行授权来源格式无效', 403)
@@ -3748,7 +3748,28 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
       throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队临时授权已撤销、过期或范围变化，已拒绝执行', 403)
     }
   }
-  return { recheck_id: `authz_recheck_${randomUUID()}`, actor_id: snapshot.actorId, workspace_id: workspaceId, context_id: snapshot.contextId, context_version: `${AUTHZ_POLICY_VERSION}:${currentAuthorizationRevision}`, policy_version: AUTHZ_POLICY_VERSION, grant_revision: snapshot.grantRevision, scope_hash: snapshot.scopeHash, capability: snapshot.capability, resource_id: resourceId, authorized: true, checked_at: new Date().toISOString() }
+  const recheck = { recheck_id: `authz_recheck_${randomUUID()}`, actor_id: snapshot.actorId, workspace_id: workspaceId, context_id: snapshot.contextId, context_version: `${AUTHZ_POLICY_VERSION}:${currentAuthorizationRevision}`, policy_version: AUTHZ_POLICY_VERSION, grant_revision: snapshot.grantRevision, scope_hash: snapshot.scopeHash, capability: snapshot.capability, resource_id: resourceId, authorized: true, checked_at: new Date().toISOString() }
+  if (!execution) return recheck
+  if (!execution.eventId.trim()) throw new DomainError('AUTHZ_EXECUTION_EVENT_REQUIRED', '执行授权预留缺少持久事件标识，已拒绝执行', 503)
+  let reservation: Awaited<ReturnType<AuthorizationRepository['reserveExecution']>>
+  try {
+    reservation = await authzRepository.reserveExecution({
+      reservationId: `worker-execution:${execution.eventId}:${snapshot.capability}`,
+      eventId: execution.eventId,
+      subjectIdentityId,
+      workspaceId,
+      capability: workerOperationCapabilities[snapshot.capability],
+      resourceId,
+      scopeHash: snapshot.scopeHash,
+      expectedAuthorizationRevision,
+      ...(grantMatch ? { grantId: grantMatch[1]!, expectedGrantRevision: Number(grantMatch[2]) } : {}),
+    })
+  } catch (error) {
+    if (error instanceof DomainError) throw error
+    throw new DomainError('AUTHZ_EXECUTION_RESERVATION_UNAVAILABLE', '执行授权预留仓储不可用，Provider 未调用', 503)
+  }
+  if (!reservation) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '执行授权在预留提交前已变化，Provider 未调用', 403, { event_id: execution.eventId, reservation_id: `worker-execution:${execution.eventId}:${snapshot.capability}` })
+  return { ...recheck, reservation_id: reservation.reservationId, event_id: reservation.eventId }
 }
 
 export async function deriveWorkerContinuationAuthorizationSnapshot(
@@ -16175,7 +16196,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     } catch {
       throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '持久事件缺少有效且精确绑定的授权快照', 403)
     }
-    return send(res, 200, workspaceId, { authorization_recheck: await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId) }, null, req)
+    return send(res, 200, workspaceId, { authorization_recheck: await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId, { eventId: event.id }) }, null, req)
   }
   if (req.method === 'GET' && publishExecutionCheckMatch) {
     await requireWorkerCredentialAuthorization(req)
