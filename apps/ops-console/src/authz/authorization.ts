@@ -14,6 +14,8 @@ export type AuthorizationProjection = {
   readonly roles: readonly string[];
   readonly capabilities: ReadonlySet<OpsCapability>;
   readonly deniedCapabilities: ReadonlySet<OpsCapability>;
+  /** Server-projected resource scope for each capability; never inferred from roles. */
+  readonly capabilityScopes: ReadonlyMap<OpsCapability, OpsScope>;
   readonly scope: OpsScope;
   readonly policyVersion?: string;
   readonly source: "server" | "local-development" | "deny-all";
@@ -49,11 +51,17 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly Capabil
 function serverPermissions(session: OpsSession) {
   const allow = new Set<string>();
   const deny = new Set<string>();
+  const scopes = new Map<string, OpsScope>();
   for (const permission of session.effective_permissions ?? []) {
     const id = (typeof permission === "string" ? permission : permission.capability ?? permission.id ?? "").trim();
     if (!id) continue;
     if (typeof permission !== "string" && permission.effect === "deny") deny.add(id);
-    else allow.add(id);
+    else {
+      allow.add(id);
+      if (typeof permission !== "string" && permission.scope) {
+        scopes.set(id, { kind: permission.scope.type, id: permission.scope.id ?? permission.scope.ids?.[0], ids: permission.scope.ids });
+      }
+    }
   }
   for (const capability of session.capabilities ?? []) {
     const id = capability.trim();
@@ -63,6 +71,7 @@ function serverPermissions(session: OpsSession) {
     allow,
     deny,
     present: session.effective_permissions !== undefined || session.capabilities !== undefined,
+    scopes,
   };
 }
 
@@ -91,7 +100,7 @@ export function createAuthorizationProjection(
   const scope = inferScope(session);
   const projected = session
     ? serverPermissions(session)
-    : { allow: new Set<string>(), deny: new Set<string>(), present: false };
+    : { allow: new Set<string>(), deny: new Set<string>(), present: false, scopes: new Map<string, OpsScope>() };
   // Credential transport (OIDC vs local Bearer) never changes authorization.
   // Both modes consume the server projection and remain deny-all before the
   // session arrives.
@@ -102,12 +111,13 @@ export function createAuthorizationProjection(
     roles: session?.canonical_roles ?? session?.roles ?? [],
     capabilities,
     deniedCapabilities: projected.deny,
+    capabilityScopes: projected.scopes,
     scope,
     policyVersion: session?.catalog_version ?? session?.policy_version,
     source: projected.present ? "server" : "deny-all",
     can,
     canAny: (required) => required.some(can),
-    scopeFor: (capability) => can(capability) ? scope : undefined,
+    scopeFor: (capability) => can(capability) ? projected.scopes.get(capability) ?? scope : undefined,
   };
 }
 

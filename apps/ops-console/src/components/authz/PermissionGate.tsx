@@ -22,7 +22,11 @@ export function PermissionGate({
   if (allowed) return <>{children}</>;
   if (fallback !== undefined) return <>{fallback}</>;
   if (behavior === "readonly") {
-    return <Alert type="info" showIcon title="当前范围为只读" description={`缺少能力：${required.join(" 或 ")}`} />;
+    const scopes = required.map((item) => authorization.scopeFor(item)).filter(Boolean);
+    const scopeText = scopes.length
+      ? `当前授权范围：${scopes.map((scope) => `${scope!.kind}:${scope!.id ?? scope!.ids?.join(",") ?? "未识别"}`).join("、")}`
+      : "当前授权范围未返回";
+    return <Alert type="info" showIcon title="当前范围为只读" description={<span>{`缺少能力：${required.join(" 或 ")}`} · {scopeText}</span>} />;
   }
   return null;
 }

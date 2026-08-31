@@ -35,6 +35,18 @@ describe("authorization projection", () => {
     expect(authorization.can("marketing.queue.update")).toBe(false);
   });
 
+  it("preserves server-projected capability scope for desktop explanations", () => {
+    const authorization = createAuthorizationProjection(session(["workspace_owner"], {
+      effective_permissions: [
+        { capability: "identity.read", effect: "allow", scope: { type: "workspace", ids: ["ws_1"] } },
+        { capability: "store.connection.read", effect: "allow", scope: { type: "store", id: "store_7", ids: ["store_7"] } },
+      ],
+    }), true);
+    expect(authorization.scopeFor("identity.read")).toEqual({ kind: "workspace", id: "ws_1", ids: ["ws_1"] });
+    expect(authorization.scopeFor("store.connection.read")).toEqual({ kind: "store", id: "store_7", ids: ["store_7"] });
+    expect(authorization.scopeFor("workspace.member.read")).toBeUndefined();
+  });
+
   it("makes explicit deny override a flat capability", () => {
     const authorization = createAuthorizationProjection(session(["platform_ops"], {
       capabilities: ["billing.platform.read"],
