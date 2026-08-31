@@ -1474,3 +1474,7 @@ npm run dev:api
 2026-08-31 图片生成 callback/lease 收紧增量：新增共享 `image-generation-callback.v1` 校验，API 接收与 Worker 发送双侧拒绝未知字段、空错误、非法/超长 ID、非 HTTPS 图片引用以及 `images/error` 歧义；Provider status 在失败分支前校验 response request ID；Worker-only 图片路由补齐 workspace hydration。该增量仍缺真实 Provider、双 API/生产 PostgreSQL/RLS、对象存储并发归档与故障注入证据，继续 `doc/todo` / `NO-GO`。
 
 2026-08-31 Provider operation reservation 增量：migration 117 为图片执行增加 workspace-scoped `provider_operation_key` 与唯一索引；Worker 在 Provider 调用前先预约稳定 key，AI adapter 使用该 key 作为 relay `Idempotency-Key`；Memory/Postgres 普通 claim 遇到已有 reservation 的过期 lease 时 fail-closed 为 `IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN`，不创建第二次普通 Provider dispatch，并在终态保留 operation key。仓储/迁移/AI 定向回归 26/26 通过；根回归 397 文件通过、17 跳过，2629 项通过、35 项跳过；类型检查通过。该切片仍缺真实 Provider、双副本崩溃恢复、PostgreSQL/RLS 并发、dispatching 状态和账务唯一关联证据，继续 `doc/todo` / `NO-GO`。
+
+2026-09-01 Ops 桌面无障碍增量：Ops Console 增加键盘“跳转到主要内容”入口和高对比度焦点样式；定向 6/6、Ops Console 全量 72 文件/338 项、TypeScript、生产构建和差异检查通过。真实桌面浏览器、OIDC/权限矩阵与生产宿主证据仍缺，相关 TODO 不迁移到 `doc/done`。
+
+2026-09-01 SLA 重开投影增量：客服工单从 `resolved/closed` 重开到 `open/in_progress/waiting_customer` 时清除 `resolvedAt`，避免错误保持 `met`；SLA/Worker 定向 10/10、TypeScript 与差异检查通过。真实 Postgres/RLS、调度和值班运行证据仍缺，相关 TODO 继续留在 `doc/todo`。
