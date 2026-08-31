@@ -52,7 +52,7 @@ Automation 不为补充报告细节继续调用其他查询工具。若两个聚
 
 ## 原生模板二：每周六平台经营简报
 
-建议时间：每周一 09:30。创建时必须由用户确认一个明确的 IANA 时区（例如 `Asia/Shanghai`）。
+建议时间：每周六 09:30。创建时必须由用户确认一个明确的 IANA 时区（例如 `Asia/Shanghai`）。
 
 创建 Automation 时使用以下提示词：
 
@@ -61,6 +61,10 @@ Automation 不为补充报告细节继续调用其他查询工具。若两个聚
 输出顺序：本周当前摘要 → 比较状态 → 六平台/店铺分布 → 商品与库存风险 → 内容与发布漏斗 → 规则/授权风险 → fixture/unbound 与数据覆盖说明 → 三条建议。
 
 ## 创建与安全检查
+
+生产环境默认关闭 API/Worker 的旧版内部 Automation tick（codex_native_automations_only）。
+商家巡检必须由 Codex App 原生 Automations 调度；只有经过运营迁移审批、并明确承担同步副作用的独立内部调度部署，才可设置
+MERCHANT_INTERNAL_AUTOMATION_TICK_ENABLED=true。该变量不得由商家插件或 Automation 模板自行设置。
 
 当用户要求创建上述 Automation 时：
 

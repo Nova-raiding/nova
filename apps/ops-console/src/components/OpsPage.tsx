@@ -5,6 +5,7 @@ interface OpsPageProps {
   eyebrow: string;
   title: string;
   description: string;
+  nextStep?: string;
   children: ReactNode;
 }
 
@@ -12,6 +13,7 @@ export function OpsPage({
   eyebrow,
   title,
   description,
+  nextStep,
   children,
 }: OpsPageProps) {
   const pageId = `ops-page-${eyebrow.toLowerCase().replaceAll(" ", "-")}`;
@@ -22,9 +24,15 @@ export function OpsPage({
         <Typography.Title id={pageId} level={3}>
           {title}
         </Typography.Title>
-        <Typography.Paragraph type="secondary">
-          {description}
-        </Typography.Paragraph>
+      <Typography.Paragraph type="secondary">
+        {description}
+      </Typography.Paragraph>
+      {nextStep ? (
+        <div className="ops-conversation-step" role="status" aria-live="polite">
+          <Typography.Text strong>当前下一步</Typography.Text>
+          <Typography.Text type="secondary">{nextStep}</Typography.Text>
+        </div>
+      ) : null}
       </header>
       <Space orientation="vertical" size={20} className="content-stack">
         {children}

@@ -27,7 +27,17 @@ runtime:
   request_body_limit_mb: 50
 data:
   database_url: "${SECRET:STAGING_DATABASE_URL}"
-  worker_api_signing_secret: "${SECRET:STAGING_WORKER_API_SIGNING_SECRET}"
+  worker_api_credentials_ref: "secret://merchant-staging/worker-api-credentials"
+  worker_sync_api_token_ref: "secret://merchant-staging/worker-sync-token"
+  worker_sync_api_signing_secret_ref: "secret://merchant-staging/worker-sync-signing"
+  worker_generation_api_token_ref: "secret://merchant-staging/worker-generation-token"
+  worker_generation_api_signing_secret_ref: "secret://merchant-staging/worker-generation-signing"
+  worker_publish_api_token_ref: "secret://merchant-staging/worker-publish-token"
+  worker_publish_api_signing_secret_ref: "secret://merchant-staging/worker-publish-signing"
+  worker_reconcile_api_token_ref: "secret://merchant-staging/worker-reconcile-token"
+  worker_reconcile_api_signing_secret_ref: "secret://merchant-staging/worker-reconcile-signing"
+  worker_automation_api_token_ref: "secret://merchant-staging/worker-automation-token"
+  worker_automation_api_signing_secret_ref: "secret://merchant-staging/worker-automation-signing"
   redis_url: "${SECRET:STAGING_REDIS_URL}"
   object_storage_bucket: "merchant-staging-assets"
   object_storage_region: "cn"

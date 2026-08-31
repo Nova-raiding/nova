@@ -3,9 +3,11 @@ import { PlanBillingSection } from "../components/finance/PlanBillingSection";
 import { RechargeOrdersSection } from "../components/finance/RechargeOrdersSection";
 import { ReconciliationSection } from "../components/finance/ReconciliationSection";
 import { RefundSection } from "../components/finance/RefundSection";
+import { FinanceSearchSection } from "../components/finance/FinanceSearchSection.js";
 import { OpsPage } from "../components/OpsPage";
 import { OpsPageError } from "../components/OpsPageError";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
+import { useFinanceSearch } from "../hooks/useFinanceSearch.js";
 
 interface FinancePageProps {
   model: OpsConsoleModel;
@@ -13,6 +15,7 @@ interface FinancePageProps {
 
 export function FinancePage({ model }: FinancePageProps) {
   const { error, load } = model;
+  const financeSearch = useFinanceSearch(model.financeSearchClient, { limit: 50 }, true);
 
   return (
     <OpsPage
@@ -21,6 +24,7 @@ export function FinancePage({ model }: FinancePageProps) {
       description="管理充值、账单、退款、套餐和模型计费策略。"
     >
       <OpsPageError error={error} onRetry={() => void load()} />
+      <FinanceSearchSection controller={financeSearch} />
       <RechargeOrdersSection model={model} />
       <ReconciliationSection model={model} />
       <RefundSection model={model} />

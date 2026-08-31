@@ -72,10 +72,11 @@ async function configureBearerMembers(entries: Array<{
   actorId: string
   memberRole: MemberRole
   gatewayRoles: string[]
+  workbenches?: ('platform' | 'workspace')[]
 }>) {
-  const grants: Record<string, { workspaces: string[]; actor_id: string; roles: string[] }> = {}
+  const grants: Record<string, { workspaces: string[]; actor_id: string; roles: string[]; workbenches?: ('platform' | 'workspace')[] }> = {}
   for (const entry of entries) {
-    grants[entry.token] = { workspaces: [entry.workspaceId], actor_id: entry.actorId, roles: entry.gatewayRoles }
+    grants[entry.token] = { workspaces: [entry.workspaceId], actor_id: entry.actorId, roles: entry.gatewayRoles, ...(entry.workbenches ? { workbenches: entry.workbenches } : {}) }
     await workspaceMembers.upsert({
       workspaceId: entry.workspaceId,
       externalSubject: entry.actorId,
@@ -95,6 +96,7 @@ async function callMcp<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},
   paramsWorkspaceId = headerWorkspaceId,
+  workbench: 'platform' | 'workspace' = 'workspace',
 ): Promise<McpResponse<T>> {
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',
@@ -102,6 +104,7 @@ async function callMcp<T = unknown>(
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       'x-workspace-id': headerWorkspaceId,
+      'x-ops-workbench': workbench,
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -145,7 +148,7 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
     await configureBearerMembers([
       { token: tokens.ownerA, workspaceId: workspaceA, actorId: `content-owner-a-${suffix}`, memberRole: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
       { token: tokens.operatorA, workspaceId: workspaceA, actorId: `content-operator-a-${suffix}`, memberRole: 'operator', gatewayRoles: ['operator'] },
-      { token: tokens.platformRulesA, workspaceId: workspaceA, actorId: `content-platform-rules-a-${suffix}`, memberRole: 'platform_ops', gatewayRoles: ['platform_ops', 'rules_admin'] },
+      { token: tokens.platformRulesA, workspaceId: workspaceA, actorId: `content-platform-rules-a-${suffix}`, memberRole: 'workspace_owner', gatewayRoles: ['platform_ops', 'rules_admin', 'workspace_owner'], workbenches: ['platform', 'workspace'] },
       { token: tokens.ownerB, workspaceId: workspaceB, actorId: `content-owner-b-${suffix}`, memberRole: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
     ])
 
@@ -212,18 +215,18 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
 
     expect(resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.interactive.confirm', {
       confirmation: 'I_CONFIRM_INTERACTIVE_WRITES',
-    }))).toMatchObject({ enabled: true, scope: 'current_interactive_session', automation: 'read_only' })
+    }))).toMatchObject({ enabled: true, scope: 'current_interactive_session', automation: 'read_only', ticket: { nonce_hash: expect.stringMatching(/^[a-f0-9]{64}$/u), intent_hash: expect.stringMatching(/^[a-f0-9]{64}$/u), expires_at: expect.any(String) } })
 
     const usersExport = resultOf<any>(await callMcp(base, tokens.platformRulesA, workspaceA, 'ops.users.export', {
       query: `content-owner-a-${suffix}`,
       status: 'active',
       format: 'json',
       limit: '10',
-    }))
+    }, workspaceA, 'platform'))
     expect(usersExport).toMatchObject({ filename: expect.stringMatching(/^ops-users-\d{4}-\d{2}-\d{2}\.json$/), count: 1, truncated: false })
     expect(JSON.parse(usersExport.content)).toEqual([expect.objectContaining({ external_subject: `content-owner-a-${suffix}`, workspace_id: workspaceA })])
 
-    const commercialExport = resultOf<any>(await callMcp(base, tokens.platformRulesA, workspaceA, 'ops.commercial.export', { format: 'json' }))
+    const commercialExport = resultOf<any>(await callMcp(base, tokens.platformRulesA, workspaceA, 'ops.commercial.export', { format: 'json' }, workspaceA, 'platform'))
     expect(commercialExport).toMatchObject({ filename: expect.stringMatching(/^ops-commercial-\d{4}-\d{2}-\d{2}\.json$/), counts: { offers: expect.any(Number), addons: expect.any(Number), coupons: expect.any(Number), rollouts: expect.any(Number) } })
     expect(JSON.parse(commercialExport.content)).toEqual(expect.objectContaining({ offers: expect.any(Array), addons: expect.any(Array), coupons: expect.any(Array), rollouts: expect.any(Array), modelMarkup: expect.objectContaining({ multiplier: expect.any(Number) }) }))
 
@@ -240,14 +243,14 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
     expect(syncStatus).toEqual(expect.any(Object))
     const history = resultOf<any[]>(await callMcp(base, tokens.ownerA, workspaceA, 'rule.history', { pack_id: rulePackId }))
     expect(history).toEqual([expect.objectContaining({ id: ruleVersion.id, workspaceId: workspaceA, status: 'active' })])
-    const audit = resultOf<any[]>(await callMcp(base, tokens.platformRulesA, workspaceA, 'rule.audit', { pack_id: rulePackId }))
+    const audit = resultOf<any[]>(await callMcp(base, tokens.platformRulesA, workspaceA, 'rule.audit', { pack_id: rulePackId }, workspaceA, 'platform'))
     expect(audit).toEqual([expect.objectContaining({ id: `rule-audit-${suffix}`, workspaceId: workspaceA, action: 'activated' })])
     const inactiveRule = resultOf<any>(await callMcp(base, tokens.platformRulesA, workspaceA, 'rule.status', {
       pack_id: rulePackId,
       version: '1.0.0',
       status: 'inactive',
       reason: '完成状态变更运行证据',
-    }))
+    }, workspaceA, 'platform'))
     expect(inactiveRule).toMatchObject({ id: ruleVersion.id, workspaceId: workspaceA, status: 'inactive', revision: 2 })
 
     const brand = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'brand.get'))

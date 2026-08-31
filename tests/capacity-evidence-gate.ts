@@ -64,7 +64,7 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
 function main() {
   const args = process.argv.slice(2)
   const fileIndex = args.indexOf('--file')
-  const path = (fileIndex >= 0 ? args[fileIndex + 1] : undefined) ?? 'docs/capacity-evidence.example.json'
+  const path = (fileIndex >= 0 ? args[fileIndex + 1] : undefined) ?? 'doc/todo/infra/capacity-evidence.example.json'
   const releaseIndex = args.indexOf('--release-id')
   const expectedReleaseId = releaseIndex >= 0 ? args[releaseIndex + 1] : undefined
   const profileIndex = args.indexOf('--profile')
@@ -73,7 +73,9 @@ function main() {
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read JSON capacity evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
   const errors = validateCapacityEvidence(document, { requireCloudGate: args.includes('--require-cloud-gate'), expectedReleaseId, expectedProfile })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
-  console.log(`capacity evidence gate passed: ${path}${args.includes('--require-cloud-gate') ? ' (real cloud)' : ''}`)
+  console.log(args.includes('--require-cloud-gate')
+    ? `capacity evidence gate passed: ${path} (real cloud requirements validated; release binding is a separate gate)`
+    : `capacity evidence schema passed: ${path} (fixture/non-production validation only; not real-cloud evidence)`)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main()

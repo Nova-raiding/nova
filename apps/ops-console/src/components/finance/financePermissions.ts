@@ -1,3 +1,5 @@
+import type { AuthorizationProjection } from "../../authz/authorization.js";
+
 export interface FinancePermissions {
   refund: boolean;
   paymentReconciliation: boolean;
@@ -5,19 +7,14 @@ export interface FinancePermissions {
   billingExport: boolean;
 }
 
-const hasAny = (roles: readonly string[], allowed: readonly string[]) =>
-  roles.some((role) => allowed.includes(role));
-
 export function financePermissions(
-  roles: readonly string[],
-  managedSession: boolean,
+  authorization: AuthorizationProjection,
 ): FinancePermissions {
-  if (!managedSession) return { refund: true, paymentReconciliation: true, modelSettlement: true, billingExport: true };
   return {
-    refund: hasAny(roles, ["workspace_owner", "merchant_admin", "finance"]),
-    paymentReconciliation: hasAny(roles, ["workspace_owner", "merchant_admin", "finance", "platform_ops"]),
-    modelSettlement: hasAny(roles, ["finance", "platform_ops"]),
-    billingExport: hasAny(roles, ["workspace_owner", "merchant_admin", "finance", "platform_ops"]),
+    refund: authorization.can("billing.refund.execute"),
+    paymentReconciliation: authorization.can("billing.reconcile.execute"),
+    modelSettlement: authorization.can("billing.reconcile.execute"),
+    billingExport: authorization.can("billing.export"),
   };
 }
 

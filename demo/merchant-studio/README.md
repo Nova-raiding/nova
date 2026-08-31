@@ -30,4 +30,4 @@ env PATH=/opt/homebrew/opt/node@22/bin:/usr/bin:/bin npm run build
 - 平台官方凭证或写入开关未配置时，API 会明确返回 `NOT_CONFIGURED`，不会产生外部写操作。
 - 发布确认已演示内容批准与平台写入二次确认分离、字段 diff、远端快照、loading 和受理回执语义。
 - 概览页的平台能力证据卡片显示 authorize/read/full_sync/incremental_sync/create/update/query_status/revoke 八项能力状态；`test_e2e` 和 `production_canary` 明确区分，未配置 API 时不会使用演示数据冒充证据。
-- 设计依据见 `docs/ui-research-and-design-rationale.md`，设计 token 基线见 `design-system/merchant-studio/MASTER.md`。
+- 设计依据见 `doc/ui-research-and-design-rationale.md`，设计 token 基线见 `design-system/merchant-studio/MASTER.md`。

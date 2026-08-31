@@ -37,6 +37,45 @@ interface OverviewSectionProps {
   model: OpsConsoleModel;
 }
 
+interface DeletionDecisionRunnerOptions {
+  key: string;
+  locks: Set<string>;
+  action: () => Promise<boolean>;
+  onStarted: () => void;
+  onSuccess: () => void;
+  onFailure: () => void;
+  onSettled: () => void;
+}
+
+export async function runDeletionDecisionOnce({
+  key,
+  locks,
+  action,
+  onStarted,
+  onSuccess,
+  onFailure,
+  onSettled,
+}: DeletionDecisionRunnerOptions): Promise<boolean> {
+  if (locks.size > 0) return false;
+  locks.add(key);
+  onStarted();
+  try {
+    const succeeded = await action();
+    if (succeeded) {
+      onSuccess();
+      return true;
+    }
+    onFailure();
+    return false;
+  } catch {
+    onFailure();
+    return false;
+  } finally {
+    locks.delete(key);
+    onSettled();
+  }
+}
+
 export function DataReadinessSection({ model }: OverviewSectionProps) {
   const [deletionDecision, setDeletionDecision] = useState<{
     decision: DataDeletionDecision;
@@ -44,10 +83,12 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
   }>();
   const [deletionReason, setDeletionReason] = useState("");
   const [deletionReasonTouched, setDeletionReasonTouched] = useState(false);
+  const [deletionError, setDeletionError] = useState<string>();
   const [deletionActionLoading, setDeletionActionLoading] = useState<
     Record<string, boolean>
   >({});
   const deletionActionLocksRef = useRef(new Set<string>());
+  const deletionTriggerRef = useRef<HTMLElement | null>(null);
   const {
     settings,
     setSettings,
@@ -140,7 +181,6 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
     load,
     loadRules,
     enabledCount,
-    sessionRoles,
     can,
     canFinance,
     canPlatformOps,
@@ -202,23 +242,33 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
   const deletionSubmitting = activeDeletionActionKey
     ? Boolean(deletionActionLoading[activeDeletionActionKey])
     : false;
+  const deletionActionsBusy = Object.keys(deletionActionLoading).length > 0;
   const deletionReasonInvalid =
     deletionReason.trim().length < DATA_DELETION_REASON_MIN_LENGTH;
 
   const openDeletionDecision = (
     request: DataDeletionRequest,
     decision: DataDeletionDecision,
+    trigger: HTMLElement,
   ) => {
+    if (deletionActionLocksRef.current.size > 0) return;
+    deletionTriggerRef.current = trigger;
     setDeletionDecision({ request, decision });
     setDeletionReason("");
     setDeletionReasonTouched(false);
+    setDeletionError(undefined);
+  };
+
+  const resetDeletionDecision = () => {
+    setDeletionDecision(undefined);
+    setDeletionReason("");
+    setDeletionReasonTouched(false);
+    setDeletionError(undefined);
   };
 
   const closeDeletionDecision = () => {
     if (deletionSubmitting) return;
-    setDeletionDecision(undefined);
-    setDeletionReason("");
-    setDeletionReasonTouched(false);
+    resetDeletionDecision();
   };
 
   const confirmDeletionDecision = async () => {
@@ -230,23 +280,30 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
       deletionDecision.request.id,
       deletionDecision.decision,
     );
-    if (deletionActionLocksRef.current.has(key)) return;
-    deletionActionLocksRef.current.add(key);
-    setDeletionActionLoading((current) => ({ ...current, [key]: true }));
-    try {
-      const succeeded =
-        deletionDecision.decision === "approve"
-          ? await approveDeletion(deletionDecision.request, deletionReason)
-          : await cancelDeletion(deletionDecision.request, deletionReason);
-      if (succeeded) closeDeletionDecision();
-    } finally {
-      deletionActionLocksRef.current.delete(key);
-      setDeletionActionLoading((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-    }
+    const decision = deletionDecision;
+    const reason = deletionReason;
+    setDeletionError(undefined);
+    await runDeletionDecisionOnce({
+      key,
+      locks: deletionActionLocksRef.current,
+      onStarted: () =>
+        setDeletionActionLoading((current) => ({ ...current, [key]: true })),
+      action: () =>
+        decision.decision === "approve"
+          ? approveDeletion(decision.request, reason)
+          : cancelDeletion(decision.request, reason),
+      onSuccess: resetDeletionDecision,
+      onFailure: () =>
+        setDeletionError(
+          `操作未完成。请核对申请 ${decision.request.id} 的当前状态后重试；如持续失败，请联系平台运营。`,
+        ),
+      onSettled: () =>
+        setDeletionActionLoading((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        }),
+    });
   };
   return (
     <>
@@ -421,8 +478,14 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
               dataIndex: "scope",
               render: (value: string) => <Tag>{value}</Tag>,
             },
-            { title: "原因", dataIndex: "reason" },
-            { title: "申请人", dataIndex: "requestedBy" },
+            {
+              title: "原因",
+              render: (_: unknown, row: DataDeletionRequest) => row.aggregate ? `${row.count ?? 0} 条申请` : row.reason,
+            },
+            {
+              title: "申请人",
+              render: (_: unknown, row: DataDeletionRequest) => row.aggregate ? "平台聚合" : row.requestedBy,
+            },
             {
               title: "审批数",
               render: (_: unknown, row: DataDeletionRequest) =>
@@ -431,12 +494,13 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
             {
               title: "计划执行",
               dataIndex: "scheduledFor",
-              render: (value: string) => new Date(value).toLocaleString(),
+              render: (value: string | undefined, row: DataDeletionRequest) => row.aggregate ? (row.requestedAt ? new Date(row.requestedAt).toLocaleString() : "-") : (value ? new Date(value).toLocaleString() : "-"),
             },
             { title: "状态", dataIndex: "status" },
             {
               title: "操作",
               render: (_: unknown, row: DataDeletionRequest) => {
+                if (row.aggregate) return <Typography.Text type="secondary">切换工作区后操作</Typography.Text>;
                 const approveLoading = Boolean(
                   deletionActionLoading[
                     deletionActionKey(row.id, "approve")
@@ -450,9 +514,11 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
                     <Button
                       type="link"
                       loading={approveLoading}
-                      disabled={cancelLoading}
+                      disabled={deletionActionsBusy && !approveLoading}
                       aria-label={`审批数据删除申请 ${row.id}`}
-                      onClick={() => openDeletionDecision(row, "approve")}
+                      onClick={(event) =>
+                        openDeletionDecision(row, "approve", event.currentTarget)
+                      }
                     >
                       审批
                     </Button>
@@ -460,9 +526,11 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
                       type="link"
                       danger
                       loading={cancelLoading}
-                      disabled={approveLoading}
+                      disabled={deletionActionsBusy && !cancelLoading}
                       aria-label={`取消数据删除申请 ${row.id}`}
-                      onClick={() => openDeletionDecision(row, "cancel")}
+                      onClick={(event) =>
+                        openDeletionDecision(row, "cancel", event.currentTarget)
+                      }
                     >
                       取消申请
                     </Button>
@@ -501,6 +569,10 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
         mask={{ closable: !deletionSubmitting }}
         onOk={() => void confirmDeletionDecision()}
         onCancel={closeDeletionDecision}
+        afterClose={() => {
+          deletionTriggerRef.current?.focus();
+          deletionTriggerRef.current = null;
+        }}
         destroyOnHidden
       >
         <Typography.Paragraph type="secondary">
@@ -508,6 +580,17 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
             ? `申请 ${deletionDecision.request.id} · 范围 ${deletionDecision.request.scope}`
             : ""}
         </Typography.Paragraph>
+        {deletionError ? (
+          <Alert
+            id="data-deletion-error"
+            type="error"
+            showIcon
+            role="alert"
+            message="数据删除操作失败"
+            description={deletionError}
+            style={{ marginBottom: 16 }}
+          />
+        ) : null}
         <Form layout="vertical">
           <Form.Item
             label="具体原因"
@@ -537,7 +620,11 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
               }
               aria-invalid={deletionReasonTouched && deletionReasonInvalid}
               placeholder="说明核验依据、业务背景或取消原因"
-              onChange={(event) => setDeletionReason(event.target.value)}
+              aria-describedby={deletionError ? "data-deletion-error" : undefined}
+              onChange={(event) => {
+                setDeletionReason(event.target.value);
+                setDeletionError(undefined);
+              }}
               onBlur={() => setDeletionReasonTouched(true)}
             />
           </Form.Item>

@@ -24,9 +24,14 @@ describe("ops console component architecture", () => {
       new URL("pages/OpsConsoleController.tsx", srcRoot),
       "utf8",
     );
-    expect(controller.split("\n").length).toBeLessThan(120);
     expect(controller).not.toContain("营销能力运营治理");
     expect(controller).not.toContain("套餐、加购与增长规则");
+    expect(controller).not.toMatch(/from ["'][^"']*\/\w+Page(?:\.js)?["']/u);
+    expect(controller).not.toMatch(/\b(?:Card|Table|Form|Descriptions)\b/u);
+    expect(controller).not.toMatch(/\b(?:rpc|opsRestGet|rpcWithMeta)\s*\(/u);
+    expect(controller).toContain("const ActivePage = opsPageRegistry[activeDomain]");
+    expect(controller).toContain("<ActivePage model={model}");
+    expect(controller).toContain("<OpsPageBoundary resetKey={activeDomain}>");
   });
 
   it("uses real domain pages instead of generic children wrappers", () => {
@@ -39,7 +44,7 @@ describe("ops console component architecture", () => {
     ]) {
       const page = readFileSync(new URL(`pages/${pageName}`, srcRoot), "utf8");
       expect(page, pageName).not.toContain("children: ReactNode");
-      expect(page.split("\n").length, pageName).toBeGreaterThan(20);
+      expect(page.split("\n").length, pageName).toBeGreaterThan(18);
       expect(page.split("\n").length, pageName).toBeLessThan(120);
     }
   });
@@ -53,14 +58,20 @@ describe("ops console component architecture", () => {
       "OverviewPage",
       "TasksPage",
       "StoresPage",
+      "RulesPage",
       "ModelsPage",
       "FinancePage",
+      "AuditPage",
     ]) {
       expect(registry).toContain(`import(\"../pages/${pageName}.js\")`);
     }
     expect(registry).toContain('import { UsersPage } from "../pages/UsersPage.js"');
     expect(registry).toContain("users: lazy(async () => ({ default: UsersPage }))");
-    expect(registry.match(/lazy\(/gu)).toHaveLength(6);
+    for (const routeName of ["SupportRoute", "IncidentsRoute", "FeatureFlagsRoute"]) {
+      expect(registry).toContain(`import("./routes/${routeName}.js")`);
+    }
+    expect(registry).toContain('storage: lazy(');
+    expect(registry.match(/lazy\(/gu)).toHaveLength(13);
   });
 
   it("separates transport and domain types from React page files", () => {

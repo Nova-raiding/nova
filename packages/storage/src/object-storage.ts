@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { chmod, mkdir, open, readFile, rename, rm, lstat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, rename, rm, lstat, readdir, writeFile } from 'node:fs/promises'
 import { isIP } from 'node:net'
 import { dirname, isAbsolute, posix, resolve, sep } from 'node:path'
 
@@ -38,6 +38,15 @@ export interface PromoteCleanObjectInput {
   scanEvidenceRef: string
 }
 
+export interface CopyQuarantineToCleanInput extends PromoteCleanObjectInput {
+  /** Immutable digest bound to the committed scan receipt. */
+  expectedSha256: string
+  /** Immutable byte length bound to the committed scan receipt. */
+  expectedSizeBytes: number
+}
+
+export type DeleteQuarantineAfterCommitInput = CopyQuarantineToCleanInput
+
 /**
  * Storage boundary used by asset/application code.
  *
@@ -48,8 +57,15 @@ export interface PromoteCleanObjectInput {
  */
 export interface ObjectStoragePort {
   putQuarantine(input: PutQuarantineObjectInput): Promise<ObjectMetadata>
+  /** List metadata only for one already-authorized workspace. */
+  list(workspaceId: string): Promise<readonly ObjectMetadata[]>
   head(workspaceId: string, key: string, options?: { includeQuarantine?: boolean }): Promise<ObjectMetadata | null>
   get(workspaceId: string, key: string, options?: { includeQuarantine?: boolean }): Promise<StoredObject>
+  /** Phase 1: create and verify clean bytes while retaining the quarantine source. */
+  copyQuarantineToClean(input: CopyQuarantineToCleanInput): Promise<ObjectMetadata>
+  /** Phase 2: after the business transaction commits, idempotently remove the verified source. */
+  deleteQuarantineAfterCommit(input: DeleteQuarantineAfterCommitInput): Promise<void>
+  /** @deprecated Compatibility operation; new callers must use the two-phase primitives. */
   promoteClean(input: PromoteCleanObjectInput): Promise<ObjectMetadata>
   delete(workspaceId: string, key: string, options?: { includeQuarantine?: boolean }): Promise<void>
 }
@@ -59,6 +75,8 @@ export interface ObjectStoragePort {
  * cloud SDK or credentials leak into the domain package. */
 export interface CloudObjectTransport {
   head(key: string): Promise<{ contentType?: string; sizeBytes?: number; metadata?: Record<string, string> } | null>
+  /** Provider-native listing. Implementations must return provider keys only. */
+  list?(prefix: string): Promise<readonly string[]>
   get(key: string): Promise<{ body: Uint8Array; contentType?: string; metadata?: Record<string, string> }>
   put(key: string, input: { body: Uint8Array; contentType: string; metadata: Record<string, string>; ifAbsent?: boolean }): Promise<void>
   delete(key: string): Promise<void>
@@ -72,6 +90,14 @@ export class CloudObjectNotFoundError extends Error {
   constructor(message = 'cloud object not found') {
     super(message)
     this.name = 'CloudObjectNotFoundError'
+  }
+}
+
+export class ObjectStoragePartialWriteError extends Error {
+  readonly code = 'OBJECT_STORAGE_PARTIAL_WRITE'
+  constructor(readonly orphanKey: string, readonly cause: unknown, readonly cleanupErrors: unknown[]) {
+    super('object body was written but compensation could not fully remove it')
+    this.name = 'ObjectStoragePartialWriteError'
   }
 }
 
@@ -217,12 +243,41 @@ function requireSha(value: string | undefined, field: string): string | undefine
   return value.toLowerCase()
 }
 
+function requireExpectedSize(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new ObjectStorageError('OBJECT_SIZE_INVALID', 'expectedSizeBytes 必须是非负安全整数', 400)
+  return value
+}
+
+function requireScanEvidence(value: string): string {
+  const evidence = value.trim()
+  if (!evidence || evidence.length > 512 || /[\u0000\r\n]/u.test(evidence)) throw new ObjectStorageError('SCAN_EVIDENCE_REQUIRED', '转入 clean 区域必须提供外部扫描证据引用', 400)
+  return evidence
+}
+
+function cleanKeyForQuarantine(workspaceId: string, quarantineKey: string): { sourceKey: string; targetKey: string } {
+  const source = requireKeyForWorkspace(workspaceId, quarantineKey, 'quarantine')
+  const parts = source.relative.split('/')
+  return { sourceKey: source.relative, targetKey: `clean/${workspaceId}/${parts[2]}/${parts.slice(3).join('/')}` }
+}
+
+function assertPromotionEvidence(metadata: ObjectMetadata, expectedSha256: string, expectedSizeBytes: number, scanEvidenceRef?: string): void {
+  if (metadata.sha256 !== expectedSha256 || metadata.sizeBytes !== expectedSizeBytes) {
+    throw new ObjectStorageError('OBJECT_PROMOTION_EVIDENCE_MISMATCH', '对象 SHA-256 或大小与扫描证据不一致', 409)
+  }
+  if (scanEvidenceRef !== undefined && metadata.scanEvidenceRef !== scanEvidenceRef) {
+    throw new ObjectStorageError('OBJECT_PROMOTION_EVIDENCE_MISMATCH', 'clean 对象与扫描证据引用不一致', 409)
+  }
+}
+
 function safeFileName(fileName: string): string {
   const trimmed = fileName.trim()
   if (!trimmed || trimmed === '.' || trimmed === '..' || trimmed.includes('/') || trimmed.includes('\\') || /[\u0000-\u001f\u007f]/u.test(trimmed)) {
     throw new ObjectStorageError('OBJECT_NAME_INVALID', '素材文件名无效', 400)
   }
-  const normalized = trimmed.normalize('NFKC').replace(/[^\p{L}\p{N}._-]/gu, '_').replace(/^\.+/u, '_').slice(0, MAX_FILE_NAME_LENGTH)
+  // Object keys must be portable across case-sensitive cloud stores and the
+  // case-insensitive filesystems used by local acceptance. Preserve the
+  // display name in asset metadata, but canonicalize the storage filename.
+  const normalized = trimmed.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}._-]/gu, '_').replace(/^\.+/u, '_').slice(0, MAX_FILE_NAME_LENGTH)
   if (!normalized || normalized === '.' || normalized === '..') throw new ObjectStorageError('OBJECT_NAME_INVALID', '素材文件名无效', 400)
   return normalized
 }
@@ -230,7 +285,7 @@ function safeFileName(fileName: string): string {
 function requireContentType(contentType: string): string {
   const value = contentType.trim()
   if (!value || value.length > 255 || !/^[\w.+-]+\/[\w.+-]+(?:\s*;.*)?$/u.test(value)) throw new ObjectStorageError('OBJECT_CONTENT_TYPE_INVALID', '素材 MIME 类型无效', 400)
-  return value
+  return value.toLowerCase()
 }
 
 function requireKeyForWorkspace(workspaceId: string, key: string, expectedZone?: ObjectZone): { zone: ObjectZone; relative: string } {
@@ -279,6 +334,33 @@ export class LocalObjectStorage implements ObjectStoragePort {
     return this.writeObject({ key, workspaceId, zone: 'quarantine', contentType, body: input.body, sha256: digest })
   }
 
+  async list(workspaceId: string): Promise<readonly ObjectMetadata[]> {
+    const scope = requireId(workspaceId, 'workspaceId')
+    const result: ObjectMetadata[] = []
+    for (const zone of ['quarantine', 'clean'] as const) {
+      const workspaceRoot = resolve(this.rootDir, zone, scope)
+      const visit = async (directory: string, relativeDirectory: string): Promise<void> => {
+        let entries
+        try { entries = await readdir(directory, { withFileTypes: true }) } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+          throw new ObjectStorageError('OBJECT_STORAGE_UNAVAILABLE', '对象存储暂时不可用', 503)
+        }
+        for (const entry of entries) {
+          if (entry.isSymbolicLink()) throw new ObjectStorageError('OBJECT_PATH_INVALID', '对象存储目录不能包含符号链接', 500)
+          const relative = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name
+          const fullPath = resolve(directory, entry.name)
+          if (entry.isDirectory()) await visit(fullPath, relative)
+          else if (entry.isFile() && entry.name.endsWith('.meta.json')) {
+            const key = `${zone}/${scope}/${relative.slice(0, -'.meta.json'.length)}`
+            result.push(await this.readMetadata(scope, key))
+          }
+        }
+      }
+      await visit(workspaceRoot, '')
+    }
+    return result.sort((left, right) => left.key.localeCompare(right.key))
+  }
+
   async head(workspaceId: string, key: string, options: { includeQuarantine?: boolean } = {}): Promise<ObjectMetadata | null> {
     const parsed = requireKeyForWorkspace(workspaceId, key)
     this.assertReadableZone(parsed.zone, options.includeQuarantine === true)
@@ -294,23 +376,99 @@ export class LocalObjectStorage implements ObjectStoragePort {
     const parsed = requireKeyForWorkspace(workspaceId, key)
     this.assertReadableZone(parsed.zone, options.includeQuarantine === true)
     const metadata = await this.readMetadata(workspaceId, parsed.relative)
-    const body = new Uint8Array(await readFile(this.objectPath(parsed.relative)))
+    let body: Uint8Array
+    try {
+      body = new Uint8Array(await readFile(this.objectPath(parsed.relative)))
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') throw new ObjectStorageError('OBJECT_NOT_FOUND', '对象不存在', 404)
+      throw new ObjectStorageError('OBJECT_STORAGE_UNAVAILABLE', '对象存储暂时不可用', 503)
+    }
     this.verifyBody(metadata, body)
     return { metadata, body }
   }
 
+  async copyQuarantineToClean(input: CopyQuarantineToCleanInput): Promise<ObjectMetadata> {
+    const workspaceId = requireId(input.workspaceId, 'workspaceId')
+    const evidence = requireScanEvidence(input.scanEvidenceRef)
+    const expectedSha256 = requireSha(input.expectedSha256, 'expectedSha256')!
+    const expectedSizeBytes = requireExpectedSize(input.expectedSizeBytes)
+    const { sourceKey, targetKey } = cleanKeyForQuarantine(workspaceId, input.quarantineKey)
+    const existingTarget = await this.head(workspaceId, targetKey, { includeQuarantine: true })
+    if (existingTarget) {
+      const verifiedTarget = await this.get(workspaceId, targetKey, { includeQuarantine: true })
+      assertPromotionEvidence(verifiedTarget.metadata, expectedSha256, expectedSizeBytes, evidence)
+      try {
+        const sourceObject = await this.get(workspaceId, sourceKey, { includeQuarantine: true })
+        assertPromotionEvidence(sourceObject.metadata, expectedSha256, expectedSizeBytes)
+        const sameContent = sourceObject.metadata.contentType === verifiedTarget.metadata.contentType
+        if (!sameContent) throw new ObjectStorageError('OBJECT_PROMOTION_CONFLICT', '已有 clean 对象与 quarantine 源内容不一致，已保留源对象并阻止晋级', 409)
+      } catch (error) {
+        if (!(error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND')) throw error
+      }
+      return verifiedTarget.metadata
+    }
+    const sourceObject = await this.get(workspaceId, sourceKey, { includeQuarantine: true })
+    assertPromotionEvidence(sourceObject.metadata, expectedSha256, expectedSizeBytes)
+    const target = await this.writeObject({ key: targetKey, workspaceId, zone: 'clean', contentType: sourceObject.metadata.contentType, body: sourceObject.body, sha256: sourceObject.metadata.sha256, scanEvidenceRef: evidence })
+    const verifiedTarget = await this.get(workspaceId, target.key, { includeQuarantine: true })
+    assertPromotionEvidence(verifiedTarget.metadata, expectedSha256, expectedSizeBytes, evidence)
+    // Phase 1 never removes quarantine, including idempotent retries.
+    await this.get(workspaceId, sourceKey, { includeQuarantine: true })
+    return target
+  }
+
+  async deleteQuarantineAfterCommit(input: DeleteQuarantineAfterCommitInput): Promise<void> {
+    const workspaceId = requireId(input.workspaceId, 'workspaceId')
+    const evidence = requireScanEvidence(input.scanEvidenceRef)
+    const expectedSha256 = requireSha(input.expectedSha256, 'expectedSha256')!
+    const expectedSizeBytes = requireExpectedSize(input.expectedSizeBytes)
+    const { sourceKey, targetKey } = cleanKeyForQuarantine(workspaceId, input.quarantineKey)
+    const target = await this.get(workspaceId, targetKey, { includeQuarantine: true })
+    assertPromotionEvidence(target.metadata, expectedSha256, expectedSizeBytes, evidence)
+    const objectPath = await this.safePath(sourceKey)
+    let sourceFound = false
+    try {
+      const sourceMetadata = await this.readMetadata(workspaceId, sourceKey)
+      assertPromotionEvidence(sourceMetadata, expectedSha256, expectedSizeBytes)
+      sourceFound = true
+    } catch (error) {
+      if (!(error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND')) throw error
+    }
+    try {
+      const body = new Uint8Array(await readFile(objectPath))
+      if (body.byteLength !== expectedSizeBytes || sha256(body) !== expectedSha256) throw new ObjectStorageError('OBJECT_PROMOTION_EVIDENCE_MISMATCH', '隔离源内容与提交证据不一致', 409)
+      sourceFound = true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    if (!sourceFound) return
+    await this.removeObject(sourceKey)
+  }
+
   async promoteClean(input: PromoteCleanObjectInput): Promise<ObjectMetadata> {
     const workspaceId = requireId(input.workspaceId, 'workspaceId')
-    const evidence = input.scanEvidenceRef.trim()
-    if (!evidence || evidence.length > 512 || /[\u0000\r\n]/u.test(evidence)) throw new ObjectStorageError('SCAN_EVIDENCE_REQUIRED', '转入 clean 区域必须提供外部扫描证据引用', 400)
-    const source = requireKeyForWorkspace(workspaceId, input.quarantineKey, 'quarantine')
-    const sourceMetadata = await this.readMetadata(workspaceId, source.relative)
-    const body = new Uint8Array(await readFile(this.objectPath(source.relative)))
-    this.verifyBody(sourceMetadata, body)
-    const parts = source.relative.split('/')
-    const targetKey = `clean/${workspaceId}/${parts[2]}/${parts.slice(3).join('/')}`
-    const target = await this.writeObject({ key: targetKey, workspaceId, zone: 'clean', contentType: sourceMetadata.contentType, body, sha256: sourceMetadata.sha256, scanEvidenceRef: evidence })
-    await this.removeObject(source.relative)
+    const evidence = requireScanEvidence(input.scanEvidenceRef)
+    const { sourceKey, targetKey } = cleanKeyForQuarantine(workspaceId, input.quarantineKey)
+    let source: StoredObject
+    try {
+      source = await this.get(workspaceId, sourceKey, { includeQuarantine: true })
+    } catch (error) {
+      if (!(error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND')) throw error
+      const target = await this.get(workspaceId, targetKey, { includeQuarantine: true })
+      if (target.metadata.scanEvidenceRef !== evidence) throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', 'clean 对象已由不同扫描证据提升', 409)
+      await this.deleteQuarantineAfterCommit({ ...input, expectedSha256: target.metadata.sha256, expectedSizeBytes: target.metadata.sizeBytes })
+      return target.metadata
+    }
+    const existingTarget = await this.head(workspaceId, targetKey, { includeQuarantine: true })
+    if (existingTarget?.scanEvidenceRef !== undefined && existingTarget.scanEvidenceRef !== evidence) throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', 'clean 对象已由不同扫描证据提升', 409)
+    const phaseInput = { ...input, expectedSha256: source.metadata.sha256, expectedSizeBytes: source.metadata.sizeBytes }
+    let target: ObjectMetadata
+    try { target = await this.copyQuarantineToClean(phaseInput) } catch (error) {
+      if (error instanceof ObjectStorageError && error.code === 'OBJECT_PROMOTION_EVIDENCE_MISMATCH' && existingTarget) throw new ObjectStorageError('OBJECT_PROMOTION_CONFLICT', '已有 clean 对象与 quarantine 源内容不一致，已保留源对象并阻止晋级', 409)
+      throw error
+    }
+    await this.deleteQuarantineAfterCommit(phaseInput)
     return target
   }
 
@@ -333,8 +491,26 @@ export class LocalObjectStorage implements ObjectStoragePort {
     await this.ensureDirectory(dirname(objectPath))
     try {
       const existing = await this.readMetadata(input.workspaceId, parsed.relative)
-      if (existing.sha256 === metadata.sha256 && existing.sizeBytes === metadata.sizeBytes) return existing
-      throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', '对象 key 已存在且内容不同', 409)
+      const sameImmutableMetadata = existing.sha256 === metadata.sha256
+        && existing.sizeBytes === metadata.sizeBytes
+        && existing.contentType === metadata.contentType
+        && existing.zone === metadata.zone
+        && existing.workspaceId === metadata.workspaceId
+        && existing.scanEvidenceRef === metadata.scanEvidenceRef
+      if (sameImmutableMetadata) {
+        try {
+          // Metadata is not a durable upload by itself. Verify the body before
+          // acknowledging an idempotent retry after a partial delete/crash.
+          const existingBody = new Uint8Array(await readFile(objectPath))
+          this.verifyBody(existing, existingBody)
+        } catch (error) {
+          if (error instanceof ObjectStorageError && error.code === 'OBJECT_INTEGRITY_FAILED') throw error
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ObjectStorageError('OBJECT_INTEGRITY_FAILED', '对象元数据存在但内容缺失，需要存储修复', 500)
+          throw new ObjectStorageError('OBJECT_STORAGE_UNAVAILABLE', '对象存储暂时不可用', 503)
+        }
+        return existing
+      }
+      throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', '对象 key 已存在且内容或安全元数据不同', 409)
     } catch (error) {
       if (!(error instanceof ObjectStorageError) || error.code !== 'OBJECT_NOT_FOUND') throw error
     }
@@ -467,6 +643,24 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
     return this.writeObject({ key, workspaceId, zone: 'quarantine', contentType, body: input.body, sha256: digest })
   }
 
+  async list(workspaceId: string): Promise<readonly ObjectMetadata[]> {
+    const scope = requireId(workspaceId, 'workspaceId')
+    if (!this.transport.list) throw new ObjectStorageError('OBJECT_LIST_UNSUPPORTED', '对象存储未提供清单能力', 503)
+    const result: ObjectMetadata[] = []
+    for (const zone of ['quarantine', 'clean'] as const) {
+      const providerPrefix = this.objectKey(`${zone}/${scope}/`)
+      const keys = await this.transport.list(providerPrefix)
+      for (const providerKey of keys) {
+        if (!providerKey.endsWith('.merchant-meta.json')) continue
+        const logicalKey = this.keyPrefix && providerKey.startsWith(`${this.keyPrefix}/`)
+          ? providerKey.slice(this.keyPrefix.length + 1, -'.merchant-meta.json'.length)
+          : providerKey.slice(0, -'.merchant-meta.json'.length)
+        result.push(await this.readMetadata(scope, logicalKey))
+      }
+    }
+    return result.sort((left, right) => left.key.localeCompare(right.key))
+  }
+
   async head(workspaceId: string, key: string, options: { includeQuarantine?: boolean } = {}): Promise<ObjectMetadata | null> {
     const parsed = requireKeyForWorkspace(workspaceId, key)
     this.assertReadableZone(parsed.zone, options.includeQuarantine === true)
@@ -486,24 +680,100 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
     return { metadata, body: result.body }
   }
 
+  async copyQuarantineToClean(input: CopyQuarantineToCleanInput): Promise<ObjectMetadata> {
+    const workspaceId = requireId(input.workspaceId, 'workspaceId')
+    const evidence = requireScanEvidence(input.scanEvidenceRef)
+    const expectedSha256 = requireSha(input.expectedSha256, 'expectedSha256')!
+    const expectedSizeBytes = requireExpectedSize(input.expectedSizeBytes)
+    const { sourceKey, targetKey } = cleanKeyForQuarantine(workspaceId, input.quarantineKey)
+    const existingTarget = await this.head(workspaceId, targetKey, { includeQuarantine: true })
+    if (existingTarget) {
+      let verifiedTarget: StoredObject
+      try {
+        verifiedTarget = await this.get(workspaceId, targetKey, { includeQuarantine: true })
+      } catch (error) {
+        if (error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND') throw new ObjectStorageError('OBJECT_INTEGRITY_FAILED', 'clean 对象元数据存在但内容缺失，需要存储修复', 500)
+        throw error
+      }
+      assertPromotionEvidence(verifiedTarget.metadata, expectedSha256, expectedSizeBytes, evidence)
+      try {
+        const sourceObject = await this.get(workspaceId, sourceKey, { includeQuarantine: true })
+        assertPromotionEvidence(sourceObject.metadata, expectedSha256, expectedSizeBytes)
+        if (sourceObject.metadata.contentType !== verifiedTarget.metadata.contentType) throw new ObjectStorageError('OBJECT_PROMOTION_CONFLICT', '已有 clean 对象与 quarantine 源内容不一致，已保留源对象并阻止晋级', 409)
+      } catch (error) {
+        if (!(error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND')) throw error
+      }
+      return verifiedTarget.metadata
+    }
+    const sourceObject = await this.get(workspaceId, sourceKey, { includeQuarantine: true })
+    assertPromotionEvidence(sourceObject.metadata, expectedSha256, expectedSizeBytes)
+    const target = await this.writeObject({ key: targetKey, workspaceId, zone: 'clean', contentType: sourceObject.metadata.contentType, body: sourceObject.body, sha256: sourceObject.metadata.sha256, scanEvidenceRef: evidence })
+    const verifiedTarget = await this.get(workspaceId, target.key, { includeQuarantine: true })
+    assertPromotionEvidence(verifiedTarget.metadata, expectedSha256, expectedSizeBytes, evidence)
+    return target
+  }
+
+  async deleteQuarantineAfterCommit(input: DeleteQuarantineAfterCommitInput): Promise<void> {
+    const workspaceId = requireId(input.workspaceId, 'workspaceId')
+    const evidence = requireScanEvidence(input.scanEvidenceRef)
+    const expectedSha256 = requireSha(input.expectedSha256, 'expectedSha256')!
+    const expectedSizeBytes = requireExpectedSize(input.expectedSizeBytes)
+    const { sourceKey, targetKey } = cleanKeyForQuarantine(workspaceId, input.quarantineKey)
+    const target = await this.get(workspaceId, targetKey, { includeQuarantine: true })
+    assertPromotionEvidence(target.metadata, expectedSha256, expectedSizeBytes, evidence)
+    let sourceMetadata: ObjectMetadata | null = null
+    try { sourceMetadata = await this.readMetadata(workspaceId, sourceKey) } catch (error) {
+      if (!(error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND')) throw error
+    }
+    if (sourceMetadata) assertPromotionEvidence(sourceMetadata, expectedSha256, expectedSizeBytes)
+    let sourceBody: Uint8Array | null = null
+    try { sourceBody = (await this.transport.get(this.objectKey(sourceKey))).body } catch (error) {
+      if (!isCloudNotFound(error)) throw cloudStorageError(error)
+    }
+    if (sourceBody && (sourceBody.byteLength !== expectedSizeBytes || sha256(sourceBody) !== expectedSha256)) {
+      throw new ObjectStorageError('OBJECT_PROMOTION_EVIDENCE_MISMATCH', '隔离源内容与提交证据不一致', 409)
+    }
+    if (!sourceMetadata && !sourceBody) return
+    await this.delete(workspaceId, sourceKey, { includeQuarantine: true })
+  }
+
   async promoteClean(input: PromoteCleanObjectInput): Promise<ObjectMetadata> {
     const workspaceId = requireId(input.workspaceId, 'workspaceId')
-    const evidence = input.scanEvidenceRef.trim()
-    if (!evidence || evidence.length > 512 || /[\u0000\r\n]/u.test(evidence)) throw new ObjectStorageError('SCAN_EVIDENCE_REQUIRED', '转入 clean 区域必须提供外部扫描证据引用', 400)
-    const source = requireKeyForWorkspace(workspaceId, input.quarantineKey, 'quarantine')
-    const sourceObject = await this.get(workspaceId, source.relative, { includeQuarantine: true })
-    const parts = source.relative.split('/')
-    const targetKey = `clean/${workspaceId}/${parts[2]}/${parts.slice(3).join('/')}`
-    const target = await this.writeObject({ key: targetKey, workspaceId, zone: 'clean', contentType: sourceObject.metadata.contentType, body: sourceObject.body, sha256: sourceObject.metadata.sha256, scanEvidenceRef: evidence })
-    await this.delete(workspaceId, source.relative, { includeQuarantine: true })
+    const evidence = requireScanEvidence(input.scanEvidenceRef)
+    const { sourceKey, targetKey } = cleanKeyForQuarantine(workspaceId, input.quarantineKey)
+    let source: StoredObject
+    try {
+      source = await this.get(workspaceId, sourceKey, { includeQuarantine: true })
+    } catch (error) {
+      if (!(error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND')) throw error
+      const target = await this.get(workspaceId, targetKey, { includeQuarantine: true })
+      if (target.metadata.scanEvidenceRef !== evidence) throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', 'clean 对象已由不同扫描证据提升', 409)
+      await this.deleteQuarantineAfterCommit({ ...input, expectedSha256: target.metadata.sha256, expectedSizeBytes: target.metadata.sizeBytes })
+      return target.metadata
+    }
+    const existingTarget = await this.head(workspaceId, targetKey, { includeQuarantine: true })
+    if (existingTarget?.scanEvidenceRef !== undefined && existingTarget.scanEvidenceRef !== evidence) throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', 'clean 对象已由不同扫描证据提升', 409)
+    const phaseInput = { ...input, expectedSha256: source.metadata.sha256, expectedSizeBytes: source.metadata.sizeBytes }
+    let target: ObjectMetadata
+    try { target = await this.copyQuarantineToClean(phaseInput) } catch (error) {
+      if (error instanceof ObjectStorageError && error.code === 'OBJECT_PROMOTION_EVIDENCE_MISMATCH' && existingTarget) throw new ObjectStorageError('OBJECT_PROMOTION_CONFLICT', '已有 clean 对象与 quarantine 源内容不一致，已保留源对象并阻止晋级', 409)
+      throw error
+    }
+    await this.deleteQuarantineAfterCommit(phaseInput)
     return target
   }
 
   async delete(workspaceId: string, key: string, options: { includeQuarantine?: boolean } = {}): Promise<void> {
     const parsed = requireKeyForWorkspace(workspaceId, key)
     this.assertReadableZone(parsed.zone, options.includeQuarantine === true)
-    await this.transport.delete(this.objectKey(parsed.relative))
-    await this.transport.delete(this.metadataKey(parsed.relative))
+    // Deletion is intentionally idempotent so orphan cleanup converges after
+    // a previous attempt deleted either the body or its metadata successfully.
+    try { await this.transport.delete(this.objectKey(parsed.relative)) } catch (error) {
+      if (!isCloudNotFound(error)) throw cloudStorageError(error)
+    }
+    try { await this.transport.delete(this.metadataKey(parsed.relative)) } catch (error) {
+      if (!isCloudNotFound(error)) throw cloudStorageError(error)
+    }
   }
 
   private assertReadableZone(zone: ObjectZone, includeQuarantine: boolean) { if (zone === 'quarantine' && !includeQuarantine) throw new ObjectStorageError('QUARANTINE_ACCESS_DENIED', '隔离区素材未经扫描，不允许读取', 403) }
@@ -521,7 +791,27 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
     const parsed = requireKeyForWorkspace(input.workspaceId, input.key, input.zone)
     const metadata: ObjectMetadata = { key: parsed.relative, workspaceId: input.workspaceId, zone: input.zone, contentType: input.contentType, sizeBytes: input.body.byteLength, sha256: input.sha256, createdAt: new Date().toISOString(), ...(input.scanEvidenceRef ? { scanEvidenceRef: input.scanEvidenceRef } : {}) }
     const existing = await this.head(input.workspaceId, parsed.relative, { includeQuarantine: true })
-    if (existing) { if (existing.sha256 === metadata.sha256 && existing.sizeBytes === metadata.sizeBytes) return existing; throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', '对象 key 已存在且内容不同', 409) }
+    if (existing) {
+      const sameImmutableMetadata = existing.sha256 === metadata.sha256
+        && existing.sizeBytes === metadata.sizeBytes
+        && existing.contentType === metadata.contentType
+        && existing.zone === metadata.zone
+        && existing.workspaceId === metadata.workspaceId
+        && existing.scanEvidenceRef === metadata.scanEvidenceRef
+      if (sameImmutableMetadata) {
+        try {
+          // Metadata alone is not a committed object. Verify the body before
+          // acknowledging an idempotent retry so a partial delete cannot turn
+          // into a false upload success.
+          await this.get(input.workspaceId, parsed.relative, { includeQuarantine: true })
+        } catch (error) {
+          if (error instanceof ObjectStorageError && error.code === 'OBJECT_NOT_FOUND') throw new ObjectStorageError('OBJECT_INTEGRITY_FAILED', '对象元数据存在但内容缺失，需要存储修复', 500)
+          throw error
+        }
+        return existing
+      }
+      throw new ObjectStorageError('OBJECT_ALREADY_EXISTS', '对象 key 已存在且内容或安全元数据不同', 409)
+    }
     const objectKey = this.objectKey(parsed.relative)
     const metadataKey = this.metadataKey(parsed.relative)
     await this.transport.put(objectKey, { body: input.body, contentType: input.contentType, metadata: { sha256: input.sha256, workspaceId: input.workspaceId, zone: input.zone }, ifAbsent: true })
@@ -531,8 +821,9 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
       // The body has no usable identity until its metadata is durable. Best-effort
       // compensation prevents a provider failure from leaving an unaddressable
       // object that blocks the same asset on retry.
-      await this.transport.delete(objectKey).catch(() => undefined)
-      await this.transport.delete(metadataKey).catch(() => undefined)
+      const cleanup = await Promise.allSettled([this.transport.delete(objectKey), this.transport.delete(metadataKey)])
+      const cleanupErrors = cleanup.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map(result => result.reason)
+      if (cleanupErrors.length) throw new ObjectStoragePartialWriteError(parsed.relative, error, cleanupErrors)
       throw error
     }
     return metadata

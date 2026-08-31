@@ -101,6 +101,30 @@ describe('HttpPlatformConnector', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('cancels in-flight platform HTTP when the durable lease signal aborts', async () => {
+    const controller = new AbortController()
+    let platformSignal: AbortSignal | undefined
+    let requestStarted!: () => void
+    const started = new Promise<void>(resolve => { requestStarted = resolve })
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async (_url, init) => {
+        platformSignal = init?.signal ?? undefined
+        requestStarted()
+        return await new Promise<Response>((_resolve, reject) => platformSignal?.addEventListener('abort', () => reject(platformSignal?.reason), { once: true }))
+      },
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+    const pending = connector.syncProducts({ workspaceId: 'ws', accountId: 'acct', signal: controller.signal })
+    await started
+    controller.abort(new Error('lease lost'))
+
+    await expect(pending).rejects.toMatchObject({ normalized: { code: 'REMOTE_ERROR', unknown: false } })
+    expect(platformSignal?.aborted).toBe(true)
+  })
+
   it('revalidates a signer-mutated URL in secure environments', async () => {
     vi.stubEnv('NODE_ENV', 'staging')
     try {

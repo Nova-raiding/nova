@@ -245,6 +245,12 @@ export interface KnowledgeModuleOptions {
 }
 
 export interface KnowledgeEvent {
+  /** Durable envelope metadata used to defend replay against a mis-scoped source. */
+  id?: string
+  workspaceId?: string
+  aggregateId?: string
+  sequence?: number
+  createdAt?: string
   eventType: string
   payload: Record<string, unknown>
 }
@@ -359,6 +365,7 @@ export class KnowledgeModule {
   private readonly feedback = new Map<string, FeedbackRecord>()
   private readonly suggestions = new Map<string, LearningSuggestion>()
   private readonly competitors = new Map<string, CompetitorAnalysis>()
+  private readonly hydratedSequences = new Map<string, number>()
 
   constructor(options: KnowledgeModuleOptions = {}) {
     this.clock = options.clock ?? (() => new Date().toISOString())
@@ -375,6 +382,14 @@ export class KnowledgeModule {
   /** Rebuild knowledge state from append-only events after an API restart. */
   hydrate(events: readonly KnowledgeEvent[]): void {
     for (const event of events) {
+      const known = new Set(['knowledge.rule.created', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
+      if (!known.has(event.eventType)) throw new KnowledgeError('KNOWLEDGE_EVENT_UNKNOWN', `unsupported knowledge event: ${event.eventType}`)
+      if (event.aggregateId && event.sequence !== undefined) {
+        if (!Number.isSafeInteger(event.sequence) || event.sequence < 1) throw new KnowledgeError('KNOWLEDGE_EVENT_SEQUENCE_INVALID')
+        const previous = this.hydratedSequences.get(event.aggregateId)
+        if (previous !== undefined && event.sequence <= previous) throw new KnowledgeError('KNOWLEDGE_EVENT_SEQUENCE_OUT_OF_ORDER')
+        this.hydratedSequences.set(event.aggregateId, event.sequence)
+      }
       const payload = event.payload
       const id = typeof payload.id === 'string' ? payload.id : undefined
       if (id) {
@@ -390,6 +405,13 @@ export class KnowledgeModule {
         if (![...this.suggestions.values()].some(item => item.feedbackId === id)) this.createSuggestion(feedback)
       }
       if ((event.eventType === 'knowledge.learning.confirmed' || event.eventType === 'knowledge.learning.dismissed') && id) this.suggestions.set(id, clone(payload as unknown as LearningSuggestion))
+      const observed = payload.knowledge_observation
+      if ((event.eventType === 'task_feedback_submitted' || event.eventType === 'publish.observation') && observed && typeof observed === 'object' && !Array.isArray(observed)) {
+        const item = observed as Record<string, unknown>
+        if (typeof item.workspaceId === 'string' && typeof item.sourceKey === 'string' && (item.kind === 'feedback' || item.kind === 'platform_rejection') && typeof item.reason === 'string') {
+          this.recordObservedFeedback({ workspaceId: item.workspaceId, sourceKey: item.sourceKey, kind: item.kind, reason: item.reason, ...(typeof item.platform === 'string' ? { platform: item.platform } : {}), ...(typeof item.contentId === 'string' ? { contentId: item.contentId } : {}), ...(typeof item.details === 'string' ? { details: item.details } : {}), ...(item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata) ? { metadata: item.metadata as Record<string, string> } : {}), ...(typeof item.createdAt === 'string' ? { createdAt: item.createdAt } : {}) })
+        }
+      }
     }
   }
 
@@ -567,6 +589,21 @@ export class KnowledgeModule {
     return clone(record)
   }
 
+  recordObservedFeedback(input: FeedbackCreateInput & { sourceKey: string; createdAt?: string }): FeedbackRecord {
+    const sourceKey = requiredText(input.sourceKey, 'FEEDBACK_SOURCE_KEY_REQUIRED')
+    const existing = [...this.feedback.values()].find(item => item.workspaceId === input.workspaceId && item.metadata.source_key === sourceKey)
+    if (existing) return clone(existing)
+    const record: FeedbackRecord = {
+      id: `feedback_observed_${sourceKey}`, workspaceId: requiredText(input.workspaceId, 'WORKSPACE_REQUIRED'), kind: input.kind,
+      ...(input.platform ? { platform: input.platform.trim() } : {}), ...(input.contentId ? { contentId: input.contentId.trim() } : {}),
+      reason: requiredText(input.reason, 'FEEDBACK_REASON_REQUIRED'), ...(input.details ? { details: input.details.trim() } : {}),
+      metadata: { ...(input.metadata ?? {}), source_key: sourceKey }, createdAt: input.createdAt ?? this.now(),
+    }
+    this.feedback.set(record.id, record)
+    this.createSuggestion(record, `learning_observed_${sourceKey}`)
+    return clone(record)
+  }
+
   listFeedback(workspaceId: string, kind?: FeedbackKind): FeedbackRecord[] {
     return [...this.feedback.values()].filter(item => item.workspaceId === workspaceId && (!kind || item.kind === kind)).map(clone)
   }
@@ -576,10 +613,17 @@ export class KnowledgeModule {
     return record?.workspaceId === workspaceId ? clone(record) : undefined
   }
 
-  private createSuggestion(record: FeedbackRecord): LearningSuggestion {
+  removeUnpersistedFeedback(workspaceId: string, feedbackId: string): void {
+    const record = this.feedback.get(feedbackId)
+    if (!record || record.workspaceId !== workspaceId) return
+    this.feedback.delete(feedbackId)
+    for (const [id, suggestion] of this.suggestions) if (suggestion.workspaceId === workspaceId && suggestion.feedbackId === feedbackId) this.suggestions.delete(id)
+  }
+
+  private createSuggestion(record: FeedbackRecord, suggestionId?: string): LearningSuggestion {
     const scope: RuleScope = record.platform ? 'platform' : 'global'
     const suggestion: LearningSuggestion = {
-      id: this.nextId('learning'), workspaceId: record.workspaceId, feedbackId: record.id, status: 'pending',
+      id: suggestionId ?? this.nextId('learning'), workspaceId: record.workspaceId, feedbackId: record.id, status: 'pending',
       summary: `根据${record.kind === 'platform_rejection' ? '平台驳回' : '反馈'}“${record.reason}”生成待确认建议`,
       proposedRule: {
         content: record.details ? `${record.reason}：${record.details}` : record.reason,

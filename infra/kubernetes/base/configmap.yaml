@@ -4,32 +4,69 @@ metadata:
   name: merchant-runtime
 data:
   NODE_ENV: production
+  CONNECTOR_FIXTURE_MODE: "false"
   OPS_AUTH_MODE: oidc
+  # Production authorization is fail-closed. Durable platform assignments are
+  # authoritative over gateway role claims so revocation takes effect on the
+  # next request instead of waiting for an upstream session refresh.
+  MCP_AUTHZ_MODE: enforce
+  AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: "true"
   # The merchant host uses the bearer boundary; ops.merchant.example.com
   # remains OIDC-gateway-only. The API compares this exact host value.
   MERCHANT_BEARER_HOSTNAME: merchant.example.com
   PORT: "8787"
   # Target profile: 12 API replicas x 12 + 40 Worker replicas x 3 = 264;
   # leaves headroom below the 300 backend connection budget.
-  DB_POOL_MAX: "12"
+  DB_POOL_MAX: "10"
+  OPS_DB_POOL_MAX: "3"
+  RUN_MIGRATIONS_ON_STARTUP: "false"
   MAX_ACTIVE_JOBS_PER_WORKSPACE: "3"
   WORKER_API_BASE_URL: http://merchant-api:8787
+  # Scan callbacks use a dedicated ClusterIP Service that is never referenced
+  # by public Ingress. The scan Deployment maps this value to WORKER_API_BASE_URL.
+  ASSET_SCANNER_INTERNAL_API_BASE_URL: http://merchant-api-scanner-internal:8787
   WORKER_DB_POOL_MAX: "3"
   WORKER_DB_CONNECTION_TIMEOUT_MS: "3000"
   WORKER_WORKSPACES: auto
   WORKER_POLL_INTERVAL_MS: "500"
+  STORAGE_RECONCILIATION_INTERVAL_MS: "900000"
   WORKER_BATCH_SIZE: "100"
   WORKER_WORKSPACE_BATCH_SIZE: "10"
-  WORKER_LEASE_MS: "30000"
+  # Must exceed the maximum model call plus worker callback timeout and margin.
+  WORKER_LEASE_MS: "900000"
+  AI_TIMEOUT_MS: "90000"
+  WORKER_API_TIMEOUT_MS: "360000"
   # Admission limits are provider-approved values, not server capacity claims.
   # Override per environment after the platform/model quota evidence is signed.
   WORKER_PLATFORM_QUOTA_PER_MINUTE: "60"
   WORKER_MODEL_QUOTA_PER_MINUTE: "60"
   REQUEST_BODY_LIMIT_BYTES: "52428800"
+  # Production scanning is always delegated to the isolated scan worker. Any
+  # missing scanner dependency must retain the object in quarantine.
+  ALLOW_LOCAL_ASSET_SCAN_FIXTURE: "false"
+  ASSET_SCANNER_MODE: clamav_worker
+  # Public scanner identity contract. These values are not credentials: the API
+  # accepts heartbeats/receipts only from the explicitly approved service ID,
+  # and fails readiness when ClamAV definitions are below this release floor.
+  ASSET_SCANNER_SERVICE_ID: merchant-asset-scanner-production
+  ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: merchant-asset-scanner-production
+  ASSET_SCAN_MIN_DEFINITIONS_VERSION: "28000"
+  ASSET_SCAN_POLICY_VERSION: "2026-08-30"
+  ASSET_SCANNER_TIMEOUT_MS: "90000"
+  WORKER_SCAN_MAX_ATTEMPTS: "12"
+  WORKER_SCAN_RETRY_BASE_MS: "5000"
+  WORKER_SCAN_RETRY_MAX_MS: "900000"
+  CLAMAV_HOST: "127.0.0.1"
+  CLAMAV_PORT: "3310"
+  CLAMAV_TIMEOUT_MS: "30000"
+  CLAMAV_MAX_FILE_BYTES: "52428800"
+  CLAMAV_SIGNATURE_MAX_AGE_MINUTES: "1440"
   ASSET_STORAGE_BUCKET: merchant-production-assets
   ASSET_STORAGE_REGION: cn
   ASSET_STORAGE_ENDPOINT: https://s3.cn.example-provider.com
   ASSET_STORAGE_PREFIX: merchant-assets
+  PUBLIC_ASSET_BASE_URL: https://merchant.example.com
+  ASSET_DISPLAY_URL_SIGNING_KEY_ID: display-active
   ASSET_UPLOAD_MAX_BYTES: "52428800"
   OBJECT_STORAGE_VERSIONING: "true"
   DATA_RETENTION_DAYS: "90"
@@ -40,15 +77,45 @@ data:
   LIFECYCLE_POLICY_REF: vault://merchant-asset-lifecycle-policy
   ALERT_CHANNEL_SECRET_REF: vault://merchant-alert-channel
   MODEL_RELAY_BASE_URL: https://model-relay.example.com/v1
+  MODEL_RELAY_ALLOWED_HOSTS: model-relay.example.com
+  VIDEO_ARTIFACT_ALLOWED_HOSTS: video-cdn.example.com
+  IMAGE_ARTIFACT_ALLOWED_HOSTS: image-cdn.example.com
+  MODEL_RELAY_PRICING_DERIVATION_ENABLED: "true"
+  MODEL_RELAY_PRICING_GROUP: SVIP
+  MODEL_RELAY_TEXT_PRICING_GROUP: VIP
+  MODEL_RELAY_OCR_PRICING_GROUP: VIP
+  MODEL_RELAY_IMAGE_PRICING_GROUP: VIP
+  MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP: VIP
+  MODEL_RELAY_VIDEO_PRICING_GROUP: SVIP
+  MODEL_RELAY_VIDEO_PRICING_OVERRIDES: '{"happyhorse-1.1-t2v":0.4508,"happyhorse-1.1-i2v":0.4508,"happyhorse-1.1-r2v":0.4508,"wan3.0-video":0.25}'
+  MODEL_RELAY_COST_EVIDENCE: "false"
+  MODEL_RELAY_TEXT_COST_EVIDENCE: "false"
+  MODEL_RELAY_OCR_COST_EVIDENCE: "false"
+  MODEL_RELAY_IMAGE_COST_EVIDENCE: "false"
+  MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: "false"
+  MODEL_RELAY_VIDEO_COST_EVIDENCE: "false"
   IMAGE_MODEL: merchant-main-image
+  IMAGE_GENERATION_EXECUTION_MODE: durable
+  IMAGE_GENERATION_PATH: /images/generations
+  # Provider-specific status lookup is required before ambiguous outcomes can
+  # be reconciled. Keep it empty in the base until the relay contract supplies
+  # a real request-id endpoint; outcome_unknown remains fail-closed.
+  IMAGE_STATUS_PATH: ""
+  IMAGE_EDIT_PATH: /images/generations
+  IMAGE_TIMEOUT_MS: "300000"
+  IMAGE_EDIT_TIMEOUT_MS: "300000"
   IMAGE_EDIT_MODEL: merchant-main-image-edit
   OCR_MODEL: merchant-vision-ocr
   VIDEO_MODEL: merchant-video
+  IMAGE_RESPONSE_FORMAT: url
+  VIDEO_DURATION_SECONDS: "100"
+  VIDEO_GENERATION_PATH: /video/generations
+  VIDEO_STATUS_PATH: /video/generations/{job_id}
   # Platform-owned model settings only. API keys are injected from the Secret
   # Manager contract; zero limits intentionally keep traffic fail-closed until
   # provider quota and cost approval are attached to the release.
   AI_MODEL: merchant-main-text
-  AI_MAX_INPUT_TOKENS: "12000"
+  AI_MAX_INPUT_TOKENS: "4000"
   AI_MAX_OUTPUT_TOKENS: "2500"
   MODEL_RPM_LIMIT: "0"
   MODEL_TPM_LIMIT: "0"

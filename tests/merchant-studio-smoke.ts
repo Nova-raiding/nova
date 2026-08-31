@@ -22,6 +22,7 @@ type Envelope<T> = {
 }
 
 type McpEnvelope<T> = Envelope<{ result: T }>
+type ItemsPage<T> = { items: T[]; total: number; limit: number; offset: number }
 
 const apiUrl = (process.env.SMOKE_API_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '')
 const uiUrl = (process.env.SMOKE_UI_URL ?? 'http://127.0.0.1:18081').replace(/\/$/, '')
@@ -95,12 +96,20 @@ function expectError(error: unknown, code: string, label: string) {
   assert(actual.code === code, `${label}: expected ${code}, got ${actual.code ?? actual.status ?? 'unknown'}`)
 }
 
+function normalizeItems<T>(value: T[] | ItemsPage<T>, label: string): T[] {
+  if (Array.isArray(value)) return value
+  assert(Array.isArray(value.items), `${label} returned neither an array nor a paginated items response`)
+  return value.items
+}
+
 async function checkUi() {
   const response = await fetch(uiUrl)
   assert(response.ok, `UI ${uiUrl} returned HTTP ${response.status}`)
   const html = await response.text()
   assert(html.includes('Merchant Studio'), 'UI shell does not contain Merchant Studio')
-  const asset = html.match(/src="([^"]+\.(?:js|tsx))"/)?.[1]
+  // Vite dev entries may carry a cache-busting query string. Keep the
+  // smoke check strict about the asset type while accepting that valid URL.
+  const asset = html.match(/src="([^"]+\.(?:js|tsx)(?:\?[^\"]+)?)"/)?.[1]
   assert(asset, 'UI index does not reference a JavaScript entry/bundle')
   const assetResponse = await fetch(new URL(asset, `${uiUrl}/`))
   assert(assetResponse.ok, `UI JavaScript bundle returned HTTP ${assetResponse.status}`)
@@ -132,7 +141,7 @@ async function main() {
     await request(`/v1/billing/callback/wechat`, { method: 'POST', body: JSON.stringify({ workspace_id: workspaceId, order_id: order.id, provider_trade_id: `merchant-studio-smoke-trade-${workspaceId}`, amount_fen: Math.round(Number(order.amount_cny) * 100), state: 'SUCCESS' }) })
   }
 
-  const productsBefore = await request<Array<{ id: string; platform: Platform; workspaceId: string; title: string }>>('/v1/products')
+  const productsBefore = normalizeItems(await request<Array<{ id: string; platform: Platform; workspaceId: string; title: string }> | ItemsPage<{ id: string; platform: Platform; workspaceId: string; title: string }>>('/v1/products'), 'products')
   for (const product of productsBefore) assert(product.workspaceId === workspaceId, `product ${product.id} crossed workspace boundary`)
 
   const syncResults = await Promise.all(platforms.map(async platform => {
@@ -150,7 +159,7 @@ async function main() {
   }))
   assert(syncResults.length === platforms.length, 'not all platform sync probes completed')
 
-  const products = await request<Array<{ id: string; platform: Platform; title: string }>>('/v1/products')
+  const products = normalizeItems(await request<Array<{ id: string; platform: Platform; title: string }> | ItemsPage<{ id: string; platform: Platform; title: string }>>('/v1/products'), 'products')
   if (mode === 'production') {
     console.log(JSON.stringify({ status: 'PASS', mode, ui, platforms, productCount: products.length, fullFlow: 'SKIPPED_READ_ONLY_PRODUCTION', note: 'Production smoke is read-only; use disposable fixture mode for workflow writes.' }, null, 2))
     return

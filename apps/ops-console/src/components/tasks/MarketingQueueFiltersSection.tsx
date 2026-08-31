@@ -28,6 +28,7 @@ export function MarketingQueueFiltersSection({
       <Space wrap>
         <Select
           allowClear
+          aria-label="按营销队列平台筛选"
           placeholder="平台"
           style={{ width: 150 }}
           value={queueFilters.platform}
@@ -41,6 +42,7 @@ export function MarketingQueueFiltersSection({
         />
         <Select
           allowClear
+          aria-label="按营销队列店铺筛选"
           placeholder="店铺"
           style={{ width: 240 }}
           value={queueFilters.accountId}
@@ -54,6 +56,7 @@ export function MarketingQueueFiltersSection({
         />
         <Input
           allowClear
+          aria-label="按营销队列商品 ID 筛选"
           placeholder="商品 ID"
           style={{ width: 180 }}
           value={queueFilters.productId ?? ""}
@@ -66,6 +69,7 @@ export function MarketingQueueFiltersSection({
         />
         <Input
           allowClear
+          aria-label="按营销队列任务 ID 筛选"
           placeholder="任务 ID"
           style={{ width: 180 }}
           value={queueFilters.taskId ?? ""}
@@ -78,6 +82,7 @@ export function MarketingQueueFiltersSection({
         />
         <Select
           allowClear
+          aria-label="按营销队列状态筛选"
           placeholder="状态"
           style={{ width: 160 }}
           value={queueFilters.state}

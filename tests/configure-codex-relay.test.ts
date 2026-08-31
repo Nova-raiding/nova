@@ -13,6 +13,20 @@ describe('Codex relay configuration renderer', () => {
     expect(png.readUInt32BE(20)).toBeGreaterThanOrEqual(16)
   })
 
+  it('includes the per-duration billing field in the real video relay canary', () => {
+    const source = readFileSync('scripts/model-relay-canary.ts', 'utf8')
+    expect(source).toContain("duration: videoDurationSeconds")
+    expect(source).not.toContain("output: 'rendering', context: { canary: true }")
+  })
+
+  it('records auditable pricing fields and can reuse a paid video task for status evidence', () => {
+    const source = readFileSync('scripts/model-relay-canary.ts', 'utf8')
+    expect(source).toContain('MODEL_RELAY_CANARY_VIDEO_TASK_ID')
+    expect(source).toContain('pricingVersion: quote.metadata.pricing_version')
+    expect(source).toContain('pricingGroup: quote.metadata.pricing_group')
+    expect(source).toContain('costCny: quote.costCny')
+  })
+
   it('preserves unrelated settings and replaces the selected provider section', () => {
     const rendered = renderCodexRelayConfig({
       existing: 'approval_policy = "on-request"\nmodel = "old"\nmodel_provider = "old_provider"\n\n[model_providers.damai_relay]\nbase_url = "https://old.example/v1"\n\n[other]\nvalue = true\n',

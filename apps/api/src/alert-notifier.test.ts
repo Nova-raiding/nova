@@ -10,6 +10,8 @@ describe('alert notifier', () => {
   it('fails closed when the channel is not configured or is insecure in production', () => {
     expect(alertNotificationReadiness({ NODE_ENV: 'production' })).toMatchObject({ configured: false, ready: false })
     expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'http://alerts.test', OPS_ALERT_WEBHOOK_SECRET: 'secret' })).toMatchObject({ configured: true, ready: false })
+    expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'https://alerts.test/hook', OPS_ALERT_WEBHOOK_SECRET: 'secret' })).toMatchObject({ configured: true, ready: false, reason: '安全环境必须配置 OPS_ALERT_WEBHOOK_ALLOWED_HOSTS' })
+    expect(alertNotificationReadiness({ NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'https://127.0.0.1/hook', OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: '127.0.0.1', OPS_ALERT_WEBHOOK_SECRET: 'secret' })).toMatchObject({ configured: true, ready: false })
   })
 
   it('signs a sanitized alert and retries transient webhook failures', async () => {
@@ -17,7 +19,7 @@ describe('alert notifier', () => {
       .mockResolvedValueOnce(new Response('busy', { status: 503 }))
       .mockResolvedValueOnce(new Response('rate limited', { status: 429 }))
       .mockResolvedValueOnce(new Response('{}', { status: 202 }))
-    const result = await notifyOperationalAlert(alert, { env: { NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'https://alerts.test/hook', OPS_ALERT_WEBHOOK_SECRET: 'secret' }, fetchImpl, now: () => 1_756_089_600_000, requestId: 'notify_test' })
+    const result = await notifyOperationalAlert(alert, { env: { NODE_ENV: 'production', OPS_ALERT_WEBHOOK_URL: 'https://alerts.test/hook', OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: 'alerts.test', OPS_ALERT_WEBHOOK_SECRET: 'secret' }, fetchImpl, now: () => 1_756_089_600_000, requestId: 'notify_test' })
     expect(result).toMatchObject({ delivery: 'delivered', attempts: 3, requestId: 'notify_test' })
     expect(fetchImpl).toHaveBeenCalledTimes(3)
     const request = fetchImpl.mock.calls[2]?.[1] as RequestInit

@@ -60,7 +60,7 @@ async function callMcp<T = unknown>(
 }
 
 function resultOf<T>(response: McpResponse<T>): T {
-  expect(response.status).toBe(200)
+  expect(response.status, JSON.stringify(response.body)).toBe(200)
   expect(response.body.error).toBeNull()
   expect(response.body.data).not.toBeNull()
   return response.body.data!.result
@@ -76,9 +76,11 @@ beforeAll(async () => {
   vi.stubEnv('VIDEO_MODEL_RELAY_API_KEY', 'video-relay-test-key')
   vi.stubEnv('VIDEO_MODEL', 'video-e2e-v1')
   api = await import('./server.js')
+  api.setVideoArtifactFetcherForTests(async () => new Response(Uint8Array.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0, 0, 0, 0, 0]), { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': '20' } }))
 })
 
 afterAll(async () => {
+  api?.setVideoArtifactFetcherForTests(undefined)
   if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
   vi.unstubAllEnvs()
 })

@@ -4,16 +4,28 @@
       "command": "sh",
       "args": ["./mcp/bridge.sh"],
       "cwd": ".",
+      "env_vars": [
+        "PATH",
+        "HOME",
+        "CODEX_HOME",
+        "CODEX_NODE_BIN",
+        "CODEX_MCP_NODE_PATH",
+        "NODE_ENV",
+        "MERCHANT_MCP_BASE_URL",
+        "MERCHANT_WORKSPACE_ID",
+        "MERCHANT_MCP_TOKEN",
+        "MERCHANT_ALLOW_FIXTURE_FALLBACK",
+        "MERCHANT_MCP_WRITE_ENABLED",
+        "MERCHANT_RULE_APPROVAL_TOKEN",
+        "MERCHANT_ARTIFACT_DIR",
+        "MERCHANT_MCP_TIMEOUT_MS",
+        "MERCHANT_MCP_RETRY_ATTEMPTS",
+        "MERCHANT_MCP_RETRY_DELAY_MS",
+        "MERCHANT_ASSET_RESOURCE_DOMAINS"
+      ],
       "env": {
-        "MERCHANT_MCP_BASE_URL": "${MERCHANT_MCP_BASE_URL}",
-        "MERCHANT_WORKSPACE_ID": "${MERCHANT_WORKSPACE_ID}",
-        "MERCHANT_MCP_TOKEN": "${MERCHANT_MCP_TOKEN}",
-        "MERCHANT_ALLOW_FIXTURE_FALLBACK": "${MERCHANT_ALLOW_FIXTURE_FALLBACK}",
-        "MERCHANT_MCP_WRITE_ENABLED": "${MERCHANT_MCP_WRITE_ENABLED}",
         "MERCHANT_MCP_ROLE": "viewer",
-        "MERCHANT_ACTOR_ID": "codex-app-user",
-        "MERCHANT_RULE_APPROVAL_TOKEN": "",
-        "MERCHANT_ARTIFACT_DIR": ""
+        "MERCHANT_ACTOR_ID": "codex-app-user"
       }
     }
   }

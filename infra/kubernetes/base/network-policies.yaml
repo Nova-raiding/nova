@@ -1,0 +1,68 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: merchant-api-ingress-boundary
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: merchant-api}}
+  policyTypes: [Ingress]
+  ingress:
+    # Public traffic can reach only the public Service through the ingress
+    # controller. The Ingress itself rejects /v1/internal before proxying.
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: ingress-nginx}
+      ports: [{protocol: TCP, port: 8787}]
+    # First-party UI proxies and callback workers retain access to the normal
+    # API Service. Internal scanner endpoints remain HMAC-authenticated.
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - merchant-ui
+                  - merchant-ops-ui
+                  - merchant-worker-sync
+                  - merchant-worker-generation
+                  - merchant-worker-publish
+                  - merchant-worker-reconcile
+                  - merchant-worker-automation
+                  - merchant-worker-scan
+      ports: [{protocol: TCP, port: 8787}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: merchant-worker-scan-isolation
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: merchant-worker-scan}}
+  policyTypes: [Ingress, Egress]
+  # clamd has no Service and listens only inside the scan Pod. NetworkPolicy
+  # does not block the worker-to-sidecar loopback path, while this empty rule
+  # prevents every other Pod from reaching clamd on the scan Pod IP.
+  ingress: []
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: merchant-api}}
+      ports: [{protocol: TCP, port: 8787}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    # Database and Redis are private provider endpoints in production. Narrow
+    # these CIDRs in each deployment overlay to the allocated service ranges.
+    - to:
+        - ipBlock: {cidr: 10.0.0.0/8}
+        - ipBlock: {cidr: 172.16.0.0/12}
+        - ipBlock: {cidr: 192.168.0.0/16}
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 6379}
+    # Quarantine objects are fetched from the configured HTTPS object store.
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}
+      ports: [{protocol: TCP, port: 443}]

@@ -6,9 +6,21 @@ export interface ApiHealth {
   setup?: { objectStorage?: { configured: boolean; mode: string } }
 }
 
+export interface PlatformModelStatus {
+  state: string
+  relay?: { configured?: boolean; host?: string | null; reasons?: string[] }
+  capabilities?: { text_generation?: boolean; image_generation?: boolean; image_editing?: boolean; image_fact_ocr?: boolean; video_rendering?: boolean }
+  next_actions?: string[]
+  cost_control_ready?: boolean
+  cost_evidence_ready?: boolean
+  release_metadata_ready?: boolean
+}
+
 export type PlatformId = 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin'
 export type TaskState = string
 export type PublishState = string
+
+const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {}
 
 export interface ApiEnvelope<T> {
   request_id: string
@@ -18,6 +30,35 @@ export interface ApiEnvelope<T> {
   warnings: Array<{ code?: string; message?: string }>
   next_actions: string[]
   error: { code: string; message: string; details?: Record<string, unknown> } | null
+}
+
+export interface ApiPage<T> { items: T[]; total: number; limit: number; offset: number }
+
+export function normalizeApiPage<T>(value: ApiPage<T> | T[], limit: number, offset: number): ApiPage<T> {
+  if (Array.isArray(value)) return { items: value, total: value.length, limit, offset }
+  if (!value || !Array.isArray(value.items) || !Number.isInteger(value.total) || !Number.isInteger(value.limit) || !Number.isInteger(value.offset)) throw new Error('API 分页响应格式无效')
+  return value
+}
+
+export function normalizeApiItems<T>(value: ApiPage<T> | T[]): T[] {
+  if (Array.isArray(value)) return value
+  if (!value || !Array.isArray(value.items)) throw new Error('API 列表响应格式无效')
+  return value.items
+}
+
+async function fetchAllPages<T>(baseUrl: string, path: string, pageSize = 50): Promise<T[]> {
+  const items: T[] = []
+  let offset = 0
+  let total = Number.POSITIVE_INFINITY
+  while (offset < total) {
+    const separator = path.includes('?') ? '&' : '?'
+    const page = normalizeApiPage(await requestApi<ApiPage<T> | T[]>(baseUrl, `${path}${separator}limit=${pageSize}&offset=${offset}`), pageSize, offset)
+    items.push(...page.items)
+    total = page.total
+    if (!page.items.length) break
+    offset += page.items.length
+  }
+  return items
 }
 
 export interface PlatformAccount {
@@ -41,12 +82,43 @@ export interface CapabilityEvidenceRow {
   verifiedAt?: string
   apiVersion?: string
   scope?: string
+  /** Optional lifecycle fields returned by newer media-spec registries. */
+  source?: string
+  version?: string
+  expiresAt?: string
+  status?: 'approved' | 'expired' | 'draft' | string
 }
 
 export interface PlatformCapability {
   platform: PlatformId
   readiness: { ready: boolean; reasons: string[]; verifiedCapabilities: string[] }
   capabilities: CapabilityEvidenceRow[]
+}
+
+export interface DeliveryReadinessSnapshot {
+  generatedAt?: string
+  mappingPreflights?: Array<{
+    id: string
+    platform: PlatformId
+    accountId?: string
+    productId?: string
+    status: 'passed' | 'blocked' | 'unverified' | string
+    findings: Array<{ code: string; field?: string; message: string; nextAction?: string }>
+  }>
+  bundles?: Array<{
+    id: string
+    status: 'valid' | 'invalid' | 'unverified' | string
+    manifestHash?: string
+    errors: Array<{ code: string; path?: string; message: string }>
+    verifiedAt?: string
+  }>
+  authenticity?: Array<{
+    id: string
+    kind: 'image' | 'video'
+    status: 'verified' | 'blocked' | 'unverified' | string
+    evidenceRef?: string
+    reasons?: string[]
+  }>
 }
 export interface RulePack {
   id: string
@@ -85,6 +157,12 @@ export interface BillingStatus {
   plugin_access: { unlocked: boolean; balance_cny: string; unlocks: string[] }
   recharge_channels: string[]
   provider_ready: boolean
+  capability_entitlements?: {
+    balance: { state: string; label: string; value_cny: string; reason: string }
+    package_quota: { state: string; label: string; remaining: number | null; reason: string }
+    generation: { state: string; label: string; reason: string; code: string | null }
+    platform_publish: { state: string; label: string; reason: string; code: string | null; platform?: string; store?: string }
+  }
 }
 
 export interface RechargeOrder {
@@ -103,7 +181,7 @@ export interface WorkspaceMetrics {
   stores: Array<{ platform: PlatformId; accountId: string; connection?: { state: string; readable: boolean; dataMode: string }; product?: { total: number } }>
   productSummary: { total: number; lowStock: number; missingImages: number }
   riskSummary: { total: number; returned: number; truncated: boolean }
-  riskItems: Array<{ severity: 'high' | 'medium'; type: string }>
+  riskItems: Array<{ severity: 'high' | 'medium'; type: string; title?: string; platform?: PlatformId; storeName?: string; status?: string; nextAction?: string }>
   taskFunnel: Record<string, number>
 }
 
@@ -121,11 +199,31 @@ export interface Product {
   factsConfirmed: boolean
   source: string
   updatedAt: string
+  version?: number
+  brandId?: string
   price?: number
   category?: string
   images?: string[]
+  /** Read-only relationship returned by the product API; the Studio never edits this locally. */
+  sourceAssetIds?: string[]
   attributes?: Record<string, string>
   skus?: Array<{ id: string; name: string; price?: number; stock?: number; images?: string[]; attributes?: Record<string, string> }>
+  canonical_scope?: { verification_status: 'verified' | 'legacy_only' | 'conflict' | 'blocked'; read_mode?: 'legacy_shadow' | 'dual_verify' | 'canonical_read'; canonical_product_id?: string | null; listing_id?: string | null; listing_count?: number }
+}
+
+export interface ProductIdentityExpectation {
+  productId: string
+  platform: PlatformId
+  accountId?: string
+  storeName?: string
+}
+
+export function assertProductTargetIdentity(product: Product, expected: ProductIdentityExpectation): Product {
+  if (product.id !== expected.productId) throw new Error('商品 ID 与所选商品不一致，已阻止创建任务。')
+  if (product.platform !== expected.platform) throw new Error('商品平台与所选平台不一致，已阻止创建任务。')
+  if (expected.accountId !== undefined && product.accountId !== expected.accountId) throw new Error('商品店铺身份与最新商品事实不一致，已阻止创建任务。')
+  if (expected.storeName !== undefined && product.storeName !== expected.storeName) throw new Error('商品店铺身份与最新商品事实不一致，已阻止创建任务。')
+  return product
 }
 
 export interface Task {
@@ -154,6 +252,9 @@ export interface TaskQuestion {
   prompt: string
   why: string
   ifSkipped: string
+  /** Stable IDs for an explicit selection card; absence means free-form input. */
+  candidates?: string[]
+  evidenceKind?: 'merchant_request' | 'catalog_fact' | 'platform_authorization' | 'platform_rule' | 'system_default'
 }
 
 export interface TaskUnderstanding {
@@ -216,6 +317,43 @@ export interface GenerationJob {
   contentVersionId?: string
   errorCode?: string
   errorMessage?: string
+}
+
+export interface ImageGenerationJob {
+  jobId: string
+  revision: number
+  state: 'queued' | 'running' | 'succeeded' | 'failed' | string
+  archiveState: 'pending' | 'archived' | 'partial' | 'external_unarchived' | string
+  productId: string
+  taskId?: string | null
+  contentVersionId?: string | null
+  imageMode: 'create' | 'optimize' | string
+  direction: string
+  requestedCount: number
+  sourceAssetIds: string[]
+  sourceProductVersion: number
+  intentHash: string
+  executionState?: string | null
+  providerRequestId?: string | null
+  executionAttempt?: number | null
+  reconciliationRequired?: boolean
+  errorCode?: string | null
+  errorMessage?: string | null
+  updatedAt: string
+  createdAt: string
+  outputs: Array<{ visualRef: string; ordinal: number; assetId?: string | null; archiveReceiptId?: string | null; archiveReceiptDigest?: string | null; storageKey: string; mimeType: string; sizeBytes: number; sha256: string; createdAt: string; reviewStatus: string; gate: { archive: string; scan: string; rights: string; authenticity: string; selectable: boolean; blockers: string[] } }>
+  images?: string[]
+  availabilityWarning?: string
+  nextAction: { type: string; label: string; allowed: boolean }
+}
+type ImageGenerationJobWire = {
+  job_id: string; revision: number; state: ImageGenerationJob['state']; archive_state: ImageGenerationJob['archiveState']; product_id: string; task_id?: string | null; content_version_id?: string | null; image_mode: string; direction: string; requested_count: number; source_asset_ids: string[]; source_product_version: number; intent_hash: string; execution_state?: string | null; provider_request_id?: string | null; execution_attempt?: number | null; reconciliation_required?: boolean; error_code?: string | null; error_message?: string | null; updated_at: string; created_at: string; outputs: Array<{ visual_ref: string; ordinal: number; asset_id?: string | null; archive_receipt_id?: string | null; archive_receipt_digest?: string | null; storage_key: string; mime_type: string; size_bytes: number; sha256: string; created_at: string; review_status: string; gate: ImageGenerationJob['outputs'][number]['gate'] }>; images?: string[]; availability_warning?: string; next_action: { type: string; label: string; allowed: boolean }
+}
+
+export type ImageGenerationJobListItem = {
+  jobId: string; productId: string; taskId?: string | null; contentVersionId?: string | null; revision: number
+  state: string; archiveState: string; requestedCount: number; candidateCount: number; productTitle?: string | null; platform?: string | null; storeName?: string | null; createdAt: string; updatedAt: string
+  errorCode?: string; errorMessage?: string
 }
 
 export interface PublishPreview {
@@ -290,6 +428,27 @@ export interface AssetMetadata {
   references: Array<{ name: string; mimeType: string; firstSeenAt: string }>
   revision: number
   createdAt: string
+  readiness?: { status: 'draft' | 'ready' | 'blocked' | string; reasons: string[] }
+  display?: { primaryStatus: string; label: string; sourceState: string; reasons: string[]; nextAction: { method: string; label: string; allowed: boolean } | null }
+}
+
+export interface StorageQuotaProjection {
+  usedBytes: number
+  reservedBytes: number
+  limitBytes: number
+  availableBytes: number
+  status: 'available' | 'near_limit' | 'over_limit' | string
+}
+
+export interface ProductAssetBinding {
+  workspaceId: string
+  productId: string
+  assetId: string
+  assetRole: string
+  ordinal: number
+  status: string
+  createdAt: string
+  updatedAt: string
 }
 
 export type BrandCandidateFieldKey = 'name' | 'positioning' | 'audience' | 'tone' | 'forbiddenTerms' | 'logoRules' | 'colors' | 'fonts' | 'rights'
@@ -362,12 +521,12 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
   return chunks.join('')
 }
 
-export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = (import.meta.env.VITE_WORKSPACE_ID as string | undefined) ?? 'ws_demo'): Promise<T> {
+export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo'): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('accept', 'application/json')
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
   headers.set('x-workspace-id', workspaceId)
-  const token = import.meta.env.VITE_API_TOKEN as string | undefined
+  const token = runtimeEnv.VITE_API_TOKEN
   if (token) headers.set('authorization', `Bearer ${token}`)
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS)
@@ -422,7 +581,7 @@ export function describeApiError(error: unknown) {
   return '请求失败，请稍后重试。'
 }
 
-export async function fetchApiHealth(baseUrl = import.meta.env.VITE_API_BASE_URL): Promise<ApiHealth | null> {
+export async function fetchApiHealth(baseUrl = runtimeEnv.VITE_API_BASE_URL): Promise<ApiHealth | null> {
   if (!baseUrl) return null
   return requestApi<ApiHealth>(baseUrl, '/healthz')
 }
@@ -433,6 +592,7 @@ export async function requestMcp<T>(baseUrl: string, method: string, params: Rec
 }
 
 export const fetchBillingStatus = (baseUrl: string) => requestMcp<BillingStatus>(baseUrl, 'billing.status')
+export const fetchPlatformModelStatus = (baseUrl: string) => requestMcp<PlatformModelStatus>(baseUrl, 'platform.model.status')
 export const fetchWorkspaceMetrics = (baseUrl: string) => requestMcp<WorkspaceMetrics>(baseUrl, 'workspace.metrics')
 export const createRechargeOrder = (baseUrl: string, amountCny: string, channel: 'alipay' | 'wechat' = 'alipay') => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.create', { amount_cny: amountCny, channel, idempotency_key: `studio-${channel}-${amountCny}-${Date.now()}` })
 export const fetchRechargeOrder = (baseUrl: string, orderId: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.get', { order_id: orderId })
@@ -440,10 +600,41 @@ export const optimizeProductTitle = (baseUrl: string, input: { product_id: strin
 
 export const fetchPlatformAccounts = (baseUrl: string) => requestApi<{ items: PlatformAccount[] }>(baseUrl, '/v1/platform-accounts')
 export const fetchPlatformCapabilities = (baseUrl: string) => requestApi<{ items: PlatformCapability[] }>(baseUrl, '/v1/platform-capabilities')
-export const fetchRulePacks = (baseUrl: string, platform?: PlatformId) => requestApi<RulePack[]>(baseUrl, `/v1/rules${platform ? `?platform=${encodeURIComponent(platform)}` : ''}`)
+export const fetchDeliveryReadiness = (baseUrl: string) => requestApi<DeliveryReadinessSnapshot>(baseUrl, '/v1/delivery-readiness')
+/** Execute the server-owned mapping gate; callers must provide the full evidence envelope. */
+export const evaluatePlatformMappingPreflight = (baseUrl: string, input: Record<string, unknown>) => requestMcp<{ publishable: boolean; findings: Array<{ code: string; field?: string; message: string }>; confirmationValid: boolean }>(baseUrl, 'platform.mapping.preflight', { input_json: JSON.stringify(input) })
+export const fetchRulePacks = (baseUrl: string, platform?: PlatformId) => fetchAllPages<RulePack>(baseUrl, `/v1/rules${platform ? `?platform=${encodeURIComponent(platform)}` : ''}`)
 export const fetchCatalogCategories = (baseUrl: string) => requestApi<CatalogCategory[]>(baseUrl, '/v1/catalog/categories')
-export const fetchProducts = (baseUrl: string) => requestApi<Product[]>(baseUrl, '/v1/products')
-export const fetchAssets = (baseUrl: string) => requestApi<AssetMetadata[]>(baseUrl, '/v1/assets')
+export const fetchProducts = (baseUrl: string) => fetchAllPages<Product>(baseUrl, '/v1/products')
+export const fetchProductPage = (baseUrl: string, options: { query?: string; platform?: PlatformId; accountId?: string; factsConfirmed?: boolean; limit?: number; offset?: number } = {}) => {
+  const limit = options.limit ?? 20
+  const offset = options.offset ?? 0
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (options.query) params.set('query', options.query)
+  if (options.platform) params.set('platform', options.platform)
+  if (options.accountId) params.set('account_id', options.accountId)
+  if (options.factsConfirmed !== undefined) params.set('facts_confirmed', String(options.factsConfirmed))
+  return requestApi<ApiPage<Product> | Product[]>(baseUrl, `/v1/products?${params.toString()}`).then(value => normalizeApiPage(value, limit, offset))
+}
+export const fetchProductAssetBindings = (baseUrl: string, productId: string) => requestApi<{ items: ProductAssetBinding[]; source?: string }>(baseUrl, `/v1/products/${encodeURIComponent(productId)}/assets`)
+export const fetchProductsByAsset = (baseUrl: string, assetId: string) => requestApi<{ items: ProductAssetBinding[]; source?: string }>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/products`)
+export const changeProductAssetBinding = (baseUrl: string, productId: string, input: { assetId: string; brandId: string; expectedVersion: number; reason: string; assetRole?: 'source' | 'main' | 'secondary' | 'detail'; ordinal?: number }, mode: 'bind' | 'unbind' = 'bind') => requestApi<{ binding: ProductAssetBinding; audited: boolean }>(baseUrl, `/v1/products/${encodeURIComponent(productId)}/assets`, { method: mode === 'bind' ? 'POST' : 'DELETE', body: JSON.stringify({ asset_id: input.assetId, brand_id: input.brandId, expected_version: input.expectedVersion, reason: input.reason, asset_role: input.assetRole ?? 'source', ...(input.ordinal === undefined ? {} : { ordinal: input.ordinal }) }) })
+export async function fetchProduct(baseUrl: string, productId: string): Promise<Product> {
+  try {
+    return await requestApi<Product>(baseUrl, `/v1/products/${encodeURIComponent(productId)}`)
+  } catch (cause) {
+    if ((cause as ApiError | undefined)?.status !== 404) throw cause
+    const products = await fetchProducts(baseUrl)
+    const product = products.find(candidate => candidate.id === productId)
+    if (product) return product
+    throw cause
+  }
+}
+/** Fetch asset metadata in bounded pages while preserving the legacy array API
+ * used by the current library UI. No individual HTTP response contains the
+ * whole workspace collection. */
+export const fetchAssets = (baseUrl: string) => fetchAllPages<AssetMetadata>(baseUrl, '/v1/assets')
+export const fetchAssetStorageQuota = (baseUrl: string) => requestApi<ApiPage<AssetMetadata> & { storage_quota?: StorageQuotaProjection }>(baseUrl, '/v1/assets?limit=1&offset=0').then(value => value.storage_quota)
 const assetMimeType = (file: File) => file.type || ({
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',
   '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -464,8 +655,8 @@ export const confirmAssetFacts = (baseUrl: string, assetId: string, facts: Recor
 export const parseAsset = (baseUrl: string, assetId: string) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/parse`, { method: 'POST' })
 export async function fetchAssetBlob(baseUrl: string, assetId: string, signal?: AbortSignal): Promise<Blob> {
   const headers = new Headers({ accept: 'application/octet-stream' })
-  headers.set('x-workspace-id', (import.meta.env.VITE_WORKSPACE_ID as string | undefined) ?? 'ws_demo')
-  const token = import.meta.env.VITE_API_TOKEN as string | undefined
+  headers.set('x-workspace-id', runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo')
+  const token = runtimeEnv.VITE_API_TOKEN
   if (token) headers.set('authorization', `Bearer ${token}`)
   const response = await fetch(apiUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { headers, signal })
   if (!response.ok) {
@@ -476,22 +667,32 @@ export async function fetchAssetBlob(baseUrl: string, assetId: string, signal?: 
   return response.blob()
 }
 export const reviewProductImages = (baseUrl: string, productId: string) => requestApi<{ productId: string; images: string[]; findings: ReviewFinding[]; externallyUnverified: string[] }>(baseUrl, `/v1/products/${encodeURIComponent(productId)}/image-review`)
-export const importProduct = (baseUrl: string, input: { platform: PlatformId; title: string; local_product_key?: string; remote_id?: string; category?: string; price?: number; stock?: number; sku_count?: number; store_name?: string }) => requestApi<Product>(baseUrl, '/v1/products/import', { method: 'POST', body: JSON.stringify(input) })
-export const fetchPublishJobs = (baseUrl: string) => requestApi<PublishJob[]>(baseUrl, '/v1/publish-jobs')
-export const createTask = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string }) => requestApi<Task>(baseUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify(input) })
+export const generateProductImages = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string; direction: string; mode: 'create' | 'optimize'; count: number; idempotency_key: string }) => requestMcp<{ job_id: string; product_id: string; next_action?: { type: string; label: string; allowed: boolean } }>(baseUrl, 'catalog.image.generate', input)
+export const retryImageGeneration = (baseUrl: string, jobId: string, expectedRevision: number) => requestMcp<{ job_id: string; previous_job_id: string; state: string }>(baseUrl, 'catalog.image.retry', { job_id: jobId, expected_revision: String(expectedRevision), idempotency_key: `merchant-studio-image-retry-${jobId}-${expectedRevision}` })
+export const importProduct = (baseUrl: string, input: { platform: PlatformId; title: string; local_product_key?: string; remote_id?: string; category?: string; price?: number; stock?: number; sku_count?: number; store_name?: string; asset_ids?: string[] }) => requestApi<Product>(baseUrl, '/v1/products/import', { method: 'POST', body: JSON.stringify(input) })
+export const fetchPublishJobs = (baseUrl: string) => fetchAllPages<PublishJob>(baseUrl, '/v1/publish-jobs')
+export const createTask = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string; request_text?: string; idempotency_key?: string }) => requestApi<Task>(baseUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify(input) })
 export const fetchTask = (baseUrl: string, taskId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}`)
-export const fetchTasks = (baseUrl: string, filters: { state?: string; platform?: PlatformId; query?: string } = {}) => { const params = new URLSearchParams(); if (filters.state) params.set('state', filters.state); if (filters.platform) params.set('platform', filters.platform); if (filters.query) params.set('query', filters.query); return requestApi<Task[]>(baseUrl, `/v1/tasks${params.toString() ? `?${params.toString()}` : ''}`) }
+export const fetchTasks = (baseUrl: string, filters: { state?: string; platform?: PlatformId; query?: string } = {}) => { const params = new URLSearchParams(); if (filters.state) params.set('state', filters.state); if (filters.platform) params.set('platform', filters.platform); if (filters.query) params.set('query', filters.query); return fetchAllPages<Task>(baseUrl, `/v1/tasks${params.toString() ? `?${params.toString()}` : ''}`) }
+export const fetchTaskPage = (baseUrl: string, filters: { state?: string; platform?: PlatformId; query?: string; limit?: number; offset?: number } = {}) => { const limit = filters.limit ?? 20; const offset = filters.offset ?? 0; const params = new URLSearchParams({ limit: String(limit), offset: String(offset) }); if (filters.state) params.set('state', filters.state); if (filters.platform) params.set('platform', filters.platform); if (filters.query) params.set('query', filters.query); return requestApi<ApiPage<Task> | Task[]>(baseUrl, `/v1/tasks?${params.toString()}`).then(value => normalizeApiPage(value, limit, offset)) }
 export const understandTask = (baseUrl: string, requestText: string) => requestApi<TaskUnderstanding>(baseUrl, '/v1/tasks/understand', { method: 'POST', body: JSON.stringify({ request_text: requestText }) })
 export const answerTask = (baseUrl: string, taskId: string, answers: Record<string, string | number | boolean | string[]>, expectedVersion?: number) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/answers`, { method: 'POST', body: JSON.stringify({ answers, ...(expectedVersion === undefined ? {} : { expected_version: expectedVersion }) }) })
 export const createTaskGroup = (baseUrl: string, entries: Array<{ product_id: string; platform: PlatformId; account_id?: string }>, requestText?: string) => requestApi<{ id: string; taskIds: string[]; tasks: Task[] }>(baseUrl, '/v1/task-groups', { method: 'POST', body: JSON.stringify({ entries, ...(requestText ? { request_text: requestText } : {}) }) })
 export const selectDirection = (baseUrl: string, taskId: string, directionId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/directions`, { method: 'POST', body: JSON.stringify({ direction_id: directionId }) })
+export const selectVisualCandidates = (baseUrl: string, contentVersionId: string, visualRefs: string[], expectedRevision: number, reason: string, idempotencyKey: string) => requestMcp<{ content_version_id: string; parent_content_version_id: string; version: number; revision: number; state: string; visualSelection: { state: string; count: number; items: Array<{ visualRef: string; ordinal: number; reviewStatus: string; publishable: boolean }> }; reviewRequired: boolean; approvalRequired: boolean }>(baseUrl, 'content.visual.select', { content_version_id: contentVersionId, visual_refs_json: JSON.stringify(visualRefs), expected_revision: String(expectedRevision), idempotency_key: idempotencyKey, reason })
 export const confirmTaskPlan = (baseUrl: string, taskId: string, expectedVersion?: number) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/plan/confirm`, { method: 'POST', body: JSON.stringify(expectedVersion === undefined ? {} : { expected_version: expectedVersion }) })
 export const enqueueContentGeneration = (baseUrl: string, taskId: string, idempotencyKey: string) => requestApi<GenerationJob>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/content-jobs`, { method: 'POST', headers: { 'idempotency-key': idempotencyKey } })
 export const fetchGenerationJob = (baseUrl: string, jobId: string) => requestApi<GenerationJob>(baseUrl, `/v1/generation-jobs/${encodeURIComponent(jobId)}`)
-export const fetchContentVersions = (baseUrl: string, taskId: string) => requestApi<ContentVersion[]>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/content-versions`)
+export const fetchImageGenerationJob = (baseUrl: string, jobId: string) => requestApi<ImageGenerationJobWire>(baseUrl, `/v1/image-generation-jobs/${encodeURIComponent(jobId)}`).then(value => ({ jobId: value.job_id, revision: value.revision, state: value.state, archiveState: value.archive_state, productId: value.product_id, taskId: value.task_id, contentVersionId: value.content_version_id, imageMode: value.image_mode, direction: value.direction, requestedCount: value.requested_count, sourceAssetIds: value.source_asset_ids, sourceProductVersion: value.source_product_version, intentHash: value.intent_hash, executionState: value.execution_state, providerRequestId: value.provider_request_id, executionAttempt: value.execution_attempt, reconciliationRequired: value.reconciliation_required, errorCode: value.error_code, errorMessage: value.error_message, updatedAt: value.updated_at, createdAt: value.created_at, outputs: value.outputs.map(output => ({ visualRef: output.visual_ref, ordinal: output.ordinal, assetId: output.asset_id, archiveReceiptId: output.archive_receipt_id, archiveReceiptDigest: output.archive_receipt_digest, storageKey: output.storage_key, mimeType: output.mime_type, sizeBytes: output.size_bytes, sha256: output.sha256, createdAt: output.created_at, reviewStatus: output.review_status, gate: output.gate })), images: value.images, availabilityWarning: value.availability_warning, nextAction: value.next_action }))
+export const fetchImageGenerationJobs = (baseUrl: string, filters: { state?: string } = {}) => {
+  const params = new URLSearchParams({ limit: '50', offset: '0' })
+  if (filters.state) params.set('state', filters.state)
+  return requestApi<ApiPage<ImageGenerationJobListItem>>(baseUrl, `/v1/image-generation-jobs?${params.toString()}`)
+}
+export const fetchContentVersions = (baseUrl: string, taskId: string) => fetchAllPages<ContentVersion>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/content-versions`)
 export const reviewContent = (baseUrl: string, contentVersionId: string) => requestApi<{ findings: ReviewFinding[]; categories: ReviewCategory[]; blocking: boolean }>(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/review`)
 export const decideReviewFinding = (baseUrl: string, contentVersionId: string, input: { code: string; field: string; status: 'acknowledged' | 'waived'; reason?: string; expected_revision?: number }) => requestApi<{ version: ContentVersion; report: { findings: ReviewFinding[]; categories: ReviewCategory[]; blocking: boolean } }>(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/review-decisions`, { method: 'POST', body: JSON.stringify(input) })
-export const fetchTaskFeedback = (baseUrl: string, taskId: string) => requestApi<TaskFeedback[]>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/feedback`)
+export const fetchTaskFeedback = (baseUrl: string, taskId: string) => fetchAllPages<TaskFeedback>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/feedback`)
 export const fetchTaskTimeline = (baseUrl: string, taskId: string) => requestApi<TaskTimelineEvent[]>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/timeline?limit=200`)
 export const submitTaskFeedback = (baseUrl: string, taskId: string, input: { content_version_id?: string; rating: FeedbackRating; reason?: string }) => requestApi<TaskFeedback>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/feedback`, { method: 'POST', body: JSON.stringify(input) })
 export const diffContentVersions = (baseUrl: string, contentVersionId: string, againstVersionId?: string) => requestApi<{ fromVersionId: string; toVersionId: string; changes: Array<{ path: string; before: unknown; after: unknown }> }>(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/diff${againstVersionId ? `?against=${encodeURIComponent(againstVersionId)}` : ''}`)
@@ -520,7 +721,7 @@ export const completeFixtureAuthorization = (baseUrl: string, platform: Platform
   return requestApi<{ platform: PlatformId; accountId: string; connected: boolean; initialSync?: { state: string; jobId: string } }>(baseUrl, `/v1/oauth/callback/${platform}?state=${encodeURIComponent(state)}&code=fixture-code`)
 }
 export const syncPlatform = (baseUrl: string, platform: PlatformId, accountId?: string) => requestApi<{ platform: PlatformId; source: string; simulated: boolean; items: Product[] }>(baseUrl, `/v1/platform-accounts/${platform}/sync`, { method: 'POST', headers: accountId ? { 'x-account-id': accountId } : undefined, body: JSON.stringify(accountId ? { account_id: accountId } : {}) })
-export const fetchSyncJobs = (baseUrl: string) => requestApi<SyncJob[]>(baseUrl, '/v1/sync-jobs')
+export const fetchSyncJobs = (baseUrl: string) => fetchAllPages<SyncJob>(baseUrl, '/v1/sync-jobs')
 export const revokePlatform = (baseUrl: string, platform: PlatformId, accountId: string) => requestApi<{ platform: PlatformId; accountId: string; state: string; remoteRevoked: boolean }>(baseUrl, `/v1/platform-accounts/${platform}`, { method: 'DELETE', headers: { 'x-account-id': accountId } })
 export const retrySyncFailures = (baseUrl: string, syncJobId: string, failureIds?: string[]) => requestApi<{ jobs: SyncJob[] }>(baseUrl, `/v1/sync-jobs/${encodeURIComponent(syncJobId)}/retry-failed`, { method: 'POST', body: JSON.stringify(failureIds?.length ? { failure_ids: failureIds } : {}) })
 export const modifyContentVersion = (baseUrl: string, contentVersionId: string, input: { changes: Record<string, unknown>; locked_fields?: string[]; reason: string; expected_revision?: number }) => requestApi<{ source: ContentVersion; version: ContentVersion; task: Task }>(baseUrl, `/v1/content-versions/${encodeURIComponent(contentVersionId)}/modify`, { method: 'POST', body: JSON.stringify(input) })

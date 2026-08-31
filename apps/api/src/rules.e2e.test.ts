@@ -96,6 +96,8 @@ describe('durable rule-center HTTP boundary', () => {
     const listed = await fetch(`${base}/v1/rules?pack_id=catalog`, { headers: readerHeaders }).then(json)
     expect(listed.error).toBeNull()
     expect(listed.data).toHaveLength(1)
+    const listedPage = await fetch(`${base}/v1/rules?pack_id=catalog&limit=1&offset=0`, { headers: readerHeaders }).then(json)
+    expect(listedPage.data).toMatchObject({ items: [expect.objectContaining({ id: (listed.data as Array<{ id: string }>)[0]?.id })], total: 1, limit: 1, offset: 0 })
     const audit = await fetch(`${base}/v1/rules/audit?pack_id=catalog`, { headers: adminHeaders }).then(json)
     expect(audit.error).toBeNull()
     expect(audit.data).toHaveLength(1)
@@ -136,6 +138,13 @@ describe('durable rule-center HTTP boundary', () => {
     expect(repository.versions[0]?.status).toBe('draft')
     expect(repository.audits.map(item => item.action)).toEqual(['created'])
 
+    const refreshedDraft = await fetch(`${base}/mcp`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.list', params: { workspace_id: 'ws_lifecycle' } }),
+    }).then(json)
+    expect(refreshedDraft.error).toBeNull()
+    expect((refreshedDraft.data as { result: Array<{ version: string; status: string }> }).result).toContainEqual(expect.objectContaining({ version: '3.0.0', status: 'draft' }))
+
     const activated = await fetch(`${base}/v1/rules/catalog/versions/3.0.0/status`, {
       method: 'POST', headers,
       body: JSON.stringify({ status: 'active', reason: '审批通过', approval: { approval_ref: 'ticket-3', approved_at: '2026-08-23T02:00:00.000Z', approved_by: 'reviewer_2' } }),
@@ -144,6 +153,23 @@ describe('durable rule-center HTTP boundary', () => {
     expect((activated.data as { status: string; revision: number })).toMatchObject({ status: 'active', revision: 2 })
     expect(repository.audits.map(item => item.action)).toEqual(['created', 'activated'])
     expect(repository.audits[1]).toMatchObject({ actorId: 'rules_admin_1', data: { approved_by: 'reviewer_2', approval_ref: 'ticket-3' } })
+
+    const refreshedActive = await fetch(`${base}/mcp`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'rule.list', params: { workspace_id: 'ws_lifecycle' } }),
+    }).then(json)
+    expect((refreshedActive.data as { result: Array<{ version: string; status: string }> }).result).toContainEqual(expect.objectContaining({ version: '3.0.0', status: 'active' }))
+
+    const inactive = await fetch(`${base}/v1/rules/catalog/versions/3.0.0/status`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ status: 'inactive', reason: '替换前保留历史版本' }),
+    }).then(json)
+    expect(inactive.error).toBeNull()
+    const refreshedInactive = await fetch(`${base}/mcp`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'rule.list', params: { workspace_id: 'ws_lifecycle' } }),
+    }).then(json)
+    expect((refreshedInactive.data as { result: Array<{ version: string; status: string }> }).result).toContainEqual(expect.objectContaining({ version: '3.0.0', status: 'inactive' }))
   })
 
   it('filters rule.list by the requested platform and keeps global rules visible', async () => {
@@ -154,12 +180,17 @@ describe('durable rule-center HTTP boundary', () => {
     await repository.insertVersion({ id: 'global-rule', workspaceId, packId: 'global', name: '全局规则', version: '1', scope: 'global', status: 'active', sourceKind: 'official', sourceReference: 'official://global', sourceCheckedAt: now, checksum: 'a'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
     await repository.insertVersion({ id: 'jd-rule', workspaceId, packId: 'jd', name: '京东规则', version: '1', scope: 'platform', targetId: 'jd', status: 'active', sourceKind: 'official', sourceReference: 'official://jd', sourceCheckedAt: now, checksum: 'b'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
     await repository.insertVersion({ id: 'taobao-rule', workspaceId, packId: 'taobao', name: '淘宝规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active', sourceKind: 'official', sourceReference: 'official://taobao', sourceCheckedAt: now, checksum: 'c'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    await repository.insertVersion({ id: 'draft-rule', workspaceId, packId: 'draft', name: '待审批规则', version: '1', scope: 'global', status: 'draft', sourceKind: 'internal', sourceReference: 'internal://draft', sourceCheckedAt: now, checksum: 'd'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    await repository.insertVersion({ id: 'inactive-rule', workspaceId, packId: 'inactive', name: '已停用规则', version: '1', scope: 'global', status: 'inactive', sourceKind: 'internal', sourceReference: 'internal://inactive', sourceCheckedAt: now, checksum: 'e'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 2 })
     const base = await start()
     const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.list', params: { workspace_id: workspaceId, platform: 'jd' } }) }).then(json)
     expect(response.error).toBeNull()
     expect((response.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule'])
     const unfiltered = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'rule.list', params: { workspace_id: workspaceId } }) }).then(json)
     expect((unfiltered.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule', 'taobao-rule'])
+    const operationsView = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'platform_ops_1', 'x-role': 'platform_ops' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'rule.list', params: { workspace_id: workspaceId } }) }).then(json)
+    expect(operationsView.error).toBeNull()
+    expect((operationsView.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule', 'taobao-rule', 'draft-rule', 'inactive-rule'])
   })
 
   it('uses workspace-persisted rules when automation decides whether to pause', async () => {
@@ -248,5 +279,42 @@ describe('durable rule-center HTTP boundary', () => {
     const restAsync = await fetch(`${base}/v1/tasks/${task.id}/content-jobs`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'idempotency-key': `expired-rule-job-${workspaceId}` }, body: '{}' }).then(json)
     expect(restAsync.error?.code).toBe('PLATFORM_RULE_PREFLIGHT_BLOCKED')
     expect([...service.generationJobs.values()].some(job => job.workspaceId === workspaceId)).toBe(false)
+  })
+
+  it('applies persisted expiration policy and only reports exact normalized conflict keys', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const now = new Date().toISOString()
+    const request = (base: string, workspaceId: string, productId: string, id: number) => fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'multimodal.generate', params: { workspace_id: workspaceId, modality: 'text', prompt: `生成克制商品标题 ${id}`, context_json: JSON.stringify({ brand: { id: 'brand-1', version: '1' }, product: { id: productId, version: '1' }, rules: [{ id: 'client-rule', version: '1' }] }) } }) }).then(json)
+
+    const advisoryWorkspace = `ws_persisted_advisory_${Date.now()}`
+    const advisoryProduct = service.importProduct({ workspaceId: advisoryWorkspace, platform: 'taobao', category: '女装外套', title: '建议规则商品', stock: 4 })
+    service.confirmProductFacts(advisoryWorkspace, advisoryProduct.id)
+    await repository.insertVersion({ id: `category-advisory-${advisoryWorkspace}`, workspaceId: advisoryWorkspace, packId: 'category-advisory', name: '品类建议规则', version: '1', scope: 'category', scopeValue: '女装外套', status: 'active', severity: 'warning', action: 'warn', effectiveTo: '2026-01-01T00:00:00.000Z', sourceKind: 'internal', sourceReference: 'internal://category-advisory', sourceCheckedAt: now, checksum: 'a'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    const base = await start()
+    const advisory = await request(base, advisoryWorkspace, advisoryProduct.id, 1)
+    expect(advisory.error).toBeNull()
+    expect((advisory.data as { result: { rule_preflight: { findings: unknown[] } } }).result.rule_preflight.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'warning', action: 'warn' }))
+
+    await repository.insertVersion({ id: `platform-expired-${advisoryWorkspace}`, workspaceId: advisoryWorkspace, packId: 'platform-expired', name: '平台过期规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'expired', severity: 'warning', action: 'allow', sourceKind: 'official', sourceReference: 'official://platform-expired', sourceCheckedAt: now, checksum: 'b'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    const platformExpired = await request(base, advisoryWorkspace, advisoryProduct.id, 2)
+    expect(platformExpired.error?.code).toBe('PLATFORM_RULE_PREFLIGHT_BLOCKED')
+    expect((platformExpired.error as unknown as { details: { rule_preflight: { findings: unknown[] } } }).details.rule_preflight.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'error', action: 'block' }))
+
+    const conflictWorkspace = `ws_persisted_conflicts_${Date.now()}`
+    const conflictProduct = service.importProduct({ workspaceId: conflictWorkspace, platform: 'taobao', category: '女装外套', title: '精确冲突商品', stock: 4 })
+    service.confirmProductFacts(conflictWorkspace, conflictProduct.id)
+    await repository.insertVersion({ id: `global-hard-${conflictWorkspace}`, workspaceId: conflictWorkspace, packId: 'global-hard', name: '全局硬规则', version: '1', scope: 'global', status: 'active', severity: 'error', action: 'block', sourceKind: 'legal_review', sourceReference: 'legal://global-hard', sourceCheckedAt: now, checksum: 'c'.repeat(64), checks: { required_fields: [' Product.Title '], conflict_keys: ['PRICE\u3000CLAIM'] }, createdBy: 'rules_admin', revision: 1 })
+    await repository.insertVersion({ id: `category-unrelated-${conflictWorkspace}`, workspaceId: conflictWorkspace, packId: 'category-unrelated', name: '无关品类例外', version: '1', scope: 'category', scopeValue: '女装外套', status: 'active', severity: 'warning', action: 'allow', sourceKind: 'internal', sourceReference: 'internal://unrelated', sourceCheckedAt: now, checksum: 'd'.repeat(64), checks: { required_fields: ['product.description'], conflict_keys: ['stock-display'] }, createdBy: 'rules_admin', revision: 1 })
+    const unrelated = await request(base, conflictWorkspace, conflictProduct.id, 3)
+    expect(unrelated.error).toBeNull()
+    expect((unrelated.data as { result: { rule_preflight: { findings: Array<{ code: string }>; rule_hits: Array<{ ruleVersionId: string; matchedChecks: string[] }> } } }).result.rule_preflight.findings.filter(item => item.code === 'RULE_PRIORITY_CONFLICT')).toEqual([])
+    expect((unrelated.data as { result: { rule_preflight: { rule_hits: Array<{ ruleVersionId: string; matchedChecks: string[] }> } } }).result.rule_preflight.rule_hits).toContainEqual(expect.objectContaining({ ruleVersionId: `global-hard-${conflictWorkspace}`, matchedChecks: expect.arrayContaining(['requiredFields', 'conflictKeys']) }))
+
+    await repository.insertVersion({ id: `category-conflict-${conflictWorkspace}`, workspaceId: conflictWorkspace, packId: 'category-conflict', name: '同字段品类例外', version: '1', scope: 'category', scopeValue: '女装外套', status: 'active', severity: 'warning', action: 'allow', sourceKind: 'internal', sourceReference: 'internal://conflict', sourceCheckedAt: now, checksum: 'e'.repeat(64), checks: { required_fields: ['product.title'] }, createdBy: 'rules_admin', revision: 1 })
+    const exactConflict = await request(base, conflictWorkspace, conflictProduct.id, 4)
+    expect(exactConflict.error?.code).toBe('PLATFORM_RULE_PREFLIGHT_BLOCKED')
+    const conflictFinding = (exactConflict.error as unknown as { details: { rule_preflight: { findings: Array<{ code: string; message: string }> } } }).details.rule_preflight.findings.find(item => item.code === 'RULE_PRIORITY_CONFLICT')
+    expect(conflictFinding?.message).toContain('field:product.title')
   })
 })

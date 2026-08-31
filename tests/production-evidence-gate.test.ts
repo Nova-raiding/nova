@@ -10,11 +10,11 @@ const privateKeyPem = pair.privateKey.export({ format: 'pem', type: 'pkcs8' }).t
 const publicKeyPem = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString()
 const otherPublicKey = generateKeyPairSync('ed25519').publicKey.export({ format: 'pem', type: 'spki' }).toString()
 const rsaPublicKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ format: 'pem', type: 'spki' }).toString()
-const digest = `sha256:${'a'.repeat(64)}`; const manifestSha256 = 'd'.repeat(64); const releaseGitSha = 'e'.repeat(40); const now = new Date('2026-08-28T06:00:00Z')
+const imageSetDigest = `sha256:${'a'.repeat(64)}`; const manifestSha256 = 'd'.repeat(64); const releaseGitSha = 'e'.repeat(40); const now = new Date('2026-08-28T06:00:00Z')
 const deploymentNonce = 'deployment_nonce_abcdefghijklmnop'
 const artifactRoot = mkdtempSync(join(tmpdir(), 'production-evidence-artifacts-'))
 afterAll(() => rmSync(artifactRoot, { recursive: true, force: true }))
-const options = (kind: ProductionEvidenceKind) => ({ kind, releaseId: 'release-1', imageDigest: digest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, trustedKeyId: 'release-security-2026', publicKeyPem, now })
+const options = (kind: ProductionEvidenceKind) => ({ kind, releaseId: 'release-1', imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, trustedKeyId: 'release-security-2026', publicKeyPem, now })
 
 function artifactReference(kind: ProductionEvidenceKind, name: string) {
   const relative = `${kind}/${name}.json`; const path = join(artifactRoot, relative); const content = JSON.stringify({ kind, name, provider_request_id: `request-${name}` })
@@ -26,7 +26,7 @@ function evidence(kind: ProductionEvidenceKind) {
   const checkNames = kind === 'payment' ? ['checkout', 'callback', 'callback_replay', 'provider_query', 'reconciliation', 'refund'] : ['backup_checksum', 'isolated_restore', 'migrations', 'data_integrity', 'application_smoke']
   const checks = Object.fromEntries(checkNames.map(name => [name, { status: 'pass', evidence_ref: artifactReference(kind, name) }]))
   const value: Record<string, unknown> = {
-    schema_version: '1', kind, release_id: 'release-1', image_digest: digest, manifest_sha256: manifestSha256, release_git_sha: releaseGitSha, environment: 'production', status: 'pass', generated_at: '2026-08-28T05:20:00Z', attested_at: '2026-08-28T05:30:00Z', expires_at: '2026-08-29T05:30:00Z', evidence_id: `production-${kind}-evidence-0001`, deployment_nonce: deploymentNonce, key_id: 'release-security-2026', simulated: false, verified_by: 'release-manager@example.com', checks,
+    schema_version: '2', kind, release_id: 'release-1', image_set_digest: imageSetDigest, manifest_sha256: manifestSha256, release_git_sha: releaseGitSha, environment: 'production', status: 'pass', generated_at: '2026-08-28T05:20:00Z', attested_at: '2026-08-28T05:30:00Z', expires_at: '2026-08-29T05:30:00Z', evidence_id: `production-${kind}-evidence-0001`, deployment_nonce: deploymentNonce, key_id: 'release-security-2026', simulated: false, verified_by: 'release-manager@example.com', checks,
     ...(kind === 'payment' ? { provider: 'alipay', amount_cny: 0.01, provider_trade_id_sha256: 'b'.repeat(64) } : { recovery_target_isolated: true, backup_sha256: 'c'.repeat(64), source_backup_created_at: '2026-08-28T04:00:00Z', recovery_point_at: '2026-08-28T04:30:00Z' }),
   }
   value.signature_base64 = signProductionEvidence(value, privateKeyPem)
@@ -52,6 +52,13 @@ describe('production payment and restore evidence gates', () => {
   it('rejects a valid signature bound to a different deployment nonce', () => {
     const value = evidence('payment'); value.deployment_nonce = 'different_deployment_nonce_1234'; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
     expect(validateProductionEvidence(value, options('payment'))).toContain('deployment_nonce must match the deployment orchestrator nonce')
+  })
+
+  it('rejects legacy or tampered image bindings even when independently signed', () => {
+    const legacy = evidence('payment'); delete legacy.image_set_digest; legacy.schema_version = '1'; legacy.image_digest = imageSetDigest; legacy.signature_base64 = signProductionEvidence(legacy, privateKeyPem)
+    expect(validateProductionEvidence(legacy, options('payment'))).toEqual(expect.arrayContaining(['schema_version must match 2', `image_set_digest must match ${imageSetDigest}`]))
+    const changed = evidence('payment'); changed.image_set_digest = `sha256:${'f'.repeat(64)}`; changed.signature_base64 = signProductionEvidence(changed, privateKeyPem)
+    expect(validateProductionEvidence(changed, options('payment'))).toContain(`image_set_digest must match ${imageSetDigest}`)
   })
 
   it('rejects missing, changed and symlinked artifacts even when the reference shape is valid', () => {

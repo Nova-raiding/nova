@@ -1,5 +1,74 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DomainError, MerchantService } from './service.js'
+import { createHash } from 'node:crypto'
+import { DomainError, MerchantService, isTrustedCleanAsset, type AssetMetadata } from './service.js'
+import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecyclePort } from './campaign-delivery-orchestrator.js'
+import type { CampaignDeliveryManifestInput } from './campaign-delivery-manifest.js'
+import { verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest } from '../../multimodal/src/delivery-bundle-manifest.js'
+import { platformMediaSpecImmutableDigest, type PlatformMediaSpecRuntimeRecord } from '../../multimodal/src/platform-media-spec-runtime.js'
+
+const digest = (value: string) => createHash('sha256').update(value).digest('hex')
+
+function markTrustedClean(asset: AssetMetadata): void {
+  asset.scanStatus = 'clean'
+  asset.scanReceiptId = `receipt:${asset.id}`
+  asset.scanReceiptDigest = digest(`receipt:${asset.id}`)
+  asset.scanVerdict = 'clean'
+  asset.storageKey = `clean/${asset.workspaceId}/${asset.id}/source`
+}
+
+function archiveReceipt(workspaceId: string, jobId: string, asset: AssetMetadata, createdAt: string) {
+  const archiveReceiptId = `image_archive_${asset.id}`
+  return {
+    archiveReceiptId,
+    archiveReceiptDigest: digest(JSON.stringify({ archiveReceiptId, workspaceId, jobId, assetId: asset.id, objectSha256: asset.sha256, sizeBytes: asset.sizeBytes, mimeType: asset.mimeType, createdAt })),
+  }
+}
+
+function runtimeMediaSpec(overrides: Partial<PlatformMediaSpecRuntimeRecord> = {}): PlatformMediaSpecRuntimeRecord {
+  const base = {
+    id: 'taobao-detail-canary-v1', platform: 'taobao' as const, placement: 'detail-hero', device: 'desktop' as const, version: 'v1',
+    specJson: { width: 1200, height: 400, safeZone: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }, formats: ['webp'], maxFileBytes: 2_000_000 },
+    sourceUrl: 'https://official.example/media-spec', sourceSha256: digest('platform-media-source'), checkedAt: '2025-08-29T08:00:00.000Z',
+    evidenceArtifactRef: 'artifact://canary/taobao-detail-hero', evidenceArtifactSha256: digest('platform-media-canary'), status: 'approved' as const,
+    expiresAt: '2029-08-29T08:00:00.000Z', revision: 2, approvedBy: 'ops-1', approvedAt: '2025-08-29T08:30:00.000Z',
+  }
+  const value = { ...base, ...overrides } as Omit<PlatformMediaSpecRuntimeRecord, 'immutableDigest'>
+  return { ...value, immutableDigest: overrides.immutableDigest ?? platformMediaSpecImmutableDigest(value) }
+}
+
+function readStoredZip(input: Uint8Array): Map<string, Uint8Array> {
+  const bytes = Buffer.from(input)
+  const files = new Map<string, Uint8Array>()
+  let offset = 0
+  while (offset + 4 <= bytes.length && bytes.readUInt32LE(offset) === 0x04034b50) {
+    const method = bytes.readUInt16LE(offset + 8)
+    if (method !== 0) throw new Error(`unsupported ZIP compression method ${method}`)
+    const size = bytes.readUInt32LE(offset + 18)
+    const nameLength = bytes.readUInt16LE(offset + 26)
+    const extraLength = bytes.readUInt16LE(offset + 28)
+    const nameStart = offset + 30
+    const dataStart = nameStart + nameLength + extraLength
+    const dataEnd = dataStart + size
+    if (dataEnd > bytes.length) throw new Error('truncated ZIP entry')
+    const name = bytes.subarray(nameStart, nameStart + nameLength).toString('utf8')
+    if (files.has(name)) throw new Error(`duplicate ZIP entry ${name}`)
+    files.set(name, bytes.subarray(dataStart, dataEnd))
+    offset = dataEnd
+  }
+  if (!files.size) throw new Error('ZIP contains no local file entries')
+  return files
+}
+
+const unchangedVisualComparison = { outcome: 'unchanged' as const, confidence: 0.99 }
+const productionVisualEvidence = (candidateHash: string) => ({
+  originalImage: { width: 1200, height: 1200, hash: digest('original-product-image') },
+  candidateImage: { width: 1200, height: 1200, hash: candidateHash },
+  protectedRegions: [], editableRegions: [], observedChanges: [], ocr: { original: [], candidate: [] },
+  protectedComparisons: { logo: unchangedVisualComparison, certificationMark: unchangedVisualComparison, packagingText: unchangedVisualComparison },
+  productComparisons: { structure: unchangedVisualComparison, color: unchangedVisualComparison, material: unchangedVisualComparison },
+  provenance: { source: 'asset:merchant-original@r1', provider: 'production-visual-diff', model: 'visual-authenticity-v1' },
+  humanReview: { status: 'not_required' as const },
+})
 
 describe('MerchantService', () => {
   it('reuses a deterministic campaign task id and rejects a different scope', () => {
@@ -10,6 +79,66 @@ describe('MerchantService', () => {
     expect(() => service.createTask({ ...input, campaignItemId: 'item_2' })).toThrowError(expect.objectContaining({ code: 'TASK_IDEMPOTENCY_CONFLICT' }))
   })
 
+  it('projects campaign create/generate/get/pause/resume/retry through a validated delivery manifest using real MerchantService tasks', async () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '批量品牌' })
+    const campaignId = 'campaign-domain-flow'
+    const itemId = 'campaign-item-1'
+    const listingId = 'listing-1'
+    const accountId = 'account-1'
+    const visualVersion = { id: 'visual-campaign-1', hash: digest('visual-campaign-1') }
+    const specification = { id: 'spec-campaign-1', hash: digest('spec-campaign-1'), evidenceState: 'production_canary' as const, evidenceRef: 'canary://campaign/spec-1' }
+    const ruleSnapshot = { id: 'rules-campaign-1', hash: digest('rules-campaign-1'), checkedAt: '2026-08-29T08:00:00.000Z', evidenceRef: 'rules://campaign-1' }
+    const campaign: CampaignDeliveryManifestInput = {
+      id: 'delivery-manifest-campaign-1', workspaceId: 'ws_demo', campaignId, brandId: brand.id, revision: 1,
+      items: [{
+        id: itemId, productId: 'prod_fixture_1', listingId, skuIds: ['sku-default'], platform: 'taobao', accountId,
+        contentVersion: { id: 'content-pending-1', hash: digest('content-pending-1') }, visualVersions: [visualVersion], specification, ruleSnapshot,
+        versionVector: { campaignId, brandId: brand.id, productId: 'prod_fixture_1', listingId, skuIds: ['sku-default'], platform: 'taobao', accountId, contentVersionId: 'content-pending-1', visualVersionIds: [visualVersion.id], specificationId: specification.id, ruleSnapshotId: ruleSnapshot.id },
+        review: { status: 'pending' }, publish: { status: 'not_ready', attempts: 0 },
+      }],
+    }
+    let generatedTaskId = ''
+    const port: CampaignDeliveryLifecyclePort = {
+      execute: async operation => {
+        const item = campaign.items[0]!
+        if (operation === 'generate') {
+          const task = service.createTask({ workspaceId: 'ws_demo', productId: item.productId, platform: item.platform, accountId, brandId: brand.id, campaignId, campaignItemId: item.id })
+          generatedTaskId = task.id
+          service.selectDirection(task.id, 'A', task.version)
+          const version = service.createDraft(task.id)
+          item.contentVersion = { id: version.id, hash: digest(JSON.stringify(version.body)) }
+          item.versionVector.contentVersionId = version.id
+          campaign.revision = (campaign.revision ?? 0) + 1
+        } else if (operation === 'pause') {
+          campaign.paused = true; campaign.pauseReason = '运营暂停'; campaign.revision = (campaign.revision ?? 0) + 1
+        } else if (operation === 'resume') {
+          campaign.paused = false; delete campaign.pauseReason
+          item.review = { status: 'approved', approval: { id: 'approval-campaign-1', platform: item.platform, accountId, productId: item.productId, listingId, contentVersionId: item.contentVersion.id, visualVersionIds: [visualVersion.id], ruleSnapshotId: ruleSnapshot.id, approvedBy: 'reviewer-1', approvedAt: '2026-08-29T08:10:00.000Z' } }
+          item.publish = { status: 'failed', attempts: 1, remoteSnapshotHash: digest('campaign-remote-snapshot'), error: { code: 'REMOTE_TIMEOUT', message: '远端超时' } }
+          campaign.revision = (campaign.revision ?? 0) + 1
+        } else if (operation === 'retry_failed') {
+          item.publish = { status: 'awaiting_confirmation', attempts: 1, remoteSnapshotHash: digest('campaign-remote-snapshot') }
+          campaign.revision = (campaign.revision ?? 0) + 1
+        }
+        return structuredClone(campaign)
+      },
+    }
+    const adapter = new CampaignDeliveryOrchestratorAdapter(port)
+    const scope = { workspaceId: 'ws_demo', campaignId }
+
+    expect((await adapter.create(scope)).manifest).toMatchObject({ state: 'pending', revision: 1 })
+    expect((await adapter.create(scope)).manifest.revision).toBe(1)
+    const generated = await adapter.generate(scope)
+    expect(generated.manifest.items[0]).toMatchObject({ contentVersion: { id: service.tasks.get(generatedTaskId)?.contentVersionId }, nextAction: 'review_item' })
+    expect(service.tasks.get(generatedTaskId)).toMatchObject({ campaignId, campaignItemId: itemId })
+    expect((await adapter.get(scope)).manifest.revision).toBe(generated.manifest.revision)
+    expect((await adapter.pause({ ...scope, reason: '运营暂停' })).manifest).toMatchObject({ state: 'paused', paused: true })
+    expect((await adapter.resume(scope)).manifest.items[0]).toMatchObject({ publish: { status: 'failed' }, nextAction: 'retry_failed' })
+    expect((await adapter.retryFailed({ ...scope, itemIds: [itemId] })).manifest.items[0]).toMatchObject({ publish: { status: 'awaiting_confirmation' }, nextAction: 'confirm_publish' })
+    await expect(adapter.get({ workspaceId: 'ws_foreign', campaignId })).rejects.toMatchObject({ code: 'CAMPAIGN_VERSION_SCOPE_LEAK' })
+  })
+
   it('freezes approved competitor differentiation references into the generation context', () => {
     let providerInput: { competitorReference?: unknown } | undefined
     const service = new MerchantService({ fixtureMode: true, knowledgeContextProvider: input => { providerInput = input; return { rules: [], assets: [], confirmedLearningSuggestions: [], ...(input.competitorReference ? { competitorReferences: [input.competitorReference] } : {}) } } })
@@ -18,8 +147,110 @@ describe('MerchantService', () => {
     service.answerTask('ws_demo', task.id, { competitor_reference_json: JSON.stringify(reference) })
     service.selectDirection(task.id, 'A')
     service.confirmProductionPlan('ws_demo', task.id, 'operator')
-    expect(providerInput?.competitorReference).toEqual(reference)
-    expect(task.inputSnapshot?.knowledgeContext?.competitorReferences).toEqual([reference])
+    expect(providerInput?.competitorReference).toMatchObject({
+      ...reference,
+      policy: {
+        mode: 'legacy',
+        provenance: { complete: false },
+        humanReview: { required: true, reasons: ['LEGACY_COMPETITOR_REFERENCE'] },
+      },
+    })
+    expect(task.inputSnapshot?.knowledgeContext?.competitorReferences).toEqual([
+      expect.objectContaining({ ...reference, policy: expect.objectContaining({ mode: 'legacy' }) }),
+    ])
+    expect(task.inputSnapshot?.competitorReferencePolicy).toMatchObject({ mode: 'legacy', provenance: { complete: false }, humanReview: { required: true, reasons: ['LEGACY_COMPETITOR_REFERENCE'] } })
+    const version = service.createDraft(task.id)
+    expect(service.reviewContent('ws_demo', version.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'COMPETITOR_REFERENCE_LEGACY_REVIEW_REQUIRED', severity: 'warning', priority: 'P1' }),
+    ]))
+  })
+
+  it('validates policy-v1 competitor provenance and freezes only bounded review evidence', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
+    const reference = {
+      competitorAnalysisId: 'competitor_policy_safe',
+      structuralObservations: ['利益点后置证据'], expressionObservations: ['短句'], differentiationAngles: ['透明边界'], safeExpressionGuidance: ['仅用本品事实'], compliance: { originalTextCopied: false, competitorBrandReused: false },
+      scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' },
+      source: { url: 'https://example.com/public-reference', platform: 'tmall', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页，无需登录即可访问' } },
+      extracted: { structures: ['问题→证据→边界'], themes: ['透明表达'], trends: ['移动端短句'], sellingPoints: [], originalSpans: [{ text: '极简布局突出核心卖点' }], assets: [] },
+    }
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } })
+    service.selectDirection(task.id, 'A', task.version)
+    const confirmed = service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
+
+    expect(confirmed.inputSnapshot?.competitorReferencePolicy).toMatchObject({ mode: 'policy_v1', provenance: { complete: true, url: reference.source.url, scope: reference.scope }, allowedInsights: { structures: ['问题→证据→边界'], themes: ['透明表达'], trends: ['移动端短句'] }, humanReview: { required: false } })
+    expect(confirmed.inputSnapshot?.competitorReferencePolicy?.evaluationReference?.extracted.originalSpans).toEqual([{ text: '极简布局突出核心卖点' }])
+    expect(JSON.stringify(confirmed.inputSnapshot?.knowledgeContext)).not.toContain('极简布局突出核心卖点')
+    expect(JSON.stringify(confirmed.inputSnapshot?.knowledgeContext)).not.toContain(reference.source.access.evidence)
+    expect(Object.isFrozen(confirmed.inputSnapshot)).toBe(true)
+    expect(Object.isFrozen(confirmed.inputSnapshot?.competitorReferencePolicy)).toBe(true)
+    expect(Object.isFrozen(confirmed.inputSnapshot?.competitorReferencePolicy?.evaluationReference?.extracted.originalSpans)).toBe(true)
+  })
+
+  it('rejects mismatched scope and long competitor excerpts before task creation', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
+    const base = { competitorAnalysisId: 'competitor_policy_invalid', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, source: { url: 'https://example.com/reference', platform: 'web', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开页面' } } }
+    expect(() => service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify({ ...base, scope: { workspaceId: 'ws_foreign', brandId: brand.id, productId: 'prod_fixture_1' }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [], assets: [] } }) } }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_SCOPE_MISMATCH' }))
+    const longExcerpt = '这是一段明显超过短引用限额并且不应进入不可变任务快照的竞品原始长文案，其中包含大量无需保存的逐字内容和表达细节'
+    expect(() => service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify({ ...base, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [{ text: longExcerpt }], assets: [] } }) } }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_POLICY_BLOCKED', details: expect.objectContaining({ findings: expect.arrayContaining([expect.objectContaining({ code: 'COMPETITOR_QUOTE_LIMIT_EXCEEDED' })]) }) }))
+    expect(() => service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify({ ...base, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { ...base.source, access: { kind: 'public', evidence: '' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [], assets: [] } }) } }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_POLICY_BLOCKED', details: expect.objectContaining({ findings: expect.arrayContaining([expect.objectContaining({ code: 'COMPETITOR_ACCESS_EVIDENCE_REQUIRED' })]) }) }))
+    expect(() => service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify({ ...base, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { ...base.source, access: { kind: 'private', evidence: '内部资料授权记录', ownerWorkspaceId: 'ws_foreign' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [], assets: [] } }) } }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_POLICY_BLOCKED', details: expect.objectContaining({ findings: expect.arrayContaining([expect.objectContaining({ code: 'COMPETITOR_CROSS_TENANT_PRIVATE_SOURCE' })]) }) }))
+  })
+
+  it('turns copied generated content into an unwaivable P0 review finding', async () => {
+    const copied = '极简布局突出核心卖点'
+    const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => ({ title: copied, detail: '本商品信息以已确认事实为准。', sellingPoints: ['关键事实可追溯'] }) } })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
+    const reference = { competitorAnalysisId: 'competitor_policy_copy', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/copy-source', platform: 'tmall', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [{ text: copied }], assets: [] } }
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } })
+    service.selectDirection(task.id, 'A', task.version)
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
+    const version = await service.generateDraft(task.id)
+    const finding = service.reviewContent('ws_demo', version.id).find(item => item.code === 'COMPETITOR_VERBATIM_COPY' as never)
+
+    expect(finding).toMatchObject({ severity: 'error', priority: 'P0', status: 'open', field: expect.stringContaining('competitor_policy.') })
+    expect(service.reviewContentReport('ws_demo', version.id)).toMatchObject({ blocking: true, categories: expect.arrayContaining([expect.objectContaining({ id: 'copy_price_compliance', status: 'blocking' })]) })
+    expect(() => service.setReviewFindingDecision({ workspaceId: 'ws_demo', contentVersionId: version.id, code: finding!.code, field: finding!.field, status: 'acknowledged', actorId: 'merchant' })).toThrowError(expect.objectContaining({ code: 'REVIEW_P0_DECISION_FORBIDDEN' }))
+    expect(() => service.approveContent(task.id, version.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+  })
+
+  it('catches Unicode, zero-width, punctuation and synonym near-copy evasions in the generated draft', async () => {
+    const sourceText = '极简布局突出核心卖点并以真实场景建立可信感'
+    const evasiveText = '简约、版\u200b式强调主要利益点；采用实际使用场景营造可靠感'
+    const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => ({ title: evasiveText, detail: '仅陈述本商品已确认信息。', sellingPoints: ['关键事实可追溯'] }) } })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
+    const reference = { competitorAnalysisId: 'competitor_policy_unicode_evasion', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/unicode-source', platform: 'web', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开页面' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [{ text: sourceText }], assets: [] } }
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } })
+    service.selectDirection(task.id, 'A', task.version)
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
+    const version = await service.generateDraft(task.id)
+
+    expect(service.reviewContent('ws_demo', version.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'COMPETITOR_NEAR_COPY', severity: 'error', priority: 'P0' }),
+    ]))
+    expect(() => service.approveContent(task.id, version.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+  })
+
+  it('blocks unproven competitor facts and referenced competitor assets after generation', async () => {
+    const generated = { title: '本地商品方案', detail: '经实验室测试可连续防水48小时。', sellingPoints: ['经实验室测试可连续防水48小时'], modules: [{ key: 'hero', title: '主视觉', purpose: '展示商品', body: '使用本地商品信息', factSourceIds: [], contentKind: 'creative' as const, imageGuidance: '直接使用 competitor-logo 制作主图' }] }
+    const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => generated } })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
+    const reference = { competitorAnalysisId: 'competitor_policy_fact_asset', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/fact-source', platform: 'tmall', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [{ text: '经实验室测试可连续防水48小时' }], originalSpans: [], assets: [{ id: 'competitor-logo', kind: 'logo', description: '竞品 Logo' }] } }
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } })
+    service.selectDirection(task.id, 'A', task.version)
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
+    const version = await service.generateDraft(task.id)
+    const findings = service.reviewContent('ws_demo', version.id)
+
+    expect(findings.map(item => item.code as string)).toEqual(expect.arrayContaining(['COMPETITOR_UNVERIFIED_FACT_TRANSFER', 'COMPETITOR_ASSET_REUSE']))
+    expect(findings.filter(item => (item.code as string).startsWith('COMPETITOR_'))).toEqual(expect.arrayContaining([expect.objectContaining({ severity: 'error', priority: 'P0' })]))
+    expect(() => service.approveContent(task.id, version.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
   })
 
   it('supports safe operations queue transitions without replaying external writes', async () => {
@@ -79,11 +310,239 @@ describe('MerchantService', () => {
     expect(service.listDeliverables('ws_demo').items[0]).toMatchObject({ visual: { binding: 'exact', candidateCount: 1, representative: { visualRef: `dvis_${'A'.repeat(24)}`, publishable: false }, platformPublished: false }, boundaries: { includesImages: false, includesUrls: false, exactImageVersionBinding: true } })
     expect(() => service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, taskId: task.id, contentVersionId: draft.id, idempotencyKey: 'bound-image-after-freeze' })).toThrowError(expect.objectContaining({ code: 'IMAGE_CONTENT_VERSION_FROZEN' }))
 
+    const deferred = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, sourceAssetIds: ['asset_waiting_scan'], imageMode: 'optimize', idempotencyKey: 'continuation-restart-1', count: 1, continuation: { sourceAssetId: 'asset_waiting_scan', state: 'waiting_scan', requestedBy: 'merchant-restart', billingState: 'pending' } })
     const restarted = new MerchantService({ fixtureMode: true })
+    restarted.hydrateSnapshot({ entityType: 'product', entity: structuredClone(product) })
     restarted.hydrateSnapshot({ entityType: 'image_generation_job', entity: structuredClone(archived) })
+    restarted.hydrateSnapshot({ entityType: 'image_generation_job', entity: structuredClone(deferred) })
     expect(restarted.getImageGenerationJob('ws_demo', job.id).outputs).toHaveLength(1)
+    expect(restarted.getImageGenerationJob('ws_demo', deferred.id).continuation).toMatchObject({ state: 'waiting_scan', sourceAssetId: 'asset_waiting_scan', billingState: 'pending', requestedBy: 'merchant-restart' })
+    expect(restarted.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, sourceAssetIds: ['asset_waiting_scan'], imageMode: 'optimize', idempotencyKey: 'continuation-restart-1', count: 1, continuation: { sourceAssetId: 'asset_waiting_scan', state: 'waiting_scan', requestedBy: 'merchant-restart', billingState: 'pending' } }).id).toBe(deferred.id)
+    const unpersisted = restarted.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'continuation-persist-failed', count: 1, continuation: { sourceAssetId: 'asset_unpersisted', state: 'waiting_scan', requestedBy: 'merchant-restart', billingState: 'pending' } })
+    expect(restarted.discardUnpersistedImageGeneration('ws_demo', unpersisted.id)).toBe(true)
+    expect(restarted.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'continuation-persist-failed', count: 1, continuation: { sourceAssetId: 'asset_unpersisted', state: 'waiting_scan', requestedBy: 'merchant-restart', billingState: 'pending' } }).id).not.toBe(unpersisted.id)
     expect(restarted.resolveImageGenerationByVisualRef('ws_demo', `dvis_${'A'.repeat(24)}`).id).toBe(job.id)
     expect(() => restarted.resolveImageGenerationByVisualRef('ws_other', `dvis_${'A'.repeat(24)}`)).toThrowError(expect.objectContaining({ code: 'VISUAL_NOT_FOUND' }))
+  })
+
+  it('single-flights concurrent image generation replays for the same job and idempotency key', async () => {
+    let releaseProvider!: (images: string[]) => void
+    const providerResult = new Promise<string[]>(resolve => { releaseProvider = resolve })
+    const generate = vi.fn(async () => await providerResult)
+    const service = new MerchantService({ fixtureMode: true, imageGenerator: { generate } })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-single-flight', count: 1 })
+
+    const first = service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })
+    const replay = service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })
+
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1))
+    releaseProvider(['data:image/png;base64,aW1hZ2U='])
+    await expect(Promise.all([first, replay])).resolves.toEqual([
+      expect.objectContaining({ job: expect.objectContaining({ id: job.id, state: 'succeeded' }) }),
+      expect.objectContaining({ job: expect.objectContaining({ id: job.id, state: 'succeeded' }) }),
+    ])
+    expect(generate).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let a late provider timeout overwrite a succeeded image generation terminal state', async () => {
+    const service = new MerchantService({ fixtureMode: true, imageGenerator: { generate: async () => ['data:image/png;base64,aW1hZ2U='] } })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-success-is-terminal', count: 1 })
+    const completed = await service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })
+    const succeededRevision = completed.job.revision
+
+    const afterLateTimeout = service.markImageGenerationFailed({ workspaceId: 'ws_demo', jobId: job.id, errorCode: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', errorMessage: 'image provider returned ambiguous HTTP 524', expectedRevision: succeededRevision })
+
+    expect(afterLateTimeout).toBe(completed.job)
+    expect(afterLateTimeout).toMatchObject({ state: 'succeeded', revision: succeededRevision })
+    expect(afterLateTimeout.errorCode).toBeUndefined()
+    expect(afterLateTimeout.errorMessage).toBeUndefined()
+  })
+
+  it('preserves reconciled success when an in-flight provider request later rejects with 524', async () => {
+    let rejectProvider!: (reason?: unknown) => void
+    const providerResult = new Promise<string[]>((_, reject) => { rejectProvider = reject })
+    const generate = vi.fn(async () => await providerResult)
+    const service = new MerchantService({ fixtureMode: true, imageGenerator: { generate } })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-late-provider-error', count: 1 })
+
+    const completion = service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1))
+    const reconciled = service.archiveImageGenerationOutputs('ws_demo', job.id, [{ visualRef: `dvis_${'B'.repeat(24)}`, ordinal: 1, storageKey: `quarantine/ws_demo/${job.id}/candidate-1.webp`, mimeType: 'image/webp', sizeBytes: 9, sha256: 'b'.repeat(64), createdAt: '2026-08-31T00:00:00.000Z', reviewStatus: 'unreviewed' }], 'archived')
+    const succeededRevision = reconciled.revision
+    rejectProvider(new Error('image provider returned ambiguous HTTP 524'))
+
+    await expect(completion).resolves.toMatchObject({ job: { id: job.id, state: 'succeeded', revision: succeededRevision } })
+    expect(job).toMatchObject({ state: 'succeeded', revision: succeededRevision })
+    expect(job.errorCode).toBeUndefined()
+    expect(job.errorMessage).toBeUndefined()
+  })
+
+  it('supports an explicit, version-checked manual image failure without retrying or mutating product images', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    const originalImages = product.images ? [...product.images] : undefined
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'manual-image-failure', count: 1 })
+    const initialRevision = job.revision
+    const failed = service.markImageGenerationFailed({ workspaceId: 'ws_demo', jobId: job.id, errorCode: 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: 'Provider 查询确认失败', expectedRevision: initialRevision })
+    expect(failed).toMatchObject({ id: job.id, state: 'failed', archiveState: 'external_unarchived', revision: initialRevision + 1, errorCode: 'IMAGE_GENERATION_MANUAL_FAILED' })
+    expect(product.images).toEqual(originalImages)
+    expect(service.markImageGenerationFailed({ workspaceId: 'ws_demo', jobId: job.id, errorCode: 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: 'Provider 查询确认失败', expectedRevision: failed.revision })).toBe(failed)
+    expect(() => service.markImageGenerationFailed({ workspaceId: 'ws_demo', jobId: job.id, errorCode: 'OTHER', errorMessage: '覆盖', expectedRevision: initialRevision })).toThrowError(expect.objectContaining({ code: 'IMAGE_GENERATION_REVISION_CONFLICT' }))
+  })
+
+  it('only retries a pre-provider configuration failure with frozen input and a new idempotency key', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-original', direction: 'white background', count: 2 })
+    service.markImageGenerationFailed({ workspaceId: 'ws_demo', jobId: job.id, errorCode: 'IMAGE_GENERATION_NOT_CONFIGURED', errorMessage: 'provider missing' })
+    const retried = service.retryImageGeneration({ workspaceId: 'ws_demo', jobId: job.id, idempotencyKey: 'image-retry-1' })
+    expect(retried.alreadyExists).toBe(false)
+    expect(retried.job).toMatchObject({ state: 'queued', idempotencyKey: 'image-retry-1', direction: 'white background', count: 2, providerAttemptState: 'not_started', retryCount: 1 })
+    expect(service.retryImageGeneration({ workspaceId: 'ws_demo', jobId: job.id, idempotencyKey: 'image-retry-1' })).toMatchObject({ alreadyExists: true, job: { id: retried.job.id } })
+  })
+
+  it('rejects image retry after a provider attempt or for an unknown failure', async () => {
+    const service = new MerchantService({ fixtureMode: true, imageGenerator: { generate: async () => { throw new Error('provider failed') } } })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-provider-failed', count: 1 })
+    await service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id }).catch(() => undefined)
+    expect(() => service.retryImageGeneration({ workspaceId: 'ws_demo', jobId: job.id, idempotencyKey: 'image-retry-unsafe' })).toThrowError(expect.objectContaining({ code: 'IMAGE_GENERATION_RETRY_NOT_SAFE' }))
+  })
+
+  it('persists an unreviewed trusted-clean job preference without reviewing, binding content, or publishing', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    const originalProduct = structuredClone(product)
+    const asset = service.registerAsset({ workspaceId: 'ws_demo', name: 'candidate-a.webp', mimeType: 'image/webp', sizeBytes: 11, sha256: digest('preferred-candidate-a'), storageKey: 'quarantine/ws_demo/candidate-a.webp' })
+    markTrustedClean(asset)
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'job-preference-generate', count: 1 })
+    const visualRef = `dvis_${'P'.repeat(24)}`
+    const createdAt = '2026-08-31T01:00:00.000Z'
+    service.archiveImageGenerationOutputs('ws_demo', job.id, [{ visualRef, assetId: asset.id, ...archiveReceipt('ws_demo', job.id, asset, createdAt), ordinal: 1, storageKey: asset.storageKey, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, sha256: asset.sha256, createdAt, reviewStatus: 'unreviewed' }], 'archived')
+    const revision = job.revision
+    const taskCount = service.tasks.size
+    const contentVersionCount = service.contentVersions.size
+    const publishJobCount = service.publishJobs.size
+
+    const selected = service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef, expectedRevision: revision, idempotencyKey: 'prefer-a', selectedBy: 'merchant-1', reason: '更符合商品主视觉方向' })
+
+    expect(selected).toMatchObject({ reviewStatus: 'unreviewed', currentlyUsable: true, publishable: false, preferredSelection: { visualRef, selectedBy: 'merchant-1', reason: '更符合商品主视觉方向', idempotencyKey: 'prefer-a', intentHash: expect.stringMatching(/^[a-f0-9]{64}$/u), selectedAt: expect.any(String) } })
+    expect(job).toMatchObject({ revision: revision + 1, preferredSelection: selected.preferredSelection, outputs: [{ visualRef, reviewStatus: 'unreviewed' }] })
+    expect(service.products.get(product.id)).toEqual(originalProduct)
+    expect(service.tasks.size).toBe(taskCount)
+    expect(service.contentVersions.size).toBe(contentVersionCount)
+    expect(service.publishJobs.size).toBe(publishJobCount)
+
+    const restarted = new MerchantService({ fixtureMode: true })
+    restarted.hydrateSnapshot({ entityType: 'image_generation_job', entity: structuredClone(job) })
+    expect(restarted.getImageGenerationJob('ws_demo', job.id).preferredSelection).toEqual(selected.preferredSelection)
+  })
+
+  it('makes job candidate preference idempotent and version-checks only a changed candidate', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    const assets = ['a', 'b'].map(marker => {
+      const asset = service.registerAsset({ workspaceId: 'ws_demo', name: `candidate-${marker}.webp`, mimeType: 'image/webp', sizeBytes: 11, sha256: digest(`candidate-${marker}`), storageKey: `quarantine/ws_demo/candidate-${marker}.webp` })
+      markTrustedClean(asset)
+      return asset
+    })
+    const refs = [`dvis_${'Q'.repeat(24)}`, `dvis_${'R'.repeat(24)}`]
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'job-preference-idempotency', count: 2 })
+    const createdAt = '2026-08-31T01:00:00.000Z'
+    service.archiveImageGenerationOutputs('ws_demo', job.id, refs.map((visualRef, index) => ({ visualRef, assetId: assets[index]!.id, ...archiveReceipt('ws_demo', job.id, assets[index]!, createdAt), ordinal: index + 1, storageKey: assets[index]!.storageKey, mimeType: assets[index]!.mimeType, sizeBytes: assets[index]!.sizeBytes, sha256: assets[index]!.sha256, createdAt, reviewStatus: 'unreviewed' })), 'archived')
+    const first = service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[0]!, expectedRevision: job.revision, idempotencyKey: 'prefer-first', selectedBy: 'merchant', reason: '首选方案' })
+    const selectedRevision = job.revision
+
+    expect(service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[0]!, expectedRevision: 1, idempotencyKey: 'prefer-first', selectedBy: 'merchant', reason: '首选方案' })).toMatchObject({ preferredSelection: first.preferredSelection, currentlyUsable: true })
+    expect(job.revision).toBe(selectedRevision)
+    expect(() => service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[0]!, expectedRevision: selectedRevision, idempotencyKey: 'prefer-first', selectedBy: 'merchant', reason: '改变意图' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }))
+    const repeatedVisual = service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[0]!, expectedRevision: selectedRevision, idempotencyKey: 'same-candidate-new-key', selectedBy: 'other', reason: '重复选择同一候选' })
+    expect(repeatedVisual.preferredSelection).toMatchObject({ visualRef: refs[0], idempotencyKey: 'same-candidate-new-key', selectedBy: 'other' })
+    expect(job.revision).toBe(selectedRevision + 1)
+    expect(() => service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[1]!, expectedRevision: selectedRevision, idempotencyKey: 'prefer-second-stale', selectedBy: 'merchant', reason: '切换方案' })).toThrowError(expect.objectContaining({ code: 'IMAGE_GENERATION_REVISION_CONFLICT' }))
+    const changed = service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[1]!, expectedRevision: selectedRevision + 1, idempotencyKey: 'prefer-second', selectedBy: 'merchant', reason: '切换方案' })
+    expect(changed.preferredSelection.visualRef).toBe(refs[1])
+    expect(job.revision).toBe(selectedRevision + 2)
+    const restarted = new MerchantService({ fixtureMode: true })
+    restarted.hydrateSnapshot({ entityType: 'image_generation_job', entity: structuredClone(job) })
+    const replayedFirst = restarted.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[0]!, expectedRevision: job.revision, idempotencyKey: 'prefer-first', selectedBy: 'merchant', reason: '首选方案' })
+    expect(replayedFirst.preferredSelection.visualRef).toBe(refs[0])
+    expect(replayedFirst.currentlyUsable).toBe(false)
+    expect(restarted.getImageGenerationJob('ws_demo', job.id).preferredSelection?.visualRef).toBe(refs[1])
+    expect(() => restarted.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: refs[1]!, expectedRevision: job.revision, idempotencyKey: 'prefer-first', selectedBy: 'merchant', reason: '切换方案' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }))
+  })
+
+  it('rejects blocked, foreign, or non-trusted-clean job candidates', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    const clean = service.registerAsset({ workspaceId: 'ws_demo', name: 'clean.webp', mimeType: 'image/webp', sizeBytes: 11, sha256: digest('clean-candidate'), storageKey: 'quarantine/ws_demo/clean.webp' })
+    const quarantined = service.registerAsset({ workspaceId: 'ws_demo', name: 'quarantined.webp', mimeType: 'image/webp', sizeBytes: 11, sha256: digest('quarantined-candidate'), storageKey: 'quarantine/ws_demo/quarantined.webp' })
+    markTrustedClean(clean)
+    const blockedRef = `dvis_${'S'.repeat(24)}`
+    const quarantinedRef = `dvis_${'T'.repeat(24)}`
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'job-preference-gates', count: 2 })
+    service.archiveImageGenerationOutputs('ws_demo', job.id, [
+      { visualRef: blockedRef, assetId: clean.id, ...archiveReceipt('ws_demo', job.id, clean, '2026-08-31T01:00:00.000Z'), ordinal: 1, storageKey: clean.storageKey, mimeType: clean.mimeType, sizeBytes: clean.sizeBytes, sha256: clean.sha256, createdAt: '2026-08-31T01:00:00.000Z', reviewStatus: 'unreviewed' },
+      { visualRef: quarantinedRef, assetId: quarantined.id, ...archiveReceipt('ws_demo', job.id, quarantined, '2026-08-31T01:00:00.000Z'), ordinal: 2, storageKey: quarantined.storageKey, mimeType: quarantined.mimeType, sizeBytes: quarantined.sizeBytes, sha256: quarantined.sha256, createdAt: '2026-08-31T01:00:00.000Z', reviewStatus: 'unreviewed' },
+    ], 'archived')
+    service.reviewImageGenerationOutputs('ws_demo', [blockedRef], 'blocked')
+
+    expect(() => service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: blockedRef, expectedRevision: job.revision, idempotencyKey: 'prefer-blocked', selectedBy: 'merchant', reason: '不可选择' })).toThrowError(expect.objectContaining({ code: 'VISUAL_BLOCKED' }))
+    expect(() => service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: quarantinedRef, expectedRevision: job.revision, idempotencyKey: 'prefer-quarantined', selectedBy: 'merchant', reason: '不可选择' })).toThrowError(expect.objectContaining({ code: 'VISUAL_SCAN_REQUIRED' }))
+    expect(() => service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef: `dvis_${'U'.repeat(24)}`, expectedRevision: job.revision, idempotencyKey: 'prefer-foreign', selectedBy: 'merchant', reason: '不可选择' })).toThrowError(expect.objectContaining({ code: 'VISUAL_SELECTION_SCOPE_MISMATCH' }))
+    expect(job.preferredSelection).toBeUndefined()
+  })
+
+  it('fails closed on candidate archive metadata or receipt mismatch and recomputes usability on replay', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const asset = service.registerAsset({ workspaceId: 'ws_demo', name: 'integrity.webp', mimeType: 'image/webp', sizeBytes: 11, sha256: digest('integrity-candidate'), storageKey: 'quarantine/ws_demo/integrity.webp' })
+    markTrustedClean(asset)
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'job-integrity', count: 1 })
+    const visualRef = `dvis_${'V'.repeat(24)}`
+    const createdAt = '2026-08-31T02:00:00.000Z'
+    service.archiveImageGenerationOutputs('ws_demo', job.id, [{ visualRef, assetId: asset.id, ...archiveReceipt('ws_demo', job.id, asset, createdAt), ordinal: 1, storageKey: asset.storageKey, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, sha256: asset.sha256, createdAt, reviewStatus: 'unreviewed' }], 'archived')
+    const output = job.outputs![0]!
+    const baseline = structuredClone(output)
+    const corruptions: Array<() => void> = [
+      () => { output.sha256 = digest('wrong') },
+      () => { output.sizeBytes += 1 },
+      () => { output.mimeType = 'image/png' },
+      () => { delete output.archiveReceiptId },
+      () => { output.archiveReceiptDigest = digest('wrong-receipt') },
+    ]
+    for (const [index, corrupt] of corruptions.entries()) {
+      Object.assign(output, structuredClone(baseline)); corrupt()
+      expect(() => service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef, expectedRevision: job.revision, idempotencyKey: `integrity-${index}`, selectedBy: 'merchant', reason: '完整性负向测试' })).toThrowError(expect.objectContaining({ code: 'VISUAL_ARCHIVE_INTEGRITY_FAILED' }))
+    }
+    Object.assign(output, structuredClone(baseline))
+    const selected = service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef, expectedRevision: job.revision, idempotencyKey: 'integrity-valid', selectedBy: 'merchant', reason: '完整性通过' })
+    asset.scanStatus = 'blocked'
+    expect(service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef, expectedRevision: 1, idempotencyKey: 'integrity-valid', selectedBy: 'merchant', reason: '完整性通过' })).toMatchObject({ preferredSelection: selected.preferredSelection, currentlyUsable: false, publishable: false })
+  })
+
+  it('bounds persisted preference idempotency history', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const asset = service.registerAsset({ workspaceId: 'ws_demo', name: 'bounded.webp', mimeType: 'image/webp', sizeBytes: 11, sha256: digest('bounded-candidate'), storageKey: 'quarantine/ws_demo/bounded.webp' })
+    markTrustedClean(asset)
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'job-bounded-history', count: 1 })
+    const visualRef = `dvis_${'W'.repeat(24)}`
+    const createdAt = '2026-08-31T03:00:00.000Z'
+    service.archiveImageGenerationOutputs('ws_demo', job.id, [{ visualRef, assetId: asset.id, ...archiveReceipt('ws_demo', job.id, asset, createdAt), ordinal: 1, storageKey: asset.storageKey, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, sha256: asset.sha256, createdAt, reviewStatus: 'unreviewed' }], 'archived')
+    for (let index = 0; index < 40; index += 1) service.selectImageGenerationCandidate({ workspaceId: 'ws_demo', jobId: job.id, visualRef, expectedRevision: job.revision, idempotencyKey: `bounded-${index}`, selectedBy: 'merchant', reason: `第 ${index} 次明确选择` })
+    expect(job.preferredSelectionHistory).toHaveLength(32)
+    expect(job.preferredSelectionHistory?.[0]?.idempotencyKey).toBe('bounded-8')
+    expect(job.preferredSelectionHistory?.at(-1)?.idempotencyKey).toBe('bounded-39')
+  })
+
+  it('lists image jobs only within the workspace and orders the newest update first', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    const first = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'discovery-first' })
+    const second = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'discovery-second' })
+    const otherProduct = service.importProduct({ workspaceId: 'ws_other', platform: product.platform, title: '其他工作区商品' })
+    service.enqueueImageGeneration({ workspaceId: 'ws_other', productId: otherProduct.id, idempotencyKey: 'discovery-other' })
+    first.updatedAt = '2026-08-31T00:00:00.000Z'
+    second.updatedAt = '2026-08-31T01:00:00.000Z'
+    expect(service.listImageGenerationJobsPage('ws_demo', { limit: 1, offset: 0 })).toMatchObject({ total: 2, items: [{ id: second.id }] })
+    expect(service.listImageGenerationJobs('ws_demo')).toHaveLength(2)
   })
 
   it('freezes image candidates to the selected SKU scope', () => {
@@ -130,6 +589,76 @@ describe('MerchantService', () => {
     expect(preview.visualPreview).toMatchObject({ imageMode: 'replace_pending_adapter', count: 2, executionReady: false, blocker: 'IMAGE_PUBLISH_ADAPTER_UNAVAILABLE', items: [{ visualRef: refs[1], firstIsMainImage: true }, { visualRef: refs[0], firstIsMainImage: false }] })
     expect(preview.changes).not.toContain('images')
     expect(() => service.confirmPublish({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: selected.version.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey: 'publish-selected-visuals' })).toThrowError(expect.objectContaining({ code: 'IMAGE_PUBLISH_ADAPTER_UNAVAILABLE' }))
+  })
+
+  it('enforces visual authenticity and production-canary delivery variants through image review and preparePublish', async () => {
+    const createSelectedVersion = async (service: MerchantService, marker: string) => {
+      const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+      service.selectDirection(task.id, 'A', task.version)
+      const draft = service.createDraft(task.id)
+      const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', taskId: task.id, contentVersionId: draft.id, idempotencyKey: `visual-gate-${marker}`, count: 1 })
+      await service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })
+      const visualRef = `dvis_${marker.repeat(24).slice(0, 24)}`
+      service.archiveImageGenerationOutputs('ws_demo', job.id, [{ visualRef, ordinal: 1, storageKey: `quarantine/ws_demo/${job.id}/candidate.webp`, mimeType: 'image/webp', sizeBytes: 12, sha256: digest(`candidate-${marker}`), createdAt: '2026-08-29T09:00:00.000Z', reviewStatus: 'unreviewed' }], 'archived')
+      service.reviewImageGenerationOutputs('ws_demo', [visualRef], 'passed')
+      const selected = service.selectVisuals({ workspaceId: 'ws_demo', contentVersionId: draft.id, visualRefs: [visualRef], expectedRevision: draft.revision, idempotencyKey: `select-${marker}`, selectedBy: 'reviewer', reason: '真实性证据与交付规格均已核验' })
+      service.approveContent(task.id, selected.version.id)
+      return { task, selected: selected.version, visualRef }
+    }
+    const verified = new MerchantService({
+      fixtureMode: true,
+      requireProductionVisualEvidence: true,
+      requireProductionDeliveryEvidence: true,
+      visualAuthenticityEvidenceProvider: ({ output }) => productionVisualEvidence(output.sha256),
+      deliveryVariantPlanProvider: ({ task, product, selectedVisuals }) => ({
+        platform: task.platform, placement: 'detail-hero', devices: ['desktop'], productCount: 1,
+        sourceAssets: selectedVisuals.map(item => ({ id: item.visualRef, width: 1200, height: 1200, safeZone: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }, productIds: [product.id] })),
+        specifications: [],
+        activity: { countdown: 'none' },
+      }),
+      platformMediaSpecRuntimeProvider: () => [runtimeMediaSpec()],
+    })
+    const ready = await createSelectedVersion(verified, 'V')
+    const preview = verified.preparePublish(ready.task.id)
+    expect(preview.visualPreview).toMatchObject({ externallyUnverified: false, deliveryEvidence: { readyForProduction: true, externallyUnverified: false, plan: { readyForProduction: true, externallyUnverified: false, variants: [{ specificationEvidence: { binding: { recordId: 'taobao-detail-canary-v1', revision: 2, immutableDigest: expect.stringMatching(/^[a-f0-9]{64}$/u), sourceSha256: digest('platform-media-source'), evidenceArtifactSha256: digest('platform-media-canary') } } }] } }, items: expect.arrayContaining([expect.objectContaining({ authenticity: { externallyUnverified: false, report: expect.objectContaining({ publishable: true, status: 'pass' }) } })]) })
+    expect(ready.task.pendingPublish?.deliveryEvidenceHash).toMatch(/^[a-f0-9]{64}$/u)
+
+    const missingDeliveryEvidence = new MerchantService({ fixtureMode: true, requireProductionVisualEvidence: true, requireProductionDeliveryEvidence: true, visualAuthenticityEvidenceProvider: ({ output }) => productionVisualEvidence(output.sha256) })
+    const unverified = await createSelectedVersion(missingDeliveryEvidence, 'U')
+    expect(() => missingDeliveryEvidence.preparePublish(unverified.task.id)).toThrowError(expect.objectContaining({ code: 'DELIVERY_VARIANT_EXTERNALLY_UNVERIFIED', details: expect.objectContaining({ externallyUnverified: true }) }))
+
+    const tamperedRuntime = new MerchantService({
+      fixtureMode: true, requireProductionVisualEvidence: true, requireProductionDeliveryEvidence: true,
+      visualAuthenticityEvidenceProvider: ({ output }) => productionVisualEvidence(output.sha256),
+      deliveryVariantPlanProvider: ({ task, product, selectedVisuals }) => ({ platform: task.platform, placement: 'detail-hero', devices: ['desktop'], productCount: 1, sourceAssets: selectedVisuals.map(item => ({ id: item.visualRef, width: 1200, height: 1200, productIds: [product.id] })), specifications: [], activity: { countdown: 'none' } }),
+      platformMediaSpecRuntimeProvider: () => [runtimeMediaSpec({ immutableDigest: 'f'.repeat(64) })],
+    })
+    const tampered = await createSelectedVersion(tamperedRuntime, 'T')
+    expect(() => tamperedRuntime.preparePublish(tampered.task.id)).toThrowError(expect.objectContaining({ code: 'PLATFORM_MEDIA_SPEC_RUNTIME_BLOCKED', details: expect.objectContaining({ externallyUnverified: true, findings: expect.arrayContaining([expect.objectContaining({ code: 'IMMUTABLE_DIGEST_MISMATCH' })]) }) }))
+
+    const legacyManualProvider = new MerchantService({
+      fixtureMode: true, requireProductionVisualEvidence: true, requireProductionDeliveryEvidence: true,
+      visualAuthenticityEvidenceProvider: ({ output }) => productionVisualEvidence(output.sha256),
+      deliveryVariantPlanProvider: ({ task, product, selectedVisuals }) => ({
+        platform: task.platform, placement: 'legacy-detail', devices: ['desktop'], productCount: 1,
+        sourceAssets: selectedVisuals.map(item => ({ id: item.visualRef, width: 1200, height: 1200, productIds: [product.id] })),
+        specifications: [{ id: 'legacy-provider-spec', device: 'desktop', width: 1200, height: 400, formats: ['webp'], maxFileBytes: 2_000_000, evidence: { state: 'production_canary', reference: 'canary://legacy-provider' } }], activity: { countdown: 'none' },
+      }),
+    })
+    const legacy = await createSelectedVersion(legacyManualProvider, 'L')
+    expect(legacyManualProvider.preparePublish(legacy.task.id).visualPreview).toMatchObject({ deliveryEvidence: { readyForProduction: true, plan: { variants: [{ specificationId: 'legacy-provider-spec' }] } } })
+  })
+
+  it('fails image review closed when production authenticity evidence is unavailable', async () => {
+    const service = new MerchantService({ fixtureMode: true, requireProductionVisualEvidence: true })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'visual-auth-missing', count: 1 })
+    await service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })
+    const visualRef = `dvis_${'E'.repeat(24)}`
+    service.archiveImageGenerationOutputs('ws_demo', job.id, [{ visualRef, ordinal: 1, storageKey: `quarantine/ws_demo/${job.id}/candidate.webp`, mimeType: 'image/webp', sizeBytes: 12, sha256: digest('missing-auth-candidate'), createdAt: '2026-08-29T09:00:00.000Z', reviewStatus: 'passed', authenticity: { externallyUnverified: false } }], 'archived')
+
+    expect(() => service.reviewImageGenerationOutputs('ws_demo', [visualRef], 'passed')).toThrowError(expect.objectContaining({ code: 'VISUAL_AUTHENTICITY_EXTERNALLY_UNVERIFIED', details: expect.objectContaining({ externallyUnverified: true }) }))
+    expect(job.outputs?.[0]).toMatchObject({ reviewStatus: 'unreviewed' })
+    expect(job.outputs?.[0]).not.toHaveProperty('authenticity')
   })
 
   it('freezes the exact non-image publish payload and never falls back to mutable product images', () => {
@@ -270,7 +799,7 @@ describe('MerchantService', () => {
       sha256, storageKey: 'quarantine/ws_assets/asset-1/original.png',
       rightsStatus: 'pending', rightsScope: 'limited_use', aiModificationAllowed: false,
     })
-    first.scanStatus = 'clean'
+    markTrustedClean(first)
     first.rightsStatus = 'approved'
     first.revision = 3
 
@@ -302,13 +831,60 @@ describe('MerchantService', () => {
     expect(service.assets.size).toBe(2)
   })
 
+  it('moves an untrusted duplicate back to quarantine for a new platform scan without changing rights', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const asset = service.registerAsset({
+      workspaceId: 'ws_rescan', name: 'source.png', mimeType: 'image/png', sizeBytes: 12,
+      sha256: 'c'.repeat(64), storageKey: 'quarantine/ws_rescan/asset-1/source.png',
+      rightsStatus: 'approved', rightsScope: 'owned', aiModificationAllowed: true,
+    })
+    markTrustedClean(asset)
+    asset.scanStatus = 'blocked'
+    asset.scanVerdict = 'malicious'
+    asset.scanFindings = ['old-private-finding']
+    const previousRevision = asset.revision
+    const rescanning = service.prepareAssetRescan({
+      workspaceId: 'ws_rescan', assetId: asset.id,
+      storageKey: 'quarantine/ws_rescan/asset-1/retry.png', sizeBytes: 12,
+      sha256: asset.sha256, mimeType: 'image/png',
+    })
+
+    expect(rescanning).toMatchObject({
+      scanStatus: 'quarantined', sourceRevision: 2, revision: previousRevision + 1,
+      rightsStatus: 'approved', rightsScope: 'owned', aiModificationAllowed: true,
+      storageKey: 'quarantine/ws_rescan/asset-1/retry.png',
+    })
+    expect(rescanning.scanReceiptId).toBeUndefined()
+    expect(rescanning.scanReceiptDigest).toBeUndefined()
+    expect(rescanning.scanVerdict).toBeUndefined()
+    expect(rescanning.scanFindings).toBeUndefined()
+  })
+
+  it('pages asset metadata without exposing the full workspace collection', () => {
+    const service = new MerchantService({ seedFixture: false })
+    for (let index = 0; index < 3; index += 1) service.registerAsset({ workspaceId: 'ws_asset_page', name: `asset-${index}.png`, mimeType: 'image/png', sizeBytes: 1, sha256: `${String(index).repeat(64)}`, storageKey: `quarantine/ws_asset_page/${index}.png` })
+    const page = service.listAssetsPage('ws_asset_page', { limit: 2, offset: 1 })
+    expect(page).toMatchObject({ total: 3, limit: 2, offset: 1 })
+    expect(page.items).toHaveLength(2)
+    expect(service.listAssetsPage('ws_other').items).toEqual([])
+  })
+
+  it('pages sync job metadata with a stable tenant-scoped order', () => {
+    const service = new MerchantService({ seedFixture: false })
+    for (let index = 0; index < 3; index += 1) service.createSyncJob({ workspaceId: 'ws_sync_page', platform: 'taobao', accountId: `store-${index}` })
+    const page = service.listSyncJobsPage('ws_sync_page', { limit: 2, offset: 1 })
+    expect(page).toMatchObject({ total: 3, limit: 2, offset: 1 })
+    expect(page.items).toHaveLength(2)
+    expect(service.listSyncJobsPage('ws_other').items).toEqual([])
+  })
+
   it('does not partially apply a rejected asset rights update', () => {
     const service = new MerchantService({ seedFixture: false })
     const asset = service.registerAsset({
       workspaceId: 'ws_asset_rights_atomic', name: 'source.png', mimeType: 'image/png', sizeBytes: 1,
       sha256: 'e'.repeat(64), storageKey: 'quarantine/ws_asset_rights_atomic/source.png',
     })
-    asset.scanStatus = 'clean'
+    markTrustedClean(asset)
     const before = { ...asset, applicableRegions: asset.applicableRegions, usageScopes: asset.usageScopes }
 
     expect(() => service.updateAssetRights({
@@ -327,7 +903,7 @@ describe('MerchantService', () => {
       workspaceId: 'ws_asset_rights_values', name: 'source.png', mimeType: 'image/png', sizeBytes: 1,
       sha256: 'f'.repeat(64), storageKey: 'quarantine/ws_asset_rights_values/source.png',
     })
-    asset.scanStatus = 'clean'
+    markTrustedClean(asset)
     const before = structuredClone(asset)
     expect(() => service.updateAssetRights({ workspaceId: 'ws_asset_rights_values', assetId: asset.id, rightsStatus: 'approved', rightsScope: 'not-a-scope' as never })).toThrowError(expect.objectContaining({ code: 'ASSET_RIGHTS_SCOPE_INVALID' }))
     expect(asset).toEqual(before)
@@ -351,7 +927,29 @@ describe('MerchantService', () => {
     asset.rightsScope = 'commercial_authorized'
     asset.factsConfirmedBy = 'merchant'
     asset.factsConfirmedAt = new Date().toISOString()
+    expect(service.listAssets('ws_asset_readiness')[0]?.readiness).toEqual({ status: 'blocked', reasons: ['安全扫描凭据缺失或无效'] })
+    markTrustedClean(asset)
     expect(service.listAssets('ws_asset_readiness')[0]?.readiness).toEqual({ status: 'ready', reasons: [] })
+  })
+
+  it('rejects legacy clean state without a signed-receipt binding from generation', () => {
+    const service = new MerchantService({ fixtureMode: true, seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_trusted_clean', platform: 'taobao', title: '可信素材门禁商品', stock: 1 })
+    const asset = service.registerAsset({ workspaceId: 'ws_trusted_clean', name: 'legacy.png', mimeType: 'image/png', sizeBytes: 10, sha256: '8'.repeat(64), storageKey: 'quarantine/ws_trusted_clean/legacy.png', rightsStatus: 'approved', rightsScope: 'owned', applicablePlatforms: ['taobao'], usageScopes: ['ai_generation'] })
+    asset.scanStatus = 'clean'
+    asset.storageKey = `clean/${asset.workspaceId}/${asset.id}/source`
+    expect(isTrustedCleanAsset(asset)).toBe(false)
+    const task = service.createTask({ workspaceId: 'ws_trusted_clean', productId: product.id, platform: 'taobao' })
+    service.answerTask('ws_trusted_clean', task.id, { asset_ids: [asset.id], confirm_facts: true })
+    service.selectDirection(task.id, 'A')
+    expect(() => service.confirmProductionPlan('ws_trusted_clean', task.id, 'merchant')).toThrowError(expect.objectContaining({ code: 'ASSET_NOT_READY' }))
+    markTrustedClean(asset)
+    expect(isTrustedCleanAsset(asset)).toBe(true)
+    expect(isTrustedCleanAsset({ ...asset, scanReceiptDigest: asset.scanReceiptDigest!.toUpperCase() })).toBe(false)
+    expect(isTrustedCleanAsset({ ...asset, scanReceiptId: ` ${asset.scanReceiptId}` })).toBe(false)
+    expect(isTrustedCleanAsset({ ...asset, storageKey: `clean/ws_other/${asset.id}/source` })).toBe(false)
+    expect(isTrustedCleanAsset({ ...asset, storageKey: `clean/${asset.workspaceId}/${asset.id}/../source` })).toBe(false)
+    expect(service.confirmProductionPlan('ws_trusted_clean', task.id, 'merchant').state).toBe('plan_confirmed')
   })
 
   it('revokes an account while preserving identity and blocking operations', () => {
@@ -444,6 +1042,22 @@ describe('MerchantService', () => {
     const second = service.confirmPublish(input)
     expect(second.id).toBe(first.id)
     expect(service.publishJobs.size).toBe(1)
+  })
+
+  it('can defer publish state mutation until durable persistence commits', () => {
+    const service = new MerchantService()
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', accountId: 'acct_taobao_1' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    service.approveContent(task.id, draft.id)
+    const preview = service.preparePublish(task.id)
+    const job = service.confirmPublish({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: draft.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey: 'deferred-publish', deferCommit: true })
+    expect(task.state).toBe('publish_prepared')
+    expect(service.publishJobs.has(job.id)).toBe(false)
+
+    service.commitPublishConfirmation(job)
+    expect(task.state).toBe('publishing')
+    expect(service.publishJobs.get(job.id)).toBe(job)
   })
 
   it('scopes publish idempotency keys to the workspace', () => {
@@ -627,6 +1241,24 @@ describe('MerchantService', () => {
     await expect(service.generateDraft(otherTask.id, 'sync-generation-1')).rejects.toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
   })
 
+  it('freezes generation context for a task that has not been assigned to a brand', async () => {
+    const captured: Array<{ taskId: string; inputTokensEstimate: number }> = []
+    const service = new MerchantService({
+      fixtureMode: true,
+      contextSnapshotSink: async input => {
+        captured.push({ taskId: input.task.id, inputTokensEstimate: input.inputTokensEstimate })
+        return { id: `context_link_${input.task.id}`, contextHash: 'a'.repeat(64) }
+      },
+    })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant')
+
+    const prepared = await service.prepareGenerationContext(task.id, 'model:generation:brandless')
+    expect(prepared.contextRef).toEqual({ id: `context_link_${task.id}`, contextHash: 'a'.repeat(64) })
+    expect(captured).toEqual([{ taskId: task.id, inputTokensEstimate: prepared.inputTokensEstimate }])
+  })
+
   it('preserves provider-success settlement failures instead of mapping them to provider failure', async () => {
     const contentGenerator = {
       generate: async () => { throw Object.assign(new Error('local settlement sink failed'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING', receiptKey: 'relay-request-1', providerSucceeded: true }) },
@@ -699,7 +1331,7 @@ describe('MerchantService', () => {
       skus: [{ id: 'sku-blue-m', name: '蓝色/M', price: 199, stock: 7 }], skuCount: 1,
     })
     const asset = service.registerAsset({ workspaceId: 'ws_snapshot', name: 'source.png', mimeType: 'image/png', sizeBytes: 10, sha256: 'c'.repeat(64), storageKey: 'quarantine/ws_snapshot/source.png', rightsStatus: 'approved', rightsScope: 'commercial_authorized', applicablePlatforms: ['taobao'], usageScopes: ['commercial'] })
-    asset.scanStatus = 'clean'
+    markTrustedClean(asset)
     const task = service.createTask({ workspaceId: 'ws_snapshot', productId: product.id, platform: 'taobao' })
     service.answerTask('ws_snapshot', task.id, { asset_ids: [asset.id], confirm_facts: true })
     service.selectDirection(task.id, 'A')
@@ -723,7 +1355,7 @@ describe('MerchantService', () => {
     const service = new MerchantService({ fixtureMode: true, seedFixture: false })
     const product = service.importProduct({ workspaceId: 'ws_asset_scope', platform: 'taobao', title: '授权边界外套', price: 199, stock: 1 })
     const asset = service.registerAsset({ workspaceId: 'ws_asset_scope', name: 'cn-only.png', mimeType: 'image/png', sizeBytes: 10, sha256: '9'.repeat(64), storageKey: 'quarantine/ws_asset_scope/cn-only.png', rightsStatus: 'approved', rightsScope: 'commercial_authorized', applicablePlatforms: ['taobao'], applicableRegions: ['CN'], usageScopes: ['commercial'] })
-    asset.scanStatus = 'clean'
+    markTrustedClean(asset)
     const task = service.createTask({ workspaceId: 'ws_asset_scope', productId: product.id, platform: 'taobao' })
     service.answerTask('ws_asset_scope', task.id, { asset_ids: [asset.id], confirm_facts: true })
     service.selectDirection(task.id, 'A')
@@ -734,13 +1366,52 @@ describe('MerchantService', () => {
     const service = new MerchantService({ fixtureMode: true, seedFixture: false })
     const product = service.importProduct({ workspaceId: 'ws_asset_facts', platform: 'taobao', title: '事实外套', price: 199, stock: 1 })
     const asset = service.registerAsset({ workspaceId: 'ws_asset_facts', name: '商品资料.txt', mimeType: 'text/plain', sizeBytes: 10, sha256: 'a'.repeat(64), storageKey: 'quarantine/ws_asset_facts/facts.txt', rightsStatus: 'approved', rightsScope: 'commercial_authorized', applicablePlatforms: ['taobao'], usageScopes: ['commercial'] })
-    asset.scanStatus = 'clean'
+    markTrustedClean(asset)
     const task = service.createTask({ workspaceId: 'ws_asset_facts', productId: product.id, platform: 'taobao' })
     service.answerTask('ws_asset_facts', task.id, { asset_ids: [asset.id], confirm_facts: true })
     service.selectDirection(task.id, 'A')
     expect(() => service.confirmProductionPlan('ws_asset_facts', task.id, 'merchant')).toThrowError(expect.objectContaining({ code: 'ASSET_NOT_READY', details: expect.objectContaining({ parse_status: 'pending', facts_confirmed: false }) }))
     service.updateAssetParse({ workspaceId: 'ws_asset_facts', assetId: asset.id, state: 'succeeded', source: 'manual', confirmedBy: 'merchant', facts: { material: '防晒面料' } })
     expect(service.confirmProductionPlan('ws_asset_facts', task.id, 'merchant').state).toBe('plan_confirmed')
+  })
+
+  it('plans and verifies asset previews through the real asset parse lifecycle with source-bound evidence', () => {
+    const service = new MerchantService({ fixtureMode: true, seedFixture: false })
+    const asset = service.registerAsset({ workspaceId: 'ws_asset_preview', name: 'hero.png', mimeType: 'image/png', sizeBytes: 2_000_000, sha256: 'd'.repeat(64), storageKey: 'quarantine/ws_asset_preview/hero.png', rightsStatus: 'approved', rightsScope: 'commercial_authorized' })
+    markTrustedClean(asset)
+
+    const parsed = service.updateAssetParse({
+      workspaceId: 'ws_asset_preview', assetId: asset.id, state: 'succeeded', source: 'parser', facts: { width: 1600, height: 1200 },
+      previewEvidence: { detectedMimeType: 'image/png', previewAllowed: true, image: { width: 1600, height: 1200 } },
+    })
+    expect(parsed.preview).toMatchObject({ status: 'planned', externallyUnverified: true, source: { sha256: asset.sha256, revision: 1 }, plan: { status: 'ready', jobs: expect.any(Array) } })
+    expect(parsed.preview!.plan.jobs).toHaveLength(6)
+    expect(parsed.preview!.planHash).toMatch(/^[a-f0-9]{64}$/u)
+    expect(Object.isFrozen(parsed.preview!.plan)).toBe(true)
+    expect(JSON.stringify(parsed.preview)).not.toContain(asset.storageKey)
+
+    const artifacts = parsed.preview!.plan.jobs.map((job, index) => ({ jobId: job.id, targetKey: job.targetKey, sha256: String((index % 8) + 1).repeat(64), sizeBytes: 1_000 + index, mimeType: job.outputFormat === 'jpeg' ? 'image/jpeg' : `image/${job.outputFormat}`, scanStatus: 'clean' as const }))
+    expect(() => service.completeAssetPreview({ workspaceId: 'ws_asset_preview', assetId: asset.id, cacheKey: parsed.preview!.plan.cacheKey, sourceSha256: 'e'.repeat(64), sourceRevision: 1, artifacts })).toThrowError(expect.objectContaining({ code: 'ASSET_PREVIEW_SOURCE_STALE' }))
+    expect(() => service.completeAssetPreview({ workspaceId: 'ws_asset_preview', assetId: asset.id, cacheKey: parsed.preview!.plan.cacheKey, sourceSha256: asset.sha256, sourceRevision: 1, artifacts: artifacts.map((item, index) => index === 0 ? { ...item, scanStatus: 'blocked' as const } : item) })).toThrowError(expect.objectContaining({ code: 'ASSET_PREVIEW_EVIDENCE_INVALID' }))
+
+    const verified = service.completeAssetPreview({ workspaceId: 'ws_asset_preview', assetId: asset.id, cacheKey: parsed.preview!.plan.cacheKey, sourceSha256: asset.sha256, sourceRevision: 1, artifacts, verifiedAt: '2025-08-29T11:00:00.000Z' })
+    expect(verified).toMatchObject({ status: 'verified', externallyUnverified: false, verifiedAt: '2025-08-29T11:00:00.000Z', artifacts: expect.arrayContaining([expect.objectContaining({ scanStatus: 'clean' })]) })
+    expect(() => service.completeAssetPreview({ workspaceId: 'ws_foreign', assetId: asset.id, cacheKey: parsed.preview!.plan.cacheKey, sourceSha256: asset.sha256, sourceRevision: 1, artifacts })).toThrowError(expect.objectContaining({ code: 'ASSET_NOT_FOUND' }))
+    service.updateAssetRights({ workspaceId: 'ws_asset_preview', assetId: asset.id, rightsStatus: 'rejected' })
+    expect(asset.preview).toBeUndefined()
+  })
+
+  it('keeps unsafe or legacy asset parse flows backward compatible and preview-fail-closed', () => {
+    const service = new MerchantService({ fixtureMode: true, seedFixture: false })
+    const legacy = service.registerAsset({ workspaceId: 'ws_asset_preview', name: 'legacy.txt', mimeType: 'text/plain', sizeBytes: 12, sha256: 'e'.repeat(64), storageKey: 'quarantine/ws_asset_preview/legacy.txt' })
+    markTrustedClean(legacy)
+    expect(service.updateAssetParse({ workspaceId: 'ws_asset_preview', assetId: legacy.id, state: 'succeeded', source: 'parser', facts: { title: 'legacy' } }).preview).toBeUndefined()
+
+    const unsafe = service.registerAsset({ workspaceId: 'ws_asset_preview', name: 'spoofed.png', mimeType: 'image/png', sizeBytes: 100, sha256: 'f'.repeat(64), storageKey: 'quarantine/ws_asset_preview/spoofed.png', rightsStatus: 'pending' })
+    markTrustedClean(unsafe)
+    const result = service.updateAssetParse({ workspaceId: 'ws_asset_preview', assetId: unsafe.id, state: 'succeeded', source: 'parser', facts: { width: 100, height: 100 }, previewEvidence: { detectedMimeType: 'application/pdf', previewAllowed: true, image: { width: 100, height: 100 } } })
+    expect(result.preview).toMatchObject({ status: 'blocked', externallyUnverified: true, plan: { jobs: [], findings: expect.arrayContaining([expect.objectContaining({ code: 'PREVIEW_RIGHTS_DENIED' }), expect.objectContaining({ code: 'MIME_SIGNATURE_MISMATCH' })]) } })
+    expect(() => service.completeAssetPreview({ workspaceId: 'ws_asset_preview', assetId: unsafe.id, cacheKey: result.preview!.plan.cacheKey, sourceSha256: unsafe.sha256, sourceRevision: 1, artifacts: [] })).toThrowError(expect.objectContaining({ code: 'ASSET_PREVIEW_NOT_PLANNED' }))
   })
 
   it('enforces a workspace-wide active job quota while preserving idempotent retries', () => {
@@ -840,6 +1511,7 @@ describe('MerchantService', () => {
     const feedback = service.submitFeedback({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: version.id, rating: 'needs_improvement', reason: '标题过长', comment: '请突出核心卖点', actorId: 'actor_1' })
     expect(feedback).toMatchObject({ taskId: task.id, contentVersionId: version.id, rating: 'needs_improvement', actorId: 'actor_1' })
     expect(service.listFeedback('ws_demo', task.id)).toEqual([feedback])
+    expect(service.listFeedbackPage('ws_demo', task.id, { limit: 1, offset: 0 })).toMatchObject({ items: [feedback], total: 1, limit: 1, offset: 0 })
     expect(() => service.listFeedback('ws_other', task.id)).toThrowError(DomainError)
     expect(() => service.submitFeedback({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: 'cv_other', rating: 'liked', actorId: 'actor_1' })).toThrowError(DomainError)
     expect(() => service.submitFeedback({ workspaceId: 'ws_demo', taskId: task.id, rating: 'liked', comment: 'x'.repeat(2001), actorId: 'actor_1' })).toThrowError(DomainError)
@@ -913,6 +1585,7 @@ describe('MerchantService', () => {
     const service = new MerchantService()
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     const initial = service.listCreativeDirections('ws_demo', task.id)
+    expect(initial).toHaveLength(3)
     const merged = service.updateCreativeDirections({ workspaceId: 'ws_demo', taskId: task.id, action: 'merge', directionIds: [initial[0]!.id, initial[1]!.id], expectedVersion: task.version })
     expect(merged.directions).toHaveLength(3)
     expect(merged.newDirection?.id).toBe('MERGE-v1')
@@ -921,6 +1594,69 @@ describe('MerchantService', () => {
     expect(modified.directions).toHaveLength(3)
     expect(modified.newDirection?.id).toBe('MERGE-v1-v2')
     expect(modified.task.directionHistory).toHaveLength(6)
+  })
+
+  it('regenerates semantic direction content instead of renaming duplicate directions', () => {
+    const service = new MerchantService()
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    const initial = service.listCreativeDirections('ws_demo', task.id)
+    const regenerated = service.updateCreativeDirections({ workspaceId: 'ws_demo', taskId: task.id, action: 'regenerate', feedback: '强化真实通勤场景', expectedVersion: task.version })
+
+    expect(regenerated.directions).toHaveLength(3)
+    expect(regenerated.newDirection?.id).toBe('A-v1')
+    expect(regenerated.newDirection?.coreIdea).not.toBe(initial[0]?.coreIdea)
+    expect(regenerated.newDirection?.structure).not.toBe(initial[0]?.structure)
+    expect(regenerated.newDirection?.visualDirection).not.toBe(initial[0]?.visualDirection)
+  })
+
+  it('rebuilds selling-point evidence when a direction is regenerated or edited', () => {
+    const service = new MerchantService()
+    const product = service.products.get('prod_fixture_1')!
+    product.sellingPoints = [{ id: 'sp-confirmed', text: '证据来源卖点', proofStatus: 'confirmed', sourceIds: ['product-field:benefit'] }]
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+
+    const regenerated = service.updateCreativeDirections({ workspaceId: 'ws_demo', taskId: task.id, action: 'regenerate', feedback: '强化证据', expectedVersion: task.version })
+    expect(regenerated.newDirection?.sellingPointEvidence).toEqual(
+      regenerated.newDirection?.sellingPoints.map(text => expect.objectContaining({ text, proofStatus: 'pending', factSourceIds: [] })),
+    )
+
+    const edited = service.updateCreativeDirections({ workspaceId: 'ws_demo', taskId: task.id, action: 'modify', directionId: regenerated.directions[0]!.id, changes: { sellingPoints: ['证据来源卖点'] }, expectedVersion: regenerated.task.version })
+    expect(edited.newDirection?.sellingPointEvidence).toEqual([{ text: '证据来源卖点', proofStatus: 'confirmed', factSourceIds: ['product-field:benefit'] }])
+  })
+
+  it('rejects near-duplicate creative directions with an explainable sanitized quality report', () => {
+    const service = new MerchantService()
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    const distinct = service.listCreativeDirections('ws_demo', task.id)
+    task.directions = [
+      { ...distinct[0]!, coreIdea: 'secret://merchant-context 极简质感，突出核心卖点', structure: '核心卖点→商品证明→CTA', visualDirection: '极简高端感', copyDirection: '简洁并强调主要利益点', sellingPoints: ['核心卖点'], fitReason: '适合高端用户', risk: '避免绝对化' },
+      { ...distinct[1]!, coreIdea: 'secret://merchant-context 简约高级感，强调主要利益点', structure: '主要利益点→商品证明→CTA', visualDirection: '简约品质感', copyDirection: '极简并突出核心利益点', sellingPoints: ['主要卖点'], fitReason: '适合高端用户', risk: '避免绝对化' },
+      distinct[2]!,
+    ]
+
+    let rejection: DomainError | undefined
+    try { service.listCreativeDirections('ws_demo', task.id) } catch (error) { rejection = error as DomainError }
+    expect(rejection).toMatchObject({
+      code: 'CREATIVE_DIRECTIONS_NOT_DISTINCT',
+      status: 409,
+      details: { report: { passed: false, pair_scores: expect.arrayContaining([expect.objectContaining({ direction_ids: ['A', 'B'], passed: false })]) } },
+    })
+    expect(rejection?.details?.report).not.toHaveProperty('normalizedDirections')
+    expect(JSON.stringify(rejection?.details)).not.toContain('secret://merchant-context')
+  })
+
+  it('rejects a creative-direction update that changes only the name', () => {
+    const service = new MerchantService()
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    const initial = service.listCreativeDirections('ws_demo', task.id)
+
+    expect(() => service.updateCreativeDirections({ workspaceId: 'ws_demo', taskId: task.id, action: 'modify', directionId: initial[0]!.id, changes: { name: '换个名称但内容不变' }, expectedVersion: task.version }))
+      .toThrowError(expect.objectContaining({
+        code: 'CREATIVE_DIRECTIONS_NOT_DISTINCT',
+        details: expect.objectContaining({ report: expect.objectContaining({ passed: false }) }),
+      }))
+    expect(task.version).toBe(1)
+    expect(task.directions).toBeUndefined()
   })
 
   it('exports structured content without inventing a publish receipt', () => {
@@ -941,6 +1677,47 @@ describe('MerchantService', () => {
     expect(bundle.fileName).toBe('content-v1-bundle.zip')
     expect(bundle.contentType).toBe('application/zip')
     expect(Array.from(bundle.binaryBody?.slice(0, 4) ?? [])).toEqual([0x50, 0x4b, 0x03, 0x04])
+  })
+
+  it('exports a self-verified delivery bundle with hashes, source map, frozen review and a real receipt while preserving the legacy manifest', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '交付品牌' })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id })
+    service.selectDirection(task.id, 'A', task.version)
+    const version = service.createDraft(task.id)
+    service.approveContent(task.id, version.id)
+    const preview = service.preparePublish(task.id)
+    const publish = service.confirmPublish({ workspaceId: 'ws_demo', taskId: task.id, contentVersionId: version.id, confirmationHash: preview.confirmationHash, remoteSnapshotHash: preview.remoteSnapshotHash, idempotencyKey: 'verified-delivery-export' })
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: publish.id, observedAt: '2026-08-29T10:00:00.000Z', status: { found: true, state: 'published', remoteId: 'TB-738204915', requestId: 'platform-request-1', simulated: false } })
+
+    const bundle = service.exportContent('ws_demo', version.id, 'bundle')
+    const repeatedBundle = service.exportContent('ws_demo', version.id, 'bundle')
+    expect(repeatedBundle.binaryBody).toEqual(bundle.binaryBody)
+    expect(bundle.deliveryVerification).toEqual({ valid: true, errors: [] })
+    expect(bundle.deliveryManifestHash).toMatch(/^[a-f0-9]{64}$/u)
+    expect(bundle.deliveryManifest).toMatchObject({ publishable: true, review: { findingsFile: 'review-findings.json' }, sourceMap: { file: 'source-map.json', entries: expect.arrayContaining([expect.objectContaining({ outputPath: 'content.json' })]) }, publishReceipt: { file: 'publish-receipt.json', requestId: 'platform-request-1', remoteProductId: 'TB-738204915' } })
+    expect(bundle.deliveryManifest?.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'content.json', sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) }),
+      expect.objectContaining({ path: 'review-findings.json', sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) }),
+      expect.objectContaining({ path: 'source-map.json', sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) }),
+      expect.objectContaining({ path: 'publish-receipt.json', sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) }),
+    ]))
+    const archiveFiles = readStoredZip(bundle.binaryBody!)
+    const archiveManifest = JSON.parse(Buffer.from(archiveFiles.get('manifest.json')!).toString('utf8')) as DeliveryBundleManifest
+    const verificationFiles: DeliveryBundleFile[] = [...archiveFiles].map(([path, content]) => ({
+      path,
+      mimeType: path === 'manifest.json' ? 'application/json; charset=utf-8' : archiveManifest.files.find(file => file.path === path)!.mimeType,
+      content: Buffer.from(content).toString('utf8'),
+    }))
+    expect(verifyDeliveryBundle(archiveManifest, verificationFiles, bundle.deliveryManifestHash!)).toEqual({ valid: true, errors: [] })
+    const tamperedFiles = verificationFiles.map(file => file.path === 'content.json' ? { ...file, content: `${String(file.content)}\n{"tampered":true}` } : file)
+    expect(verifyDeliveryBundle(archiveManifest, tamperedFiles, bundle.deliveryManifestHash!)).toMatchObject({ valid: false, errors: expect.arrayContaining([expect.objectContaining({ code: 'FILE_HASH_MISMATCH', path: 'content.json' })]) })
+
+    const legacy = JSON.parse(service.exportContent('ws_demo', version.id, 'manifest').body) as { schema_version: string; workspace_id: string; publish_receipt: { request_id: string }; delivery_bundle_manifest_hash: string; delivery_bundle_verification: { valid: boolean } }
+    expect(legacy).toMatchObject({ workspace_id: 'ws_demo', publish_receipt: { request_id: 'platform-request-1' }, delivery_bundle_manifest_hash: bundle.deliveryManifestHash, delivery_bundle_verification: { valid: true } })
+    expect(JSON.parse(Buffer.from(archiveFiles.get('legacy-manifest.json')!).toString('utf8'))).toMatchObject({ schema_version: legacy.schema_version, workspace_id: legacy.workspace_id, publish_receipt: legacy.publish_receipt })
+    expect(archiveFiles.has('legacy-review-findings.json')).toBe(true)
+    expect(archiveFiles.has('legacy-source-map.json')).toBe(true)
   })
 
   it('always includes a static brief in generated content and exports it', () => {
@@ -1073,6 +1850,107 @@ describe('MerchantService', () => {
     expect(restarted.reviewContentReport('ws_demo', version.id).findings).toContainEqual(expect.objectContaining({ code: 'BRAND_FORBIDDEN_TERM', evidence: expect.objectContaining({ sourceIds: [`brand:${brand.id}:r${brand.revision}`] }) }))
   })
 
+  it('reuses a confirmed brand audience as task context and freezes it in the input snapshot', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵', audience: '城市通勤女性' })
+    const understanding = service.understandTaskRequest('ws_demo', '给轻云防晒外套 2026 做淘宝详情页')
+    expect(understanding.extracted).toMatchObject({ brand_id: brand.id, audience: '城市通勤女性' })
+
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, requestText: '制作淘宝详情页' })
+    expect(task.answers).toMatchObject({ brand_id: brand.id, audience: '城市通勤女性' })
+    expect(task.missingQuestions.map(question => question.id)).not.toContain('audience')
+    service.selectDirection(task.id, 'A', task.version)
+    const confirmed = service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
+    expect(confirmed.productionPlan?.audience).toBe('城市通勤女性')
+    expect(confirmed.inputSnapshot?.audience).toBe('城市通勤女性')
+    expect(confirmed.inputSnapshot?.brand).toMatchObject({ id: brand.id, revision: brand.revision, audience: '城市通勤女性' })
+
+    service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵', audience: '户外旅行人群', resolutions: { audience: 'candidate' } })
+    expect(confirmed.inputSnapshot?.audience).toBe('城市通勤女性')
+    expect(confirmed.inputSnapshot?.brand).toMatchObject({ revision: brand.revision, audience: '城市通勤女性' })
+  })
+
+  it('lets a product or campaign audience override the brand default and asks when the override is unspecified', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵', audience: '城市通勤女性' })
+    const explicit = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, requestText: '制作淘宝活动详情页，面向大学生' })
+    expect(explicit.answers.audience).toBe('大学生')
+    expect(explicit.missingQuestions.map(question => question.id)).not.toContain('audience')
+
+    const unspecifiedUnderstanding = service.understandTaskRequest('ws_demo', '给轻云防晒外套 2026 做淘宝活动详情页，本次活动受众需要单独确认')
+    expect(unspecifiedUnderstanding.extracted.audience).toBeUndefined()
+    expect(unspecifiedUnderstanding.questions).toContainEqual(expect.objectContaining({ id: 'audience', kind: 'recommended' }))
+    const unspecified = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, requestText: '制作淘宝活动详情页，本次活动受众需要单独确认' })
+    expect(unspecified.answers.audience).toBeUndefined()
+    expect(unspecified.missingQuestions).toContainEqual(expect.objectContaining({ id: 'audience', kind: 'recommended' }))
+  })
+
+  it('does not reuse or expose a brand audience from another workspace', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '本地品牌', audience: '本地受众' })
+    const foreign = service.upsertBrandProfile({ workspaceId: 'ws_other', name: '外部品牌', audience: '机密外部受众' })
+    expect(() => service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: foreign.id }))
+      .toThrowError(expect.objectContaining({ code: 'BRAND_PROFILE_NOT_FOUND', status: 404 }))
+    expect(JSON.stringify(service.understandTaskRequest('ws_demo', '给轻云防晒外套 2026 做淘宝详情页'))).not.toContain('机密外部受众')
+  })
+
+  it('persists safe complex promotion intent with exact evidence without applying brand candidates', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵', audience: '城市通勤女性' })
+    const text = '品牌：山海；目标人群：户外新手。给轻云防晒外套 2026 做淘宝活动详情页，商品范围：轻云防晒外套 2026。活动时间从2026年9月1日至2026年9月10日。满300元减30元；满3件8折；预售定金20元，尾款180元；会员价99元。'
+    const understanding = service.understandTaskRequest('ws_demo', text)
+
+    expect(understanding.merchantIntent.safeToApply).toBe(true)
+    expect(understanding.merchantIntent.brand).toMatchObject({ name: { value: '山海' }, audience: { value: '户外新手' } })
+    expect(understanding.extracted.audience).toBeUndefined()
+    expect(understanding.questions.filter(question => question.kind === 'blocking')).toEqual([])
+    const structured = JSON.parse(understanding.extracted.merchant_intent_json!) as { promotion: { mechanisms: Array<{ kind: string; evidence: Array<{ text: string; start: number; end: number }> }>; validity: { value: { start: { iso: string }; end: { iso: string } } }; platforms: { value: string[] }; products: { value: string[] } } }
+    expect(structured.promotion.mechanisms.map(item => item.kind)).toEqual(['threshold_reduction', 'quantity_discount', 'presale', 'member_price'])
+    expect(structured.promotion.validity.value).toMatchObject({ start: { iso: '2026-09-01' }, end: { iso: '2026-09-10' } })
+    expect(structured.promotion.platforms.value).toEqual(['taobao'])
+    expect(structured.promotion.products.value).toEqual(['轻云防晒外套 2026'])
+    for (const evidence of structured.promotion.mechanisms.flatMap(item => item.evidence)) expect(text.slice(evidence.start, evidence.end)).toBe(evidence.text)
+
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, requestText: text })
+    expect(JSON.parse(task.answers.merchant_intent_json as string)).toEqual(structured)
+    expect(task.answers.audience).toBeUndefined()
+    expect(service.getBrandProfile('ws_demo')).toMatchObject({ id: brand.id, name: '云朵', audience: '城市通勤女性', revision: brand.revision })
+  })
+
+  it('turns every ambiguous natural-language value into an evidence-backed blocking clarification', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const text = '给轻云防晒外套 2026 做淘宝详情页。会员价99元，member price ¥89。活动时间2026-09-01至2026-09-10；活动时间2026-10-01至2026-10-07。'
+    const understanding = service.understandTaskRequest('ws_demo', text)
+
+    expect(understanding.executionPlan).toMatchObject({ mode: 'needs_clarification', canCreate: false })
+    expect(understanding.extracted.merchant_intent_json).toBeUndefined()
+    const intentQuestions = understanding.questions.filter(question => question.id.startsWith('merchant_intent_'))
+    expect(intentQuestions).toHaveLength(2)
+    expect(intentQuestions.every(question => question.kind === 'blocking' && question.evidence?.length)).toBe(true)
+    for (const evidence of intentQuestions.flatMap(question => question.evidence ?? [])) expect(text.slice(evidence.start, evidence.end)).toBe(evidence.text)
+    expect(() => service.createTaskFromRequest({ workspaceId: 'ws_demo', requestText: text })).toThrowError(expect.objectContaining({ code: 'TASK_REQUEST_NEEDS_CLARIFICATION' }))
+
+    const draft = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', requestText: text })
+    expect(draft.state).toBe('draft')
+    expect(draft.answers.merchant_intent_json).toBeUndefined()
+    expect(draft.missingQuestions.filter(question => question.id.startsWith('merchant_intent_'))).toHaveLength(2)
+  })
+
+  it('gives explicit structured task answers priority over conflicting natural-language inference', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const promotionJson = JSON.stringify([{ id: 'merchant-confirmed-member-price', kind: 'final_price', label: '商家确认会员价 88 元', platform: 'taobao', valid_to: '2026-12-31', price_cny: 88 }])
+    const merchantIntentJson = JSON.stringify({ schemaVersion: '1.0', source: 'merchant_confirmed_form', promotion: { mechanisms: [{ kind: 'member_price', memberPrice: { currency: 'CNY', amount: '88.00', minorUnits: 8800 } }] } })
+    const task = service.createTask({
+      workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao',
+      requestText: '制作淘宝详情页。会员价99元，member price ¥89。',
+      answers: { promotion_json: promotionJson, merchant_intent_json: merchantIntentJson, price_policy: '商家已确认会员价 88 元' },
+    })
+
+    expect(task.answers).toMatchObject({ promotion_json: promotionJson, merchant_intent_json: merchantIntentJson, price_policy: '商家已确认会员价 88 元' })
+    expect(task.missingQuestions.some(question => question.id.startsWith('merchant_intent_'))).toBe(false)
+    expect(task.state).toBe('ready_for_direction')
+  })
+
   it('rejects a brand binding from another workspace', () => {
     const service = new MerchantService({ fixtureMode: true })
     const foreign = service.upsertBrandProfile({ workspaceId: 'ws_other', name: '其他品牌' })
@@ -1113,7 +1991,7 @@ describe('MerchantService', () => {
     expect(service.getBrandVisualReadiness('ws_visual', 'taobao')).toMatchObject({ ready: false, issues: expect.arrayContaining([expect.objectContaining({ code: 'LOGO_ASSET_NOT_READY' }), expect.objectContaining({ code: 'FONT_LICENSE_NOT_APPROVED' })]) })
     expect(() => service.assertBrandVisualGenerationReady('ws_visual', 'taobao')).toThrowError(expect.objectContaining({ code: 'BRAND_VISUAL_RULES_BLOCKED' }))
 
-    asset.scanStatus = 'clean'; asset.rightsStatus = 'approved'; asset.rightsScope = 'commercial_authorized'; asset.applicablePlatforms = ['taobao']; asset.applicableRegions = ['CN']
+    markTrustedClean(asset); asset.rightsStatus = 'approved'; asset.rightsScope = 'commercial_authorized'; asset.applicablePlatforms = ['taobao']; asset.applicableRegions = ['CN']
     service.upsertBrandProfile({ workspaceId: 'ws_visual', name: '视觉品牌', visualRules: { ...profile.visualRules!, fonts: [{ family: '品牌字体', licenseStatus: 'approved' }] }, resolutions: { visualRules: 'candidate' } })
     expect(() => service.assertBrandVisualGenerationReady('ws_visual', 'taobao')).toThrowError(expect.objectContaining({ code: 'BRAND_VISUAL_RULES_BLOCKED' }))
     expect(service.assertBrandVisualGenerationReady('ws_visual', 'taobao', 'CN')).toMatchObject({ ready: true, configured: true })
@@ -1139,7 +2017,7 @@ describe('MerchantService', () => {
   it('rechecks frozen visual-rule assets before approval when rights later become invalid', () => {
     const service = new MerchantService()
     const logo = service.registerAsset({ workspaceId: 'ws_demo', name: 'brand-logo.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'e'.repeat(64), storageKey: 'quarantine/ws_demo/brand-logo.png' })
-    logo.scanStatus = 'clean'; logo.rightsStatus = 'approved'; logo.rightsScope = 'owned'; logo.applicablePlatforms = ['taobao']
+    markTrustedClean(logo); logo.rightsStatus = 'approved'; logo.rightsScope = 'owned'; logo.applicablePlatforms = ['taobao']
     service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '视觉品牌', visualRules: { logo: { assetIds: [logo.id], allowRecolor: false, allowDistortion: false, allowRedraw: false } } })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
@@ -1152,21 +2030,57 @@ describe('MerchantService', () => {
   it('records explicit historical-asset preferences and feeds only eligible excellent assets into generation', () => {
     const service = new MerchantService()
     const asset = service.registerAsset({ workspaceId: 'ws_demo', name: '历史优秀主图.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'f'.repeat(64), storageKey: 'quarantine/ws_demo/history.png' })
-    asset.scanStatus = 'clean'; asset.rightsStatus = 'approved'; asset.rightsScope = 'owned'; asset.applicablePlatforms = ['taobao']
+    markTrustedClean(asset); asset.rightsStatus = 'approved'; asset.rightsScope = 'owned'; asset.applicablePlatforms = ['taobao']
     expect(() => service.updateAssetPreference({ workspaceId: 'ws_demo', assetId: asset.id, verdict: 'excellent', reasons: [], actorId: 'merchant' })).toThrowError(expect.objectContaining({ code: 'ASSET_PREFERENCE_REASON_REQUIRED' }))
     const preferred = service.updateAssetPreference({ workspaceId: 'ws_demo', assetId: asset.id, verdict: 'excellent', reasons: ['商品主体清晰', '留白适合移动端'], actorId: 'merchant' })
     expect(preferred.preference).toMatchObject({ verdict: 'excellent', reasons: ['商品主体清晰', '留白适合移动端'], updatedBy: 'merchant' })
 
-    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    const unrelatedTask = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(unrelatedTask.id, 'A')
+    service.confirmProductionPlan('ws_demo', unrelatedTask.id, 'merchant')
+    expect(service.prepareCodexDraft(unrelatedTask.id).referenceAssets).toEqual([])
+
+    const product = service.importProduct({ workspaceId: 'ws_demo', platform: 'taobao', title: '绑定历史素材的商品', sourceAssetIds: [asset.id], stock: 5 })
+    service.confirmProductFacts('ws_demo', product.id)
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
     service.selectDirection(task.id, 'A')
     service.confirmProductionPlan('ws_demo', task.id, 'merchant')
     expect(service.prepareCodexDraft(task.id).referenceAssets).toEqual([expect.objectContaining({ id: asset.id, preference: expect.objectContaining({ verdict: 'excellent', reasons: ['商品主体清晰', '留白适合移动端'] }) })])
 
     service.updateAssetPreference({ workspaceId: 'ws_demo', assetId: asset.id, verdict: 'disliked', reasons: ['背景干扰商品主体'], actorId: 'merchant', expectedRevision: preferred.revision })
-    const blockedTask = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    const blockedTask = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
     service.answerTask('ws_demo', blockedTask.id, { asset_ids: [asset.id] })
     service.selectDirection(blockedTask.id, 'A')
     expect(() => service.confirmProductionPlan('ws_demo', blockedTask.id, 'merchant')).toThrowError(expect.objectContaining({ code: 'ASSET_PREFERENCE_BLOCKED' }))
+  })
+
+  it('fails closed instead of rebuilding a missing frozen context in production', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant')
+    service.taskInputSnapshots.delete(task.inputSnapshotId)
+    const previousNodeEnv = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      expect(() => service.createDraft(task.id)).toThrowError(expect.objectContaining({ code: 'TASK_CONTEXT_SNAPSHOT_NOT_FOUND' }))
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = previousNodeEnv
+    }
+  })
+
+  it('strictly validates task account workspace, platform, and authorization state', () => {
+    const service = new MerchantService({ seedFixture: false, strictAccountScope: true })
+    const product = service.importProduct({ workspaceId: 'ws_scope', platform: 'taobao', title: '作用域校验商品', stock: 1, price: 99 })
+    const otherWorkspace = service.registerPlatformAccount({ workspaceId: 'ws_other', platform: 'taobao', remoteAccountId: 'other', credentialRef: 'fixture://other' })
+    const wrongPlatform = service.registerPlatformAccount({ workspaceId: 'ws_scope', platform: 'jd', remoteAccountId: 'jd', credentialRef: 'fixture://jd' })
+    const revoked = service.registerPlatformAccount({ workspaceId: 'ws_scope', platform: 'taobao', remoteAccountId: 'revoked', credentialRef: 'fixture://revoked' })
+    service.revokePlatformAccount('ws_scope', revoked.id, 'taobao')
+
+    expect(() => service.createTask({ workspaceId: 'ws_scope', productId: product.id, platform: 'taobao', accountId: otherWorkspace.id })).toThrowError(expect.objectContaining({ code: 'PLATFORM_ACCOUNT_NOT_FOUND' }))
+    expect(() => service.createTask({ workspaceId: 'ws_scope', productId: product.id, platform: 'taobao', accountId: wrongPlatform.id })).toThrowError(expect.objectContaining({ code: 'PLATFORM_ACCOUNT_NOT_FOUND' }))
+    expect(() => service.createTask({ workspaceId: 'ws_scope', productId: product.id, platform: 'taobao', accountId: revoked.id })).toThrowError(expect.objectContaining({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED' }))
   })
 
   it('keeps asset preference writes tenant-scoped and revision-safe', () => {
@@ -1207,6 +2121,16 @@ describe('MerchantService', () => {
     expect(service.getContentVersion('ws_clone', draft.id).taskId).toBe(source.id)
   })
 
+  it('clones a historical task into an explicitly selected replacement store', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_rebind_clone', platform: 'taobao', title: '账号漂移商品', stock: 10, price: 199 })
+    const source = service.createTask({ workspaceId: 'ws_rebind_clone', productId: product.id, platform: 'taobao', accountId: 'store-taobao-old' })
+    const cloned = service.cloneTask('ws_rebind_clone', source.id, '按当前店铺重新制作', { accountId: 'store-taobao-current' })
+    expect(cloned).toMatchObject({ productId: product.id, platform: 'taobao', accountId: 'store-taobao-current', state: 'draft' })
+    expect(cloned.id).not.toBe(source.id)
+    expect(cloned.contentVersionId).toBeUndefined()
+  })
+
   it('clones a task to another platform only from an explicitly selected target product', () => {
     const service = new MerchantService({ seedFixture: false })
     const sourceProduct = service.importProduct({ workspaceId: 'ws_cross_clone', platform: 'taobao', title: '跨平台源商品', stock: 10, price: 199 })
@@ -1221,5 +2145,13 @@ describe('MerchantService', () => {
     expect(cloned.id).not.toBe(source.id)
     expect(cloned.contentVersionId).toBeUndefined()
     expect(cloned.answers.promotion_json).toBeUndefined()
+  })
+
+  it('preserves canonical listing scope when cloning within the same execution store', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_canonical_clone', platform: 'taobao', accountId: 'store-taobao-1', title: '规范商品', stock: 10 })
+    const source = service.createTask({ workspaceId: 'ws_canonical_clone', productId: product.id, platform: 'taobao', accountId: 'store-taobao-1', canonicalProductId: 'canonical_1', listingId: 'listing_1' })
+    const cloned = service.cloneTask('ws_canonical_clone', source.id)
+    expect(cloned).toMatchObject({ canonicalProductId: 'canonical_1', listingId: 'listing_1', platform: 'taobao', accountId: 'store-taobao-1' })
   })
 })

@@ -20,6 +20,8 @@ function config(overrides: Record<string, boolean> = {}) {
     'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com',
     'OPS_AUTH_MODE: oidc',
     'auth_enforcement: strict',
+    'mcp_authorization_mode: enforce',
+    'durable_platform_assignments_required: true',
     'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
     ...flags.map(flag => `${flag}: ${overrides[flag] === false ? 'false' : 'true'}`),
     ...socialFlags.map(flag => `${flag}: ${overrides[flag] === true ? 'true' : 'false'}`),
@@ -28,7 +30,22 @@ function config(overrides: Record<string, boolean> = {}) {
     'database_max_backend_connections: 300',
     'database_connection_utilization_alert_percent: 80',
     'secret_provider: vault',
-    'worker_api_signing_secret: vault://worker-api-signing',
+    'worker_api_credentials_ref: vault://worker-api-credentials',
+    ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [
+      `worker_${role}_api_token_ref: vault://worker-${role}-token`,
+      `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`,
+    ]),
+    'asset_scanner_mode: clamav_worker',
+    'allow_local_asset_scan_fixture: false',
+    'asset_scanner_api_token_ref: vault://merchant-scanner/api-token',
+    'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing-secret',
+    'asset_scan_receipt_key_id: scanner-production-2026-08',
+    'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key',
+    'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys',
+    'asset_scan_policy_version: scan-policy-2026-08-30',
+    `clamav_image_digest: sha256:${'a'.repeat(64)}`,
+    'clamav_signature_max_age_minutes: 1440',
+    'clamav_max_file_bytes: 52428800',
     'payment_mode: provider',
     'payment_provider_adapters: alipay,wechat',
     'payment_checkout_base_url: https://payments.example.com/checkout',
@@ -58,6 +75,8 @@ function config(overrides: Record<string, boolean> = {}) {
     'object_storage_region: cn',
     'object_storage_endpoint: https://s3.example.com',
     'object_storage_kms_key: vault://kms', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token',
+    'asset_display_base_url: https://merchant.example.com',
+    'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret',
     'object_storage_versioning: true',
     'lifecycle_policy_ref: vault://asset-lifecycle-policy',
     'asset_quarantine_retention_days: 7',
@@ -123,9 +142,52 @@ describe('production config gate', () => {
     expect(() => run(quoted)()).toThrow(/OIDC|auth/i)
   })
 
+  it('rejects duplicate YAML keys instead of allowing check/runtime value drift', () => {
+    expect(() => run(`${config()}\nauth_enforcement: disabled`)()).toThrow(/duplicate|YAML/i)
+  })
+
+  it('requires enforced MCP authorization and authoritative durable platform roles', () => {
+    expect(() => run(config().replace('mcp_authorization_mode: enforce', 'mcp_authorization_mode: shadow'))()).toThrow(/mcp_authorization_mode/)
+    expect(() => run(config().replace('durable_platform_assignments_required: true', 'durable_platform_assignments_required: false'))()).toThrow(/durable platform assignments/)
+  })
+
+  it('rejects invalid YAML before evaluating production settings', () => {
+    expect(() => run(`${config()}\ninvalid: [` )()).toThrow(/YAML/i)
+  })
+
+  it('rejects an empty role-scoped worker signing secret reference', () => {
+    const emptySecret = config().replace('worker_publish_api_signing_secret_ref: vault://worker-publish-signing', 'worker_publish_api_signing_secret_ref:')
+    expect(() => run(emptySecret)()).toThrow(/worker_publish_api_signing_secret_ref/)
+  })
+
+  it('rejects shared role credential references', () => {
+    const shared = config().replace('worker_publish_api_token_ref: vault://worker-publish-token', 'worker_publish_api_token_ref: vault://worker-sync-token')
+    expect(() => run(shared)()).toThrow(/worker role credential references must be unique/)
+  })
+
+  it('fails closed when the production asset scanner contract is incomplete or unsafe', () => {
+    expect(() => run(config().replace('asset_scanner_mode: clamav_worker', 'asset_scanner_mode: fixture'))()).toThrow(/asset_scanner_mode/)
+    expect(() => run(config().replace('allow_local_asset_scan_fixture: false', 'allow_local_asset_scan_fixture: true'))()).toThrow(/fixture/)
+    expect(() => run(config().replace('asset_scan_policy_version: scan-policy-2026-08-30\n', ''))()).toThrow(/asset_scan_policy_version/)
+    expect(() => run(config().replace(`sha256:${'a'.repeat(64)}`, 'clamav:1.4.6'))()).toThrow(/clamav_image_digest/)
+    expect(() => run(config().replace('clamav_signature_max_age_minutes: 1440', 'clamav_signature_max_age_minutes: 1441'))()).toThrow(/signature_max_age/)
+  })
+
+  it('requires isolated scanner credentials and receipt signing trust roots', () => {
+    expect(() => run(config().replace('asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key\n', ''))()).toThrow(/asset_scan_receipt_private_key_ref/)
+    expect(() => run(config().replace('asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_trusted_public_keys_ref:'))()).toThrow(/trusted_public_keys/)
+    expect(() => run(config().replace('asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing-secret', 'asset_scanner_workspace_signing_secret_ref: vault://worker-publish-signing'))()).toThrow(/isolated/)
+    expect(() => run(config().replace('asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing-secret', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/api-token'))()).toThrow(/isolated/)
+  })
+
   it('rejects incomplete lifecycle and alert-channel policy', () => {
     expect(() => run(config().replace('object_storage_versioning: true\n', ''))()).toThrow(/versioning/)
     expect(() => run(config().replace('alert_channel_secret_ref: vault://merchant-alert-channel', ''))()).toThrow(/alert_channel/)
+  })
+
+  it('requires HTTPS signed asset-display configuration', () => {
+    expect(() => run(config().replace('asset_display_base_url: https://merchant.example.com', 'asset_display_base_url: http://merchant.example.com'))()).toThrow(/asset_display_base_url/)
+    expect(() => run(config().replace('asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'asset_display_url_signing_secret_ref:'))()).toThrow(/asset_display_url_signing_secret_ref/)
   })
 
   it('requires a provider query endpoint for payment status reconciliation', () => {

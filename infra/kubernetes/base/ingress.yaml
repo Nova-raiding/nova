@@ -5,15 +5,23 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: 50m
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # /v1 is public for merchant APIs, but scanner callbacks are service-to-
+    # service only. `return` inside an NGINX location is deterministic and
+    # prevents the broader /v1 Prefix rule from forwarding internal paths.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      if ($request_uri ~* "^/v1/internal(?:/|$)") { return 404; }
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: [merchant.example.com]
+    - hosts: [merchant.example.com, ops.merchant.example.com]
       secretName: merchant-tls
   rules:
     - host: merchant.example.com
       http:
         paths:
+          - path: /v1/internal
+            pathType: Prefix
+            backend: {service: {name: merchant-internal-deny, port: {name: http}}}
           - path: /v1
             pathType: Prefix
             backend: {service: {name: merchant-api, port: {name: http}}}
@@ -32,6 +40,9 @@ spec:
     - host: ops.merchant.example.com
       http:
         paths:
+          - path: /v1/internal
+            pathType: Prefix
+            backend: {service: {name: merchant-internal-deny, port: {name: http}}}
           - path: /v1
             pathType: Prefix
             backend: {service: {name: merchant-api, port: {name: http}}}
@@ -47,3 +58,18 @@ spec:
           - path: /
             pathType: Prefix
             backend: {service: {name: merchant-ops-ui, port: {name: http}}}
+---
+# Deliberately has no matching endpoints. Kubernetes longest-prefix routing
+# sends every public /v1/internal request here instead of merchant-api, even
+# when ingress-nginx disables snippet annotations at the controller level.
+apiVersion: v1
+kind: Service
+metadata:
+  name: merchant-internal-deny
+  labels:
+    app.kubernetes.io/name: merchant-internal-deny
+    merchant.example.com/exposure: public-deny-sink
+spec:
+  type: ClusterIP
+  selector: {merchant.example.com/deny-endpoint: "never"}
+  ports: [{name: http, port: 80, targetPort: 8080}]

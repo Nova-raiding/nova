@@ -1,5 +1,6 @@
 export type PlatformModelKind = 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
 export type ModelEnvironment = Record<string, string | undefined>
+import { inspectOutboundUrl, isSecureEnvironment } from '../../connectors/src/outbound-security.js'
 
 export interface PlatformModelGateResult {
   ready: boolean
@@ -16,12 +17,45 @@ export interface PlatformModelCostGateResult {
   reasons: string[]
 }
 
+export interface PlatformModelRequestCostResult {
+  ready: boolean
+  costCny: number
+  limitCny: number
+  reasons: string[]
+}
+
+export interface PlatformModelBudgetEstimate {
+  ready: boolean
+  amountCny: number
+  version?: string
+  reasons: string[]
+}
+
+const MODEL_BUDGET_ESTIMATE_KEYS: Record<PlatformModelKind, string> = {
+  text: 'MODEL_TEXT_MAX_REQUEST_CNY', image: 'MODEL_IMAGE_MAX_REQUEST_CNY', image_edit: 'MODEL_IMAGE_EDIT_MAX_REQUEST_CNY', ocr: 'MODEL_OCR_MAX_REQUEST_CNY', video: 'MODEL_VIDEO_MAX_REQUEST_CNY',
+}
+
+/** Versioned conservative request ceilings. Missing production estimates are
+ * intentionally not defaulted, so provider traffic fails closed. */
+export function evaluatePlatformModelBudgetEstimate(source: ModelEnvironment, kind: PlatformModelKind): PlatformModelBudgetEstimate {
+  const amountCny = Number(source[MODEL_BUDGET_ESTIMATE_KEYS[kind]] ?? 0)
+  const version = source.MODEL_COST_ESTIMATE_VERSION?.trim()
+  const reasons: string[] = []
+  if (!Number.isFinite(amountCny) || amountCny <= 0) reasons.push('request_estimate_missing_or_invalid')
+  if (!version) reasons.push('estimate_version_missing')
+  return { ready: reasons.length === 0, amountCny: Number.isFinite(amountCny) && amountCny > 0 ? Number(amountCny.toFixed(12)) : 0, ...(version ? { version } : {}), reasons }
+}
+
 export function evaluatePlatformModelRelayGate(source: ModelEnvironment): { ready: boolean; reasons: string[]; endpointHost?: string } {
   const relay = source.MODEL_RELAY_BASE_URL?.trim()
   if (!relay) return { ready: false, reasons: ['model_relay_endpoint_missing'] }
   try {
     const parsed = new URL(relay)
     if (parsed.protocol !== 'https:') return { ready: false, reasons: ['model_relay_endpoint_must_use_https'], endpointHost: parsed.host }
+    const allowedHosts = (source.MODEL_RELAY_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+    if (isSecureEnvironment(source.NODE_ENV) && !allowedHosts.length) return { ready: false, reasons: ['model_relay_allowed_hosts_missing'], endpointHost: parsed.host }
+    const reason = inspectOutboundUrl(relay, { environment: source.NODE_ENV, ...(allowedHosts.length ? { allowedHosts } : {}), resolveDns: false })
+    if (reason === 'HOST_NOT_ALLOWLISTED') return { ready: false, reasons: ['model_relay_host_not_allowlisted'], endpointHost: parsed.host }
     return { ready: true, reasons: [], endpointHost: parsed.host }
   } catch { return { ready: false, reasons: ['model_relay_endpoint_invalid'] } }
 }
@@ -50,6 +84,9 @@ export function evaluatePlatformModelGate(source: ModelEnvironment, kind: Platfo
       https = parsed.protocol === 'https:'
       endpointHost = parsed.host
       if (!https) reasons.push('endpoint_must_use_https')
+      const allowedHosts = (source.MODEL_RELAY_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+      if (isSecureEnvironment(source.NODE_ENV) && !allowedHosts.length) reasons.push('model_relay_allowed_hosts_missing')
+      else if (allowedHosts.length && inspectOutboundUrl(endpoint, { environment: source.NODE_ENV, allowedHosts, resolveDns: false }) === 'HOST_NOT_ALLOWLISTED') reasons.push('model_relay_host_not_allowlisted')
     } catch { reasons.push('endpoint_invalid') }
   }
   if (!apiKey) reasons.push('api_key_missing')
@@ -66,4 +103,12 @@ export function evaluatePlatformModelCostGate(source: ModelEnvironment): Platfor
   if (!Number.isFinite(tpm) || tpm <= 0) reasons.push('tpm_missing_or_invalid')
   if (!Number.isFinite(dailyCnyLimit) || dailyCnyLimit <= 0) reasons.push('daily_cny_limit_missing_or_invalid')
   return { ready: reasons.length === 0, rpm: Number.isFinite(rpm) && rpm > 0 ? rpm : 0, tpm: Number.isFinite(tpm) && tpm > 0 ? tpm : 0, dailyCnyLimit: Number.isFinite(dailyCnyLimit) && dailyCnyLimit > 0 ? dailyCnyLimit : 0, reasons }
+}
+
+export function evaluatePlatformModelRequestCost(costCny: number, limitCny: number): PlatformModelRequestCostResult {
+  const reasons: string[] = []
+  if (!Number.isFinite(costCny) || costCny < 0) reasons.push('request_cost_missing_or_invalid')
+  if (!Number.isFinite(limitCny) || limitCny <= 0) reasons.push('daily_cny_limit_missing_or_invalid')
+  if (reasons.length === 0 && costCny > limitCny) reasons.push('request_cost_exceeds_daily_limit')
+  return { ready: reasons.length === 0, costCny: Number.isFinite(costCny) && costCny >= 0 ? costCny : 0, limitCny: Number.isFinite(limitCny) && limitCny > 0 ? limitCny : 0, reasons }
 }

@@ -24,6 +24,17 @@ interface OverviewSectionProps {
   model: OpsConsoleModel;
 }
 
+export function canPublishToProduction(row: PlatformOperation): boolean {
+  const capabilities = row.capabilities ?? [];
+  const canaryPassed = capabilities.length > 0 && capabilities.every((item) => item.state === "production_canary");
+  return row.state === "connected"
+    && row.readEnabled === true
+    && row.writeEnabled === true
+    && row.readiness?.ready === true
+    && row.readiness.mediaUpload?.ready === true
+    && canaryPassed;
+}
+
 export function PlatformReadinessSection({ model }: OverviewSectionProps) {
   const {
     settings,
@@ -117,7 +128,6 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
     load,
     loadRules,
     enabledCount,
-    sessionRoles,
     can,
     canFinance,
     canPlatformOps,
@@ -127,6 +137,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
     canRules,
     canQueue,
     canMembers,
+    canAuditExport,
     selectedAutomationStore,
     automationScopeParams,
     updateRuleStatus,
@@ -175,9 +186,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
             <Tag color={alerts.length ? "red" : "green"}>
               {alerts.length} 条未确认
             </Tag>
-            <Button size="small" onClick={() => void exportOperations()}>
-              导出运营审计
-            </Button>
+            {canAuditExport ? <Button size="small" onClick={() => void exportOperations()}>导出运营审计</Button> : null}
             <Button size="small" onClick={() => void load()}>
               刷新告警
             </Button>
@@ -211,6 +220,15 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
                 `${row.entityType} / ${row.entityId}`,
             },
             { title: "下一步", dataIndex: "nextAction" },
+            {
+              title: "通知",
+              render: (_: unknown, row: OperationalAlert) => {
+                const delivery = row.notification?.delivery;
+                const color = delivery === "delivered" ? "green" : delivery === "failed" ? "red" : delivery === "blocked" ? "orange" : "default";
+                const label = delivery === "delivered" ? "已投递" : delivery === "failed" ? "失败" : delivery === "blocked" ? "被阻断" : delivery === "disabled" ? "未启用" : "待记录";
+                return <Tag color={color}>{label}{row.notification ? ` · ${row.notification.attempts}次` : ""}</Tag>;
+              },
+            },
             {
               title: "操作",
               render: (_: unknown, row: OperationalAlert) => (
@@ -292,10 +310,10 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
               },
             },
             {
-              title: "连接器",
+              title: "生产发布",
               render: (_: unknown, row: PlatformOperation) => (
-                <Tag color={row.readiness?.ready ? "green" : "red"}>
-                  {row.readiness?.ready ? "连接器已就绪" : "连接器阻断"}
+                <Tag color={canPublishToProduction(row) ? "green" : "red"}>
+                  {canPublishToProduction(row) ? "允许生产发布" : "生产发布阻断"}
                 </Tag>
               ),
             },

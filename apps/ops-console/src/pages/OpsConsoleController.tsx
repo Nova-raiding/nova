@@ -1,14 +1,54 @@
-import { Suspense } from "react";
-import { App as AntApp, Layout, Skeleton } from "antd";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Alert, App as AntApp, Button, Layout, Result, Skeleton } from "antd";
 import { OpsHeader } from "../components/OpsHeader";
-import { OpsSidebar } from "../components/OpsSidebar";
+import { mainItems, OpsSidebar } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
 import { platformLabels } from "../types/ops";
-import { managedOpsSession } from "../api/opsClient";
+import { abortOpsRequests, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
+import { OpsPageBoundary } from "../components/OpsPageBoundary";
+import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, visibleOpsDomains } from "../navigation/opsNavigation.js";
+import { AuthorizationProvider } from "../authz/AuthorizationProvider.js";
+import { AccessDeniedResult } from "../components/authz/AccessDeniedResult.js";
+import { domainReadCapabilities } from "../authz/authorization.js";
+import type { OpsWorkbench } from "../types/ops.js";
+import { urlForWorkbench, workbenchIntentFromLocation } from "../navigation/opsWorkbenchLocation.js";
 
 const { Content } = Layout;
+
+export function commitOpsWorkbenchTransition(
+  next: OpsWorkbench,
+  pushHistory: boolean,
+  dependencies: {
+    abort: () => unknown;
+    persist: (workbench: OpsWorkbench) => unknown;
+    location: Pick<Location, "pathname" | "search" | "hash">;
+    push: (url: string) => void;
+    replace: (url: string) => void;
+  } = {
+    abort: () => abortOpsRequests(),
+    persist: setOpsWorkbenchContext,
+    location: window.location,
+    push: (url) => window.history.pushState(null, "", url),
+    replace: (url) => window.history.replaceState(null, "", url),
+  },
+) {
+  dependencies.abort();
+  dependencies.persist(next);
+  const target = urlForWorkbench(dependencies.location, next);
+  (pushHistory ? dependencies.push : dependencies.replace)(target);
+  return target;
+}
+
+export function opsSessionGateState(
+  managed: boolean,
+  sessionLoaded: boolean,
+  sessionError?: string,
+): "ready" | "loading" | "blocked" {
+  if (!managed || sessionLoaded) return "ready";
+  return sessionError ? "blocked" : "loading";
+}
 
 export async function selectStoreScope(
   model: Pick<OpsConsoleModel, "setSelectedStoreScope" | "loadAutomationScope">,
@@ -18,10 +58,58 @@ export async function selectStoreScope(
   return model.loadAutomationScope(scope);
 }
 
-function Dashboard() {
-  const model = useOpsConsoleModel();
-  const { activeDomain, navigate: navigateToDomain } = useOpsNavigation();
+function Dashboard({
+  model,
+  activeWorkbench,
+  switchingWorkbench,
+  onWorkbenchChange,
+  availableWorkbenches,
+  onAvailableWorkbenches,
+}: {
+  model: OpsConsoleModel;
+  activeWorkbench: OpsWorkbench;
+  switchingWorkbench: boolean;
+  onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean) => void;
+  availableWorkbenches: readonly OpsWorkbench[];
+  onAvailableWorkbenches: (workbenches: readonly OpsWorkbench[]) => void;
+}) {
+  const { activeDomain, navigate: navigateToRoute } = useOpsNavigation();
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const sessionError = managedOpsSession && !model.opsSession
+    ? model.dataSetError("ops.session")
+    : undefined;
+  const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
+  const sessionGate = opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError);
+  const sessionReady = sessionGate === "ready";
+  const visibleDomains = visibleOpsDomains(model.authorization);
+  const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization);
   const ActivePage = opsPageRegistry[activeDomain];
+  const navigateToDomain = (domain: Parameters<typeof navigateToRoute>[0]) => {
+    const requiredWorkbench = requiredWorkbenchForDomain(domain);
+    if (requiredWorkbench && requiredWorkbench !== activeWorkbench) onWorkbenchChange(requiredWorkbench, false);
+    navigateToRoute(domain);
+  };
+
+  useEffect(() => {
+    if (model.opsSession?.available_workbenches?.length) {
+      onAvailableWorkbenches(model.opsSession.available_workbenches);
+    }
+  }, [model.opsSession?.available_workbenches?.join("|")]);
+
+  useEffect(() => {
+    // Keep domain-specific hydration behind the same client-side visibility
+    // gate as navigation. The API remains authoritative, but an operator
+    // should not generate predictable 403 noise for domains they cannot use
+    // every time the overview or refresh action runs.
+    const canRead = (domain: Parameters<typeof canViewOpsDomain>[0]) =>
+      canViewOpsDomain(domain, model.authorization);
+    if ((activeDomain === "overview" || activeDomain === "rules") && canRead("rules"))
+      void model.loadRules();
+    if ((activeDomain === "overview" || activeDomain === "finance") && canRead("finance"))
+      void model.loadRechargeOrders();
+    if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
+    if (activeDomain === "users" && canRead("users")) void model.loadUsers();
+  }, [activeDomain, model.canUserGovernance, model.opsSession?.actor_id]);
 
   return (
     <Layout className="ops-shell">
@@ -30,24 +118,77 @@ function Dashboard() {
         stores={model.storeDirectory}
         platformLabels={platformLabels}
         selectedStoreScope={model.selectedStoreScope}
+        workspaceId={model.opsSession?.workspace_id}
+        scope={model.authorization.scope}
         onNavigate={navigateToDomain}
         onSelectStore={(scope) => selectStoreScope(model, scope)}
+        visibleDomains={visibleDomains}
+        onMobileOpenChange={setMobileNavigationOpen}
       />
-      <Layout>
+      <Layout inert={mobileNavigationOpen || undefined} aria-hidden={mobileNavigationOpen || undefined}>
         <OpsHeader
           managedSession={managedOpsSession}
           roles={model.opsSession?.roles}
           sessionLoaded={Boolean(model.opsSession)}
           dataSource={model.dataSource}
+          refreshing={model.loading}
+          session={model.opsSession}
+          authorization={model.authorization}
+          activeWorkbench={activeWorkbench}
+          availableWorkbenches={availableWorkbenches}
+          switchingWorkbench={switchingWorkbench}
+          onWorkbenchChange={onWorkbenchChange}
+          onJitExpired={() => { model.clearAuthorizationScopedData(); void model.load(); }}
           onRefresh={() => {
             void model.load();
-            void model.loadModelMarkup();
+            if (model.canModelMarkup && canViewOpsDomain("models", model.authorization) && readOpsConnectionConfig().workbench === "platform")
+              void model.loadModelMarkup();
+            if (canViewOpsDomain("rules", model.authorization))
+              void model.loadRules();
+            if (canViewOpsDomain("finance", model.authorization))
+              void model.loadRechargeOrders();
+            if (model.canUserGovernance && canViewOpsDomain("users", model.authorization))
+              void model.loadUsers();
           }}
         />
-        <Content className="ops-content">
-          <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>
-            <ActivePage model={model} onNavigate={navigateToDomain} />
-          </Suspense>
+        <Content id="ops-main-content" className="ops-content" tabIndex={-1}>
+          {model.error ? (
+            <Alert
+              className="ops-global-load-warning"
+              role="status"
+              type="warning"
+              showIcon
+              title="部分运营数据未刷新"
+              description={model.error}
+            />
+          ) : null}
+          {sessionGate === "blocked" ? (
+            <Result
+              status="error"
+              title="无法验证运营权限"
+              subTitle={`${sessionError ?? "权限会话加载失败"}。为保护运营数据，当前会话已拒绝所有页面与动作。`}
+              extra={<Button type="primary" onClick={() => void model.load()}>重试权限验证</Button>}
+            />
+          ) : sessionGate === "loading" ? (
+            <Skeleton active paragraph={{ rows: 8 }} aria-label="正在验证运营权限" />
+          ) : authorized ? (
+            <OpsPageBoundary resetKey={activeDomain}>
+              <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} aria-label="正在加载页面" />}>
+                <ActivePage model={model} onNavigate={navigateToDomain} />
+              </Suspense>
+            </OpsPageBoundary>
+          ) : (
+            <AccessDeniedResult
+              domainLabel={mainItems.find((item) => item.domain === activeDomain)?.label ?? activeDomain}
+              capability={domainReadCapabilities[activeDomain][0]}
+              scope={model.authorization.scope}
+              requestId={sessionErrorEvidence?.requestId}
+              traceId={sessionErrorEvidence?.traceId}
+              reasonCode={sessionErrorEvidence?.code}
+              onBack={() => navigateToDomain("overview")}
+              onRefresh={() => void model.load()}
+            />
+          )}
         </Content>
       </Layout>
     </Layout>
@@ -55,9 +196,80 @@ function Dashboard() {
 }
 
 export function OpsConsoleController() {
+  const [activeWorkbench, setActiveWorkbench] = useState<OpsWorkbench>(() =>
+    workbenchIntentFromLocation(window.location)
+      ?? requiredWorkbenchForDomain(domainFromLocation(window.location))
+      ?? readOpsConnectionConfig().workbench,
+  );
+  const [contextReady, setContextReady] = useState(false);
+  const [switchingWorkbench, setSwitchingWorkbench] = useState(false);
+  const [availableWorkbenches, setAvailableWorkbenches] = useState<readonly OpsWorkbench[]>([activeWorkbench]);
+
+  const activateWorkbench = (next: OpsWorkbench, pushHistory: boolean) => {
+    if (next === activeWorkbench && contextReady) return;
+    setSwitchingWorkbench(true);
+    commitOpsWorkbenchTransition(next, pushHistory);
+    setActiveWorkbench(next);
+    setContextReady(true);
+    window.requestAnimationFrame(() => setSwitchingWorkbench(false));
+  };
+
+  useEffect(() => {
+    setOpsWorkbenchContext(activeWorkbench);
+    setContextReady(true);
+  }, []);
+  useEffect(() => {
+    const restore = () => {
+      const intent = workbenchIntentFromLocation(window.location);
+      if (intent && intent !== activeWorkbench) activateWorkbench(intent, false);
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, [activeWorkbench, contextReady]);
+
   return (
-    <AntApp>
-      <Dashboard />
-    </AntApp>
+    <OpsAntAppBoundary>
+      {contextReady ? (
+        <OpsConsoleRuntime
+          key={activeWorkbench}
+          activeWorkbench={activeWorkbench}
+          switchingWorkbench={switchingWorkbench}
+          availableWorkbenches={availableWorkbenches}
+          onAvailableWorkbenches={setAvailableWorkbenches}
+          onWorkbenchChange={(next, pushHistory = true) => activateWorkbench(next, pushHistory)}
+        />
+      ) : <Skeleton active paragraph={{ rows: 8 }} aria-label="正在初始化运营工作台" />}
+    </OpsAntAppBoundary>
+  );
+}
+
+export function OpsAntAppBoundary({ children }: { children: ReactNode }) {
+  return <AntApp>{children}</AntApp>;
+}
+
+function OpsConsoleRuntime({
+  activeWorkbench,
+  switchingWorkbench,
+  onWorkbenchChange,
+  availableWorkbenches,
+  onAvailableWorkbenches,
+}: {
+  activeWorkbench: OpsWorkbench;
+  switchingWorkbench: boolean;
+  onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean) => void;
+  availableWorkbenches: readonly OpsWorkbench[];
+  onAvailableWorkbenches: (workbenches: readonly OpsWorkbench[]) => void;
+}) {
+  const model = useOpsConsoleModel();
+  const switchWorkbench = (next: OpsWorkbench, pushHistory = true) => {
+    // Make the boundary explicit instead of relying only on the keyed remount:
+    // no old tenant/platform data remains visible while the new session loads.
+    model.clearAuthorizationScopedData();
+    onWorkbenchChange(next, pushHistory);
+  };
+  return (
+    <AuthorizationProvider authorization={model.authorization}>
+      <Dashboard model={model} activeWorkbench={activeWorkbench} switchingWorkbench={switchingWorkbench} onWorkbenchChange={switchWorkbench} availableWorkbenches={availableWorkbenches} onAvailableWorkbenches={onAvailableWorkbenches} />
+    </AuthorizationProvider>
   );
 }

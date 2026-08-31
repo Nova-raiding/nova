@@ -25,7 +25,7 @@ export interface PlatformRuleSyncStatus {
 
 export const PLATFORM_RULE_SOURCES: readonly PlatformRuleSource[] = [
   { platform: 'jd', label: '京东', officialUrl: 'https://rule.jd.com/rule/ruleDetail.action?ruleId=1249712217973198848', machineReadable: false },
-  { platform: 'taobao', label: '淘宝', officialUrl: 'https://developer.alibaba.com/docs/doc.htm?articleId=120797&docType=1&treeId=23', machineReadable: false },
+  { platform: 'taobao', label: '淘宝', officialUrl: 'https://developer.alibaba.com/doc/doc.htm?articleId=120797&docType=1&treeId=23', machineReadable: false },
   { platform: 'tmall', label: '天猫', officialUrl: 'https://www.tmall.com/wow/seller/act/guize', machineReadable: false },
   { platform: 'pinduoduo', label: '拼多多', officialUrl: 'https://www.yangkeduo.com/home/help/', machineReadable: false },
   { platform: 'xiaohongshu', label: '小红书', officialUrl: 'https://school.xiaohongshu.com/', machineReadable: false },

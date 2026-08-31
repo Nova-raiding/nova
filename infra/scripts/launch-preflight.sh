@@ -4,6 +4,10 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 
+if [ "${SKIP_LOCAL_OPS_GATE:-false}" = 'true' ] && [ "${NODE_ENV:-}" != 'test' ]; then
+  echo 'SKIP_LOCAL_OPS_GATE is only permitted in NODE_ENV=test' >&2
+  exit 1
+fi
 [ -n "$config_path" ] || { echo 'launch preflight requires PRODUCTION_CONFIG_PATH or a rendered config path' >&2; exit 2; }
 
 echo 'launch preflight: checking production configuration'

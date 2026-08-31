@@ -1,1 +1,7 @@
 export * from './multimodal.js'
+export * from './visual-authenticity-gate.js'
+export * from './asset-preview-planner.js'
+export * from './delivery-variant-planner.js'
+export * from './platform-media-spec-runtime.js'
+export * from './video-storyboard-quality.js'
+export * from './delivery-bundle-manifest.js'

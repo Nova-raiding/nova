@@ -8,7 +8,7 @@ export interface SignedPlatformRuleEntry {
   version: string
   sourceReference: string
   sourceCheckedAt: string
-  checks: { forbiddenTerms?: string[]; requiredFields?: string[] }
+  checks: { forbiddenTerms?: string[]; requiredFields?: string[]; conflictKeys?: string[] }
   severity: 'error' | 'warning'
   action: 'block' | 'warn' | 'review' | 'allow'
   effectiveFrom?: string
@@ -69,7 +69,8 @@ export function verifyAndParsePlatformRuleManifest(raw: string, signature: strin
     if (!severity || !action) throw new Error('RULE_MANIFEST_POLICY_INVALID')
     const forbiddenTerms = cleanStringList(value.checks.forbidden_terms ?? value.checks.forbiddenTerms, 'forbidden_terms')
     const requiredFields = cleanStringList(value.checks.required_fields ?? value.checks.requiredFields, 'required_fields')
-    return { platform, packId, name: cleanText(value.name, 'name'), version, sourceReference, sourceCheckedAt: cleanDate(value.source_checked_at, 'source_checked_at'), checks: { ...(forbiddenTerms ? { forbiddenTerms } : {}), ...(requiredFields ? { requiredFields } : {}) }, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) }
+    const conflictKeys = cleanStringList(value.checks.conflict_keys ?? value.checks.conflictKeys, 'conflict_keys')
+    return { platform, packId, name: cleanText(value.name, 'name'), version, sourceReference, sourceCheckedAt: cleanDate(value.source_checked_at, 'source_checked_at'), checks: { ...(forbiddenTerms ? { forbiddenTerms } : {}), ...(requiredFields ? { requiredFields } : {}), ...(conflictKeys ? { conflictKeys } : {}) }, severity, action, ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}) }
   })
   return { schemaVersion: '1', generatedAt, entries }
 }

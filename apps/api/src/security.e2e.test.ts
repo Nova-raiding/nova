@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createHmac } from 'node:crypto'
-import { configuredOAuthRedirectUri, oauthStates, server, service, workspaceMembers } from './server.js'
+import { createHash, createHmac } from 'node:crypto'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
+import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
+import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES } from '../../../packages/contracts/src/authz.js'
+import { createWorkerRequestProof, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 
-type Envelope<T = unknown> = { workspace_id: string; data: T | null; error: { code: string; details?: Record<string, unknown> } | null }
+type Envelope<T = Record<string, any>> = { workspace_id: string; data: T | null; error: { code: string; details?: Record<string, unknown> } | null }
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -18,12 +22,29 @@ async function start() {
 
 async function json(response: Response) { return { response, body: await response.json() as Envelope } }
 
-async function configureBearerMembers(entries: Array<{ token: string; workspaceId: string; actorId?: string; role?: 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'; grantWorkspaces?: string[]; gatewayRoles?: string[] }>) {
-  const grants: Record<string, { workspaces: string[]; actor_id: string; roles?: string[] }> = {}
+function workerProofHeaders(input: { role: WorkerRequestRole; secret: string; method: string; path: string; workspaceId: string; body?: string }) {
+  return createWorkerRequestProof({ secret: input.secret, role: input.role, method: input.method, requestTarget: input.path, workspaceId: input.workspaceId, body: input.body }).headers
+}
+
+function signedOidcBootstrap(input: { issuer: string; subject: string; nonce: string; displayName: string; externalSubject?: string }) {
+  const path = '/mcp'
+  const timestamp = String(Math.floor(Date.now() / 1000))
+  const authTime = String(Number(timestamp) - 10)
+  const sessionExpiresAt = String(Number(timestamp) + 3600)
+  const sessionId = `session-${input.nonce}`
+  const body = JSON.stringify({ jsonrpc: '2.0', id: input.nonce, method: 'workspace.bootstrap', params: { display_name: input.displayName, ...(input.externalSubject ? { external_subject: input.externalSubject } : {}) } })
+  const bodyDigest = createHash('sha256').update(body).digest('hex')
+  const canonical = ['POST', path, '', 'workspace', input.issuer, input.subject, sessionId, '', '', authTime, sessionExpiresAt, timestamp, bodyDigest, input.nonce].join('\n')
+  const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
+  return { body, headers: { 'content-type': 'application/json', 'x-workspace-bootstrap': 'true', 'x-oidc-workbench': 'workspace', 'x-oidc-issuer': input.issuer, 'x-oidc-sub': input.subject, 'x-oidc-sid': sessionId, 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': bodyDigest, 'x-oidc-nonce': input.nonce, 'x-oidc-signature': signature } }
+}
+
+async function configureBearerMembers(entries: Array<{ token: string; workspaceId: string; actorId?: string; role?: 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'; grantWorkspaces?: string[]; gatewayRoles?: string[]; deniedCapabilities?: string[]; workbenches?: Array<'platform' | 'workspace'> }>) {
+  const grants: Record<string, { workspaces: string[]; actor_id: string; roles?: string[]; denied_capabilities?: string[]; workbenches: Array<'platform' | 'workspace'> }> = {}
   for (const entry of entries) {
     const actorId = entry.actorId ?? `${entry.token}-actor`
     const role = entry.role ?? 'workspace_owner'
-    grants[entry.token] = { workspaces: entry.grantWorkspaces ?? [entry.workspaceId], actor_id: actorId, ...(entry.gatewayRoles ? { roles: entry.gatewayRoles } : {}) }
+    grants[entry.token] = { workspaces: entry.grantWorkspaces ?? [entry.workspaceId], actor_id: actorId, workbenches: entry.workbenches ?? (role === 'platform_ops' ? ['platform'] : ['workspace']), ...(entry.gatewayRoles ? { roles: entry.gatewayRoles } : {}), ...(entry.deniedCapabilities ? { denied_capabilities: entry.deniedCapabilities } : {}) }
     await workspaceMembers.upsert({ workspaceId: entry.workspaceId, externalSubject: actorId, displayName: actorId, role, status: 'active', invitedBy: 'security-test' })
   }
   vi.stubEnv('API_AUTH_TOKENS', JSON.stringify(grants))
@@ -33,10 +54,49 @@ beforeEach(() => vi.stubEnv('SESSION_ID_HASH_SECRET', 'test-session-hash-secret'
 
 afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
+  setAuthorizationRepositoryForTests(undefined)
   vi.unstubAllEnvs()
 })
 
 describe('security and access-control acceptance gates', () => {
+  it('fails closed on missing or unknown production authorization modes and accepts explicit staged domains', () => {
+    expect(() => mcpAuthorizationRuntimeConfig({}, true, false)).toThrow('生产环境必须显式配置 MCP_AUTHZ_MODE')
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'allow-all' }, true, false)).toThrow('MCP_AUTHZ_MODE 仅支持 shadow、staged 或 enforce')
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged' }, true, false)).toThrow('staged 模式必须显式声明至少一个 capability 域')
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'unknown' }, true, false)).toThrow('未知 capability 域')
+    const staged = mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, true, false)
+    expect(staged.mode).toBe('staged')
+    expect([...staged.enforceDomains]).toEqual(['support', 'incident'])
+    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, true, false)).toHaveLength(17)
+    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, true, false)).toContain('catalog.image.select')
+    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'enforce' }, true, false)).toHaveLength(MCP_METHODS.length)
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: 'support' }, true, false)).toThrow('enforce 模式已经覆盖全部 capability 域')
+    const stagedMethods = mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, true, false)
+    expect(stagedMethods.length).toBeGreaterThan(17)
+    expect(stagedMethods).toEqual(expect.arrayContaining(['ops.support.tickets.list', 'ops.support.ticket.comment', 'ops.incidents.list', 'ops.incident.transition']))
+  })
+  it('fails closed when production image selection tickets are not backed by Postgres', () => {
+    expect(() => assertImageSelectionTicketPersistence({ mode: 'memory', configured: true, production: true, testRuntime: false })).toThrowError(expect.objectContaining({ code: 'IMAGE_SELECTION_TICKET_PERSISTENCE_REQUIRED' }))
+    expect(() => assertImageSelectionTicketPersistence({ mode: 'postgres', configured: false, production: true, testRuntime: false })).toThrowError(expect.objectContaining({ code: 'IMAGE_SELECTION_TICKET_PERSISTENCE_REQUIRED' }))
+    expect(() => assertImageSelectionTicketPersistence({ mode: 'postgres', configured: true, production: true, testRuntime: false })).not.toThrow()
+  })
+  it('accepts only the documented narrow DashScope OSS image artifact host shape', () => {
+    expect(trustedDashScopeImageArtifactHost('https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/result.png?signature=redacted')).toBe('dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com')
+    expect(trustedDashScopeImageArtifactHost('https://dashscope-a717.oss-accelerate.aliyuncs.com/result.png')).toBe('dashscope-a717.oss-accelerate.aliyuncs.com')
+    expect(trustedDashScopeImageArtifactHost('https://evil.aliyuncs.com/result.png')).toBeUndefined()
+    expect(trustedDashScopeImageArtifactHost('https://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com.evil.example/result.png')).toBeUndefined()
+    expect(trustedDashScopeImageArtifactHost('http://dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com/result.png')).toBe('dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com')
+  })
+
+  it('pins production video artifacts to the reviewed host allowlist', async () => {
+    vi.stubEnv('VIDEO_ARTIFACT_ALLOWED_HOSTS', 'cdn.example.com')
+    vi.stubEnv('NODE_ENV', 'test')
+    await expect(assertVideoArtifactUrl('https://cdn.example.com/video.mp4')).resolves.toBeUndefined()
+    vi.stubEnv('NODE_ENV', 'production')
+    await expect(assertVideoArtifactUrl('https://evil.example.com/video.mp4')).rejects.toThrow('HOST_NOT_ALLOWLISTED')
+    vi.stubEnv('VIDEO_ARTIFACT_ALLOWED_HOSTS', '')
+    await expect(assertVideoArtifactUrl('https://cdn.example.com/video.mp4')).rejects.toThrow('生产环境必须配置视频 artifact 域名白名单')
+  })
   it('fails closed in staging instead of trusting caller supplied identity headers', async () => {
     const workspaceId = `ws_staging_auth_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'staging')
@@ -53,6 +113,368 @@ describe('security and access-control acceptance gates', () => {
     expect((await call({ authorization: 'Bearer staging-token' })).error).toBeNull()
   })
 
+  it('projects server-computed capabilities and denies a legacy platform_ops emergency mutation', async () => {
+    const workspaceId = `ws_authz_projection_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([{ token: 'authz-ops-token', workspaceId, actorId: 'authz-ops', role: 'platform_ops', gatewayRoles: ['platform_ops', 'rules_admin'], deniedCapabilities: ['identity.update'] }])
+    const base = await start()
+    const call = (method: string, params: Record<string, unknown> = {}) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer authz-ops-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    const session = await call('ops.session')
+    expect(session.error).toBeNull()
+    expect(session.data?.result).toMatchObject({
+      schema_version: 2,
+      workbench: 'platform',
+      available_workbenches: ['platform', 'workspace'],
+      context_id: 'platform:global',
+      roles: ['platform_ops', 'rules_admin'],
+      canonical_roles: ['ops_admin', 'rules_admin'],
+      policy_version: '2026-08-31.v2',
+      denied_capabilities: ['identity.update'],
+      scopes: expect.arrayContaining([
+        { type: 'self', ids: ['authz-ops'] },
+        { type: 'platform', ids: ['*'] },
+      ]),
+      capabilities: expect.arrayContaining(['feature_flag.update', 'rule.publish.approve']),
+    })
+    expect(session.data?.result.capabilities).not.toContain('feature_flag.administer')
+    expect(session.data?.result.capabilities).not.toContain('identity.update')
+    expect(session.data?.result.scopes).not.toEqual(expect.arrayContaining([{ type: 'workspace', ids: [workspaceId] }]))
+    const domainReadCapabilities = {
+      overview: ['platform.summary.read', 'workspace.summary.read'],
+      users: ['identity.read'],
+      support: ['support.ticket.read', 'support.ticket.update'],
+      incidents: ['incident.read', 'incident.update', 'incident.administer'],
+      tasks: ['marketing.summary.read', 'marketing.queue.read', 'customer.content.read'],
+      stores: ['platform.settings.read', 'store.connection.read'],
+      rules: ['rule.read', 'platform.media_spec.read'],
+      models: ['model.status.read', 'model.cost.read', 'model.policy.update'],
+      'feature-flags': ['feature_flag.read', 'feature_flag.update', 'feature_flag.administer'],
+      storage: ['storage.reconciliation.read', 'workspace.summary.read'],
+      finance: ['billing.self.read', 'billing.workspace.read', 'billing.platform.read', 'commercial.read', 'model.cost.read'],
+      audit: ['audit.read', 'audit.export'],
+    } as const
+    for (const [domain, required] of Object.entries(domainReadCapabilities)) {
+      expect(required.some(capability => session.data?.result.capabilities.includes(capability)), `ops.session must project a canonical read capability for ${domain}`).toBe(true)
+    }
+
+    const denied = await call('ops.feature-flag.emergency.set', {
+      id: 'flag-authz', disabled: 'true', expected_revision: '1', idempotency_key: 'authz-emergency-1', reason: '验证紧急开关服务端拒绝',
+    })
+    expect(denied.error).toMatchObject({ code: 'FORBIDDEN', details: { capability: 'feature_flag.administer', policy_version: '2026-08-31.v2' } })
+    expect(await operationAudits.list(workspaceId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ actorId: 'authz-ops', action: 'authz.decision', resourceType: 'mcp_method', resourceId: 'ops.feature-flag.emergency.set', after: expect.objectContaining({ decision_id: denied.error?.details?.decision_id, result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' }) }),
+    ]))
+  })
+
+  it('fails closed when an enforced authorization decision cannot be persisted to the audit sink', async () => {
+    const workspaceId = `ws_authz_audit_failure_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([{ token: 'authz-audit-failure-token', workspaceId, actorId: 'authz-audit-failure-actor', role: 'platform_ops', gatewayRoles: ['platform_ops'] }])
+    const append = vi.spyOn(operationAudits, 'append').mockRejectedValueOnce(new Error('AUTHZ_AUDIT_SINK_UNAVAILABLE'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const base = await start()
+      const response = await fetch(`${base}/mcp`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer authz-audit-failure-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'authz-audit-failure', method: 'ops.feature-flag.emergency.set', params: { id: 'flag-audit-failure', disabled: 'true', expected_revision: '1', idempotency_key: 'authz-audit-failure-1', reason: '验证授权审计不可用时拒绝请求' } }),
+      })
+      const body = await response.json() as Envelope
+      expect(response.status).toBe(500)
+      expect(body.error?.code).toBe('INTERNAL_ERROR')
+      expect(append).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, actorId: 'authz-audit-failure-actor', action: 'authz.decision', resourceType: 'mcp_method', resourceId: 'ops.feature-flag.emergency.set', after: expect.objectContaining({ result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' }) }))
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('AUTHZ_AUDIT_SINK_UNAVAILABLE'))
+    } finally {
+      append.mockRestore()
+      consoleError.mockRestore()
+    }
+  })
+
+  it('binds a dual-role bearer identity to one explicitly allowed workbench without role or scope bleed', async () => {
+    const workspaceId = `ws_dual_workbench_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([{ token: 'dual-workbench-token', workspaceId, actorId: 'dual-workbench-actor', role: 'merchant_admin', gatewayRoles: ['platform_ops', 'merchant_admin'], workbenches: ['platform', 'workspace'] }])
+    const base = await start()
+    const call = (workbench: 'platform' | 'workspace', method: string) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer dual-workbench-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-ops-workbench': workbench },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `${workbench}-${method}`, method, params: { workspace_id: workspaceId } }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    const platform = (await call('platform', 'ops.session')).data?.result
+    expect(platform).toMatchObject({ schema_version: 2, workbench: 'platform', available_workbenches: ['platform', 'workspace'], roles: ['platform_ops'], canonical_roles: ['ops_admin'], assignable_roles: ['merchant_admin', 'operator', 'support', 'finance', 'platform_ops'], scopes: expect.arrayContaining([{ type: 'platform', ids: ['*'] }]) })
+    expect(platform.scopes).not.toEqual(expect.arrayContaining([{ type: 'workspace', ids: [workspaceId] }]))
+    const workspace = (await call('workspace', 'ops.session')).data?.result
+    expect(workspace).toMatchObject({ schema_version: 2, workbench: 'workspace', available_workbenches: ['platform', 'workspace'], roles: ['merchant_admin'], canonical_roles: ['workspace_admin'], assignable_roles: ['merchant_admin', 'operator', 'support', 'finance'], scopes: expect.arrayContaining([{ type: 'workspace', ids: [workspaceId] }]) })
+    expect(workspace.scopes).not.toEqual(expect.arrayContaining([{ type: 'platform', ids: ['*'] }]))
+
+    expect((await call('workspace', 'ops.users.list')).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+    expect((await call('platform', 'catalog.search')).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+  })
+
+  it('allows a platform ops.session without tenant membership and rejects bearer workbench escalation outside its grant', async () => {
+    const workspaceId = `ws_platform_session_route_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'platform-session-token': { workspaces: [], actor_id: 'platform-session-actor', roles: ['platform_ops'], workbenches: ['platform'] },
+      'workspace-only-token': { workspaces: [workspaceId], actor_id: 'workspace-only-actor', roles: ['merchant_admin'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const call = (token: string, workbench: 'platform' | 'workspace', method = 'ops.session') => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(token === 'platform-session-token' ? {} : { 'x-workspace-id': workspaceId }), 'x-ops-workbench': workbench },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `${token}-${workbench}-${method}`, method, params: {} }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    expect((await call('platform-session-token', 'platform')).data?.result).toMatchObject({ workbench: 'platform', available_workbenches: ['platform'], roles: ['platform_ops'], context_id: 'platform:global' })
+    expect((await call('platform-session-token', 'platform', 'catalog.search')).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+    expect((await call('workspace-only-token', 'platform')).error?.code).toBe('AUTHZ_WORKBENCH_FORBIDDEN')
+    expect((await call('platform-session-token', 'workspace')).error?.code).toBe('AUTHZ_WORKBENCH_FORBIDDEN')
+  })
+
+  it('loads and revokes durable platform role assignments on every request', async () => {
+    const workspaceId = `ws_durable_platform_role_${Date.now()}`
+    const repository = new MemoryAuthorizationRepository()
+    setAuthorizationRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', 'true')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    await configureBearerMembers([{ token: 'durable-platform-token', workspaceId, actorId: 'durable-platform-actor', role: 'platform_ops', gatewayRoles: ['platform_ops'], grantWorkspaces: [], workbenches: ['platform'] }])
+    const base = await start()
+    const call = (method: string) => fetch(`${base}/mcp`, {
+      method: 'POST', headers: { authorization: 'Bearer durable-platform-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params: {} }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    const initial = (await call('ops.session')).data?.result
+    expect(initial).toMatchObject({ roles: [], capabilities: ['authorization.session.read'], authorization_revision: 0, workspace_id: null })
+    const assignment = await repository.assignPlatformRole({ subjectIdentityId: initial.identity_id, role: 'ops_admin', assignedBy: 'security-admin', reason: 'grant platform operations', expectedAuthorizationRevision: 0 })
+    expect((await call('ops.feature-flags.list')).error).toBeNull()
+    const active = (await call('ops.session')).data?.result
+    expect(active).toMatchObject({ roles: ['ops_admin'], canonical_roles: ['ops_admin'], authorization_revision: 1 })
+    expect(active.effective_permissions).toEqual(expect.arrayContaining([expect.objectContaining({ capability: 'feature_flag.read', source: 'platform_assignment', source_id: assignment.id, revision: '1' })]))
+    const matrix = (await call('ops.authorization.matrix.get')).data?.result
+    expect(matrix).toMatchObject({ schema_version: 1, policy_version: AUTHZ_POLICY_VERSION, generated_from: 'MCP_METHOD_POLICIES', method_count: MCP_METHODS.length, role_count: expect.any(Number) })
+    expect(matrix.items).toHaveLength(MCP_METHODS.length)
+    expect(matrix.roles).toEqual(CANONICAL_ROLES)
+    expect(matrix.role_count).toBe(CANONICAL_ROLES.length)
+    for (const item of matrix.items) {
+      expect(Object.keys(item.role_access)).toEqual(CANONICAL_ROLES)
+      expect(Object.values(item.role_access).every(access => ['hidden', 'read', 'operate', 'govern'].includes(access as string))).toBe(true)
+    }
+    expect(matrix.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ method: 'ops.session', capability: 'authorization.session.read', role_access: expect.objectContaining({ platform_admin: 'read', viewer: 'read' }) }),
+      expect.objectContaining({ method: 'ops.users.list', capability: 'identity.read', workbench: 'platform', effect: 'read', role_access: expect.objectContaining({ platform_admin: 'read', viewer: 'hidden' }) }),
+      expect.objectContaining({ method: 'content.generate', capability: 'customer.content.update', workbench: 'workspace', effect: 'write', role_access: expect.objectContaining({ operator: 'operate', viewer: 'hidden' }) }),
+    ]))
+
+    await repository.revokePlatformRole({ id: assignment.id, subjectIdentityId: initial.identity_id, actorId: 'security-admin', reason: 'remove platform operations', expectedRevision: 1, expectedAuthorizationRevision: 1 })
+    expect((await call('ops.feature-flags.list')).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_CAPABILITY_MISSING' } })
+    expect((await call('ops.session')).data?.result).toMatchObject({ roles: [], authorization_revision: 2 })
+  })
+
+  it('manages durable platform roles and exact-workspace JIT grants through registered MCP methods', async () => {
+    const workspaceId = `ws_authz_admin_${Date.now()}`
+    const repository = new MemoryAuthorizationRepository(() => new Date('2026-08-31T04:00:00.000Z'))
+    setAuthorizationRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', 'true')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    await configureBearerMembers([{ token: 'authz-admin-token', workspaceId, actorId: 'authz-admin-actor', role: 'platform_ops', gatewayRoles: ['platform_admin'], grantWorkspaces: [], workbenches: ['platform'] }])
+    const base = await start()
+    const session = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer authz-admin-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ops.session', params: {} }) }).then(response => response.json() as Promise<Envelope<{ result: { identity_id: string } }>>)
+    const adminIdentityId = session.data!.result.identity_id
+    await repository.assignPlatformRole({ subjectIdentityId: adminIdentityId, role: 'platform_admin', assignedBy: 'seed', reason: '安全测试管理员', expectedAuthorizationRevision: 0 })
+    const call = (method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: 'Bearer authz-admin-token', 'content-type': 'application/json', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+    const target = 'identity-managed-target'
+    const assigned = await call('ops.authorization.role.assign', { subject_identity_id: target, role: 'support_agent', expected_authorization_revision: '0', reason: '客服值班角色' })
+    expect(assigned.error).toBeNull()
+    expect(assigned.data?.result).toMatchObject({ subjectIdentityId: target, role: 'support_agent', authorizationRevision: 1 })
+    const grant = await call('ops.authorization.grant.issue', { subject_identity_id: target, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: '["support.ticket.read"]', resource_scope_json: JSON.stringify({ type: 'workspace', ids: [workspaceId] }), ticket_ref: 'INC-20260831-1', approved_by: 'security-approver', approved_at: '2026-08-31T03:59:00.000Z', expires_at: '2026-08-31T04:10:00.000Z', max_uses: '2', expected_authorization_revision: '1', reason: '处理指定客服工单' })
+    expect(grant.error).toBeNull()
+    expect(grant.data?.result).toMatchObject({ subjectIdentityId: target, workspaceId, authorizationRevision: 2 })
+    const wrongScope = await call('ops.authorization.grant.issue', { subject_identity_id: target, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: '["support.ticket.read"]', resource_scope_json: JSON.stringify({ type: 'workspace', ids: ['ws_other'] }), ticket_ref: 'INC-20260831-2', approved_by: 'security-approver', approved_at: '2026-08-31T03:59:00.000Z', expires_at: '2026-08-31T04:10:00.000Z', max_uses: '1', expected_authorization_revision: '2', reason: '越界授权负测' })
+    expect(wrongScope.error?.code).toBe('AUTHORIZATION_GRANT_INVALID')
+  })
+
+  it('enters a workspace through an exact durable JIT grant and denies the next request after max-use', async () => {
+    const workspaceId = `ws_durable_jit_${Date.now()}`
+    const repository = new MemoryAuthorizationRepository(() => new Date('2026-08-31T04:00:00.000Z'))
+    setAuthorizationRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'durable-jit-token': { workspaces: [workspaceId], actor_id: 'durable-jit-actor', roles: ['platform_ops'], workbenches: ['platform', 'workspace'] },
+    }))
+    const base = await start()
+    const call = (workbench: 'platform' | 'workspace', method: string) => fetch(`${base}/mcp`, {
+      method: 'POST', headers: { authorization: 'Bearer durable-jit-token', 'content-type': 'application/json', 'x-ops-workbench': workbench, ...(workbench === 'workspace' ? { 'x-workspace-id': workspaceId } : {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `${workbench}-${method}`, method, params: {} }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    const platformSession = (await call('platform', 'ops.session')).data?.result
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: platformSession.identity_id, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'investigate merchant support case', ticketRef: `SUP-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    const workspaceSession = (await call('workspace', 'ops.session')).data?.result
+    expect(workspaceSession).toMatchObject({ canonical_roles: [], authorization_revision: 1, context: { access_mode: 'temporary_support', workspace_id: workspaceId } })
+    expect(workspaceSession.effective_permissions).toEqual(expect.arrayContaining([expect.objectContaining({ capability: 'support.ticket.read', source: 'temporary_grant', source_id: grant.id, effect_limit: 'read' })]))
+
+    expect((await call('workspace', 'ops.support.tickets.list')).error).toBeNull()
+    expect((await call('workspace', 'ops.support.tickets.list')).error?.code).toBe('WORKSPACE_MEMBERSHIP_REQUIRED')
+  })
+
+  it('keeps an active member on direct role access without consuming an unrelated grant', async () => {
+    const workspaceId = `ws_member_direct_grant_${Date.now()}`
+    const actorId = `member-direct-actor-${Date.now()}`
+    const repository = new MemoryAuthorizationRepository(() => new Date('2026-08-31T04:00:00.000Z'))
+    setAuthorizationRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    await configureBearerMembers([{ token: 'member-direct-token', workspaceId, actorId, role: 'operator', gatewayRoles: ['operator'] }])
+    const base = await start()
+    const call = (method: string) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer member-direct-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params: {} }),
+    }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
+
+    const identityId = (await call('ops.session')).data?.result.identity_id
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'unrelated support investigation', ticketRef: `DIRECT-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+
+    expect((await call('ops.marketing.queue')).error).toBeNull()
+    const session = (await call('ops.session')).data?.result
+    expect(session).toMatchObject({ roles: ['operator'], canonical_roles: ['operator'], context: { access_mode: 'direct', workspace_id: workspaceId } })
+    expect(await repository.getGrant(grant.id, identityId)).toMatchObject({ useCount: 0, revision: 1, authorizationRevision: 1 })
+  })
+
+  it('rejects a suspended member before an exact grant can be consumed', async () => {
+    const workspaceId = `ws_suspended_exact_grant_${Date.now()}`
+    const actorId = `suspended-exact-actor-${Date.now()}`
+    const repository = new MemoryAuthorizationRepository(() => new Date('2026-08-31T04:00:00.000Z'))
+    setAuthorizationRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    await configureBearerMembers([{ token: 'suspended-exact-token', workspaceId, actorId, role: 'operator', gatewayRoles: ['operator'] }])
+    const base = await start()
+    const call = (method: string) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer suspended-exact-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params: {} }),
+    }).then(async response => ({ status: response.status, body: await response.json() as Envelope<{ result: any }> }))
+
+    const identityId = (await call('ops.session')).body.data?.result.identity_id
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'exact queue investigation', ticketRef: `SUSPENDED-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    await workspaceMembers.suspend({ workspaceId, externalSubject: actorId, actorId: 'security-admin', reason: 'security suspension' })
+
+    const denied = await call('ops.marketing.queue')
+    expect(denied.status).toBe(403)
+    expect(denied.body.error?.code).toBe('MEMBER_SUSPENDED')
+    expect(await repository.getGrant(grant.id, identityId)).toMatchObject({ useCount: 0, revision: 1, authorizationRevision: 1 })
+  })
+
+  it('admits a non-member through the exact marketing queue grant and rejects after max-use', async () => {
+    const workspaceId = `ws_queue_exact_grant_${Date.now()}`
+    const repository = new MemoryAuthorizationRepository(() => new Date('2026-08-31T04:00:00.000Z'))
+    setAuthorizationRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'queue-exact-token': { workspaces: [workspaceId], actor_id: `queue-exact-actor-${Date.now()}`, roles: ['platform_ops'], workbenches: ['platform', 'workspace'] },
+    }))
+    const base = await start()
+    const call = (workbench: 'platform' | 'workspace', method: string) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer queue-exact-token', 'content-type': 'application/json', 'x-ops-workbench': workbench, ...(workbench === 'workspace' ? { 'x-workspace-id': workspaceId } : {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: `${workbench}-${method}`, method, params: {} }),
+    }).then(async response => ({ status: response.status, body: await response.json() as Envelope<{ result: any }> }))
+
+    const identityId = (await call('platform', 'ops.session')).body.data?.result.identity_id
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'one queue inspection', ticketRef: `QUEUE-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+
+    const admitted = await call('workspace', 'ops.marketing.queue')
+    expect(admitted.status).toBe(200)
+    expect(admitted.body.error).toBeNull()
+    expect(await repository.getGrant(grant.id, identityId)).toMatchObject({ useCount: 1, revision: 2, authorizationRevision: 2 })
+    const exhausted = await call('workspace', 'ops.marketing.queue')
+    expect(exhausted.status).toBe(403)
+    expect(exhausted.body.error?.code).toBe('WORKSPACE_MEMBERSHIP_REQUIRED')
+    expect(await repository.getGrant(grant.id, identityId)).toMatchObject({ useCount: 1, revision: 2, authorizationRevision: 2 })
+  })
+
+  it('rejects an authenticated x-actor-id mismatch at the strict global identity boundary', async () => {
+    const workspaceId = `ws_actor_mismatch_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
+    await configureBearerMembers([{ token: 'actor-mismatch-token', workspaceId, actorId: 'authenticated-actor', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] }])
+    const base = await start()
+    const headers = { authorization: 'Bearer actor-mismatch-token', 'x-workspace-id': workspaceId, 'x-actor-id': 'forged-actor' }
+    const mcp = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.health', params: { workspace_id: workspaceId } }),
+    })
+    const rest = await fetch(`${base}/v1/products`, { headers })
+
+    expect(mcp.status).toBe(403)
+    expect((await mcp.json() as Envelope).error?.code).toBe('FORBIDDEN')
+    expect(rest.status).toBe(403)
+    expect((await rest.json() as Envelope).error?.code).toBe('FORBIDDEN')
+  })
+
+  it('rechecks the exact consumed grant row before a critical worker executes', async () => {
+    const workspaceId = `ws_worker_grant_${Date.now()}`
+    const identityId = `identity-worker-grant-${Date.now()}`
+    const issuedAt = Date.now()
+    const repository = new MemoryAuthorizationRepository(() => new Date(issuedAt))
+    setAuthorizationRepositoryForTests(repository)
+    const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['customer.content.update'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'approved catalog repair', ticketRef: `WORKER-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
+    const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: identityId, workspaceId, capability: 'customer.content.update', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'support-operator', reason: 'enqueue approved catalog repair' })
+    expect(consumed).toBeDefined()
+    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-worker-grant', actorId: 'support-operator', workspaceId, contextId: `workspace:${workspaceId}`, contextVersion: 'authz-v1', policyVersion: 'authz-v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, scopeHash: grant.scopeHash, capability: 'catalog.sync.execute' as const, resourceId: 'sync-job-1', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
+
+    await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, 'sync-job-1')).resolves.toMatchObject({ authorized: true, scope_hash: grant.scopeHash })
+    await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot, grantRevision: `grant:forged:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}` }, workspaceId, 'sync-job-1')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+    await repository.revokeGrant({ id: grant.id, subjectIdentityId: identityId, actorId: 'security-approver', reason: 'withdraw worker authority', expectedRevision: consumed!.revision, expectedAuthorizationRevision: consumed!.authorizationRevision })
+    await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, 'sync-job-1')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+  })
+
+  it('re-authorizes publish reconciliation against the current membership role instead of relabeling the publish snapshot', async () => {
+    const workspaceId = `ws_worker_continuation_${Date.now()}`
+    const identityId = `identity-worker-continuation-${Date.now()}`
+    const actorId = `worker-continuation-${Date.now()}`
+    setAuthorizationRepositoryForTests(new MemoryAuthorizationRepository())
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'operator', status: 'active', invitedBy: 'security-test' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: actorId, identityId })
+    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-publish-source', actorId, workspaceId, contextId: `workspace:${workspaceId}`, contextVersion: '2026-08-31.v1', policyVersion: '2026-08-31.v1', grantRevision: `membership:${identityId}:0`, scopeHash: 'a'.repeat(64), capability: 'publish.execute' as const, resourceId: 'publish-job-1', authorized: true as const, decidedAt: new Date().toISOString() }
+
+    await expect(deriveWorkerContinuationAuthorizationSnapshot(snapshot, workspaceId, 'publish-job-1', 'publish.reconcile', { event: 'publish.reconcile_requested' })).resolves.toMatchObject({
+      capability: 'publish.reconcile',
+      resourceId: 'publish-job-1',
+      authorized: true,
+    })
+
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'support', status: 'active', invitedBy: 'security-test' })
+    await workspaceMembers.bindIdentity({ workspaceId, externalSubject: actorId, identityId })
+    await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, 'publish-job-1')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+  })
+
+  it('denies a publish reconciliation continuation when the source JIT grant lacks the read capability', async () => {
+    const workspaceId = `ws_worker_continuation_grant_${Date.now()}`
+    const identityId = `identity-worker-continuation-grant-${Date.now()}`
+    const issuedAt = Date.now()
+    const repository = new MemoryAuthorizationRepository(() => new Date(issuedAt))
+    setAuthorizationRepositoryForTests(repository)
+    const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['customer.publish.execute'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'one publish only', ticketRef: `PUBLISH-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
+    const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: identityId, workspaceId, capability: 'customer.publish.execute', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'temporary-publisher', reason: 'enqueue one publish' })
+    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-publish-grant-source', actorId: 'temporary-publisher', workspaceId, contextId: `workspace:${workspaceId}`, contextVersion: '2026-08-31.v1', policyVersion: '2026-08-31.v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, scopeHash: grant.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish-job-grant-1', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
+
+    await expect(deriveWorkerContinuationAuthorizationSnapshot(snapshot, workspaceId, 'publish-job-grant-1', 'publish.reconcile', { event: 'publish.reconcile_requested' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+  })
+
   it('denies automation policy changes by support members in staging', async () => {
     const workspaceId = `ws_staging_automation_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'staging')
@@ -65,6 +487,78 @@ describe('security and access-control acceptance gates', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'automation.policy.update', params: { workspace_id: workspaceId, platform: 'taobao', account_id: account.id, enabled: 'true', reason: '越权开启自动化尝试' } }),
     }).then(value => value.json() as Promise<Envelope>)
     expect(response.error?.code).toBe('FORBIDDEN')
+  })
+
+  it('keeps platform_ops out of customer marketing data while preserving platform summaries', async () => {
+    const workspaceId = `ws_platform_ops_boundary_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'production')
+    await configureBearerMembers([{ token: 'platform-boundary-token', workspaceId, actorId: 'platform-boundary-actor', role: 'platform_ops', gatewayRoles: ['platform_ops'] }])
+    const base = await start()
+    const call = (method: string, params: Record<string, unknown> = {}) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer platform-boundary-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params: { workspace_id: workspaceId, ...params } }),
+    }).then(response => response.json() as Promise<Envelope>)
+
+    const customerDataMethods = [
+      ['ops.marketing.queue', {}],
+      ['ops.audit.detail', { source: 'operation', id: 'audit-unknown' }],
+      ['ops.marketing.queue.assign', { item_type: 'generation', item_id: 'job_unknown', operator_id: 'operator', reason: '越权测试' }],
+      ['ops.marketing.visual.review', { visual_refs_json: '["visual_unknown"]', status: 'passed', reason: '越权测试' }],
+      ['ops.marketing.generation.retry', { job_id: 'job_unknown', reason: '越权测试' }],
+      ['ops.marketing.publish.acknowledge', { publish_job_id: 'publish_unknown', reason: '越权测试' }],
+      ['ops.marketing.revision.create', { publish_job_id: 'publish_unknown', changes_json: '{}', reason: '越权测试' }],
+      ['ops.support.tickets.list', { limit: '10' }],
+      ['ops.support.crm.export', { limit: '10' }],
+    ] as const
+    for (const [method, params] of customerDataMethods) {
+      const errorCode = (await call(method, params)).error?.code
+      expect(errorCode, `${method} must deny the platform workbench before customer-data handling`).toBe('FORBIDDEN')
+    }
+    expect((await call('ops.workspaces.list')).error).toBeNull()
+    const brandSummary = await call('ops.brand-units.summary', { platform_scope: 'platform' })
+    expect(brandSummary.error).toBeNull()
+    expect(brandSummary.data?.result).toMatchObject({ scope: 'platform', brandCount: expect.any(Number), boundStoreCount: expect.any(Number), unboundBrandCount: expect.any(Number), canonicalProductCount: expect.any(Number), listingCount: expect.any(Number) })
+    expect(JSON.stringify(brandSummary.data?.result)).not.toContain('品牌')
+    expect((await call('ops.brand-units.summary')).error?.code).toBe('INVALID_REQUEST')
+    expect((await call('ops.storage.reconciliation.list')).error?.code).toBe('INVALID_REQUEST')
+    expect((await call('ops.storage.reconciliation.list', { platform_scope: 'platform' })).error?.code).not.toBe('INVALID_REQUEST')
+
+    const revoked = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `platform-alert-${Date.now()}`, credentialRef: 'vault://security/platform-alert' })
+    revoked.tokenState = 'revoked'
+    service.registerPlatformAccount({ workspaceId, platform: 'jd', remoteAccountId: `platform-automation-${Date.now()}`, credentialRef: 'vault://security/platform-automation' })
+    const platformAlerts = await call('ops.alerts.list', { platform_scope: 'platform' })
+    expect(platformAlerts.error).toBeNull()
+    expect(platformAlerts.data?.result).toMatchObject({ aggregate: true, items: expect.any(Array) })
+    expect(JSON.stringify(platformAlerts.data?.result)).not.toContain(workspaceId)
+    expect(JSON.stringify(platformAlerts.data?.result)).not.toContain(revoked.id)
+    expect((await call('ops.alerts.list', { platform_scope: 'platform', entity_id: revoked.id })).error?.code).toBe('OPS_CUSTOMER_ACCESS_REQUIRED')
+    expect((await call('ops.alert.ack', { alert_id: 'customer-alert-guess', reason: '平台越权确认测试' })).error?.code).not.toBe('OPS_CUSTOMER_ACCESS_REQUIRED')
+    const platformStores = await call('ops.stores.list', { platform_scope: 'platform' })
+    expect(platformStores.error).toBeNull()
+    expect(platformStores.data?.result).toMatchObject({ aggregate: true, items: expect.any(Array) })
+    expect(JSON.stringify(platformStores.data?.result)).not.toContain(workspaceId)
+    expect(JSON.stringify(platformStores.data?.result)).not.toContain(revoked.id)
+    const automationPolicies = await call('automation.policy.list', { platform_scope: 'platform' })
+    expect(automationPolicies.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+    const platformDeletion = await call('ops.data.delete.list', { platform_scope: 'platform', limit: '50' })
+    expect(platformDeletion.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+
+    const restHeaders = { authorization: 'Bearer platform-boundary-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const accounts = await fetch(`${base}/v1/platform-accounts`, { headers: restHeaders }).then(response => response.json() as Promise<Envelope>)
+    expect(accounts.error, 'REST platform workbench must fail at the shared capability boundary before customer-data handling').toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+    const authorize = await fetch(`${base}/v1/platform-accounts/taobao/authorize`, { method: 'POST', headers: restHeaders, body: JSON.stringify({}) }).then(response => response.json() as Promise<Envelope>)
+    expect(authorize.error, 'REST platform workbench must fail at the shared capability boundary before customer-data handling').toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+    expect((await call('platform.connect', { platform: 'taobao' })).error, 'MCP platform workbench must reject a workspace policy before customer-data handling').toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+  })
+
+  it('protects the production metrics endpoint with an explicit scrape credential', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('METRICS_AUTH_TOKEN', '')
+    const base = await start()
+    const response = await fetch(`${base}/metrics`)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: 'METRICS_AUTH_NOT_CONFIGURED' })
   })
 
   it('fails closed when an authenticated production identity has no active workspace membership', async () => {
@@ -85,6 +579,35 @@ describe('security and access-control acceptance gates', () => {
     await workspaceMembers.upsert({ workspaceId, externalSubject: 'member-gate-user', displayName: '成员门禁测试', role: 'workspace_owner', status: 'active', invitedBy: 'bootstrap' })
     const allowed = await call()
     expect(allowed.status).toBe(200)
+  })
+
+  it('applies workspace membership and brand-profile write roles to the REST surface', async () => {
+    const workspaceId = `ws_brand_http_boundary_${Date.now()}`
+    vi.stubEnv('NODE_ENV', 'staging')
+    await configureBearerMembers([
+      { token: 'brand-http-owner-token', workspaceId, actorId: 'brand-http-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
+      { token: 'brand-http-support-token', workspaceId, actorId: 'brand-http-support', role: 'support', gatewayRoles: ['support'] },
+      { token: 'brand-http-ops-token', workspaceId, actorId: 'brand-http-ops', role: 'platform_ops', gatewayRoles: ['platform_ops'] },
+    ])
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'brand-http-owner-token': { workspaces: [workspaceId], actor_id: 'brand-http-owner', roles: ['workspace_owner'], workbenches: ['workspace'] },
+      'brand-http-support-token': { workspaces: [workspaceId], actor_id: 'brand-http-support', roles: ['support'], workbenches: ['workspace'] },
+      'brand-http-ops-token': { workspaces: [workspaceId], actor_id: 'brand-http-ops', roles: ['platform_ops'], workbenches: ['platform'] },
+      'brand-http-orphan-token': { workspaces: [workspaceId], actor_id: 'brand-http-orphan', workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const call = (token: string, method: 'GET' | 'PUT', body?: Record<string, unknown>) => fetch(`${base}/v1/brand-profile`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    }).then(response => response.json() as Promise<Envelope>)
+
+    expect((await call('brand-http-orphan-token', 'GET')).error?.code).toBe('WORKSPACE_MEMBERSHIP_REQUIRED')
+    expect((await call('brand-http-support-token', 'PUT', { name: '越权品牌' })).error?.code).toBe('FORBIDDEN')
+    expect((await call('brand-http-owner-token', 'PUT', { name: '工作区品牌' })).error).toBeNull()
+    expect((await call('brand-http-owner-token', 'GET')).data).toMatchObject({ profile: { name: '工作区品牌' } })
+    expect((await call('brand-http-ops-token', 'GET')).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+    expect((await call('brand-http-ops-token', 'PUT', { name: '平台直写' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
   })
 
   it('rejects a workspace member whose stored role exceeds the signed identity role', async () => {
@@ -122,12 +645,12 @@ describe('security and access-control acceptance gates', () => {
     expect((await call('tenant-admin-token', 'ops.user.suspend', { external_subject: 'target-user', reason: '越权停用尝试' })).error?.code).toBe('FORBIDDEN')
     expect((await call('tenant-admin-token', 'ops.member.upsert', { external_subject: 'target-user', role: 'platform_ops', reason: '越权授予平台角色' })).error?.code).toBe('PLATFORM_ROLE_GRANT_DENIED')
     expect((await call('tenant-admin-token', 'ops.member.upsert', { external_subject: 'target-user', role: 'workspace_owner', reason: '越权授予所有者角色' })).error?.code).toBe('WORKSPACE_OWNER_GRANT_DENIED')
-    expect((await call('tenant-admin-token', 'ops.member.upsert', { external_subject: 'target-user', role: 'support', reason: '调整租户内角色' })).data?.result).toMatchObject({ role: 'support', status: 'active' })
+    expect((await call('tenant-admin-token', 'ops.member.upsert', { external_subject: 'target-user', role: 'support', expected_revision: '1', reason: '调整租户内角色' })).data?.result).toMatchObject({ role: 'support', status: 'active' })
     const directory = await call('platform-ops-token', 'ops.users.list', { query: 'target-user' })
     expect(directory.data?.result).toMatchObject({ total: 1, items: [expect.objectContaining({ externalSubject: 'target-user', status: 'active' })] })
-    expect((await call('platform-ops-token', 'ops.user.suspend', { external_subject: 'target-user', reason: '安全测试停用' })).data?.result).toMatchObject({ status: 'suspended' })
+    expect((await call('platform-ops-token', 'ops.user.suspend', { external_subject: 'target-user', expected_revision: '2', reason: '安全测试停用' })).data?.result).toMatchObject({ status: 'suspended' })
     expect((await call('platform-ops-token', 'ops.user.suspend', { external_subject: 'platform-operator', reason: '自我停用尝试' })).error?.code).toBe('SELF_SUSPENSION_DENIED')
-    expect((await call('platform-ops-token', 'ops.user.activate', { external_subject: 'target-user', reason: '安全测试恢复' })).data?.result).toMatchObject({ status: 'active' })
+    expect((await call('platform-ops-token', 'ops.user.activate', { external_subject: 'target-user', expected_revision: '3', reason: '安全测试恢复' })).data?.result).toMatchObject({ status: 'active' })
     const detail = await call('platform-ops-token', 'ops.user.detail', { external_subject: 'target-user' })
     expect(detail.data?.result).toMatchObject({
       identity: { externalSubject: 'target-user', displayName: '待停用用户', membershipCount: 1, activeMembershipCount: 1 },
@@ -137,7 +660,7 @@ describe('security and access-control acceptance gates', () => {
       expect.objectContaining({ action: 'user.suspend', reason: '安全测试停用' }),
       expect.objectContaining({ action: 'user.activate', reason: '安全测试恢复' }),
     ]))
-    expect((await call('platform-ops-token', 'ops.user.activate', { external_subject: 'target-user', reason: '重复恢复尝试' })).error?.code).toBe('MEMBER_ALREADY_ACTIVE')
+    expect((await call('platform-ops-token', 'ops.user.activate', { external_subject: 'target-user', expected_revision: '4', reason: '重复恢复尝试' })).error?.code).toBe('MEMBER_ALREADY_ACTIVE')
   })
 
   it('keeps global commercial catalogs platform-owned while tenant admins only manage their own rollout', async () => {
@@ -167,7 +690,7 @@ describe('security and access-control acceptance gates', () => {
     }
 
     const ownRollout = { offer_code: `offer-${suffix}`, target_workspace_id: workspaceId, percentage: '25', enabled: 'true', reason: '租户内灰度' }
-    expect((await call('commercial-admin-token', 'ops.commercial.rollout.upsert', ownRollout)).error).toBeNull()
+    expect((await call('commercial-admin-token', 'ops.commercial.rollout.upsert', ownRollout)).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
     expect((await call('commercial-admin-token', 'ops.commercial.rollout.upsert', { ...ownRollout, target_workspace_id: otherWorkspaceId })).error?.code).toBe('FORBIDDEN')
     const { target_workspace_id: _targetWorkspaceId, ...globalRollout } = ownRollout
     expect((await call('commercial-platform-token', 'ops.commercial.rollout.upsert', globalRollout)).data?.result).not.toHaveProperty('workspaceId')
@@ -301,7 +824,7 @@ describe('security and access-control acceptance gates', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.reconciliation', params: { workspace_id: workspaceId } }),
     }).then(response => response.json() as Promise<Envelope<{ result: { model_usage: { provider_cost_cny: string | null } } }>>)
 
-    expect((await call('merchant-cost-token')).data?.result.model_usage.provider_cost_cny).toBeNull()
+    expect((await call('merchant-cost-token')).error?.code).toBe('FORBIDDEN')
     expect((await call('finance-cost-token')).data?.result.model_usage.provider_cost_cny).toBe('0.000000')
   })
 
@@ -309,7 +832,7 @@ describe('security and access-control acceptance gates', () => {
     const routingWorkspace = `ws_platform_route_${Date.now()}`
     const targetWorkspace = `ws_platform_target_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'platform-only-token': { workspaces: [routingWorkspace], actor_id: 'platform-only-operator', roles: ['platform_ops'] } }))
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'platform-only-token': { workspaces: [routingWorkspace], actor_id: 'platform-only-operator', roles: ['platform_ops'], workbenches: ['platform'] } }))
     await workspaceMembers.upsert({ workspaceId: targetWorkspace, externalSubject: 'target-only-user', displayName: '目标用户', role: 'operator', status: 'active', invitedBy: 'security-test' })
     const base = await start()
     const call = (method: string, params: Record<string, string>) => fetch(`${base}/mcp`, {
@@ -323,10 +846,14 @@ describe('security and access-control acceptance gates', () => {
     const workspaces = await call('ops.workspaces.list', { workspace_id: routingWorkspace })
     expect(workspaces.error).toBeNull()
     expect(workspaces.data?.result).toEqual(expect.arrayContaining([expect.objectContaining({ workspaceId: targetWorkspace, memberCount: 1 })]))
+    const workspacePage = await call('ops.workspaces.list', { workspace_id: routingWorkspace, offset: '0', limit: '1', query: targetWorkspace })
+    expect(workspacePage.error).toBeNull()
+    expect(workspacePage.data?.result).toMatchObject({ offset: 0, limit: 1, hasMore: false, items: [expect.objectContaining({ workspaceId: targetWorkspace })] })
+    expect(workspacePage.data?.result.total).toBeGreaterThanOrEqual(1)
     const detail = await call('ops.user.detail', { external_subject: 'target-only-user' })
     expect(detail.error).toBeNull()
     expect(detail.data?.result.identity).toMatchObject({ externalSubject: 'target-only-user', membershipCount: 1 })
-    expect((await call('ops.user.suspend', { external_subject: 'target-only-user', reason: '跨租户停用验证' })).data?.result).toMatchObject({ workspaceId: targetWorkspace, status: 'suspended' })
+    expect((await call('ops.user.suspend', { external_subject: 'target-only-user', expected_revision: '1', reason: '跨租户停用验证' })).data?.result).toMatchObject({ workspaceId: targetWorkspace, status: 'suspended' })
   })
 
   it('restricts platform account administration and billing exports to their explicit workspace roles', async () => {
@@ -364,26 +891,33 @@ describe('security and access-control acceptance gates', () => {
     expect(service.getPlatformAccount(workspaceId, deniedRevokeAccount.id, 'jd').tokenState).toBe('connected')
 
     let expectedRevision = aliasAccount.revision
-    for (const [token, alias] of [['sensitive-owner-token', '所有者店铺'], ['sensitive-admin-token', '管理员店铺'], ['sensitive-platform-token', '平台运营店铺']] as const) {
+    for (const [token, alias] of [['sensitive-owner-token', '所有者店铺'], ['sensitive-admin-token', '管理员店铺']] as const) {
       const renamed = await call(token, 'platform.store.alias.set', { platform: 'taobao', account_id: aliasAccount.id, alias, expected_revision: String(expectedRevision) })
       expect(renamed.error).toBeNull()
       expect(renamed.data?.result.store).toMatchObject({ accountId: aliasAccount.id, alias })
       expectedRevision += 1
     }
+    expect((await call('sensitive-platform-token', 'platform.store.alias.set', { platform: 'taobao', account_id: aliasAccount.id, alias: '平台运营店铺', expected_revision: String(expectedRevision) })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
 
     for (const [token, account] of revokeAccounts) {
       const revoked = await call(token, 'platform.revoke', { platform: 'jd', account_id: account.id })
-      expect(revoked.error?.code).toBe('PLATFORM_REVOKE_REMOTE_FAILED')
-      expect(service.getPlatformAccount(workspaceId, account.id, 'jd').tokenState).toBe('revoked')
+      if (token === 'sensitive-platform-token') {
+        expect(revoked.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
+        expect(service.getPlatformAccount(workspaceId, account.id, 'jd').tokenState).toBe('connected')
+      } else {
+        expect(revoked.error?.code).toBe('PLATFORM_REVOKE_REMOTE_FAILED')
+        expect(service.getPlatformAccount(workspaceId, account.id, 'jd').tokenState).toBe('revoked')
+      }
     }
 
-    for (const token of ['sensitive-owner-token', 'sensitive-admin-token', 'sensitive-finance-token', 'sensitive-platform-token']) {
-      const exported = await call(token, 'billing.export', { format: 'json', limit: '10' })
+    for (const token of ['sensitive-owner-token', 'sensitive-admin-token', 'sensitive-finance-token']) {
+      const exported = await call(token, 'billing.export', { format: 'json', limit: '10', scope: 'workspace' })
       expect(exported.error).toBeNull()
       expect(exported.data?.result).toMatchObject({ filename: `billing-${workspaceId}.json`, contentType: 'application/json' })
     }
+    expect((await call('sensitive-platform-token', 'billing.export', { format: 'json', limit: '10', scope: 'workspace' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
     for (const token of ['sensitive-operator-token', 'sensitive-support-token']) {
-      expect((await call(token, 'billing.export', { format: 'json' })).error?.code).toBe('FORBIDDEN')
+      expect((await call(token, 'billing.export', { format: 'json' })).data?.result).toMatchObject({ scope: 'mine', filename: 'my-billing.json' })
     }
 
     expect((await call('sensitive-owner-token', 'platform.store.alias.set', { platform: 'taobao', account_id: foreignAccount.id, alias: '跨租户修改', expected_revision: String(foreignAccount.revision) })).error?.code).toBe('PLATFORM_ACCOUNT_NOT_FOUND')
@@ -417,13 +951,19 @@ describe('security and access-control acceptance gates', () => {
     ])
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `brand-store-${workspaceId}`, credentialRef: 'vault://brand-access' })
     const source = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-access-source', title: '品权限商品', stock: 3 })
+    const hiddenSource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-hidden-source', title: '不可见商品', stock: 2 })
     const base = await start()
     const ownerHeaders = { authorization: 'Bearer brand-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const editorHeaders = { authorization: 'Bearer brand-editor-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const mcp = (headers: Record<string, string>, id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
     expect((await mcp(ownerHeaders, 1, 'brand-unit.create', { brand_id: 'brand_access', name: '权限品' })).error).toBeNull()
+    expect((await mcp(ownerHeaders, 1.1, 'brand-unit.create', { brand_id: 'brand_hidden', name: '不可见品' })).error).toBeNull()
     expect((await mcp(ownerHeaders, 2, 'brand-unit.bind-store', { brand_id: 'brand_access', platform: 'taobao', account_id: account.id })).error).toBeNull()
+    expect((await mcp(ownerHeaders, 2.05, 'catalog.facts.confirm', { product_id: source.id })).error).toBeNull()
+    expect((await mcp(ownerHeaders, 2.06, 'catalog.facts.confirm', { product_id: hiddenSource.id })).error).toBeNull()
+    expect((await mcp(ownerHeaders, 2.1, 'brand-unit.product.create', { brand_id: 'brand_access', title: '初始品牌商品', source_product_id: source.id })).error).toBeNull()
+    expect((await mcp(ownerHeaders, 2.11, 'brand-unit.product.create', { brand_id: 'brand_hidden', title: '不可见商品', source_product_id: hiddenSource.id })).error).toBeNull()
     expect((await mcp(editorHeaders, 3, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 0 })
     expect((await mcp(editorHeaders, 3.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation).toMatchObject({ presentation: 'tree', hierarchy: ['brand', 'platform', 'store'], items: [] })
     expect((await mcp(editorHeaders, 4, 'brand-unit.list', { brand_id: 'brand_access' })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
@@ -431,14 +971,55 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(ownerHeaders, 5, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'viewer' })).error).toBeNull()
     expect((await mcp(editorHeaders, 6, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 1 })
     expect((await mcp(editorHeaders, 6.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation.items).toEqual([expect.objectContaining({ id: 'brand_access', title: '权限品', platforms: [expect.objectContaining({ platform: 'taobao', stores: [expect.objectContaining({ accountId: account.id })] })] })])
+    expect((await mcp(editorHeaders, 6.2, 'creative.brief', { product_id: hiddenSource.id, asset_type: 'banner' })).error?.code).toBe('PRODUCT_NOT_FOUND')
+    expect((await mcp(editorHeaders, 6.3, 'creative.preview', { product_id: hiddenSource.id, asset_type: 'banner' })).error?.code).toBe('PRODUCT_NOT_FOUND')
+    expect((await mcp(editorHeaders, 6.4, 'catalog.image.generate', { product_id: hiddenSource.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `hidden-image-${workspaceId}` })).error?.code).toBe('PRODUCT_NOT_FOUND')
+    const generatedJob = service.enqueueImageGeneration({ workspaceId, productId: source.id, idempotencyKey: `brand-image-${workspaceId}`, count: 1 })
+    const generatedVisualRef = `dvis_${'B'.repeat(24)}`
+    const selectionIntentHash = createHash('sha256').update(JSON.stringify({ method: 'catalog.image.select', jobId: generatedJob.id, visualRef: generatedVisualRef, expectedRevision: generatedJob.revision })).digest('hex')
+    const viewerSelection = await mcp(editorHeaders, 6.6, 'catalog.image.select', { job_id: generatedJob.id, visual_ref: generatedVisualRef, expected_revision: String(generatedJob.revision), idempotency_key: `brand-select-${workspaceId}`, reason: '品牌候选图选择', confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: selectionIntentHash })
+    expect(viewerSelection.error).toMatchObject({ code: 'BRAND_ACCESS_REQUIRED', details: { required_role: 'editor' } })
     expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
     const protectedTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
+    const hiddenTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
+    const restPublishDenied = await fetch(`${base}/v1/publish-jobs`, {
+      method: 'POST',
+      headers: { ...editorHeaders, 'idempotency-key': 'brand-editor-publish-denied' },
+      body: JSON.stringify({ workspace_id: workspaceId, task_id: protectedTask.id, content_version_id: 'cv-not-reached', confirmation_hash: 'hash-not-reached', remote_snapshot_hash: 'snapshot-not-reached' }),
+    }).then(response => response.json() as Promise<Envelope>)
+    expect(restPublishDenied.error?.code).toBe('BRAND_ACCESS_REQUIRED')
+    expect(service.listPublishJobs(workspaceId)).toHaveLength(0)
     expect((await mcp(editorHeaders, 7.1, 'task.history', {})).data?.result.items).toEqual([expect.objectContaining({ id: protectedTask.id })])
+    expect((await mcp(editorHeaders, 7.11, 'task.resume', { task_id: hiddenTask.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
     expect((await mcp(editorHeaders, 7.2, 'task.resume', { task_id: protectedTask.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
 
     expect((await mcp(ownerHeaders, 8, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'editor' })).error).toBeNull()
+    expect((await mcp(editorHeaders, 8.1, 'catalog.image.select', { job_id: generatedJob.id, visual_ref: generatedVisualRef, expected_revision: String(generatedJob.revision), idempotency_key: `brand-select-${workspaceId}`, reason: '品牌候选图选择', confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: selectionIntentHash })).error?.code).toBe('INTERACTIVE_CONFIRMATION_TICKET_INVALID')
     expect((await mcp(editorHeaders, 9, 'brand-unit.product.create', { brand_id: 'brand_access', title: '可编辑商品', source_product_id: source.id })).error).toBeNull()
     expect((await mcp(editorHeaders, 9.1, 'task.resume', { task_id: protectedTask.id })).error).toBeNull()
+
+    service.confirmProductFacts(workspaceId, source.id)
+    const protectedPublishTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
+    const hiddenPublishTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
+    for (const task of [protectedPublishTask, hiddenPublishTask]) {
+      service.selectDirection(task.id, 'A')
+      const draft = service.createDraft(task.id)
+      service.approveContent(task.id, draft.id)
+    }
+    const protectedPreview = service.preparePublish(protectedPublishTask.id)
+    const protectedJob = service.confirmPublish({ workspaceId, taskId: protectedPublishTask.id, contentVersionId: protectedPreview.version.id, confirmationHash: protectedPreview.confirmationHash, remoteSnapshotHash: protectedPreview.remoteSnapshotHash, idempotencyKey: `brand-access-protected-${Date.now()}` })
+    const hiddenPreview = service.preparePublish(hiddenPublishTask.id)
+    const hiddenJob = service.confirmPublish({ workspaceId, taskId: hiddenPublishTask.id, contentVersionId: hiddenPreview.version.id, confirmationHash: hiddenPreview.confirmationHash, remoteSnapshotHash: hiddenPreview.remoteSnapshotHash, idempotencyKey: `brand-access-hidden-${Date.now()}` })
+    expect((await mcp(editorHeaders, 9.2, 'publish.get', { publish_job_id: protectedJob.id })).error).toBeNull()
+    expect((await mcp(editorHeaders, 9.3, 'publish.get', { publish_job_id: hiddenJob.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
+    const restHidden = await fetch(`${base}/v1/publish-jobs/${hiddenJob.id}`, { headers: editorHeaders }).then(response => response.json() as Promise<Envelope>)
+    expect(restHidden.error?.code).toBe('BRAND_ACCESS_REQUIRED')
+    const restList = await fetch(`${base}/v1/publish-jobs?limit=1&offset=0`, { headers: editorHeaders }).then(response => response.json() as Promise<Envelope<{ items: Array<{ id: string }>; total: number }>>)
+    expect(restList.error).toBeNull()
+    expect(restList.data).toMatchObject({ total: 1, items: [{ id: protectedJob.id }], limit: 1, offset: 0 })
+    const restHiddenPage = await fetch(`${base}/v1/publish-jobs?limit=1&offset=1`, { headers: editorHeaders }).then(response => response.json() as Promise<Envelope<{ items: Array<{ id: string }>; total: number }>>)
+    expect(restHiddenPage.error).toBeNull()
+    expect(restHiddenPage.data).toMatchObject({ total: 1, items: [], limit: 1, offset: 1 })
   })
 
   it('resolves an independent OAuth callback for every platform', () => {
@@ -523,11 +1104,20 @@ describe('security and access-control acceptance gates', () => {
     const timestamp = String(Math.floor(Date.now() / 1000))
     const authTime = String(Number(timestamp) - 10)
     const sessionExpiresAt = String(Number(timestamp) + 3600)
-    const canonical = ['GET', path, 'ws_oidc', 'https://issuer.example.com', 'oidc-user', 'oidc-session-1', 'merchant_admin,operator', 'mfa', authTime, sessionExpiresAt, timestamp].join('\n')
+    const bodyDigest = createHash('sha256').update('').digest('hex')
+    const nonce = `oidc-get-${Date.now()}-nonce`
+    const canonical = ['GET', path, 'ws_oidc', 'workspace', 'https://issuer.example.com', 'oidc-user', 'oidc-session-1', 'merchant_admin,operator', 'mfa', authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
     const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
-    const headers = { 'x-workspace-id': 'ws_oidc', 'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'oidc-user', 'x-oidc-sid': 'oidc-session-1', 'x-oidc-workspace': 'ws_oidc', 'x-oidc-roles': 'operator,merchant_admin', 'x-oidc-amr': 'mfa', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-signature': signature }
+    const headers = { 'x-workspace-id': 'ws_oidc', 'x-oidc-workbench': 'workspace', 'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'oidc-user', 'x-oidc-sid': 'oidc-session-1', 'x-oidc-workspace': 'ws_oidc', 'x-oidc-roles': 'operator,merchant_admin', 'x-oidc-amr': 'mfa', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': bodyDigest, 'x-oidc-nonce': nonce, 'x-oidc-signature': signature }
     const missing = await fetch(`${base}${path}`, { headers: { 'x-workspace-id': 'ws_oidc' } })
     expect(missing.status).toBe(401)
+    const queryTampered = await fetch(`${base}${path}?limit=1`, { headers })
+    expect(queryTampered.status).toBe(401)
+    const workbenchTampered = await fetch(`${base}${path}`, { headers: { ...headers, 'x-oidc-workbench': 'platform' } })
+    expect(workbenchTampered.status).toBe(401)
+    const workbenchMissing = await fetch(`${base}${path}`, { headers: Object.fromEntries(Object.entries(headers).filter(([name]) => name !== 'x-oidc-workbench')) })
+    expect(workbenchMissing.status).toBe(401)
+    expect((await workbenchMissing.json() as Envelope).error?.code).toBe('AUTHZ_WORKBENCH_ASSERTION_INVALID')
     const allowed = await fetch(`${base}${path}`, { headers })
     expect(allowed.status).toBe(200)
     const conflicting = await fetch(`${base}${path}`, { headers: { ...headers, 'x-workspace-id': 'ws_other' } })
@@ -549,6 +1139,9 @@ describe('security and access-control acceptance gates', () => {
     const path = '/v1/products'
     const merchant = await fetch(`${base}${path}`, { headers: { authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host' } })
     expect(merchant.status).toBe(200)
+    const merchantEscalation = await fetch(`${base}${path}`, { headers: { authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host', 'x-ops-workbench': 'platform' } })
+    expect(merchantEscalation.status).toBe(403)
+    expect((await merchantEscalation.json() as Envelope).error?.code).toBe('AUTHZ_WORKBENCH_FORBIDDEN')
     vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'ops.merchant.example.com')
     const opsBearer = await fetch(`${base}${path}`, { headers: { host: 'ops.merchant.example.com', authorization: 'Bearer merchant-ui-token', 'x-workspace-id': 'ws_merchant_host' } })
     expect(opsBearer.status).toBe(401)
@@ -563,22 +1156,58 @@ describe('security and access-control acceptance gates', () => {
     const timestamp = String(Math.floor(Date.now() / 1000))
     const authTime = String(Number(timestamp) - 10)
     const sessionExpiresAt = String(Number(timestamp) + 3600)
-    const canonical = ['POST', path, '', 'https://issuer.example.com', 'new-oidc-user', 'bootstrap-session-1', '', '', authTime, sessionExpiresAt, timestamp].join('\n')
+    const requestBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.bootstrap', params: { display_name: 'OIDC 首次工作区' } })
+    const bodyDigest = createHash('sha256').update(requestBody).digest('hex')
+    const nonce = `oidc-bootstrap-${Date.now()}-1`
+    const canonical = ['POST', path, '', 'workspace', 'https://issuer.example.com', 'new-oidc-user', 'bootstrap-session-1', '', '', authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
     const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
     const headers = {
       'content-type': 'application/json',
       'x-workspace-bootstrap': 'true',
+      'x-oidc-workbench': 'workspace',
       'x-oidc-issuer': 'https://issuer.example.com',
       'x-oidc-sub': 'new-oidc-user',
       'x-oidc-sid': 'bootstrap-session-1',
       'x-oidc-auth-time': authTime,
       'x-oidc-session-expires-at': sessionExpiresAt,
       'x-oidc-timestamp': timestamp,
+      'x-oidc-body-sha256': bodyDigest,
+      'x-oidc-nonce': nonce,
       'x-oidc-signature': signature,
     }
-    const response = await fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.bootstrap', params: { display_name: 'OIDC 首次工作区' } }) }).then(json)
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers, body: requestBody }).then(json)
     expect(response.body.error).toBeNull()
     expect((response.body.data as { result: { workspaceId: string; owner: { actorId: string } } }).result).toMatchObject({ workspaceId: expect.stringMatching(/^ws_[a-f0-9]{24}$/), owner: { actorId: 'new-oidc-user' } })
+    const replay = await fetch(`${base}${path}`, { method: 'POST', headers, body: requestBody })
+    expect(replay.status).toBe(401)
+    expect((await replay.json() as Envelope).error?.code).toBe('UNAUTHENTICATED')
+    const substituted = await fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'workspace.bootstrap', params: { display_name: '被替换的请求体' } }) })
+    expect(substituted.status).toBe(401)
+    expect((await substituted.json() as Envelope).error?.code).toBe('UNAUTHENTICATED')
+  })
+
+  it('reuses bootstrap by signed issuer and subject while isolating another issuer', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('OPS_AUTH_MODE', 'oidc')
+    vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'oidc-test-secret')
+    const base = await start()
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const subject = `bootstrap-idempotent-${suffix}`
+    const firstRequest = signedOidcBootstrap({ issuer: 'https://issuer-a.example.com', subject, nonce: `bootstrap-a1-${suffix}`, displayName: '首次可信工作区' })
+    const secondRequest = signedOidcBootstrap({ issuer: 'https://issuer-a.example.com', subject, nonce: `bootstrap-a2-${suffix}`, displayName: '不得覆盖名称' })
+    const isolatedRequest = signedOidcBootstrap({ issuer: 'https://issuer-b.example.com', subject, nonce: `bootstrap-b1-${suffix}`, displayName: '另一发行方工作区' })
+
+    const first = await fetch(`${base}/mcp`, { method: 'POST', ...firstRequest }).then(json)
+    const second = await fetch(`${base}/mcp`, { method: 'POST', ...secondRequest }).then(json)
+    const isolated = await fetch(`${base}/mcp`, { method: 'POST', ...isolatedRequest }).then(json)
+    const firstResult = (first.body.data as { result: { workspaceId: string; displayName: string; reused: boolean; owner: { issuer: string; externalSubject: string } } }).result
+    const secondResult = (second.body.data as { result: typeof firstResult }).result
+    const isolatedResult = (isolated.body.data as { result: typeof firstResult }).result
+
+    expect(firstResult).toMatchObject({ reused: false, displayName: '首次可信工作区', owner: { issuer: 'https://issuer-a.example.com', externalSubject: subject } })
+    expect(secondResult).toMatchObject({ workspaceId: firstResult.workspaceId, reused: true, displayName: '首次可信工作区' })
+    expect(isolatedResult).toMatchObject({ reused: false, owner: { issuer: 'https://issuer-b.example.com', externalSubject: subject } })
+    expect(isolatedResult.workspaceId).not.toBe(firstResult.workspaceId)
   })
 
   it('does not allow bootstrap to assign ownership to a different external subject', async () => {
@@ -590,14 +1219,17 @@ describe('security and access-control acceptance gates', () => {
     const timestamp = String(Math.floor(Date.now() / 1000))
     const authTime = String(Number(timestamp) - 10)
     const sessionExpiresAt = String(Number(timestamp) + 3600)
-    const canonical = ['POST', path, '', 'https://issuer.example.com', 'authenticated-user', 'bootstrap-session-2', '', '', authTime, sessionExpiresAt, timestamp].join('\n')
+    const requestBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.bootstrap', params: { display_name: '错误 owner 工作区', external_subject: 'different-user' } })
+    const bodyDigest = createHash('sha256').update(requestBody).digest('hex')
+    const nonce = `oidc-bootstrap-${Date.now()}-2`
+    const canonical = ['POST', path, '', 'workspace', 'https://issuer.example.com', 'authenticated-user', 'bootstrap-session-2', '', '', authTime, sessionExpiresAt, timestamp, bodyDigest, nonce].join('\n')
     const signature = createHmac('sha256', 'oidc-test-secret').update(canonical).digest('hex')
-    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-bootstrap': 'true', 'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'authenticated-user', 'x-oidc-sid': 'bootstrap-session-2', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-signature': signature }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'workspace.bootstrap', params: { display_name: '错误 owner 工作区', external_subject: 'different-user' } }) })
+    const response = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-bootstrap': 'true', 'x-oidc-workbench': 'workspace', 'x-oidc-issuer': 'https://issuer.example.com', 'x-oidc-sub': 'authenticated-user', 'x-oidc-sid': 'bootstrap-session-2', 'x-oidc-auth-time': authTime, 'x-oidc-session-expires-at': sessionExpiresAt, 'x-oidc-timestamp': timestamp, 'x-oidc-body-sha256': bodyDigest, 'x-oidc-nonce': nonce, 'x-oidc-signature': signature }, body: requestBody })
     expect(response.status).toBe(403)
     expect((await response.json() as Envelope).error?.code).toBe('FORBIDDEN')
   })
 
-  it('rejects wildcard workspace grants unless explicitly enabled for a controlled local deployment', async () => {
+  it('rejects wildcard workspace grants in production even if the local deployment flags are enabled', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'pilot-token', workspaceId: 'ws_any', grantWorkspaces: ['*'] }])
     vi.stubEnv('ALLOW_WILDCARD_WORKSPACE_GRANT', 'false')
@@ -607,7 +1239,7 @@ describe('security and access-control acceptance gates', () => {
     expect(denied.status).toBe(403)
     vi.stubEnv('ALLOW_WILDCARD_WORKSPACE_GRANT', 'true')
     const allowed = await fetch(`${base}/v1/products`, { headers: { authorization: 'Bearer pilot-token', 'x-workspace-id': 'ws_any' } })
-    expect(allowed.status).toBe(200)
+    expect(allowed.status).toBe(403)
   })
 
   it('requires an HTTPS OAuth callback in production', async () => {
@@ -706,6 +1338,11 @@ describe('security and access-control acceptance gates', () => {
     expect(response.status).toBe(503)
     expect(body.error?.code).toBe('PLATFORM_WRITE_NOT_READY')
     expect(service.listPublishJobs('ws_publish_gate')).toHaveLength(0)
+    const mcpResponse = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'publish-gate-mcp-1' }, body: JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'publish.confirm', params: { task_id: taskId, content_version_id: draftVersion.id, confirmation_hash: preview.confirmationHash, remote_snapshot_hash: preview.remoteSnapshotHash, account_id: 'remote-publish-gate' } }) })
+    const mcpBody = await mcpResponse.json() as Envelope
+    expect(mcpResponse.status).toBe(503)
+    expect(mcpBody.error?.code).toBe('PLATFORM_WRITE_NOT_READY')
+    expect(service.listPublishJobs('ws_publish_gate')).toHaveLength(0)
   })
 
   it('requires a bound store for production product imports across MCP and REST', async () => {
@@ -801,8 +1438,7 @@ describe('security and access-control acceptance gates', () => {
     vi.stubEnv('OPS_AUTH_MODE', 'oidc')
     vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'merchant.example.com')
     vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'worker-oidc-secret')
-    vi.stubEnv('WORKER_API_TOKEN', 'worker-token')
-    vi.stubEnv('WORKER_API_SIGNING_SECRET', 'worker-signing-secret')
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ generation: { token: 'worker-token', signing_secret: 'worker-signing-secret' } }))
     const productId = `prod_worker_${Date.now()}`
     service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId: 'ws_worker' })
     const task = service.createTask({ workspaceId: 'ws_worker', productId, platform: 'taobao' })
@@ -810,6 +1446,12 @@ describe('security and access-control acceptance gates', () => {
     service.confirmProductionPlan('ws_worker', task.id, 'test-worker')
     const job = service.enqueueGeneration({ workspaceId: 'ws_worker', taskId: task.id, idempotencyKey: `worker-${Date.now()}` })
     const base = await start()
+    const executionPath = `/v1/generation-jobs/${job.id}`
+    const executionHeaders = { host: 'merchant-api', authorization: 'Bearer worker-token', 'x-workspace-id': 'ws_worker', ...workerProofHeaders({ role: 'generation', secret: 'worker-signing-secret', method: 'GET', path: executionPath, workspaceId: 'ws_worker' }) }
+    const execution = await fetch(`${base}${executionPath}`, { headers: executionHeaders })
+    expect(execution.status).toBe(200)
+    expect((await execution.json() as Envelope<{ taskId: string; state: string }>).data).toMatchObject({ taskId: task.id, state: 'queued' })
+
     const path = `/v1/generation-jobs/${job.id}/result`
     const body = JSON.stringify({ content: { title: 'worker', detail: 'worker', sellingPoints: ['fact'] } })
     const commonHeaders = { host: 'merchant-api', 'x-workspace-id': 'ws_worker', 'content-type': 'application/json' }
@@ -835,9 +1477,18 @@ describe('security and access-control acceptance gates', () => {
     expect(oidc.status).toBe(403)
     expect((await oidc.json() as Envelope).error?.code).toBe('FORBIDDEN')
 
-    const signature = createHmac('sha256', 'worker-signing-secret').update(`POST\n${path}\nws_worker`).digest('hex')
-    const accepted = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', 'x-worker-workspace-signature': signature }, body })
-    expect(accepted.status).toBe(200)
+    const proof = workerProofHeaders({ role: 'generation', secret: 'worker-signing-secret', method: 'POST', path, workspaceId: 'ws_worker', body })
+    const tampered = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof }, body: `${body} ` })
+    expect(tampered.status).toBe(403)
+    const accepted = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof }, body })
+    // Worker authentication is accepted, but delivery remains pending until
+    // the relay posts a settled provider receipt. Auth success must not imply
+    // content success or permit an unaccounted generation result.
+    expect(accepted.status).toBe(409)
+    expect((await accepted.json() as Envelope).error?.code).toBe('MODEL_RELAY_EVIDENCE_REQUIRED')
+    const replayed = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof }, body })
+    expect(replayed.status).toBe(409)
+    expect((await replayed.json() as Envelope).error?.code).toBe('WORKER_NONCE_REPLAY')
   })
 
   it('exposes opaque credential locators only through the worker execution gate', async () => {
@@ -857,21 +1508,36 @@ describe('security and access-control acceptance gates', () => {
   it('accepts only the signed worker automation scheduler endpoint in staging', async () => {
     vi.stubEnv('NODE_ENV', 'staging')
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'worker-token': ['ws_worker_automation'] }))
-    vi.stubEnv('WORKER_API_TOKEN', 'worker-token')
-    vi.stubEnv('WORKER_API_SIGNING_SECRET', 'automation-secret')
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ automation: [{ token: 'worker-token', signing_secret: 'automation-secret' }, { token: 'previous-worker-token', signing_secret: 'previous-automation-secret' }], generation: { token: 'generation-token', signing_secret: 'generation-secret' } }))
     const base = await start(); const workspaceId = 'ws_worker_automation'; const path = '/v1/internal/automation/tick'
     const unsigned = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': workspaceId } })
     expect(unsigned.status).toBe(403)
-    const signature = createHmac('sha256', 'automation-secret').update(`POST\n${path}\n${workspaceId}`).digest('hex')
-    const signed = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': workspaceId, 'x-worker-workspace-signature': signature } })
+    const crossRole = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer generation-token', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'generation', secret: 'generation-secret', method: 'POST', path, workspaceId }) } })
+    expect(crossRole.status).toBe(403)
+    const previous = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer previous-worker-token', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'automation', secret: 'previous-automation-secret', method: 'POST', path, workspaceId }) } })
+    expect(previous.status).toBe(200)
+    const signed = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'automation', secret: 'automation-secret', method: 'POST', path, workspaceId }) } })
     expect(signed.status).toBe(200)
     expect((await signed.json() as Envelope<{ executed: unknown[]; unattendedAutoResubmit: boolean }>).data).toMatchObject({ executed: [], unattendedAutoResubmit: false })
   })
 
+  it('fails closed when worker role credentials are shared or a rotation window exceeds two credentials', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const base = await start(); const workspaceId = 'ws_worker_bad_credentials'; const path = '/v1/internal/automation/tick'
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ automation: { token: 'shared-token', signing_secret: 'automation-secret' }, generation: { token: 'shared-token', signing_secret: 'generation-secret' } }))
+    const shared = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer shared-token', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'automation', secret: 'automation-secret', method: 'POST', path, workspaceId }) } })
+    expect(shared.status).toBe(503)
+    expect((await shared.json() as Envelope).error?.code).toBe('WORKER_AUTH_MISCONFIGURED')
+
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ automation: [1, 2, 3].map(index => ({ token: `token-${index}`, signing_secret: `secret-${index}` })) }))
+    const excessive = await fetch(`${base}${path}`, { method: 'POST', headers: { authorization: 'Bearer token-1', 'x-workspace-id': workspaceId, ...workerProofHeaders({ role: 'automation', secret: 'secret-1', method: 'POST', path, workspaceId }) } })
+    expect(excessive.status).toBe(503)
+    expect((await excessive.json() as Envelope).error?.code).toBe('WORKER_AUTH_MISCONFIGURED')
+  })
+
   it('fails closed when production worker workspace signing is missing', async () => {
     vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('WORKER_API_TOKEN', 'worker-token')
-    vi.stubEnv('WORKER_API_SIGNING_SECRET', '')
+    vi.stubEnv('WORKER_API_CREDENTIALS', '')
     const base = await start()
     const response = await fetch(`${base}/v1/internal/automation/tick`, { method: 'POST', headers: { authorization: 'Bearer worker-token', 'x-workspace-id': 'ws_worker_missing_signing' } })
     expect(response.status).toBe(503)

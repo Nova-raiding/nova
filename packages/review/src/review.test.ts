@@ -171,13 +171,79 @@ describe('deterministic content review', () => {
     expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(true)
   })
 
-  it('does not allow a lower-scope allow rule to override a higher-scope block', () => {
+  it('uses advisory expiry configuration outside platform scope without blocking review', () => {
+    const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+      packId: 'advisory-brand', name: '品牌建议规则', version: '1', scope: 'brand', targetId: 'brand-1', status: 'active',
+      effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'warning', action: 'warn', checks: { conflictKeys: ['visual-density'] },
+      source: { kind: 'internal', reference: 'manual://advisory-expired', checkedAt: '2026-08-20T00:00:00.000Z' },
+    }])
+    const result = center.evaluate({ brand: 'brand-1' }, '2026-08-24T12:00:00.000Z')
+    expect(result.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'warning', action: 'warn' }))
+    expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { brand: 'brand-1' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(false)
+  })
+
+  it('keeps expired platform rules P0 fail-closed even when configured as advisory', () => {
+    const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+      packId: 'advisory-platform', name: '平台建议规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active',
+      effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'warning', action: 'allow',
+      source: { kind: 'official', reference: 'manual://platform-expired', checkedAt: '2026-08-20T00:00:00.000Z' },
+    }])
+    const result = center.evaluate({ platform: 'taobao' }, '2026-08-24T12:00:00.000Z')
+    expect(result.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'error', action: 'block' }))
+    expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(true)
+  })
+
+  it('uses advisory policy for a rule explicitly transitioned to expired', () => {
+    const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+      packId: 'expired-advisory', name: '已撤销建议规则', version: '1', scope: 'campaign', targetId: 'summer', status: 'active',
+      severity: 'warning', action: 'review', source: { kind: 'internal', reference: 'manual://expired-advisory', checkedAt: '2026-08-20T00:00:00.000Z' },
+    }])
+    center.setStatus({ packId: 'expired-advisory', status: 'expired', actorId: 'rules-owner', reason: '建议规则待复核' })
+    expect(center.evaluate({ campaign: 'summer' }).findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'warning', action: 'review' }))
+  })
+
+  it('does not downgrade expiry when either configured policy is blocking', () => {
+    const source = { kind: 'internal' as const, reference: 'manual://blocking-expiry', checkedAt: '2026-08-20T00:00:00.000Z' }
+    const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [
+      { packId: 'warning-block', name: '阻断动作', version: '1', scope: 'brand', targetId: 'brand-1', status: 'active', effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'warning', action: 'block', source },
+      { packId: 'error-review', name: '错误级别', version: '1', scope: 'brand', targetId: 'brand-1', status: 'active', effectiveTo: '2026-08-24T11:00:00.000Z', severity: 'error', action: 'review', source },
+    ])
+    expect(center.evaluate({ brand: 'brand-1' }).findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleVersionId: 'warning-block@1', severity: 'error', action: 'block' }),
+      expect.objectContaining({ ruleVersionId: 'error-review@1', severity: 'error', action: 'block' }),
+    ]))
+  })
+
+  it('does not allow a lower-scope allow rule to override the same normalized blocked term', () => {
     const source = { kind: 'official' as const, reference: 'manual://priority', checkedAt: '2026-08-23T00:00:00.000Z' }
     const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [
-      { packId: 'legal-hard', name: '法律硬规则', version: '1', scope: 'global', status: 'active', source, action: 'block' },
-      { packId: 'campaign-exception', name: '活动例外', version: '1', scope: 'campaign', targetId: 'summer', status: 'active', source, action: 'allow' },
+      { packId: 'legal-hard', name: '法律硬规则', version: '1', scope: 'global', status: 'active', source, action: 'block', checks: { forbiddenTerms: ['SALE\u3000PRICE'] } },
+      { packId: 'campaign-exception', name: '活动例外', version: '1', scope: 'campaign', targetId: 'summer', status: 'active', source, action: 'allow', checks: { forbiddenTerms: [' sale price '] } },
     ])
-    expect(center.evaluate({ campaign: 'summer' }).findings).toContainEqual(expect.objectContaining({ code: 'RULE_PRIORITY_CONFLICT', ruleVersionId: 'campaign-exception@1', severity: 'error', action: 'block' }))
+    const finding = center.evaluate({ campaign: 'summer' }).findings.find(item => item.code === 'RULE_PRIORITY_CONFLICT')
+    expect(finding).toMatchObject({ ruleVersionId: 'campaign-exception@1', severity: 'error', action: 'block' })
+    expect(finding?.message).toContain('term:sale price')
+  })
+
+  it('does not report priority conflicts for unrelated or cross-domain keys', () => {
+    const source = { kind: 'official' as const, reference: 'manual://precise-priority', checkedAt: '2026-08-23T00:00:00.000Z' }
+    const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [
+      { packId: 'term-hard', name: '词规则', version: '1', scope: 'global', status: 'active', source, action: 'block', checks: { forbiddenTerms: ['最低价'], conflictKeys: ['price-claim'] } },
+      { packId: 'unrelated-allow', name: '无关活动例外', version: '1', scope: 'campaign', targetId: 'summer', status: 'active', source, action: 'allow', checks: { forbiddenTerms: ['新品'], requiredFields: ['最低价'], conflictKeys: ['stock-display'] } },
+    ])
+    expect(center.evaluate({ campaign: 'summer' }).findings.filter(item => item.code === 'RULE_PRIORITY_CONFLICT')).toEqual([])
+  })
+
+  it('supports normalized field and explicit conflict keys', () => {
+    const source = { kind: 'internal' as const, reference: 'manual://key-priority', checkedAt: '2026-08-23T00:00:00.000Z' }
+    const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [
+      { packId: 'field-hard', name: '字段硬规则', version: '1', scope: 'global', status: 'active', source, action: 'block', checks: { requiredFields: [' Product.Title '], conflictKeys: ['PRICE\u3000CLAIM'] } },
+      { packId: 'store-allow', name: '店铺例外', version: '1', scope: 'store', targetId: 'store-1', status: 'active', source, action: 'allow', checks: { requiredFields: ['product.title'], conflictKeys: ['price claim'] } },
+    ])
+    const conflicts = center.evaluate({ store: 'store-1' }).findings.filter(item => item.code === 'RULE_PRIORITY_CONFLICT')
+    expect(conflicts).toHaveLength(1)
+    expect(conflicts[0]?.message).toContain('conflict:price claim')
+    expect(conflicts[0]?.message).toContain('field:product.title')
   })
 
   it('also reports a rule explicitly transitioned to expired', () => {

@@ -12,7 +12,8 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "jsx": "react-jsx"
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
   "exclude": ["apps/ops-console", "demo/merchant-studio", "node_modules", "dist"]

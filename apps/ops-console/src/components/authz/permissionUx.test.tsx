@@ -1,0 +1,86 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import { createAuthorizationProjection } from "../../authz/authorization.js";
+import { AuthorizationProvider } from "../../authz/AuthorizationProvider.js";
+import type { OpsSession } from "../../types/ops.js";
+import { AccessDeniedResult } from "./AccessDeniedResult.js";
+import { PermissionGate } from "./PermissionGate.js";
+import { formatJitRemaining, RoleScopeBar } from "./RoleScopeBar.js";
+
+const session: OpsSession = {
+  actor_id: "actor_1", workspace_id: "ws_1", roles: ["platform_ops"], canonical_roles: ["ops_admin"],
+  workspace_granted: true, capabilities: ["platform.summary.read"], policy_version: "2026-08-31.v1",
+  scopes: [{ type: "platform", ids: ["*"] }],
+  schema_version: 2, workbench: "platform", available_workbenches: ["platform", "workspace"], context_id: "ctx_1", context_version: "1",
+};
+
+describe("desktop permission UX", () => {
+  it("formats a live JIT countdown without exposing a token", () => {
+    expect(formatJitRemaining(15 * 60 * 1000 + 1200)).toBe("15:02");
+    expect(formatJitRemaining(-1)).toBe("00:00");
+  });
+  it("exposes the server-projected JIT mode, exact scope and use budget", () => {
+    const html = renderToStaticMarkup(<RoleScopeBar
+      session={{ ...session, temporary_grants: [{ id: "grant_1", access_mode: "write", workspace_id: "ws_1", resource_scope: { type: "workspace", ids: ["ws_1"] }, expires_at: "2999-01-01T00:00:00.000Z", max_uses: 3, use_count: 1 }] }}
+      authorization={createAuthorizationProjection(session, true)}
+    />);
+    expect(html).toContain("临时授权 · 可写");
+    expect(html).toContain("范围 workspace:ws_1");
+    expect(html).toContain("使用 1/3");
+    expect(html).toContain('aria-live="polite"');
+  });
+  it("keeps identity, workbench, scope and policy visible", () => {
+    const html = renderToStaticMarkup(<RoleScopeBar session={session} authorization={createAuthorizationProjection(session, true)} />);
+    expect(html).toContain("平台运营");
+    expect(html).toContain("actor_1");
+    expect(html).toContain("平台控制台");
+    expect(html).toContain("平台全局");
+    expect(html).toContain("2026-08-31.v1");
+    expect(html).toContain("商家工作区");
+  });
+
+  it("keeps a single server-projected workbench static", () => {
+    const workspaceSession = { ...session, workbench: "workspace" as const, available_workbenches: ["workspace" as const], scopes: [{ type: "workspace" as const, ids: ["ws_1"] }] };
+    const html = renderToStaticMarkup(<RoleScopeBar session={workspaceSession} authorization={createAuthorizationProjection(workspaceSession, true)} />);
+    expect(html).toContain("商家工作区");
+    expect(html).not.toContain("平台控制台");
+    expect(html).not.toContain("当前运营工作台");
+  });
+
+  it("keeps server candidates switchable when the active projection is deny-all", () => {
+    const deniedSession = { ...session, capabilities: [] };
+    const authorization = createAuthorizationProjection(deniedSession, true);
+    const html = renderToStaticMarkup(<RoleScopeBar session={deniedSession} authorization={authorization} activeWorkbench="platform" onWorkbenchChange={() => undefined} />);
+    expect(authorization.can("platform.summary.read")).toBe(false);
+    expect(html).toContain("平台控制台");
+    expect(html).toContain("商家工作区");
+    expect(html).toContain("当前运营工作台");
+  });
+
+  it("retains the last server-projected switch targets while the next workbench session is unavailable", () => {
+    const html = renderToStaticMarkup(<RoleScopeBar authorization={createAuthorizationProjection(undefined, true)} activeWorkbench="workspace" availableWorkbenches={["platform", "workspace"]} onWorkbenchChange={() => undefined} />);
+    expect(html).toContain("平台控制台");
+    expect(html).toContain("商家工作区");
+    expect(html).toContain("当前运营工作台");
+  });
+
+  it("hides denied content and explains read-only state", () => {
+    const authorization = createAuthorizationProjection(session, true);
+    const hidden = renderToStaticMarkup(<AuthorizationProvider authorization={authorization}><PermissionGate capability="identity.update"><button>停用身份</button></PermissionGate></AuthorizationProvider>);
+    const readOnly = renderToStaticMarkup(<AuthorizationProvider authorization={authorization}><PermissionGate capability="identity.update" behavior="readonly"><button>停用身份</button></PermissionGate></AuthorizationProvider>);
+    expect(hidden).not.toContain("停用身份");
+    expect(readOnly).toContain("当前范围为只读");
+    expect(readOnly).toContain("identity.update");
+  });
+
+  it("shows denied capability, scope and request evidence", () => {
+    const html = renderToStaticMarkup(<AccessDeniedResult domainLabel="用户与租户" capability="identity.read" scope={{ kind: "workspace", id: "ws_1" }} requestId="req_1" traceId="trace_1" reasonCode="CAPABILITY_DENIED" onBack={() => undefined} onRefresh={() => undefined} />);
+    expect(html).toContain("identity.read");
+    expect(html).toContain("workspace:ws_1");
+    expect(html).toContain("req_1");
+    expect(html).toContain("trace_1");
+    expect(html).toContain("CAPABILITY_DENIED");
+    expect(html).toContain("刷新权限");
+    expect(html).toContain('role="alert"');
+  });
+});

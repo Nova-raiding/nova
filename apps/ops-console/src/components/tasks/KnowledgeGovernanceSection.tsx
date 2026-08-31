@@ -6,6 +6,7 @@ import { KnowledgeRulesPanel } from "./knowledge/KnowledgeRulesPanel";
 import { LearningSuggestionsPanel } from "./knowledge/LearningSuggestionsPanel";
 import { MarketingQueuePanel } from "./knowledge/MarketingQueuePanel";
 import { UploadedAssetGovernance } from "./knowledge/UploadedAssetGovernance";
+import { DeliveryGovernancePanel } from "./knowledge/DeliveryGovernancePanel";
 
 interface KnowledgeGovernanceSectionProps {
   model: OpsConsoleModel;
@@ -91,6 +92,11 @@ export function KnowledgeGovernanceSection({
             key: "queue",
             label: `任务队列（${queueCount}）`,
             children: <MarketingQueuePanel model={model} />,
+          },
+          {
+            key: "delivery",
+            label: "交付证据",
+            children: <DeliveryGovernancePanel model={model} />,
           },
         ]}
       />

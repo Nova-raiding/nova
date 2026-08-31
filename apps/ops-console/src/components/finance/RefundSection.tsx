@@ -1,4 +1,4 @@
-import { Button, Card, Form, Input, Tag } from "antd";
+import { Button, Card, Form, Input, Modal, Tag } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 
 interface RefundSectionProps {
@@ -7,6 +7,16 @@ interface RefundSectionProps {
 
 export function RefundSection({ model }: RefundSectionProps) {
   const { refundForm, refund, canFinance, refundSubmitting } = model;
+  const confirmRefund = (values: { orderId: string; reason: string }) => {
+    Modal.confirm({
+      title: "确认创建退款？",
+      content: `订单 ${values.orderId} 将按服务端订单状态和原支付金额执行退款。原因：${values.reason}`,
+      okText: "确认退款",
+      cancelText: "返回修改",
+      okButtonProps: { danger: true },
+      onOk: () => refund(values),
+    });
+  };
 
   return (
     <Card
@@ -16,7 +26,7 @@ export function RefundSection({ model }: RefundSectionProps) {
       <Form
         form={refundForm}
         layout="inline"
-        onFinish={refund}
+        onFinish={confirmRefund}
         onFinishFailed={({ errorFields }) => {
           const first = errorFields[0]?.name;
           if (first) refundForm.scrollToField(first, { block: "center", focus: true });

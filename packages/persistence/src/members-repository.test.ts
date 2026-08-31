@@ -7,11 +7,14 @@ describe('PostgresMembersRepository', () => {
     const now = '2026-08-28T00:00:00.000Z'
     const current = { id: 'member_1', workspaceId: 'ws_1', externalSubject: 'user_1', displayName: '用户一', role: 'operator', status: 'active', invitedBy: 'admin', revision: 2, createdAt: now, updatedAt: now }
     const calls: string[] = []
-    const query = vi.fn(async (sql: string) => {
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
       calls.push(sql.split(' ')[0]!)
       if (sql.startsWith('SELECT id')) return { rows: [current] }
       if (sql.startsWith('INSERT INTO workspace_members')) return { rows: [{ ...current, role: 'support', revision: 3 }] }
-      if (sql.startsWith('INSERT INTO workspace_operation_audit')) return { rows: [{ id: 'audit_1', workspaceId: 'ws_1', actorId: 'admin', action: 'member.upsert', resourceType: 'workspace_member', resourceId: 'user_1', before: current, after: { ...current, role: 'support', revision: 3 }, reason: '角色调整', createdAt: now }] }
+      if (sql.startsWith('INSERT INTO workspace_operation_audit')) {
+        expect(params?.[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+        return { rows: [{ id: params?.[0], workspaceId: 'ws_1', actorId: 'admin', action: 'member.upsert', resourceType: 'workspace_member', resourceId: 'user_1', before: current, after: { ...current, role: 'support', revision: 3 }, reason: '角色调整', createdAt: now }] }
+      }
       return { rows: [] }
     })
     const client: SqlClient = { query: query as unknown as SqlClient['query'], release: vi.fn() }
@@ -26,11 +29,14 @@ describe('PostgresMembersRepository', () => {
     const now = '2026-08-28T00:00:00.000Z'
     const current = { id: 'member_1', workspaceId: 'ws_1', externalSubject: 'user_1', displayName: '用户一', role: 'operator', status: 'active', invitedBy: 'admin', revision: 2, createdAt: now, updatedAt: now }
     const calls: string[] = []
-    const query = vi.fn(async (sql: string) => {
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
       calls.push(sql.split(' ')[0]!)
       if (sql.startsWith('SELECT id')) return { rows: [current] }
       if (sql.startsWith('UPDATE workspace_members')) return { rows: [{ ...current, status: 'suspended', revision: 3 }] }
-      if (sql.startsWith('INSERT INTO workspace_operation_audit')) return { rows: [{ id: 'audit_1', workspaceId: 'ws_1', actorId: 'admin', action: 'user.suspend', resourceType: 'workspace_member', resourceId: 'user_1', before: current, after: { ...current, status: 'suspended', revision: 3 }, reason: '风险工单', createdAt: now }] }
+      if (sql.startsWith('INSERT INTO workspace_operation_audit')) {
+        expect(params?.[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+        return { rows: [{ id: params?.[0], workspaceId: 'ws_1', actorId: 'admin', action: 'user.suspend', resourceType: 'workspace_member', resourceId: 'user_1', before: current, after: { ...current, status: 'suspended', revision: 3 }, reason: '风险工单', createdAt: now }] }
+      }
       return { rows: [] }
     })
     const client: SqlClient = { query: query as unknown as SqlClient['query'], release: vi.fn() }

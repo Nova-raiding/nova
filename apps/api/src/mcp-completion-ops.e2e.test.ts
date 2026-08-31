@@ -26,10 +26,17 @@ async function configureBearerMembers(entries: Array<{
   actorId: string
   role: WorkspaceRole
   grantWorkspaces?: string[]
+  gatewayRoles?: string[]
+  workbenches?: Array<'workspace' | 'platform'>
 }>) {
-  const grants: Record<string, { workspaces: string[]; actor_id: string; roles: string[] }> = {}
+  const grants: Record<string, { workspaces: string[]; actor_id: string; roles: string[]; workbenches?: Array<'workspace' | 'platform'> }> = {}
   for (const entry of entries) {
-    grants[entry.token] = { workspaces: entry.grantWorkspaces ?? [entry.workspaceId], actor_id: entry.actorId, roles: [entry.role] }
+    grants[entry.token] = {
+      workspaces: entry.grantWorkspaces ?? [entry.workspaceId],
+      actor_id: entry.actorId,
+      roles: entry.gatewayRoles ?? [entry.role],
+      ...(entry.workbenches ? { workbenches: entry.workbenches } : {}),
+    }
     await workspaceMembers.upsert({
       workspaceId: entry.workspaceId,
       externalSubject: entry.actorId,
@@ -68,7 +75,7 @@ async function callMcp<T = unknown>(
 }
 
 function resultOf<T>(response: McpResponse<T>): T {
-  expect(response.status).toBe(200)
+  expect(response.status, JSON.stringify(response.body)).toBe(200)
   expect(response.body.error).toBeNull()
   expect(response.body.data).not.toBeNull()
   return response.body.data!.result
@@ -97,6 +104,8 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       supportA: `support-a-${suffix}`,
       financeA: `finance-a-${suffix}`,
       platformA: `platform-a-${suffix}`,
+      commercialFinance: `commercial-finance-${suffix}`,
+      commercialOps: `commercial-ops-${suffix}`,
       ownerB: `owner-b-${suffix}`,
       adminB: `admin-b-${suffix}`,
     }
@@ -107,6 +116,8 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       { token: tokens.supportA, workspaceId: workspaceA, actorId: `support-a-${suffix}`, role: 'support' },
       { token: tokens.financeA, workspaceId: workspaceA, actorId: `finance-a-${suffix}`, role: 'finance' },
       { token: tokens.platformA, workspaceId: workspaceA, actorId: `platform-a-${suffix}`, role: 'platform_ops' },
+      { token: tokens.commercialFinance, workspaceId: workspaceA, actorId: `commercial-finance-${suffix}`, role: 'finance', gatewayRoles: ['finance_ops'], workbenches: ['platform'] },
+      { token: tokens.commercialOps, workspaceId: workspaceA, actorId: `commercial-ops-${suffix}`, role: 'platform_ops', gatewayRoles: ['platform_ops'], workbenches: ['platform'] },
       { token: tokens.ownerB, workspaceId: workspaceB, actorId: `owner-b-${suffix}`, role: 'workspace_owner' },
       { token: tokens.adminB, workspaceId: workspaceB, actorId: `admin-b-${suffix}`, role: 'merchant_admin' },
     ])
@@ -173,10 +184,10 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     ]))
 
     for (const [method, token] of [
-      ['ops.commercial.offers.list', tokens.financeA],
-      ['ops.commercial.addons.list', tokens.financeA],
-      ['ops.commercial.coupons.list', tokens.financeA],
-      ['ops.commercial.rollouts.list', tokens.ownerA],
+      ['ops.commercial.offers.list', tokens.commercialFinance],
+      ['ops.commercial.addons.list', tokens.commercialFinance],
+      ['ops.commercial.coupons.list', tokens.commercialFinance],
+      ['ops.commercial.rollouts.list', tokens.commercialOps],
     ] as const) {
       expect(resultOf<any[]>(await callMcp(base, token, workspaceA, method))).toEqual(expect.any(Array))
     }
@@ -185,22 +196,27 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       contentType: 'application/json',
       content: '[]',
     })
+    expect(resultOf<any>(await callMcp(base, tokens.operatorA, workspaceA, 'billing.export', { format: 'json', limit: '20' }))).toMatchObject({
+      scope: 'mine',
+      filename: 'my-billing.json',
+      contentType: 'application/json',
+    })
     expect(resultOf<any>(await callMcp(base, tokens.financeA, workspaceA, 'billing.model-usage.reconciliation.run', { limit: '10' }))).toMatchObject({
       state: 'completed', checked: 0, settled: [], pending: [], actor_id: `finance-a-${suffix}`,
     })
 
-    const alerts = resultOf<any[]>(await callMcp(base, tokens.operatorA, workspaceA, 'ops.alerts.list', {
+    const alerts = resultOf<any[]>(await callMcp(base, tokens.commercialOps, workspaceA, 'ops.alerts.list', {
       status: 'open',
       code: 'OAUTH_REAUTH_REQUIRED',
       entity_id: revokedAccount.id,
     }))
     expect(alerts).toHaveLength(1)
-    const acknowledged = resultOf<any>(await callMcp(base, tokens.operatorA, workspaceA, 'ops.alert.ack', {
+    const acknowledged = resultOf<any>(await callMcp(base, tokens.commercialOps, workspaceA, 'ops.alert.ack', {
       alert_id: alerts[0].id,
       reason: '已联系商家重新授权',
     }))
-    expect(acknowledged).toMatchObject({ id: alerts[0].id, workspaceId: workspaceA, status: 'acknowledged', acknowledgedBy: `operator-a-${suffix}` })
-    const acknowledgedList = resultOf<any[]>(await callMcp(base, tokens.operatorA, workspaceA, 'ops.alerts.list', {
+    expect(acknowledged).toMatchObject({ id: alerts[0].id, workspaceId: workspaceA, status: 'acknowledged', acknowledgedBy: `commercial-ops-${suffix}` })
+    const acknowledgedList = resultOf<any[]>(await callMcp(base, tokens.commercialOps, workspaceA, 'ops.alerts.list', {
       status: 'acknowledged', entity_id: revokedAccount.id,
     }))
     expect(acknowledgedList).toEqual([expect.objectContaining({ id: alerts[0].id, acknowledgementReason: '已联系商家重新授权' })])
@@ -221,7 +237,9 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     expect(replayedConsume).toMatchObject({ charged: true, snapshot: { workspaceId: workspaceA, usedTasks: 1 } })
     const usageConflict = await callMcp(base, tokens.ownerA, workspaceA, 'billing.usage.consume', { task_id: conflictingTaskId, idempotency_key: usageKey })
     expect(usageConflict.body.error?.code).toBe('USAGE_IDEMPOTENCY_CONFLICT')
-    const firstRefund = resultOf<any>(await callMcp(base, tokens.financeA, workspaceA, 'billing.usage.refund', { task_id: taskId, idempotency_key: usageKey, reason: '测试额度退回' }))
+    const firstRefundResponse = await callMcp(base, tokens.financeA, workspaceA, 'billing.usage.refund', { task_id: taskId, idempotency_key: usageKey, reason: '测试额度退回' })
+    expect(firstRefundResponse.status, JSON.stringify(firstRefundResponse.body)).toBe(200)
+    const firstRefund = resultOf<any>(firstRefundResponse)
     const replayedRefund = resultOf<any>(await callMcp(base, tokens.financeA, workspaceA, 'billing.usage.refund', { task_id: taskId, idempotency_key: usageKey, reason: '测试额度退回重放' }))
     expect(firstRefund).toMatchObject({ refunded: true, snapshot: { workspaceId: workspaceA, usedTasks: 0 } })
     expect(replayedRefund).toMatchObject({ refunded: false, snapshot: { workspaceId: workspaceA, usedTasks: 0 } })
@@ -281,7 +299,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     expect(listedB).toEqual([expect.objectContaining({ id: foreignRequest.id, workspaceId: workspaceB, status: 'pending' })])
 
     const missingRequired = await callMcp(base, tokens.ownerA, workspaceA, 'billing.usage.consume', { task_id: 'missing-key' })
-    const extraParameter = await callMcp(base, tokens.financeA, workspaceA, 'ops.commercial.offers.list', { unexpected: 'rejected' })
+    const extraParameter = await callMcp(base, tokens.commercialFinance, workspaceA, 'ops.commercial.offers.list', { unexpected: 'rejected' })
     const invalidEnum = await callMcp(base, tokens.financeA, workspaceA, 'billing.export', { format: 'xml' })
     const invalidAlertStatus = await callMcp(base, tokens.operatorA, workspaceA, 'ops.alerts.list', { status: 'closed' })
     expect(missingRequired.body.error?.code).toBe('INVALID_REQUEST')
@@ -301,7 +319,6 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       { token: tokens.financeA, method: 'ops.alert.ack', params: { alert_id: alerts[0].id, reason: '低权限确认' } },
       { token: tokens.operatorA, method: 'billing.usage.refund', params: { task_id: taskId, idempotency_key: usageKey, reason: '低权限退款' } },
       { token: tokens.operatorA, method: 'billing.model-usage.reconciliation.run', params: { limit: '1' } },
-      { token: tokens.operatorA, method: 'billing.export', params: { format: 'csv' } },
       { token: tokens.operatorA, method: 'workspace.data.delete.request', params: { scope: 'assets', reason: '低权限删除', idempotency_key: `denied-${suffix}` } },
     ]
     for (const testCase of lowPrivilegeCases) {

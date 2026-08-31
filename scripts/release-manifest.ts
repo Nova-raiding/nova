@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, relative } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
@@ -8,6 +9,8 @@ export interface ReleaseManifest {
   releaseId: string
   generatedAt: string
   components: {
+    repositoryVersion: string
+    releaseGitSha: string
     pluginVersion: string
     skillBundleVersion: string
     mcpVersion: string
@@ -17,7 +20,7 @@ export interface ReleaseManifest {
   }
   mcp: { methodCount: number; methodListSha256: string; bridgeSha256: string }
   artifacts: Array<{ path: string; sha256: string; bytes: number }>
-  productionEvidence: { capability: string; capacity: string; modelRelay: string; payment: string; restore: string }
+  productionEvidence: { capability: string; capacity: string; modelRelay: string; payment: string; restore: string; objectStorage: string; codexAppHost: string; canonicalCutover: string }
 }
 
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -33,11 +36,15 @@ export function buildReleaseManifest(input: {
   connectorBuild?: string
   modelId?: string
   promptBundleVersion?: string
+  releaseGitSha?: string
   capabilityEvidenceRef?: string
   capacityEvidenceRef?: string
   paymentEvidenceRef?: string
   modelRelayEvidenceRef?: string
   restoreEvidenceRef?: string
+  objectStorageEvidenceRef?: string
+  codexAppHostEvidenceRef?: string
+  canonicalCutoverEvidenceRef?: string
 }): ReleaseManifest {
   const root = resolve(input.root ?? process.cwd())
   const pluginManifestPath = resolve(root, 'apps/plugin/.codex-plugin/plugin.json')
@@ -46,10 +53,34 @@ export function buildReleaseManifest(input: {
   const bridgePath = resolve(root, 'apps/plugin/mcp/bridge.mjs')
   const pluginManifest = readJson(pluginManifestPath)
   const packageJson = readJson(packagePath)
+  const releaseMetadataPath = resolve(root, 'release-metadata.json')
+  const releaseMetadata = readJson(releaseMetadataPath)
+  const repositoryVersion = readFileSync(resolve(root, 'VERSION'), 'utf8').trim()
   const pluginVersion = String(pluginManifest.version ?? '')
   if (!/^0\.1\.0\+codex\.[0-9]{14}$/.test(pluginVersion)) throw new Error('plugin manifest version is not a release version')
   if (packageJson.version !== pluginVersion) throw new Error('plugin package version does not match plugin manifest')
-  const artifactPaths = [pluginManifestPath, packagePath, skillPath, bridgePath]
+  if (releaseMetadata.repositoryVersion !== repositoryVersion) throw new Error('release metadata repository version does not match VERSION')
+  if (releaseMetadata.pluginVersion !== pluginVersion) throw new Error('release metadata plugin version does not match plugin manifest')
+  if (releaseMetadata.mcpMethodCount !== MCP_METHODS.length) throw new Error('release metadata MCP method count does not match the current contract registry')
+  const merchantHiddenMethods = new Set([
+    'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve', 'billing.usage.consume',
+    'billing.usage.refund', 'billing.refund', 'billing.reconciliation.run', 'platform.settings.update',
+    'platform.revoke', 'platform.model.status', 'asset.scan', 'content.codex.prepare', 'content.codex.commit',
+  ])
+  const bridge = readFileSync(bridgePath, 'utf8')
+  const bridgeStart = bridge.indexOf('const METHODS = {')
+  const bridgeEnd = bridge.indexOf('\n}\n\n', bridgeStart)
+  const methodDefinitions = bridgeStart >= 0 && bridgeEnd > bridgeStart ? bridge.slice(bridgeStart, bridgeEnd) : ''
+  const bridgeToolCount = [...methodDefinitions.matchAll(/^  '([^']+)'\s*:/gmu)].map(match => match[1]!).filter(name => !name.startsWith('ops.') && !merchantHiddenMethods.has(name)).length
+  if (releaseMetadata.merchantBridgeToolCount !== bridgeToolCount) throw new Error('release metadata merchant bridge tool count does not match the current bridge surface')
+  const opsNavigation = readFileSync(resolve(root, 'apps/ops-console/src/navigation/opsNavigation.ts'), 'utf8')
+  const opsDomainCount = [...(opsNavigation.match(/export const opsDomains = \[(.*?)\] as const/su)?.[1] ?? '').matchAll(/"[a-z0-9-]+"/gu)].length
+  if (releaseMetadata.opsDomainCount !== opsDomainCount) throw new Error('release metadata Ops domain count does not match the current navigation surface')
+  const releaseGitSha = input.releaseGitSha?.trim()
+    || process.env.RELEASE_GIT_SHA?.trim()
+    || execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  if (!/^[a-f0-9]{40}$/u.test(releaseGitSha)) throw new Error('release git SHA must be a full 40-character commit SHA')
+  const artifactPaths = [resolve(root, 'VERSION'), resolve(root, 'CHANGELOG.md'), releaseMetadataPath, pluginManifestPath, packagePath, skillPath, bridgePath, resolve(root, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'), resolve(root, 'apps/api/openapi.yaml'), resolve(root, 'packages/contracts/src/mcp.ts')]
   const artifacts = artifactPaths.map(path => {
     const bytes = readFileSync(path)
     return { path: relative(root, path), sha256: sha256(bytes), bytes: bytes.byteLength }
@@ -59,6 +90,8 @@ export function buildReleaseManifest(input: {
     releaseId: input.releaseId,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     components: {
+      repositoryVersion,
+      releaseGitSha,
       pluginVersion,
       skillBundleVersion: process.env.SKILL_BUNDLE_VERSION?.trim() || pluginVersion,
       mcpVersion: process.env.MCP_VERSION?.trim() || pluginVersion,
@@ -74,6 +107,9 @@ export function buildReleaseManifest(input: {
       modelRelay: input.modelRelayEvidenceRef ?? (process.env.MODEL_RELAY_EVIDENCE_REF?.trim() || 'not-provided'),
       payment: input.paymentEvidenceRef ?? (process.env.PAYMENT_EVIDENCE_REF?.trim() || 'not-provided'),
       restore: input.restoreEvidenceRef ?? (process.env.RESTORE_EVIDENCE_REF?.trim() || 'not-provided'),
+      objectStorage: input.objectStorageEvidenceRef ?? (process.env.OBJECT_STORAGE_EVIDENCE_REF?.trim() || 'not-provided'),
+      codexAppHost: input.codexAppHostEvidenceRef ?? (process.env.CODEX_APP_HOST_EVIDENCE_REF?.trim() || 'not-provided'),
+      canonicalCutover: input.canonicalCutoverEvidenceRef ?? (process.env.CANONICAL_CUTOVER_EVIDENCE_REF?.trim() || 'not-provided'),
     },
   }
 }

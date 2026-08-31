@@ -38,7 +38,7 @@ export function useOpsNavigation(): {
     window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
     window.requestAnimationFrame(() =>
       document
-        .querySelector<HTMLElement>(".ops-page")
+        .querySelector<HTMLElement>("#ops-main-content")
         ?.focus({ preventScroll: true }),
     );
   };

@@ -121,7 +121,6 @@ export function CommercialOverviewSection({ model }: OverviewSectionProps) {
     load,
     loadRules,
     enabledCount,
-    sessionRoles,
     can,
     canFinance,
     canPlatformOps,

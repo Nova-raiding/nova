@@ -4,6 +4,7 @@ import type { PublishHandlerResult } from '../../../packages/workers/src/publish
 import { buildPublishObservationRequest, PublishObservationReportError } from '../../../packages/workers/src/publish-observation.js'
 import type { GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
+import { createUnavailableExecutionAuthorizationGuard, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 
 export interface WorkerProjection {
   snapshots: Map<string, { sequence: number; payload: Record<string, unknown> }>
@@ -12,15 +13,23 @@ export interface WorkerProjection {
 
 export interface WorkerHandlerOptions {
   projection?: WorkerProjection
-  onStateSnapshot?: (event: DurableOutboxEvent, projection: WorkerProjection) => Promise<void> | void
-  onTaskCreated?: (event: DurableOutboxEvent, projection: WorkerProjection) => Promise<void> | void
-  publishRequested?: (event: DurableOutboxEvent, projection: WorkerProjection) => Promise<PublishHandlerResult>
-  reconcileRequested?: (event: DurableOutboxEvent, projection: WorkerProjection) => Promise<PublishHandlerResult>
-  generationRequested?: (event: DurableOutboxEvent, projection: WorkerProjection) => Promise<GeneratedContent>
-  onGenerationResult?: (event: DurableOutboxEvent, result: { content?: GeneratedContent; error?: { code: string; message: string } }, projection: WorkerProjection) => Promise<void> | void
-  onGenerationDeferred?: (event: DurableOutboxEvent, error: { code: string; message: string; retryAfterSeconds: number }, projection: WorkerProjection) => Promise<void> | void
-  onPublishObservation?: (event: DurableOutboxEvent, observation: PublishHandlerResult, projection: WorkerProjection) => Promise<void> | void
-  syncRequested?: (event: DurableOutboxEvent, projection: WorkerProjection) => Promise<unknown>
+  onStateSnapshot?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
+  onTaskCreated?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
+  publishRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<PublishHandlerResult>
+  reconcileRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<PublishHandlerResult>
+  generationRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<GeneratedContent>
+  /** Executes a frozen ordinary-image request; the callback must persist the
+   * provider result before the outbox event is acknowledged. */
+  imageGenerationRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
+  onGenerationResult?: (event: DurableOutboxEvent, result: { content?: GeneratedContent; error?: { code: string; message: string } }, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
+  onGenerationDeferred?: (event: DurableOutboxEvent, error: { code: string; message: string; retryAfterSeconds: number }, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
+  onPublishObservation?: (event: DurableOutboxEvent, observation: PublishHandlerResult, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
+  syncRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
+  scanRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
+  imageContinuationRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
+  /** Required at the production side-effect boundary. The default denies all
+   * critical execution until an authoritative live recheck port is wired. */
+  executionAuthorization?: WorkerExecutionAuthorizationGuard
 }
 
 export function createWorkerProjection(): WorkerProjection {
@@ -34,7 +43,10 @@ export function createWorkerProjection(): WorkerProjection {
  */
 export function createOutboxHandler(options: WorkerHandlerOptions = {}): DurableOutboxHandler<DurableOutboxEvent, unknown> {
   const projection = options.projection ?? createWorkerProjection()
-  return async ({ event }) => {
+  const executionAuthorization = options.executionAuthorization ?? createUnavailableExecutionAuthorizationGuard()
+  const authorize = (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => executionAuthorization.assertAuthorized(event, operation, signal)
+  return async ({ event, signal }) => {
+    throwIfLeaseLost(signal)
     if (!isObject(event.payload)) {
       throw unknownFailure('MALFORMED_EVENT', `Event ${event.id} payload must be an object`)
     }
@@ -49,7 +61,8 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
       if (!previous || previous.sequence <= event.sequence) {
         projection.snapshots.set(event.aggregateId, { sequence: event.sequence, payload: event.payload })
       }
-      await options.onStateSnapshot?.(event, projection)
+      await options.onStateSnapshot?.(event, projection, signal)
+      throwIfLeaseLost(signal)
       return { value: { handled: event.eventType, aggregateId: event.aggregateId } }
     }
 
@@ -57,48 +70,119 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
       const taskId = typeof event.payload.id === 'string' ? event.payload.id : event.aggregateId
       if (!taskId) throw unknownFailure('MALFORMED_TASK_CREATED', `Event ${event.id} has no task id`)
       projection.tasks.set(taskId, event.payload)
-      await options.onTaskCreated?.(event, projection)
+      await options.onTaskCreated?.(event, projection, signal)
+      throwIfLeaseLost(signal)
       return { value: { handled: event.eventType, taskId } }
     }
 
     if (event.eventType === 'generation.requested' && options.generationRequested) {
+      await authorize(event, 'generation.execute', signal)
       try {
-        const content = await options.generationRequested(event, projection)
-        await options.onGenerationResult?.(event, { content }, projection)
+        const content = await options.generationRequested(event, projection, signal)
+        throwIfLeaseLost(signal)
+        await options.onGenerationResult?.(event, { content }, projection, signal)
+        throwIfLeaseLost(signal)
         return { value: content }
       } catch (error) {
+        throwIfLeaseLost(signal)
         // Quota exhaustion is backpressure, not a terminal generation failure.
         // Leave the outbox event retryable so the user-facing job remains
         // queued while the provider's window resets.
         if (error instanceof QuotaExceededError) {
-          await options.onGenerationDeferred?.(event, { code: error.code, message: error.message, retryAfterSeconds: error.decision.retryAfterSeconds }, projection)
+          await options.onGenerationDeferred?.(event, { code: error.code, message: error.message, retryAfterSeconds: error.decision.retryAfterSeconds }, projection, signal)
           throw new WorkerFailure({ code: error.code, message: error.message, retryable: true, unknown: false })
         }
-        const failure = { code: 'AI_GENERATION_FAILED', message: error instanceof Error ? error.message : 'content generation failed' }
-        await options.onGenerationResult?.(event, { error: failure }, projection)
-        throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: true, unknown: false })
+        const candidateCode = (error as { code?: unknown })?.code
+        const failure = {
+          code: typeof candidateCode === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(candidateCode) ? candidateCode : 'AI_GENERATION_FAILED',
+          message: error instanceof Error ? error.message : 'content generation failed',
+        }
+        if (failure.code === 'GENERATION_JOB_TERMINAL') {
+          throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: false })
+        }
+        await options.onGenerationResult?.(event, { error: failure }, projection, signal)
+        // The user-facing generation job is now terminal. Retrying this
+        // external model event would charge the same logical action again
+        // while the job can no longer accept a result.
+        throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: false })
+      }
+    }
+
+    if (event.eventType === 'image.generation.requested' && options.imageGenerationRequested) {
+      await authorize(event, 'image_generation.execute', signal)
+      try {
+        const result = await options.imageGenerationRequested(event, projection, signal)
+        throwIfLeaseLost(signal)
+        return { value: result }
+      } catch (error) {
+        throwIfLeaseLost(signal)
+        const candidate = error as { code?: unknown; retryable?: unknown; unknown?: unknown }
+        throw new WorkerFailure({
+          code: typeof candidate.code === 'string' ? candidate.code : 'IMAGE_GENERATION_EXECUTION_FAILED',
+          message: error instanceof Error ? error.message : 'image generation failed',
+          retryable: candidate.retryable === true,
+          unknown: candidate.unknown !== false,
+        })
       }
     }
 
     if (event.eventType === 'sync.requested' && options.syncRequested) {
+      await authorize(event, 'catalog.sync.execute', signal)
       try {
-        return { value: await options.syncRequested(event, projection) }
+        const result = await options.syncRequested(event, projection, signal)
+        throwIfLeaseLost(signal)
+        return { value: result }
       } catch (error) {
+        throwIfLeaseLost(signal)
         throw new WorkerFailure({ code: 'SYNC_EXECUTION_FAILED', message: error instanceof Error ? error.message : 'catalog sync failed', retryable: true, unknown: false })
       }
     }
 
+    if (['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'].includes(event.eventType) && options.scanRequested) {
+      try {
+        if (event.eventType === 'asset.scan_redrive_requested') await authorize(event, 'asset.scan.execute', signal)
+        const result = await options.scanRequested(event, projection, signal)
+        throwIfLeaseLost(signal)
+        return { value: result }
+      } catch (error) {
+        throwIfLeaseLost(signal)
+        const candidate = error as { code?: unknown; retryable?: unknown }
+        throw new WorkerFailure({ code: typeof candidate.code === 'string' ? candidate.code : 'ASSET_SCAN_EXECUTION_FAILED', message: error instanceof Error ? error.message : 'asset scan failed', retryable: candidate.retryable !== false, unknown: false })
+      }
+    }
+
+    if (event.eventType === 'asset.generation_continuations.ready' && options.imageContinuationRequested) {
+      await authorize(event, 'asset.continuation.execute', signal)
+      try {
+        const result = await options.imageContinuationRequested(event, projection, signal)
+        throwIfLeaseLost(signal)
+        return { value: result }
+      } catch (error) {
+        throwIfLeaseLost(signal)
+        const candidate = error as { code?: unknown; retryable?: unknown }
+        throw new WorkerFailure({ code: typeof candidate.code === 'string' ? candidate.code : 'IMAGE_CONTINUATION_EXECUTION_FAILED', message: error instanceof Error ? error.message : 'image continuation failed', retryable: candidate.retryable !== false, unknown: false })
+      }
+    }
+
+    if (event.eventType === 'asset.generation_continuation.waiting_scan' || event.eventType === 'asset.generation_continuation.awaiting_rights' || event.eventType === 'asset.generation_continuations.awaiting_confirmation') {
+      return { value: { handled: event.eventType, aggregateId: event.aggregateId } }
+    }
+
     if ((event.eventType === 'publish.requested' && options.publishRequested) || (event.eventType === 'publish.reconcile_requested' && options.reconcileRequested)) {
+      await authorize(event, event.eventType === 'publish.requested' ? 'publish.execute' : 'publish.reconcile', signal)
       let executionCompleted = false
       try {
         const executor = event.eventType === 'publish.requested' ? options.publishRequested! : options.reconcileRequested!
-        const observation = await executor(event, projection)
+        const observation = await executor(event, projection, signal)
         executionCompleted = true
-        await options.onPublishObservation?.(event, observation, projection)
+        throwIfLeaseLost(signal)
+        await options.onPublishObservation?.(event, observation, projection, signal)
+        throwIfLeaseLost(signal)
         const report = buildPublishObservationRequest(observation, { source: event.eventType === 'publish.reconcile_requested' ? 'reconcile' : 'publish' })
         if (!report.status.found || report.status.state === 'unknown') return { state: 'unknown' as const, value: observation }
         return { value: observation }
       } catch (error) {
+        throwIfLeaseLost(signal)
         // A committed connector result followed by a failed API write must be
         // retried as delivery failure. Do not emit a synthetic unknown
         // observation that could downgrade a real submitted/published result.
@@ -122,7 +206,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         // reporting is configured, persist that observation before the durable
         // outbox row is marked unknown.
         if (options.onPublishObservation) {
-          await options.onPublishObservation(event, { remoteStatus: { found: false, state: 'unknown', simulated: false } }, projection)
+          await options.onPublishObservation(event, { remoteStatus: { found: false, state: 'unknown', simulated: false } }, projection, signal)
         }
         throw new WorkerFailure({ code: normalized.code ?? 'PUBLISH_EXECUTION_FAILED', message: normalized.message ?? 'publish execution failed', retryable: normalized.retryable ?? false, unknown: normalized.unknown ?? true })
       }
@@ -139,6 +223,11 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
 
     throw unknownFailure('UNSUPPORTED_EVENT_TYPE', `Event type ${event.eventType} requires manual handling`)
   }
+}
+
+function throwIfLeaseLost(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  throw new WorkerFailure({ code: 'OUTBOX_LEASE_LOST', message: 'outbox lease lost; external operation aborted', retryable: false, unknown: true })
 }
 
 function unknownFailure(code: string, message: string): WorkerFailure {

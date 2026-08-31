@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createConfiguredConnector, type AccessCredential, type CredentialProvider, type HttpConnectorConfig, type Platform } from './index.js'
 
-const platforms: Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo']
+// Keep the real HTTP contract honest for every supported platform. The social
+// connectors have generic bearer/mapping adapters, but they must still pass
+// the same OAuth, read, write, receipt, revoke and media boundary checks.
+const platforms: Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
 
 function makeConfig(platform: Platform): HttpConnectorConfig {
   return {
@@ -88,5 +91,11 @@ describe.each(platforms)('%s HTTP connector FR-15 contract', (platform) => {
     await expect(connector.uploadMedia?.({ workspaceId: 'ws', accountId: `${platform}-shop`, credentialRef: 'vault://shop' }, { visualRef: 'dvis_1', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: Buffer.from('image'), idempotencyKey: 'publish:media-1' })).resolves.toMatchObject({ platform, role: 'main', url: `https://cdn.${platform}.test/media-1.jpg`, simulated: false })
     expect(calls[0]?.url).toBe(`https://${platform}.test/api/media/upload`)
     expect(calls[0]?.body).toContain('aW1hZ2U=')
+  })
+
+  it('fails closed for media when the platform upload path is not configured', async () => {
+    const connector = createConfiguredConnector(platform, { config: makeConfig(platform), credentials: makeStore(), fetch: async () => json({}) , allowTestCredentials: true, allowTestAdapters: true })
+    expect((connector as { mediaUploadReadiness?: () => { ready: boolean } }).mediaUploadReadiness?.().ready).toBe(false)
+    await expect(connector.uploadMedia?.({ workspaceId: 'ws', accountId: `${platform}-shop` }, { visualRef: 'dvis_1', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: Buffer.from('image'), idempotencyKey: `publish:${platform}:media-missing` })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED', platform } })
   })
 })

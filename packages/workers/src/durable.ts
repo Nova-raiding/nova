@@ -12,6 +12,7 @@ export interface DurableOutboxEvent {
   attempts?: number
   nextAttemptAt?: string
   leaseToken?: string
+  leaseUntil?: string
   unknownAt?: string
   lastError?: Record<string, unknown>
   publishedAt?: string
@@ -19,6 +20,8 @@ export interface DurableOutboxEvent {
 
 export interface DurableOutboxStore<E extends DurableOutboxEvent = DurableOutboxEvent> {
   claimPending(workspaceId: string, options?: OutboxClaimOptions): Promise<E[]>
+  validateLease(workspaceId: string, id: string, leaseToken: string, now?: string): Promise<E>
+  renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now?: string): Promise<E>
   ack(workspaceId: string, id: string, leaseToken?: string): Promise<E>
   recordFailure(workspaceId: string, id: string, failure: WorkerError, nextAttemptAt: string, leaseToken?: string): Promise<E>
   markUnknown(workspaceId: string, id: string, failure: WorkerError, leaseToken?: string): Promise<E>
@@ -37,6 +40,10 @@ export interface QueuePort<T> {
   ack(message: QueueMessage<T>): Promise<void>
   /** Requeue is used only when persistence cannot record the outcome. */
   nack(message: QueueMessage<T>, delayMs?: number): Promise<void>
+  /** Requeues claims whose worker lease expired after a crash. */
+  recoverStale?(olderThanMs: number): Promise<number>
+  /** True only when the durable queue still contains this message. */
+  contains?(id: string): Promise<boolean>
 }
 
 /**
@@ -45,9 +52,16 @@ export interface QueuePort<T> {
  */
 export interface RedisQueueTransport {
   push(key: string, value: string): Promise<void>
-  /** timeoutSeconds <= 0 means a non-blocking pop; positive values may block. */
+  /**
+   * Atomically claims into a processing list. timeoutSeconds <= 0 means a
+   * non-blocking claim; positive values may block.
+   */
   pop(key: string, timeoutSeconds: number): Promise<string | undefined>
+  /** Removes an acknowledged claim from the processing list. */
   remove?(key: string, value: string): Promise<void>
+  /** Atomically returns claims older than the cutoff to the ready queue. */
+  recover?(key: string, olderThanEpochMs: number): Promise<number>
+  contains?(key: string, id: string): Promise<boolean>
 }
 
 export class RedisQueueAdapter<T> implements QueuePort<T> {
@@ -65,15 +79,22 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
   }
 
   async ack(message: QueueMessage<T>): Promise<void> {
-    // BRPOP-style transports remove on dequeue. Reliable queue transports may
-    // override remove to clear a pending list/visibility record.
     await this.transport.remove?.(this.key, JSON.stringify({ id: message.id, value: this.encode(message.value) }))
   }
 
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
     if (delayMs > 0) await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+    // Push before removing the claim. A crash between these operations can
+    // duplicate an idempotent outbox message, while the opposite order could
+    // lose it until the database lease expires.
     await this.enqueue(message)
+    await this.ack(message)
   }
+
+  async recoverStale(olderThanMs: number): Promise<number> {
+    return await this.transport.recover?.(this.key, Date.now() - olderThanMs) ?? 0
+  }
+  async contains(id: string): Promise<boolean> { return await this.transport.contains?.(this.key, id) ?? false }
 }
 
 export class InMemoryQueue<T> implements QueuePort<T> {
@@ -87,6 +108,7 @@ export class InMemoryQueue<T> implements QueuePort<T> {
     if (delayMs > 0) await new Promise<void>(resolve => setTimeout(resolve, delayMs))
     await this.enqueue(message)
   }
+  async contains(id: string): Promise<boolean> { return this.messages.some(message => message.id === id) }
   get size(): number { return this.messages.length }
 }
 
@@ -100,10 +122,9 @@ export interface DurableDispatcherOptions {
 }
 
 export type DurableDispatchResult<E> = { state: 'succeeded' | 'unknown' | 'queued' | 'dead_letter'; event: E } | { state: 'empty' }
-export type DurableOutboxHandler<E, R> = (context: { event: E; attempt: number; now: number }) => Promise<HandlerResult<R> | R>
+export type DurableOutboxHandler<E, R> = (context: { event: E; attempt: number; now: number; signal?: AbortSignal }) => Promise<HandlerResult<R> | R>
 
 export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutboxEvent, R = unknown> {
-  private readonly queued = new Set<string>()
   private readonly now: () => number
   private readonly leaseMs: number
   private readonly baseDelayMs: number
@@ -126,12 +147,12 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   }
 
   async restore(workspaceId: string, limit = 100): Promise<number> {
+    await this.queue.recoverStale?.(this.leaseMs)
     const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now: new Date(this.now()).toISOString(), ...this.claim })
     let added = 0
     for (const event of events) {
-      if (this.queued.has(event.id)) continue
+      if (await this.queue.contains?.(event.id)) continue
       await this.queue.enqueue({ id: event.id, value: event })
-      this.queued.add(event.id)
       added += 1
     }
     return added
@@ -140,17 +161,59 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   async dispatchOnce(): Promise<DurableDispatchResult<E>> {
     const message = await this.queue.dequeue()
     if (!message) return { state: 'empty' }
-    this.queued.delete(message.id)
     const event = message.value
     const attempt = (event.attempts ?? 0) + 1
+    const leaseToken = event.leaseToken
+    if (!leaseToken) {
+      await this.queue.ack(message)
+      return { state: 'dead_letter', event }
+    }
+
+    try {
+      await this.store.validateLease(event.workspaceId, event.id, leaseToken, new Date(this.now()).toISOString())
+    } catch (leaseError) {
+      return this.handleLeaseError(event, message, leaseError)
+    }
+
+    const abortController = new AbortController()
+    const heartbeatIntervalMs = Math.max(1, Math.floor(this.leaseMs / 3))
+    let heartbeatTimer: ReturnType<typeof setTimeout> | undefined
+    let heartbeatInFlight: Promise<void> | undefined
+    let stopped = false
+    let leaseError: unknown
+
+    const heartbeat = async (): Promise<void> => {
+      if (stopped) return
+      try {
+        await this.store.renewLease(event.workspaceId, event.id, leaseToken, this.leaseMs, new Date(this.now()).toISOString())
+      } catch (cause) {
+        leaseError = cause
+        abortController.abort(cause)
+      } finally {
+        if (!stopped && leaseError === undefined) heartbeatTimer = setTimeout(runHeartbeat, heartbeatIntervalMs)
+      }
+    }
+    const runHeartbeat = () => { heartbeatInFlight = heartbeat() }
+    heartbeatTimer = setTimeout(runHeartbeat, heartbeatIntervalMs)
+
+    const stopHeartbeat = async () => {
+      stopped = true
+      if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer)
+      await heartbeatInFlight
+    }
+
     let normalized: HandlerResult<R>
     try {
-      const result = await this.handler({ event, attempt, now: this.now() })
+      const result = await this.handler({ event, attempt, now: this.now(), signal: abortController.signal })
       normalized = result && typeof result === 'object' && ('state' in result || 'value' in result) ? result as HandlerResult<R> : { value: result as R }
     } catch (cause) {
+      await stopHeartbeat()
+      if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError)
       const failure = normalizeDurableError(cause)
       return this.recordHandlerFailure(event, message, failure)
     }
+    await stopHeartbeat()
+    if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError)
 
     try {
       if (normalized.state === 'unknown') {
@@ -170,6 +233,15 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       await this.queue.nack(message, this.baseDelayMs)
       throw persistenceError
     }
+  }
+
+  private async handleLeaseError(event: E, message: QueueMessage<E>, leaseError: unknown): Promise<DurableDispatchResult<E>> {
+    if (isStaleOutboxError(leaseError)) {
+      await this.queue.ack(message)
+      return { state: 'dead_letter', event }
+    }
+    await this.queue.nack(message, this.baseDelayMs)
+    throw leaseError
   }
 
   private async recordHandlerFailure(event: E, message: QueueMessage<E>, failure: WorkerError): Promise<DurableDispatchResult<E>> {

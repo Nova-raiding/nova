@@ -13,9 +13,11 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "tsBuildInfoFile": "dist/config/tsconfig.tsbuildinfo",
     "noEmit": true,
     "jsx": "react-jsx"
   },
   "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

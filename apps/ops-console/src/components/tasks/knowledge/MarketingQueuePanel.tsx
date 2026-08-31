@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Alert, Button, Form, Input, Modal, Space, Table, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Descriptions, Empty, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import { parseRevisionChangesJson, type RevisionCreationValues } from "./revisionCreation.js";
+import { describeOpsError, rpc } from "../../../api/opsClient.js";
+import { CampaignLifecycleControl } from './CampaignLifecycleControl.js'
+import { assetScanRecoveryEvidence } from "./assetScanRecovery.js";
 
 interface MarketingQueuePanelProps {
   model: OpsConsoleModel;
@@ -15,6 +18,49 @@ interface QueueRow {
   detail: string;
   updatedAt: string;
   action: ReactNode;
+}
+
+export interface PublishBatchDetail {
+  id: string;
+  state: string;
+  pauseReason?: string;
+  items: Array<{ taskId: string; productId?: string; platform?: string; accountId?: string; contentVersionId?: string; state: string; error?: { code?: string; message?: string } }>;
+}
+
+export function visualEvidenceState(reviewStatus: string) {
+  return reviewStatus === "blocked" ? "blocked" : "evidence_unverified";
+}
+
+export function publishBatchItemScope(item: PublishBatchDetail["items"][number]) {
+  return {
+    platform: item.platform ?? null,
+    accountId: item.accountId ?? null,
+    productId: item.productId ?? null,
+    taskId: item.taskId,
+    state: item.state,
+  };
+}
+
+export function publishBatchItemKey(item: PublishBatchDetail["items"][number]) {
+  return JSON.stringify([item.taskId, item.platform ?? null, item.accountId ?? null, item.productId ?? null, item.contentVersionId ?? null]);
+}
+
+export function parsePublishBatchDetail(value: unknown): PublishBatchDetail {
+  if (!value || typeof value !== "object") throw new Error("批次详情响应格式无效");
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.id !== "string" || typeof candidate.state !== "string" || !Array.isArray(candidate.items)) throw new Error("批次详情缺少 id、state 或 items");
+  const items = candidate.items.map((value, index) => {
+    if (!value || typeof value !== "object") throw new Error(`批次项目 ${index + 1} 格式无效`);
+    const item = value as Record<string, unknown>;
+    if (typeof item.taskId !== "string" || typeof item.state !== "string") throw new Error(`批次项目 ${index + 1} 缺少 taskId 或 state`);
+    const optionalString = (key: string) => typeof item[key] === "string" ? item[key] as string : undefined;
+    const rawError = item.error;
+    const error = rawError && typeof rawError === "object"
+      ? { code: typeof (rawError as Record<string, unknown>).code === "string" ? (rawError as Record<string, unknown>).code as string : undefined, message: typeof (rawError as Record<string, unknown>).message === "string" ? (rawError as Record<string, unknown>).message as string : undefined }
+      : undefined;
+    return { taskId: item.taskId, state: item.state, productId: optionalString("productId"), platform: optionalString("platform"), accountId: optionalString("accountId"), contentVersionId: optionalString("contentVersionId"), error };
+  });
+  return { id: candidate.id, state: candidate.state, pauseReason: typeof candidate.pauseReason === "string" ? candidate.pauseReason : undefined, items };
 }
 
 function stateColor(state: string) {
@@ -31,7 +77,25 @@ function stateColor(state: string) {
   return "orange";
 }
 
+export function queueStateLabel(state: string) {
+  return ({
+    queued: "排队中",
+    running: "处理中",
+    processing: "处理中",
+    failed: "失败",
+    rejected: "已驳回",
+    unknown: "待对账",
+    manual_attention: "待人工处理",
+    blocked: "已阻断",
+    succeeded: "已完成",
+    completed: "已完成",
+    published: "已发布",
+    ready: "待处理",
+  } as Record<string, string>)[state] ?? "状态待确认";
+}
+
 export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
+  const { message } = App.useApp();
   const {
     acknowledgePublish,
     assignQueueItem,
@@ -42,13 +106,14 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
     retryFailedPublishBatch,
     retryGeneration,
     reviewVisual,
+    reconcileImageExecution,
   } = model;
   const [revisionForm] = Form.useForm<RevisionCreationValues>();
   const [revisionTarget, setRevisionTarget] = useState<OpsConsoleModel["marketingQueue"]["publish"][number]>();
   const [revisionSubmitting, setRevisionSubmitting] = useState(false);
   const [revisionError, setRevisionError] = useState("");
   const [assignmentForm] = Form.useForm<{ operatorId: string }>();
-  const [assignmentTarget, setAssignmentTarget] = useState<{ itemType: "generation" | "publish"; itemId: string; revision: number; currentOperator?: string | null }>();
+  const [assignmentTarget, setAssignmentTarget] = useState<{ itemType: "generation" | "publish" | "image"; itemId: string; revision: number; currentOperator?: string | null }>();
   const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
   const [batchDecision, setBatchDecision] = useState<{
     action: "pause" | "resume" | "retry";
@@ -59,11 +124,54 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [batchError, setBatchError] = useState("");
   const batchSubmitLockRef = useRef(false);
+  const batchDetailRequestRef = useRef(0);
+  const batchDetailRegionRef = useRef<HTMLDivElement>(null);
+  const [batchDetail, setBatchDetail] = useState<PublishBatchDetail>();
+  const [batchDetailTarget, setBatchDetailTarget] = useState("");
+  const [batchDetailLoading, setBatchDetailLoading] = useState(false);
+  const [batchDetailError, setBatchDetailError] = useState("");
+  const [imageEvidenceTarget, setImageEvidenceTarget] = useState<OpsConsoleModel["marketingQueue"]["imageExecutions"][number]>();
+  const [imageEvidenceExporting, setImageEvidenceExporting] = useState(false);
+  const [imageReconcileTarget, setImageReconcileTarget] = useState<OpsConsoleModel["marketingQueue"]["imageExecutions"][number]>();
+  const [imageResolution, setImageResolution] = useState<"completed" | "failed">("failed");
+  const [imageReason, setImageReason] = useState("");
+  const [imageEvidenceRef, setImageEvidenceRef] = useState("");
+  const [imageReconcileSubmitting, setImageReconcileSubmitting] = useState(false);
+  const [visualReviewTarget, setVisualReviewTarget] = useState<{
+    visual: OpsConsoleModel["marketingQueue"]["visuals"][number];
+    status: "passed" | "blocked";
+  }>();
+  const [visualReviewReason, setVisualReviewReason] = useState("");
+  const [visualReviewSubmitting, setVisualReviewSubmitting] = useState(false);
   const revisionErrorRef = useRef<HTMLDivElement>(null);
+
+  const exportImageEvidence = async () => {
+    if (!imageEvidenceTarget) return;
+    setImageEvidenceExporting(true);
+    try {
+      const response = await rpc("ops.marketing.image.evidence.export", { job_id: imageEvidenceTarget.jobId }) as { fileName?: string; contentType?: string; json?: string };
+      if (typeof response.json !== "string") throw new Error("证据包响应格式无效");
+      const blob = new Blob([response.json], { type: response.contentType ?? "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = response.fileName ?? `image-evidence-${imageEvidenceTarget.jobId}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "图片证据包导出失败");
+    } finally {
+      setImageEvidenceExporting(false);
+    }
+  };
 
   useEffect(() => {
     if (revisionError) revisionErrorRef.current?.focus();
   }, [revisionError]);
+
+  useEffect(() => {
+    if (!batchDetailLoading && (batchDetail || batchDetailError)) batchDetailRegionRef.current?.focus();
+  }, [batchDetail, batchDetailError, batchDetailLoading]);
 
   const closeRevisionModal = () => {
     if (revisionSubmitting) return;
@@ -88,17 +196,45 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       setRevisionSubmitting(false);
     }
   };
-  const openAssignment = (target: { itemType: "generation" | "publish"; itemId: string; revision: number; currentOperator?: string | null }) => {
+  const openAssignment = (target: { itemType: "generation" | "publish" | "image"; itemId: string; revision: number; currentOperator?: string | null }) => {
     assignmentForm.setFieldsValue({ operatorId: target.currentOperator ?? "" });
     setAssignmentTarget(target);
   };
   const closeAssignment = () => { if (!assignmentSubmitting) { setAssignmentTarget(undefined); assignmentForm.resetFields(); } };
+  const openVisualReview = (visual: OpsConsoleModel["marketingQueue"]["visuals"][number], status: "passed" | "blocked") => {
+    setVisualReviewTarget({ visual, status });
+    setVisualReviewReason("");
+  };
+  const closeVisualReview = () => {
+    if (visualReviewSubmitting) return;
+    setVisualReviewTarget(undefined);
+    setVisualReviewReason("");
+  };
+  const submitVisualReview = async () => {
+    if (!visualReviewTarget || visualReviewReason.trim().length < 4) return;
+    setVisualReviewSubmitting(true);
+    try {
+      await reviewVisual(visualReviewTarget.visual, visualReviewTarget.status, visualReviewReason);
+      setVisualReviewTarget(undefined);
+      setVisualReviewReason("");
+    } finally {
+      setVisualReviewSubmitting(false);
+    }
+  };
   const submitAssignment = async (values: { operatorId: string }) => {
     if (!assignmentTarget) return;
     setAssignmentSubmitting(true);
     const saved = await assignQueueItem(assignmentTarget.itemType, assignmentTarget.itemId, assignmentTarget.revision, values.operatorId);
     setAssignmentSubmitting(false);
     if (saved) closeAssignment();
+  };
+  const closeImageReconcile = () => { if (!imageReconcileSubmitting) { setImageReconcileTarget(undefined); setImageReason(""); setImageEvidenceRef(""); setImageResolution("failed"); } };
+  const submitImageReconcile = async () => {
+    if (!imageReconcileTarget || imageReason.trim().length < 4 || !imageEvidenceRef.trim()) return;
+    setImageReconcileSubmitting(true);
+    try {
+      if (await reconcileImageExecution({ jobId: imageReconcileTarget.jobId, resolution: imageResolution, evidenceRef: imageEvidenceRef, reason: imageReason, revision: imageReconcileTarget.revision })) closeImageReconcile();
+    } finally { setImageReconcileSubmitting(false); }
   };
   const openBatchDecision = (
     action: "pause" | "resume" | "retry",
@@ -115,6 +251,20 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
     setBatchReason("");
     setBatchConfirmations("");
     setBatchError("");
+  };
+  const loadBatchDetail = async (batchId: string) => {
+    const requestId = ++batchDetailRequestRef.current;
+    setBatchDetailLoading(true);
+    setBatchDetailTarget(batchId);
+    setBatchDetailError("");
+    try {
+      const result = parsePublishBatchDetail(await rpc("publish.batch.get", { batch_id: batchId }));
+      if (requestId === batchDetailRequestRef.current) setBatchDetail(result);
+    } catch (cause) {
+      if (requestId === batchDetailRequestRef.current) { setBatchDetail(undefined); setBatchDetailError(describeOpsError(cause)); }
+    } finally {
+      if (requestId === batchDetailRequestRef.current) setBatchDetailLoading(false);
+    }
   };
   const submitBatchDecision = async () => {
     if (!batchDecision || batchSubmitLockRef.current) return;
@@ -158,6 +308,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       updatedAt: batch.updatedAt,
       action: (
         <Space wrap>
+          <Button type="link" onClick={() => void loadBatchDetail(batch.id)}>查看逐项状态</Button>
           {batch.state === "paused" ? (
             <Button type="link" onClick={() => openBatchDecision("resume", batch)}>确认恢复</Button>
           ) : !["completed", "failed"].includes(batch.state) ? (
@@ -232,40 +383,56 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       id: `visual:${visual.visualRef}`,
       kind: "视觉候选",
       taskId: visual.taskId ?? visual.productId,
-      state: visual.reviewStatus,
-      detail: `SKU：${visual.skuIds.join(", ") || "全 SKU"}；候选 ${visual.ordinal}；${visual.assignedOperatorId ? `负责人：${visual.assignedOperatorId}` : "未分配负责人"}`,
+      state: visualEvidenceState(visual.reviewStatus),
+      detail: `人工画面状态：${visual.reviewStatus}；真实性证据未返回。SKU：${visual.skuIds.join(", ") || "全 SKU"}；候选 ${visual.ordinal}；${visual.assignedOperatorId ? `负责人：${visual.assignedOperatorId}` : "未分配负责人"}`,
       updatedAt: visual.updatedAt,
       action: (
         <Space>
           <Button
             type="link"
-            onClick={() => void reviewVisual(visual, "passed")}
+            onClick={() => openVisualReview(visual, "passed")}
           >
-            通过
+            人工画面通过（非真实性）
           </Button>
           <Button
             type="link"
             danger
-            onClick={() => void reviewVisual(visual, "blocked")}
+            onClick={() => openVisualReview(visual, "blocked")}
           >
             阻断
           </Button>
         </Space>
       ),
     })),
-    ...marketingQueue.uploadedAssetRisks.map((asset) => ({
-      id: `uploaded-asset:${asset.id}`,
-      kind: "上传素材",
-      taskId: asset.name,
-      state: asset.readiness.status,
-      detail: `${asset.readiness.reasons.join("；") || "待处理"}；下一步：${asset.nextAction?.label ?? asset.nextStep ?? "联系安全审核"}`,
-      updatedAt: asset.createdAt,
-      action: <Typography.Text type="secondary">商家交互确认</Typography.Text>,
+    ...marketingQueue.imageExecutions.map((execution) => ({
+      id: `image-execution:${execution.jobId}`,
+      kind: "图片执行对账",
+      taskId: execution.taskId ?? execution.jobId,
+      state: execution.state,
+      detail: `${execution.assignedOperatorId ? `负责人：${execution.assignedOperatorId}；` : "未分配负责人；"}告警：${execution.alertState === "open" ? "超时待处理" : "观察中"}；最后动作：${execution.lastAction}；归档：${execution.archiveState}；Provider 请求：${execution.providerRequestId ?? "尚未确认"}；对账：${execution.reconciliationStatus ?? "未收口"}${execution.reconciliationEvidenceRef ? `（${execution.reconciliationEvidenceRef}）` : ""}；attempt ${execution.attempt}；${execution.errorMessage ?? execution.reconciliationReason ?? execution.nextAction}`,
+      updatedAt: execution.updatedAt,
+      action: <Space wrap><Button type="link" onClick={() => setImageEvidenceTarget(execution)} aria-label={`查看图片任务 ${execution.jobId} 的执行证据`}>查看执行证据</Button><Button type="link" onClick={() => { setImageReconcileTarget(execution); setImageResolution("failed"); setImageReason(""); setImageEvidenceRef(""); }}>人工收口</Button><Button type="link" onClick={() => openAssignment({ itemType: "image", itemId: execution.jobId, revision: execution.revision, currentOperator: execution.assignedOperatorId })}>分配负责人</Button></Space>,
     })),
+    ...marketingQueue.uploadedAssetRisks.map((asset) => {
+      const recovery = assetScanRecoveryEvidence(asset, marketingQueue.assetScanFailures);
+      const deadLetterDetail = recovery.eventId
+        ? `；扫描死信 event_id ${recovery.eventId}；错误 ${recovery.errorCode ?? "SCAN_FAILED"}${recovery.errorMessage ? ` · ${recovery.errorMessage}` : ""}；retryable ${recovery.retryable === true ? "true" : recovery.retryable === false ? "false" : "未返回"}；revision ${recovery.assetRevision ?? "未返回"}`
+        : "；扫描死信证据未返回，保持禁止人工重试";
+      return {
+        id: `uploaded-asset:${asset.id}`,
+        kind: "上传素材",
+        taskId: asset.name,
+        state: asset.readiness.status,
+        detail: `${asset.readiness.reasons.join("；") || "待处理"}${deadLetterDetail}；下一步：${asset.nextAction?.label ?? asset.nextStep ?? "联系安全审核"}`,
+        updatedAt: asset.createdAt,
+        action: <Typography.Text type="secondary">请在下方“上传素材治理动作”核对并处理</Typography.Text>,
+      };
+    }),
   ];
 
   return (
     <>
+      <CampaignLifecycleControl canControl={model.canQueue}/>
       <Table
       rowKey="id"
       pagination={{ pageSize: 8 }}
@@ -276,8 +443,8 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
         {
           title: "状态",
           dataIndex: "state",
-          render: (value: string) => (
-            <Tag color={stateColor(value)}>{value}</Tag>
+            render: (value: string) => (
+            <Tag color={stateColor(value)} aria-label={`状态：${queueStateLabel(value)}`}>{queueStateLabel(value)}</Tag>
           ),
         },
         { title: "原因/下一步", dataIndex: "detail" },
@@ -289,6 +456,80 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
         { title: "操作", dataIndex: "action" },
       ]}
       />
+      <Modal open={Boolean(imageEvidenceTarget)} title="图片执行证据" footer={imageEvidenceTarget ? <Button loading={imageEvidenceExporting} onClick={() => void exportImageEvidence()}>导出脱敏证据包</Button> : null} onCancel={() => setImageEvidenceTarget(undefined)} destroyOnHidden>
+        {imageEvidenceTarget && <Descriptions column={1} size="small" bordered>
+          <Descriptions.Item label="Job ID">{imageEvidenceTarget.jobId}</Descriptions.Item>
+          <Descriptions.Item label="Task / Product">{imageEvidenceTarget.taskId ?? "未绑定任务"} / {imageEvidenceTarget.productId}</Descriptions.Item>
+          <Descriptions.Item label="执行状态"><Tag color={stateColor(imageEvidenceTarget.state)}>{queueStateLabel(imageEvidenceTarget.state)}</Tag></Descriptions.Item>
+          <Descriptions.Item label="归档状态">{imageEvidenceTarget.archiveState}</Descriptions.Item>
+          <Descriptions.Item label="执行尝试">{imageEvidenceTarget.attempt}</Descriptions.Item>
+          <Descriptions.Item label="Provider request ID">{imageEvidenceTarget.providerRequestId ?? "尚未确认"}</Descriptions.Item>
+          <Descriptions.Item label="请求事件 ID">{imageEvidenceTarget.eventId}</Descriptions.Item>
+          <Descriptions.Item label="错误">{imageEvidenceTarget.errorCode ?? "无"}{imageEvidenceTarget.errorMessage ? `：${imageEvidenceTarget.errorMessage}` : ""}</Descriptions.Item>
+          <Descriptions.Item label="下一步">{imageEvidenceTarget.nextAction}</Descriptions.Item>
+          <Descriptions.Item label="告警/最后动作">{imageEvidenceTarget.alertState === "open" ? "超时待处理" : "观察中"} · {imageEvidenceTarget.lastAction}</Descriptions.Item>
+          <Descriptions.Item label="关闭依据">{imageEvidenceTarget.closureEvidence ?? "尚未关闭"}</Descriptions.Item>
+          <Descriptions.Item label="对账状态">{imageEvidenceTarget.reconciliationStatus ?? "未收口"} · revision {imageEvidenceTarget.reconciliationRevision ?? "—"}</Descriptions.Item>
+          <Descriptions.Item label="对账证据">{imageEvidenceTarget.reconciliationEvidenceRef ?? "未提供"}</Descriptions.Item>
+          <Descriptions.Item label="对账原因">{imageEvidenceTarget.reconciliationReason ?? "未提供"}</Descriptions.Item>
+          <Descriptions.Item label="更新时间">{new Date(imageEvidenceTarget.updatedAt).toLocaleString()}</Descriptions.Item>
+        </Descriptions>}
+      </Modal>
+      <Modal open={Boolean(imageReconcileTarget)} title="人工收口图片执行" okText="提交收口" cancelText="取消" confirmLoading={imageReconcileSubmitting} okButtonProps={{ danger: imageResolution === "failed", disabled: imageReason.trim().length < 4 || !imageEvidenceRef.trim() }} onCancel={closeImageReconcile} onOk={() => void submitImageReconcile()} destroyOnHidden>
+        <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+          <Alert type="warning" showIcon title="未知状态不能直接视为成功" description="完成收口仅在服务端确认任务成功、产物已归档且安全扫描通过时允许；失败收口必须留下可追溯证据。" />
+          <Typography.Text type="secondary">{imageReconcileTarget ? `${imageReconcileTarget.jobId} · revision ${imageReconcileTarget.revision}` : ""}</Typography.Text>
+          <Select aria-label="图片收口结果" value={imageResolution} onChange={setImageResolution} options={[{ value: "failed", label: "确认失败" }, { value: "completed", label: "确认完成（需产物门禁通过）" }]} style={{ width: "100%" }} />
+          <Input aria-label="图片收口证据引用" value={imageEvidenceRef} onChange={(event) => setImageEvidenceRef(event.target.value)} placeholder="证据引用：工单、Provider 查询记录或审计附件 ID" maxLength={500} />
+          <Input.TextArea aria-label="图片收口原因" value={imageReason} onChange={(event) => setImageReason(event.target.value)} placeholder="填写人工判断依据（至少 4 个字符）" maxLength={500} showCount rows={4} />
+        </Space>
+      </Modal>
+      <Modal
+        open={Boolean(visualReviewTarget)}
+        title={visualReviewTarget?.status === "passed" ? "确认视觉候选通过" : "确认阻断视觉候选"}
+        okText={visualReviewTarget?.status === "passed" ? "提交通过" : "提交阻断"}
+        cancelText="取消"
+        confirmLoading={visualReviewSubmitting}
+        okButtonProps={{ danger: visualReviewTarget?.status === "blocked", disabled: visualReviewReason.trim().length < 4 }}
+        onCancel={closeVisualReview}
+        onOk={() => void submitVisualReview()}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            {visualReviewTarget ? `候选 ${visualReviewTarget.visual.ordinal} · ${visualReviewTarget.visual.visualRef} · revision ${visualReviewTarget.visual.revision}` : ""}
+          </Typography.Text>
+          <Alert
+            showIcon
+            type={visualReviewTarget?.status === "passed" ? "warning" : "error"}
+            title={visualReviewTarget?.status === "passed" ? "此动作只代表人工画面审查通过" : "阻断后候选不可进入选图链路"}
+            description="真实性、扫描、权益和发布门禁仍由服务端独立判断；版本变化时提交会被拒绝。"
+          />
+          <Input.TextArea
+            aria-label="视觉审核原因"
+            value={visualReviewReason}
+            onChange={(event) => setVisualReviewReason(event.target.value)}
+            placeholder="填写本次审核依据（至少 4 个字符）"
+            maxLength={300}
+            showCount
+            autoFocus
+            rows={4}
+          />
+        </Space>
+      </Modal>
+      <div className="ops-visually-hidden" role="status" aria-live="polite" aria-atomic="true">{batchDetailLoading ? "正在读取批次逐项状态" : batchDetailError ? "批次逐项状态读取失败" : batchDetail ? `已读取批次 ${batchDetail.id} 的 ${batchDetail.items.length} 个项目` : ""}</div>
+      {(batchDetailLoading || batchDetailError || batchDetail) && <div ref={batchDetailRegionRef} className="ops-batch-detail-region" tabIndex={-1}><Card size="small" className="ops-batch-detail" title={batchDetail ? `批次 ${batchDetail.id} · 逐项状态` : "批次逐项状态"} extra={batchDetail ? <Button type="link" onClick={() => { batchDetailRequestRef.current += 1; setBatchDetail(undefined); setBatchDetailTarget(""); setBatchDetailError(""); setBatchDetailLoading(false); }}>关闭</Button> : undefined}>
+        {batchDetailLoading && <Typography.Text type="secondary">正在按平台、店铺和任务读取逐项状态…</Typography.Text>}
+        {batchDetailError && <Alert type="error" showIcon role="alert" title="批次详情读取失败" description={batchDetailError} action={<Button onClick={() => { if (batchDetailTarget) void loadBatchDetail(batchDetailTarget); }}>重试</Button>} />}
+        {batchDetail && batchDetail.items.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="服务端返回空批次；没有任何项目可安全操作"/>}
+        {batchDetail && batchDetail.items.length > 0 && <Table rowKey={publishBatchItemKey} pagination={false} scroll={{ x: 760 }} dataSource={batchDetail.items} columns={[
+          { title: "平台", dataIndex: "platform", render: (value?: string) => value ?? <Typography.Text type="danger">未返回</Typography.Text> },
+          { title: "店铺账号", dataIndex: "accountId", render: (value?: string) => value ?? <Typography.Text type="danger">未绑定</Typography.Text> },
+          { title: "商品 / 任务", render: (_: unknown, item: PublishBatchDetail["items"][number]) => <div><b>{item.productId ?? "商品 ID 未返回"}</b><br/><Typography.Text type="secondary">{item.taskId}</Typography.Text></div> },
+          { title: "状态", dataIndex: "state", render: (value: string) => <Tag color={stateColor(value)} aria-label={`状态：${queueStateLabel(value)}`}>{queueStateLabel(value)}</Tag> },
+          { title: "错误 / 下一步", render: (_: unknown, item: PublishBatchDetail["items"][number]) => item.error ? `${item.error.code ?? "ITEM_FAILED"} · ${item.error.message ?? "人工核对后重试"}` : item.state === "failed" ? "缺少结构化错误；禁止自动重试" : "继续观测独立平台回执" },
+        ]}/>}
+      </Card></div>}
       <Modal
         title="创建发布修正版"
         open={Boolean(revisionTarget)}
@@ -298,7 +539,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
         onCancel={closeRevisionModal}
         onOk={() => revisionForm.submit()}
       >
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Text type="secondary">
             {revisionTarget ? `${revisionTarget.platform} · ${revisionTarget.id} · ${revisionTarget.rejection?.message ?? revisionTarget.rejection?.rawCode ?? "平台驳回"}` : ""}
           </Typography.Text>

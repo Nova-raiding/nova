@@ -1,10 +1,14 @@
+import { createHash } from 'node:crypto'
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
+import { assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
 
 export interface ContentGenerationInput {
   platform: string
   product: {
+    id?: string
     title: string
     category?: string
     price?: number
@@ -13,6 +17,8 @@ export interface ContentGenerationInput {
     attributes?: Record<string, string>
   }
   directionId: string
+  /** Immutable product fact versions that the provider may cite. */
+  confirmedFactSourceIds?: string[]
   /** Frozen, merchant-confirmed visual constraints; providers must treat them as non-negotiable. */
   brandVisualRules?: {
     logo?: { assetIds: string[]; allowRecolor: boolean; allowDistortion: boolean; allowRedraw: boolean; clearSpace?: string }
@@ -72,7 +78,7 @@ export interface StaticBrief {
 }
 
 export interface ContentGenerator {
-  generate(input: ContentGenerationInput): Promise<GeneratedContent>
+  generate(input: ContentGenerationInput, options?: { signal?: AbortSignal }): Promise<GeneratedContent>
 }
 
 export interface OpenAICompatibleGeneratorOptions {
@@ -82,8 +88,11 @@ export interface OpenAICompatibleGeneratorOptions {
   timeoutMs?: number
   fetch?: typeof fetch
   usageSink?: RelayUsageSink
+  relaySecurity?: RelaySecurityPolicy
   maxInputTokens?: number
   maxOutputTokens?: number
+  /** Maximum output tokens reserved across the initial call and repairs. */
+  maxTotalOutputTokens?: number
 }
 
 const MAX_TEXT_RELAY_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -99,6 +108,20 @@ function readContent(payload: unknown): unknown {
   const content = choice.message.content
   if (typeof content !== 'string') return content
   try { return JSON.parse(content) } catch { return undefined }
+}
+
+function normalizeProviderStructure(value: unknown, input: ContentGenerationInput): unknown {
+  if (!isRecord(value)) return value
+  // Never manufacture module provenance by copying every frozen product source.
+  // A source must be selected for the specific module by the provider; an empty
+  // list must reach schema validation and fail closed.
+  const modules = value.modules
+  if (!isRecord(value.brief)) return modules === value.modules ? value : { ...value, modules }
+  const brief = { ...value.brief }
+  if (brief.targetDimensions === undefined || brief.targetDimensions === '') brief.targetDimensions = '按目标平台版位规范配置，未配置时由设计确认'
+  if (Array.isArray(brief.visualHierarchy) && brief.visualHierarchy.length === 0) brief.visualHierarchy = ['商品主体', '标题', '核心卖点']
+  if (Array.isArray(brief.protectedAreas) && brief.protectedAreas.length === 0) brief.protectedAreas = ['商品主体', 'Logo（如有）', '包装文字与认证标识（如有）']
+  return { ...value, ...(modules !== undefined ? { modules } : {}), brief }
 }
 
 /** Validate without repairing or silently dropping fields. This is the trust boundary for model/Codex output. */
@@ -118,7 +141,7 @@ export function validateContentSchema(value: unknown, source = 'content'): Gener
   if (value.modules !== undefined) {
     if (!Array.isArray(value.modules) || value.modules.length === 0) errors.push('modules 必须是非空数组')
     else {
-      modules = value.modules.map((raw, index) => {
+      modules = value.modules.map((raw, index): ContentModule | undefined => {
         if (!isRecord(raw)) { errors.push(`modules[${index}] 必须是对象`); return undefined }
         const key = requiredText(raw, 'key', `modules[${index}].key`)
         const moduleTitle = requiredText(raw, 'title', `modules[${index}].title`)
@@ -128,12 +151,13 @@ export function validateContentSchema(value: unknown, source = 'content'): Gener
         if (!Array.isArray(sourceIds) || sourceIds.length === 0 || sourceIds.some(item => typeof item !== 'string' || !item.trim())) errors.push(`modules[${index}].factSourceIds 必须是非空字符串数组`)
         const factSourceIds = Array.isArray(sourceIds) ? sourceIds.filter((item): item is string => typeof item === 'string').map(item => item.trim()) : []
         const contentKind = raw.contentKind
-        if (contentKind !== undefined && !['fact', 'creative', 'pending'].includes(String(contentKind))) errors.push(`modules[${index}].contentKind 必须是 fact、creative 或 pending`)
+        if (!['fact', 'creative', 'pending'].includes(String(contentKind))) errors.push(`modules[${index}].contentKind 必须是 fact、creative 或 pending`)
+        const normalizedContentKind: NonNullable<ContentModule['contentKind']> | undefined = contentKind === 'fact' || contentKind === 'creative' || contentKind === 'pending' ? contentKind : undefined
         if (contentKind === 'pending' && (typeof raw.pendingReason !== 'string' || !raw.pendingReason.trim())) errors.push(`modules[${index}].pendingReason 必须是非空字符串`)
         const referenced = raw.referencedSkuIds
         if (referenced !== undefined && (!Array.isArray(referenced) || referenced.some(item => typeof item !== 'string' || !item.trim()))) errors.push(`modules[${index}].referencedSkuIds 必须是字符串数组`)
         if (raw.imageGuidance !== undefined && (typeof raw.imageGuidance !== 'string' || !raw.imageGuidance.trim())) errors.push(`modules[${index}].imageGuidance 必须是非空字符串`)
-        return { key, title: moduleTitle, purpose, body, factSourceIds, ...(contentKind !== undefined ? { contentKind: contentKind as ContentModule['contentKind'] } : {}), ...(typeof raw.pendingReason === 'string' && raw.pendingReason.trim() ? { pendingReason: raw.pendingReason.trim() } : {}), ...(Array.isArray(referenced) && referenced.length ? { referencedSkuIds: referenced.filter((item): item is string => typeof item === 'string').map(item => item.trim()) } : {}), ...(typeof raw.imageGuidance === 'string' && raw.imageGuidance.trim() ? { imageGuidance: raw.imageGuidance.trim() } : {}) }
+        return normalizedContentKind ? { key, title: moduleTitle, purpose, body, factSourceIds, contentKind: normalizedContentKind, ...(typeof raw.pendingReason === 'string' && raw.pendingReason.trim() ? { pendingReason: raw.pendingReason.trim() } : {}), ...(Array.isArray(referenced) && referenced.length ? { referencedSkuIds: referenced.filter((item): item is string => typeof item === 'string').map(item => item.trim()) } : {}), ...(typeof raw.imageGuidance === 'string' && raw.imageGuidance.trim() ? { imageGuidance: raw.imageGuidance.trim() } : {}) } : undefined
       }).filter((item): item is ContentModule => Boolean(item))
     }
   }
@@ -163,35 +187,45 @@ export function validateContentSchema(value: unknown, source = 'content'): Gener
 function validate(value: unknown): GeneratedContent { return validateContentSchema(value, '模型响应') }
 
 function prompt(input: ContentGenerationInput) {
+  const { usageContext: _usageContext, ...providerInput } = input
   return JSON.stringify({
     role: 'commerce-content-generation',
     knowledgePolicy: 'knowledgeContext.rules are frozen task rules; knowledgeContext.assets have confirmed=false and are reference-only, never product facts; confirmedLearningSuggestions are suggestions and never bypass rule approval; competitorReferences are structured observations only and must not be copied into product claims or verbatim expression.',
-    instruction: '根据商品事实生成合规电商营销内容。不得编造事实，不得使用绝对化或最高级宣传；promotion 只能使用输入中已确认且仍在 validFrom/validTo 内的价格/优惠，必须按 skuIds 限定，不得自行合并不同 SKU 价格。brandVisualRules 是商家已确认的强约束，必须原样遵守，不得改色、变形、重绘 Logo，不得使用禁用色或未批准字体，也不得出现 restrictedSubjects 中列明的禁用内容、人物、代言人或 IP。referenceAssets 中 excellent 素材及原因只用于风格参考，不得把参考素材内容当作当前商品事实；disliked 素材不得进入参考集合。competitorReferences 只用于差异化结构和表达方向，禁止复制竞品原文、品牌或未经确认的卖点。只返回 JSON：title、detail、sellingPoints、modules、brief。modules 中每项必须包含 key、title、purpose、body、factSourceIds 和 contentKind（fact=已确认事实，creative=创意表达，pending=资料缺失）；contentKind=pending 时必须填写 pendingReason；可选 referencedSkuIds 和 imageGuidance；引用 SKU 时必须逐个填入 referencedSkuIds，不能用一个值代表多个 SKU；没有事实的模块省略。brief 必须包含 platform、placement、targetDimensions、visualHierarchy、productImageGuidance、logoSafety、headline、subheadline、coreSellingPoint、cta、textDensity、safeArea、protectedAreas；价格没有输入时不要输出 priceExpression。',
-    input,
+    instruction: '根据商品事实生成合规电商营销内容。不得编造事实，不得使用绝对化或最高级宣传；promotion 只能使用输入中已确认且仍在 validFrom/validTo 内的价格/优惠，必须按 skuIds 限定，不得自行合并不同 SKU 价格。brandVisualRules 是商家已确认的强约束，必须原样遵守，不得改色、变形、重绘 Logo，不得使用禁用色或未批准字体，也不得出现 restrictedSubjects 中列明的禁用内容、人物、代言人或 IP。referenceAssets 中 excellent 素材及原因只用于风格参考，不得把参考素材内容当作当前商品事实；disliked 素材不得进入参考集合。competitorReferences 只用于差异化结构和表达方向，禁止复制竞品原文、品牌或未经确认的卖点。只返回 JSON：title、detail、sellingPoints、modules、brief。modules 中每项必须包含 key、title、purpose、body、factSourceIds 和 contentKind（fact=已确认事实，creative=创意表达，pending=资料缺失）；contentKind=pending 时必须填写 pendingReason；可选 referencedSkuIds 和 imageGuidance；引用 SKU 时必须逐个填入 referencedSkuIds，不能用一个值代表多个 SKU；没有事实的模块省略。brief 必须包含 platform、placement、targetDimensions、visualHierarchy、productImageGuidance、logoSafety、headline、subheadline、coreSellingPoint、cta、textDensity、safeArea、protectedAreas，所有必填字符串都不得为空；输入未提供精确尺寸时 targetDimensions 必须填写“按目标平台版位规范配置，未配置时由设计确认”；价格没有输入时不要输出 priceExpression。',
+    input: providerInput,
   })
 }
 
 export function estimateContentGenerationTokens(value: unknown) { return Math.ceil(Buffer.byteLength(JSON.stringify(value), 'utf8') / 3) }
 
 const REPAIR_MESSAGE_TOKEN_RESERVE = 800
-export function estimateContentGenerationRequestTokens(input: ContentGenerationInput) {
-  return Math.ceil(Buffer.byteLength(prompt(input), 'utf8') / 3) + REPAIR_MESSAGE_TOKEN_RESERVE
+const REPAIR_DIAGNOSTIC_MAX_CHARS = 600
+const REPAIR_MAX_OUTPUT_TOKENS = 800
+export const MAX_CONTENT_INPUT_TOKENS = 4_000
+function estimateRequestTokensFromPrompt(promptText: string, additionalMessages: readonly string[] = []) {
+  const payload = additionalMessages.length ? { prompt: promptText, additionalMessages } : { prompt: promptText }
+  return Math.ceil(Buffer.byteLength(JSON.stringify(payload), 'utf8') / 3) + (additionalMessages.length ? 0 : REPAIR_MESSAGE_TOKEN_RESERVE)
+}
+export function estimateContentGenerationRequestTokens(input: ContentGenerationInput, additionalMessages: readonly string[] = []) {
+  return estimateRequestTokensFromPrompt(prompt(input), additionalMessages)
 }
 
 export function resolveTokenBudget(value: unknown, fallback: number, name: 'input' | 'output') {
   const candidate = value === undefined || value === null || value === '' ? fallback : Number(value)
-  if (!Number.isSafeInteger(candidate) || candidate < 1 || candidate > 1_000_000) {
-    throw new Error(`TOKEN_BUDGET_INVALID: ${name} token budget 必须是 1 至 1000000 的整数`)
+  const maximum = name === 'input' ? MAX_CONTENT_INPUT_TOKENS : 1_000_000
+  if (!Number.isSafeInteger(candidate) || candidate < 1 || candidate > maximum) {
+    throw new Error(`TOKEN_BUDGET_INVALID: ${name} token budget 必须是 1 至 ${maximum} 的整数`)
   }
   return candidate
 }
 
-export function budgetContentGenerationInput(input: ContentGenerationInput, maxInputTokens = 12_000): ContentGenerationInput {
-  maxInputTokens = resolveTokenBudget(maxInputTokens, 12_000, 'input')
+export function budgetContentGenerationInput(input: ContentGenerationInput, maxInputTokens = 4_000): ContentGenerationInput {
+  maxInputTokens = resolveTokenBudget(maxInputTokens, 4_000, 'input')
   const hardContext: ContentGenerationInput = {
     platform: input.platform,
     product: input.product,
     directionId: input.directionId,
+    ...(input.confirmedFactSourceIds?.length ? { confirmedFactSourceIds: input.confirmedFactSourceIds } : {}),
     ...(input.brandVisualRules ? { brandVisualRules: input.brandVisualRules } : {}),
     ...(input.promotions ? { promotions: input.promotions } : {}),
     ...(input.knowledgeContext ? { knowledgeContext: { rules: input.knowledgeContext.rules, assets: [], confirmedLearningSuggestions: [] } } : {}),
@@ -211,7 +245,18 @@ export function budgetContentGenerationInput(input: ContentGenerationInput, maxI
     for (const suggestion of input.knowledgeContext.confirmedLearningSuggestions.slice(0, 20)) addIfFits(() => { context.confirmedLearningSuggestions.push(suggestion) }, () => { context.confirmedLearningSuggestions.pop() })
     if (input.knowledgeContext.competitorReferences?.length) addIfFits(() => { context.competitorReferences = input.knowledgeContext!.competitorReferences!.slice(0, 5) }, () => { delete context.competitorReferences })
   }
+  budgetedInputBudgets.set(bounded, maxInputTokens)
   return bounded
+}
+
+// The application service freezes and budgets the exact envelope before it is
+// persisted. Keep that work reusable when the OpenAI-compatible adapter is the
+// next consumer; the WeakMap does not retain request data after the envelope is
+// unreachable and the budget remains part of the cache key.
+const budgetedInputBudgets = new WeakMap<object, number>()
+
+function reuseBudgetedInput(input: ContentGenerationInput, maxInputTokens: number): ContentGenerationInput {
+  return budgetedInputBudgets.get(input) === maxInputTokens ? input : budgetContentGenerationInput(input, maxInputTokens)
 }
 
 export class OpenAICompatibleContentGenerator implements ContentGenerator {
@@ -221,31 +266,67 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
     this.fetchImpl = options.fetch ?? fetch
   }
 
-  async generate(input: ContentGenerationInput): Promise<GeneratedContent> {
+  async generate(input: ContentGenerationInput, options: { signal?: AbortSignal } = {}): Promise<GeneratedContent> {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 90_000)
+    const callerSignal = options.signal
+    const abortFromCaller = () => controller.abort(callerSignal?.reason)
+    if (callerSignal?.aborted) abortFromCaller()
+    else callerSignal?.addEventListener('abort', abortFromCaller, { once: true })
+    const timeout = setTimeout(() => controller.abort(new DOMException('model provider request timed out', 'TimeoutError')), this.options.timeoutMs ?? 90_000)
     try {
-      const boundedInput = budgetContentGenerationInput(input, this.options.maxInputTokens ?? 12_000)
-      const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: prompt(boundedInput) }]
+      const boundedInput = reuseBudgetedInput(input, this.options.maxInputTokens ?? 4_000)
+      // The initial prompt is immutable across repair attempts. Reusing its
+      // serialized form avoids rebuilding the full product/knowledge payload
+      // for every retry while keeping the exact request body unchanged.
+      const initialPrompt = prompt(boundedInput)
+      const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: initialPrompt }]
+      const repairMessages: string[] = []
+      const maxOutputTokens = this.options.maxOutputTokens ?? 2_500
+      const maxTotalOutputTokens = this.options.maxTotalOutputTokens ?? maxOutputTokens + (2 * Math.min(maxOutputTokens, REPAIR_MAX_OUTPUT_TOKENS))
+      if (!Number.isSafeInteger(maxTotalOutputTokens) || maxTotalOutputTokens < 1 || maxTotalOutputTokens > 1_000_000) throw new Error('TOKEN_BUDGET_INVALID: total output token budget must be between 1 and 1000000')
+      let reservedOutputTokens = 0
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        const response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-          method: 'POST',
-          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
-          body: JSON.stringify({ model: this.options.model, temperature: attempt === 0 ? 0.4 : 0, max_tokens: this.options.maxOutputTokens ?? 2_500, response_format: { type: 'json_object' }, messages }),
-          signal: controller.signal,
-          redirect: 'error',
-        })
-        if (!response.ok) throw new Error(`model provider returned HTTP ${response.status}`)
-        const payload = JSON.parse(await readBoundedResponseText(response, MAX_TEXT_RELAY_RESPONSE_BYTES, 'model response')) as unknown
-        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'text', model: this.options.model, context: input.usageContext })
-        const content = readContent(payload)
+        const requestOutputTokens = attempt === 0 ? maxOutputTokens : Math.min(maxOutputTokens, REPAIR_MAX_OUTPUT_TOKENS)
+        if (reservedOutputTokens + requestOutputTokens > maxTotalOutputTokens) throw new Error('OUTPUT_BUDGET_EXCEEDED: 累计模型输出 Token 预算已用尽，停止继续修复')
+        reservedOutputTokens += requestOutputTokens
+        const requestBody = JSON.stringify({ model: this.options.model, temperature: attempt === 0 ? 0.4 : 0, max_tokens: requestOutputTokens, response_format: { type: 'json_object' }, messages })
+        const logicalAttemptKey = input.usageContext?.actionId?.trim()
+          ? `mm-${createHash('sha256').update(JSON.stringify([input.usageContext.workspaceId?.trim() ?? '', input.usageContext.actionId.trim(), this.options.model.trim(), attempt, requestBody]), 'utf8').digest('hex')}`
+          : providerIdempotencyKey({ operation: 'text_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, requestBody })
+        let response: Response
+        try {
+          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+          response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+            method: 'POST',
+            headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': logicalAttemptKey },
+            body: requestBody,
+            signal: controller.signal,
+            redirect: 'error',
+          })
+        } catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider request') }
+        assertProviderResponseAccepted(response, logicalAttemptKey, 'text provider')
+        let responseText: string
+        try { responseText = await readBoundedResponseText(response, MAX_TEXT_RELAY_RESPONSE_BYTES, 'model response') }
+        catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider response') }
+        let payload: unknown
+        try { payload = JSON.parse(responseText) as unknown }
+        catch (error) { throwProviderOutcomeUnknown(logicalAttemptKey, 'text provider response parsing', error) }
+        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'text', model: this.options.model, context: { ...input.usageContext, providerAttemptId: logicalAttemptKey } })
+        const content = normalizeProviderStructure(readContent(payload), boundedInput)
         try { return validate(content) } catch (error) {
           if (attempt === 2 || !(error instanceof Error) || !error.message.includes('CONTENT_SCHEMA_INVALID')) throw error
-          messages.push({ role: 'user', content: `上一个 JSON 未通过结构校验：${error.message.slice(0, 2_000)}。只修复结构和缺失字段，不增加任何未确认商品事实；依据最初输入重新返回完整 JSON。不要复述上一份响应。` })
+          const repairMessage = `上一个 JSON 未通过结构校验：${error.message.slice(0, REPAIR_DIAGNOSTIC_MAX_CHARS)}。只修复结构和缺失字段，不增加任何未确认商品事实；依据最初输入重新返回完整 JSON。不要复述上一份响应。`
+          const nextRepairMessages = [...repairMessages, repairMessage]
+          if (estimateRequestTokensFromPrompt(initialPrompt, nextRepairMessages) > (this.options.maxInputTokens ?? 4_000)) throw new Error('CONTEXT_BUDGET_EXCEEDED: 累计结构修复消息加入后超过输入 Token 预算')
+          repairMessages.push(repairMessage)
+          messages.push({ role: 'user', content: repairMessage })
         }
       }
       throw new Error('CONTENT_SCHEMA_INVALID: 模型结构化内容修复失败')
-    } finally { clearTimeout(timeout) }
+    } finally {
+      clearTimeout(timeout)
+      callerSignal?.removeEventListener('abort', abortFromCaller)
+    }
   }
 }
 
@@ -254,6 +335,7 @@ export function createContentGeneratorFromEnv(source: Record<string, string | un
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
   const model = source.AI_MODEL?.trim() ?? source.MODEL_ID?.trim()
   if (!relayUrl || !apiKey || !model) return undefined
-  if (!/^https:\/\//u.test(relayUrl) || inspectOutboundUrl(relayUrl, { environment: source.NODE_ENV, resolveDns: false })) return undefined
-  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens: resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 12_000, 'input'), maxOutputTokens: resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output'), ...(usageSink ? { usageSink } : {}) })
+  const relaySecurity = relaySecurityFromEnv(source)
+  if (!relaySecurity) return undefined
+  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens: resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 4_000, 'input'), maxOutputTokens: resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output'), ...(usageSink ? { usageSink } : {}) })
 }

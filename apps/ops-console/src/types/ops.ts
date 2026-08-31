@@ -22,7 +22,7 @@ export type Settings = {
   annualPriceCny: number;
   includedStores: number;
   includedTasks: number;
-  revision: number;
+  revision?: number;
 };
 export type PlatformSetting = {
   platform: Platform;
@@ -68,6 +68,8 @@ export type Member = {
 };
 export type PlatformUser = Member & {
   workspaceId: string;
+  /** Membership revision required by the platform governance RPCs. */
+  revision?: number;
   workspaceStatus: "active" | "disabled";
   invitedBy?: string;
   commercial?: {
@@ -119,6 +121,13 @@ export type WorkspaceSummary = {
   subscriptionStatus: string;
   memberCount: number;
 };
+export type WorkspaceDirectoryPage = {
+  items: WorkspaceSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+};
 export type Offer = {
   id: string;
   code: string;
@@ -128,6 +137,9 @@ export type Offer = {
   includedStores: number;
   includedTasks: number;
   active: boolean;
+  validFrom: string;
+  validTo?: string;
+  changeReason?: string;
   revision: number;
 };
 export type Addon = {
@@ -167,6 +179,8 @@ export type ModelMarkupPolicy = {
   updatedAt: string;
 };
 export type GrowthFunnel = {
+  scope?: "workspace" | "platform";
+  workspaceCount?: number;
   counts: Record<string, number>;
   totalEvents: number;
 };
@@ -184,6 +198,13 @@ export type OperationalAlert = {
   evidence: Record<string, unknown>;
   nextAction: string;
   acknowledgementReason?: string;
+  notification?: {
+    delivery: "disabled" | "blocked" | "delivered" | "failed";
+    attempts: number;
+    requestId?: string;
+    reason?: string;
+    updatedAt: string;
+  };
 };
 export type ModelStatus = {
   ownership: string;
@@ -213,9 +234,23 @@ export type ModelStatus = {
   };
   cost_control_ready?: boolean;
   cost_evidence_ready?: boolean;
+  cost_evidence_by_modality?: Partial<Record<"text" | "image" | "image_edit" | "ocr" | "video", boolean>>;
   release_metadata_ready?: boolean;
   release_metadata_missing?: string[];
   next_actions: string[];
+};
+export type PlatformModelUsageSummary = {
+  scope: "platform";
+  workspaceCount: number;
+  failedWorkspaceCount: number;
+  recordCount: number;
+  totalTokens: number;
+  providerCostCny: number;
+  customerChargeCny: number;
+  unsettledRecordCount: number;
+  byModality: Record<string, number>;
+  byModel: Record<string, number>;
+  bySettlementStatus: Record<string, number>;
 };
 export type Rule = {
   id: string;
@@ -230,6 +265,19 @@ export type Rule = {
   revision: number;
   effectiveFrom?: string;
   effectiveTo?: string;
+};
+export type RuleSyncStatus = {
+  platform: Platform;
+  label: string;
+  officialUrl: string;
+  configured: boolean;
+  machineReadable: boolean;
+  latestVersion: string | null;
+  sourceCheckedAt: string | null;
+  ageHours: number | null;
+  stale: boolean;
+  state: "ready" | "stale" | "not_configured";
+  reason: string;
 };
 export type KnowledgeAsset = {
   id: string;
@@ -272,6 +320,36 @@ export type WorkspaceMetrics = {
     evidence: string[];
   }>;
   quality?: { p0FindingCount: number; modelFailureRate: number };
+  /** Read-only, redacted storage reconciliation status. Never contains object keys or download URLs. */
+  storageReconciliation?: StorageReconciliationSummary;
+};
+export type StorageReconciliationSummary = {
+  status: "clean" | "attention_required" | "failed" | "unavailable";
+  runStatus?: "succeeded" | "failed";
+  lastRunAt?: string | null;
+  errorMessage?: string;
+  quota?: {
+    usedBytes: number;
+    limitBytes?: number;
+    reservedBytes: number;
+    projectedBytes: number;
+    availableBytes?: number;
+  };
+  counts?: {
+    references: number;
+    inventoryObjects: number;
+    matched: number;
+    missing: number;
+    metadataMismatches: number;
+    orphans: number;
+    crossWorkspace: number;
+    duplicates: number;
+  };
+  findingCounts?: Partial<Record<"missing_object" | "object_metadata_mismatch" | "orphan_object" | "cross_workspace_reference" | "cross_workspace_object" | "duplicate_object" | "quota_exceeded", number>>;
+  message?: string;
+  freshness?: "fresh" | "stale" | "expired" | "unknown";
+  freshnessAfterMinutes?: number;
+  workspaceId?: string;
 };
 export type UploadedAssetRisk = {
   id: string;
@@ -290,6 +368,18 @@ export type UploadedAssetRisk = {
     requiredInputs: string[];
   } | null;
   nextStep?: string;
+  /** Optional durable dead-letter evidence returned by ops.marketing.queue. */
+  scanFailure?: AssetScanFailure | null;
+};
+export type AssetScanFailure = {
+  assetId?: string;
+  eventId?: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  retryable?: boolean;
+  assetRevision?: number;
+  sourceRevision?: number;
+  failedAt?: string | null;
 };
 export type MarketingQueue = {
   generation: Array<{
@@ -335,6 +425,30 @@ export type MarketingQueue = {
     revision: number;
     updatedAt: string;
   }>;
+  imageExecutions: Array<{
+    jobId: string;
+    taskId?: string | null;
+    productId: string;
+    state: string;
+    archiveState: string;
+    eventId: string;
+    attempt: number;
+    providerRequestId?: string | null;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+    assignedOperatorId?: string | null;
+    assignedAt?: string | null;
+    revision: number;
+    updatedAt: string;
+    reconciliationStatus?: string | null;
+    reconciliationRevision?: number | null;
+    reconciliationEvidenceRef?: string | null;
+    reconciliationReason?: string | null;
+    alertState: "open" | "monitoring";
+    lastAction: string;
+    closureEvidence?: string | null;
+    nextAction: string;
+  }>;
   batches: Array<{
     id: string;
     state: string;
@@ -347,6 +461,95 @@ export type MarketingQueue = {
   learningSuggestions: LearningSuggestion[];
   assetRisks: KnowledgeAsset[];
   uploadedAssetRisks: UploadedAssetRisk[];
+  /** Optional until the server exposes durable scan dead letters in the queue read model. */
+  assetScanFailures?: AssetScanFailure[];
+};
+export type PlatformTaskSummary = {
+  scope: "platform";
+  workspaceCount: number;
+  failedWorkspaceCount: number;
+  taskCount: number;
+  generationQueueCount: number;
+  publishQueueCount: number;
+  byState: Record<string, number>;
+};
+export type PlatformBrandUnitSummary = {
+  scope: "platform";
+  workspaceCount: number;
+  brandCount: number;
+  boundStoreCount: number;
+  unboundBrandCount: number;
+  canonicalProductCount: number;
+  listingCount: number;
+  workspaces: Array<{
+    workspaceId: string;
+    brandCount: number;
+    boundStoreCount: number;
+    unboundBrandCount: number;
+    canonicalProductCount: number;
+    listingCount: number;
+  }>;
+};
+export type PlatformCanonicalConsistencySummary = {
+  scope: "platform";
+  workspaceCount: number;
+  status: "clean" | "attention_required";
+  counts: Record<"verified" | "legacy_only" | "conflict" | "blocked", number>;
+  generatedAt?: string | null;
+  readMode?: "live" | "snapshot";
+  freshness?: "fresh" | "stale" | "expired";
+  revision?: string | number | null;
+  read_control?: { mode: "legacy_shadow" | "dual_verify" | "canonical_read"; source: string; reason?: string; revision?: number };
+  unified_link_audit?: { persisted: boolean; count: number; items?: Array<{ auditKey: string; entityType: string; entityId: string; status: string; codes: string[]; checkRevision: string; checksum: string; firstSeenAt: string; lastSeenAt: string; lastError?: string }> };
+  reports: Array<CanonicalProductConsistencyReport & { generatedAt?: string; readMode?: "live" | "snapshot"; freshness?: "fresh" | "stale" | "expired" }>;
+};
+export type CanonicalProductConsistencyReport = {
+  workspaceId: string;
+  status: "clean" | "attention_required";
+  contractStatus?: "clean" | "attention_required" | "unknown" | "unavailable";
+  availability?: "available" | "unknown" | "unavailable";
+  generatedAt?: string | null;
+  readMode?: "live" | "snapshot";
+  freshness?: "fresh" | "stale" | "expired" | "unknown";
+  revision?: string | number | null;
+  read_control?: { mode: "legacy_shadow" | "dual_verify" | "canonical_read"; source: string; reason?: string; revision?: number };
+  unified_link_audit?: { persisted: boolean; count: number; items?: Array<{ auditKey: string; entityType: string; entityId: string; status: string; codes: string[]; checkRevision: string; checksum: string; firstSeenAt: string; lastSeenAt: string; lastError?: string }> };
+  counts: Record<"verified" | "legacy_only" | "conflict" | "blocked", number>;
+  findings: Array<{
+    legacyProductId: string;
+    status: "verified" | "legacy_only" | "conflict" | "blocked";
+    contractStatus?: "verified" | "backfilled" | "legacy_only" | "conflict" | "blocked" | "unknown" | "unavailable";
+    productId?: string;
+    codes: string[];
+    canonicalProductId?: string;
+    scope?: { brandId: string | null; platform: string | null; accountId: string | null; listingId: string | null };
+    relation?: { listingIds: string[]; campaignItemIds: string[]; taskIds: string[]; publishJobIds: string[] };
+    listingIds: string[];
+    campaignItemIds: string[];
+    taskIds: string[];
+    publishJobIds: string[];
+    blocking?: { code: string; message: string; impact: string; objectType: string; objectId: string; retryable: boolean } | null;
+    nextAction?: { id: string; method: string; label: string; reason: string; permission: { allowed: boolean; requiredRole: string | null }; requiredInputs: string[]; confirmation: "none" | "interactive_confirmation" } | null;
+    evidence?: { codes: string[]; generatedAt: string; revision: string | number | null };
+  }>;
+  orphanFindings: Array<{
+    entityType: "canonical_product" | "listing" | "campaign_item" | "task" | "publish_job";
+    entityId: string;
+    status: "conflict" | "blocked";
+    codes: string[];
+  }>;
+};
+export type CanonicalBackfillConflict = { id: string; workspaceId: string; runId: string; legacyProductId: string; code: string; canonicalIds: string[]; status: "open" | "claimed" | "resolved" | "dismissed"; assigneeId?: string; resolutionNote?: string; verificationEvidence?: Record<string, unknown>; sourceProductVersion?: number; revision: number; createdAt: string; updatedAt: string };
+export type PlatformMarketingSummary = {
+  scope: "platform";
+  workspaceCount: number;
+  failedWorkspaceCount: number;
+  taskCount: number;
+  generationByState: Record<string, number>;
+  publishByState: Record<string, number>;
+  visualReviewCount: number;
+  assetRiskCount: number;
+  learningSuggestionCount: number;
 };
 export type QueueFilters = {
   platform?: Platform;
@@ -395,6 +598,8 @@ export type PlatformOperation = {
   readiness?: PlatformHealth;
 };
 export type StoreDirectory = {
+  workspaceId?: string;
+  aggregate?: boolean;
   platform: Platform;
   accountId: string;
   alias?: string;
@@ -419,6 +624,7 @@ export type StoreDirectory = {
 export type BrandNavigationItem = {
   id: string;
   title: string;
+  revision?: number;
   platforms: Array<{
     id: string;
     platform: string;
@@ -452,6 +658,9 @@ export type EvidenceReadiness = {
 };
 export type DataDeletionRequest = {
   id: string;
+  workspaceId?: string;
+  aggregate?: boolean;
+  count?: number;
   scope: "workspace" | "assets" | "business";
   reason: string;
   requestedBy: string;
@@ -510,6 +719,10 @@ export type Reconciliation = {
     unsettled_records: number;
     by_modality: Record<string, number>;
     unsettled: ModelUsageSettlementRecord[];
+    reconciliation_status?: "locally_consistent" | "pending" | "needs_review" | string;
+    reconciliation_checks?: { unknown_actor_count: number; orphan_action_count: number; wallet_amount_mismatch_count: number };
+    external_provider_statement?: { status: "externally_unverified" | string; source?: string; endpoint?: string; auth?: string; note?: string };
+    by_actor?: Array<{ actor_id: string; record_count: number; input_tokens: number; output_tokens: number; total_tokens: number; provider_cost_cny: string | null; customer_charge_cny: string; unsettled_records: number; by_modality: Record<string, number> }>;
   };
   provider?: { mode: string; ready: boolean; reasons: string[] };
 };
@@ -561,6 +774,8 @@ export type AutomationPolicy = {
   nextRunAt?: string;
   revision: number;
   store?: StoreDirectory | null;
+  aggregate?: boolean;
+  count?: number;
 };
 export type AutomationScan = {
   counts: { products: number; publishJobs: number; risks: number };
@@ -583,15 +798,61 @@ export type AutomationScan = {
   }>;
   unattendedAutoResubmit: boolean;
 };
+export type OpsWorkbench = "platform" | "workspace";
 export type OpsSession = {
   actor_id: string;
   workspace_id: string;
   roles: string[];
+  canonical_roles?: string[];
   workspace_granted: boolean;
+  schema_version?: number;
+  workbench?: OpsWorkbench;
+  available_workbenches?: OpsWorkbench[];
+  context_id?: string;
+  context_version?: string;
+  capabilities?: string[];
+  /** Server-computed member roles this session may assign; missing means fail-closed. */
+  assignable_roles?: Array<"workspace_owner" | "merchant_admin" | "operator" | "support" | "finance" | "platform_ops">;
+  effective_permissions?: Array<string | {
+    /** `capability` is the canonical server field; `id` remains accepted for
+     * compatibility with older gateway projections. */
+    capability?: string;
+    id?: string;
+    effect: "allow" | "deny";
+    reason_code?: string;
+    scope?: { type: "platform" | "workspace" | "brand" | "store" | "controlled_support"; id?: string; ids?: string[] };
+    obligations?: string[];
+  }>;
+  scope?: { type: "platform" | "workspace" | "brand" | "store" | "controlled_support"; id?: string; ids?: string[] };
+  scopes?: Array<{ type: "self" | "workspace" | "platform"; ids: string[] }>;
+  temporary_grants?: Array<{
+    id: string;
+    access_mode?: "read" | "write";
+    workspace_id?: string;
+    capabilities?: string[];
+    resource_scope?: { type?: string; ids?: string[] };
+    expires_at?: string;
+    max_uses?: number;
+    use_count?: number;
+    revision?: number;
+    authorization_revision?: number;
+  }>;
+  catalog_version?: string;
+  policy_version?: string;
 };
-export type RpcErrorPayload = { code?: string; message?: string };
-export type Rpc = {
-  result?: {
+export type OpsNextAction = string | Readonly<Record<string, unknown>>;
+export type RpcWarning = {
+  code: string;
+  message: string;
+  details?: Readonly<Record<string, unknown>>;
+};
+export type RpcErrorPayload = {
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+  details?: Readonly<Record<string, unknown>>;
+};
+export type OpsLegacyResult = {
     settings?: Settings;
     platforms?: PlatformSetting[];
     subscription?: Subscription;
@@ -599,8 +860,42 @@ export type Rpc = {
     policy?: AutomationPolicy;
     policies?: AutomationPolicy[];
   };
-  data?: { result?: Rpc["result"]; error?: RpcErrorPayload | null };
+export type Rpc<T = OpsLegacyResult> = {
+  request_id?: string;
+  trace_id?: string;
+  workspace_id?: string;
+  warnings?: RpcWarning[];
+  next_actions?: OpsNextAction[];
+  data?: {
+    jsonrpc?: "2.0";
+    id?: string | number | null;
+    result?: T | null;
+    error?: RpcErrorPayload | null;
+  } | null;
+  /** Compatibility with a directly returned JSON-RPC response. */
+  result?: T | null;
   error?: RpcErrorPayload | null;
 };
 
-export type OpsRequestError = Error & { code?: string; httpStatus?: number };
+export type OpsResponseMeta = {
+  requestId?: string;
+  traceId?: string;
+  workspaceId?: string;
+  warnings: RpcWarning[];
+  nextActions: OpsNextAction[];
+};
+export type OpsRpcResponse<T> =
+  | { state: "data"; data: T; meta: OpsResponseMeta }
+  | { state: "empty"; data: null; meta: OpsResponseMeta };
+export type OpsRequestError = Error & {
+  code?: string;
+  httpStatus?: number;
+  requestId?: string;
+  traceId?: string;
+  workspaceId?: string;
+  retryable?: boolean;
+  retryAfterSeconds?: number;
+  details?: Readonly<Record<string, unknown>>;
+  warnings?: RpcWarning[];
+  nextActions?: OpsNextAction[];
+};

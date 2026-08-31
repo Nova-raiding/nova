@@ -8,18 +8,20 @@ x-worker-environment: &worker-environment
   NODE_ENV: production
   DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
   REDIS_URL: redis://redis:6379
-  WORKER_WORKSPACES: auto
+  WORKER_WORKSPACES: ${WORKER_WORKSPACES:-auto}
   WORKER_POLL_INTERVAL_MS: 500
+  STORAGE_RECONCILIATION_INTERVAL_MS: ${STORAGE_RECONCILIATION_INTERVAL_MS:-900000}
   WORKER_BATCH_SIZE: 100
   WORKER_WORKSPACE_BATCH_SIZE: 10
-  WORKER_LEASE_MS: 30000
+  WORKER_LEASE_MS: 900000
   WORKER_PLATFORM_QUOTA_PER_MINUTE: ${WORKER_PLATFORM_QUOTA_PER_MINUTE:-60}
   WORKER_MODEL_QUOTA_PER_MINUTE: ${WORKER_MODEL_QUOTA_PER_MINUTE:-60}
+  AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-90000}
+  WORKER_API_TIMEOUT_MS: ${WORKER_API_TIMEOUT_MS:-360000}
+  WORKER_DEPENDENCY_CHECK_INTERVAL_MS: ${WORKER_DEPENDENCY_CHECK_INTERVAL_MS:-10000}
   WORKER_DB_POOL_MAX: 5
   WORKER_DB_CONNECTION_TIMEOUT_MS: 3000
   WORKER_API_BASE_URL: http://api:8787
-  WORKER_API_TOKEN: ${WORKER_API_TOKEN:-pilot-local-token}
-  WORKER_API_SIGNING_SECRET: ${WORKER_API_SIGNING_SECRET:-pilot-local-signing-secret}
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
 
 x-worker-common: &worker-common
@@ -35,6 +37,7 @@ x-worker-common: &worker-common
       limits: { cpus: "2.0", memory: 4G }
       reservations: { cpus: "0.5", memory: 512M }
   depends_on:
+    api: { condition: service_healthy }
     migrate: { condition: service_completed_successfully }
     postgres: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -53,7 +56,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/ui.Dockerfile
-    ports: ["18081:80"]
+    ports: ["127.0.0.1:${LOCAL_UI_PORT:-18081}:8080"]
     environment:
       MERCHANT_API_TOKEN: ${MERCHANT_API_TOKEN:-pilot-local-token}
     logging: *default-logging
@@ -61,7 +64,32 @@ services:
     depends_on:
       api: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget --header='Authorization: Bearer $$MERCHANT_API_TOKEN' -qO- http://127.0.0.1:8080/readyz >/dev/null && wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  ops-ui:
+    restart: unless-stopped
+    image: local-ops-ui
+    build:
+      context: ../..
+      dockerfile: infra/docker/ops-console.Dockerfile
+      args:
+        OPS_CONSOLE_BUILD_MODE: local
+        VITE_API_BASE: /api
+        VITE_OPS_AUTH_MODE: local
+    ports: ["127.0.0.1:${LOCAL_OPS_UI_PORT:-18082}:8080"]
+    environment:
+      OPS_API_UPSTREAM: http://api:8787
+      OPS_API_RESOLVER: ${OPS_API_RESOLVER:-127.0.0.11}
+    logging: *default-logging
+    stop_grace_period: 10s
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/readyz >/dev/null && wget -qO- http://127.0.0.1:8080/ | grep -q 'Merchant Operations Console' || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -69,61 +97,133 @@ services:
 
   api:
     restart: unless-stopped
+    image: local-api
     dns:
       - ${CONTAINER_DNS_PRIMARY:-1.1.1.1}
       - ${CONTAINER_DNS_SECONDARY:-8.8.8.8}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
     environment:
-      NODE_ENV: production
+      # Local acceptance intentionally enables the local wildcard pilot grant;
+      # production keeps NODE_ENV=production and never uses this compose file.
+      NODE_ENV: development
+      LOCAL_COMPOSE: "true"
+      MCP_AUTHZ_MODE: enforce
+      REQUEST_OBSERVABILITY_LOGS: ${REQUEST_OBSERVABILITY_LOGS:-false}
+      DEPLOYMENT_PROFILE: local_acceptance
       PORT: 8787
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
+      OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
       REDIS_URL: redis://redis:6379
       DB_POOL_MAX: 20
       RUN_MIGRATIONS_ON_STARTUP: "false"
       MAX_ACTIVE_JOBS_PER_WORKSPACE: ${MAX_ACTIVE_JOBS_PER_WORKSPACE:-3}
       REQUEST_BODY_LIMIT_BYTES: 52428800
+      ALLOW_LOCAL_DURABLE_OBJECT_STORAGE: "true"
+      # Real scanner is the default even in local acceptance. A deterministic
+      # fixture must be enabled only by an explicit test-only override.
+      ALLOW_LOCAL_ASSET_SCAN_FIXTURE: "false"
+      ASSET_SCANNER_MODE: clamav_worker
+      ASSET_SCANNER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:-scanner-local-token}
+      ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: ${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:-scanner-local-signing-secret}
+      ASSET_SCAN_TRUSTED_PUBLIC_KEYS: '${ASSET_SCAN_TRUSTED_PUBLIC_KEYS:-}'
+      # Keep the pre-identity local issuer only for already-signed local
+      # attempts. Production Kubernetes approves one production identity.
+      ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: ${ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS:-merchant-asset-scanner-local,merchant-asset-scanner}
+      ASSET_SCAN_MIN_DEFINITIONS_VERSION: ${ASSET_SCAN_MIN_DEFINITIONS_VERSION:-28000}
+      ASSET_SCAN_POLICY_VERSION: ${ASSET_SCAN_POLICY_VERSION:-local-real-scan-v1}
+      ASSET_STORAGE_ROOT: /var/lib/merchant-assets/objects
+      PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-http://127.0.0.1:8787}
+      ASSET_DISPLAY_URL_SIGNING_SECRET: ${ASSET_DISPLAY_URL_SIGNING_SECRET:-local-asset-display-signing-secret-rotate-before-production}
+      ASSET_DISPLAY_URL_SIGNING_KEY_ID: ${ASSET_DISPLAY_URL_SIGNING_KEY_ID:-local-primary}
+      ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON: ${ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON:-}
       API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-120}
-      OPS_API_RATE_LIMIT_PER_MINUTE: ${OPS_API_RATE_LIMIT_PER_MINUTE:-600}
-      API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","roles":["workspace_owner","platform_ops","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]}}'
+      OPS_API_RATE_LIMIT_PER_MINUTE: ${OPS_API_RATE_LIMIT_PER_MINUTE:-10000}
+      # Keep direct local API testing explicit; production uses the ingress
+      # origin and never inherits this loopback allow-list.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:18082,http://localhost:18082}
+      API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","bootstrap":true,"workbenches":["platform","workspace"],"roles":["workspace_owner","platform_ops","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]}}'
       SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:-pilot-local-session-hash-secret}
       ALLOW_WILDCARD_WORKSPACE_GRANT: "true"
-      PUBLIC_OAUTH_REDIRECT_URI: http://127.0.0.1:8787/v1/oauth/callback/{platform}
+      PUBLIC_OAUTH_REDIRECT_URI: http://127.0.0.1:${LOCAL_API_PORT:-8787}/v1/oauth/callback/{platform}
       CONNECTOR_FIXTURE_MODE: "false"
       ALLOW_LOCAL_PAYMENT_FIXTURE: "true"
       PLUGIN_WRITE_ENABLED: "false"
-      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-}
+      # Keep direct `docker compose up` aligned with the relay launcher. An
+      # explicitly supplied environment value still wins, while an unset
+      # value uses the configured Wormhole relay rather than silently
+      # disabling model access.
+      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
+      MODEL_RELAY_ALLOWED_HOSTS: ${MODEL_RELAY_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
+      IMAGE_ARTIFACT_ALLOWED_HOSTS: ${IMAGE_ARTIFACT_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
       MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-}
-      IMAGE_MODEL: ${IMAGE_MODEL:-}
-      IMAGE_EDIT_MODEL: ${IMAGE_EDIT_MODEL:-}
-      OCR_MODEL: ${OCR_MODEL:-}
-      VIDEO_MODEL: ${VIDEO_MODEL:-}
+      VIDEO_MODEL_RELAY_API_KEY: ${VIDEO_MODEL_RELAY_API_KEY:-}
+      MODEL_RELAY_LOG_BASE_URL: ${MODEL_RELAY_LOG_BASE_URL:-}
+      MODEL_RELAY_LOG_USER_TOKEN: ${MODEL_RELAY_LOG_USER_TOKEN:-}
+      MODEL_RELAY_LOG_REFRESH_COOKIE: ${MODEL_RELAY_LOG_REFRESH_COOKIE:-}
+      MODEL_RELAY_LOG_SESSION_FILE: ${MODEL_RELAY_LOG_SESSION_FILE:-/var/lib/merchant-assets/relay-session.json}
+      MODEL_RELAY_LOG_USER_ID: ${MODEL_RELAY_LOG_USER_ID:-}
+      AI_MODEL: ${AI_MODEL:-deepseek-v4-pro}
+      IMAGE_MODEL: ${IMAGE_MODEL:-qwen-image-3.0}
+      IMAGE_GENERATION_EXECUTION_MODE: ${IMAGE_GENERATION_EXECUTION_MODE:-durable}
+      IMAGE_GENERATION_PATH: ${IMAGE_GENERATION_PATH:-/images/generations}
+      IMAGE_EDIT_MODEL: ${IMAGE_EDIT_MODEL:-qwen-image-3.0}
+      IMAGE_EDIT_PATH: ${IMAGE_EDIT_PATH:-/images/generations}
+      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-300000}
+      IMAGE_EDIT_TIMEOUT_MS: ${IMAGE_EDIT_TIMEOUT_MS:-300000}
+      IMAGE_RESPONSE_FORMAT: ${IMAGE_RESPONSE_FORMAT:-url}
+      OCR_MODEL: ${OCR_MODEL:-qwen3-max}
+      VIDEO_MODEL: ${VIDEO_MODEL:-happyhorse-1.1-t2v}
+      VIDEO_DURATION_SECONDS: ${VIDEO_DURATION_SECONDS:-100}
+      VIDEO_GENERATION_PATH: ${VIDEO_GENERATION_PATH:-/video/generations}
+      VIDEO_STATUS_PATH: ${VIDEO_STATUS_PATH:-/video/generations/{job_id}}
       MODEL_RPM_LIMIT: ${MODEL_RPM_LIMIT:-30}
       MODEL_TPM_LIMIT: ${MODEL_TPM_LIMIT:-100000}
       MODEL_DAILY_CNY_LIMIT: ${MODEL_DAILY_CNY_LIMIT:-10.00}
+      MODEL_COST_ESTIMATE_VERSION: ${MODEL_COST_ESTIMATE_VERSION:-local-acceptance-2026-08-29}
+      MODEL_TEXT_MAX_REQUEST_CNY: ${MODEL_TEXT_MAX_REQUEST_CNY:-2.00}
+      MODEL_IMAGE_MAX_REQUEST_CNY: ${MODEL_IMAGE_MAX_REQUEST_CNY:-5.00}
+      MODEL_IMAGE_EDIT_MAX_REQUEST_CNY: ${MODEL_IMAGE_EDIT_MAX_REQUEST_CNY:-5.00}
+      MODEL_OCR_MAX_REQUEST_CNY: ${MODEL_OCR_MAX_REQUEST_CNY:-2.00}
+      MODEL_VIDEO_MAX_REQUEST_CNY: ${MODEL_VIDEO_MAX_REQUEST_CNY:-20.00}
       MODEL_RELAY_COST_EVIDENCE: ${MODEL_RELAY_COST_EVIDENCE:-false}
+      MODEL_RELAY_TEXT_COST_EVIDENCE: ${MODEL_RELAY_TEXT_COST_EVIDENCE:-false}
+      MODEL_RELAY_OCR_COST_EVIDENCE: ${MODEL_RELAY_OCR_COST_EVIDENCE:-false}
+      MODEL_RELAY_IMAGE_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_COST_EVIDENCE:-false}
+      MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE:-false}
+      MODEL_RELAY_VIDEO_COST_EVIDENCE: ${MODEL_RELAY_VIDEO_COST_EVIDENCE:-false}
       MODEL_RELAY_PRICING_DERIVATION_ENABLED: ${MODEL_RELAY_PRICING_DERIVATION_ENABLED:-true}
       MODEL_RELAY_PRICING_GROUP: ${MODEL_RELAY_PRICING_GROUP:-SVIP}
-      PLUGIN_VERSION: ${PLUGIN_VERSION:-0.1.0+codex.20260828084500}
-      SKILL_BUNDLE_VERSION: ${SKILL_BUNDLE_VERSION:-0.1.0+codex.20260828084500}
+      MODEL_RELAY_TEXT_PRICING_GROUP: ${MODEL_RELAY_TEXT_PRICING_GROUP:-VIP}
+      MODEL_RELAY_OCR_PRICING_GROUP: ${MODEL_RELAY_OCR_PRICING_GROUP:-VIP}
+      MODEL_RELAY_IMAGE_PRICING_GROUP: ${MODEL_RELAY_IMAGE_PRICING_GROUP:-SVIP}
+      MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP: ${MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP:-SVIP}
+      MODEL_RELAY_VIDEO_PRICING_GROUP: ${MODEL_RELAY_VIDEO_PRICING_GROUP:-SVIP}
+      MODEL_RELAY_VIDEO_PRICING_OVERRIDES: '${MODEL_RELAY_VIDEO_PRICING_OVERRIDES:-{"happyhorse-1.1-t2v":0.4508,"happyhorse-1.1-i2v":0.4508,"happyhorse-1.1-r2v":0.4508,"wan3.0-video":0.25}}'
+      PLUGIN_VERSION: ${PLUGIN_VERSION:-0.1.0+codex.20260831142726}
+      SKILL_BUNDLE_VERSION: ${SKILL_BUNDLE_VERSION:-0.1.0+codex.20260831142726}
       MCP_VERSION: ${MCP_VERSION:-2025-06-18}
       CONNECTOR_BUILD: ${CONNECTOR_BUILD:-merchant-connectors-0.1.0}
       PROMPT_BUNDLE_VERSION: ${PROMPT_BUNDLE_VERSION:-merchant-prompts-0.1.0}
-      WORKER_API_TOKEN: ${WORKER_API_TOKEN:-pilot-local-token}
-      WORKER_API_SIGNING_SECRET: ${WORKER_API_SIGNING_SECRET:-pilot-local-signing-secret}
+      WORKER_API_CREDENTIALS: '${WORKER_API_CREDENTIALS:-{"sync":{"token":"sync-local-token","signing_secret":"sync-local-signing-secret"},"generation":{"token":"generation-local-token","signing_secret":"generation-local-signing-secret"},"publish":{"token":"publish-local-token","signing_secret":"publish-local-signing-secret"},"reconcile":{"token":"reconcile-local-token","signing_secret":"reconcile-local-signing-secret"},"automation":{"token":"automation-local-token","signing_secret":"automation-local-signing-secret"},"scan":{"token":"scanner-local-token","signing_secret":"scanner-local-signing-secret"}}}'
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_SERVICE_NAME: merchant-api
     deploy:
       resources:
         limits: { cpus: "2.0", memory: 4G }
         reservations: { cpus: "0.5", memory: 512M }
-    ports: ["8787:8787"]
+    # Host port is configurable so release-sim and local Compose can coexist.
+    # Container callers continue to use api:8787 on the Compose network.
+    ports: ["127.0.0.1:${LOCAL_API_PORT:-8787}:8787"]
     logging: *default-logging
+    volumes:
+      - merchant-assets:/var/lib/merchant-assets
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/healthz >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -136,11 +236,26 @@ services:
       default:
         aliases: [merchant-api]
 
+  api-replica:
+    extends:
+      service: api
+    build: !reset null
+    image: local-api
+    ports: !override ["127.0.0.1:${LOCAL_API_REPLICA_PORT:-8788}:8787"]
+    environment:
+      # `extends` replaces the child environment map; keep the local
+      # customer-data bypass explicit on the replica so both API instances
+      # enforce the same local acceptance policy.
+      LOCAL_COMPOSE: "true"
+      OTEL_SERVICE_NAME: merchant-api-replica
+
   worker-sync:
     <<: *worker-common
     environment:
       <<: *worker-environment
       WORKER_ROLE: sync
+      WORKER_API_TOKEN: ${WORKER_SYNC_API_TOKEN:-sync-local-token}
+      WORKER_API_SIGNING_SECRET: ${WORKER_SYNC_API_SIGNING_SECRET:-sync-local-signing-secret}
       WORKER_READY_FILE: /tmp/merchant-worker-sync-ready
       OTEL_SERVICE_NAME: merchant-worker-sync
 
@@ -149,11 +264,20 @@ services:
     environment:
       <<: *worker-environment
       WORKER_ROLE: generation
-      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-}
+      WORKER_API_TOKEN: ${WORKER_GENERATION_API_TOKEN:-generation-local-token}
+      WORKER_API_SIGNING_SECRET: ${WORKER_GENERATION_API_SIGNING_SECRET:-generation-local-signing-secret}
+      MODEL_RELAY_BASE_URL: ${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v1}
+      MODEL_RELAY_ALLOWED_HOSTS: ${MODEL_RELAY_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
+      IMAGE_ARTIFACT_ALLOWED_HOSTS: ${IMAGE_ARTIFACT_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
       MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
-      AI_MAX_INPUT_TOKENS: ${AI_MAX_INPUT_TOKENS:-12000}
+      AI_MAX_INPUT_TOKENS: ${AI_MAX_INPUT_TOKENS:-4000}
       AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-2500}
+      IMAGE_MODEL: ${IMAGE_MODEL:-qwen-image-3.0}
+      IMAGE_GENERATION_PATH: ${IMAGE_GENERATION_PATH:-/images/generations}
+      IMAGE_STATUS_PATH: ${IMAGE_STATUS_PATH:-}
+      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-300000}
+      IMAGE_RESPONSE_FORMAT: ${IMAGE_RESPONSE_FORMAT:-url}
       WORKER_READY_FILE: /tmp/merchant-worker-generation-ready
       OTEL_SERVICE_NAME: merchant-worker-generation
 
@@ -162,6 +286,8 @@ services:
     environment:
       <<: *worker-environment
       WORKER_ROLE: publish
+      WORKER_API_TOKEN: ${WORKER_PUBLISH_API_TOKEN:-publish-local-token}
+      WORKER_API_SIGNING_SECRET: ${WORKER_PUBLISH_API_SIGNING_SECRET:-publish-local-signing-secret}
       WORKER_READY_FILE: /tmp/merchant-worker-publish-ready
       OTEL_SERVICE_NAME: merchant-worker-publish
 
@@ -170,6 +296,8 @@ services:
     environment:
       <<: *worker-environment
       WORKER_ROLE: reconcile
+      WORKER_API_TOKEN: ${WORKER_RECONCILE_API_TOKEN:-reconcile-local-token}
+      WORKER_API_SIGNING_SECRET: ${WORKER_RECONCILE_API_SIGNING_SECRET:-reconcile-local-signing-secret}
       WORKER_READY_FILE: /tmp/merchant-worker-reconcile-ready
       OTEL_SERVICE_NAME: merchant-worker-reconcile
 
@@ -178,9 +306,91 @@ services:
     environment:
       <<: *worker-environment
       WORKER_ROLE: automation
+      WORKER_API_TOKEN: ${WORKER_AUTOMATION_API_TOKEN:-automation-local-token}
+      WORKER_API_SIGNING_SECRET: ${WORKER_AUTOMATION_API_SIGNING_SECRET:-automation-local-signing-secret}
       WORKER_AUTOMATION_INTERVAL_MS: ${WORKER_AUTOMATION_INTERVAL_MS:-30000}
       WORKER_READY_FILE: /tmp/merchant-worker-automation-ready
       OTEL_SERVICE_NAME: merchant-worker-automation
+
+  worker-scan:
+    <<: *worker-common
+    # Scanner readiness is published as a signed Redis heartbeat and is
+    # intentionally fail-closed at the API boundary. Keep the container
+    # healthcheck aligned with that contract: an unproven scanner must not be
+    # reported healthy merely because its process is still alive.
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready && node -e \"process.kill(1, 0)\" >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    environment:
+      <<: *worker-environment
+      WORKER_ROLE: scan
+      # The scanner identity is intentionally distinct from every other worker.
+      WORKER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:-scanner-local-token}
+      WORKER_API_SIGNING_SECRET: ${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:-scanner-local-signing-secret}
+      ASSET_SCANNER_API_TOKEN: ${ASSET_SCANNER_API_TOKEN:-scanner-local-token}
+      ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: ${ASSET_SCANNER_WORKSPACE_SIGNING_SECRET:-scanner-local-signing-secret}
+      ASSET_SCAN_RECEIPT_KEY_ID: ${ASSET_SCAN_RECEIPT_KEY_ID:-local-scanner-key}
+      ASSET_SCANNER_SERVICE_ID: ${ASSET_SCANNER_SERVICE_ID:-merchant-asset-scanner-local}
+      ASSET_SCAN_POLICY_VERSION: ${ASSET_SCAN_POLICY_VERSION:-local-real-scan-v1}
+      ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM: ${ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM:-}
+      ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64: ${ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64:-}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      CLAMAV_TIMEOUT_MS: ${CLAMAV_TIMEOUT_MS:-30000}
+      ASSET_SCANNER_TIMEOUT_MS: ${ASSET_SCANNER_TIMEOUT_MS:-90000}
+      WORKER_SCAN_MAX_ATTEMPTS: ${WORKER_SCAN_MAX_ATTEMPTS:-12}
+      WORKER_SCAN_RETRY_BASE_MS: ${WORKER_SCAN_RETRY_BASE_MS:-5000}
+      WORKER_SCAN_RETRY_MAX_MS: ${WORKER_SCAN_RETRY_MAX_MS:-900000}
+      CLAMAV_MAX_FILE_BYTES: ${CLAMAV_MAX_FILE_BYTES:-52428800}
+      SCANNER_HEARTBEAT_INTERVAL_MS: ${SCANNER_HEARTBEAT_INTERVAL_MS:-5000}
+      SCANNER_HEARTBEAT_TTL_SECONDS: ${SCANNER_HEARTBEAT_TTL_SECONDS:-15}
+      SCANNER_DEFINITIONS_MAX_AGE_SECONDS: ${SCANNER_DEFINITIONS_MAX_AGE_SECONDS:-86400}
+      SCANNER_EICAR_MAX_AGE_SECONDS: ${SCANNER_EICAR_MAX_AGE_SECONDS:-900}
+      SCANNER_CALLBACK_MAX_AGE_SECONDS: ${SCANNER_CALLBACK_MAX_AGE_SECONDS:-86400}
+      SCANNER_MINIMUM_READY_INSTANCES: ${SCANNER_MINIMUM_READY_INSTANCES:-1}
+      WORKER_READY_FILE: /tmp/merchant-worker-scan-ready
+      OTEL_SERVICE_NAME: merchant-worker-scan
+    depends_on:
+      api: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      clamav: { condition: service_healthy }
+
+  clamav:
+    restart: unless-stopped
+    image: ${CLAMAV_IMAGE:-clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b}
+    command: ["/opt/merchant/clamav-supervisor.sh"]
+    dns:
+      - ${CONTAINER_DNS_PRIMARY:-1.1.1.1}
+      - ${CONTAINER_DNS_SECONDARY:-8.8.8.8}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Check hourly so a once-daily scheduler cannot cross the strict
+      # 24-hour signature freshness gate between checks.
+      FRESHCLAM_CHECKS: "24"
+      HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
+      HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}
+    expose: ["3310"]
+    logging: *default-logging
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 4G }
+        reservations: { cpus: "0.5", memory: 3G }
+    volumes:
+      - clamav-database:/var/lib/clamav
+      - ./clamav-supervisor.sh:/opt/merchant/clamav-supervisor.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1 >/dev/null 2>&1 && version=$$(clamdscan --version) && published=$${version#*/*/} && published_epoch=$$(date -d \"$$published\" +%s) && [ $$(( $$(date +%s) - $$published_epoch )) -le 86400 ]"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
 
   migrate:
     restart: "no"
@@ -191,11 +401,14 @@ services:
       PGDATABASE: merchant
       PGUSER: merchant
       PGPASSWORD: merchant_local_only
-    entrypoint: ["/bin/sh", "-c", "/bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && psql -v ON_ERROR_STOP=1 -f /ops/seed-demo.sql"]
+      DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
+      OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
+    entrypoint: ["/bin/sh", "-c", "/bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/verify-runtime-db-role.sh && psql -v ON_ERROR_STOP=1 -f /ops/seed-demo.sql"]
     volumes:
       - ../../packages/persistence/src/migrations:/migrations:ro
       - ../scripts/apply-migrations.sh:/ops/apply-migrations.sh:ro
       - ./ensure-app-role.sql:/ops/ensure-app-role.sql:ro
+      - ../scripts/verify-runtime-db-role.sh:/ops/verify-runtime-db-role.sh:ro
       - ./seed-demo.sql:/ops/seed-demo.sql:ro
     depends_on:
       postgres: { condition: service_healthy }
@@ -209,7 +422,7 @@ services:
       POSTGRES_DB: merchant
       POSTGRES_USER: merchant
       POSTGRES_PASSWORD: merchant_local_only
-    ports: ["54329:5432"]
+    ports: ["127.0.0.1:${LOCAL_POSTGRES_PORT:-54329}:5432"]
     logging: *default-logging
     stop_grace_period: 60s
     deploy:
@@ -228,7 +441,7 @@ services:
   redis:
     restart: unless-stopped
     image: redis:7-alpine
-    ports: ["63799:6379"]
+    ports: ["127.0.0.1:${LOCAL_REDIS_PORT:-63799}:6379"]
     logging: *default-logging
     stop_grace_period: 30s
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "3gb", "--maxmemory-policy", "noeviction"]
@@ -245,3 +458,5 @@ services:
 
 volumes:
   merchant-postgres:
+  merchant-assets:
+  clamav-database:

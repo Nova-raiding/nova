@@ -22,6 +22,8 @@ printf '%s' "${PAYMENT_CALLBACK_BASE_URL:-}" | grep -Eq '^https://' || { echo "P
 printf '%s' "${PAYMENT_PROVIDER_QUERY_API_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_PROVIDER_QUERY_API_URL must be HTTPS" >&2; exit 1; }
 printf '%s' "${PAYMENT_PROVIDER_REFUND_API_URL:-}" | grep -Eq '^https://' || { echo "PAYMENT_PROVIDER_REFUND_API_URL must be HTTPS" >&2; exit 1; }
 [ -f "$PLATFORM_CANARY_BASE_EVIDENCE" ] || { echo "base evidence not found" >&2; exit 1; }
+[ -n "${PRODUCTION_API_BASE_URL:-}" ] || { echo "PRODUCTION_API_BASE_URL is required so the canary is bound to the deployed application" >&2; exit 1; }
+printf '%s' "$PRODUCTION_API_BASE_URL" | grep -Eq '^https://' || { echo "PRODUCTION_API_BASE_URL must use HTTPS" >&2; exit 1; }
 
 read_env() {
   # Indirect environment lookup without eval; operator metadata must never
@@ -86,13 +88,37 @@ for platform in $(printf '%s' "$platforms" | tr ',' ' '); do
   cp "$output" "$current"
 done
 
-npx --no-install tsx tests/capability-evidence-gate.ts --file "$current" --require-canary --release-id "$RELEASE_ID"
-cp "$current" "$PLATFORM_CANARY_OUTPUT"
-
-if [ "${RUN_WORKER_ACCEPTANCE:-false}" = true ]; then
-  [ -n "${DATABASE_URL:-}" ] || { echo "DATABASE_URL is required for worker acceptance" >&2; exit 1; }
-  [ -n "${WORKER_WORKSPACES:-}" ] || { echo "WORKER_WORKSPACES is required for worker acceptance" >&2; exit 1; }
-  NODE_ENV=production npx --no-install tsx apps/worker/src/acceptance.ts
-fi
+# The runner produces an unsigned candidate. A protected external attester
+# must add the immutable release bindings and Ed25519 signature; application
+# containers and repository scripts never receive the private key.
+attester=/usr/local/libexec/merchant/attest-capability-evidence
+[ "${PRODUCTION_EVIDENCE_TEST_CAPABILITY_ATTESTER+x}" != x ] || { echo "capability attester override is forbidden" >&2; exit 1; }
+[ -x "$attester" ] || { echo "protected capability evidence attester is not provisioned: $attester" >&2; exit 1; }
+[ ! -L "$attester" ] && [ -f "$attester" ] || { echo "capability attester must be a regular non-symlink executable" >&2; exit 1; }
+owner_of() { stat -f '%u' "$1" 2>/dev/null || stat -c '%u' "$1"; }
+mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+validate_attester_path() {
+  path=$1
+  label=$2
+  [ ! -L "$path" ] || { echo "$label must not be a symlink: $path" >&2; exit 1; }
+  [ "$(owner_of "$path")" = 0 ] || { echo "$label must be owned by root: $path" >&2; exit 1; }
+  mode=$(mode_of "$path")
+  case "$mode" in *[2367][0-7]|*[2367]) echo "$label must not be writable by group or other users: $path mode=$mode" >&2; exit 1 ;; esac
+}
+for protected_path in /usr/local/libexec /usr/local/libexec/merchant "$attester"; do
+  validate_attester_path "$protected_path" 'capability attester trust path'
+done
+trust_dir=/run/release-security/evidence-trust
+sh "$repo_root/infra/scripts/validate-production-evidence-trust.sh" "$repo_root"
+expected_attester_digest=$(sed -n '1p' "$trust_dir/production-capability-attester-sha256")
+printf '%s\n' "$expected_attester_digest" | grep -Eq '^[0-9a-f]{64}$' || { echo "capability attester trusted digest is not provisioned" >&2; exit 1; }
+actual_attester_digest=$(shasum -a 256 "$attester" | awk '{print $1}')
+[ "$actual_attester_digest" = "$expected_attester_digest" ] || { echo "capability attester digest mismatch" >&2; exit 1; }
+"$attester" attest --input "$current" --output "$PLATFORM_CANARY_OUTPUT" --release-id "$RELEASE_ID" \
+  --deployment-nonce "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}" \
+  --release-git-sha "${RELEASE_GIT_SHA:?RELEASE_GIT_SHA is required}" \
+  --manifest-sha256 "${RELEASE_MANIFEST_SHA256:?RELEASE_MANIFEST_SHA256 is required}" \
+  --image-set-digest "${RELEASE_IMAGE_SET_DIGEST:?RELEASE_IMAGE_SET_DIGEST is required}"
+[ -f "$PLATFORM_CANARY_OUTPUT" ] || { echo "capability attester did not produce evidence" >&2; exit 1; }
 
 echo "production canary passed: release_id=$RELEASE_ID output=$PLATFORM_CANARY_OUTPUT"

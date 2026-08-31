@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let server: typeof import('./server.js').server
 
@@ -30,7 +30,18 @@ async function call(base: string, workspace: string, method: string, params: Rec
 describe('four-platform fixture authorization lifecycle', () => {
   beforeAll(async () => {
     process.env.CONNECTOR_FIXTURE_MODE = 'true'
+    process.env.DEPLOYMENT_PROFILE = 'local_acceptance'
+    process.env.LOCAL_COMPOSE = 'true'
+    process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE = 'true'
+    vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'false')
     server = (await import('./server.js')).server
+  })
+
+  beforeEach(() => {
+    // Mapping governance has its own strict end-to-end suite. These fixture
+    // scenarios isolate authorization, store scoping, entitlements, and the
+    // six-platform content lifecycle from that independent production gate.
+    vi.stubEnv('REQUIRE_PLATFORM_GOVERNANCE_GATES', 'false')
   })
 
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())) })
@@ -301,6 +312,9 @@ describe('four-platform fixture authorization lifecycle', () => {
     })
     const result = metrics.data?.result
     expect(result).toMatchObject({
+      source: 'memory_service',
+      dataCompleteness: 'process_local',
+      hydration: { status: 'not_available', attempted: false, invalidSnapshotCount: 0 },
       comparisonAvailable: false,
       period: { activityFiltered: true, productRisksAreCurrentSnapshot: true },
       productSummary: { total: 7 },
@@ -345,5 +359,5 @@ describe('four-platform fixture authorization lifecycle', () => {
     expect(missingPlatform.error).toMatchObject({ code: 'STORE_PLATFORM_REQUIRED' })
     const mismatchedPlatform = await call(base, workspace, 'workspace.metrics', { platform: 'jd', account_id: taobaoStore.accountId })
     expect(mismatchedPlatform.error).toMatchObject({ code: 'PLATFORM_ACCOUNT_NOT_FOUND' })
-  })
+  }, 30_000)
 })

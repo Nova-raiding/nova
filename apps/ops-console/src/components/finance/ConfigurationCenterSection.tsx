@@ -2,6 +2,7 @@ import {
   Button,
   Card,
   Col,
+  Alert,
   Form,
   Input,
   InputNumber,
@@ -13,7 +14,7 @@ import {
 } from "antd";
 import { SaveOutlined } from "@ant-design/icons";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
-import type { Audit, Platform, PlatformSetting } from "../../types/ops";
+import type { Platform, PlatformSetting } from "../../types/ops";
 
 interface ConfigurationCenterSectionProps {
   model: OpsConsoleModel;
@@ -26,14 +27,15 @@ export function ConfigurationCenterSection({
     settings,
     platformRows,
     setPlatformRows,
-    audits,
     orders,
     loading,
     saving,
     canPlatformOps,
     saveCommercial,
     savePlatform,
+    dataSetError,
   } = model;
+  const configurationError = dataSetError("workspace.commercial.get");
 
   return (
     <Card
@@ -41,6 +43,7 @@ export function ConfigurationCenterSection({
       title="配置中心"
       extra={<Tag color="blue">Revision {settings?.revision ?? "-"}</Tag>}
     >
+      {configurationError ? <Alert type="error" showIcon message="配置中心读取失败" description={configurationError} /> : null}
       <Tabs
         items={[
           {
@@ -54,7 +57,7 @@ export function ConfigurationCenterSection({
                 layout="vertical"
                 onFinish={saveCommercial}
                 className="config-form"
-                disabled={!canPlatformOps}
+                disabled={!canPlatformOps || !settings}
               >
                 <Row gutter={16}>
                   <Col xs={24} md={8}>
@@ -121,7 +124,7 @@ export function ConfigurationCenterSection({
                   </Col>
                 </Row>
                 <Button
-                  disabled={!canPlatformOps}
+                  disabled={!canPlatformOps || !settings}
                   type="primary"
                   htmlType="submit"
                   icon={<SaveOutlined />}
@@ -277,33 +280,6 @@ export function ConfigurationCenterSection({
                     dataIndex: "createdAt",
                     render: (value: string) => new Date(value).toLocaleString(),
                   },
-                ]}
-              />
-            ),
-          },
-          {
-            key: "audit",
-            forceRender: true,
-            label: "操作审计",
-            children: (
-              <Table
-                rowKey="id"
-                pagination={{ pageSize: 8 }}
-                dataSource={audits}
-                columns={[
-                  {
-                    title: "时间",
-                    dataIndex: "createdAt",
-                    render: (value: string) => new Date(value).toLocaleString(),
-                  },
-                  { title: "操作者", dataIndex: "actorId" },
-                  { title: "动作", dataIndex: "action" },
-                  {
-                    title: "资源",
-                    render: (_: unknown, row: Audit) =>
-                      `${row.resourceType} / ${row.resourceId}`,
-                  },
-                  { title: "原因", dataIndex: "reason" },
                 ]}
               />
             ),

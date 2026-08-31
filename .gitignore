@@ -7,3 +7,10 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 .gstack/
+
+# TypeScript outputs belong in dist/. Keeping emitted artifacts beside src/*.ts
+# makes NodeNext/Vitest resolve stale JavaScript ahead of the authoritative TS.
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map

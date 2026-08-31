@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto'
 import type { OperationalAlert } from '../../../packages/persistence/src/index.js'
+import { inspectOutboundUrl, isSecureEnvironment } from '../../../packages/connectors/src/outbound-security.js'
 
 export type AlertNotificationDelivery = 'disabled' | 'blocked' | 'delivered' | 'failed'
 
@@ -18,13 +19,17 @@ export interface AlertNotificationOptions {
 }
 
 const configuredUrl = (env: Record<string, string | undefined>) => env.OPS_ALERT_WEBHOOK_URL?.trim() ?? ''
+const configuredAllowedHosts = (env: Record<string, string | undefined>) => (env.OPS_ALERT_WEBHOOK_ALLOWED_HOSTS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
 
 export function alertNotificationReadiness(env: Record<string, string | undefined> = process.env) {
   const url = configuredUrl(env)
   if (!url) return { configured: false, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 未配置' }
   let parsed: URL
   try { parsed = new URL(url) } catch { return { configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_URL 不是合法 URL' } }
-  if (env.NODE_ENV === 'production' && parsed.protocol !== 'https:') return { configured: true, ready: false, reason: '生产告警 Webhook 必须使用 HTTPS' }
+  const allowedHosts = configuredAllowedHosts(env)
+  if (isSecureEnvironment(env.NODE_ENV) && !allowedHosts.length) return { configured: true, ready: false, reason: '安全环境必须配置 OPS_ALERT_WEBHOOK_ALLOWED_HOSTS' }
+  const outboundReason = inspectOutboundUrl(url, { environment: env.NODE_ENV, ...(allowedHosts.length ? { allowedHosts } : {}) })
+  if (outboundReason) return { configured: true, ready: false, reason: `告警 Webhook 地址不安全：${outboundReason}` }
   if (!env.OPS_ALERT_WEBHOOK_SECRET?.trim()) return { configured: true, ready: false, reason: 'OPS_ALERT_WEBHOOK_SECRET 未配置' }
   return { configured: true, ready: true, protocol: parsed.protocol }
 }

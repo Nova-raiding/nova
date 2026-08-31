@@ -10,11 +10,14 @@ case "$profile" in
 esac
 echo "profile=$profile api=$api sync=$sync generation=$generation publish=$publish reconcile=$reconcile automation=$automation"
 if [ "${EXECUTE:-false}" != true ]; then
-  echo "dry run; set EXECUTE=true and provide SCALE_COMMAND"
+  echo "dry run; set EXECUTE=true to apply with kubectl"
   exit 0
 fi
-: "${SCALE_COMMAND:?SCALE_COMMAND is required when EXECUTE=true}"
-for workload in api sync generation publish reconcile automation; do
-  replicas=$(eval "printf '%s' \"\${$workload}\"")
-  sh -c "$SCALE_COMMAND $workload $replicas"
-done
+namespace=${SCALE_NAMESPACE:-merchant}
+printf '%s\n' "$namespace" | grep -Eq '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' || { echo "invalid SCALE_NAMESPACE" >&2; exit 2; }
+kubectl scale -n "$namespace" deployment/merchant-api --replicas="$api"
+kubectl scale -n "$namespace" deployment/merchant-worker-sync --replicas="$sync"
+kubectl scale -n "$namespace" deployment/merchant-worker-generation --replicas="$generation"
+kubectl scale -n "$namespace" deployment/merchant-worker-publish --replicas="$publish"
+kubectl scale -n "$namespace" deployment/merchant-worker-reconcile --replicas="$reconcile"
+kubectl scale -n "$namespace" deployment/merchant-worker-automation --replicas="$automation"

@@ -48,6 +48,8 @@ export interface OutboxRepository {
   markPublished(workspaceId: string, id: string, publishedAt?: string): Promise<OutboxEvent>
   listAggregateEvents(workspaceId: string, aggregateId: string, limit?: number): Promise<OutboxEvent[]>
   listWorkspaceEvents?(workspaceId: string, limit?: number): Promise<OutboxEvent[]>
+  listWorkspaceEventsAfter?(workspaceId: string, cursor: { createdAt: string; eventId: string } | undefined, limit?: number): Promise<OutboxEvent[]>
+  metrics?(workspaceId: string): Promise<{ pending: number; connectorErrors: Record<string, number> }>
 }
 
 export interface OutboxFailure {
@@ -59,10 +61,13 @@ export interface OutboxFailure {
 
 export interface DurableOutboxRepository extends OutboxRepository {
   claimPending(workspaceId: string, options?: OutboxClaimOptions): Promise<OutboxEvent[]>
+  validateLease(workspaceId: string, id: string, leaseToken: string, now?: string): Promise<OutboxEvent>
+  renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now?: string): Promise<OutboxEvent>
   recordFailure(workspaceId: string, id: string, failure: OutboxFailure, nextAttemptAt: string, leaseToken?: string): Promise<OutboxEvent>
+  deadLetter(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent>
   markUnknown(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent>
   ack(workspaceId: string, id: string, leaseToken?: string, publishedAt?: string): Promise<OutboxEvent>
-  loadStateSnapshots(workspaceId: string): Promise<Array<{ aggregateId: string; sequence: number; payload: Record<string, unknown> }>>
+  loadStateSnapshots(workspaceId: string, options?: { excludeEntityTypes?: readonly string[] }): Promise<Array<{ aggregateId: string; sequence: number; payload: Record<string, unknown> }>>
   listActiveWorkspaceIds(): Promise<string[]>
 }
 
@@ -95,8 +100,18 @@ export class InMemoryOutbox {
     this.events.push(event)
     return event
   }
-  pending(limit = 100) { return this.events.filter(event => !event.publishedAt).slice(0, limit) }
-  markPublished(id: string) { const event = this.events.find(item => item.id === id); if (!event) throw new Error('outbox event not found'); event.publishedAt = new Date().toISOString(); return event }
+  pending(workspaceId: string, limit = 100) {
+    const scope = requireWorkspaceScope(workspaceId)
+    if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
+    return this.events.filter(event => event.workspaceId === scope && !event.publishedAt).slice(0, limit)
+  }
+  markPublished(workspaceId: string, id: string) {
+    const scope = requireWorkspaceScope(workspaceId)
+    const event = this.events.find(item => item.workspaceId === scope && item.id === id)
+    if (!event) throw new OutboxEventNotFoundError()
+    event.publishedAt = new Date().toISOString()
+    return event
+  }
   all() { return [...this.events] }
   listAggregateEvents(workspaceId: string, aggregateId: string, limit = 100) {
     if (!workspaceId.trim()) throw new TenantScopeError()
@@ -109,6 +124,13 @@ export class InMemoryOutbox {
     if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
     return this.events.filter(event => event.workspaceId === workspaceId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(-limit)
+  }
+  listWorkspaceEventsAfter(workspaceId: string, cursor: { createdAt: string; eventId: string } | undefined, limit = 1000) {
+    if (!workspaceId.trim()) throw new TenantScopeError()
+    if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
+    return this.events.filter(event => event.workspaceId === workspaceId
+      && (!cursor || event.createdAt > cursor.createdAt || (event.createdAt === cursor.createdAt && event.id > cursor.eventId)))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(0, limit)
   }
 }
 
@@ -258,13 +280,34 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
     return withWorkspaceTransaction(this.pool, scope, async client => {
       const result = await client.query<OutboxRow>(
+        `SELECT * FROM (
+           SELECT id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
+                  attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
+             FROM outbox_events
+            WHERE workspace_id = $1
+            ORDER BY created_at DESC, id DESC
+            LIMIT $2
+         ) recent
+         ORDER BY created_at ASC, id ASC`,
+        [scope, limit],
+      )
+      return result.rows.map(toOutboxEvent)
+    })
+  }
+
+  async listWorkspaceEventsAfter(workspaceId: string, cursor: { createdAt: string; eventId: string } | undefined, limit = 1000): Promise<OutboxEvent[]> {
+    const scope = requireWorkspaceScope(workspaceId)
+    if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<OutboxRow>(
         `SELECT id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                 attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
            FROM outbox_events
           WHERE workspace_id = $1
+            AND ($2::timestamptz IS NULL OR created_at > $2::timestamptz OR (created_at = $2::timestamptz AND id > $3))
           ORDER BY created_at ASC, id ASC
-          LIMIT $2`,
-        [scope, limit],
+          LIMIT $4`,
+        [scope, cursor?.createdAt ?? null, cursor?.eventId ?? '', limit],
       )
       return result.rows.map(toOutboxEvent)
     })
@@ -323,6 +366,45 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     })
   }
 
+  async validateLease(workspaceId: string, id: string, leaseToken: string, now = new Date().toISOString()): Promise<OutboxEvent> {
+    const scope = requireWorkspaceScope(workspaceId)
+    if (!id) throw new Error('outbox event id is required')
+    if (!leaseToken) throw new OutboxEventNotFoundError()
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<OutboxRow>(
+        `SELECT id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
+                attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
+           FROM outbox_events
+          WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL AND unknown_at IS NULL
+            AND lease_token = $3 AND lease_until > GREATEST($4::timestamptz, now())
+          LIMIT 1`,
+        [scope, id, leaseToken, now],
+      )
+      if (!result.rows[0]) throw new OutboxEventNotFoundError()
+      return toOutboxEvent(result.rows[0])
+    })
+  }
+
+  async renewLease(workspaceId: string, id: string, leaseToken: string, leaseMs: number, now = new Date().toISOString()): Promise<OutboxEvent> {
+    const scope = requireWorkspaceScope(workspaceId)
+    if (!id) throw new Error('outbox event id is required')
+    if (!leaseToken) throw new OutboxEventNotFoundError()
+    if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('leaseMs must be a positive integer')
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<OutboxRow>(
+        `UPDATE outbox_events
+            SET lease_until = GREATEST($4::timestamptz, now()) + ($5 * interval '1 millisecond')
+          WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL AND unknown_at IS NULL
+            AND lease_token = $3 AND lease_until > GREATEST($4::timestamptz, now())
+          RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
+                    attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
+        [scope, id, leaseToken, now, leaseMs],
+      )
+      if (!result.rows[0]) throw new OutboxEventNotFoundError()
+      return toOutboxEvent(result.rows[0])
+    })
+  }
+
   async recordFailure(workspaceId: string, id: string, failure: OutboxFailure, nextAttemptAt: string, leaseToken?: string): Promise<OutboxEvent> {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
@@ -334,10 +416,33 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
                 lease_token = NULL,
                 lease_until = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
-            AND unknown_at IS NULL AND ($3::text IS NULL OR lease_token = $3)
+            AND unknown_at IS NULL
+            AND ($3::text IS NULL OR (lease_token = $3 AND lease_until > now()))
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, nextAttemptAt, JSON.stringify(failure)],
+      )
+      if (!result.rows[0]) throw new OutboxEventNotFoundError()
+      return toOutboxEvent(result.rows[0])
+    })
+  }
+
+  async deadLetter(workspaceId: string, id: string, failure: OutboxFailure, leaseToken?: string): Promise<OutboxEvent> {
+    const scope = requireWorkspaceScope(workspaceId)
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<OutboxRow>(
+        `UPDATE outbox_events
+            SET attempts = attempts + 1,
+                published_at = COALESCE(published_at, now()),
+                last_error = $4::jsonb,
+                lease_token = NULL,
+                lease_until = NULL
+          WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
+            AND unknown_at IS NULL
+            AND ($3::text IS NULL OR (lease_token = $3 AND lease_until > now()))
+          RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
+                    attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
+        [scope, id, leaseToken ?? null, JSON.stringify(failure)],
       )
       if (!result.rows[0]) throw new OutboxEventNotFoundError()
       return toOutboxEvent(result.rows[0])
@@ -355,7 +460,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
                 lease_token = NULL,
                 lease_until = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
-            AND ($3::text IS NULL OR lease_token = $3)
+            AND ($3::text IS NULL OR (lease_token = $3 AND lease_until > now()))
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, JSON.stringify(failure)],
@@ -372,7 +477,8 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
         `UPDATE outbox_events
             SET published_at = COALESCE(published_at, $4::timestamptz), lease_token = NULL, lease_until = NULL
           WHERE workspace_id = $1 AND id = $2
-            AND (published_at IS NOT NULL OR $3::text IS NULL OR lease_token = $3)
+            AND (published_at IS NOT NULL OR $3::text IS NULL
+              OR (lease_token = $3 AND lease_until > now()))
           RETURNING id, workspace_id, aggregate_id, event_type, sequence, payload, published_at, created_at,
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at`,
         [scope, id, leaseToken ?? null, publishedAt],
@@ -382,15 +488,16 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     })
   }
 
-  async loadStateSnapshots(workspaceId: string) {
+  async loadStateSnapshots(workspaceId: string, options: { excludeEntityTypes?: readonly string[] } = {}) {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
       const result = await client.query<{ aggregate_id: string; sequence: number; payload: Record<string, unknown> }>(
         `SELECT aggregate_id, sequence, payload
            FROM outbox_events
           WHERE workspace_id = $1 AND event_type = 'state.snapshot'
+            AND NOT (coalesce(payload->>'entityType', '') = ANY($2::text[]))
           ORDER BY aggregate_id ASC, sequence ASC, created_at ASC`,
-        [scope],
+        [scope, options.excludeEntityTypes ?? []],
       )
       return result.rows.map(row => ({ aggregateId: row.aggregate_id, sequence: row.sequence, payload: row.payload }))
     })
@@ -399,9 +506,27 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
   async listActiveWorkspaceIds(): Promise<string[]> {
     const client = await this.pool.connect()
     try {
-      const result = await client.query<{ id: string }>("SELECT id FROM workspaces WHERE status = 'active' ORDER BY id")
-      return result.rows.map(row => row.id)
+      const result = await client.query<{ workspace_id: string }>(
+        'SELECT workspace_id FROM public.worker_active_workspace_catalog()',
+      )
+      return result.rows.map(row => row.workspace_id)
     } finally { client.release?.() }
+  }
+
+  async metrics(workspaceId: string): Promise<{ pending: number; connectorErrors: Record<string, number> }> {
+    const scope = requireWorkspaceScope(workspaceId)
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<{ pending: string | number; rate_limited: string | number; timeout: string | number }>(
+        `SELECT count(*) FILTER (WHERE published_at IS NULL AND unknown_at IS NULL) AS pending,
+                coalesce(sum(attempts) FILTER (WHERE last_error->>'code' = 'RATE_LIMITED'), 0) AS rate_limited,
+                coalesce(sum(attempts) FILTER (WHERE last_error->>'code' = 'TIMEOUT'), 0) AS timeout
+           FROM outbox_events
+          WHERE workspace_id = $1`,
+        [scope],
+      )
+      const row = result.rows[0] ?? { pending: 0, rate_limited: 0, timeout: 0 }
+      return { pending: Number(row.pending), connectorErrors: { RATE_LIMITED: Number(row.rate_limited), TIMEOUT: Number(row.timeout) } }
+    })
   }
 }
 

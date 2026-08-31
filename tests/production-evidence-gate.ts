@@ -39,10 +39,10 @@ function validateArtifact(reference: string | undefined, root: string, label: st
 /** Used by the independent evidence pipeline and tests; preflight receives no private key. */
 export const signProductionEvidence = (value: unknown, privateKeyPem: string) => sign(null, payload(value), privateKeyPem).toString('base64')
 
-export function validateProductionEvidence(document: unknown, options: { kind: ProductionEvidenceKind; releaseId: string; imageDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; artifactRoot: string; trustedKeyId: string; publicKeyPem: string; now?: Date }): string[] {
+export function validateProductionEvidence(document: unknown, options: { kind: ProductionEvidenceKind; releaseId: string; imageSetDigest: string; manifestSha256: string; releaseGitSha: string; deploymentNonce: string; artifactRoot: string; trustedKeyId: string; publicKeyPem: string; now?: Date }): string[] {
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as Evidence; const errors: string[] = []; const now = options.now ?? new Date()
-  const expected: Record<string, string> = { schema_version: '1', kind: options.kind, release_id: options.releaseId, image_digest: options.imageDigest, manifest_sha256: options.manifestSha256, release_git_sha: options.releaseGitSha, environment: 'production', status: 'pass', key_id: options.trustedKeyId }
+  const expected: Record<string, string> = { schema_version: '2', kind: options.kind, release_id: options.releaseId, image_set_digest: options.imageSetDigest, manifest_sha256: options.manifestSha256, release_git_sha: options.releaseGitSha, environment: 'production', status: 'pass', key_id: options.trustedKeyId }
   for (const [field, wanted] of Object.entries(expected)) if (value[field] !== wanted) errors.push(`${field} must match ${wanted}`)
   for (const field of ['evidence_id', 'deployment_nonce', 'verified_by', 'signature_base64'] as const) if (!text(value[field])) errors.push(`${field} is required`)
   if (value.simulated !== false) errors.push('simulated must be false')
@@ -68,11 +68,11 @@ export function validateProductionEvidence(document: unknown, options: { kind: P
 
 function arg(name: string) { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1] }
 function main() {
-  const kind = arg('--kind') as ProductionEvidenceKind; const file = arg('--file'); const releaseId = arg('--release-id'); const imageDigest = arg('--image-digest'); const manifestSha256 = arg('--manifest-sha256'); const releaseGitSha = arg('--release-git-sha'); const deploymentNonce = arg('--deployment-nonce'); const artifactRoot = arg('--artifact-root'); const publicKeyPath = arg('--public-key'); const trustedKeyId = arg('--key-id')
-  if (!checksByKind[kind] || !file || !releaseId || !imageDigest || !manifestSha256 || !releaseGitSha || !deploymentNonce || !artifactRoot || !publicKeyPath || !trustedKeyId) { console.error('release, image, manifest, commit, deployment nonce, artifact root and fixed trust anchor are required'); process.exit(2) }
+  const kind = arg('--kind') as ProductionEvidenceKind; const file = arg('--file'); const releaseId = arg('--release-id'); const imageSetDigest = arg('--image-set-digest'); const manifestSha256 = arg('--manifest-sha256'); const releaseGitSha = arg('--release-git-sha'); const deploymentNonce = arg('--deployment-nonce'); const artifactRoot = arg('--artifact-root'); const publicKeyPath = arg('--public-key'); const trustedKeyId = arg('--key-id')
+  if (!checksByKind[kind] || !file || !releaseId || !imageSetDigest || !manifestSha256 || !releaseGitSha || !deploymentNonce || !artifactRoot || !publicKeyPath || !trustedKeyId) { console.error('release, canonical image set, manifest, commit, deployment nonce, artifact root and fixed trust anchor are required'); process.exit(2) }
   const publicKeyPem = readFileSync(publicKeyPath, 'utf8'); if (publicKeyPem.includes('UNPROVISIONED') || trustedKeyId === 'UNPROVISIONED') { console.error('production evidence trust anchor is not provisioned'); process.exit(1) }
   const document = JSON.parse(readFileSync(file, 'utf8')) as unknown
-  const errors = validateProductionEvidence(document, { kind, releaseId, imageDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, publicKeyPem, trustedKeyId })
+  const errors = validateProductionEvidence(document, { kind, releaseId, imageSetDigest, manifestSha256, releaseGitSha, deploymentNonce, artifactRoot, publicKeyPem, trustedKeyId })
   if (errors.length) { console.error(errors.join('\n')); process.exit(1) }
   console.log(`${kind} production evidence gate passed: ${file}`)
 }

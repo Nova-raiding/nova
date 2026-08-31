@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
 import { buildReleaseManifest } from '../scripts/release-manifest.js'
@@ -6,6 +7,8 @@ import { buildReleaseManifest } from '../scripts/release-manifest.js'
 describe('release manifest', () => {
   it('binds the plugin, skill, MCP and evidence references to one release', () => {
     const pluginVersion = (JSON.parse(readFileSync('apps/plugin/package.json', 'utf8')) as { version: string }).version
+    const repositoryVersion = readFileSync('VERSION', 'utf8').trim()
+    const releaseGitSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
     const manifest = buildReleaseManifest({
       root: process.cwd(),
       releaseId: 'rc-20260826',
@@ -18,11 +21,15 @@ describe('release manifest', () => {
       paymentEvidenceRef: 'artifact://payment/rc-20260826',
       modelRelayEvidenceRef: 'artifact://relay/rc-20260826',
       restoreEvidenceRef: 'artifact://restore/rc-20260826',
+      objectStorageEvidenceRef: 'artifact://object-storage/rc-20260826',
+      codexAppHostEvidenceRef: 'artifact://codex-app-host/rc-20260826',
     })
     expect(manifest).toMatchObject({
       schemaVersion: 1,
       releaseId: 'rc-20260826',
       components: {
+        repositoryVersion,
+        releaseGitSha,
         pluginVersion,
         skillBundleVersion: pluginVersion,
         mcpVersion: pluginVersion,
@@ -37,9 +44,11 @@ describe('release manifest', () => {
         modelRelay: 'artifact://relay/rc-20260826',
         payment: 'artifact://payment/rc-20260826',
         restore: 'artifact://restore/rc-20260826',
+        objectStorage: 'artifact://object-storage/rc-20260826',
+        codexAppHost: 'artifact://codex-app-host/rc-20260826',
       },
     })
-    expect(manifest.artifacts).toHaveLength(4)
+    expect(manifest.artifacts).toHaveLength(10)
     expect(manifest.artifacts.every(item => /^[a-f0-9]{64}$/.test(item.sha256) && item.bytes > 0)).toBe(true)
   })
 
@@ -51,6 +60,9 @@ describe('release manifest', () => {
       modelRelay: 'not-provided',
       payment: 'not-provided',
       restore: 'not-provided',
+      objectStorage: 'not-provided',
+        codexAppHost: 'not-provided',
+        canonicalCutover: 'not-provided',
     })
   })
 })

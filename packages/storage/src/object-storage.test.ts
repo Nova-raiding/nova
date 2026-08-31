@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CloudObjectNotFoundError, LocalObjectStorage, ObjectStorageError, S3CompatibleObjectStorage, isRetryableObjectStorageReadError, parseS3CompatibleObjectStorageConfig, type CloudObjectTransport, withObjectStorageReadRetry } from './object-storage.js'
+import { CloudObjectNotFoundError, LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, isRetryableObjectStorageReadError, parseS3CompatibleObjectStorageConfig, type CloudObjectTransport, withObjectStorageReadRetry } from './object-storage.js'
 
 const digest = (body: Uint8Array) => createHash('sha256').update(body).digest('hex')
 
@@ -56,6 +56,63 @@ describe('LocalObjectStorage', () => {
     await expect(store.get('ws_a', clean.key)).resolves.toMatchObject({ body, metadata: expect.objectContaining({ zone: 'clean' }) })
   })
 
+  it('canonicalizes filename case so local and cloud object keys have identical identity', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('case portable')
+    const first = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_case', fileName: 'Logo.PNG', contentType: 'IMAGE/PNG', body })
+    const replay = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_case', fileName: 'logo.png', contentType: 'image/png', body })
+    expect(first.key).toBe('quarantine/ws_a/asset_case/logo.png')
+    expect(replay).toEqual(first)
+  })
+
+  it('copies locally without deleting quarantine, then performs evidence-bound idempotent cleanup', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('two phase local bytes')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_two_phase', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+    const input = { workspaceId: 'ws_a', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://receipt-local', expectedSha256: digest(body), expectedSizeBytes: body.byteLength }
+
+    const first = await store.copyQuarantineToClean(input)
+    const second = await store.copyQuarantineToClean(input)
+    expect(second).toEqual(first)
+    await expect(store.get('ws_a', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body })
+    await expect(store.get('ws_a', first.key)).resolves.toMatchObject({ body })
+
+    await expect(store.deleteQuarantineAfterCommit({ ...input, expectedSizeBytes: body.byteLength + 1 })).rejects.toMatchObject({ code: 'OBJECT_PROMOTION_EVIDENCE_MISMATCH' })
+    await expect(store.get('ws_a', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body })
+    await expect(store.deleteQuarantineAfterCommit(input)).resolves.toBeUndefined()
+    await expect(store.deleteQuarantineAfterCommit(input)).resolves.toBeUndefined()
+    await expect(store.head('ws_a', quarantine.key, { includeQuarantine: true })).resolves.toBeNull()
+  })
+
+  it('rejects cross-tenant and corrupt local copy retries while preserving quarantine', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('local source survives')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_local_failure', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+    const input = { workspaceId: 'ws_a', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://receipt-local-failure', expectedSha256: digest(body), expectedSizeBytes: body.byteLength }
+    const clean = await store.copyQuarantineToClean(input)
+    await writeFile(join(store.rootDir, clean.key), new TextEncoder().encode('corrupt'))
+
+    await expect(store.copyQuarantineToClean({ ...input, workspaceId: 'ws_b' })).rejects.toMatchObject({ code: 'OBJECT_SCOPE_DENIED' })
+    await expect(store.copyQuarantineToClean(input)).rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED' })
+    await expect(store.get('ws_a', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body })
+  })
+
+  it('makes local clean and quarantine deletion idempotent', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('delete locally')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_delete', fileName: 'x.txt', contentType: 'text/plain', body })
+
+    await expect(store.delete('ws_a', quarantine.key)).rejects.toMatchObject({ code: 'QUARANTINE_ACCESS_DENIED' })
+    await expect(store.delete('ws_a', quarantine.key, { includeQuarantine: true })).resolves.toBeUndefined()
+    await expect(store.delete('ws_a', quarantine.key, { includeQuarantine: true })).resolves.toBeUndefined()
+
+    const second = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_delete_clean', fileName: 'x.txt', contentType: 'text/plain', body })
+    const clean = await store.promoteClean({ workspaceId: 'ws_a', quarantineKey: second.key, scanEvidenceRef: 'scanner://delete-local' })
+    await expect(store.delete('ws_a', clean.key)).resolves.toBeUndefined()
+    await expect(store.delete('ws_a', clean.key)).resolves.toBeUndefined()
+    await expect(store.head('ws_a', clean.key)).resolves.toBeNull()
+  })
+
   it('rejects mismatched bytes, traversal, oversize objects, and conflicting keys without a partial object', async () => {
     const store = await storage()
     const body = new Uint8Array([1, 2, 3])
@@ -77,6 +134,31 @@ describe('LocalObjectStorage', () => {
     await writeFile(join(store.rootDir, 'clean/ws_a/asset_3/x.bin'), new Uint8Array([0]))
     await expect(store.get('ws_a', 'clean/ws_a/asset_3/x.bin')).rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED' })
     await expect(readFile(join(store.rootDir, 'clean/ws_a/asset_3/x.bin'))).resolves.toEqual(Buffer.from([0]))
+  })
+
+  it('reports a typed not-found error when metadata outlives the object body', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('durable asset bytes')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_orphaned', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+    const clean = await store.promoteClean({ workspaceId: 'ws_a', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://scan-orphaned' })
+    await rm(join(store.rootDir, clean.key))
+
+    await expect(store.get('ws_a', clean.key)).rejects.toMatchObject({
+      name: 'ObjectStorageError',
+      code: 'OBJECT_NOT_FOUND',
+      status: 404,
+      message: '对象不存在',
+    })
+  })
+
+  it('does not acknowledge a local idempotent upload when only metadata remains', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('metadata without body')
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_partial', fileName: 'x.txt', contentType: 'text/plain', body })
+    await rm(join(store.rootDir, uploaded.key))
+
+    await expect(store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_partial', fileName: 'x.txt', contentType: 'text/plain', body }))
+      .rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED', status: 500 })
   })
 })
 
@@ -121,6 +203,82 @@ describe('S3CompatibleObjectStorage', () => {
     await expect(store.get('ws_other', clean.key)).rejects.toMatchObject({ code: 'OBJECT_SCOPE_DENIED' })
   })
 
+  it('copies in S3 without source deletion and makes post-commit cleanup converge after a partial delete', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    let failMetadataDelete = true
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) {
+        if (key.endsWith('.merchant-meta.json') && key.includes('/quarantine/') && failMetadataDelete) {
+          failMetadataDelete = false
+          throw new Error('transient metadata delete failure')
+        }
+        objects.delete(key)
+      },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode('two phase cloud bytes')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_two_phase', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+    const input = { workspaceId: 'ws_cloud', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://receipt-cloud', expectedSha256: digest(body), expectedSizeBytes: body.byteLength }
+
+    const first = await store.copyQuarantineToClean(input)
+    await expect(store.copyQuarantineToClean(input)).resolves.toEqual(first)
+    expect(objects.has(`merchant/${quarantine.key}`)).toBe(true)
+    expect(objects.has(`merchant/${quarantine.key}.merchant-meta.json`)).toBe(true)
+
+    await expect(store.deleteQuarantineAfterCommit(input)).rejects.toMatchObject({ code: 'OBJECT_STORAGE_UNAVAILABLE' })
+    expect(objects.has(`merchant/${quarantine.key}`)).toBe(false)
+    expect(objects.has(`merchant/${quarantine.key}.merchant-meta.json`)).toBe(true)
+    await expect(store.deleteQuarantineAfterCommit(input)).resolves.toBeUndefined()
+    await expect(store.deleteQuarantineAfterCommit(input)).resolves.toBeUndefined()
+    expect(objects.has(`merchant/${quarantine.key}.merchant-meta.json`)).toBe(false)
+  })
+
+  it('preserves S3 quarantine on target partial write, evidence mismatch, and cross-tenant calls', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    let failCleanMetadata = true
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) {
+        objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata })
+        if (key.includes('/clean/') && key.endsWith('.merchant-meta.json') && failCleanMetadata) {
+          failCleanMetadata = false
+          throw new Error('clean metadata outage')
+        }
+      },
+      async delete(key) { objects.delete(key) },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode('cloud source survives')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_copy_failure', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+    const input = { workspaceId: 'ws_cloud', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://receipt-cloud-failure', expectedSha256: digest(body), expectedSizeBytes: body.byteLength }
+
+    await expect(store.copyQuarantineToClean(input)).rejects.toThrow('clean metadata outage')
+    await expect(store.get('ws_cloud', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body })
+    await expect(store.copyQuarantineToClean({ ...input, expectedSha256: 'a'.repeat(64) })).rejects.toMatchObject({ code: 'OBJECT_PROMOTION_EVIDENCE_MISMATCH' })
+    await expect(store.copyQuarantineToClean({ ...input, workspaceId: 'ws_other' })).rejects.toMatchObject({ code: 'OBJECT_SCOPE_DENIED' })
+    await expect(store.get('ws_cloud', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body })
+  })
+
+  it('does not acknowledge an idempotent cloud upload when only metadata remains', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) { objects.delete(key) },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode('durable body')
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_partial', fileName: 'x.txt', contentType: 'text/plain', body })
+    objects.delete(`merchant/${uploaded.key}`)
+    await expect(store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_partial', fileName: 'x.txt', contentType: 'text/plain', body }))
+      .rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED' })
+  })
+
   it('compensates the cloud body when metadata persistence fails', async () => {
     const objects = new Map<string, Uint8Array>()
     const deleted: string[] = []
@@ -147,5 +305,142 @@ describe('S3CompatibleObjectStorage', () => {
       'merchant/quarantine/ws_cloud/asset_rollback/x.txt',
       'merchant/quarantine/ws_cloud/asset_rollback/x.txt.merchant-meta.json',
     ])
+  })
+
+  it('reports a durable orphan key when metadata persistence and cleanup both fail', async () => {
+    const transport: CloudObjectTransport = {
+      async head() { return null },
+      async get() { throw new CloudObjectNotFoundError() },
+      async put(key) {
+        if (key.endsWith('.merchant-meta.json')) throw new Error('metadata provider outage')
+      },
+      async delete() { throw new Error('cleanup provider outage') },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+
+    await expect(store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_orphan', fileName: 'x.txt', contentType: 'text/plain', body: new TextEncoder().encode('orphan me') }))
+      .rejects.toMatchObject({
+        name: 'ObjectStoragePartialWriteError',
+        orphanKey: 'quarantine/ws_cloud/asset_orphan/x.txt',
+        cleanupErrors: [expect.any(Error), expect.any(Error)],
+      } satisfies Partial<ObjectStoragePartialWriteError>)
+  })
+
+  it('rejects a same-byte retry when immutable content metadata conflicts', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) { objects.delete(key) },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode('same bytes')
+    await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_metadata', fileName: 'x.bin', contentType: 'application/octet-stream', body })
+
+    await expect(store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_metadata', fileName: 'x.bin', contentType: 'text/plain', body }))
+      .rejects.toMatchObject({ code: 'OBJECT_ALREADY_EXISTS', status: 409 })
+  })
+
+  it('retries quarantine cleanup after clean promotion committed but metadata deletion failed', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    let failQuarantineMetadataDelete = true
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) {
+        if (key.includes('/quarantine/') && key.endsWith('.merchant-meta.json') && failQuarantineMetadataDelete) {
+          failQuarantineMetadataDelete = false
+          throw new Error('transient metadata delete failure')
+        }
+        objects.delete(key)
+      },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode('promote once')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_retry', fileName: 'x.txt', contentType: 'text/plain', body })
+
+    await expect(store.promoteClean({ workspaceId: 'ws_cloud', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://retry-1' }))
+      .rejects.toMatchObject({ code: 'OBJECT_STORAGE_UNAVAILABLE' })
+    await expect(store.get('ws_cloud', 'clean/ws_cloud/asset_retry/x.txt')).resolves.toMatchObject({ body })
+
+    await expect(store.promoteClean({ workspaceId: 'ws_cloud', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://retry-1' }))
+      .resolves.toMatchObject({ zone: 'clean', scanEvidenceRef: 'scanner://retry-1' })
+    await expect(store.head('ws_cloud', quarantine.key, { includeQuarantine: true })).resolves.toBeNull()
+  })
+
+  it('keeps quarantine when an existing clean target body is missing or corrupt', async () => {
+    for (const [caseName, targetBody] of [
+      ['missing', undefined],
+      ['corrupt', new TextEncoder().encode('corrupt clean body')],
+    ] as const) {
+      const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+      const transport: CloudObjectTransport = {
+        async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+        async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+        async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+        async delete(key) { objects.delete(key) },
+      }
+      const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+      const body = new TextEncoder().encode(`quarantine source ${caseName}`)
+      const quarantine = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: `asset_${caseName}`, fileName: 'x.txt', contentType: 'text/plain', body })
+      const cleanKey = quarantine.key.replace('quarantine/', 'clean/')
+      const sourceMetadata = objects.get(`merchant/${quarantine.key}.merchant-meta.json`)!
+      const cleanMetadata = {
+        ...JSON.parse(new TextDecoder().decode(sourceMetadata.body)),
+        key: cleanKey,
+        zone: 'clean',
+        scanEvidenceRef: 'scanner://existing-clean',
+      }
+      objects.set(`merchant/${cleanKey}.merchant-meta.json`, { body: new TextEncoder().encode(JSON.stringify(cleanMetadata)), contentType: 'application/json', metadata: { workspaceId: 'ws_cloud', zone: 'clean' } })
+      if (targetBody) objects.set(`merchant/${cleanKey}`, { body: targetBody, contentType: 'text/plain', metadata: { workspaceId: 'ws_cloud', zone: 'clean' } })
+
+      await expect(store.promoteClean({ workspaceId: 'ws_cloud', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://existing-clean' }))
+        .rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED' })
+      await expect(store.get('ws_cloud', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body })
+    }
+  })
+
+  it('rejects a self-consistent but different clean object and preserves the quarantine source', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) { objects.delete(key) },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const sourceBody = new TextEncoder().encode('source')
+    const targetBody = new TextEncoder().encode('different clean body')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_conflict', assetId: 'asset_conflict', fileName: 'x.txt', contentType: 'text/plain', body: sourceBody })
+    const cleanKey = quarantine.key.replace('quarantine/', 'clean/')
+    const targetSha = digest(targetBody)
+    const sourceMetadata = objects.get(`merchant/${quarantine.key}.merchant-meta.json`)!
+    const cleanMetadata = { ...JSON.parse(new TextDecoder().decode(sourceMetadata.body)), key: cleanKey, zone: 'clean', sha256: targetSha, sizeBytes: targetBody.byteLength, scanEvidenceRef: 'scanner://conflict' }
+    objects.set(`merchant/${cleanKey}.merchant-meta.json`, { body: new TextEncoder().encode(JSON.stringify(cleanMetadata)), contentType: 'application/json', metadata: { workspaceId: 'ws_conflict', zone: 'clean' } })
+    objects.set(`merchant/${cleanKey}`, { body: targetBody, contentType: 'text/plain', metadata: { workspaceId: 'ws_conflict', zone: 'clean' } })
+    await expect(store.promoteClean({ workspaceId: 'ws_conflict', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://conflict' })).rejects.toMatchObject({ code: 'OBJECT_PROMOTION_CONFLICT' })
+    await expect(store.get('ws_conflict', quarantine.key, { includeQuarantine: true })).resolves.toMatchObject({ body: sourceBody })
+  })
+
+  it('makes cloud deletion converge when the body or metadata was already removed', async () => {
+    const objects = new Set<string>()
+    const transport: CloudObjectTransport = {
+      async head(key) { return objects.has(key) ? { sizeBytes: 1 } : null },
+      async get(key) { if (!objects.has(key)) throw new CloudObjectNotFoundError(); return { body: new Uint8Array([1]) } },
+      async put(key) { objects.add(key) },
+      async delete(key) {
+        if (!objects.delete(key)) throw new CloudObjectNotFoundError()
+      },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode('delete me')
+    const uploaded = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_delete', fileName: 'x.txt', contentType: 'text/plain', body })
+    objects.delete(`merchant/${uploaded.key}`)
+
+    await expect(store.delete('ws_cloud', uploaded.key, { includeQuarantine: true })).resolves.toBeUndefined()
+    await expect(store.delete('ws_cloud', uploaded.key, { includeQuarantine: true })).resolves.toBeUndefined()
+    expect(objects).toHaveLength(0)
   })
 })

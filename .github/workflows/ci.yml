@@ -4,17 +4,108 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: merchant
+          POSTGRES_PASSWORD: merchant
+          POSTGRES_DB: merchant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U merchant -d merchant"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run check
+      - name: Run explicit repository release gates
+        run: npm run test:release-gates
+      - name: Create isolated PostgreSQL migration databases
+        run: |
+          docker exec "${{ job.services.postgres.id }}" createdb -U merchant legacy_backfill_test
+          docker exec "${{ job.services.postgres.id }}" createdb -U merchant model_budget_test
+      - name: Bootstrap non-superuser application role
+        run: >-
+          docker exec -i "${{ job.services.postgres.id }}"
+          psql -v ON_ERROR_STOP=1 -U merchant -d merchant
+          < infra/local/ensure-app-role.sql
+      - name: Run PostgreSQL migration acceptance tests without skips
+        env:
+          LEGACY_BACKFILL_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/legacy_backfill_test
+          WORKSPACE_CATALOG_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+          MODEL_BUDGET_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/model_budget_test
+          BRAND_CANONICAL_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+          WORKSPACE_BOOTSTRAP_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+          PERSISTENCE_RELEASE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+          PLATFORM_MEDIA_SPEC_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+          ASSET_PARSE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+          STORAGE_QUOTA_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+        run: >-
+          npm test --
+          packages/persistence/src/migration-049.test.ts
+          packages/persistence/src/migration-051.test.ts
+          packages/persistence/src/migration-053.test.ts
+          packages/persistence/src/migration-063.test.ts
+          packages/persistence/src/migration-064.test.ts
+          packages/persistence/src/migration-067-release.postgres.test.ts
+          packages/persistence/src/migration-068-release.postgres.test.ts
+          packages/persistence/src/migration-069-release.postgres.test.ts
+          packages/persistence/src/migration-070-072-release.postgres.test.ts
+          packages/persistence/src/migration-073-release.postgres.test.ts
+          packages/persistence/src/migration-074-release.postgres.test.ts
+          packages/persistence/src/migration-077-release.postgres.test.ts
+          packages/persistence/src/migration-078-release.postgres.test.ts
+          packages/persistence/src/migration-079-release.postgres.test.ts
+          packages/persistence/src/migration-integrity-release.postgres.test.ts
+          packages/persistence/src/migration-081-release.postgres.test.ts
+          packages/persistence/src/migration-082.test.ts
+          packages/persistence/src/migration-083.test.ts
+          packages/persistence/src/migration-084.test.ts
+          packages/persistence/src/migration-085.test.ts
+          packages/persistence/src/migration-086.test.ts
+          packages/persistence/src/migration-087.test.ts
+          packages/persistence/src/migration-088.test.ts
+          packages/persistence/src/migration-089.test.ts
+          packages/persistence/src/migration-090.test.ts
+          packages/persistence/src/migration-091.test.ts
+          packages/persistence/src/migration-092.test.ts
+          packages/persistence/src/migration-093.test.ts
+          packages/persistence/src/migration-094.test.ts
+          packages/persistence/src/migration-095.test.ts
+          packages/persistence/src/migration-096.test.ts
+          packages/persistence/src/migration-097.test.ts
+          packages/persistence/src/migration-098.test.ts
+          packages/persistence/src/migration-099.test.ts
+          packages/persistence/src/migration-100.test.ts
+          packages/persistence/src/migration-101.test.ts
+          packages/persistence/src/migration-102.test.ts
+          packages/persistence/src/migration-103.test.ts
+          packages/persistence/src/migration-104.test.ts
+          packages/persistence/src/migration-105.test.ts
+          packages/persistence/src/migration-105-release.postgres.test.ts
+          packages/persistence/src/migration-106.test.ts
+          packages/persistence/src/migration-107.test.ts
+          packages/persistence/src/migration-108.test.ts
+          packages/persistence/src/campaign-lifecycle.postgres.test.ts
+          packages/persistence/src/model-daily-budget.postgres.test.ts
+          packages/persistence/src/storage-quota-repository.postgres.test.ts
+          packages/persistence/src/platform-media-spec-repository.test.ts
+          packages/persistence/src/mapping-preflight-approval-repository.test.ts
+          packages/persistence/src/asset-parse-repository.test.ts
       - run: npm run test:load
       - run: npm run build
       - run: npm audit --omit=dev

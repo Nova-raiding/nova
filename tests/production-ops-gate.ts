@@ -15,9 +15,11 @@ type Service = {
 type Compose = { services?: Record<string, Service> }
 
 const composeFile = 'infra/local/docker-compose.yml'
-const runbookFile = 'docs/production-ops-runbook.md'
+const runbookFile = 'doc/todo/release/production-ops-runbook.md'
 const otelFile = 'infra/observability/otel-collector.example.yaml'
 const alertsFile = 'infra/observability/prometheus-alerts.example.yaml'
+const apiManifest = readFileSync('infra/kubernetes/base/api.yaml', 'utf8')
+const productionRuntime = readFileSync('infra/kubernetes/base/configmap.yaml', 'utf8')
 
 function compose(): Compose {
   return JSON.parse(execFileSync('docker', ['compose', '-f', composeFile, 'config', '--format', 'json'], { encoding: 'utf8' })) as Compose
@@ -34,6 +36,11 @@ function env(service: Service): Record<string, string> {
 
 function contains(service: Service, pattern: string) {
   return service.healthcheck?.test?.some(value => value.includes(pattern)) === true
+}
+
+function productionRuntimeValue(key: string): string | undefined {
+  const match = productionRuntime.match(new RegExp(`^\\s+${key}:\\s*(?:"([^"]*)"|'([^']*)'|([^\\s#]+))\\s*$`, 'm'))
+  return match?.[1] ?? match?.[2] ?? match?.[3]
 }
 
 const config = compose()
@@ -54,7 +61,8 @@ for (const name of ['ui', 'api', ...workerServices, 'postgres', 'redis']) {
 
 assert.equal(services.migrate!.restart, 'no', 'migration service must not restart indefinitely')
 assert.ok(contains(services.ui!, '127.0.0.1'), 'UI healthcheck must probe the local HTTP listener')
-assert.ok(contains(services.api!, '/healthz'), 'API healthcheck must probe /healthz')
+assert.ok(contains(services.api!, '/readyz'), 'API healthcheck must probe dependency readiness at /readyz')
+assert.ok(apiManifest.includes('path: /livez'), 'API liveness must use the dependency-independent /livez probe')
 for (const name of workerServices) assert.ok(contains(services[name]!, 'process.kill(1, 0)'), `${name} healthcheck must probe process liveness`)
 assert.ok(contains(services.postgres!, 'pg_isready'), 'Postgres readiness check is required')
 assert.ok(contains(services.redis!, 'redis-cli'), 'Redis readiness check is required')
@@ -65,20 +73,29 @@ for (const dependency of [
   ['api', 'postgres', 'service_healthy'],
   ['api', 'redis', 'service_healthy'],
   ...workerServices.flatMap(worker => [[worker, 'migrate', 'service_completed_successfully'], [worker, 'postgres', 'service_healthy'], [worker, 'redis', 'service_healthy']] as const),
+  ...workerServices.map(worker => [worker, 'api', 'service_healthy'] as const),
   ['migrate', 'postgres', 'service_healthy'],
 ] as const) {
   assert.equal(services[dependency[0]]!.depends_on?.[dependency[1]]?.condition, dependency[2], `${dependency[0]} must wait for ${dependency[1]} (${dependency[2]})`)
 }
 
 const apiEnv = env(services.api!)
-assert.equal(apiEnv.NODE_ENV, 'production')
-assert.equal(apiEnv.CONNECTOR_FIXTURE_MODE, 'false')
-assert.equal(apiEnv.PLUGIN_WRITE_ENABLED, 'false')
+// infra/local is deliberately a development/acceptance Compose stack. The
+// production assertions must read the production runtime contract instead of
+// treating local-only defaults as a deployment configuration.
+assert.equal(productionRuntimeValue('NODE_ENV'), 'production')
+assert.equal(productionRuntimeValue('CONNECTOR_FIXTURE_MODE'), 'false')
+assert.equal(productionRuntimeValue('PLUGIN_WRITE_ENABLED'), 'false')
 assert.ok('OTEL_EXPORTER_OTLP_ENDPOINT' in apiEnv, 'API must expose an OTEL endpoint injection point')
-assert.ok(apiEnv.WORKER_API_TOKEN, 'API must expose a separately injected worker callback token')
+assert.ok(apiEnv.WORKER_API_CREDENTIALS, 'API must expose a role-scoped worker credential map')
+const workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>
+assert.equal(new Set(Object.values(workerCredentials).map(value => value.token)).size, workerServices.length, 'worker role tokens must be distinct')
+assert.equal(new Set(Object.values(workerCredentials).map(value => value.signing_secret)).size, workerServices.length, 'worker role signing secrets must be distinct')
 for (const name of workerServices) {
   const workerEnv = env(services[name]!)
   assert.ok(workerEnv.WORKER_ROLE, `${name} must declare a worker role`)
+  assert.equal(workerEnv.WORKER_API_TOKEN, workerCredentials[workerEnv.WORKER_ROLE!]?.token, `${name} token must match only its role`)
+  assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, workerCredentials[workerEnv.WORKER_ROLE!]?.signing_secret, `${name} signing secret must match only its role`)
   assert.equal(workerEnv.WORKER_WORKSPACES, 'auto')
   assert.ok('OTEL_EXPORTER_OTLP_ENDPOINT' in workerEnv, `${name} must expose an OTEL endpoint injection point`)
 }

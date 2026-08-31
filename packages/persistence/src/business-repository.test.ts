@@ -50,8 +50,81 @@ describe('PostgresBusinessRepository', () => {
     client.enqueue() // COMMIT
     const result = await new PostgresBusinessRepository(new RecordingPool(client)).loadWorkspace('ws_one')
     expect(result).toHaveLength(1)
-    expect(client.calls[2]?.values).toEqual(['ws_one'])
+    expect(client.calls[2]?.values).toEqual(['ws_one', []])
     expect(client.calls[2]?.text).toContain('FROM business_entity_snapshots')
+  })
+
+  it('paginates normalized tasks inside tenant and brand scope before counting', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // set_config
+    client.enqueue({ total: '2' })
+    client.enqueue({ data: { id: 'task_2', brandId: 'brand_1' } }, { data: { id: 'task_3', brandId: 'brand_1' } })
+    client.enqueue() // COMMIT
+
+    const page = await new PostgresBusinessRepository(new RecordingPool(client)).listTasksPage('ws_one', {
+      accessibleBrandIds: ['brand_1'], state: 'approved', limit: 20, offset: 0,
+    })
+
+    expect(page).toEqual({ items: [{ id: 'task_2', brandId: 'brand_1' }, { id: 'task_3', brandId: 'brand_1' }], total: 2, limit: 20, offset: 0 })
+    expect(client.calls[2]?.text).toContain('brand_id = ANY($3::text[])')
+    expect(client.calls[2]?.values).toEqual(['ws_one', 'approved', ['brand_1']])
+    expect(client.calls[3]?.text).toContain('ORDER BY created_at DESC, id ASC LIMIT $4 OFFSET $5')
+  })
+
+  it('lists product asset bindings through the tenant-scoped relation', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // set_config
+    client.enqueue({
+      workspace_id: 'ws_one', product_id: 'product_1', asset_id: 'asset_1', asset_role: 'source', ordinal: 1, status: 'active',
+      created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:01.000Z',
+    })
+    client.enqueue() // COMMIT
+
+    const result = await new PostgresBusinessRepository(new RecordingPool(client)).listProductAssetBindings('ws_one', { productId: 'product_1' })
+
+    expect(result).toEqual([{ workspaceId: 'ws_one', productId: 'product_1', assetId: 'asset_1', assetRole: 'source', ordinal: 1, status: 'active', createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:01.000Z' }])
+    expect(client.calls[2]?.text).toContain('FROM product_asset_bindings')
+    expect(client.calls[2]?.values).toEqual(['ws_one', 'product_1'])
+  })
+
+  it('binds an asset with workspace, brand, version and audit controls', async () => {
+    const client = new RecordingClient()
+    client.enqueue() // BEGIN
+    client.enqueue() // set_config
+    client.enqueue({ workspace_id: 'ws_one', entity_type: 'product', entity_id: 'product_1', entity_version: 3, payload: { id: 'product_1', workspaceId: 'ws_one', brandId: 'brand_1', sourceAssetIds: [] }, created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:00.000Z' })
+    client.enqueue({ entity_id: 'asset_1', payload: { id: 'asset_1', workspaceId: 'ws_one', brandId: 'brand_1' } })
+    client.enqueue({ workspace_id: 'ws_one', entity_type: 'product', entity_id: 'product_1', entity_version: 4, payload: { id: 'product_1', workspaceId: 'ws_one', brandId: 'brand_1', sourceAssetIds: ['asset_1'] }, created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:01.000Z' })
+    client.enqueue() // normalized product projection trigger
+    client.enqueue({ workspace_id: 'ws_one', product_id: 'product_1', asset_id: 'asset_1', asset_role: 'source', ordinal: 1, status: 'active', created_at: '2026-08-23T00:00:01.000Z', updated_at: '2026-08-23T00:00:01.000Z' })
+    client.enqueue() // audit
+    client.enqueue() // COMMIT
+    const result = await new PostgresBusinessRepository(new RecordingPool(client), { normalizedProjection: true }).bindProductAsset({ workspaceId: 'ws_one', productId: 'product_1', assetId: 'asset_1', assetRole: 'source', brandId: 'brand_1', expectedVersion: 3, actorId: 'member_1', reason: '绑定商品主素材' })
+    expect(result).toMatchObject({ workspaceId: 'ws_one', productId: 'product_1', assetId: 'asset_1', status: 'active' })
+    expect(client.calls.some(call => call.text.includes('workspace_operation_audit'))).toBe(true)
+    expect(client.calls.some(call => call.text.includes('FOR UPDATE'))).toBe(true)
+    expect(client.calls.some(call => call.text.includes("entity_type='asset'"))).toBe(true)
+  })
+
+  it('rejects stale product versions before changing the relation', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue()
+    client.enqueue({ workspace_id: 'ws_one', entity_type: 'product', entity_id: 'product_1', entity_version: 4, payload: { id: 'product_1', brandId: 'brand_1' }, created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:00.000Z' })
+    client.enqueue() // ROLLBACK
+    await expect(new PostgresBusinessRepository(new RecordingPool(client)).bindProductAsset({ workspaceId: 'ws_one', productId: 'product_1', assetId: 'asset_1', assetRole: 'main', brandId: 'brand_1', expectedVersion: 3, actorId: 'member_1', reason: '绑定素材' })).rejects.toBeInstanceOf(BusinessSnapshotVersionConflictError)
+    expect(client.calls.some(call => call.text.includes('product_asset_bindings'))).toBe(false)
+  })
+
+  it('rejects a cross-brand asset before relation or audit writes', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue()
+    client.enqueue({ workspace_id: 'ws_one', entity_type: 'product', entity_id: 'product_1', entity_version: 3, payload: { id: 'product_1', brandId: 'brand_1' }, created_at: '2026-08-23T00:00:00.000Z', updated_at: '2026-08-23T00:00:00.000Z' })
+    client.enqueue({ entity_id: 'asset_2', payload: { id: 'asset_2', workspaceId: 'ws_one', brandId: 'brand_2' } })
+    client.enqueue() // ROLLBACK
+    await expect(new PostgresBusinessRepository(new RecordingPool(client)).bindProductAsset({ workspaceId: 'ws_one', productId: 'product_1', assetId: 'asset_2', assetRole: 'source', brandId: 'brand_1', expectedVersion: 3, actorId: 'member_1', reason: '绑定素材' })).rejects.toThrow('PRODUCT_ASSET_BINDING_BRAND_MISMATCH')
+    expect(client.calls.some(call => call.text.includes('product_asset_bindings'))).toBe(false)
+    expect(client.calls.some(call => call.text.includes('workspace_operation_audit'))).toBe(false)
   })
 
   it('uses a tenant scope before a missing entity is reported', async () => {
@@ -134,6 +207,8 @@ describe('PostgresBusinessRepository', () => {
 
     const projection = client.calls[3]
     expect(projection?.text).toContain('brand_id, canonical_product_id, listing_id, campaign_id, campaign_item_id')
+    expect(projection?.text).toContain('CASE WHEN $6::text IS NOT NULL')
+    expect(projection?.text).toContain('id = $6::text')
     expect(projection?.text).toContain('brand_id=EXCLUDED.brand_id')
     expect(projection?.text).toContain('campaign_item_id=EXCLUDED.campaign_item_id')
     expect(projection?.values).toEqual([

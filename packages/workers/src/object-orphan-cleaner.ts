@@ -1,25 +1,56 @@
-import type { ObjectOrphanRepository } from '../../persistence/src/object-orphan-repository.js'
+import type { ObjectOrphanRepository, ObjectStorageOrphan } from '../../persistence/src/object-orphan-repository.js'
 
 export interface ObjectOrphanCleanupResult { scanned: number; cleaned: number; retrying: number; manualAttention: number }
 
-export async function cleanObjectStorageOrphans(input: { workspaceId: string; repository: ObjectOrphanRepository; deleteObject: (objectKey: string) => Promise<void>; limit?: number; maxAttempts?: number; now?: Date }): Promise<ObjectOrphanCleanupResult> {
+type OrphanOutcome = 'cleaned' | 'retrying' | 'manual_attention'
+
+const repositoryIds = new WeakMap<object, number>()
+let nextRepositoryId = 1
+const activeCleanups = new Map<string, Promise<OrphanOutcome>>()
+
+function repositoryId(repository: ObjectOrphanRepository): number {
+  const existing = repositoryIds.get(repository)
+  if (existing !== undefined) return existing
+  const id = nextRepositoryId++
+  repositoryIds.set(repository, id)
+  return id
+}
+
+export async function cleanObjectStorageOrphans(input: { workspaceId: string; repository: ObjectOrphanRepository; deleteObject: (objectKey: string) => Promise<void>; onDeleted?: (row: ObjectStorageOrphan) => Promise<void>; limit?: number; maxAttempts?: number; now?: Date }): Promise<ObjectOrphanCleanupResult> {
   const now = input.now ?? new Date()
   const maxAttempts = Math.max(1, input.maxAttempts ?? 5)
   const rows = await input.repository.listPending(input.workspaceId, Math.min(500, Math.max(1, input.limit ?? 100)))
   const result: ObjectOrphanCleanupResult = { scanned: rows.length, cleaned: 0, retrying: 0, manualAttention: 0 }
   for (const row of rows) {
-    try {
-      await input.deleteObject(row.objectKey)
-      await input.repository.markCleaned({ workspaceId: input.workspaceId, id: row.id })
-      result.cleaned += 1
-    } catch (error) {
-      const nextAttempts = row.attempts + 1
-      const manualAttention = nextAttempts >= maxAttempts
-      const delayMs = Math.min(24 * 60 * 60 * 1_000, 30_000 * 2 ** Math.max(0, nextAttempts - 2))
-      await input.repository.markRetry({ workspaceId: input.workspaceId, id: row.id, error: error instanceof Error ? error.message.slice(0, 2_000) : 'object delete failed', nextAttemptAt: new Date(now.getTime() + delayMs).toISOString(), manualAttention })
-      if (manualAttention) result.manualAttention += 1
-      else result.retrying += 1
+    const key = `${repositoryId(input.repository)}:${input.workspaceId}:${row.id}`
+    let cleanup = activeCleanups.get(key)
+    if (!cleanup) {
+      cleanup = cleanOneOrphan(input, row, now, maxAttempts)
+      activeCleanups.set(key, cleanup)
+      void cleanup.then(
+        () => { if (activeCleanups.get(key) === cleanup) activeCleanups.delete(key) },
+        () => { if (activeCleanups.get(key) === cleanup) activeCleanups.delete(key) },
+      )
     }
+    const outcome = await cleanup
+    if (outcome === 'cleaned') result.cleaned += 1
+    else if (outcome === 'manual_attention') result.manualAttention += 1
+    else result.retrying += 1
   }
   return result
+}
+
+async function cleanOneOrphan(input: { workspaceId: string; repository: ObjectOrphanRepository; deleteObject: (objectKey: string) => Promise<void>; onDeleted?: (row: ObjectStorageOrphan) => Promise<void> }, row: ObjectStorageOrphan, now: Date, maxAttempts: number): Promise<OrphanOutcome> {
+  try {
+    await input.deleteObject(row.objectKey)
+    await input.onDeleted?.(row)
+    await input.repository.markCleaned({ workspaceId: input.workspaceId, id: row.id })
+    return 'cleaned'
+  } catch (error) {
+    const nextAttempts = row.attempts + 1
+    const manualAttention = nextAttempts >= maxAttempts
+    const delayMs = Math.min(24 * 60 * 60 * 1_000, 30_000 * 2 ** Math.max(0, nextAttempts - 2))
+    await input.repository.markRetry({ workspaceId: input.workspaceId, id: row.id, error: error instanceof Error ? error.message.slice(0, 2_000) : 'object delete failed', nextAttemptAt: new Date(now.getTime() + delayMs).toISOString(), manualAttention })
+    return manualAttention ? 'manual_attention' : 'retrying'
+  }
 }

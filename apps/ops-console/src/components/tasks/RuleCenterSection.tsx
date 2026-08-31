@@ -1,4 +1,5 @@
-import { Button, Card, Form, Input, Space, Table, Tag, Typography } from "antd";
+import { useState } from "react";
+import { Alert, Button, Card, Form, Input, Modal, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Rule } from "../../types/ops";
 
@@ -7,8 +8,19 @@ interface RuleCenterSectionProps {
 }
 
 export function RuleCenterSection({ model }: RuleCenterSectionProps) {
-  const { canRules, publishRuleDraft, ruleForm, rules, updateRuleStatus } =
+  const { canRules, publishRuleDraft, ruleForm, ruleMutationKey, rules, updateRuleStatus } =
     model;
+  const [activationTarget, setActivationTarget] = useState<Rule>();
+  const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string }>();
+
+  const activateRule = async () => {
+    if (!activationTarget) return;
+    const values = await activationForm.validateFields();
+    const activated = await updateRuleStatus(activationTarget, "active", values);
+    if (!activated) return;
+    setActivationTarget(undefined);
+    activationForm.resetFields();
+  };
 
   return (
     <Card
@@ -19,7 +31,17 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         </Tag>
       }
     >
+      {!canRules ? (
+        <Alert
+          type="info"
+          showIcon
+          message="当前为规则只读视图"
+          description="平台运营可以查看规则同步状态和生命周期证据；创建、审批、激活和停用需要 rules_admin 权限。"
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
       <Form
+        name="rule-draft-create"
         form={ruleForm}
         layout="inline"
         onFinish={publishRuleDraft}
@@ -28,7 +50,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
           if (first) ruleForm.scrollToField(first, { block: "center", focus: true });
         }}
         style={{ marginBottom: 16 }}
-        disabled={!canRules}
+        disabled={!canRules || Boolean(ruleMutationKey)}
         aria-label="创建规则草稿"
       >
         <Form.Item name="packId" label="规则包 ID" rules={[{ required: true, message: "请输入规则包 ID" }]}> 
@@ -54,7 +76,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         <Form.Item name="reason" label="创建原因" rules={[{ required: true, message: "请输入创建原因" }]}> 
           <Input placeholder="发布原因" />
         </Form.Item>
-        <Button disabled={!canRules} type="primary" htmlType="submit">
+        <Button disabled={!canRules || Boolean(ruleMutationKey)} loading={ruleMutationKey === "draft"} type="primary" htmlType="submit">
           创建规则草稿
         </Button>
       </Form>
@@ -92,15 +114,27 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
             title: "操作",
             render: (_: unknown, row: Rule) => (
               <Space>
+                {row.status !== "active" && row.status !== "expired" ? (
+                  <Button
+                    disabled={!canRules || Boolean(ruleMutationKey)}
+                    loading={ruleMutationKey === `${row.id}:active`}
+                    type="link"
+                    onClick={() => setActivationTarget(row)}
+                  >
+                    审批并激活
+                  </Button>
+                ) : null}
                 <Button
-                  disabled={!canRules}
+                  disabled={!canRules || Boolean(ruleMutationKey)}
+                  loading={ruleMutationKey === `${row.id}:expired`}
                   type="link"
                   onClick={() => void updateRuleStatus(row, "expired")}
                 >
                   标记过期
                 </Button>
                 <Button
-                  disabled={!canRules}
+                  disabled={!canRules || Boolean(ruleMutationKey)}
+                  loading={ruleMutationKey === `${row.id}:inactive`}
                   type="link"
                   danger
                   onClick={() => void updateRuleStatus(row, "inactive")}
@@ -115,6 +149,35 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
       <Typography.Text type="secondary">
         草稿发布不代表已生效；规则激活必须由服务端规则管理员提供审批凭证，所有状态变更写入审计。
       </Typography.Text>
+      <Modal
+        title="审批并激活规则"
+        open={Boolean(activationTarget)}
+        okText="确认激活"
+        cancelText="取消"
+        confirmLoading={ruleMutationKey === `${activationTarget?.id}:active`}
+        onOk={() => void activateRule()}
+        onCancel={() => {
+          if (ruleMutationKey) return;
+          setActivationTarget(undefined);
+          activationForm.resetFields();
+        }}
+        destroyOnHidden
+      >
+        <Form name="rule-activation-approval" form={activationForm} layout="vertical" aria-label="规则激活审批">
+          <Form.Item name="approvalRef" label="审批引用" rules={[{ required: true, message: "请输入审批引用" }]}>
+            <Input placeholder="工单或审批记录 ID" />
+          </Form.Item>
+          <Form.Item name="approvedBy" label="审批人 ID" rules={[{ required: true, message: "请输入不同于当前操作者的审批人 ID" }]}>
+            <Input placeholder="独立审批人 ID" />
+          </Form.Item>
+          <Form.Item name="approvedAt" label="审批时间" rules={[{ required: true, message: "请输入 ISO 8601 审批时间" }, { pattern: /^\d{4}-\d{2}-\d{2}T/u, message: "请输入 ISO 8601 时间" }]}>
+            <Input placeholder="2026-08-29T08:00:00.000Z" />
+          </Form.Item>
+          <Form.Item name="reason" label="激活原因" rules={[{ required: true, message: "请输入激活原因" }]}>
+            <Input.TextArea rows={3} placeholder="说明审批依据和生效范围" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Card>
   );
 }

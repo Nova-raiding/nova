@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: merchant-schema-migration
+  labels:
+    app.kubernetes.io/name: merchant-schema-migration
+    app.kubernetes.io/part-of: merchant-marketing-codex
+    merchant.example.com/deployment-phase: migration
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: merchant-schema-migration
+        app.kubernetes.io/part-of: merchant-marketing-codex
+        merchant.example.com/deployment-phase: migration
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: migrate
+          image: merchant-api:0.1.0
+          command: ["node", "dist/apps/api/src/migrate.js"]
+          env:
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: merchant-migration-secrets, key: DATABASE_URL}}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}

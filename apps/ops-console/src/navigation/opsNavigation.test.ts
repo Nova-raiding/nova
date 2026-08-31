@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { domainFromLocation, opsDomains, urlForDomain } from "./opsNavigation.js";
+import { canViewOpsDomain, domainFromLocation, opsDomains, urlForDomain, visibleOpsDomains } from "./opsNavigation.js";
+import { createAuthorizationProjection } from "../authz/authorization.js";
+
+const authorization = (capabilities: string[], managed = true) => createAuthorizationProjection(
+  managed ? { actor_id: "actor_1", workspace_id: "ws_1", roles: [], workspace_granted: true, capabilities } : undefined,
+  managed,
+);
 
 describe("operations navigation", () => {
   it.each(opsDomains)("initializes %s from its top-level route", (domain) => {
@@ -42,5 +48,32 @@ describe("operations navigation", () => {
       { pathname: "/console/", search: "?tenant=demo" },
       "stores",
     )).toBe("/console/ops/stores?tenant=demo");
+  });
+
+  it("keeps support role navigation bounded while preserving incident response", () => {
+    const support = authorization(["platform.summary.read", "support.ticket.read", "incident.read", "feature_flag.read", "audit.read"]);
+    expect(visibleOpsDomains(support)).toEqual(["overview", "support", "incidents", "feature-flags", "audit"]);
+    expect(canViewOpsDomain("finance", support)).toBe(false);
+  });
+
+  it("lets platform operations reach every domain and local owner mode stay compatible", () => {
+    const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "support.ticket.read", "incident.read", "marketing.summary.read", "platform.settings.read", "rule.read", "model.status.read", "feature_flag.read", "storage.reconciliation.read", "billing.platform.read", "audit.read"]);
+    expect(visibleOpsDomains(all)).toEqual(opsDomains);
+    expect(visibleOpsDomains(authorization([], false))).toEqual([]);
+  });
+
+  it("does not expose platform-only domains to a workspace owner", () => {
+    const visible = visibleOpsDomains(authorization(["workspace.summary.read", "workspace.member.read", "support.ticket.read", "incident.read", "customer.content.read", "store.connection.read", "rule.read", "model.status.read", "billing.workspace.read", "audit.read"]));
+    expect(visible).toEqual([
+      "overview", "members", "support", "incidents", "tasks", "stores", "rules", "models", "storage", "finance", "audit",
+    ]);
+    expect(visible).not.toContain("users");
+    expect(visible).not.toContain("feature-flags");
+  });
+
+  it("aligns finance navigation with workspace refund and reconciliation roles", () => {
+    expect(canViewOpsDomain("finance", authorization(["billing.workspace.read", "billing.refund.execute"]))).toBe(true);
+    expect(canViewOpsDomain("finance", authorization(["billing.self.read"]))).toBe(true);
+    expect(canViewOpsDomain("finance", authorization(["customer.content.read"]))).toBe(false);
   });
 });

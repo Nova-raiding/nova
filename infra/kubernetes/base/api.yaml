@@ -10,11 +10,14 @@ spec:
     rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
   selector: {matchLabels: {app.kubernetes.io/name: merchant-api}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}}
+    metadata:
+      labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
+      annotations:
+        merchant.example.com/config-sha256: sha256:eee2d6ae6a4c0a7528a19db68b237abf8b280a7ca14ec8c3784bb78c093ac29d
     spec:
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
-      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: api
           image: merchant-api:0.1.0
@@ -22,19 +25,43 @@ spec:
           ports: [{name: http, containerPort: 8787}]
           envFrom:
             - configMapRef: {name: merchant-runtime}
-            - secretRef: {name: merchant-runtime-secrets}
           env:
             - {name: OTEL_SERVICE_NAME, value: merchant-api}
+            - {name: DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: DATABASE_URL}}}
+            - {name: OPS_DATABASE_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OPS_DATABASE_URL}}}
+            - {name: REDIS_URL, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: REDIS_URL}}}
+            - {name: API_AUTH_TOKENS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: API_AUTH_TOKENS}}}
+            - {name: OIDC_PROXY_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OIDC_PROXY_SIGNING_SECRET}}}
+            - {name: SESSION_ID_HASH_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: SESSION_ID_HASH_SECRET}}}
+            - {name: WORKER_API_CREDENTIALS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: WORKER_API_CREDENTIALS}}}
+            - {name: ASSET_SCANNER_API_TOKEN, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCANNER_API_TOKEN}}}
+            - {name: ASSET_SCANNER_WORKSPACE_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCANNER_WORKSPACE_SIGNING_SECRET}}}
+            - {name: ASSET_SCAN_TRUSTED_PUBLIC_KEYS, valueFrom: {secretKeyRef: {name: merchant-scanner-secrets, key: ASSET_SCAN_TRUSTED_PUBLIC_KEYS}}}
+            - {name: ASSET_STORAGE_KMS_KEY_ID, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_STORAGE_KMS_KEY_ID}}}
+            - {name: ASSET_DISPLAY_URL_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_DISPLAY_URL_SIGNING_SECRET}}}
+            - {name: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON, optional: true}}}
+            - {name: VAULT_TOKEN, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: VAULT_TOKEN}}}
+            - {name: RULE_APPROVAL_TOKENS, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: RULE_APPROVAL_TOKENS}}}
+            - {name: PLATFORM_RULE_SYNC_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: PLATFORM_RULE_SYNC_SIGNING_SECRET}}}
+            - {name: MODEL_RELAY_API_KEY, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MODEL_RELAY_API_KEY}}}
+            - {name: PAYMENT_PROVIDER_API_KEY, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: PAYMENT_PROVIDER_API_KEY}}}
+            - {name: PAYMENT_CALLBACK_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: PAYMENT_CALLBACK_SECRET}}}
+            - {name: OPS_CUSTOMER_ACCESS_SIGNING_SECRET, valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: OPS_CUSTOMER_ACCESS_SIGNING_SECRET}}}
           resources:
             requests: {cpu: 500m, memory: 1Gi}
             limits: {cpu: "2", memory: 4Gi}
           readinessProbe:
-            httpGet: {path: /healthz, port: http}
+            httpGet: {path: /readyz, port: http}
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 6
+          startupProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
           livenessProbe:
-            httpGet: {path: /healthz, port: http}
+            httpGet: {path: /livez, port: http}
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 3
@@ -53,6 +80,23 @@ spec:
   type: ClusterIP
   selector: {app.kubernetes.io/name: merchant-api}
   ports: [{name: http, port: 8787, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: merchant-api-scanner-internal
+  labels:
+    app.kubernetes.io/name: merchant-api-scanner-internal
+    app.kubernetes.io/part-of: merchant-marketing-codex
+    merchant.example.com/exposure: internal-only
+spec:
+  type: ClusterIP
+  # Scanner bootstrapping probes /healthz through this private Service before
+  # API /readyz can observe scanner quorum. Publish only these internal API
+  # endpoints before readiness to avoid a circular cold-start dependency.
+  publishNotReadyAddresses: true
+  selector: {app.kubernetes.io/name: merchant-api}
+  ports: [{name: scanner-http, port: 8787, targetPort: http}]
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

@@ -1,7 +1,12 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
+import { MemoryInteractiveConfirmationTicketRepository, type InteractiveConfirmationTicketRepository } from '../../../packages/persistence/src/interactive-confirmation-ticket-repository.js'
 
 let server: typeof import('./server.js').server
 let service: typeof import('./server.js').service
+let securityAuditEventsForTests: typeof import('./server.js').securityAuditEventsForTests
+let setImageSelectionTicketRepositoryForTests: typeof import('./server.js').setImageSelectionTicketRepositoryForTests
+let imageSelectionEventsForTests: typeof import('./server.js').imageSelectionEventsForTests
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -15,8 +20,8 @@ async function start() {
 }
 
 describe('product image review API', () => {
-  beforeAll(async () => { const module = await import('./server.js'); server = module.server; service = module.service })
-  afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())) })
+  beforeAll(async () => { const module = await import('./server.js'); server = module.server; service = module.service; securityAuditEventsForTests = module.securityAuditEventsForTests; setImageSelectionTicketRepositoryForTests = module.setImageSelectionTicketRepositoryForTests; imageSelectionEventsForTests = module.imageSelectionEventsForTests })
+  afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setImageSelectionTicketRepositoryForTests(); vi.unstubAllEnvs() })
 
   it('returns deterministic findings and external verification boundaries', async () => {
     const base = await start()
@@ -29,18 +34,79 @@ describe('product image review API', () => {
 
   it('generates, stores and reviews main-image variants through MCP', async () => {
     const base = await start()
+    vi.stubEnv('PUBLIC_ASSET_BASE_URL', base)
+    vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_SECRET', 'test-asset-display-signing-secret-at-least-32-bytes')
+    vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'test-primary')
     const response = await fetch(`${base}/mcp`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'catalog.image.generate', params: { product_id: 'prod_fixture_1', count: '2', direction: '白底主图' } }),
-    }).then(value => value.json()) as { data: { result: { job_id: string; execution: { mode: string; simulated: boolean; providerExecuted: boolean; label: string }; job: { state: string; artifactRole: string; archiveState: string; candidates: Array<{ visualRef: string }> }; product: { images?: string[] }; images: string[]; review: unknown[] } } }
+    }).then(value => value.json()) as { data: { result: { job_id: string; execution: { mode: string; simulated: boolean; providerExecuted: boolean; label: string }; product_protection: { policy: string; allowed: boolean; immutableAttributes: string[]; safeModifications: string[] }; job: { state: string; artifactRole: string; archiveState: string; candidates: Array<{ visualRef: string; assetId: string; scanStatus: string }> }; product: { images?: string[] }; images?: string[]; review?: unknown[] } } }
     expect(response.data.result.execution).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false, label: '本地演示图片，未调用图片模型' })
     expect(response.data.result.job.state).toBe('succeeded')
     expect(response.data.result.job).toMatchObject({ artifactRole: 'candidate', archiveState: 'archived' })
-    expect(response.data.result.images).toHaveLength(2)
-    expect(response.data.result.product.images).not.toEqual(response.data.result.images)
-    expect(response.data.result.images[0]).toMatch(/^data:image\/webp;base64,/u)
-    expect(response.data.result.review).toEqual([])
+    expect(response.data.result.job.candidates).toEqual(expect.arrayContaining([expect.objectContaining({ assetId: expect.any(String), scanStatus: 'quarantined' })]))
+    const candidateAssetId = response.data.result.job.candidates[0]!.assetId
+    const scanned = await Promise.all(response.data.result.job.candidates.map(candidate => fetch(`${base}/v1/assets/${encodeURIComponent(candidate.assetId)}/scan`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ scan_evidence_ref: `scanner://generated-image-e2e/${candidate.assetId}` }) }).then(value => value.json()) as Promise<{ data: { scanStatus: string } }>))
+    expect(scanned.every(item => item.data.scanStatus === 'clean')).toBe(true)
+    const cleanJob = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'catalog.image.get', params: { visual_ref: response.data.result.job.candidates[0]!.visualRef } }) }).then(value => value.json()) as { data: { result: { images: string[]; image_urls: string[]; selection_tickets: Array<{ visual_ref: string; nonce_hash: string; intent_hash: string; expires_at: string }>; review: unknown[]; job: { revision: number; candidates: Array<{ assetId: string; scanStatus: string; visualRef: string }> } } } }
+    expect(cleanJob.data.result.job.candidates[0]).toMatchObject({ assetId: candidateAssetId, scanStatus: 'clean' })
+    expect(response.data.result.images).toBeUndefined()
+    expect(cleanJob.data.result.images).toHaveLength(1)
+    expect(response.data.result.product.images).not.toEqual(cleanJob.data.result.images)
+    expect(cleanJob.data.result.images[0]).toMatch(/^data:image\/webp;base64,/u)
+    expect(cleanJob.data.result.image_urls).toHaveLength(1)
+    expect(cleanJob.data.result.selection_tickets).toEqual([{ visual_ref: response.data.result.job.candidates[0]!.visualRef, nonce_hash: expect.stringMatching(/^[a-f0-9]{64}$/u), intent_hash: expect.stringMatching(/^[a-f0-9]{64}$/u), expires_at: expect.any(String) }])
+    expect(Date.parse(cleanJob.data.result.selection_tickets[0]!.expires_at) - Date.now()).toBeGreaterThan(4 * 60_000)
+    expect(new URL(cleanJob.data.result.image_urls[0]!).searchParams.get('kid')).toBe('test-primary')
+    expect(new URL(cleanJob.data.result.image_urls[0]!).searchParams.get('v')).toBe('1')
+    const displayed = await fetch(cleanJob.data.result.image_urls[0]!)
+    expect(displayed.status).toBe(200)
+    expect(displayed.headers.get('content-type')).toBe('image/webp')
+    expect(displayed.headers.get('cache-control')).toContain('no-store')
+    expect(displayed.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(displayed.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(displayed.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(new Uint8Array(await displayed.arrayBuffer()).byteLength).toBeGreaterThan(0)
+    vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_SECRET', 'rotated-test-display-signing-secret-at-least-32-bytes')
+    vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'test-rotated')
+    vi.stubEnv('ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON', JSON.stringify({ 'test-primary': 'test-asset-display-signing-secret-at-least-32-bytes' }))
+    expect((await fetch(cleanJob.data.result.image_urls[0]!)).status).toBe(200)
+    const unknownKid = new URL(cleanJob.data.result.image_urls[0]!)
+    unknownKid.searchParams.set('kid', 'unknown-key')
+    expect((await fetch(unknownKid)).status).toBe(403)
+    const tampered = new URL(cleanJob.data.result.image_urls[0]!)
+    tampered.searchParams.set('workspace_id', 'ws_other')
+    expect((await fetch(tampered)).status).toBe(403)
+    const expired = new URL(cleanJob.data.result.image_urls[0]!)
+    expired.searchParams.set('expires', '1')
+    expect((await fetch(expired)).status).toBe(403)
+    expect(cleanJob.data.result.review).toEqual([])
+    const publishJobsBeforePreference = [...service.publishJobs.values()].filter(job => job.workspaceId === 'ws_demo').length
+    const firstTicket = cleanJob.data.result.selection_tickets[0]!
+    const missingTicket = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 48, method: 'catalog.image.select', params: { job_id: response.data.result.job_id, visual_ref: response.data.result.job.candidates[0]!.visualRef, expected_revision: String(cleanJob.data.result.job.revision), idempotency_key: 'image-ticket-missing', reason: '缺少票据' } }) }).then(value => value.json()) as { error: { code: string } }
+    expect(missingTicket.error.code).toBe('INVALID_REQUEST')
+    const candidateMismatch = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 49, method: 'catalog.image.select', params: { job_id: response.data.result.job_id, visual_ref: response.data.result.job.candidates[1]!.visualRef, expected_revision: String(cleanJob.data.result.job.revision), idempotency_key: 'image-ticket-candidate-mismatch', reason: '错误候选绑定', confirmation_ticket_nonce_hash: firstTicket.nonce_hash, confirmation_ticket_intent_hash: firstTicket.intent_hash } }) }).then(value => value.json()) as { error: { code: string } }
+    expect(candidateMismatch.error.code).toBe('INTERACTIVE_CONFIRMATION_INTENT_MISMATCH')
+    const revisionMismatch = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 50, method: 'catalog.image.select', params: { job_id: response.data.result.job_id, visual_ref: response.data.result.job.candidates[0]!.visualRef, expected_revision: String(cleanJob.data.result.job.revision + 1), idempotency_key: 'image-ticket-revision-mismatch', reason: '错误版本绑定', confirmation_ticket_nonce_hash: firstTicket.nonce_hash, confirmation_ticket_intent_hash: firstTicket.intent_hash } }) }).then(value => value.json()) as { error: { code: string } }
+    expect(revisionMismatch.error.code).toBe('INTERACTIVE_CONFIRMATION_INTENT_MISMATCH')
+    const preferred = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 51, method: 'catalog.image.select', params: { job_id: response.data.result.job_id, visual_ref: response.data.result.job.candidates[0]!.visualRef, expected_revision: String(cleanJob.data.result.job.revision), idempotency_key: 'image-card-preference-e2e', reason: 'ChatGPT 卡片明确选择', confirmation_ticket_nonce_hash: firstTicket.nonce_hash, confirmation_ticket_intent_hash: firstTicket.intent_hash } }) }).then(value => value.json()) as { data: { result: { preference_status: string; review_status: string; currently_usable: boolean; publishable: boolean; review_required: boolean; platformPublished: boolean; remote_write_performed: boolean; revision: number; idempotent_replay: boolean } } }
+    expect(preferred.data.result).toMatchObject({ preference_status: 'selected', review_status: 'unreviewed', currently_usable: true, publishable: false, review_required: true, platformPublished: false, remote_write_performed: false, idempotent_replay: false })
+    expect(JSON.stringify(imageSelectionEventsForTests('ws_demo').at(-1))).not.toMatch(/confirmation_ticket|nonce_hash|nonceHash/u)
+    const replayedPreference = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 52, method: 'catalog.image.select', params: { job_id: response.data.result.job_id, visual_ref: response.data.result.job.candidates[0]!.visualRef, expected_revision: String(cleanJob.data.result.job.revision), idempotency_key: 'image-card-preference-e2e', reason: 'ChatGPT 卡片明确选择', confirmation_ticket_nonce_hash: firstTicket.nonce_hash, confirmation_ticket_intent_hash: firstTicket.intent_hash } }) }).then(value => value.json()) as { data: { result: { revision: number; idempotent_replay: boolean } } }
+    expect(replayedPreference.data.result).toMatchObject({ revision: preferred.data.result.revision, idempotent_replay: true })
+    const consumedTicketDifferentWrite = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 52.1, method: 'catalog.image.select', params: { job_id: response.data.result.job_id, visual_ref: response.data.result.job.candidates[0]!.visualRef, expected_revision: String(cleanJob.data.result.job.revision), idempotency_key: 'image-card-preference-new-write', reason: '新的写操作不可重放旧票据', confirmation_ticket_nonce_hash: firstTicket.nonce_hash, confirmation_ticket_intent_hash: firstTicket.intent_hash } }) }).then(value => value.json()) as { error: { code: string } }
+    expect(consumedTicketDifferentWrite.error.code).toBe('INTERACTIVE_CONFIRMATION_TICKET_INVALID')
+    expect([...service.publishJobs.values()].filter(job => job.workspaceId === 'ws_demo')).toHaveLength(publishJobsBeforePreference)
+    const restoredPreference = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 53, method: 'catalog.image.get', params: { job_id: response.data.result.job_id } }) }).then(value => value.json()) as { data: { result: { selection_tickets: Array<{ visual_ref: string; nonce_hash: string; intent_hash: string }>; job: { revision: number; preferredCandidate: { visualRef: string; status: string; platformPublished: boolean } } } } }
+    expect(restoredPreference.data.result.job.preferredCandidate).toMatchObject({ visualRef: response.data.result.job.candidates[0]!.visualRef, status: 'preferred', platformPublished: false })
+    const concurrentTicket = restoredPreference.data.result.selection_tickets.find(ticket => ticket.visual_ref === response.data.result.job.candidates[1]!.visualRef)!
+    const concurrentCall = (id: number, key: string, reason: string) => fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id, method: 'catalog.image.select', params: { job_id: response.data.result.job_id, visual_ref: concurrentTicket.visual_ref, expected_revision: String(restoredPreference.data.result.job.revision), idempotency_key: key, reason, confirmation_ticket_nonce_hash: concurrentTicket.nonce_hash, confirmation_ticket_intent_hash: concurrentTicket.intent_hash } }) }).then(value => value.json()) as Promise<{ data: { result: { preference_status: string } } | null; error: { code: string } | null }>
+    const concurrent = await Promise.all([concurrentCall(54, 'image-ticket-race-a', '并发选择 A'), concurrentCall(55, 'image-ticket-race-b', '并发选择 B')])
+    expect(concurrent.filter(item => item.data?.result.preference_status === 'selected')).toHaveLength(1)
+    expect(concurrent.filter(item => item.error?.code === 'INTERACTIVE_CONFIRMATION_TICKET_INVALID')).toHaveLength(1)
+    expect(response.data.result.product_protection).toMatchObject({ policy: 'protected-product-intent-v1', allowed: true, immutableAttributes: expect.arrayContaining(['color', 'structure', 'material', 'logo', 'packaging_text', 'certification_mark', 'accessories']), safeModifications: [] })
+    expect(JSON.stringify(response.data.result.product_protection)).not.toMatch(/evidence|promptConstraints|instructionZh|instructionEn/u)
     expect(JSON.stringify(response.data.result.job)).not.toMatch(/storageKey|sha256|data:image/u)
 
     const historical = await fetch(`${base}/mcp`, {
@@ -50,10 +116,13 @@ describe('product image review API', () => {
     expect(historical.data.result).toMatchObject({ historicalCandidate: true, platformPublished: false })
     expect(historical.data.result.images).toHaveLength(1)
 
+    const allClean = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'catalog.image.get', params: { job_id: response.data.result.job_id } }) }).then(value => value.json()) as { data: { result: { images: string[] } } }
+    expect(allClean.data.result.images).toHaveLength(2)
+
     const reviewedDelimited = await fetch(`${base}/mcp`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'catalog.image.review', params: { product_id: 'prod_fixture_1', images: response.data.result.images.join(',') } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'catalog.image.review', params: { product_id: 'prod_fixture_1', images: allClean.data.result.images.join(',') } }),
     }).then(value => value.json()) as { data: { result: { images: string[]; findings: unknown[] } } }
     expect(reviewedDelimited.data.result.images).toHaveLength(2)
     expect(reviewedDelimited.data.result.findings).toEqual([])
@@ -61,10 +130,93 @@ describe('product image review API', () => {
     const reviewedJson = await fetch(`${base}/mcp`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'catalog.image.review', params: { product_id: 'prod_fixture_1', images: JSON.stringify(response.data.result.images) } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'catalog.image.review', params: { product_id: 'prod_fixture_1', images: JSON.stringify(allClean.data.result.images) } }),
     }).then(value => value.json()) as { data: { result: { images: string[]; findings: unknown[] } } }
     expect(reviewedJson.data.result.images).toHaveLength(2)
     expect(reviewedJson.data.result.findings).toEqual([])
+  })
+
+  it('uses the same archive evidence gate for image reads and candidate selection', async () => {
+    const base = await start()
+    const workspaceId = `ws_image_integrity_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'integrity-e2e' }
+    const product = service.importProduct({ workspaceId, platform: 'taobao', localProductKey: 'image-integrity', title: '归档一致性商品', stock: 3 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const call = (id: number, method: string, params: Record<string, string>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json()) as Promise<any>
+    const generated = await call(1, 'catalog.image.generate', { product_id: product.id, count: '1', idempotency_key: `integrity-generate-${workspaceId}` })
+    const jobId = generated.data.result.job_id as string
+    const candidate = generated.data.result.job.candidates[0] as { assetId: string; visualRef: string }
+    await fetch(`${base}/v1/assets/${encodeURIComponent(candidate.assetId)}/scan`, { method: 'POST', headers, body: JSON.stringify({ scan_evidence_ref: `scanner://integrity/${candidate.assetId}` }) })
+    const job = service.getImageGenerationJob(workspaceId, jobId)
+    const readable = await call(1.5, 'catalog.image.get', { job_id: jobId })
+    const ticket = readable.data.result.selection_tickets[0] as { nonce_hash: string; intent_hash: string }
+    job.outputs![0]!.archiveReceiptDigest = '0'.repeat(64)
+
+    const unreadable = await call(2, 'catalog.image.get', { job_id: jobId })
+    expect(unreadable.data.result).toMatchObject({ availabilityWarning: expect.any(String) })
+    expect(unreadable.data.result.images).toBeUndefined()
+    expect(unreadable.data.result.selection_tickets).toBeUndefined()
+    const denied = await call(3, 'catalog.image.select', { job_id: jobId, visual_ref: candidate.visualRef, expected_revision: String(job.revision), idempotency_key: `integrity-select-${workspaceId}`, reason: '尝试选择收据不一致候选', confirmation_ticket_nonce_hash: ticket.nonce_hash, confirmation_ticket_intent_hash: ticket.intent_hash })
+    expect(denied.error).toMatchObject({ code: 'VISUAL_ARCHIVE_INTEGRITY_FAILED', details: { reason: 'archive_receipt_mismatch' } })
+    expect(job.preferredSelection).toBeUndefined()
+  })
+
+  it('stores only a nonce digest and rejects cross-session or expired image selection tickets', async () => {
+    let clock = new Date()
+    const memory = new MemoryInteractiveConfirmationTicketRepository(() => clock)
+    const issued: Parameters<InteractiveConfirmationTicketRepository['issue']>[0][] = []
+    const recordingRepository: InteractiveConfirmationTicketRepository = {
+      issue: async input => { issued.push(structuredClone(input)); return memory.issue(input) },
+      consume: input => memory.consume(input),
+    }
+    setImageSelectionTicketRepositoryForTests(recordingRepository)
+    const base = await start()
+    const workspaceId = `ws_image_ticket_expiry_${Date.now()}`
+    const actorHeaders = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'ticket-owner' }
+    const otherHeaders = { ...actorHeaders, 'x-actor-id': 'ticket-other' }
+    const product = service.importProduct({ workspaceId, platform: 'taobao', localProductKey: 'ticket-expiry', title: '票据过期商品', stock: 2 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const call = (headers: Record<string, string>, id: number, method: string, params: Record<string, string>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json()) as Promise<any>
+    const generated = await call(actorHeaders, 1, 'catalog.image.generate', { product_id: product.id, count: '1', idempotency_key: `ticket-expiry-${workspaceId}` })
+    const jobId = generated.data.result.job_id as string
+    const candidate = generated.data.result.job.candidates[0] as { assetId: string; visualRef: string }
+    await fetch(`${base}/v1/assets/${encodeURIComponent(candidate.assetId)}/scan`, { method: 'POST', headers: actorHeaders, body: JSON.stringify({ scan_evidence_ref: `scanner://ticket-expiry/${candidate.assetId}` }) })
+    const readable = await call(actorHeaders, 2, 'catalog.image.get', { job_id: jobId })
+    const ticket = readable.data.result.selection_tickets[0] as { nonce_hash: string; intent_hash: string; expires_at: string }
+    expect(issued).toHaveLength(1)
+    expect(issued[0]!.nonceHash).toBe(createHash('sha256').update(ticket.nonce_hash).digest('hex'))
+    expect(issued[0]!.nonceHash).not.toBe(ticket.nonce_hash)
+    const selection = { job_id: jobId, visual_ref: candidate.visualRef, expected_revision: String(readable.data.result.job.revision), idempotency_key: `ticket-expiry-select-${workspaceId}`, reason: '测试会话与过期绑定', confirmation_ticket_nonce_hash: ticket.nonce_hash, confirmation_ticket_intent_hash: ticket.intent_hash }
+    expect((await call(otherHeaders, 3, 'catalog.image.select', selection)).error.code).toBe('INTERACTIVE_CONFIRMATION_TICKET_INVALID')
+    clock = new Date(Date.parse(ticket.expires_at) + 1)
+    expect((await call(actorHeaders, 4, 'catalog.image.select', selection)).error.code).toBe('INTERACTIVE_CONFIRMATION_TICKET_INVALID')
+    expect(service.getImageGenerationJob(workspaceId, jobId).preferredSelection).toBeUndefined()
+  })
+
+  it('fails closed on protected product mutations before wallet usage or image job/provider work', async () => {
+    const base = await start()
+    const workspaceId = `ws_protected_product_${Date.now()}`
+    const product = service.importProduct({ workspaceId, platform: 'taobao', title: '受保护商品图片', category: '服装', stock: 6, price: 129 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const mcp = (id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json()) as Promise<any>
+    const before = await mcp(1, 'billing.transactions', {})
+    const jobsBefore = [...service.imageGenerationJobs.values()].filter(job => job.workspaceId === workspaceId).length
+
+    const blockedGenerate = await mcp(2, 'catalog.image.generate', { product_id: product.id, count: '1', direction: '把商品颜色改成红色，结构拉长，材质换成金属，删除 Logo 和包装文字，移除认证标识并增加配件' })
+    expect(blockedGenerate.error).toMatchObject({ code: 'PROTECTED_PRODUCT_MUTATION_BLOCKED', details: { product_protection: { allowed: false, blockedAttributes: expect.arrayContaining(['color', 'structure', 'material', 'logo', 'packaging_text', 'certification_mark', 'accessories']) } } })
+    expect(JSON.stringify(blockedGenerate.error.details)).not.toMatch(/evidence|promptConstraints|instructionZh|instructionEn/u)
+
+    const blockedEdit = await mcp(3, 'multimodal.image.edit', { request_json: JSON.stringify({ kind: 'image_local_edit', id: `edit-protected-${Date.now()}`, sourceImage: { id: 'asset-that-must-not-be-read', uri: 'asset://protected-source', width: 1200, height: 1200 }, prompt: '重写包装文字并移除认证标识', region: { id: 'product', rect: { x: 0, y: 0, width: 1, height: 1 } }, constraints: { editableRegions: [{ id: 'product', rect: { x: 0, y: 0, width: 1, height: 1 } }], nonModifiableRegions: [] }, context: { brand: { id: 'brand-1', version: '1', hash: 'sha256:brand' }, product: { id: product.id, version: String(product.version), hash: 'sha256:product' }, rules: [{ id: 'rule-1', version: '1', hash: 'sha256:rule' }] } }) })
+    expect(blockedEdit.error).toMatchObject({ code: 'PROTECTED_PRODUCT_MUTATION_BLOCKED', details: { product_protection: { allowed: false, blockedAttributes: expect.arrayContaining(['packaging_text', 'certification_mark']) } } })
+
+    const after = await mcp(4, 'billing.transactions', {})
+    expect(after.data.result.transactions).toEqual(before.data.result.transactions)
+    expect([...service.imageGenerationJobs.values()].filter(job => job.workspaceId === workspaceId)).toHaveLength(jobsBefore)
+
+    const safe = await mcp(5, 'catalog.image.generate', { product_id: product.id, count: '1', direction: '更换海边场景，调整光影和构图，保持商品本体不变' })
+    expect(safe.error).toBeNull()
+    expect(safe.data.result.product_protection).toMatchObject({ allowed: true, safeModifications: expect.arrayContaining(['background', 'lighting', 'composition']), blockedAttributes: [] })
   })
 
   it('rejects an explicitly selected platform or store that conflicts with the product', async () => {
@@ -91,10 +243,14 @@ describe('product image review API', () => {
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'merchant-visual-e2e' }
     const call = (id: number, method: string, params: Record<string, string>, extra: Record<string, string> = {}) => fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) }).then(response => response.json())
 
-    const generated = await call(20, 'catalog.image.generate', { product_id: product.id, task_id: task.id, content_version_id: draft.id, count: '2', idempotency_key: 'visual-select-generate-e2e' }) as { data: { result: { job: { candidates: Array<{ visualRef: string }> } } } }
+    const generated = await call(20, 'catalog.image.generate', { product_id: product.id, task_id: task.id, content_version_id: draft.id, count: '2', idempotency_key: 'visual-select-generate-e2e' }) as { data: { result: { job: { candidates: Array<{ visualRef: string; assetId?: string }> } } } }
     const refs = generated.data.result.job.candidates.map(candidate => candidate.visualRef)
     expect(refs).toHaveLength(2)
     expect(product.images).toEqual(originalImages)
+    for (const candidate of generated.data.result.job.candidates) if (candidate.assetId) {
+      const scanned = await fetch(`${base}/v1/assets/${encodeURIComponent(candidate.assetId)}/scan`, { method: 'POST', headers, body: JSON.stringify({ scan_evidence_ref: 'scanner://visual-select-e2e' }) }).then(response => response.json()) as { data: { scanStatus: string } }
+      expect(scanned.data.scanStatus).toBe('clean')
+    }
 
     const reviewed = await call(21, 'catalog.image.review', { product_id: product.id, visual_refs_json: JSON.stringify(refs) }) as { data: { result: { persistedReviewStatus: string } } }
     expect(reviewed.data.result.persistedReviewStatus).toBe('passed')
@@ -124,7 +280,13 @@ describe('product image review API', () => {
 
   it('blocks formal image generation until an approved AI-editable asset matches the product platform', async () => {
     const previous = process.env.REQUIRE_APPROVED_ASSET_FOR_GENERATION
+    const previousProfile = process.env.DEPLOYMENT_PROFILE
+    const previousLocalCompose = process.env.LOCAL_COMPOSE
+    const previousScanFixture = process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE
     process.env.REQUIRE_APPROVED_ASSET_FOR_GENERATION = 'true'
+    process.env.DEPLOYMENT_PROFILE = 'local_acceptance'
+    process.env.LOCAL_COMPOSE = 'true'
+    process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE = 'true'
     try {
       const base = await start()
       const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_image_asset_gate' }
@@ -138,10 +300,8 @@ describe('product image review API', () => {
       expect(blocked.error.details).toMatchObject({ candidate_count: 0, required: { scan_status: 'clean', rights_status: 'approved', ai_modification_allowed: true, applicable_platforms: ['taobao'] } })
 
       const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])
-      const uploaded = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'asset.upload', params: { name: 'product-source.png', mime_type: 'image/png', content_base64: pngSignature.toString('base64'), applicable_platforms_json: '["taobao"]' } }) }).then(response => response.json()) as { data: { result: { id: string; scanStatus: string } } }
-      expect(uploaded.data.result.scanStatus).toBe('quarantined')
-      const scanned = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'asset.scan', params: { asset_id: uploaded.data.result.id, scan_evidence_ref: 'scanner://image-gate-test' } }) }).then(response => response.json()) as { data: { result: { scanStatus: string } } }
-      expect(scanned.data.result.scanStatus).toBe('clean')
+      const uploaded = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'asset.upload', params: { name: 'product-source.png', mime_type: 'image/png', content_base64: pngSignature.toString('base64'), applicable_platforms_json: '["taobao"]' } }) }).then(response => response.json()) as { data: { result: { id: string; scanStatus: string; scanAutomation: { mode: string; productionEvidence: boolean } } } }
+      expect(uploaded.data.result).toMatchObject({ scanStatus: 'clean', scanAutomation: { mode: 'local_fixture', productionEvidence: false } })
       const rights = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'asset.rights.update', params: { asset_id: uploaded.data.result.id, rights_status: 'approved', rights_scope: 'commercial_authorized', applicable_platforms_json: '["taobao"]', ai_modification_allowed: 'true' } }) }).then(response => response.json()) as { data: { result: { rightsStatus: string; aiModificationAllowed: boolean } } }
       expect(rights.data.result).toMatchObject({ rightsStatus: 'approved', aiModificationAllowed: true })
 
@@ -159,6 +319,12 @@ describe('product image review API', () => {
     } finally {
       if (previous === undefined) delete process.env.REQUIRE_APPROVED_ASSET_FOR_GENERATION
       else process.env.REQUIRE_APPROVED_ASSET_FOR_GENERATION = previous
+      if (previousProfile === undefined) delete process.env.DEPLOYMENT_PROFILE
+      else process.env.DEPLOYMENT_PROFILE = previousProfile
+      if (previousLocalCompose === undefined) delete process.env.LOCAL_COMPOSE
+      else process.env.LOCAL_COMPOSE = previousLocalCompose
+      if (previousScanFixture === undefined) delete process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE
+      else process.env.ALLOW_LOCAL_ASSET_SCAN_FIXTURE = previousScanFixture
     }
   })
 
@@ -205,13 +371,57 @@ describe('product image review API', () => {
 
   it('rejects executable and signature-mismatched uploads before quarantine', async () => {
     const base = await start()
-    const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_asset_gate' }
+    const workspaceId = `ws_asset_gate_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-request-id': 'asset-security-request' }
     const executable = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'asset.upload', params: { name: 'logo.png', mime_type: 'image/png', content_base64: Buffer.from('MZ-not-an-image').toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
     expect(executable.error.code).toBe('ASSET_EXECUTABLE_REJECTED')
     const mismatch = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'asset.upload', params: { name: 'logo.png', mime_type: 'image/png', content_base64: Buffer.from('plain text').toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
-    expect(mismatch.error.code).toBe('ASSET_SIGNATURE_MISMATCH')
+    expect(mismatch.error.code).toBe('ASSET_EXTENSION_SIGNATURE_MISMATCH')
     const archive = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'asset.upload', params: { name: 'encrypted.zip', mime_type: 'application/zip', content_base64: Buffer.from('PK\x03\x04encrypted archive').toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
     expect(archive.error.code).toBe('ASSET_TYPE_UNSUPPORTED')
+    const svgBody = '<svg xmlns="http://www.w3.org/2000/svg"><script>token-in-svg</script></svg>'
+    const svg = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'asset.upload', params: { name: 'unsafe-customer-name.svg', mime_type: 'image/svg+xml', content_base64: Buffer.from(svgBody).toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
+    expect(svg.error.code).toBe('ASSET_SVG_SCRIPT_REJECTED')
+
+    const mixedBatch = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'asset.upload.batch', params: { assets_json: JSON.stringify([
+      { name: 'batch-malware.png', mime_type: 'image/png', content_base64: Buffer.from('MZ-batch').toString('base64') },
+      { name: 'safe-notes.txt', mime_type: 'text/plain', content_base64: Buffer.from('safe product notes').toString('base64') },
+      { name: 'safe-data.json', mime_type: 'application/json', content_base64: Buffer.from('{"safe":true}').toString('base64') },
+    ]) } }) }).then(response => response.json()) as { error: null; data: { result: { assets: Array<{ id: string; scanStatus: string }>; items: Array<{ index: number; status: string; error?: { code: string }; reason_codes?: string[]; security_audit_event_id?: string }>; succeeded: number; failed: number; counts: { total: number; succeeded: number; failed: number }; partial: boolean } } }
+    expect(mixedBatch.error).toBeNull()
+    expect(mixedBatch.data.result).toMatchObject({ succeeded: 2, failed: 1, counts: { total: 3, succeeded: 2, failed: 1 }, partial: true })
+    expect(mixedBatch.data.result.assets).toHaveLength(2)
+    expect(mixedBatch.data.result.assets.every(asset => asset.scanStatus === 'quarantined')).toBe(true)
+    expect(mixedBatch.data.result.items).toEqual([
+      expect.objectContaining({ index: 0, status: 'failed', error: expect.objectContaining({ code: 'ASSET_EXECUTABLE_REJECTED' }), reason_codes: expect.arrayContaining(['ASSET_EXECUTABLE_REJECTED']), security_audit_event_id: expect.stringMatching(/^asset_security_/u) }),
+      expect.objectContaining({ index: 1, status: 'succeeded' }),
+      expect.objectContaining({ index: 2, status: 'succeeded' }),
+    ])
+
+    const rejectedBatch = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'asset.upload.batch', params: { assets_json: JSON.stringify([
+      { name: 'all-rejected-malware.png', mime_type: 'image/png', content_base64: Buffer.from('MZ-all-rejected').toString('base64') },
+      { name: 'batch-unsafe.svg', mime_type: 'image/svg+xml', content_base64: Buffer.from(svgBody).toString('base64') },
+    ]) } }) }).then(response => response.json()) as { error: null; data: { result: { assets: unknown[]; items: Array<{ status: string; reason_codes: string[]; security_audit_event_id: string }>; counts: { total: number; succeeded: number; failed: number }; partial: boolean } } }
+    expect(rejectedBatch.error).toBeNull()
+    expect(rejectedBatch.data.result).toMatchObject({ assets: [], counts: { total: 2, succeeded: 0, failed: 2 }, partial: false })
+    expect(rejectedBatch.data.result.items).toEqual([
+      expect.objectContaining({ status: 'failed', reason_codes: expect.arrayContaining(['ASSET_EXECUTABLE_REJECTED']), security_audit_event_id: expect.stringMatching(/^asset_security_/u) }),
+      expect.objectContaining({ status: 'failed', reason_codes: expect.arrayContaining(['ASSET_SVG_SCRIPT_REJECTED']), security_audit_event_id: expect.stringMatching(/^asset_security_/u) }),
+    ])
+
+    const restSvg = await fetch(`${base}/v1/assets/upload`, { method: 'POST', headers: { 'content-type': 'image/svg+xml', 'x-workspace-id': workspaceId, 'x-request-id': 'asset-security-rest-request', 'x-asset-name': encodeURIComponent('rest-private-name.svg') }, body: svgBody }).then(response => response.json()) as { error: { code: string } }
+    expect(restSvg.error.code).toBe('ASSET_SVG_SCRIPT_REJECTED')
+
+    const audits = securityAuditEventsForTests(workspaceId)
+    expect(audits).toHaveLength(8)
+    expect(audits.map(event => event.payload)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ decision: 'reject', reason_code: 'ASSET_EXECUTABLE_REJECTED', request_id: 'asset-security-request', file_name_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) }),
+      expect.objectContaining({ decision: 'reject', reason_code: 'ASSET_SVG_SCRIPT_REJECTED' }),
+      expect.objectContaining({ decision: 'reject', reason_code: 'ASSET_SVG_SCRIPT_REJECTED', request_id: 'asset-security-rest-request' }),
+      expect.objectContaining({ decision: 'reject', batch_index: 0 }),
+      expect.objectContaining({ decision: 'reject', batch_index: 1 }),
+    ]))
+    expect(JSON.stringify(audits)).not.toMatch(/unsafe-customer-name|batch-malware|all-rejected-malware|batch-unsafe|rest-private-name|token-in-svg|content_base64/u)
   })
 
 })

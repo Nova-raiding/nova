@@ -28,6 +28,7 @@ const editRequest = (overrides: Partial<ImageLocalEditRequest> = {}): ImageLocal
   id: 'edit-1',
   sourceImage: { id: 'image-original-1', uri: 'https://example.test/original.png', width: 1200, height: 1200 },
   prompt: '把杯身上的文案改成春日限定，但保留 Logo。',
+  modelVersion: 'qwen-image-edit-2026-08',
   region: { id: 'target-copy', rect: { x: 0.2, y: 0.3, width: 0.4, height: 0.2 } },
   constraints: {
     editableRegions: [{ id: 'copy-area', rect: { x: 0.1, y: 0.2, width: 0.7, height: 0.5 } }],
@@ -87,6 +88,7 @@ describe('image local edit invariants', () => {
       id: request.id,
       sourceImage: request.sourceImage,
       prompt: request.prompt,
+      modelVersion: request.modelVersion,
       region: request.region,
       constraints: request.constraints,
       context: request.context,
@@ -99,12 +101,25 @@ describe('image local edit invariants', () => {
       sourceImageId: 'image-original-1',
       originalPreserved: true,
       status: 'candidate',
+      modelVersion: 'qwen-image-edit-2026-08',
     } })
     expect(candidate.ok && JSON.parse(serializeImageEditCandidate(candidate.value))).toMatchObject({
       sourceImageId: 'image-original-1',
       originalPreserved: true,
+      modelVersion: 'qwen-image-edit-2026-08',
     })
     expect(request.sourceImage.id).toBe('image-original-1')
+  })
+
+  it('rejects an empty or oversized image-edit model version', () => {
+    expect(validateImageEditRequest(editRequest({ modelVersion: '   ' }))).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: 'INVALID_IMAGE', path: 'modelVersion' })],
+    })
+    expect(validateImageEditRequest(editRequest({ modelVersion: 'm'.repeat(201) }))).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: 'INVALID_IMAGE', path: 'modelVersion' })],
+    })
   })
 
   it('rejects out-of-bounds regions and regions overlapping protected areas', () => {

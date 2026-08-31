@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MerchantService } from './service.js'
+import { DomainError, MerchantService } from './service.js'
 
 describe('content version provenance vector', () => {
   it('stores immutable provenance and exports it with the delivery manifest', () => {
@@ -231,6 +231,63 @@ describe('content version provenance vector', () => {
     expect(() => service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: modified.version.id, changes: { detail: '不应修改' }, reason: '越过锁定字段' })).toThrowError(expect.objectContaining({ code: 'CONTENT_FIELD_LOCKED' }))
   })
 
+  it('returns mergeable field differences when concurrent clients edit different fields', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const base = service.createDraft(task.id)
+    const current = service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: base.id, changes: { title: '客户端 A 标题' }, reason: '客户端 A 保存', expectedRevision: base.revision }).version
+
+    let conflict: DomainError | undefined
+    try {
+      service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: base.id, changes: { detail: '客户端 B 详情' }, reason: '客户端 B 保存', expectedRevision: base.revision })
+    } catch (error) {
+      conflict = error as DomainError
+    }
+
+    expect(conflict).toMatchObject({
+      code: 'VERSION_CONFLICT',
+      status: 409,
+      details: {
+        current_version: current.version,
+        expected_version: base.version,
+        current_version_id: current.id,
+        base_version_id: base.id,
+        can_auto_merge: true,
+        auto_mergeable_fields: ['body.detail'],
+        conflicting_fields: [],
+      },
+    })
+    expect(conflict?.details?.base_current_changes).toEqual(expect.arrayContaining([
+      { path: 'body.title', before: base.body.title, after: '客户端 A 标题' },
+    ]))
+    expect(service.listContentVersions('ws_demo', task.id)).toHaveLength(2)
+  })
+
+  it('identifies overlapping concurrent edits and never exposes conflict details across workspaces', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const base = service.createDraft(task.id)
+    service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: base.id, changes: { title: '客户端 A 标题' }, reason: '客户端 A 保存', expectedRevision: base.revision })
+
+    expect(() => service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: base.id, changes: { title: '客户端 B 标题' }, reason: '客户端 B 保存', expectedRevision: base.revision }))
+      .toThrowError(expect.objectContaining({
+        code: 'VERSION_CONFLICT',
+        details: expect.objectContaining({ can_auto_merge: false, auto_mergeable_fields: [], conflicting_fields: ['body.title'] }),
+      }))
+
+    let denied: DomainError | undefined
+    try {
+      service.modifyContentVersion({ workspaceId: 'ws_other', sourceVersionId: base.id, changes: { detail: '越权读取' }, reason: '越权请求', expectedRevision: base.revision })
+    } catch (error) {
+      denied = error as DomainError
+    }
+    expect(denied).toMatchObject({ code: 'TENANT_SCOPE_DENIED', status: 403 })
+    expect(denied?.details).toBeUndefined()
+    expect(JSON.stringify(denied)).not.toContain('客户端 A 标题')
+  })
+
   it('regenerates one detail module without changing sibling modules or provenance', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
@@ -254,6 +311,34 @@ describe('content version provenance vector', () => {
     expect(understanding.questions).toEqual([])
     const incomplete = service.understandTaskRequest('ws_demo', '做一版春季上新详情页')
     expect(incomplete.questions).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'platform', kind: 'blocking' }), expect.objectContaining({ id: 'product_id', kind: 'blocking' })]))
+  })
+
+  it('labels blocking-question provenance without inventing evidence for generic recommendations', () => {
+    const service = new MerchantService({ seedFixture: false })
+    const product = service.importProduct({ workspaceId: 'ws_question_provenance', platform: 'taobao', title: '来源测试商品', stock: 1 })
+    const task = service.createTask({ workspaceId: 'ws_question_provenance', productId: product.id, platform: 'taobao', requestText: '做淘宝详情页' })
+    expect(task.missingQuestions).toContainEqual(expect.objectContaining({ id: 'confirm_facts', evidenceKind: 'catalog_fact' }))
+    expect(task.missingQuestions?.find(question => question.id === 'placement')).toBeUndefined()
+
+    service.confirmProductFacts('ws_question_provenance', product.id)
+    service.answerTask('ws_question_provenance', task.id, { confirm_facts: true }, task.version)
+    expect(task.missingQuestions).toContainEqual(expect.objectContaining({ id: 'goal', kind: 'recommended' }))
+    expect(task.missingQuestions?.find(question => question.id === 'goal')?.evidenceKind).toBeUndefined()
+  })
+
+  it('returns stable product ids for an ambiguous product selection card', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    service.importProduct({ workspaceId: 'ws_demo', platform: 'taobao', localProductKey: 'same-title-2', title: '轻云防晒外套 2026', stock: 2 })
+    const understanding = service.understandTaskRequest('ws_demo', '给轻云防晒外套 2026 做淘宝详情页')
+    const question = understanding.questions.find(item => item.id === 'product_id')
+
+    expect(question).toMatchObject({
+      kind: 'blocking',
+      candidates: expect.arrayContaining(['prod_fixture_1']),
+    })
+    expect(question?.candidates).toHaveLength(2)
+    expect(new Set(question?.candidates).size).toBe(2)
+    expect(understanding.executionPlan.canCreate).toBe(false)
   })
 
   it('plans independent child tasks for multiple platforms without reusing one platform product', () => {

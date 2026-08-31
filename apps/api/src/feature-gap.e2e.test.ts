@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 import { server, service } from './server.js'
 
 type Envelope = { data: any; error: { code?: string; message?: string } | null }
@@ -7,8 +8,8 @@ async function start() {
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('server did not bind')
   return `http://127.0.0.1:${address.port}`
 }
-async function call(base: string, workspaceId: string, method: string, params: Record<string, unknown>) {
-  return await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope>)
+async function call(base: string, workspaceId: string, method: string, params: Record<string, unknown>, role?: string) {
+  return await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, ...(role ? { 'x-role': role } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope>)
 }
 
 describe('new commercial and operations capabilities', () => {
@@ -91,6 +92,81 @@ describe('new commercial and operations capabilities', () => {
     expect(accepted.data.result).toMatchObject({ title: suggestion.title, factsConfirmationRequired: true, humanConfirmed: true, seoGeoAcceptance: { platform: 'taobao', suggestionId: suggestion.id } })
     const stale = await call(base, workspaceId, 'catalog.title.accept', { product_id: productId, platform: 'taobao', suggestion_id: 'seo_geo_stale', title: suggestion.title })
     expect(stale.error).toMatchObject({ code: 'SEO_GEO_SUGGESTION_INVALID' })
+  })
+
+  it('enforces canonical product and listing scope before a canonical title read', async () => {
+    const base = await start(); const workspaceId = `ws_canonical_title_${Date.now()}`
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `canonical-title-store-${Date.now()}`, credentialRef: `fixture-secret/taobao/${workspaceId}` })
+    const imported = await call(base, workspaceId, 'catalog.import', { platform: 'taobao', account_id: account.id, title: '旧商品标题', price: '199', stock: '10' })
+    expect(imported.error).toBeNull()
+    const productId = imported.data.result.product_id
+    await call(base, workspaceId, 'catalog.facts.confirm', { product_id: productId })
+    const brandId = `brand_canonical_title_${Date.now()}`
+    expect((await call(base, workspaceId, 'brand-unit.create', { brand_id: brandId, name: '标准标题品牌' }, 'merchant_admin')).error).toBeNull()
+    expect((await call(base, workspaceId, 'brand-unit.bind-store', { brand_id: brandId, platform: 'taobao', account_id: account.id }, 'merchant_admin')).error).toBeNull()
+
+    const enabled = await call(base, workspaceId, 'ops.feature-flag.upsert', {
+      key: 'canonical.product.read_mode', environment: 'test', description: 'canonical title read integration test', enabled: 'true',
+      default_value_json: JSON.stringify({ type: 'string', value: 'legacy_shadow' }),
+      targets_json: JSON.stringify([{ type: 'workspace', value: workspaceId, enabled: true, override: { type: 'string', value: 'canonical_read' } }]),
+      idempotency_key: `canonical-title-flag-${Date.now()}`, reason: '验证 canonical 标题读取门禁',
+    }, 'platform_ops')
+    expect(enabled.error).toBeNull()
+
+    const taskBlocked = await call(base, workspaceId, 'task.create', { product_id: productId, platform: 'taobao', account_id: account.id })
+    expect(taskBlocked.error).toMatchObject({ code: 'CANONICAL_PRODUCT_MAPPING_REQUIRED' })
+    const blocked = await call(base, workspaceId, 'catalog.title.optimize', { product_id: productId, keyword: '通勤外套' })
+    expect(blocked.error).toMatchObject({ code: 'CANONICAL_PRODUCT_MAPPING_REQUIRED' })
+
+    const canonical = await call(base, workspaceId, 'brand-unit.product.create', { brand_id: brandId, product_id: `canonical_title_product_${Date.now()}`, source_product_id: productId, title: '标准商品标题' }, 'merchant_admin')
+    expect(canonical.error).toBeNull()
+    const listing = await call(base, workspaceId, 'brand-unit.listing.create', { brand_id: brandId, canonical_product_id: canonical.data.result.id, listing_id: `canonical_title_listing_${Date.now()}`, platform: 'taobao', account_id: account.id }, 'merchant_admin')
+    expect(listing.error).toBeNull()
+
+    const optimized = await call(base, workspaceId, 'catalog.title.optimize', { product_id: productId, keyword: '通勤外套' })
+    expect(optimized.error).toBeNull()
+    expect(optimized.data.result.canonical_scope).toMatchObject({ canonicalProductId: canonical.data.result.id, brandId, listingId: listing.data.result.id, title: '标准商品标题' })
+    expect(optimized.data.result.suggestions[0].title).toContain('标准商品标题')
+    const accepted = await call(base, workspaceId, 'catalog.title.accept', { product_id: productId, platform: 'taobao', suggestion_id: optimized.data.result.suggestions[0].id, title: optimized.data.result.suggestions[0].title })
+    expect(accepted.error).toBeNull()
+    expect(accepted.data.result).toMatchObject({ canonical_product_id: canonical.data.result.id, listing_id: listing.data.result.id, title: optimized.data.result.suggestions[0].title, factsConfirmationRequired: false, humanConfirmed: true, canonical_scope: { facts_version: 2 } })
+    const taskCreated = await call(base, workspaceId, 'task.create', { product_id: productId, platform: 'taobao', account_id: account.id })
+    expect(taskCreated.error).toBeNull()
+    expect(taskCreated.data.result).toMatchObject({ canonicalProductId: canonical.data.result.id, listingId: listing.data.result.id, brandId })
+  })
+
+  it('detects a tampered but well-formed image archive receipt digest', async () => {
+    const base = await start(); const workspaceId = `ws_archive_receipt_audit_${Date.now()}`
+    const product = service.importProduct({ workspaceId, platform: 'taobao', title: '归档回执审计商品' })
+    const job = service.enqueueImageGeneration({ workspaceId, productId: product.id, idempotencyKey: `archive-receipt-${workspaceId}` })
+    const createdAt = '2026-08-31T00:00:00.000Z'
+    const asset = service.registerAsset({ workspaceId, name: 'candidate.webp', mimeType: 'image/webp', sizeBytes: 128, sha256: 'a'.repeat(64), storageKey: `quarantine/${workspaceId}/asset/candidate.webp` })
+    asset.scanStatus = 'clean'
+    asset.storageKey = `clean/${workspaceId}/asset/candidate.webp`
+    const archiveReceiptId = `image_archive_${workspaceId}`
+    const archiveReceiptDigest = createHash('sha256').update(JSON.stringify({ archiveReceiptId, workspaceId, jobId: job.id, assetId: asset.id, objectSha256: asset.sha256, sizeBytes: asset.sizeBytes, mimeType: asset.mimeType, createdAt }), 'utf8').digest('hex')
+    service.archiveImageGenerationOutputs(workspaceId, job.id, [{ visualRef: 'dvis_audit', assetId: asset.id, archiveReceiptId, archiveReceiptDigest, ordinal: 1, storageKey: asset.storageKey, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, sha256: asset.sha256, createdAt, reviewStatus: 'unreviewed' }], 'archived')
+    service.imageGenerationJobs.get(job.id)!.outputs![0]!.archiveReceiptDigest = 'f'.repeat(64)
+    const audited = await call(base, workspaceId, 'ops.marketing.image.archive.audit', { limit: '10' }, 'platform_ops')
+    expect(audited.error).toBeNull()
+    expect(audited.data.result.findings).toEqual([expect.objectContaining({ jobId: job.id, visualRef: 'dvis_audit', codes: ['ARCHIVE_RECEIPT_DIGEST_MISMATCH'] })])
+  })
+
+  it('detects candidate metadata drift from its archived asset', async () => {
+    const base = await start(); const workspaceId = `ws_archive_metadata_audit_${Date.now()}`
+    const product = service.importProduct({ workspaceId, platform: 'taobao', title: '资产元数据审计商品' })
+    const job = service.enqueueImageGeneration({ workspaceId, productId: product.id, idempotencyKey: `archive-metadata-${workspaceId}` })
+    const createdAt = '2026-08-31T00:00:00.000Z'
+    const asset = service.registerAsset({ workspaceId, name: 'candidate.webp', mimeType: 'image/webp', sizeBytes: 128, sha256: 'a'.repeat(64), storageKey: `quarantine/${workspaceId}/asset/candidate.webp` })
+    asset.scanStatus = 'clean'
+    asset.storageKey = `clean/${workspaceId}/asset/candidate.webp`
+    const archiveReceiptId = `image_archive_${workspaceId}`
+    const archiveReceiptDigest = createHash('sha256').update(JSON.stringify({ archiveReceiptId, workspaceId, jobId: job.id, assetId: asset.id, objectSha256: asset.sha256, sizeBytes: asset.sizeBytes, mimeType: asset.mimeType, createdAt }), 'utf8').digest('hex')
+    service.archiveImageGenerationOutputs(workspaceId, job.id, [{ visualRef: 'dvis_metadata_audit', assetId: asset.id, archiveReceiptId, archiveReceiptDigest, ordinal: 1, storageKey: asset.storageKey, mimeType: asset.mimeType, sizeBytes: asset.sizeBytes, sha256: asset.sha256, createdAt, reviewStatus: 'unreviewed' }], 'archived')
+    service.imageGenerationJobs.get(job.id)!.outputs![0]!.storageKey = `clean/${workspaceId}/asset/drifted.webp`
+    const audited = await call(base, workspaceId, 'ops.marketing.image.archive.audit', { limit: '10' }, 'platform_ops')
+    expect(audited.error).toBeNull()
+    expect(audited.data.result.findings).toEqual([expect.objectContaining({ jobId: job.id, visualRef: 'dvis_metadata_audit', codes: ['ASSET_METADATA_MISMATCH'] })])
   })
 
   it('executes one-sentence image generation through the configured image path instead of returning only a request shell', async () => {
@@ -241,8 +317,8 @@ describe('new commercial and operations capabilities', () => {
     expect(scan.error).toBeNull(); expect(scan.data.result.scope).toEqual({ platform: 'douyin', accountId: account.id })
     const paused = await call(base, workspaceId, 'automation.pause', { platform: 'douyin', account_id: account.id, reason: '店铺临时停运' })
     expect(paused.error).toBeNull(); expect(paused.data.result.policy).toMatchObject({ enabled: false, pauseReason: '店铺临时停运' })
-    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' })
-    expect(audit.data.result.map((item: { action: string }) => item.action)).toContain('automation.policy.pause')
+    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' }, 'support')
+    expect(audit.data.result.records.map((item: { action: string }) => item.action)).toContain('automation.policy.pause')
   })
 
   it('runs scoped catalog sync from automation without publishing', async () => {
@@ -273,8 +349,8 @@ describe('new commercial and operations capabilities', () => {
     expect(tick.data.result.executed).toContainEqual(expect.objectContaining({ paused: true, syncSkipped: true, pauseReason: expect.stringContaining('自动暂停') }))
     const policy = await call(base, workspaceId, 'automation.policy.get', { platform: 'taobao', account_id: account.id })
     expect(policy.data.result.policy).toMatchObject({ enabled: false, pauseReason: expect.stringContaining('自动暂停') })
-    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' })
-    expect(audit.data.result.map((item: { action: string }) => item.action)).toContain('automation.policy.auto_paused')
+    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' }, 'support')
+    expect(audit.data.result.records.map((item: { action: string }) => item.action)).toContain('automation.policy.auto_paused')
   })
 
   it('turns low-stock findings into scoped interactive optimization recommendations', async () => {
@@ -301,8 +377,8 @@ describe('new commercial and operations capabilities', () => {
     expect(completed.data).toMatchObject({ automation: { triggered: true, scope: { platform: 'taobao', accountId: first.id }, humanConfirmationRequired: true, unattendedAutoResubmit: false } })
     expect(completed.data.automation.risks).toContainEqual(expect.objectContaining({ kind: 'low_stock', account_id: first.id }))
     expect(completed.data.automation.risks).not.toContainEqual(expect.objectContaining({ account_id: second.id }))
-    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' })
-    expect(audit.data.result).toContainEqual(expect.objectContaining({ action: 'automation.post_sync_scan', resourceId: policy.data.result.policy.id }))
+    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' }, 'support')
+    expect(audit.data.result.records).toContainEqual(expect.objectContaining({ action: 'automation.post_sync_scan', resourceId: policy.data.result.policy.id }))
   })
 
   it('runs the same scoped scan after a published receipt without auto-republishing', async () => {
@@ -357,7 +433,17 @@ describe('new commercial and operations capabilities', () => {
     const uploadedAsset = service.registerAsset({ workspaceId, name: '待扫描商品图.webp', mimeType: 'image/webp', sizeBytes: 9, sha256: 'a'.repeat(64), storageKey: `quarantine/${workspaceId}/pending/asset.webp` })
     const queue = await call(base, workspaceId, 'ops.marketing.queue', { limit: '20' })
     expect(queue.error).toBeNull(); expect(queue.data.result.visuals).toContainEqual(expect.objectContaining({ visualRef, reviewStatus: 'unreviewed', skuIds: expect.any(Array) }))
-    expect(queue.data.result.uploadedAssetRisks).toContainEqual(expect.objectContaining({ id: uploadedAsset.id, readiness: expect.objectContaining({ status: 'draft', reasons: expect.arrayContaining(['等待安全扫描', '等待素材事实解析', '等待商用权益确认', '等待商家确认素材事实']) }), nextAction: expect.objectContaining({ method: 'asset.scan', label: '提交安全扫描结果' }) }))
+    expect(queue.data.result.uploadedAssetRisks).toContainEqual(expect.objectContaining({
+      id: uploadedAsset.id,
+      readiness: expect.objectContaining({ status: 'draft', reasons: expect.arrayContaining(['等待安全扫描', '等待素材事实解析', '等待商用权益确认', '等待商家确认素材事实']) }),
+      nextAction: null,
+      nextStep: expect.stringContaining('当前暂时无法检查图片'),
+      scanAutomation: expect.objectContaining({
+        state: 'configuration_required',
+        mode: 'unconfigured',
+        userActionRequired: false,
+      }),
+    }))
     const filteredQueue = await call(base, workspaceId, 'ops.marketing.queue', { limit: '20', platform: product.platform, product_id: product.id, state: 'visual_review' })
     expect(filteredQueue.error).toBeNull(); expect(filteredQueue.data.result.filters).toMatchObject({ platform: product.platform, productId: product.id, state: 'visual_review' }); expect(filteredQueue.data.result.visuals).toContainEqual(expect.objectContaining({ visualRef })); expect(filteredQueue.data.result.generation).toHaveLength(0); expect(filteredQueue.data.result.uploadedAssetRisks).toHaveLength(0)
     const invalidFilter = await call(base, workspaceId, 'ops.marketing.queue', { platform: 'not-a-platform' })
@@ -374,7 +460,7 @@ describe('new commercial and operations capabilities', () => {
     expect(acknowledged.error).toBeNull(); expect(acknowledged.data.result.operatorAcknowledgement.actorId).toBe('actor_demo')
     const revision = await call(base, workspaceId, 'ops.marketing.revision.create', { publish_job_id: publish.id, changes_json: JSON.stringify({ title: '合规新标题' }), reason: '根据平台驳回创建修正版' })
     expect(revision.error).toBeNull(); expect(revision.data.result.version).toMatchObject({ parentId: draft.id, state: 'review_required' })
-    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' })
-    expect(audit.data.result.map((item: { action: string }) => item.action)).toEqual(expect.arrayContaining(['ops.marketing.generation.retry', 'ops.marketing.queue.assign', 'ops.marketing.visual.review', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create']))
+    const audit = await call(base, workspaceId, 'ops.audit.list', { limit: '20' }, 'support')
+    expect(audit.data.result.records.map((item: { action: string }) => item.action)).toEqual(expect.arrayContaining(['ops.marketing.generation.retry', 'ops.marketing.queue.assign', 'ops.marketing.visual.review', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create']))
   })
 })

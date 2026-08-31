@@ -8,13 +8,15 @@ interface ModelStatusSectionProps {
 
 export function ModelStatusSection({ model }: ModelStatusSectionProps) {
   const { modelStatus, modelStatusLoading } = model;
+  const statusLabel = modelStatus?.state ?? (modelStatusLoading ? "加载中" : "不可用");
+  const statusColor = !modelStatus ? (modelStatusLoading ? "processing" : "red") : modelStatus.state === "ready" ? "green" : "red";
 
   return (
     <Card
       title="模型服务诊断"
       extra={
-        <Tag color={!modelStatus ? "default" : modelStatus.state === "ready" ? "green" : "red"}>
-          {modelStatus?.state ?? "加载中"}
+        <Tag color={statusColor} aria-live="polite">
+          {statusLabel}
         </Tag>
       }
     >

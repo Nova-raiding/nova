@@ -9,14 +9,21 @@
  */
 
 type Envelope<T> = { data: T | null; error: { code?: string; message?: string } | null }
+type ItemsPage<T> = { items: T[]; total: number; limit: number; offset: number }
 
 const aUrl = (process.env.REPLICA_A_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '')
 const bUrl = (process.env.REPLICA_B_URL ?? 'http://127.0.0.1:8788').replace(/\/$/, '')
-const workspaceId = process.env.REPLICA_WORKSPACE_ID ?? `ws_replica_smoke_${Date.now()}`
+const workspaceId = process.env.REPLICA_WORKSPACE_ID ?? 'ws_demo'
 const token = process.env.REPLICA_API_TOKEN ?? 'pilot-local-token'
-const accountId = process.env.REPLICA_ACCOUNT_ID?.trim()
+const accountId = process.env.REPLICA_ACCOUNT_ID?.trim() ?? 'fixture-store-ws_demo-taobao'
 
 function fail(message: string): never { throw new Error(`[replica-consistency] ${message}`) }
+
+function normalizeItems<T>(value: T[] | ItemsPage<T>): T[] {
+  if (Array.isArray(value)) return value
+  if (Array.isArray(value.items)) return value.items
+  fail('products response is neither an array nor a paginated items response')
+}
 
 async function request<T>(base: string, path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
@@ -30,7 +37,6 @@ async function request<T>(base: string, path: string, init: RequestInit = {}) {
 }
 
 async function main() {
-  if (!accountId) fail('REPLICA_ACCOUNT_ID is required; provision a real/fake bound Taobao account first (the smoke must not bypass STORE_ONBOARDING_REQUIRED)')
   const accounts = await request<{ items: Array<{ platform?: string; accountId?: string; state?: string }> }>(aUrl, '/v1/platform-accounts')
   if (!accounts.items.some(item => item.platform === 'taobao' && item.accountId === accountId)) fail(`replica A has no provisioned Taobao account ${accountId} in workspace ${workspaceId}`)
   const remoteId = `REPLICA-${Date.now()}`
@@ -39,7 +45,7 @@ async function main() {
     body: JSON.stringify({ platform: 'taobao', account_id: accountId, remote_id: remoteId, title: 'Replica consistency smoke', sku_count: 1, stock: 7 }),
   })
   if (product.workspaceId !== workspaceId) fail('replica A returned the wrong workspace')
-  const productsOnB = await request<Array<{ id: string; workspaceId: string }>>(bUrl, '/v1/products')
+  const productsOnB = normalizeItems(await request<Array<{ id: string; workspaceId: string }> | ItemsPage<{ id: string; workspaceId: string }>>(bUrl, '/v1/products'))
   if (!productsOnB.some(item => item.id === product.id && item.workspaceId === workspaceId)) fail('replica B did not observe the product written by replica A')
   const task = await request<{ id: string; productId: string }>(aUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify({ product_id: product.id, platform: 'taobao', account_id: accountId }) })
   const taskOnB = await request<{ id: string; productId: string }>(bUrl, `/v1/tasks/${encodeURIComponent(task.id)}`)

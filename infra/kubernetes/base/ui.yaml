@@ -8,16 +8,17 @@ spec:
     metadata: {labels: {app.kubernetes.io/name: merchant-ui, app.kubernetes.io/part-of: merchant-marketing-codex}}
     spec:
       automountServiceAccountToken: false
-      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      securityContext: {runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, fsGroup: 101, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: ui
           image: merchant-ui:0.1.0
-          ports: [{name: http, containerPort: 80}]
+          ports: [{name: http, containerPort: 8080}]
           env:
             - name: MERCHANT_API_TOKEN
               valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MERCHANT_UI_API_TOKEN}}
           resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 256Mi}}
-          readinessProbe: {httpGet: {path: /, port: http}, periodSeconds: 5}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3}
+          livenessProbe: {httpGet: {path: /, port: http}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           volumeMounts: [{name: tmp, mountPath: /tmp}, {name: nginx-conf, mountPath: /etc/nginx/conf.d}, {name: nginx-cache, mountPath: /var/cache/nginx}, {name: nginx-run, mountPath: /var/run}]
       volumes: [{name: tmp, emptyDir: {sizeLimit: 16Mi}}, {name: nginx-conf, emptyDir: {sizeLimit: 1Mi}}, {name: nginx-cache, emptyDir: {sizeLimit: 16Mi}}, {name: nginx-run, emptyDir: {sizeLimit: 1Mi}}]

@@ -10,6 +10,10 @@ info:
     platform writes are disabled by default and remain confirmation-gated.
 servers:
   - url: http://127.0.0.1:8787
+# All API operations are authenticated by default. Public runtime probes and the
+# OAuth callback opt out explicitly at their operation level below.
+security:
+  - bearerAuth: []
 tags:
   - name: Runtime
   - name: Rules
@@ -22,6 +26,13 @@ paths:
   /v1/platform-capabilities:
     get:
       summary: Read the six-platform capability evidence matrix
+      description: |
+        Returns connector capability evidence for each supported platform.
+        The `media_upload` capability may also include the server-owned
+        desktop media-spec lifecycle fields `source`, `version`, `expiresAt`,
+        `status`, `evidenceRef`, and `verifiedAt` when an approved media
+        specification exists. Missing or non-approved media evidence is
+        omitted and must remain unverified in clients.
       parameters:
         - in: header
           name: X-Workspace-Id
@@ -35,6 +46,29 @@ paths:
         '200': { description: Capability matrix }
         '401': { description: Unauthenticated }
         '403': { description: Workspace forbidden }
+  /v1/delivery-readiness:
+    get:
+      tags: [Runtime]
+      operationId: getDeliveryReadiness
+      description: Return workspace-scoped mapping, delivery-bundle, and visual-authenticity readiness for visible products and approved content.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: workspace_id, in: query, required: false, description: Optional compatibility value; must equal the authenticated workspace scope., schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/catalog/categories:
+    get:
+      tags: [Catalog]
+      operationId: listCatalogCategories
+      description: Return deterministic catalog category and required-field metadata, optionally filtered by query.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: query, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/rules:
     get:
       tags: [Rules]
@@ -43,6 +77,8 @@ paths:
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { name: pack_id, in: query, required: false, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -134,11 +170,38 @@ paths:
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
         '404': { $ref: '#/components/responses/ErrorEnvelope' }
         '409': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/image-generation-jobs:
+    get:
+      tags: [Tasks]
+      operationId: listImageGenerationJobs
+      description: Return workspace-scoped image generation job summaries. Product visibility is filtered by the authenticated workspace and brand/store grants; no image bytes or external URLs are returned.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+        - { name: state, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/image-generation-jobs/{jobId}:
+    get:
+      tags: [Tasks]
+      operationId: getImageGenerationJob
+      description: Return one workspace-scoped image job with execution, archive, scan, rights, authenticity, review gates, and redacted candidate integrity metadata. Image bytes are returned only when the server proves all delivery gates.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: jobId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 256 } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/assets:
     get:
       tags: [Catalog]
       operationId: listAssets
-      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Offset' }]
       responses: { '200': { $ref: '#/components/responses/Envelope' } }
     post:
       tags: [Catalog]
@@ -148,6 +211,82 @@ paths:
         required: true
         content: { application/json: { schema: { type: object, required: [name, mime_type, size_bytes, sha256, storage_key], additionalProperties: false, properties: { name: { type: string }, mime_type: { type: string }, size_bytes: { type: integer, minimum: 0 }, sha256: { type: string }, storage_key: { type: string }, rights_status: { type: string, enum: [pending, approved, rejected] } } } } }
       responses: { '201': { $ref: '#/components/responses/Envelope' }, '400': { $ref: '#/components/responses/ErrorEnvelope' } }
+  /v1/assets/{assetId}/products:
+    get:
+      tags: [Catalog]
+      operationId: listProductsByAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: assetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/products/{productId}/assets:
+    get:
+      tags: [Catalog]
+      operationId: listProductAssetBindings
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+    post:
+      tags: [Catalog]
+      operationId: bindProductAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [asset_id, brand_id, expected_version, reason]
+              additionalProperties: false
+              properties:
+                asset_id: { type: string }
+                brand_id: { type: string }
+                expected_version: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 1 }
+                asset_role: { type: string, enum: [source, main, secondary, detail], default: source }
+                ordinal: { type: integer, minimum: 1 }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+    delete:
+      tags: [Catalog]
+      operationId: unbindProductAsset
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [asset_id, brand_id, expected_version, reason]
+              additionalProperties: false
+              properties:
+                asset_id: { type: string }
+                brand_id: { type: string }
+                expected_version: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 1 }
+                asset_role: { type: string, enum: [source, main, secondary, detail], default: source }
+                ordinal: { type: integer, minimum: 1 }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/assets/{assetId}/preference:
     put:
       tags: [Catalog]
@@ -232,6 +371,7 @@ paths:
     get:
       tags: [Runtime]
       operationId: workspaceHealth
+      security: []
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
   /metrics:
@@ -297,7 +437,7 @@ paths:
     get:
       tags: [Catalog]
       operationId: listSyncJobs
-      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Offset' }]
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -385,6 +525,7 @@ paths:
     get:
       tags: [OAuth]
       operationId: oauthCallback
+      security: []
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { name: platform, in: path, required: true, schema: { $ref: '#/components/schemas/Platform' } }
@@ -406,6 +547,9 @@ paths:
         - { name: platform, in: query, required: false, schema: { $ref: '#/components/schemas/Platform' } }
         - { name: account_id, in: query, required: false, schema: { type: string } }
         - { name: store_name, in: query, required: false, schema: { type: string } }
+        - { name: facts_confirmed, in: query, required: false, schema: { type: boolean } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -516,6 +660,8 @@ paths:
         - { name: platform, in: query, required: false, schema: { $ref: '#/components/schemas/Platform' } }
         - { name: state, in: query, required: false, schema: { type: string } }
         - { name: product_id, in: query, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -602,7 +748,7 @@ paths:
     get:
       tags: [Versioning]
       operationId: listContentVersions
-      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Offset' }]
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -624,7 +770,7 @@ paths:
     get:
       tags: [Tasks]
       operationId: listTaskFeedback
-      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Offset' }]
       description: Lists feedback attached to the task only; it does not alter global rules.
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
@@ -783,6 +929,13 @@ paths:
         '200': { $ref: '#/components/responses/Envelope' }
         '409': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/publish-jobs:
+    get:
+      tags: [Tasks]
+      operationId: listPublishJobs
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Offset' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
     post:
       tags: [Tasks]
       operationId: confirmPublish
@@ -841,11 +994,13 @@ paths:
         content: { application/json: { schema: { $ref: '#/components/schemas/McpRequest' } } }
       description: |
         rule.sync.status is included in the MCP allowlist and exposes read-only rule freshness.
-        Allowlist: workspace.bootstrap, workspace.health, workspace.interactive.confirm, workspace.metrics, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.get, catalog.image.review,
-        sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.answer,
+        Allowlist: workspace.bootstrap, workspace.health, workspace.interactive.confirm, workspace.metrics, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, canonical.product.consistency, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review,
+        sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, platform.revoke, task.create, task.answer,
         task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, generation.get, content.review, content.review.decide, content.versions, content.diff, content.export, content.approve,
         content.modify, content.restore, publish.prepare, publish.confirm and publish.get. The last method requires Idempotency-Key and fresh
         confirmation hashes. No raw platform write method is exposed.
+      x-method-result-schema:
+        canonical.product.consistency: '#/components/schemas/McpCanonicalProductConsistencyResult'
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -889,7 +1044,299 @@ components:
       in: path
       required: true
       schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items returned when pagination is requested. Omitting both pagination parameters preserves the legacy array response.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: Zero-based item offset. Supplying either limit or offset returns the paginated items/total/limit/offset shape.
+      schema: { type: integer, minimum: 0, default: 0 }
   schemas:
+    McpBrandUnitBindStoreParams:
+      type: object
+      description: Bind an authorized platform store to a brand unit. expected_revision is optional for backward compatibility and, when supplied, provides optimistic concurrency protection.
+      required: [brand_id, platform, account_id]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; authorization comes from the server-side token/workspace scope. }
+        brand_id: { type: string, minLength: 1, maxLength: 128 }
+        platform: { type: string, enum: [jd, taobao, tmall, pinduoduo, xiaohongshu, douyin] }
+        account_id: { type: string, minLength: 1, maxLength: 256 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10, description: Optional current brand revision; stale values fail with 409 BRAND_STORE_REVISION_CONFLICT. }
+      additionalProperties: false
+    McpCanonicalProductConsistencyParams:
+      type: object
+      description: Read-only workspace-scoped dry-run. It compares explicit legacy products/tasks links with canonical products, listings, and campaign items; it never changes cutover mode or writes business data.
+      properties:
+        workspace_id: { type: string, minLength: 1, description: Compatibility value; when supplied it must equal the authenticated X-Workspace-Id scope. }
+      additionalProperties: false
+    McpCanonicalBackfillRunCreateParams:
+      type: object
+      required: [dry_run, reason]
+      properties:
+        workspace_id: { type: string, minLength: 1 }
+        dry_run: { type: string, enum: ['true', 'false'] }
+        batch_limit: { type: string, pattern: '^(?:[1-9][0-9]{0,2}|[1-4][0-9]{3}|5000)$' }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+      additionalProperties: false
+    McpCanonicalBackfillRunGetParams:
+      type: object
+      required: [run_id]
+      properties:
+        workspace_id: { type: string, minLength: 1 }
+        run_id: { type: string, minLength: 1, maxLength: 200 }
+      additionalProperties: false
+    McpCanonicalBackfillRunControlParams:
+      type: object
+      required: [run_id, expected_revision, reason]
+      properties:
+        workspace_id: { type: string, minLength: 1 }
+        run_id: { type: string, minLength: 1, maxLength: 200 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+      additionalProperties: false
+    McpCanonicalBackfillConflictListParams:
+      type: object
+      properties:
+        workspace_id: { type: string, minLength: 1 }
+        run_id: { type: string, minLength: 1, maxLength: 200 }
+        status: { type: string, enum: [open, claimed, resolved, dismissed] }
+        limit: { type: string, pattern: '^(?:[1-9][0-9]?|100)$' }
+      additionalProperties: false
+    McpCanonicalBackfillConflictClaimParams:
+      type: object
+      required: [conflict_id, expected_revision, reason]
+      properties:
+        workspace_id: { type: string, minLength: 1 }
+        conflict_id: { type: string, minLength: 1, maxLength: 200 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+      additionalProperties: false
+    McpCanonicalBackfillConflictResolveParams:
+      type: object
+      required: [conflict_id, expected_revision, status, resolution_note, reason]
+      properties:
+        workspace_id: { type: string, minLength: 1 }
+        conflict_id: { type: string, minLength: 1, maxLength: 200 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$' }
+        status: { type: string, enum: [resolved, dismissed] }
+        resolution_note: { type: string, minLength: 3, maxLength: 1000 }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+        remediation_type: { type: string, enum: [set_legacy_brand] }
+        brand_id: { type: string, minLength: 1, maxLength: 200 }
+        expected_product_version: { type: string, pattern: '^[1-9][0-9]*$' }
+        reference: { type: string, minLength: 1, maxLength: 500 }
+      additionalProperties: false
+    McpCanonicalProductConsistencyResult:
+      type: object
+      description: API result for canonical.product.consistency. Domain status/codes remain authoritative; transport metadata proves when and from which storage mode the read was produced.
+      required: [workspaceId, status, contractVersion, contractStatus, generatedAt, readMode, freshness, revision, availability, blocking, counts, findings, orphanFindings, readOnly, cutover, source, durable, read_control, unified_link_audit]
+      properties:
+        workspaceId: { type: string }
+        status: { type: string, enum: [clean, attention_required] }
+        contractVersion: { type: integer, enum: [1] }
+        contractStatus: { type: string, enum: [clean, attention_required, unknown, unavailable] }
+        generatedAt: { oneOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        readMode: { type: string, enum: [live, snapshot] }
+        freshness: { type: string, enum: [fresh, stale, expired, unknown] }
+        revision: { oneOf: [{ type: string, pattern: '^[a-f0-9]{64}$' }, { type: integer }, { type: 'null' }] }
+        availability: { type: string, enum: [available, unknown, unavailable] }
+        blocking: { $ref: '#/components/schemas/McpCanonicalProductConsistencyBlocking' }
+        counts:
+          type: object
+          required: [verified, legacy_only, conflict, blocked]
+          properties:
+            verified: { type: integer, minimum: 0 }
+            legacy_only: { type: integer, minimum: 0 }
+            conflict: { type: integer, minimum: 0 }
+            blocked: { type: integer, minimum: 0 }
+          additionalProperties: false
+        findings:
+          type: array
+          items: { $ref: '#/components/schemas/McpCanonicalProductConsistencyFinding' }
+        orphanFindings:
+          type: array
+          items: { $ref: '#/components/schemas/McpCanonicalProductConsistencyOrphanFinding' }
+        readOnly: { type: boolean, enum: [true] }
+        cutover: { type: string, enum: [unchanged] }
+        source: { type: string, enum: [memory, postgres] }
+        durable: { type: boolean }
+        read_control: { $ref: '#/components/schemas/McpCanonicalProductReadControl' }
+        unified_link_audit: { $ref: '#/components/schemas/McpCanonicalProductUnifiedLinkAudit' }
+      additionalProperties: false
+    McpMarketingImageReconcileParams:
+      type: object
+      description: Workspace-scoped manual reconciliation of a provider-started or unknown image execution. Completion requires archived, trusted-clean outputs; failure retains evidence and reason.
+      required: [job_id, resolution, evidence_ref, reason, idempotency_key]
+      properties:
+        workspace_id: { type: string, description: Compatibility value; authorization comes from the authenticated workspace scope. }
+        job_id: { type: string, minLength: 1, maxLength: 256 }
+        resolution: { type: string, enum: [completed, failed] }
+        evidence_ref: { type: string, minLength: 1, maxLength: 512 }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+      additionalProperties: false
+    McpMarketingImageEvidenceExportParams:
+      type: object
+      description: Workspace-scoped, redacted read-only evidence export for one image job. Image bytes, URLs, credentials, raw provider payloads, and full chat content are never returned.
+      required: [job_id]
+      properties:
+        workspace_id: { type: string, description: Compatibility value; authorization comes from the authenticated workspace scope. }
+        job_id: { type: string, minLength: 1, maxLength: 256 }
+      additionalProperties: false
+    McpMarketingImageArchiveAuditParams:
+      type: object
+      description: Workspace-scoped read-only audit of image archive receipts, asset scope, digests, and trusted scan state. It never deletes or repairs data.
+      properties:
+        workspace_id: { type: string, description: Compatibility value; authorization comes from the authenticated workspace scope. }
+        limit: { type: string, pattern: '^[1-9][0-9]{0,2}$', description: Maximum findings to return; the server caps this at 100. }
+      additionalProperties: false
+    McpMarketingImageBillingAuditParams:
+      type: object
+      description: Workspace-scoped read-only audit of image provider request, action ledger, usage, cost, and settlement evidence. It never debits, refunds, or changes settlement.
+      required: [job_id]
+      properties:
+        workspace_id: { type: string, description: Compatibility value; authorization comes from the authenticated workspace scope. }
+        job_id: { type: string, minLength: 1, maxLength: 256 }
+      additionalProperties: false
+    McpCanonicalProductConsistencyFinding:
+      type: object
+      required: [legacyProductId, productId, canonicalProductId, status, contractStatus, codes, listingIds, campaignItemIds, taskIds, publishJobIds, scope, relation, blocking, nextAction, evidence]
+      properties:
+        legacyProductId: { type: string }
+        productId: { type: string }
+        canonicalProductId: { oneOf: [{ type: string }, { type: 'null' }] }
+        status: { type: string, enum: [verified, legacy_only, conflict, blocked] }
+        contractStatus: { type: string, enum: [verified, backfilled, legacy_only, conflict, blocked, unknown, unavailable] }
+        codes: { type: array, items: { type: string } }
+        listingIds: { type: array, items: { type: string } }
+        campaignItemIds: { type: array, items: { type: string } }
+        taskIds: { type: array, items: { type: string } }
+        publishJobIds: { type: array, items: { type: string } }
+        scope:
+          type: object
+          required: [brandId, platform, accountId, listingId]
+          properties:
+            brandId: { oneOf: [{ type: string }, { type: 'null' }] }
+            platform: { oneOf: [{ type: string }, { type: 'null' }] }
+            accountId: { oneOf: [{ type: string }, { type: 'null' }] }
+            listingId: { oneOf: [{ type: string }, { type: 'null' }] }
+          additionalProperties: false
+        relation:
+          type: object
+          required: [listingIds, campaignItemIds, taskIds, publishJobIds]
+          properties:
+            listingIds: { type: array, items: { type: string } }
+            campaignItemIds: { type: array, items: { type: string } }
+            taskIds: { type: array, items: { type: string } }
+            publishJobIds: { type: array, items: { type: string } }
+          additionalProperties: false
+        blocking: { $ref: '#/components/schemas/McpCanonicalProductConsistencyBlocking' }
+        nextAction: { $ref: '#/components/schemas/McpCanonicalProductConsistencyNextAction' }
+        evidence: { $ref: '#/components/schemas/McpCanonicalProductConsistencyEvidence' }
+      additionalProperties: false
+    McpCanonicalProductConsistencyBlocking:
+      oneOf:
+        - type: 'null'
+        - { $ref: '#/components/schemas/McpCanonicalProductConsistencyBlockingObject' }
+    McpCanonicalProductConsistencyBlockingObject:
+      type: object
+      required: [code, message, impact, objectType, objectId, retryable]
+      properties:
+        code: { type: string, minLength: 1 }
+        message: { type: string, minLength: 1 }
+        impact: { type: string, minLength: 1 }
+        objectType: { type: string, enum: [product, canonical_product, listing, campaign_item, task, publish_job, workspace] }
+        objectId: { type: string, minLength: 1 }
+        retryable: { type: boolean }
+      additionalProperties: false
+    McpCanonicalProductConsistencyNextAction:
+      oneOf:
+        - type: 'null'
+        - { $ref: '#/components/schemas/McpCanonicalProductConsistencyNextActionObject' }
+    McpCanonicalProductConsistencyNextActionObject:
+      type: object
+      required: [id, method, label, reason, permission, requiredInputs, confirmation]
+      properties:
+        id: { type: string, minLength: 1 }
+        method: { type: string, enum: [brand-unit.product.create, brand-unit.listing.create, canonical.product.consistency] }
+        label: { type: string, minLength: 1 }
+        reason: { type: string, minLength: 1 }
+        permission:
+          type: object
+          required: [allowed, requiredRole]
+          properties:
+            allowed: { type: boolean }
+            requiredRole: { oneOf: [{ type: string, minLength: 1 }, { type: 'null' }] }
+          additionalProperties: false
+        requiredInputs: { type: array, items: { type: string } }
+        confirmation: { type: string, enum: [none, interactive_confirmation] }
+      additionalProperties: false
+    McpCanonicalProductConsistencyOrphanFinding:
+      type: object
+      required: [entityType, entityId, status, codes, blocking, nextAction]
+      properties:
+        entityType: { type: string, enum: [canonical_product, listing, campaign_item, task, publish_job] }
+        entityId: { type: string }
+        status: { type: string, enum: [conflict, blocked] }
+        codes: { type: array, items: { type: string } }
+        blocking: { $ref: '#/components/schemas/McpCanonicalProductConsistencyBlockingObject' }
+        nextAction: { $ref: '#/components/schemas/McpCanonicalProductConsistencyNextActionObject' }
+      additionalProperties: false
+    McpCanonicalProductConsistencyEvidence:
+      type: object
+      required: [codes, generatedAt, revision]
+      properties:
+        codes: { type: array, items: { type: string } }
+        generatedAt: { oneOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        revision: { oneOf: [{ type: string, pattern: '^[a-f0-9]{64}$' }, { type: integer }, { type: 'null' }] }
+      additionalProperties: false
+    McpCanonicalProductReadControl:
+      type: object
+      required: [mode, source]
+      properties:
+        mode: { type: string, enum: [legacy_shadow, dual_verify, canonical_read] }
+        source: { type: string, enum: [default, feature_flag] }
+        reason: { type: string }
+        revision: { type: integer }
+      additionalProperties: false
+    McpCanonicalProductUnifiedLinkAudit:
+      type: object
+      required: [persisted, count, items]
+      properties:
+        persisted: { type: boolean }
+        count: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, workspaceId, auditKey, entityType, entityId, status, codes, checkRevision, checksum, firstSeenAt, lastSeenAt]
+            properties:
+              id: { type: string, minLength: 1 }
+              workspaceId: { type: string, minLength: 1 }
+              auditKey: { type: string }
+              entityType: { type: string, enum: [product, canonical_product, listing, campaign_item, task, publish_job] }
+              entityId: { type: string, minLength: 1 }
+              legacyProductId: { type: string, minLength: 1 }
+              canonicalProductId: { type: string, minLength: 1 }
+              listingId: { type: string, minLength: 1 }
+              campaignItemId: { type: string, minLength: 1 }
+              taskId: { type: string, minLength: 1 }
+              publishJobId: { type: string, minLength: 1 }
+              status: { type: string, enum: [verified, legacy_only, conflict, blocked] }
+              codes: { type: array, items: { type: string } }
+              checkRevision: { type: string }
+              checksum: { type: string }
+              firstSeenAt: { type: string, format: date-time }
+              lastSeenAt: { type: string, format: date-time }
+              lastError: { type: string }
+            additionalProperties: false
+      additionalProperties: false
     BrandVisualRules:
       type: object
       additionalProperties: false
@@ -988,6 +1435,7 @@ components:
       properties:
         workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
         product_id: { type: string }
+        brand_id: { type: string, description: Required for brand-restricted members; must grant editor access. }
         platform: { $ref: '#/components/schemas/Platform' }
         account_id: { type: string, description: Authorized platform account bound to this task. }
       additionalProperties: false
@@ -1040,6 +1488,110 @@ components:
               message: { type: string, minLength: 1, maxLength: 1000 }
             additionalProperties: false
       additionalProperties: false
+    McpCampaignBatchControlParams:
+      type: object
+      description: Always-interactive optimistic-concurrency campaign control. Stale revisions and idempotency conflicts fail closed; approval gates are never bypassed.
+      required: [campaign_id, expected_revision, idempotency_key, reason]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        campaign_id: { type: string, minLength: 1, maxLength: 200 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+      additionalProperties: false
+    McpCampaignBatchRetryFailedParams:
+      type: object
+      description: Always-interactive optimistic-concurrency retry of failed campaign items. Successful items and approval gates are never replayed or bypassed.
+      required: [campaign_id, expected_revision, idempotency_key, reason]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        campaign_id: { type: string, minLength: 1, maxLength: 200 }
+        item_ids_json: { type: string, contentMediaType: application/json, x-json-shape: array, description: Optional JSON array of 1 to 50 unique failed campaign item IDs. }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+      additionalProperties: false
+    McpPlatformMediaSpecListParams:
+      type: object
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        platform: { $ref: '#/components/schemas/Platform' }
+        placement: { type: string, minLength: 1, maxLength: 200 }
+        device: { type: string, enum: [desktop, mobile] }
+        status: { type: string, enum: [draft, approved, expired] }
+        at: { type: string, format: date-time }
+      additionalProperties: false
+    McpPlatformMediaSpecGetParams:
+      type: object
+      required: [id]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        id: { type: string, minLength: 1, maxLength: 200 }
+        at: { type: string, format: date-time }
+      additionalProperties: false
+    McpPlatformMediaSpecCreateParams:
+      type: object
+      description: Interactive write. Creates only a draft and fails closed when production evidence is invalid or mismatched.
+      required: [platform, placement, device, version, spec_json, source_url, source_sha256, checked_at, expected_revision, idempotency_key, reason]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        id: { type: string, minLength: 1, maxLength: 200 }
+        platform: { $ref: '#/components/schemas/Platform' }
+        placement: { type: string, minLength: 1, maxLength: 200 }
+        device: { type: string, enum: [desktop, mobile] }
+        version: { type: string, minLength: 1, maxLength: 100 }
+        spec_json: { type: string, contentMediaType: application/json, x-json-shape: object }
+        source_url: { type: string, format: uri, maxLength: 2000 }
+        source_sha256: { type: string, pattern: '^(?:sha256:)?[A-Fa-f0-9]{64}$' }
+        checked_at: { type: string, format: date-time }
+        evidence_artifact_ref: { type: string, minLength: 1, maxLength: 2000 }
+        evidence_artifact_sha256: { type: string, pattern: '^(?:sha256:)?[A-Fa-f0-9]{64}$' }
+        expires_at: { type: string, format: date-time }
+        expected_revision: { type: string, enum: ['0'], description: Create-only assertion. }
+        idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+      additionalProperties: false
+    McpPlatformMediaSpecUpdateParams:
+      type: object
+      description: Interactive optimistic-concurrency write; stale revision, immutable state, evidence failure, or idempotency conflict fails closed.
+      required: [id, patch_json, expected_revision, idempotency_key, reason]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        id: { type: string, minLength: 1, maxLength: 200 }
+        patch_json: { type: string, contentMediaType: application/json, x-json-shape: object }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+      additionalProperties: false
+    McpPlatformMediaSpecTransitionParams:
+      type: object
+      description: Interactive optimistic-concurrency transition; production evidence and idempotency checks fail closed.
+      required: [id, expected_revision, idempotency_key, reason]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        id: { type: string, minLength: 1, maxLength: 200 }
+        expected_revision: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 10 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 200, pattern: '^[A-Za-z0-9._:-]+$' }
+        reason: { type: string, minLength: 3, maxLength: 1000 }
+      additionalProperties: false
+    McpPlatformMappingPreflightParams:
+      type: object
+      description: Read-only fail-closed preflight against immutable production schema and mapping evidence.
+      required: [input_json]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        input_json: { type: string, contentMediaType: application/json, x-json-shape: object }
+      additionalProperties: false
+    McpDeliveryBundleVerifyParams:
+      type: object
+      description: Read-only fail-closed verification; missing, extra, malformed, or digest-mismatched files produce an invalid result.
+      required: [manifest_json, files_json, expected_manifest_hash]
+      properties:
+        workspace_id: { type: string, description: Compatibility field; never used as the authorization source. }
+        manifest_json: { type: string, contentMediaType: application/json, x-json-shape: object }
+        files_json: { type: string, contentMediaType: application/json, x-json-shape: array }
+        expected_manifest_hash: { type: string, pattern: '^(?:sha256:)?[A-Fa-f0-9]{64}$' }
+      additionalProperties: false
     McpRequest:
       type: object
       required: [jsonrpc, id, method]
@@ -1048,10 +1600,37 @@ components:
         id: { oneOf: [{ type: string }, { type: integer }, { type: 'null' }] }
         method:
           type: string
-          enum: [merchant.start, merchant.first_value, brand-unit.list, brand-unit.create, brand-unit.bind-store, brand-unit.product.create, brand-unit.listing.create, brand-unit.listing.list, brand-unit.access.grant, campaign.batch.create, campaign.batch.get, campaign.batch.generate, workspace.health, workspace.bootstrap, workspace.interactive.confirm, workspace.metrics, workspace.commercial.get, workspace.commercial.update, workspace.usage.get, ops.audit.list, ops.audit.export, ops.data.delete.list, ops.data.delete.cancel, ops.data.delete.approve, ops.members.list, ops.session, ops.workspaces.list, ops.users.list, ops.users.export, ops.user.detail, ops.user.suspend, ops.user.activate, ops.user.risk.transition, ops.user.session.revoke, ops.commercial.offers.list, ops.commercial.offer.upsert, ops.commercial.addons.list, ops.commercial.addon.upsert, ops.commercial.coupons.list, ops.commercial.export, ops.commercial.coupon.upsert, ops.commercial.rollouts.list, ops.commercial.rollout.upsert, ops.commercial.model-markup.get, ops.commercial.model-markup.update, ops.growth.funnel, ops.alerts.list, ops.alert.ack, ops.marketing.queue, ops.marketing.queue.assign, ops.marketing.visual.review, ops.marketing.generation.retry, ops.marketing.publish.acknowledge, ops.marketing.revision.create, ops.member.upsert, ops.member.suspend, subscription.get, subscription.orders.list, subscription.order.create, subscription.change, billing.usage.consume, billing.usage.refund, billing.refund, billing.reconciliation, billing.reconciliation.run, billing.model-usage.reconciliation.run, billing.model-usage.resolve, billing.export, platform.settings.get, platform.settings.update, platform.model.status, billing.status, billing.recharge.create, billing.recharge.get, billing.recharge.list, billing.transactions, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.import.batch, catalog.sku.update, catalog.product.update, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.get, catalog.image.review, sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.answer, task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, content.codex.prepare, content.codex.commit, generation.get, content.review, content.review.decide, content.visual.select, content.versions, content.diff, content.export, content.approve, content.modify, content.restore, publish.prepare, publish.batch.prepare, publish.batch.confirm, publish.batch.get, publish.batch.pause, publish.batch.resume, publish.batch.retry_failed, automation.policy.get, automation.policy.list, automation.policy.update, automation.scan, automation.tick, automation.pause, publish.confirm, publish.get, knowledge.rule.create, knowledge.rule.list, knowledge.asset.create, knowledge.asset.update, knowledge.asset.list, knowledge.feedback.record, knowledge.learning.list, knowledge.learning.confirm, knowledge.learning.dismiss, knowledge.competitor.create, knowledge.competitor.list, knowledge.competitor.reference, multimodal.image.edit, multimodal.generate, multimodal.video.request, multimodal.video.get]
+          enum: [merchant.start, merchant.first_value, brand-unit.list, brand-unit.create, brand-unit.bind-store, brand-unit.product.create, brand-unit.listing.create, brand-unit.listing.list, brand-unit.access.grant, canonical.product.consistency, ops.canonical.backfill.create, ops.canonical.backfill.get, ops.canonical.backfill.pause, ops.canonical.backfill.resume, ops.canonical.backfill.run, ops.canonical.backfill.conflicts.list, ops.canonical.backfill.conflict.claim, ops.canonical.backfill.conflict.resolve, ops.rules.workspace.audit, campaign.batch.create, campaign.batch.list, campaign.batch.get, campaign.batch.generate, campaign.batch.pause, campaign.batch.resume, campaign.batch.retry_failed, workspace.health, workspace.bootstrap, workspace.interactive.confirm, workspace.metrics, workspace.commercial.get, workspace.commercial.update, workspace.usage.get, ops.audit.list, ops.audit.platform.list, ops.audit.detail, ops.audit.export, ops.data.delete.list, ops.data.delete.cancel, ops.data.delete.approve, ops.members.list, ops.session, ops.authorization.matrix.get, ops.authorization.roles.list, ops.authorization.role.assign, ops.authorization.role.revoke, ops.authorization.grants.list, ops.authorization.grant.issue, ops.authorization.grant.revoke, ops.workspaces.list, ops.stores.list, ops.brand-units.summary, ops.tasks.summary, ops.model-usage.summary, ops.storage.reconciliation.list, ops.support.tickets.list, ops.support.ticket.get, ops.support.ticket.create, ops.support.ticket.assign, ops.support.ticket.transition, ops.support.ticket.comment, ops.support.crm.export, ops.incidents.list, ops.incident.get, ops.incident.timeline, ops.incident.create, ops.incident.transition, ops.incident.comment, ops.incident.commander.assign, ops.incident.scope.update, ops.feature-flags.list, ops.feature-flag.upsert, ops.feature-flag.emergency.set, ops.feature-flag.events, ops.feature-flag.evaluate, ops.finance.search, ops.finance.detail, ops.finance.export, ops.users.list, ops.users.export, ops.user.detail, ops.user.suspend, ops.user.activate, ops.user.risk.transition, ops.user.session.revoke, ops.commercial.offers.list, ops.commercial.offer.upsert, ops.commercial.addons.list, ops.commercial.addon.upsert, ops.commercial.coupons.list, ops.commercial.export, ops.commercial.coupon.upsert, ops.commercial.rollouts.list, ops.commercial.rollout.upsert, ops.commercial.model-markup.get, ops.commercial.model-markup.update, ops.growth.funnel, ops.alerts.list, ops.alert.ack, ops.marketing.queue, ops.marketing.summary, ops.marketing.queue.assign, ops.marketing.image.reconcile, ops.marketing.image.evidence.export, ops.marketing.image.archive.audit, ops.marketing.image.billing.audit, ops.marketing.visual.review, ops.marketing.generation.retry, ops.marketing.asset_scan.retry, ops.marketing.publish.acknowledge, ops.marketing.revision.create, ops.member.upsert, ops.member.suspend, subscription.get, subscription.orders.list, subscription.order.create, subscription.change, billing.usage.consume, billing.usage.refund, billing.refund, billing.reconciliation, billing.model-usage.statement, billing.reconciliation.run, billing.model-usage.reconciliation.run, billing.model-usage.resolve, billing.export, platform.settings.get, platform.settings.update, platform.media.spec.list, platform.media.spec.get, platform.media.spec.create, platform.media.spec.update, platform.media.spec.approve, platform.media.spec.expire, platform.mapping.preflight, platform.model.status, billing.status, billing.recharge.create, billing.recharge.get, billing.recharge.list, billing.transactions, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.import.batch, catalog.sku.update, catalog.product.update, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review, sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, feedback.submit, platform.revoke, task.create, task.answer, task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, content.codex.prepare, content.codex.commit, generation.get, content.review, content.review.decide, content.visual.select, content.versions, content.diff, content.export, content.approve, content.modify, content.restore, publish.prepare, publish.batch.prepare, publish.batch.confirm, publish.batch.get, publish.batch.pause, publish.batch.resume, publish.batch.retry_failed, automation.policy.get, automation.policy.list, automation.policy.update, automation.scan, automation.tick, automation.pause, publish.confirm, publish.get, knowledge.rule.create, knowledge.rule.list, knowledge.asset.create, knowledge.asset.update, knowledge.asset.list, knowledge.feedback.record, knowledge.learning.list, knowledge.learning.confirm, knowledge.learning.dismiss, knowledge.competitor.create, knowledge.competitor.list, knowledge.competitor.reference, delivery.bundle.verify, multimodal.image.edit, multimodal.generate, multimodal.video.request, multimodal.video.get]
         params:
           type: object
+          description: Method-specific parameters. Production-evidence methods use the fail-closed schemas declared by x-method-schema-refs; complex values are JSON-encoded strings and validated for object/array shape before dispatch.
           additionalProperties: true
+          x-method-schema-refs:
+            brand-unit.bind-store: '#/components/schemas/McpBrandUnitBindStoreParams'
+            canonical.product.consistency: '#/components/schemas/McpCanonicalProductConsistencyParams'
+            ops.canonical.backfill.create: '#/components/schemas/McpCanonicalBackfillRunCreateParams'
+            ops.canonical.backfill.get: '#/components/schemas/McpCanonicalBackfillRunGetParams'
+            ops.canonical.backfill.pause: '#/components/schemas/McpCanonicalBackfillRunControlParams'
+            ops.canonical.backfill.resume: '#/components/schemas/McpCanonicalBackfillRunControlParams'
+            ops.canonical.backfill.run: '#/components/schemas/McpCanonicalBackfillRunControlParams'
+            ops.canonical.backfill.conflicts.list: '#/components/schemas/McpCanonicalBackfillConflictListParams'
+            ops.canonical.backfill.conflict.claim: '#/components/schemas/McpCanonicalBackfillConflictClaimParams'
+            ops.canonical.backfill.conflict.resolve: '#/components/schemas/McpCanonicalBackfillConflictResolveParams'
+            ops.marketing.image.reconcile: '#/components/schemas/McpMarketingImageReconcileParams'
+            ops.marketing.image.evidence.export: '#/components/schemas/McpMarketingImageEvidenceExportParams'
+            ops.marketing.image.archive.audit: '#/components/schemas/McpMarketingImageArchiveAuditParams'
+            ops.marketing.image.billing.audit: '#/components/schemas/McpMarketingImageBillingAuditParams'
+            campaign.batch.pause: '#/components/schemas/McpCampaignBatchControlParams'
+            campaign.batch.resume: '#/components/schemas/McpCampaignBatchControlParams'
+            campaign.batch.retry_failed: '#/components/schemas/McpCampaignBatchRetryFailedParams'
+            platform.media.spec.list: '#/components/schemas/McpPlatformMediaSpecListParams'
+            platform.media.spec.get: '#/components/schemas/McpPlatformMediaSpecGetParams'
+            platform.media.spec.create: '#/components/schemas/McpPlatformMediaSpecCreateParams'
+            platform.media.spec.update: '#/components/schemas/McpPlatformMediaSpecUpdateParams'
+            platform.media.spec.approve: '#/components/schemas/McpPlatformMediaSpecTransitionParams'
+            platform.media.spec.expire: '#/components/schemas/McpPlatformMediaSpecTransitionParams'
+            platform.mapping.preflight: '#/components/schemas/McpPlatformMappingPreflightParams'
+            delivery.bundle.verify: '#/components/schemas/McpDeliveryBundleVerifyParams'
       additionalProperties: false
     ApiWarning:
       type: object
@@ -1066,8 +1645,16 @@ components:
       properties:
         code: { type: string }
         message: { type: string }
-        retryable: { type: boolean }
-        details: { type: object, additionalProperties: true }
+        retryable: { type: boolean, description: Explicit machine-readable retry decision. Clients must not infer that every error is retryable. }
+        details:
+          type: object
+          description: Structured diagnostics; may include retry_after_seconds and next_actions. Clients should preserve this object for support diagnostics.
+          additionalProperties: true
+    ApiNextAction:
+      description: A human-readable recovery step or a structured action descriptor. Both forms are emitted by implemented API surfaces.
+      oneOf:
+        - { type: string }
+        - { type: object, additionalProperties: true }
     ApiEnvelope:
       type: object
       required: [request_id, trace_id, workspace_id, data, warnings, next_actions, error]
@@ -1077,12 +1664,16 @@ components:
         workspace_id: { type: string }
         data: {}
         warnings: { type: array, items: { $ref: '#/components/schemas/ApiWarning' } }
-        next_actions: { type: array, items: { type: object, additionalProperties: true } }
+        next_actions: { type: array, items: { $ref: '#/components/schemas/ApiNextAction' } }
         error: { oneOf: [{ $ref: '#/components/schemas/ApiError' }, { type: 'null' }] }
   responses:
     Envelope:
       description: Successful response using ApiEnvelope.
       content: { application/json: { schema: { $ref: '#/components/schemas/ApiEnvelope' } } }
     ErrorEnvelope:
-      description: Failed response using the same ApiEnvelope shape; data is null.
+      description: Failed response using the same ApiEnvelope shape; data is null. Correlation IDs, warnings, next_actions, error details, and retry guidance are diagnostic contract fields and must be preserved by clients.
+      headers:
+        Retry-After:
+          description: Optional delay in seconds (or HTTP date) before a retry. The same value may be present as error.details.retry_after_seconds.
+          schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string }] }
       content: { application/json: { schema: { $ref: '#/components/schemas/ApiEnvelope' } } }

@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { request } from 'node:http'
-import { createHmac } from 'node:crypto'
+import type { ModelUsageRepository } from '../../../packages/persistence/src/model-usage-repository.js'
+import { createWorkerRequestProof } from '../../../packages/security/src/worker-request-proof.js'
 
 const harness = vi.hoisted(() => ({
   modelUsage: null as null | {
     record(input: Record<string, unknown>): Promise<Record<string, unknown> & { id: string; revision: number }>
     list(workspaceId: string, limit?: number): Promise<Array<Record<string, unknown>>>
+    reserveDailyBudget(input: Record<string, unknown>): Promise<unknown>
+    settleDailyBudget(input: Record<string, unknown>): Promise<unknown>
   },
   actionLedger: null as null | {
     record(input: Record<string, unknown>): Promise<Record<string, unknown>>
@@ -17,6 +20,8 @@ const harness = vi.hoisted(() => ({
   walletSettlementCalls: 0,
   refundCalls: 0,
   modelCalls: 0,
+  budgetSettlements: [] as Array<Record<string, unknown>>,
+  budgetReleases: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('../../../packages/persistence/src/index.js', async importOriginal => {
@@ -26,6 +31,16 @@ vi.mock('../../../packages/persistence/src/index.js', async importOriginal => {
     constructor() {
       super()
       harness.modelUsage = this as unknown as typeof harness.modelUsage
+    }
+
+    override async settleDailyBudget(input: Parameters<ModelUsageRepository['settleDailyBudget']>[0]) {
+      harness.budgetSettlements.push({ ...input })
+      return super.settleDailyBudget(input)
+    }
+
+    override async releaseDailyBudget(input: Parameters<ModelUsageRepository['releaseDailyBudget']>[0]) {
+      harness.budgetReleases.push({ ...input })
+      return super.releaseDailyBudget(input)
     }
   }
 
@@ -87,9 +102,9 @@ async function callMcp(base: string, workspaceId: string, method: string, params
 async function postWorkerUsage(base: string, workspaceId: string, payload: Record<string, unknown>) {
   const body = JSON.stringify(payload)
   const path = '/v1/internal/model-usage'
-  const signature = createHmac('sha256', 'worker-signing-test').update(`POST\n${path}\n${workspaceId}`).digest('hex')
+  const proof = createWorkerRequestProof({ secret: 'worker-signing-test', role: 'generation', method: 'POST', requestTarget: path, workspaceId, body })
   return new Promise<{ status: number; body: { data: unknown; error: { code: string } | null } }>((resolve, reject) => {
-    const req = request(new URL(path, base), { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), authorization: 'Bearer worker-token-test', 'x-workspace-id': workspaceId, 'x-worker-workspace-signature': signature } }, response => {
+    const req = request(new URL(path, base), { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), authorization: 'Bearer worker-token-test', 'x-workspace-id': workspaceId, ...proof.headers } }, response => {
       const chunks: Buffer[] = []
       response.on('data', chunk => chunks.push(Buffer.from(chunk)))
       response.on('end', () => {
@@ -151,6 +166,7 @@ async function authorizeAction(workspaceId: string, actionId: string, settlement
     multiplier: 1,
     settlementStatus: settlement === 'wallet' ? 'authorized' : 'settled',
   })
+  await harness.modelUsage!.reserveDailyBudget({ workspaceId, reservationKey: actionId, modality: 'text', model: 'relay-text-test', estimateCny: 1, estimateVersion: 'test-v1', dailyLimitCny: 100 })
 }
 
 beforeAll(async () => {
@@ -159,10 +175,16 @@ beforeAll(async () => {
   vi.stubEnv('PORT', '0')
   vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
   vi.stubEnv('MODEL_RELAY_BASE_URL', 'https://relay.example.test/v1')
+  vi.stubEnv('MODEL_RELAY_ALLOWED_HOSTS', 'relay.example.test')
   vi.stubEnv('MODEL_RELAY_API_KEY', 'test-relay-key')
   vi.stubEnv('AI_MODEL', 'relay-text-test')
-  vi.stubEnv('WORKER_API_TOKEN', 'worker-token-test')
-  vi.stubEnv('WORKER_API_SIGNING_SECRET', 'worker-signing-test')
+  vi.stubEnv('MODEL_RPM_LIMIT', '60')
+  vi.stubEnv('MODEL_TPM_LIMIT', '120000')
+  vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '100')
+  vi.stubEnv('MODEL_TEXT_MAX_REQUEST_CNY', '1')
+  vi.stubEnv('MODEL_COST_ESTIMATE_VERSION', 'test-v1')
+  vi.stubEnv('MODEL_RELAY_TEXT_COST_EVIDENCE', 'true')
+  vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ generation: { token: 'worker-token-test', signing_secret: 'worker-signing-test' } }))
   vi.stubEnv('PLUGIN_VERSION', '1.0.0-test')
   vi.stubEnv('SKILL_BUNDLE_VERSION', '1.0.0-test')
   vi.stubEnv('MCP_VERSION', '1.0.0-test')
@@ -182,6 +204,8 @@ beforeEach(() => {
   harness.walletSettlementCalls = 0
   harness.refundCalls = 0
   harness.modelCalls = 0
+  harness.budgetSettlements = []
+  harness.budgetReleases = []
 })
 
 afterAll(async () => {
@@ -191,6 +215,39 @@ afterAll(async () => {
 })
 
 describe('API model usage settlement invariants', () => {
+  it('rejects a provider usage receipt without an action id', async () => {
+    const workspaceId = `ws_worker_usage_missing_action_${Date.now()}`
+    const base = await startApi()
+    try {
+      const response = await postWorkerUsage(base, workspaceId, { modality: 'text', model: 'relay-text', providerRequestId: `missing-action-${Date.now()}`, inputTokens: 1, outputTokens: 1, totalTokens: 2, costCny: 0.01 })
+      expect(response).toMatchObject({ status: 400, body: { error: { code: 'INVALID_REQUEST' } } })
+    } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+    }
+  })
+
+  it('rejects a provider usage receipt whose action authorization does not exist', async () => {
+    const workspaceId = `ws_worker_usage_unknown_action_${Date.now()}`
+    const base = await startApi()
+    try {
+      const response = await postWorkerUsage(base, workspaceId, {
+        workspaceId,
+        actionId: `model:unknown-${Date.now()}`,
+        modality: 'text',
+        model: 'relay-text',
+        providerRequestId: `unknown-action-${Date.now()}`,
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+        costCny: 0.01,
+      })
+      expect(response).toMatchObject({ status: 409, body: { error: { code: 'MODEL_USAGE_ACTION_NOT_AUTHORIZED' } } })
+      expect(await harness.modelUsage!.list(workspaceId, 10)).toHaveLength(0)
+    } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+    }
+  })
+
   it('accepts an idempotent worker relay receipt through the internal settlement boundary', async () => {
     const workspaceId = `ws_worker_usage_${Date.now()}`
     const actionId = `model:generation:worker-${Date.now()}`
@@ -198,14 +255,14 @@ describe('API model usage settlement invariants', () => {
     await authorizeAction(workspaceId, actionId, 'included_quota')
     const base = await startApi()
     try {
-      const payload = { workspaceId, actionId, modality: 'text', model: 'relay-text', providerRequestId, inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z', metadata: { context_hash: 'a'.repeat(64) } }
+      const payload = { workspaceId, actionId, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), modality: 'text', model: 'relay-text', providerRequestId, inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z' }
       const first = await postWorkerUsage(base, workspaceId, payload)
       const replay = await postWorkerUsage(base, workspaceId, payload)
       expect(first).toMatchObject({ status: 200, body: { error: null } })
       expect(replay).toMatchObject({ status: 200, body: { error: null } })
       const rows = await harness.modelUsage!.list(workspaceId, 10)
       expect(rows).toHaveLength(1)
-      expect(rows[0]).toMatchObject({ receiptKey: providerRequestId, actionId, totalTokens: 28, costCny: 0.04, settlementStatus: 'settled', metadata: { context_hash: 'a'.repeat(64) } })
+      expect(rows[0]).toMatchObject({ receiptKey: providerRequestId, actionId, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), totalTokens: 28, costCny: 0.04, settlementStatus: 'settled' })
     } finally {
       await new Promise<void>(resolve => api.server.close(() => resolve()))
     }
@@ -232,6 +289,32 @@ describe('API model usage settlement invariants', () => {
     expect(harness.refundCalls).toBe(0)
   })
 
+  it('settles each repair-attempt receipt without reusing the original wallet authorization', async () => {
+    const workspaceId = `ws_worker_repair_${Date.now()}`
+    const actionId = `model:generation:repair-${Date.now()}`
+    const firstReceipt = `worker-first-${Date.now()}`
+    const repairReceipt = `worker-repair-${Date.now()}`
+    await authorizeAction(workspaceId, actionId, 'wallet')
+    vi.stubEnv('NODE_ENV', 'test')
+    const base = await startApi()
+    try {
+      const common = { workspaceId, actionId, modality: 'text', model: 'relay-text', inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z' }
+      expect(await postWorkerUsage(base, workspaceId, { ...common, providerRequestId: firstReceipt })).toMatchObject({ status: 200, body: { error: null } })
+      expect(await postWorkerUsage(base, workspaceId, { ...common, providerRequestId: repairReceipt })).toMatchObject({ status: 200, body: { error: null } })
+    } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+      vi.stubEnv('NODE_ENV', 'production')
+    }
+    const rows = await harness.modelUsage!.list(workspaceId, 10)
+    expect(rows).toHaveLength(2)
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerRequestId: firstReceipt, settlementStatus: 'settled' }),
+      expect.objectContaining({ providerRequestId: repairReceipt, settlementStatus: 'settled' }),
+    ]))
+    expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlementStatus: 'settled', providerRequestId: firstReceipt })
+    expect(await harness.actionLedger!.get(workspaceId, `model-usage:${repairReceipt}`)).toMatchObject({ settlement: 'wallet', settlementStatus: 'settled', providerRequestId: repairReceipt })
+  })
+
   it('marks a costed provider receipt settled after included-quota settlement succeeds', async () => {
     const workspaceId = `ws_settled_${Date.now()}`
     const actionId = `model:settled-${Date.now()}`
@@ -246,6 +329,26 @@ describe('API model usage settlement invariants', () => {
     expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlement: 'included_quota', settlementStatus: 'settled' })
     expect(harness.walletSettlementCalls).toBe(0)
     expect(harness.refundCalls).toBe(0)
+    expect(harness.budgetSettlements).toContainEqual(expect.objectContaining({ workspaceId, reservationKey: actionId, actualCostCny: 0.02, providerRequestId: harness.providerRequestId }))
+  })
+
+  it('releases an active reservation when the provider invocation fails', async () => {
+    const workspaceId = `ws_provider_failure_${Date.now()}`
+    const actionId = `model:provider-failure-${Date.now()}`
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('relay unavailable'))
+    await expect(generate(workspaceId, actionId)).rejects.toBeDefined()
+    expect(harness.budgetReleases).toContainEqual(expect.objectContaining({ workspaceId, reservationKey: actionId }))
+    expect(harness.budgetSettlements).toHaveLength(0)
+  })
+
+  it('keeps an actual-cost overrun durable and does not release it after provider success', async () => {
+    const workspaceId = `ws_actual_overrun_${Date.now()}`
+    const actionId = `model:actual-overrun-${Date.now()}`
+    harness.costCny = 101
+    await authorizeAction(workspaceId, actionId, 'included_quota')
+    await expect(generate(workspaceId, actionId)).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_PENDING', details: expect.objectContaining({ provider_succeeded: true }) })
+    expect(harness.budgetReleases).toHaveLength(0)
+    await expect(harness.modelUsage!.settleDailyBudget({ workspaceId, reservationKey: actionId, actualCostCny: 101, providerRequestId: harness.providerRequestId })).rejects.toMatchObject({ code: 'MODEL_DAILY_COST_ACTUAL_EXCEEDED' })
   })
 
   it('keeps a costed receipt pending_wallet and does not refund when wallet settlement fails', async () => {

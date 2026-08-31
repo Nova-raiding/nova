@@ -1,9 +1,6 @@
-import { UserDirectorySection } from "../components/users/UserDirectorySection";
-import { MembersSection } from "../components/finance/MembersSection";
-import { WorkspaceGovernanceSection } from "../components/users/WorkspaceGovernanceSection";
 import { OpsPage } from "../components/OpsPage";
-import { OpsPageError } from "../components/OpsPageError";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
+import { UsersGovernanceWorkspace } from "../components/users/UsersGovernanceWorkspace";
 
 interface UsersPageProps {
   model: OpsConsoleModel;
@@ -14,12 +11,9 @@ export function UsersPage({ model }: UsersPageProps) {
     <OpsPage
       eyebrow="PLATFORM GOVERNANCE"
       title="用户与租户"
-      description="跨工作区查询用户身份和成员关系，定位账号状态并执行可审计的访问停用。"
+      description="按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。"
     >
-      <OpsPageError error={model.userDirectoryError} onRetry={() => void model.loadUsers()} />
-      <WorkspaceGovernanceSection model={model} />
-      <UserDirectorySection model={model} />
-      <MembersSection model={model} />
+      <UsersGovernanceWorkspace model={model} />
     </OpsPage>
   );
 }

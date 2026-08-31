@@ -1,38 +1,1067 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    :root{color-scheme:light dark;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;--bg:#fff;--surface:#f6f7f5;--text:#17201b;--muted:#68736c;--line:#dfe4de;--green:#176b4d;--green2:#0f513a;--lime:#d8ed7a;--amber:#8a5b12;--amberbg:#fff4d6} @media(prefers-color-scheme:dark){:root{--bg:#202421;--surface:#292e2a;--text:#f4f6f3;--muted:#aab3ad;--line:#3b433d;--green:#70c89f;--green2:#1d7b58;--lime:#c9e36a;--amber:#ffd177;--amberbg:#40351f}}
-    *{box-sizing:border-box}body{margin:0;background:transparent;color:var(--text)}button,input{font:inherit}.wallet{margin:0;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--bg)}.head,.row,.actions{display:flex;align-items:center}.head{justify-content:space-between;gap:12px}.brand{display:flex;align-items:center;gap:10px}.mark{width:36px;height:36px;border-radius:11px;background:var(--lime);color:#18362a;display:grid;place-items:center;font-weight:900}.brand b,.brand small{display:block}.brand small,.sub,.label,.order small{color:var(--muted);font-size:12px}.badge{padding:5px 9px;border-radius:99px;background:var(--amberbg);color:var(--amber);font-size:11px;font-weight:700}.balance{margin:18px 0 4px;font-size:34px;font-weight:800;letter-spacing:-.04em}.sub{margin:0 0 16px}.warning{display:none;margin:0 0 16px;padding:12px;border-radius:10px;background:var(--amberbg);color:var(--amber);font-size:13px;line-height:1.5}.warning.show{display:block}.label{display:block;margin:13px 0 7px;font-weight:700}.amounts,.channels{display:grid;gap:8px}.amounts{grid-template-columns:repeat(3,1fr)}.channels{grid-template-columns:1fr 1fr}.choice{height:42px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font-weight:700}.choice.selected{border:2px solid var(--green);color:var(--green);background:transparent}.custom{width:100%;height:42px;margin-top:8px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text)}.actions{gap:8px;margin-top:16px}.primary,.secondary{height:44px;border-radius:10px;padding:0 15px;font-weight:800}.primary{flex:1;border:0;background:var(--green2);color:white}.secondary{border:1px solid var(--line);background:var(--surface);color:var(--text)}button:disabled{opacity:.55}.order{display:none;margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.order.show{display:block}.order b{display:block;margin-bottom:6px}.order .row{justify-content:space-between;gap:8px;font-size:12px}.pending{color:var(--amber);font-weight:800}.paid{color:var(--green);font-weight:800}.safe{margin:12px 0 0;color:var(--muted);font-size:11px;line-height:1.45}.error{color:#b74a3b;font-size:12px;margin-top:10px}dialog{width:min(430px,calc(100% - 28px));padding:0;border:1px solid var(--line);border-radius:18px;background:var(--bg);color:var(--text);box-shadow:0 24px 70px #0008}dialog::backdrop{background:#07110bbb;backdrop-filter:blur(3px)}.checkout{padding:22px}.checkout h2{margin:0 0 6px;font-size:21px}.checkout .pay-amount{margin:20px 0 4px;font-size:34px;font-weight:850}.checkout .pay-channel{color:var(--muted);font-size:13px}.checkout .pay-code{display:grid;place-items:center;width:148px;height:148px;margin:18px auto;border:10px solid white;border-radius:12px;background:repeating-conic-gradient(#17201b 0 8%,white 0 14%);box-shadow:inset 0 0 0 5px #17201b}.checkout .pay-code span{padding:7px;background:white;color:#17201b;font-weight:900}.checkout .pay-note{padding:10px;border-radius:9px;background:var(--amberbg);color:var(--amber);font-size:12px;line-height:1.45}.checkout .actions{margin-top:16px}.checkout .secondary{flex:1}
-  </style>
-</head>
-<body>
-  <main class="wallet" aria-live="polite">
-    <div class="head"><div class="brand"><div class="mark">麦</div><div><b>大麦钱包</b><small>内容、图片、视频统一额度</small></div></div><span class="badge" id="mode">测试支付</span></div>
-    <div class="balance">¥<span id="balance">0.00</span></div><p class="sub" id="status">充值到账后解锁生成能力</p>
-    <div class="warning" id="warning"><b>额度不足，需要充值</b><br><span id="reason">当前余额不足以完成本次任务。</span></div>
-    <span class="label">选择充值金额</span><div class="amounts"><button class="choice" data-amount="50.00">¥50</button><button class="choice selected" data-amount="100.00">¥100</button><button class="choice" data-amount="300.00">¥300</button></div>
-    <input class="custom" id="custom" inputmode="decimal" placeholder="其他金额（元）" aria-label="其他充值金额" />
-    <span class="label">支付方式</span><div class="channels"><button class="choice selected" data-channel="alipay">支付宝</button><button class="choice" data-channel="wechat">微信支付</button></div>
-    <div class="actions"><button class="primary" id="create">立即充值</button><button class="secondary" id="query" disabled>查询状态</button></div>
-    <div class="order" id="order"><div class="row"><b>充值订单</b><span class="pending" id="orderState">待支付</span></div><small id="orderInfo"></small></div>
-    <div class="error" id="error"></div><p class="safe">本地测试支付不会产生真实扣款。正式支付将在安全收银台完成，到账以服务端回调为准。</p>
-  </main>
-  <dialog id="checkout"><section class="checkout"><h2>确认支付</h2><div class="pay-channel" id="checkoutChannel">支付宝收银台</div><div class="pay-amount">¥<span id="checkoutAmount">100.00</span></div><div class="pay-code" aria-label="测试付款码"><span>大麦</span></div><div class="pay-note" id="checkoutNote">这是本地测试付款码，不会产生真实扣款。</div><div class="actions"><button class="secondary" id="closeCheckout">暂不支付</button><button class="primary" id="paidCheckout">我已完成支付</button></div></section></dialog>
-  <script>
-    const URI='ui://merchant-marketing/recharge-v1.html';let amount='100.00',channel='alipay',orderId='',latest=null,modalRequested=false,nextId=1;const pending=new Map();
-    const $=id=>document.getElementById(id);function request(method,params){const id=nextId++;window.parent.postMessage({jsonrpc:'2.0',id,method,params},'*');return new Promise((resolve,reject)=>pending.set(id,{resolve,reject}))}async function callTool(name,args){if(window.openai?.callTool)return window.openai.callTool(name,args);return request('tools/call',{name,arguments:args})}
-    function value(o,...keys){for(const k of keys)if(o&&o[k]!==undefined)return o[k]}
-    function paymentMode(data){return (value(data,'paymentMode','payment_mode','billing_mode','billingMode')||'fixture').toString().toLowerCase()}function render(data){latest=data||{};const balance=value(latest,'balance_cny','balanceCny')??value(latest.plugin_access,'balance_cny','balanceCny')??'0.00';$('balance').textContent=balance;const insufficient=latest.show_recharge===true||latest.code==='RECHARGE_REQUIRED'||latest.code==='BILLING_INSUFFICIENT_BALANCE'||latest.plugin_access?.unlocked===false;$('warning').classList.toggle('show',insufficient);$('reason').textContent=latest.recharge_reason||latest.message||'当前余额不足以完成本次任务。';$('mode').textContent=paymentMode(latest)==='provider'?'安全支付':'测试支付';const id=value(latest,'id','order_id');if(id){orderId=id;const state=value(latest,'state')||'pending';$('order').classList.add('show');$('orderState').textContent=state==='paid'?'已到账':'待支付';$('orderState').className=state==='paid'?'paid':'pending';$('orderInfo').textContent=`${latest.channel==='wechat'?'微信支付':'支付宝'} · ¥${value(latest,'amount_cny','amountCny')||amount} · ${id}`;$('query').disabled=false}$('status').textContent=latest.plugin_access?.unlocked?'钱包可用，生成能力已解锁':'充值到账后解锁生成能力';if(insufficient&&!modalRequested&&window.openai?.requestModal&&window.openai?.displayMode==='inline'){modalRequested=true;window.openai.requestModal({template:URI}).catch(()=>{})}}
-    async function openCheckout(data){const url=value(data,'paymentUrl','payment_url');if(paymentMode(data)==='provider'&&typeof url==='string'&&(/^(https:|alipays:|weixin:)/u.test(url))){if(window.openai?.openExternal){await window.openai.openExternal({href:url});return}window.open(url,'_blank','noopener,noreferrer');return}$('checkoutAmount').textContent=value(data,'amount_cny','amountCny')||amount;$('checkoutChannel').textContent=(data.channel==='wechat'?'微信支付':'支付宝')+'收银台';$('checkout').showModal()}
-    document.querySelectorAll('[data-amount]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-amount]').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');amount=b.dataset.amount;$('custom').value='' });$('custom').oninput=e=>{if(e.target.value){document.querySelectorAll('[data-amount]').forEach(x=>x.classList.remove('selected'));amount=e.target.value.trim()}};document.querySelectorAll('[data-channel]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-channel]').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');channel=b.dataset.channel});
-    $('create').onclick=async()=>{if(!/^\d+(\.\d{1,2})?$/.test(amount)||Number(amount)<=0){$('error').textContent='请输入正确的充值金额';return}$('error').textContent='';$('create').disabled=true;$('create').textContent='正在进入收银台…';try{const r=await callTool('billing.recharge.create',{amount_cny:Number(amount).toFixed(2),channel,idempotency_key:`chatgpt-ui-${Date.now()}`});const data=r?.structuredContent||r?.content?.[0]?.structuredContent||r;render(data);await openCheckout(data)}catch(e){$('error').textContent=e?.message||'创建订单失败'}finally{$('create').disabled=false;$('create').textContent='立即充值'}};
-    async function renderOrderAndWallet(response){const data=response?.structuredContent||response;render(data);if(value(data,'state')==='paid'){const wallet=await callTool('billing.status',{});render(wallet?.structuredContent||wallet)}}
-    $('query').onclick=async()=>{if(!orderId)return;$('query').disabled=true;try{const r=await callTool('billing.recharge.get',{order_id:orderId});await renderOrderAndWallet(r)}catch(e){$('error').textContent=e?.message||'查询失败'}finally{$('query').disabled=false}};
-    $('closeCheckout').onclick=()=>$('checkout').close();$('paidCheckout').onclick=async()=>{$('checkout').close();if(!orderId)return;$('query').disabled=true;try{const r=await callTool('billing.recharge.get',{order_id:orderId});await renderOrderAndWallet(r)}catch(e){$('error').textContent=e?.message||'查询失败'}finally{$('query').disabled=false}};
-    window.addEventListener('message',e=>{if(e.source!==window.parent)return;const m=e.data;if(!m||m.jsonrpc!=='2.0')return;if(m.id!==undefined&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);return}if(m.method==='ui/notifications/tool-result')render(m.params?.structuredContent)});render(window.openai?.toolOutput||{});
-  </script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          sans-serif;
+        --bg: #fff;
+        --surface: #f7f7f8;
+        --surface2: #ececf1;
+        --text: #202123;
+        --muted: #6e6e80;
+        --line: #dedee5;
+        --accent: #087b62;
+        --accent-text: #fff;
+        --danger: #b42318;
+        --warning: #9a6700;
+        --focus: #2563eb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #212121;
+          --surface: #2f2f2f;
+          --surface2: #3a3a3a;
+          --text: #ececec;
+          --muted: #b4b4b4;
+          --line: #4a4a4a;
+          --accent: #71e0c1;
+          --accent-text: #10201b;
+          --danger: #ff8a80;
+          --warning: #ffd166;
+          --focus: #7cb7ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: transparent;
+        color: var(--text);
+        font:
+          14px/1.5 ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          sans-serif;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      .shell {
+        max-width: 920px;
+        margin: auto;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .top {
+        padding: 20px 22px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .title-row,
+      .balance-row,
+      .toolbar,
+      .scope,
+      .tabs,
+      .actions,
+      .item-head {
+        display: flex;
+        align-items: center;
+      }
+      .title-row,
+      .balance-row,
+      .item-head {
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .eyebrow {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .top h1 {
+        margin: 2px 0 0;
+        font-size: 20px;
+      }
+      .shared {
+        padding: 5px 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .balance-row {
+        margin-top: 18px;
+        align-items: flex-end;
+      }
+      .balance {
+        font-size: 34px;
+        font-weight: 650;
+        letter-spacing: -0.04em;
+      }
+      .balance-label,
+      .scope-note,
+      .item-meta,
+      .item-detail,
+      .card p,
+      .section-head p {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .settlement {
+        max-width: 380px;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: right;
+      }
+      .toolbar {
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .scope {
+        gap: 2px;
+        padding: 3px;
+        border-radius: 10px;
+        background: var(--surface2);
+      }
+      .scope button {
+        min-height: 38px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .scope button[aria-pressed="true"] {
+        background: var(--bg);
+        color: var(--text);
+        box-shadow: 0 1px 3px #0002;
+      }
+      .tabs {
+        gap: 4px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        overflow-x: auto;
+      }
+      .tab {
+        min-height: 48px;
+        padding: 0 13px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .tab[aria-selected="true"] {
+        border-color: var(--accent);
+        color: var(--text);
+        font-weight: 600;
+      }
+      .tab:focus-visible,
+      .scope button:focus-visible,
+      .btn:focus-visible,
+      .choice:focus-visible,
+      input:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      .panel {
+        min-height: 280px;
+        padding: 20px 22px;
+      }
+      .panel[hidden] {
+        display: none;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+        gap: 16px;
+      }
+      .card,
+      .item {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+      }
+      .card h2,
+      .section-head h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+      .card p,
+      .section-head p {
+        margin: 3px 0 0;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 16px;
+      }
+      .metric {
+        padding: 12px;
+        border-radius: 10px;
+        background: var(--bg);
+      }
+      .metric strong,
+      .metric span {
+        display: block;
+      }
+      .metric strong {
+        font-size: 17px;
+      }
+      .metric span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .amounts,
+      .channels {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .channels {
+        grid-template-columns: 1fr 1fr;
+      }
+      .choice,
+      .btn {
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--bg);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .choice[aria-pressed="true"],
+      .choice[aria-checked="true"] {
+        border: 2px solid var(--accent);
+        color: var(--accent);
+        font-weight: 650;
+      }
+      .field {
+        width: 100%;
+        min-height: 44px;
+        margin-top: 8px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .actions {
+        gap: 8px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        padding: 0 15px;
+        font-weight: 600;
+      }
+      .btn.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--accent-text);
+      }
+      .field-label {
+        display: block;
+        margin-top: 12px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .field-label .field {
+        margin-top: 5px;
+      }
+      .field-error {
+        min-height: 18px;
+        margin-top: 3px;
+        color: var(--danger);
+        font-size: 12px;
+      }
+      .bill-controls {
+        display: flex;
+        align-items: end;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .bill-controls .field-label {
+        margin: 0;
+      }
+      .bill-controls .field {
+        width: 170px;
+        margin-top: 5px;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .section-head {
+        margin-bottom: 14px;
+      }
+      .list {
+        display: grid;
+        gap: 9px;
+      }
+      .item {
+        padding: 14px 15px;
+        border-radius: 12px;
+      }
+      .item-title {
+        font-weight: 600;
+      }
+      .item-detail {
+        margin-top: 7px;
+      }
+      .amount-positive {
+        color: var(--accent);
+        font-weight: 650;
+      }
+      .amount-negative {
+        font-weight: 650;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--surface2);
+        font-size: 11px;
+      }
+      .status.paid,
+      .status.settled {
+        color: var(--accent);
+      }
+      .status.pending {
+        color: var(--warning);
+      }
+      .status.failed,
+      .status.closed {
+        color: var(--danger);
+      }
+      .empty,
+      .loading {
+        padding: 34px 16px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .error {
+        display: none;
+        margin: 12px 22px 0;
+        padding: 11px 13px;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--danger) 10%, transparent);
+        color: var(--danger);
+      }
+      .error.show {
+        display: block;
+      }
+      .notice {
+        margin-top: 12px;
+        padding: 11px 12px;
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+      }
+      dialog {
+        width: min(440px, calc(100% - 28px));
+        padding: 22px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--bg);
+        color: var(--text);
+      }
+      dialog::backdrop {
+        background: #0009;
+      }
+      .pay {
+        font-size: 34px;
+        font-weight: 650;
+      }
+      @media (max-width: 680px) {
+        .top,
+        .panel {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .balance-row,
+        .toolbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .settlement {
+          text-align: left;
+        }
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+        .scope-note {
+          display: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell" id="app" aria-busy="false">
+      <header class="top">
+        <div class="title-row">
+          <div>
+            <p class="eyebrow">订单与账单</p>
+            <h1>大麦账务中心</h1>
+          </div>
+          <span class="shared">工作区共享钱包</span>
+        </div>
+        <div class="balance-row">
+          <div>
+            <div class="balance-label">钱包可用余额</div>
+            <div class="balance">¥<span id="balance">—</span></div>
+          </div>
+          <div class="settlement" id="settlement">
+            余额属于当前工作区；订单和用量默认只展示你本人。
+          </div>
+        </div>
+      </header>
+      <div class="toolbar">
+        <div class="scope" aria-label="账务查看范围">
+          <button data-scope="mine" aria-pressed="true">我的</button
+          ><button data-scope="workspace" aria-pressed="false" hidden>
+            整个工作区
+          </button>
+        </div>
+        <span class="scope-note" id="scopeNote">仅显示可归属到你的记录</span>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="账务分类">
+        <button
+          class="tab"
+          id="tab-overview"
+          role="tab"
+          aria-selected="true"
+          aria-controls="panel-overview"
+          tabindex="0"
+          data-tab="overview"
+        >
+          概览与充值</button
+        ><button
+          class="tab"
+          id="tab-orders"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-orders"
+          tabindex="-1"
+          data-tab="orders"
+        >
+          订单</button
+        ><button
+          class="tab"
+          id="tab-transactions"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-transactions"
+          tabindex="-1"
+          data-tab="transactions"
+        >
+          流水</button
+        ><button
+          class="tab"
+          id="tab-usage"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-usage"
+          tabindex="-1"
+          data-tab="usage"
+        >
+          账单
+        </button>
+      </nav>
+      <div class="error" id="error" role="alert"></div>
+      <section
+        class="panel"
+        id="panel-overview"
+        role="tabpanel"
+        aria-labelledby="tab-overview"
+      >
+        <div class="grid">
+          <article class="card">
+            <h2>本期概览</h2>
+            <p id="overviewText">正在读取账务状态…</p>
+            <div class="metrics">
+              <div class="metric">
+                <strong id="taskRemaining">—</strong><span>剩余行动额度</span>
+              </div>
+              <div class="metric">
+                <strong id="pendingAmount">¥0.00</strong><span>待确认金额</span>
+              </div>
+              <div class="metric">
+                <strong id="accessState">—</strong><span>模型能力</span>
+              </div>
+            </div>
+            <div class="notice">
+              钱包余额由工作区共享；“我的”范围只影响订单、流水与模型用量。
+            </div>
+          </article>
+          <article class="card">
+            <h2>钱包充值</h2>
+            <p>到账后可用于内容、图片、OCR 与视频等能力。</p>
+            <div class="amounts" aria-label="充值金额">
+              <button class="choice" data-amount="50.00" aria-pressed="false">
+                ¥50</button
+              ><button class="choice" data-amount="100.00" aria-pressed="true">
+                ¥100</button
+              ><button class="choice" data-amount="300.00" aria-pressed="false">
+                ¥300
+              </button>
+            </div>
+            <label class="field-label" for="customAmount"
+              >其他充值金额（元）<input
+                class="field"
+                id="customAmount"
+                inputmode="decimal"
+                aria-describedby="amountError"
+                placeholder="例如 200.00"
+            /></label>
+            <div class="field-error" id="amountError" aria-live="polite"></div>
+            <div class="channels" role="radiogroup" aria-label="支付方式">
+              <button
+                class="choice"
+                role="radio"
+                data-channel="alipay"
+                aria-checked="true"
+                tabindex="0"
+              >
+                支付宝</button
+              ><button
+                class="choice"
+                role="radio"
+                data-channel="wechat"
+                aria-checked="false"
+                tabindex="-1"
+              >
+                微信支付
+              </button>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="createOrder">立即充值</button
+              ><button class="btn" id="refreshStatus">刷新</button>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section
+        class="panel"
+        id="panel-orders"
+        role="tabpanel"
+        aria-labelledby="tab-orders"
+        hidden
+      >
+        <div class="section-head">
+          <h2 id="ordersTitle">我的订单</h2>
+          <p>充值与套餐订单按时间排列；历史未归属订单不会被猜测为本人订单。</p>
+        </div>
+        <div class="list" id="ordersList"></div>
+      </section>
+      <section
+        class="panel"
+        id="panel-transactions"
+        role="tabpanel"
+        aria-labelledby="tab-transactions"
+        hidden
+      >
+        <div class="section-head">
+          <h2 id="transactionsTitle">我的流水</h2>
+          <p>显示可归属到当前成员的充值、消费和退款记录。</p>
+        </div>
+        <div class="list" id="transactionsList"></div>
+      </section>
+      <section
+        class="panel"
+        id="panel-usage"
+        role="tabpanel"
+        aria-labelledby="tab-usage"
+        hidden
+      >
+        <div class="section-head">
+          <h2 id="usageTitle">我的账单</h2>
+          <p>按所选账期汇总真实模型回执；个人视图不展示平台内部成本。</p>
+          <div class="bill-controls">
+            <label class="field-label" for="billingPeriod"
+              >账期<input class="field" id="billingPeriod" type="month"
+            /></label>
+            <button class="btn" id="exportBilling">导出账单 CSV</button>
+          </div>
+        </div>
+        <div class="list" id="usageList"></div>
+      </section>
+      <div class="sr" id="live" role="status" aria-live="polite"></div>
+    </main>
+    <dialog id="checkout" aria-labelledby="checkoutTitle">
+      <h2 id="checkoutTitle">充值订单已创建</h2>
+      <p id="checkoutChannel"></p>
+      <div class="pay">¥<span id="checkoutAmount"></span></div>
+      <p id="checkoutMessage"></p>
+      <div class="actions">
+        <button class="btn" id="closeCheckout">稍后支付</button
+        ><button class="btn primary" id="checkPayment">查询支付状态</button>
+      </div>
+    </dialog>
+    <script>
+      const today = new Date(),
+        initialPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`,
+        S = {
+          scope: "mine",
+          tab: "overview",
+          amount: "100.00",
+          channel: "alipay",
+          orderId: "",
+          period: initialPeriod,
+          busy: 0,
+        },
+        $ = (id) => document.getElementById(id),
+        unwrap = (r) =>
+          r?.structuredContent ??
+          r?.content?.find?.((x) => x.structuredContent)?.structuredContent ??
+          r;
+      async function call(name, args = {}) {
+        if (!window.openai?.callTool) throw Error("当前宿主未提供插件调用能力");
+        return unwrap(await window.openai.callTool(name, args));
+      }
+      function busy(on, text = "") {
+        S.busy = Math.max(0, S.busy + (on ? 1 : -1));
+        $("app").setAttribute("aria-busy", S.busy ? "true" : "false");
+        if (text) $("live").textContent = text;
+      }
+      function fail(t = "") {
+        $("error").textContent = t;
+        $("error").classList.toggle("show", !!t);
+      }
+      const esc = (v) =>
+          String(v ?? "").replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          ),
+        money = (v) =>
+          Number(v ?? 0).toLocaleString("zh-CN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 6,
+          }),
+        when = (v) =>
+          v
+            ? new Intl.DateTimeFormat("zh-CN", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(v))
+            : "时间未知",
+        short = (v) =>
+          String(v ?? "")
+            .replace(/^recharge_/, "")
+            .slice(-10) || "—",
+        L = {
+          pending: "待支付",
+          paid: "已到账",
+          closed: "已关闭",
+          failed: "未成功",
+          refunded: "已退款",
+          debit: "消费",
+          refund: "退款",
+          recharge: "充值",
+          text: "文案",
+          image: "图片",
+          image_edit: "图片编辑",
+          ocr: "OCR",
+          video: "视频",
+        };
+      const empty = (t) => `<div class="empty">${esc(t)}</div>`,
+        badge = (v) =>
+          `<span class="status ${["paid", "settled", "pending", "failed", "closed"].includes(v) ? v : ""}">${esc(L[v] ?? v)}</span>`;
+      function periodRange() {
+        const [year, month] = S.period.split("-").map(Number);
+        const nextYear = month === 12 ? year + 1 : year;
+        const nextMonth = month === 12 ? 1 : month + 1;
+        return {
+          from_at: `${S.period}-01T00:00:00+08:00`,
+          to_at: `${nextYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00+08:00`,
+        };
+      }
+      function status(d) {
+        if (!d) return;
+        $("balance").textContent = money(d.balance_cny);
+        $("pendingAmount").textContent =
+          `¥${money(d.pending_authorization_cny)}`;
+        $("taskRemaining").textContent =
+          d.action_entitlement?.remaining_tasks ?? "—";
+        $("accessState").textContent = d.plugin_access?.unlocked
+          ? "已解锁"
+          : "待充值";
+        $("overviewText").textContent =
+          d.settlement_message || d.model_access?.message || "账务状态已更新";
+        $("settlement").textContent =
+          d.settlement_message ||
+          "余额属于当前工作区；订单和用量默认只展示你本人。";
+        document.querySelector("[data-scope=workspace]").hidden =
+          !d.viewer?.available_scopes?.includes("workspace");
+      }
+      async function loadStatus() {
+        busy(true, "正在刷新钱包");
+        try {
+          status(await call("billing.status"));
+          fail();
+          busy(false, "钱包已更新");
+        } catch (e) {
+          fail(e.message || "钱包状态暂时不可用");
+          busy(false, "钱包更新失败");
+        }
+      }
+      function orderHtml(r, s) {
+        const a = [
+          ...(r?.orders ?? []).map((o) => ({
+            kind: "钱包充值",
+            id: o.id,
+            amount: o.amount_cny,
+            state: o.state,
+            time: o.created_at,
+            detail: o.channel === "wechat" ? "微信支付" : "支付宝",
+            attributed: o.attribution_status !== "legacy_unattributed",
+          })),
+          ...(Array.isArray(s) ? s : (s?.orders ?? [])).map((o) => ({
+            kind: "套餐订单",
+            id: o.orderNo ?? o.id,
+            amount: o.paymentAmountCny ?? o.priceCny,
+            state: o.status,
+            time: o.createdAt,
+            detail: `${o.planName ?? "套餐"} · ${o.billingCycle === "annual" ? "按年" : "按月"}`,
+            attributed: Boolean(o.createdByActorId),
+          })),
+        ].sort((x, y) => String(y.time).localeCompare(String(x.time)));
+        return a.length
+          ? a
+              .map(
+                (o) =>
+                  `<article class="item"><div class="item-head"><div><div class="item-title">${esc(o.kind)} · ${esc(short(o.id))}</div><div class="item-meta">${esc(when(o.time))}</div></div>${badge(o.state)}</div><div class="item-detail">¥${money(o.amount)} · ${esc(o.detail)}${S.scope === "workspace" && !o.attributed ? " · 历史未归属" : ""}</div></article>`,
+              )
+              .join("")
+          : empty(
+              S.scope === "mine"
+                ? "还没有可归属到你的订单"
+                : "当前工作区还没有订单",
+            );
+      }
+      async function orders() {
+        let el = $("ordersList");
+        el.innerHTML = '<div class="loading">正在读取订单…</div>';
+        try {
+          let [r, s] = await Promise.all([
+            call("billing.recharge.list", { scope: S.scope, limit: "50" }),
+            call("subscription.orders.list", { scope: S.scope, limit: "50" }),
+          ]);
+          el.innerHTML = orderHtml(r, s);
+          fail();
+          $("live").textContent = "订单已更新";
+        } catch (e) {
+          el.innerHTML = empty("订单暂时无法读取");
+          fail(e.message || "订单暂时无法读取");
+          $("live").textContent = "订单读取失败";
+        }
+      }
+      async function txs() {
+        let el = $("transactionsList");
+        el.innerHTML = '<div class="loading">正在读取流水…</div>';
+        try {
+          let d = await call("billing.transactions", {
+              scope: S.scope,
+              limit: "100",
+            }),
+            a = d.transactions ?? [];
+          el.innerHTML = a.length
+            ? a
+                .map((t) => {
+                  let p = t.type !== "debit";
+                  return `<article class="item"><div class="item-head"><div><div class="item-title">${esc(L[t.type] ?? t.type)}</div><div class="item-meta">${esc(when(t.createdAt ?? t.created_at))}</div></div><div class="${p ? "amount-positive" : "amount-negative"}">${p ? "+" : "−"}¥${money(t.amount_cny)}</div></div><div class="item-detail">${esc(t.description ?? "")}${S.scope === "workspace" && !t.actorId ? " · 历史未归属" : ""}</div></article>`;
+                })
+                .join("")
+            : empty(
+                S.scope === "mine"
+                  ? "还没有可归属到你的流水"
+                  : "当前工作区还没有流水",
+              );
+          fail();
+          $("live").textContent = "流水已更新";
+        } catch (e) {
+          el.innerHTML = empty("流水暂时无法读取");
+          fail(e.message || "流水暂时无法读取");
+          $("live").textContent = "流水读取失败";
+        }
+      }
+      async function usage() {
+        let el = $("usageList");
+        el.innerHTML = '<div class="loading">正在读取模型用量…</div>';
+        try {
+          let d = await call("billing.model-usage.statement", {
+              scope: S.scope,
+              limit: "100",
+              ...periodRange(),
+            }),
+            u = d.model_usage ?? {},
+            m = Object.entries(u.by_modality ?? {});
+          const legacyNotice =
+            S.scope === "workspace" &&
+            Number(u.reconciliation_checks?.unknown_actor_count ?? 0) > 0
+              ? `<div class="notice">有 ${Number(u.reconciliation_checks.unknown_actor_count).toLocaleString()} 条历史模型用量未归属到成员。</div>`
+              : "";
+          el.innerHTML = `<article class="card"><div class="metrics"><div class="metric"><strong>${Number(u.record_count ?? 0).toLocaleString()}</strong><span>模型请求</span></div><div class="metric"><strong>${Number(u.total_tokens ?? 0).toLocaleString()}</strong><span>Token</span></div><div class="metric"><strong>¥${money(u.customer_charge_cny)}</strong><span>本期计费</span></div></div>${legacyNotice}</article>${m.length ? m.map(([k, v]) => `<article class="item"><div class="item-head"><b>${esc(L[k] ?? k)}</b><strong>${Number(v).toLocaleString()} 次</strong></div></article>`).join("") : empty("所选账期还没有可归属的模型用量")}`;
+          fail();
+          $("live").textContent = "账单已更新";
+        } catch (e) {
+          el.innerHTML = empty("账单暂时无法读取");
+          fail(e.message || "账单暂时无法读取");
+          $("live").textContent = "账单读取失败";
+        }
+      }
+      async function load() {
+        busy(true, "正在读取账务数据");
+        try {
+          if (S.tab === "overview") await loadStatus();
+          if (S.tab === "orders") await orders();
+          if (S.tab === "transactions") await txs();
+          if (S.tab === "usage") await usage();
+        } finally {
+          busy(false);
+        }
+      }
+      function tab(b, focus = true) {
+        document.querySelectorAll("[role=tab]").forEach((t) => {
+          let y = t === b;
+          t.setAttribute("aria-selected", y);
+          t.tabIndex = y ? 0 : -1;
+          $(`panel-${t.dataset.tab}`).hidden = !y;
+        });
+        S.tab = b.dataset.tab;
+        if (focus) b.focus();
+        load();
+      }
+      let tabs = [...document.querySelectorAll("[role=tab]")];
+      tabs.forEach((t, i) => {
+        t.onclick = () => tab(t, false);
+        t.onkeydown = (e) => {
+          let n = i;
+          if (e.key === "ArrowRight") n = (i + 1) % tabs.length;
+          else if (e.key === "ArrowLeft")
+            n = (i - 1 + tabs.length) % tabs.length;
+          else if (e.key === "Home") n = 0;
+          else if (e.key === "End") n = tabs.length - 1;
+          else return;
+          e.preventDefault();
+          tab(tabs[n]);
+        };
+      });
+      document.querySelectorAll("[data-scope]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            S.scope = b.dataset.scope;
+            document
+              .querySelectorAll("[data-scope]")
+              .forEach((x) => x.setAttribute("aria-pressed", x === b));
+            let w = S.scope === "workspace";
+            $("scopeNote").textContent = w
+              ? "显示当前工作区全部可见记录"
+              : "仅显示可归属到你的记录";
+            $("ordersTitle").textContent = w ? "工作区订单" : "我的订单";
+            $("transactionsTitle").textContent = w ? "工作区流水" : "我的流水";
+            $("usageTitle").textContent = w ? "工作区账单" : "我的账单";
+            load();
+          }),
+      );
+      document.querySelectorAll("[data-amount]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            S.amount = b.dataset.amount;
+            $("customAmount").value = "";
+            $("customAmount").setAttribute("aria-invalid", "false");
+            $("amountError").textContent = "";
+            document
+              .querySelectorAll("[data-amount]")
+              .forEach((x) => x.setAttribute("aria-pressed", x === b));
+          }),
+      );
+      $("customAmount").oninput = (e) => {
+        S.amount = e.target.value.trim();
+        $("customAmount").setAttribute("aria-invalid", "false");
+        $("amountError").textContent = "";
+        document
+          .querySelectorAll("[data-amount]")
+          .forEach((x) => x.setAttribute("aria-pressed", "false"));
+      };
+      const channels = [...document.querySelectorAll("[data-channel]")];
+      function selectChannel(b, focus = false) {
+        S.channel = b.dataset.channel;
+        channels.forEach((x) => {
+          const selected = x === b;
+          x.setAttribute("aria-checked", selected);
+          x.tabIndex = selected ? 0 : -1;
+        });
+        if (focus) b.focus();
+      }
+      channels.forEach((b, index) => {
+        b.onclick = () => selectChannel(b);
+        b.onkeydown = (e) => {
+          let next = index;
+          if (e.key === "ArrowRight" || e.key === "ArrowDown")
+            next = (index + 1) % channels.length;
+          else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+            next = (index - 1 + channels.length) % channels.length;
+          else if (e.key === "Home") next = 0;
+          else if (e.key === "End") next = channels.length - 1;
+          else return;
+          e.preventDefault();
+          selectChannel(channels[next], true);
+        };
+      });
+      $("billingPeriod").value = S.period;
+      $("billingPeriod").onchange = (e) => {
+        if (!/^\d{4}-\d{2}$/u.test(e.target.value)) return;
+        S.period = e.target.value;
+        if (S.tab === "usage") usage();
+      };
+      $("exportBilling").onclick = async () => {
+        const button = $("exportBilling");
+        button.disabled = true;
+        try {
+          const d = await call("billing.export", {
+            scope: S.scope,
+            format: "csv",
+            limit: "1000",
+            ...periodRange(),
+          });
+          const url = URL.createObjectURL(
+            new Blob([d.content ?? ""], {
+              type: d.contentType ?? "text/csv;charset=utf-8",
+            }),
+          );
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = d.filename ?? "my-billing.csv";
+          link.click();
+          URL.revokeObjectURL(url);
+          $("live").textContent = "账单导出已开始";
+          fail();
+        } catch (e) {
+          fail(e.message || "账单暂时无法导出");
+        } finally {
+          button.disabled = false;
+        }
+      };
+      $("createOrder").onclick = async () => {
+        if (!/^\d+(?:\.\d{1,2})?$/.test(S.amount) || Number(S.amount) < 1) {
+          $("customAmount").setAttribute("aria-invalid", "true");
+          $("amountError").textContent = "请输入不少于 1 元的正确金额";
+          $("customAmount").focus();
+          return;
+        }
+        let button = $("createOrder");
+        button.disabled = true;
+        busy(true, "正在创建充值订单");
+        try {
+          let d = await call("billing.recharge.create", {
+            amount_cny: Number(S.amount).toFixed(2),
+            channel: S.channel,
+            idempotency_key: `chatgpt-billing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          });
+          S.orderId = d.id ?? d.order_id;
+          $("checkoutAmount").textContent = d.amount_cny ?? S.amount;
+          $("checkoutChannel").textContent =
+            d.channel === "wechat" ? "微信支付" : "支付宝";
+          $("checkoutMessage").textContent =
+            d.warning || "到账以服务端状态为准。";
+          let url = d.payment_url ?? d.paymentUrl;
+          $("checkout").showModal();
+          if (d.payment_mode === "provider" && /^https:/u.test(url ?? "")) {
+            if (window.openai?.openExternal) {
+              try {
+                await window.openai.openExternal({ href: url });
+              } catch {
+                $("checkoutMessage").textContent =
+                  "订单已创建，但支付页面未能打开。请稍后查询本订单，避免重复下单。";
+              }
+            } else {
+              $("checkoutMessage").textContent =
+                "订单已创建，当前宿主无法打开支付页面。请稍后查询本订单，避免重复下单。";
+            }
+          }
+          fail();
+        } catch (e) {
+          fail(e.message || "暂时无法创建充值订单");
+        } finally {
+          button.disabled = false;
+          busy(false, "订单处理完成");
+        }
+      };
+      $("refreshStatus").onclick = loadStatus;
+      $("closeCheckout").onclick = () => $("checkout").close();
+      $("checkPayment").onclick = async () => {
+        if (!S.orderId) return;
+        let button = $("checkPayment");
+        button.disabled = true;
+        try {
+          let d = await call("billing.recharge.get", { order_id: S.orderId });
+          if (d.state === "paid") {
+            $("checkout").close();
+            await loadStatus();
+            tab($("tab-orders"), false);
+          } else
+            $("checkoutMessage").textContent =
+              "订单仍在等待支付，到账以服务端状态为准。";
+        } catch (e) {
+          fail(e.message || "暂时无法查询订单");
+        } finally {
+          button.disabled = false;
+        }
+      };
+      status(window.openai?.toolOutput);
+      loadStatus();
+    </script>
+  </body>
 </html>

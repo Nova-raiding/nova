@@ -4,8 +4,10 @@ namespace: merchant
 resources:
   - namespace.yaml
   - configmap.yaml
+  - migration.yaml
   - api.yaml
   - workers.yaml
+  - network-policies.yaml
   - ui.yaml
   - ops-ui.yaml
   - ingress.yaml

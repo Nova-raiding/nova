@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
 const root = resolve(process.cwd(), 'apps/plugin')
 const readJson = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf8')) as Record<string, any>
+const inheritedRuntimeEnv = [
+  'PATH',
+  'HOME',
+  'CODEX_HOME',
+  'CODEX_NODE_BIN',
+  'CODEX_MCP_NODE_PATH',
+  'NODE_ENV',
+  'MERCHANT_MCP_BASE_URL',
+  'MERCHANT_WORKSPACE_ID',
+  'MERCHANT_MCP_TOKEN',
+  'MERCHANT_ALLOW_FIXTURE_FALLBACK',
+  'MERCHANT_MCP_WRITE_ENABLED',
+  'MERCHANT_RULE_APPROVAL_TOKEN',
+  'MERCHANT_ARTIFACT_DIR',
+  'MERCHANT_MCP_TIMEOUT_MS',
+  'MERCHANT_MCP_RETRY_ATTEMPTS',
+  'MERCHANT_MCP_RETRY_DELAY_MS',
+  'MERCHANT_ASSET_RESOURCE_DOMAINS',
+]
 
 describe('Codex plugin installation package', () => {
   it('contains the required manifest, skill entry, and MCP companion file', () => {
@@ -14,9 +35,9 @@ describe('Codex plugin installation package', () => {
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')
     expect(manifest.interface.defaultPrompt).toEqual([
-      '开始使用大麦：先绑定京东、淘宝、天猫、拼多多、小红书、抖音店铺',
-      '查看插件钱包余额并充值，确认生成、图片、视频和发布能力是否已解锁',
-      '开始商品营销：选择平台和商品后，按事实确认→内容→主图→审核顺序引导我',
+      '开始使用大麦：先读取当前工作区和店铺连接状态，再让我选择一家店铺',
+      '查看插件钱包余额；余额不足时告诉我唯一的下一步',
+      '开始商品营销：先让我选择一个平台和商品，然后每一步都等我确认',
     ])
     expect(manifest.interface.defaultPrompt).toHaveLength(3)
     expect(manifest.entry_skill).toBeUndefined()
@@ -25,32 +46,121 @@ describe('Codex plugin installation package', () => {
     expect(existsSync(resolve(root, '.mcp.json'))).toBe(true)
   })
 
-  it('keeps the install package version aligned and points MCP at the configured endpoint', () => {
+  it('keeps the install package version aligned and inherits runtime MCP settings', () => {
     const manifest = readJson('.codex-plugin/plugin.json')
     const packageJson = readJson('package.json')
     const mcp = readJson('.mcp.json')
     expect(packageJson.version).toBe(manifest.version)
-    expect(mcp.mcpServers['merchant-marketing']).toMatchObject({
+    expect(packageJson.engines).toEqual({ node: '>=18' })
+    expect(packageJson.merchantRuntime).toMatchObject({
+      desktopHost: 'ChatGPT.app',
+      supportedDesktopPlatforms: ['darwin'],
+      environmentRecovery: 'macOS launchctl user session',
+    })
+    const server = mcp.mcpServers['merchant-marketing']
+    expect(server).toMatchObject({
       command: 'sh',
       args: ['./mcp/bridge.sh'],
       cwd: '.',
       env: {
-        MERCHANT_MCP_BASE_URL: '${MERCHANT_MCP_BASE_URL}',
-        MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}',
-        MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',
-        MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}',
-        MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}',
+        MERCHANT_MCP_ROLE: 'viewer',
+        MERCHANT_ACTOR_ID: 'codex-app-user',
       },
     })
+    expect(server.env_vars).toEqual(inheritedRuntimeEnv)
+    expect(server.env).not.toHaveProperty('MERCHANT_RULE_APPROVAL_TOKEN')
+    expect(server.env).not.toHaveProperty('MERCHANT_ARTIFACT_DIR')
+    for (const inherited of ['MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID', 'MERCHANT_MCP_TOKEN', 'MERCHANT_ALLOW_FIXTURE_FALLBACK', 'MERCHANT_MCP_WRITE_ENABLED']) {
+      expect(server.env).not.toHaveProperty(inherited)
+    }
     expect(existsSync(resolve(root, 'mcp/bridge.mjs'))).toBe(true)
     expect(existsSync(resolve(root, 'mcp/bridge.sh'))).toBe(true)
+    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 180000')
   })
 
-  it('renders a safe local test checkout without mock wording', () => {
+  it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-'))
+    const launchctl = resolve(directory, 'launchctl')
+    const uname = resolve(directory, 'uname')
+    const node = resolve(directory, 'node-probe')
+    writeFileSync(launchctl, `#!/bin/sh\ncase "$2" in\n  MERCHANT_MCP_BASE_URL) printf '%s' 'http://127.0.0.1:8790' ;;\n  MERCHANT_WORKSPACE_ID) printf '%s' 'ws_demo' ;;\n  MERCHANT_MCP_TOKEN) printf '%s' 'test-token' ;;\n  MERCHANT_ALLOW_FIXTURE_FALLBACK) printf '%s' 'true' ;;\n  MERCHANT_MCP_WRITE_ENABLED) printf '%s' 'false' ;;\nesac\n`)
+    writeFileSync(uname, `#!/bin/sh\nprintf '%s\n' Darwin\n`)
+    writeFileSync(node, `#!/bin/sh\ncase "\${1:-}" in\n  -e) exit 0 ;;\n  -p) printf '%s' '22.0.0'; exit 0 ;;\nesac\nprintf '%s|%s|%s|%s|%s' "$MERCHANT_MCP_BASE_URL" "$MERCHANT_WORKSPACE_ID" "$MERCHANT_MCP_TOKEN" "$MERCHANT_ALLOW_FIXTURE_FALLBACK" "$MERCHANT_MCP_WRITE_ENABLED"\n`)
+    chmodSync(launchctl, 0o755)
+    chmodSync(uname, 0o755)
+    chmodSync(node, 0o755)
+    try {
+      const result = spawnSync('sh', [resolve(root, 'mcp/bridge.sh')], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${directory}:/usr/bin:/bin`,
+          CODEX_NODE_BIN: node,
+          MERCHANT_MCP_BASE_URL: '',
+          MERCHANT_WORKSPACE_ID: '${MERCHANT_WORKSPACE_ID}',
+          MERCHANT_MCP_TOKEN: 'host-token',
+        },
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toBe('http://127.0.0.1:8790|ws_demo|host-token|true|false')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a configured Node runtime older than 18 before starting the bridge', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-old-node-'))
+    const node = resolve(directory, 'node-16')
+    writeFileSync(node, `#!/bin/sh\ncase "\${1:-}" in\n  -e) exit 1 ;;\n  -p) printf '%s' '16.20.2'; exit 0 ;;\nesac\nexit 99\n`)
+    chmodSync(node, 0o755)
+    try {
+      const result = spawnSync('sh', [resolve(root, 'mcp/bridge.sh')], {
+        encoding: 'utf8',
+        env: { PATH: '/usr/bin:/bin', CODEX_NODE_BIN: node },
+      })
+      expect(result.status).toBe(126)
+      expect(result.stderr).toContain('requires Node.js 18 or newer')
+      expect(result.stderr).toContain('16.20.2')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    ['MERCHANT_ALLOW_FIXTURE_FALLBACK', 'MERCHANT_ALLOW_FIXTURE_FALLBACK=true'],
+    ['MERCHANT_MCP_WRITE_ENABLED', 'interactive confirmation'],
+  ])('keeps production fail-closed when %s is enabled', (name, expectedMessage) => {
+    const result = spawnSync('sh', [resolve(root, 'mcp/bridge.sh')], {
+      encoding: 'utf8',
+      env: {
+        PATH: '/usr/bin:/bin',
+        NODE_ENV: 'production',
+        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false',
+        MERCHANT_MCP_WRITE_ENABLED: 'false',
+        [name]: 'true',
+      },
+    })
+    expect(result.status).toBe(78)
+    expect(result.stderr).toContain(expectedMessage)
+  })
+
+  it('renders an accessible ChatGPT recharge card with clear payment states', () => {
     const recharge = readFileSync(resolve(root, 'ui/recharge.html'), 'utf8')
-    expect(recharge).toContain('测试支付')
-    expect(recharge).toContain('不会产生真实扣款')
+    expect(recharge).toContain('到账以服务端状态为准')
+    expect(recharge).toContain('call("billing.recharge.create"')
+    expect(recharge).toContain('call("billing.recharge.get"')
+    expect(recharge).toContain('call("billing.export"')
     expect(recharge.toLowerCase()).not.toContain('mock')
+    expect(recharge).not.toMatch(/Codex/iu)
+    expect(recharge).toContain('role="radiogroup"')
+    expect(recharge).toContain('role="radio"')
+    expect(recharge).toContain('aria-checked="true"')
+    expect(recharge).toContain('aria-pressed="true"')
+    expect(recharge).toContain('role="alert"')
+    expect(recharge).toContain('aria-busy="false"')
+    expect(recharge).toContain('aria-labelledby="checkoutTitle"')
+    expect(recharge).toContain('data-channel="alipay"')
+    expect(recharge).toMatch(/payment_mode\s*===\s*["']provider["']/u)
+    for (const status of ['已到账', '待支付', '未成功', '已关闭', '已退款']) expect(recharge).toContain(status)
   })
 
   it('documents store authorization before wallet and product-material onboarding', () => {
@@ -72,10 +182,10 @@ describe('Codex plugin installation package', () => {
     expect(skill).toContain('不得调用宿主原生 `image_gen` 绕过业务 relay')
   })
 
-  it('keeps the installed marketplace mirror aligned', () => {
+  it('keeps the MCP startup contract marketplace mirror aligned', () => {
     const marketplaceRoot = resolve(process.cwd(), '.codex-marketplace/plugins/merchant-marketing')
-    expect(readFileSync(resolve(root, 'README.md'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'README.md'), 'utf8'))
-    expect(readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'skills/merchant-marketing/SKILL.md'), 'utf8'))
-    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.mjs'), 'utf8'))
+    expect(readFileSync(resolve(root, '.mcp.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, '.mcp.json'), 'utf8'))
+    expect(readFileSync(resolve(root, 'mcp/bridge.sh'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.sh'), 'utf8'))
+    expect(readFileSync(resolve(root, 'package.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8'))
   })
 })

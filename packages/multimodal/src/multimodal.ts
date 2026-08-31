@@ -139,6 +139,8 @@ export interface ImageLocalEditRequest {
   readonly id: string
   readonly sourceImage: ImageRef
   readonly prompt: string
+  /** Requested image-edit model/version, persisted with the candidate and audit event. */
+  readonly modelVersion?: string
   readonly region: ImageRegion
   readonly constraints: ImageEditConstraints
   readonly context: GenerationContext
@@ -149,6 +151,7 @@ export interface ImageEditCandidate {
   readonly id: string
   readonly sourceImageId: string
   readonly prompt: string
+  readonly modelVersion?: string
   readonly region: ImageRegion
   readonly context: GenerationContext
   readonly status: 'candidate'
@@ -291,6 +294,9 @@ export const validateImageEditRequest = (
     ...validateImageRef(request.sourceImage),
     ...validateRegion(request.region, 'region'),
   ]
+  if (request.modelVersion !== undefined && (!nonEmptyString(request.modelVersion) || request.modelVersion.length > 200)) {
+    issues.push(issue('INVALID_IMAGE', 'modelVersion', '模型版本必须是 1 至 200 个字符。'))
+  }
   const constraints = request.constraints
   if (!isRecord(constraints)) {
     issues.push(issue('INVALID_REGION', 'constraints', '必须提供图片区域修改约束。'))
@@ -351,6 +357,7 @@ export const createImageLocalEditRequest = (input: {
   readonly id: string
   readonly sourceImage: ImageRef
   readonly prompt: string
+  readonly modelVersion?: string
   readonly region: ImageRegion
   readonly constraints: ImageEditConstraints
   readonly context: GenerationContext
@@ -442,6 +449,7 @@ export const createImageEditCandidate = (
     id: candidateId,
     sourceImageId: request.sourceImage.id,
     prompt: request.prompt,
+    ...(request.modelVersion ? { modelVersion: request.modelVersion } : {}),
     region: request.region,
     context: request.context,
     status: 'candidate',

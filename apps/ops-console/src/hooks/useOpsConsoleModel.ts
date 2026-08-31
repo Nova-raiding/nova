@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Form } from "antd";
-import { describeOpsError, hasOpsConnection, managedOpsSession, rpc, rpcForWorkspace } from "../api/opsClient.js";
+import { describeOpsError, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type {
   Platform,
   Settings,
@@ -12,6 +12,7 @@ import type {
   PlatformUserDirectory,
   PlatformUserDetail,
   WorkspaceSummary,
+  WorkspaceDirectoryPage,
   Offer,
   Addon,
   Coupon,
@@ -21,6 +22,7 @@ import type {
   OperationalAlert,
   ModelStatus,
   Rule,
+  RuleSyncStatus,
   KnowledgeAsset,
   LearningSuggestion,
   CompetitorAnalysis,
@@ -43,20 +45,95 @@ import type {
   AutomationPolicy,
   AutomationScan,
   OpsSession,
+  PlatformTaskSummary,
+  PlatformBrandUnitSummary,
+  CanonicalProductConsistencyReport,
+  PlatformMarketingSummary,
+  PlatformModelUsageSummary,
   OpsDataSource,
   RpcErrorPayload,
   Rpc,
   OpsRequestError,
 } from "../types/ops.js";
-import { canViewModelMarkup } from "../components/finance/modelMarkupVisibility.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
 import { rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
 import { applyLoadedValue, OpsLoadCoordinator } from "./opsLoadCoordinator.js";
 import { submitRevisionCreation, type RevisionCreationValues } from "../components/tasks/knowledge/revisionCreation.js";
+import { auditCenterClient, featureFlagsClient, financeSearchClient, incidentsClient, supportClient } from "../api/opsDomainClients.js";
+import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
+import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
 
 export interface OpsLoadFilterOverrides {
   queueFilters?: QueueFilters;
   alertFilters?: AlertFilters;
+}
+
+export type OpsDataSetErrors = Readonly<Record<string, string>>;
+export type OpsDataSetErrorEvidence = Readonly<Record<string, Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details">>>;
+
+export function dataSetErrorEvidenceFor(
+  errors: OpsDataSetErrorEvidence,
+  methods: readonly string[],
+): Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details"> | undefined {
+  return methods.map((method) => errors[method]).find(Boolean);
+}
+
+/** Canonical capability policy for post-session background hydration. */
+export const OPS_BACKGROUND_HYDRATION_POLICY = {
+  "workspace.commercial.get": "workspace.summary.read",
+  "ops.audit.platform.list": "audit.read",
+  "ops.audit.list": "audit.read",
+  "ops.members.list": "workspace.member.read",
+  "ops.workspaces.list": "workspace.directory.read",
+  "ops.stores.list": "workspace.directory.read",
+  "ops.brand-units.summary": "workspace.directory.read",
+  "canonical.product.consistency": "customer.content.read",
+  "ops.tasks.summary": "workspace.directory.read",
+  "ops.marketing.summary": "marketing.summary.read",
+  "ops.model-usage.summary": "billing.platform.read",
+  "billing.model-usage.statement": "billing.workspace.read",
+  "ops.commercial.offers.list": "commercial.read",
+  "ops.commercial.addons.list": "commercial.read",
+  "ops.commercial.coupons.list": "commercial.read",
+  "ops.commercial.rollouts.list": "commercial.read",
+  "ops.growth.funnel": "workspace.directory.read",
+  "workspace.health": "workspace.summary.read",
+  "ops.alerts.list": "marketing.summary.read",
+  "ops.data.delete.list": "workspace.delete.execute",
+  "platform.model.status": "model.status.read",
+  "workspace.metrics": "workspace.summary.read",
+  "ops.storage.reconciliation.list": "storage.reconciliation.read",
+  "knowledge.rule.list": "customer.content.read",
+  "knowledge.asset.list": "customer.content.read",
+  "knowledge.learning.list": "customer.content.read",
+  "knowledge.competitor.list": "customer.content.read",
+  "ops.marketing.queue": "marketing.queue.read",
+  "automation.policy.get": "automation.read",
+  "automation.policy.list": "automation.read",
+  "automation.scan": "automation.read",
+} as const satisfies Readonly<Record<string, CapabilityId>>;
+
+export type OpsBackgroundHydrationMethod = keyof typeof OPS_BACKGROUND_HYDRATION_POLICY;
+
+export function allowedBackgroundHydrationMethods(
+  authorization: Pick<AuthorizationProjection, "can">,
+): ReadonlySet<OpsBackgroundHydrationMethod> {
+  return new Set(
+    (Object.entries(OPS_BACKGROUND_HYDRATION_POLICY) as Array<[OpsBackgroundHydrationMethod, CapabilityId]>)
+      .filter(([, capability]) => authorization.can(capability))
+      .map(([method]) => method),
+  );
+}
+
+export function dataSetErrorFor(
+  errors: OpsDataSetErrors,
+  methods: readonly string[],
+): string | undefined {
+  const failedMethods = methods.filter((method) => errors[method]);
+  const fatal = errors["*"];
+  if (!failedMethods.length) return fatal;
+  const messages = [...new Set(failedMethods.map((method) => errors[method]))];
+  return `部分数据集刷新失败（${failedMethods.join("、")}）。页面保留上次成功数据，这些值可能已过期：${messages.join("；")}`;
 }
 
 export type DataDeletionDecision = "approve" | "cancel";
@@ -64,6 +141,16 @@ export type DataDeletionDecision = "approve" | "cancel";
 export const DATA_DELETION_REASON_MIN_LENGTH = 4;
 
 export const PUBLISH_BATCH_REASON_MIN_LENGTH = 4;
+
+export function offerChangeErrors(offer: Offer): { validFrom?: string; validTo?: string; reason?: string } {
+  const validFromTime = Date.parse(offer.validFrom);
+  const validToTime = offer.validTo?.trim() ? Date.parse(offer.validTo) : undefined;
+  return {
+    ...(!offer.validFrom.trim() || !Number.isFinite(validFromTime) ? { validFrom: "请输入有效的套餐生效时间" } : {}),
+    ...(validToTime !== undefined && (!Number.isFinite(validToTime) || validToTime <= validFromTime) ? { validTo: "失效时间必须晚于生效时间" } : {}),
+    ...(!offer.changeReason?.trim() ? { reason: "请输入本次套餐变更原因" } : {}),
+  };
+}
 
 export function normalizePublishBatchPauseReason(reason: string): string {
   const normalized = reason.trim();
@@ -106,13 +193,17 @@ export async function submitDataDeletionDecision(input: {
     request_id: input.requestId,
     reason,
   });
-  await input.refresh();
+  // The decision is already durable. Refresh the broad console snapshot in
+  // the background so the confirmation dialog is not held open by unrelated
+  // datasets or their timeouts.
+  void input.refresh().catch(() => undefined);
 }
 
-export function alertListParams(filters: AlertFilters): Record<string, string> {
+export function alertListParams(filters: AlertFilters, platformScope = false): Record<string, string> {
   return {
     status: "open",
     limit: "100",
+    ...(platformScope ? { platform_scope: "platform" } : {}),
     ...(filters.platform ? { platform: filters.platform } : {}),
     ...(filters.accountId ? { account_id: filters.accountId } : {}),
     ...(filters.code ? { code: filters.code } : {}),
@@ -183,6 +274,44 @@ export async function runIdempotentOperation<T>(
   }
 }
 
+export class UserRequestGate {
+  private directory?: AbortController;
+  private detail?: AbortController;
+  private exportJob?: AbortController;
+
+  beginDirectory() {
+    this.directory?.abort();
+    return (this.directory = new AbortController());
+  }
+
+  beginDetail() {
+    this.detail?.abort();
+    return (this.detail = new AbortController());
+  }
+
+  beginExport() {
+    if (this.exportJob) return undefined;
+    return (this.exportJob = new AbortController());
+  }
+
+  finishDirectory(controller: AbortController) { if (this.directory === controller) this.directory = undefined; }
+  finishDetail(controller: AbortController) { if (this.detail === controller) this.detail = undefined; }
+  finishExport(controller: AbortController) {
+    if (this.exportJob !== controller) return false;
+    this.exportJob = undefined;
+    return true;
+  }
+
+  cancelAll() {
+    this.directory?.abort();
+    this.detail?.abort();
+    this.exportJob?.abort();
+    this.directory = undefined;
+    this.detail = undefined;
+    this.exportJob = undefined;
+  }
+}
+
 export function useOpsConsoleModel() {
   const { message, modal } = AntApp.useApp();
   const [settings, setSettings] = useState<Settings>();
@@ -203,11 +332,15 @@ export function useOpsConsoleModel() {
   const [userDirectoryLoading, setUserDirectoryLoading] = useState(false);
   const [userDirectoryError, setUserDirectoryError] = useState("");
   const userDirectoryRequestRef = useRef(0);
+  const [userExporting, setUserExporting] = useState(false);
   const [userDetail, setUserDetail] = useState<PlatformUserDetail>();
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const userDetailRequestRef = useRef(0);
   const [userDirectoryFilters, setUserDirectoryFilters] = useState<{ query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number }>({});
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceSummary[]>([]);
+  const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
+  const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
+  const workspaceDirectoryRequestRef = useRef(0);
   const [reconciliation, setReconciliation] = useState<Reconciliation>();
   const [rechargeOrders, setRechargeOrders] = useState<RechargeOrderList>();
   const [rechargeOrdersLoading, setRechargeOrdersLoading] = useState(false);
@@ -250,6 +383,10 @@ export function useOpsConsoleModel() {
   const [modelStatus, setModelStatus] = useState<ModelStatus>();
   const [modelStatusLoading, setModelStatusLoading] = useState(true);
   const [rules, setRules] = useState<Rule[]>([]);
+  const [ruleSyncStatuses, setRuleSyncStatuses] = useState<RuleSyncStatus[]>([]);
+  const [ruleSyncLoading, setRuleSyncLoading] = useState(false);
+  const [ruleMutationKey, setRuleMutationKey] = useState<string>();
+  const ruleMutationInFlight = useRef(false);
   const [knowledgeRules, setKnowledgeRules] = useState<Rule[]>([]);
   const [knowledgeAssets, setKnowledgeAssets] = useState<KnowledgeAsset[]>([]);
   const [learningSuggestions, setLearningSuggestions] = useState<
@@ -257,6 +394,7 @@ export function useOpsConsoleModel() {
   >([]);
   const [competitors, setCompetitors] = useState<CompetitorAnalysis[]>([]);
   const [workspaceMetrics, setWorkspaceMetrics] = useState<WorkspaceMetrics>();
+  const [storageReconciliationWorkspaces, setStorageReconciliationWorkspaces] = useState<NonNullable<WorkspaceMetrics["storageReconciliation"]>[]>([]);
   const [marketingQueue, setMarketingQueue] = useState<MarketingQueue>({
     generation: [],
     publish: [],
@@ -265,7 +403,13 @@ export function useOpsConsoleModel() {
     learningSuggestions: [],
     assetRisks: [],
     uploadedAssetRisks: [],
+    imageExecutions: [],
   });
+  const [platformTaskSummary, setPlatformTaskSummary] = useState<PlatformTaskSummary>();
+  const [platformBrandUnitSummary, setPlatformBrandUnitSummary] = useState<PlatformBrandUnitSummary>();
+  const [canonicalProductConsistency, setCanonicalProductConsistency] = useState<CanonicalProductConsistencyReport>();
+  const [platformMarketingSummary, setPlatformMarketingSummary] = useState<PlatformMarketingSummary>();
+  const [platformModelUsageSummary, setPlatformModelUsageSummary] = useState<PlatformModelUsageSummary>();
   const [queueFilters, setQueueFilters] = useState<QueueFilters>({});
   const [alertFilters, setAlertFilters] = useState<AlertFilters>({});
   const [automationPolicy, setAutomationPolicy] = useState<AutomationPolicy>();
@@ -276,11 +420,15 @@ export function useOpsConsoleModel() {
   const [automationScope, setAutomationScope] = useState("");
   const [selectedStoreScope, setSelectedStoreScope] = useState("");
   const [opsSession, setOpsSession] = useState<OpsSession>();
+  const opsSessionRef = useRef<OpsSession | undefined>(undefined);
+  opsSessionRef.current = opsSession;
   const [dataSource, setDataSource] = useState<OpsDataSource>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [dataSetErrors, setDataSetErrors] = useState<Record<string, string>>({});
+  const [dataSetErrorEvidenceByMethod, setDataSetErrorEvidence] = useState<Record<string, Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details">>>({});
   const loadCoordinatorRef = useRef(new OpsLoadCoordinator());
   const automationScopeRequestRef = useRef(0);
   const identityOperationKeysRef = useRef(new IdempotencyOperationKeys());
@@ -290,25 +438,109 @@ export function useOpsConsoleModel() {
   const [knowledgeRuleForm] = Form.useForm();
   const [knowledgeAssetForm] = Form.useForm();
   const [competitorForm] = Form.useForm();
+  const loadInFlightKeysRef = useRef(new Set<string>());
+  const userDirectoryInFlightKeysRef = useRef(new Set<string>());
+  const userRequestsRef = useRef(new UserRequestGate());
+
+  const cancelUserRequests = () => {
+    userDirectoryRequestRef.current += 1;
+    userDetailRequestRef.current += 1;
+    userRequestsRef.current.cancelAll();
+    userDirectoryInFlightKeysRef.current.clear();
+    setUserDirectoryLoading(false);
+    setUserDetailLoading(false);
+    setUserExporting(false);
+  };
+
+  // Authorization boundary changes must not leave a previously authorized
+  // response visible while the replacement session is being fetched. Clear
+  // every server-backed dataset first; the subsequent load repopulates only
+  // what the new projection allows.
+  const clearAuthorizationScopedData = () => {
+    loadCoordinatorRef.current.begin();
+    loadInFlightKeysRef.current.clear();
+    cancelUserRequests();
+    setSettings(undefined);
+    setPlatformRows([]);
+    setAudits([]);
+    setSubscription(undefined);
+    setOrders([]);
+    setMembers([]);
+    setUserDirectory({ items: [], total: 0, identityCount: 0, workspaceCount: 0, offset: 0, limit: 20, truncated: false });
+    setUserDirectoryError("");
+    setUserDetail(undefined);
+    setWorkspaceRows([]);
+    setWorkspaceDirectory({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
+    setReconciliation(undefined);
+    setRechargeOrders(undefined);
+    setRechargeOrdersError("");
+    setOffers([]);
+    setAddons([]);
+    setCoupons([]);
+    setRollouts([]);
+    setModelMarkup(undefined);
+    setFunnel({ counts: {}, totalEvents: 0 });
+    setPlatformHealth({});
+    setPlatformOperations([]);
+    setStoreDirectory([]);
+    setBrandNavigation([]);
+    setAlerts([]);
+    setDeletionRequests([]);
+    setModelStatus(undefined);
+    setRules([]);
+    setRuleSyncStatuses([]);
+    setKnowledgeRules([]);
+    setKnowledgeAssets([]);
+    setLearningSuggestions([]);
+    setCompetitors([]);
+    setWorkspaceMetrics(undefined);
+    setStorageReconciliationWorkspaces([]);
+    setMarketingQueue({ generation: [], publish: [], visuals: [], batches: [], learningSuggestions: [], assetRisks: [], uploadedAssetRisks: [], imageExecutions: [] });
+    setPlatformTaskSummary(undefined);
+    setPlatformBrandUnitSummary(undefined);
+    setCanonicalProductConsistency(undefined);
+    setPlatformMarketingSummary(undefined);
+    setPlatformModelUsageSummary(undefined);
+    setAutomationPolicy(undefined);
+    setAutomationPolicies([]);
+    setAutomationScan(undefined);
+    setAutomationScope("");
+    setSelectedStoreScope("");
+    opsSessionRef.current = undefined;
+    setOpsSession(undefined);
+    setDataSetErrors({});
+    setDataSetErrorEvidence({});
+    setError("");
+  };
 
   const load = async (filterOverrides: OpsLoadFilterOverrides = {}) => {
     const activeQueueFilters = filterOverrides.queueFilters ?? queueFilters;
     const activeAlertFilters = filterOverrides.alertFilters ?? alertFilters;
+    const loadKey = JSON.stringify({ activeQueueFilters, activeAlertFilters });
+    if (loadInFlightKeysRef.current.has(loadKey)) return;
+    loadInFlightKeysRef.current.add(loadKey);
     const loadRequest = loadCoordinatorRef.current.begin();
     setLoading(true);
     setModelStatusLoading(true);
     setError("");
     if (!hasOpsConnection()) {
+      loadInFlightKeysRef.current.delete(loadKey);
       setLoading(false);
       setModelStatusLoading(false);
       return;
     }
     try {
       let firstOptionalError: unknown;
+      const failedDataSets: string[] = [];
+      const failedDataSetErrors: Record<string, string> = {};
+      const failedDataSetErrorEvidence: Record<string, Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details">> = {};
       let activeLoads = 0;
       const loadWaiters: Array<() => void> = [];
       const scheduledRpc = async (method: string, params: Record<string, string> = {}) => {
-        if (activeLoads >= 8) await new Promise<void>((resolve) => loadWaiters.push(resolve));
+        // Bound background hydration without turning one slow optional domain
+        // into a multi-minute serial waterfall. Route-critical clients still
+        // run outside this queue.
+        if (activeLoads >= 4) await new Promise<void>((resolve) => loadWaiters.push(resolve));
         activeLoads += 1;
         try {
           return await rpc(method, params);
@@ -325,14 +557,54 @@ export function useOpsConsoleModel() {
           return await scheduledRpc(method, params);
         } catch (cause) {
           firstOptionalError ??= cause;
+          failedDataSets.push(method);
+          failedDataSetErrors[method] = describeOpsError(cause);
+          const evidence = cause as Partial<OpsRequestError>;
+          failedDataSetErrorEvidence[method] = {
+            ...(typeof evidence.requestId === "string" ? { requestId: evidence.requestId } : {}),
+            ...(typeof evidence.traceId === "string" ? { traceId: evidence.traceId } : {}),
+            ...(typeof evidence.code === "string" ? { code: evidence.code } : {}),
+            ...(evidence.details && typeof evidence.details === "object" ? { details: evidence.details } : {}),
+          };
           return undefined;
         }
       };
+      // Resolve the managed session before constructing the rest of the load
+      // matrix. Otherwise the first render can briefly issue workspace-scoped
+      // requests before the canonical capability projection arrives from the gateway.
+      let resolvedSession = opsSessionRef.current;
+      if (!resolvedSession) {
+        const value = await optional("ops.session");
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          resolvedSession = value as unknown as OpsSession;
+          loadCoordinatorRef.current.commit(loadRequest, () => { opsSessionRef.current = resolvedSession; setOpsSession(resolvedSession!); });
+        }
+      }
+      const resolvedAuthorization = createAuthorizationProjection(resolvedSession, managedOpsSession);
+      const allowedHydrationMethods = allowedBackgroundHydrationMethods(resolvedAuthorization);
+      const authorizedOptional = (
+        method: OpsBackgroundHydrationMethod,
+        params: Record<string, string> = {},
+      ) => allowedHydrationMethods.has(method) ? optional(method, params) : Promise.resolve(undefined);
+      const hasCustomerDataRole = resolvedAuthorization.canAny(["customer.content.read", "marketing.queue.read"]);
+      // A local bearer can carry platform roles while the operator is still
+      // on the workspace workbench. The request context, not raw roles, is
+      // authoritative for avoiding platform-only 403s during hydration.
+      const platformOperator = resolvedAuthorization.scope.kind === 'platform';
+      const platformAlertScope = platformOperator && resolvedAuthorization.can("marketing.summary.read");
+      const platformStoreScope = platformOperator && resolvedAuthorization.can("platform.settings.read");
       const [
+        sessionResult,
         result,
         auditResult,
         membersResult,
         workspacesResult,
+        storesResult,
+        brandUnitSummaryResult,
+        canonicalProductConsistencyResult,
+        taskSummaryResult,
+        marketingSummaryResult,
+        modelUsageSummaryResult,
         financeResult,
         offerResult,
         addonResult,
@@ -344,6 +616,7 @@ export function useOpsConsoleModel() {
         deletionResult,
         modelResult,
         metricsResult,
+        storageReconciliationResult,
         knowledgeRuleResult,
         assetResult,
         learningResult,
@@ -352,55 +625,111 @@ export function useOpsConsoleModel() {
         automationResult,
         automationListResult,
         automationScanResult,
-        sessionResult,
       ] = await Promise.all([
-        optional("workspace.commercial.get"),
-        optional("ops.audit.list", { limit: "50" }),
-        optional("ops.members.list"),
-        optional("ops.workspaces.list"),
-        optional("billing.reconciliation", { limit: "50" }),
-        optional("ops.commercial.offers.list"),
-        optional("ops.commercial.addons.list"),
-        optional("ops.commercial.coupons.list"),
-        optional("ops.commercial.rollouts.list"),
-        optional("ops.growth.funnel"),
-        optional("workspace.health"),
-        optional("ops.alerts.list", alertListParams(activeAlertFilters)),
-        optional("ops.data.delete.list", { limit: "50" }),
-        (async () => {
+        // Local acceptance still has a real API session (the bearer token
+        // carries the operator roles). Resolve it before deriving member,
+        // incident and workspace permissions; otherwise local mode silently
+        // falls back to an empty workspace and renders every mutation form
+        // disabled.
+        resolvedSession ? Promise.resolve(resolvedSession) : optional("ops.session"),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.commercial.get"),
+        platformOperator ? authorizedOptional("ops.audit.platform.list", { limit: "50" }) : authorizedOptional("ops.audit.list", {
+          ...(localStorage.getItem("ops_workspace_id")?.trim() ? { workspace_id: localStorage.getItem("ops_workspace_id")!.trim() } : {}),
+          limit: "50",
+        }),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.members.list"),
+        platformOperator && allowedHydrationMethods.has("ops.workspaces.list")
+          ? new Promise<void>((resolve) => window.setTimeout(resolve, 1_500)).then(() => authorizedOptional("ops.workspaces.list", { offset: "0", limit: "20" }))
+          : Promise.resolve(undefined),
+        platformStoreScope ? authorizedOptional("ops.stores.list", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformStoreScope ? authorizedOptional("ops.brand-units.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("canonical.product.consistency"),
+        platformStoreScope ? authorizedOptional("ops.tasks.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformStoreScope ? authorizedOptional("ops.marketing.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformStoreScope ? authorizedOptional("ops.model-usage.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("billing.model-usage.statement", { limit: "50" }),
+        platformOperator ? authorizedOptional("ops.commercial.offers.list") : Promise.resolve(undefined),
+        platformOperator ? authorizedOptional("ops.commercial.addons.list") : Promise.resolve(undefined),
+        platformOperator ? authorizedOptional("ops.commercial.coupons.list") : Promise.resolve(undefined),
+        platformOperator ? authorizedOptional("ops.commercial.rollouts.list") : Promise.resolve(undefined),
+        platformOperator ? authorizedOptional("ops.growth.funnel", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.health"),
+        platformOperator ? authorizedOptional("ops.alerts.list", alertListParams(activeAlertFilters, platformAlertScope)) : Promise.resolve(undefined),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.data.delete.list", { limit: "50" }),
+        !platformOperator && allowedHydrationMethods.has("platform.model.status") ? (async () => {
           try {
             const value = await scheduledRpc("platform.model.status");
             setModelStatus(value as unknown as ModelStatus);
             return value;
           } catch (cause) {
             firstOptionalError ??= cause;
+            failedDataSets.push("platform.model.status");
+            failedDataSetErrors["platform.model.status"] = describeOpsError(cause);
             return undefined;
           } finally {
             loadCoordinatorRef.current.commit(loadRequest, () => setModelStatusLoading(false));
           }
-        })(),
-        optional("workspace.metrics"),
-        optional("knowledge.rule.list"),
-        optional("knowledge.asset.list"),
-        optional("knowledge.learning.list", { status: "pending" }),
-        optional("knowledge.competitor.list"),
-        optional("ops.marketing.queue", marketingQueueParams(activeQueueFilters)),
-        optional("automation.policy.get"),
-        optional("automation.policy.list"),
-        optional("automation.scan"),
-        optional("ops.session"),
+        })() : Promise.resolve(undefined).finally(() => loadCoordinatorRef.current.commit(loadRequest, () => setModelStatusLoading(false))),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.metrics"),
+        platformOperator ? authorizedOptional("ops.storage.reconciliation.list", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.rule.list"),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.asset.list"),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.learning.list", { status: "pending" }),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.competitor.list"),
+        !platformOperator && hasCustomerDataRole
+          ? authorizedOptional("ops.marketing.queue", marketingQueueParams(activeQueueFilters))
+          : Promise.resolve(undefined),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("automation.policy.get"),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("automation.policy.list"),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("automation.scan"),
       ]);
       if (!loadCoordinatorRef.current.isCurrent(loadRequest)) return;
-      if (firstOptionalError) setError(describeOpsError(firstOptionalError));
+      setDataSetErrors(failedDataSetErrors);
+      setDataSetErrorEvidence(failedDataSetErrorEvidence);
+      if (firstOptionalError) setError(`部分数据集刷新失败（${failedDataSets.join("、")}）。页面保留上次成功数据，这些值可能已过期：${describeOpsError(firstOptionalError)}`);
       applyLoadedValue(result, (value) => {
         setSettings(value?.settings);
         setPlatformRows(value?.platforms ?? []);
         setSubscription(value?.subscription);
         setOrders(value?.orders ?? []);
       });
-      applyLoadedValue(auditResult, (value) => setAudits((value ?? []) as unknown as Audit[]));
+      applyLoadedValue(auditResult, (value) => {
+        const records = Array.isArray(value) ? value : (value as { records?: Array<Record<string, unknown>> } | undefined)?.records ?? [];
+        setAudits(records.map((record) => ({ ...record, createdAt: String(record.createdAt ?? record.occurredAt ?? "") })) as unknown as Audit[]);
+      });
       applyLoadedValue(membersResult, (value) => setMembers((value ?? []) as unknown as Member[]));
-      applyLoadedValue(workspacesResult, (value) => setWorkspaceRows((value ?? []) as unknown as WorkspaceSummary[]));
+      applyLoadedValue(workspacesResult, (value) => {
+        const page = Array.isArray(value) ? { items: value, total: value.length, offset: 0, limit: value.length || 20, hasMore: false } : value as unknown as WorkspaceDirectoryPage;
+        setWorkspaceDirectory(page);
+        setWorkspaceRows(page.items ?? []);
+      });
+      applyLoadedValue(storesResult, (value) => {
+        const items = (value as { items?: Array<Record<string, unknown>> } | undefined)?.items ?? [];
+        setStoreDirectory(items as unknown as StoreDirectory[]);
+        if (platformOperator) {
+          const platforms = [...new Set(items.map((item) => String(item.platform ?? "")).filter(Boolean))];
+          setPlatformOperations(items as unknown as PlatformOperation[]);
+          setPlatformHealth(Object.fromEntries(platforms.map((platform) => [platform, {
+            ready: items.some((item) => item.platform === platform && item.readable === true),
+            reasons: items.some((item) => item.platform === platform && item.readable === true) ? [] : ["平台店铺暂无可读取连接"],
+          }])) as Record<string, PlatformHealth>);
+        }
+      });
+      applyLoadedValue(taskSummaryResult, (value) => setPlatformTaskSummary(value as unknown as PlatformTaskSummary));
+      applyLoadedValue(brandUnitSummaryResult, (value) => setPlatformBrandUnitSummary(value as unknown as PlatformBrandUnitSummary));
+      applyLoadedValue(canonicalProductConsistencyResult, (value) => setCanonicalProductConsistency(value as unknown as CanonicalProductConsistencyReport));
+      applyLoadedValue(marketingSummaryResult, (value) => setPlatformMarketingSummary(value as unknown as PlatformMarketingSummary));
+      if (platformOperator && taskSummaryResult && typeof taskSummaryResult === "object") {
+        const tasks = taskSummaryResult as unknown as PlatformTaskSummary;
+        const marketing = marketingSummaryResult as unknown as PlatformMarketingSummary | undefined;
+        setWorkspaceMetrics({ jobs: {
+          sync: 0,
+          generation: tasks.generationQueueCount,
+          generationFailed: marketing?.generationByState?.failed ?? 0,
+          publish: tasks.publishQueueCount,
+        } });
+      }
+      applyLoadedValue(modelUsageSummaryResult, (value) => setPlatformModelUsageSummary(value as unknown as PlatformModelUsageSummary));
       applyLoadedValue(financeResult, (value) => setReconciliation(value as unknown as Reconciliation));
       applyLoadedValue(offerResult, (value) => setOffers((value ?? []) as unknown as Offer[]));
       applyLoadedValue(addonResult, (value) => setAddons((value ?? []) as unknown as Addon[]));
@@ -408,6 +737,7 @@ export function useOpsConsoleModel() {
       applyLoadedValue(rolloutResult, (value) => setRollouts((value ?? []) as unknown as Rollout[]));
       applyLoadedValue(funnelResult, (value) => setFunnel(value as unknown as GrowthFunnel));
       applyLoadedValue(metricsResult, (value) => setWorkspaceMetrics(value as unknown as WorkspaceMetrics));
+      applyLoadedValue(storageReconciliationResult, (value) => setStorageReconciliationWorkspaces(((value ?? []) as Array<Record<string, unknown>>).map(item => ({ ...item, workspaceId: item.workspaceId ?? item.workspace_id })) as unknown as NonNullable<WorkspaceMetrics["storageReconciliation"]>[]));
       applyLoadedValue(assetResult, (value) => setKnowledgeAssets((value ?? []) as unknown as KnowledgeAsset[]));
       applyLoadedValue(learningResult, (value) => setLearningSuggestions((value ?? []) as unknown as LearningSuggestion[]));
       applyLoadedValue(competitorResult, (value) => setCompetitors((value ?? []) as unknown as CompetitorAnalysis[]));
@@ -421,6 +751,7 @@ export function useOpsConsoleModel() {
           learningSuggestions: [],
           assetRisks: [],
           uploadedAssetRisks: [],
+          imageExecutions: [],
           ...(queueResult as unknown as Partial<MarketingQueue>),
         });
       if (
@@ -447,8 +778,11 @@ export function useOpsConsoleModel() {
         sessionResult &&
         typeof sessionResult === "object" &&
         !Array.isArray(sessionResult)
-      )
-        setOpsSession(sessionResult as unknown as OpsSession);
+      ) {
+        const nextSession = sessionResult as unknown as OpsSession;
+        opsSessionRef.current = nextSession;
+        setOpsSession(nextSession);
+      }
       const health = healthResult as unknown as {
         environment?: string;
         persistence?: { mode?: string };
@@ -485,23 +819,48 @@ export function useOpsConsoleModel() {
         setDataLifecycle(health?.setup?.dataLifecycle ?? { state: "not_required" });
         setProductionEvidence(health?.setup?.productionEvidence ?? { capability: { state: "not_required" }, capacity: { state: "not_required" } });
       }
-      applyLoadedValue(alertResult, (value) => setAlerts((value ?? []) as unknown as OperationalAlert[]));
-      applyLoadedValue(deletionResult, (value) => setDeletionRequests((value ?? []) as unknown as DataDeletionRequest[]));
+      applyLoadedValue(alertResult, (value) => {
+        const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | undefined)?.items ?? [];
+        setAlerts(rows as unknown as OperationalAlert[]);
+      });
+      applyLoadedValue(deletionResult, (value) => {
+        const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | undefined)?.items ?? [];
+        setDeletionRequests(rows as unknown as DataDeletionRequest[]);
+      });
       applyLoadedValue(modelResult, (value) => setModelStatus(value as unknown as ModelStatus));
     } catch (cause) {
-      loadCoordinatorRef.current.commit(loadRequest, () => setError(describeOpsError(cause)));
+      loadCoordinatorRef.current.commit(loadRequest, () => {
+        const message = describeOpsError(cause);
+        setDataSetErrors({ "*": message });
+        setError(message);
+      });
     } finally {
+      loadInFlightKeysRef.current.delete(loadKey);
       loadCoordinatorRef.current.commit(loadRequest, () => setLoading(false));
     }
   };
   const loadRules = async () => {
     if (!hasOpsConnection()) return;
-    try {
-      const result = await rpc("rule.list");
-      setRules((result ?? []) as unknown as Rule[]);
-    } catch (cause) {
-      message.error(describeOpsError(cause));
-    }
+    setRuleSyncLoading(true);
+    const [rulesResult, syncResult] = await Promise.allSettled([
+      rpc("rule.list"),
+      rpc("rule.sync.status"),
+    ]);
+    setDataSetErrors(previous => {
+      const next = { ...previous };
+      if (rulesResult.status === "fulfilled") delete next["rule.list"];
+      else next["rule.list"] = describeOpsError(rulesResult.reason);
+      if (syncResult.status === "fulfilled") delete next["rule.sync.status"];
+      else next["rule.sync.status"] = describeOpsError(syncResult.reason);
+      return next;
+    });
+    if (rulesResult.status === "fulfilled") setRules((rulesResult.value ?? []) as unknown as Rule[]);
+    else message.error(`规则列表加载失败：${describeOpsError(rulesResult.reason)}`);
+    if (syncResult.status === "fulfilled") setRuleSyncStatuses((syncResult.value ?? []) as unknown as RuleSyncStatus[]);
+    else message.error(`规则同步状态加载失败：${describeOpsError(syncResult.reason)}`);
+    if (rulesResult.status === "rejected" || syncResult.status === "rejected") setError("规则数据加载失败，请重试；空列表不代表没有平台规则。");
+    else setError("");
+    setRuleSyncLoading(false);
   };
   const opsRoleKey = opsSession?.roles.join("|") ?? "";
   useEffect(() => {
@@ -511,58 +870,43 @@ export function useOpsConsoleModel() {
       return;
     }
     void load();
-    void loadRules();
-    void loadRechargeOrders();
-    if (canViewModelMarkup(opsSession?.roles ?? [])) {
-      void rpc("ops.commercial.model-markup.get")
-        .then((value: unknown) => setModelMarkup(value as ModelMarkupPolicy))
-        .catch((cause: unknown) => setError(describeOpsError(cause)));
-    }
   }, [managedOpsSession, opsRoleKey]);
+  useEffect(() => () => cancelUserRequests(), []);
   const enabledCount = useMemo(
     () => platformRows.filter((row) => row.enabled).length,
     [platformRows],
   );
-  const sessionRoles =
-    opsSession?.roles ?? (managedOpsSession ? [] : ["workspace_owner"]);
-  const can = (allowed: readonly string[]) =>
-    !managedOpsSession ||
-    sessionRoles.some((role: string) => allowed.includes(role));
-  const financeAccess = financePermissions(sessionRoles, managedOpsSession);
+  const authorization = useMemo(
+    () => createAuthorizationProjection(opsSession, managedOpsSession),
+    [opsSession],
+  );
+  const opsWorkspaceId = opsSession?.workspace_id ?? (
+    (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim() ?? ""
+  );
+  const financeAccess = financePermissions(authorization);
+  const can = (capabilities: readonly string[]) => authorization.canAny(capabilities);
   const canFinance = financeAccess.refund;
   const canPaymentReconciliation = financeAccess.paymentReconciliation;
   const canModelSettlement = financeAccess.modelSettlement;
   const canBillingExport = financeAccess.billingExport;
-  const canPlatformOps = can([
-    "workspace_owner",
-    "merchant_admin",
-    "platform_ops",
+  const canAuditExport = authorization.can("audit.export");
+  // Compatibility presentation flag for sections not yet split into granular
+  // controls. Every mutation below still checks its exact capability.
+  const canPlatformOps = authorization.canAny([
+    "workspace.settings.update", "store.connection.update", "platform.settings.update", "commercial.update",
   ]);
-  const canGlobalCommercial = !managedOpsSession || sessionRoles.includes("platform_ops");
-  const canUserGovernance = !managedOpsSession || sessionRoles.includes("platform_ops");
-  const canModelMarkup = canViewModelMarkup(sessionRoles);
-  const canKnowledge = can([
-    "workspace_owner",
-    "merchant_admin",
-    "operator",
-    "platform_ops",
-    "knowledge_editor",
-  ]);
-  const canCompetitor = can([
-    "workspace_owner",
-    "merchant_admin",
-    "operator",
-    "platform_ops",
-    "competitor_reviewer",
-  ]);
-  const canRules = can(["workspace_owner", "merchant_admin", "rules_admin"]);
-  const canQueue = can([
-    "workspace_owner",
-    "merchant_admin",
-    "operator",
-    "platform_ops",
-  ]);
-  const canMembers = can(["workspace_owner", "merchant_admin", "platform_ops"]);
+  const canWriteFeatureFlags = authorization.can("feature_flag.update");
+  const canEmergencyFeatureFlags = authorization.can("feature_flag.administer");
+  const canGlobalCommercial = authorization.can("commercial.update");
+  const canUserGovernance = authorization.can("identity.update");
+  const canModelMarkup = authorization.canAny(["commercial.read", "commercial.update"]);
+  const canKnowledge = authorization.can("customer.content.update");
+  const canCompetitor = authorization.can("customer.content.update");
+  const canRules = authorization.canAny(["rule.update", "rule.publish.approve"]);
+  const canQueue = authorization.can("marketing.queue.update");
+  const canMembers = authorization.can("workspace.member.manage");
+  const dataSetError = (...methods: string[]) => dataSetErrorFor(dataSetErrors, methods);
+  const dataSetErrorEvidence = (...methods: string[]) => dataSetErrorEvidenceFor(dataSetErrorEvidenceByMethod, methods);
   useEffect(() => {
     if (canModelMarkup) return;
     setModelMarkup(undefined);
@@ -581,25 +925,39 @@ export function useOpsConsoleModel() {
 
   const updateRuleStatus = async (
     row: Rule,
-    status: "inactive" | "expired",
+    status: "active" | "inactive" | "expired",
+    options?: { reason?: string; approvalRef?: string; approvedBy?: string; approvedAt?: string },
   ) => {
     if (!canRules) {
       message.error("当前会话为只读，缺少规则管理员权限");
-      return;
+      return false;
     }
+    if (ruleMutationInFlight.current) return false;
+    ruleMutationInFlight.current = true;
+    setRuleMutationKey(`${row.id}:${status}`);
     try {
       await rpc("rule.status", {
         pack_id: row.packId,
         version: row.version,
         status,
-        reason: "运营后台规则生命周期调整",
+        reason: options?.reason?.trim() || "运营后台规则生命周期调整",
+        ...(status === "active" ? { approval_json: JSON.stringify({
+          approval_ref: options?.approvalRef?.trim(),
+          approved_by: options?.approvedBy?.trim(),
+          approved_at: options?.approvedAt,
+        }) } : {}),
       });
       message.success("规则状态已更新");
       await loadRules();
+      return true;
     } catch (cause) {
       message.error(
         cause instanceof Error ? cause.message : "规则状态更新失败",
       );
+      return false;
+    } finally {
+      ruleMutationInFlight.current = false;
+      setRuleMutationKey(undefined);
     }
   };
   const publishRuleDraft = async (values: {
@@ -614,6 +972,9 @@ export function useOpsConsoleModel() {
       message.error("当前会话为只读，缺少规则管理员权限");
       return;
     }
+    if (ruleMutationInFlight.current) return;
+    ruleMutationInFlight.current = true;
+    setRuleMutationKey("draft");
     try {
       await rpc("rule.publish", {
         pack_id: values.packId,
@@ -632,11 +993,14 @@ export function useOpsConsoleModel() {
       await loadRules();
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "规则发布失败");
+    } finally {
+      ruleMutationInFlight.current = false;
+      setRuleMutationKey(undefined);
     }
   };
 
   const saveCommercial = async (values: Omit<Settings, "revision">) => {
-    if (!canPlatformOps) {
+    if (!authorization.can("workspace.settings.update")) {
       message.error("当前会话为只读，缺少商业配置权限");
       return;
     }
@@ -662,7 +1026,7 @@ export function useOpsConsoleModel() {
     }
   };
   const savePlatform = async (row: PlatformSetting) => {
-    if (!canPlatformOps) {
+    if (!authorization.can("platform.settings.update")) {
       message.error("当前会话为只读，缺少平台配置权限");
       return;
     }
@@ -689,7 +1053,7 @@ export function useOpsConsoleModel() {
     }
   };
   const saveStoreAlias = async (row: StoreDirectory, alias: string) => {
-    if (!canPlatformOps) {
+    if (!authorization.can("store.connection.update")) {
       message.error("当前会话为只读，缺少平台运营权限");
       return false;
     }
@@ -712,8 +1076,23 @@ export function useOpsConsoleModel() {
       return false;
     }
   };
+  const createBrand = async (name: string) => {
+    if (!authorization.can("customer.content.update")) {
+      message.error("当前会话无权创建品牌");
+      return false;
+    }
+    try {
+      await rpc("brand-unit.create", { name: name.trim() });
+      message.success("品牌已创建");
+      await load();
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "创建品牌失败");
+      return false;
+    }
+  };
   const revokeStore = async (row: StoreDirectory) => {
-    if (!canPlatformOps) {
+    if (!authorization.can("store.connection.update")) {
       message.error("当前会话为只读，缺少平台运营权限");
       return;
     }
@@ -765,8 +1144,12 @@ export function useOpsConsoleModel() {
       message.error(cause instanceof Error ? cause.message : "成员保存失败");
     }
   };
-  const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number } = {}) => {
+  const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number } = userDirectoryFilters) => {
     if (!hasOpsConnection()) return false;
+    const requestKey = JSON.stringify(filters);
+    if (userDirectoryInFlightKeysRef.current.has(requestKey)) return false;
+    const controller = userRequestsRef.current.beginDirectory();
+    userDirectoryInFlightKeysRef.current.add(requestKey);
     const requestId = ++userDirectoryRequestRef.current;
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 20;
@@ -780,12 +1163,42 @@ export function useOpsConsoleModel() {
         ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.workspaceId?.trim() ? { workspace_id: filters.workspaceId.trim() } : {}),
-      });
+      }, { signal: controller.signal });
       if (requestId === userDirectoryRequestRef.current) setUserDirectory(response as unknown as PlatformUserDirectory);
     } catch (cause) {
-      if (requestId === userDirectoryRequestRef.current) setUserDirectoryError(describeOpsError(cause));
+      if (!controller.signal.aborted && requestId === userDirectoryRequestRef.current) setUserDirectoryError(describeOpsError(cause));
     } finally {
-      if (requestId === userDirectoryRequestRef.current) setUserDirectoryLoading(false);
+      userDirectoryInFlightKeysRef.current.delete(requestKey);
+      if (requestId === userDirectoryRequestRef.current) {
+        userRequestsRef.current.finishDirectory(controller);
+        setUserDirectoryLoading(false);
+      }
+    }
+  };
+  const loadWorkspaceDirectory = async (filters: { query?: string; status?: "active" | "disabled"; subscriptionStatus?: string; page?: number; pageSize?: number } = {}) => {
+    if (!hasOpsConnection() || !authorization.can("workspace.directory.read")) return false;
+    const requestId = ++workspaceDirectoryRequestRef.current;
+    const page = filters.page ?? Math.floor(workspaceDirectory.offset / workspaceDirectory.limit) + 1;
+    const pageSize = filters.pageSize ?? workspaceDirectory.limit;
+    setWorkspaceDirectoryLoading(true);
+    try {
+      const value = await rpc("ops.workspaces.list", {
+        offset: String((page - 1) * pageSize),
+        limit: String(pageSize),
+        ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.subscriptionStatus?.trim() ? { subscription_status: filters.subscriptionStatus.trim() } : {}),
+      });
+      if (requestId !== workspaceDirectoryRequestRef.current) return false;
+      const next = value as unknown as WorkspaceDirectoryPage;
+      setWorkspaceDirectory(next);
+      setWorkspaceRows(next.items ?? []);
+      return true;
+    } catch (cause) {
+      if (requestId === workspaceDirectoryRequestRef.current) message.error(describeOpsError(cause));
+      return false;
+    } finally {
+      if (requestId === workspaceDirectoryRequestRef.current) setWorkspaceDirectoryLoading(false);
     }
   };
   const exportUsers = async (filters: { query?: string; status?: string; workspaceId?: string } = {}) => {
@@ -793,6 +1206,9 @@ export function useOpsConsoleModel() {
       message.error("当前会话为只读，缺少平台用户导出权限");
       return false;
     }
+    const controller = userRequestsRef.current.beginExport();
+    if (!controller) return false;
+    setUserExporting(true);
     try {
       const result = (await rpc("ops.users.export", {
         format: "csv",
@@ -800,19 +1216,21 @@ export function useOpsConsoleModel() {
         ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.workspaceId?.trim() ? { workspace_id: filters.workspaceId.trim() } : {}),
-      })) as unknown as { filename: string; content: string; truncated?: boolean };
+      }, { signal: controller.signal, timeoutMs: 30_000, maxResponseBytes: 16 * 1024 * 1024 })) as unknown as { filename: string; content: string; truncated?: boolean };
       const blob = new Blob([result.content], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = result.filename;
       anchor.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
       message.success(result.truncated ? "已导出前 5000 条用户成员关系，请继续缩小筛选范围" : "用户目录已导出");
       return true;
     } catch (cause) {
-      message.error(describeOpsError(cause));
+      if (!controller.signal.aborted) message.error(describeOpsError(cause));
       return false;
+    } finally {
+      if (userRequestsRef.current.finishExport(controller)) setUserExporting(false);
     }
   };
   const exportCommercial = async () => {
@@ -828,7 +1246,7 @@ export function useOpsConsoleModel() {
       anchor.href = url;
       anchor.download = result.filename;
       anchor.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
       message.success("商业配置已导出，不包含支付密钥");
       return true;
     } catch (cause) {
@@ -836,7 +1254,7 @@ export function useOpsConsoleModel() {
       return false;
     }
   };
-  const suspendUsers = async (targets: Array<{ workspaceId: string; externalSubject: string }>, reason: string) => {
+  const suspendUsers = async (targets: Array<{ workspaceId: string; externalSubject: string; revision?: number }>, reason: string) => {
     if (!canUserGovernance) {
       message.error("当前会话为只读，缺少平台用户治理权限");
       return { succeeded: 0, failed: targets.length };
@@ -845,7 +1263,8 @@ export function useOpsConsoleModel() {
     let failed = 0;
     for (const target of targets) {
       try {
-        await rpc("ops.user.suspend", { workspace_id: target.workspaceId, external_subject: target.externalSubject, reason });
+        if (target.revision === undefined) throw new Error("用户成员版本已过期，请刷新后重试");
+        await rpc("ops.user.suspend", { workspace_id: target.workspaceId, external_subject: target.externalSubject, expected_revision: String(target.revision), reason });
         succeeded += 1;
       } catch {
         failed += 1;
@@ -865,6 +1284,7 @@ export function useOpsConsoleModel() {
       await rpc("ops.user.suspend", {
         workspace_id: workspaceId,
         external_subject: externalSubject,
+        expected_revision: String((userDirectory.items.find((item) => item.workspaceId === workspaceId && item.externalSubject === externalSubject)?.revision) ?? 0),
         reason,
       });
       message.success("用户在该工作区的访问已停用");
@@ -882,7 +1302,12 @@ export function useOpsConsoleModel() {
       return false;
     }
     try {
-      await rpc("ops.user.activate", { workspace_id: workspaceId, external_subject: externalSubject, reason });
+      await rpc("ops.user.activate", {
+        workspace_id: workspaceId,
+        external_subject: externalSubject,
+        expected_revision: String((userDirectory.items.find((item) => item.workspaceId === workspaceId && item.externalSubject === externalSubject)?.revision) ?? 0),
+        reason,
+      });
       message.success("用户在该工作区的访问已恢复");
       await loadUsers(userDirectoryFilters);
       if (userDetail?.identity.externalSubject === externalSubject) await loadUserDetail(externalSubject);
@@ -937,7 +1362,7 @@ export function useOpsConsoleModel() {
   const changeWorkspaceStatus = async (targetWorkspaceId: string, target: "active" | "disabled", reason: string) => {
     if (!canUserGovernance) { message.error("当前会话缺少跨租户治理权限"); return false; }
     try {
-      await rpcForWorkspace(targetWorkspaceId, target === "disabled" ? "workspace.deactivate" : "workspace.activate", target === "disabled" ? { reason } : {});
+      await rpcForWorkspace(targetWorkspaceId, target === "disabled" ? "workspace.deactivate" : "workspace.activate", { reason: reason.trim() });
       message.success(target === "disabled" ? "租户已停用，业务数据仍保留" : "租户已恢复");
       await load();
       return true;
@@ -949,19 +1374,25 @@ export function useOpsConsoleModel() {
       message.error("当前会话缺少平台用户治理权限");
       return false;
     }
+    const controller = userRequestsRef.current.beginDetail();
     const requestId = ++userDetailRequestRef.current;
     setUserDetail(undefined);
     setUserDetailLoading(true);
     try {
-      const response = await rpc("ops.user.detail", identityId ? { identity_id: identityId } : { external_subject: externalSubject });
+      const response = await rpc("ops.user.detail", identityId ? { identity_id: identityId } : { external_subject: externalSubject }, { signal: controller.signal });
       if (requestId === userDetailRequestRef.current) setUserDetail(response as unknown as PlatformUserDetail);
       return true;
     } catch (cause) {
-      if (requestId === userDetailRequestRef.current) setUserDetail(undefined);
-      message.error(describeOpsError(cause));
+      if (!controller.signal.aborted && requestId === userDetailRequestRef.current) {
+        setUserDetail(undefined);
+        message.error(describeOpsError(cause));
+      }
       return false;
     } finally {
-      if (requestId === userDetailRequestRef.current) setUserDetailLoading(false);
+      if (requestId === userDetailRequestRef.current) {
+        userRequestsRef.current.finishDetail(controller);
+        setUserDetailLoading(false);
+      }
     }
   };
   const refund = async (values: { orderId: string; reason: string }) => {
@@ -1297,7 +1728,7 @@ export function useOpsConsoleModel() {
       return false;
     }
   };
-  const governUploadedAsset = async (asset: UploadedAssetRisk, input: { evidence?: string; rightsStatus?: string; rightsScope?: string; factsJson?: string; reason?: string } = {}) => {
+  const governUploadedAsset = async (asset: UploadedAssetRisk, input: { rightsStatus?: string; rightsScope?: string; factsJson?: string; reason?: string } = {}) => {
     if (!canKnowledge) {
       message.error("当前会话为只读，缺少素材治理权限");
       return false;
@@ -1309,9 +1740,8 @@ export function useOpsConsoleModel() {
     }
     try {
       if (method === "asset.scan") {
-        const evidence = input.evidence?.trim();
-        if (!evidence) return false;
-        await rpc(method, { asset_id: asset.id, scan_evidence_ref: evidence });
+        message.info("安全扫描由平台自动执行，运营后台无需也不能提交扫描凭据");
+        return false;
       } else if (method === "asset.rights.update") {
         const rightsStatus = input.rightsStatus?.trim();
         if (
@@ -1384,7 +1814,7 @@ export function useOpsConsoleModel() {
     }
   };
   const cancelDeletion = async (request: DataDeletionRequest, reason: string) => {
-    if (!canPlatformOps) {
+    if (!authorization.can("workspace.delete.execute")) {
       message.error("当前会话为只读，缺少数据治理权限");
       return false;
     }
@@ -1405,7 +1835,7 @@ export function useOpsConsoleModel() {
     }
   };
   const approveDeletion = async (request: DataDeletionRequest, reason: string) => {
-    if (!canPlatformOps) {
+    if (!authorization.can("workspace.delete.execute")) {
       message.error("当前会话为只读，缺少数据治理权限");
       return false;
     }
@@ -1432,6 +1862,11 @@ export function useOpsConsoleModel() {
       message.error("当前会话为只读，缺少商业配置权限");
       return;
     }
+    const validation = offerChangeErrors(row);
+    if (Object.keys(validation).length) {
+      message.error(Object.values(validation)[0]);
+      return;
+    }
     try {
       const result = await rpc("ops.commercial.offer.upsert", {
         code: row.code,
@@ -1441,8 +1876,10 @@ export function useOpsConsoleModel() {
         included_stores: String(row.includedStores),
         included_tasks: String(row.includedTasks),
         active: String(row.active),
+        valid_from: row.validFrom,
+        ...(row.validTo?.trim() ? { valid_to: row.validTo } : {}),
         expected_revision: String(row.revision),
-        reason: "运营台套餐目录调整",
+        reason: row.changeReason!.trim(),
       });
       setOffers((current) =>
         current.map((item) =>
@@ -1509,7 +1946,7 @@ export function useOpsConsoleModel() {
     }
   };
   const saveRollout = async (row: Rollout) => {
-    if (!canPlatformOps) {
+    if (!authorization.can("commercial.update")) {
       message.error("当前会话为只读，缺少商业配置权限");
       return;
     }
@@ -1647,7 +2084,7 @@ export function useOpsConsoleModel() {
     }
   };
   const assignQueueItem = async (
-    itemType: "generation" | "publish",
+    itemType: "generation" | "publish" | "image",
     itemId: string,
     revision: number,
     operatorId: string,
@@ -1673,6 +2110,15 @@ export function useOpsConsoleModel() {
       message.error(cause instanceof Error ? cause.message : "队列分配失败");
       return false;
     }
+  };
+  const reconcileImageExecution = async (input: { jobId: string; resolution: "completed" | "failed"; evidenceRef: string; reason: string; revision: number }) => {
+    if (!canQueue) { message.error("当前会话为只读，缺少图片对账权限"); return false; }
+    try {
+      await rpc("ops.marketing.image.reconcile", { job_id: input.jobId, resolution: input.resolution, evidence_ref: input.evidenceRef.trim(), reason: input.reason.trim(), idempotency_key: crypto.randomUUID(), expected_revision: String(input.revision) });
+      message.success(input.resolution === "completed" ? "图片执行已人工确认完成" : "图片执行已人工确认失败");
+      await load();
+      return true;
+    } catch (cause) { message.error(cause instanceof Error ? cause.message : "图片执行收口失败"); return false; }
   };
   const pausePublishBatch = async (
     batch: MarketingQueue["batches"][number],
@@ -1789,6 +2235,7 @@ export function useOpsConsoleModel() {
   const reviewVisual = async (
     visual: MarketingQueue["visuals"][number],
     status: "passed" | "blocked",
+    reason?: string,
   ) => {
     if (!canQueue) {
       message.error("当前会话为只读，缺少队列权限");
@@ -1799,10 +2246,10 @@ export function useOpsConsoleModel() {
         visual_refs_json: JSON.stringify([visual.visualRef]),
         status,
         expected_revision: String(visual.revision),
-        reason:
-          status === "passed"
+        reason: reason?.trim() ||
+          (status === "passed"
             ? "运营台完成视觉候选审查"
-            : "运营台阻断视觉候选，等待重新生成或人工处理",
+            : "运营台阻断视觉候选，等待重新生成或人工处理"),
       });
       message.success(
         status === "passed" ? "视觉候选已标记通过" : "视觉候选已阻断",
@@ -1822,6 +2269,7 @@ export function useOpsConsoleModel() {
     setPlatformRows,
     audits,
     setAudits,
+    auditCenterClient,
     subscription,
     setSubscription,
     orders,
@@ -1832,11 +2280,14 @@ export function useOpsConsoleModel() {
     setUserDirectory,
     userDirectoryLoading,
     userDirectoryError,
+    userExporting,
     userDetail,
     setUserDetail,
     userDetailLoading,
     workspaceRows,
     setWorkspaceRows,
+    workspaceDirectory,
+    workspaceDirectoryLoading,
     reconciliation,
     setReconciliation,
     rechargeOrders,
@@ -1879,6 +2330,10 @@ export function useOpsConsoleModel() {
     modelStatusLoading,
     rules,
     setRules,
+    ruleSyncStatuses,
+    setRuleSyncStatuses,
+    ruleSyncLoading,
+    ruleMutationKey,
     knowledgeRules,
     setKnowledgeRules,
     knowledgeAssets,
@@ -1889,7 +2344,18 @@ export function useOpsConsoleModel() {
     setCompetitors,
     workspaceMetrics,
     setWorkspaceMetrics,
+    storageReconciliationWorkspaces,
     marketingQueue,
+    platformTaskSummary,
+    setPlatformTaskSummary,
+    platformBrandUnitSummary,
+    setPlatformBrandUnitSummary,
+    canonicalProductConsistency,
+    setCanonicalProductConsistency,
+    platformMarketingSummary,
+    setPlatformMarketingSummary,
+    platformModelUsageSummary,
+    setPlatformModelUsageSummary,
     setMarketingQueue,
     queueFilters,
     setQueueFilters,
@@ -1907,6 +2373,15 @@ export function useOpsConsoleModel() {
     setSelectedStoreScope,
     opsSession,
     setOpsSession,
+    clearAuthorizationScopedData,
+    authorization,
+    opsWorkspaceId,
+    supportClient,
+    incidentsClient,
+    featureFlagsClient,
+    canWriteFeatureFlags,
+    canEmergencyFeatureFlags,
+    financeSearchClient,
     dataSource,
     loading,
     setLoading,
@@ -1915,6 +2390,8 @@ export function useOpsConsoleModel() {
     refundSubmitting,
     error,
     setError,
+    dataSetError,
+    dataSetErrorEvidence,
     memberForm,
     refundForm,
     ruleForm,
@@ -1926,12 +2403,12 @@ export function useOpsConsoleModel() {
     loadRechargeOrders,
     queryRechargeOrder,
     enabledCount,
-    sessionRoles,
     can,
     canFinance,
     canPaymentReconciliation,
     canModelSettlement,
     canBillingExport,
+    canAuditExport,
     canPlatformOps,
     canGlobalCommercial,
     canUserGovernance,
@@ -1948,10 +2425,13 @@ export function useOpsConsoleModel() {
     saveCommercial,
     savePlatform,
     saveStoreAlias,
+    createBrand,
     revokeStore,
     saveMember,
     loadUsers,
+    loadWorkspaceDirectory,
     exportUsers,
+    cancelUserRequests,
     exportCommercial,
     suspendUsers,
     loadUserDetail,
@@ -1990,6 +2470,7 @@ export function useOpsConsoleModel() {
     updateAutomationSync,
     scanAutomation,
     assignQueueItem,
+    reconcileImageExecution,
     pausePublishBatch,
     resumePublishBatch,
     retryFailedPublishBatch,

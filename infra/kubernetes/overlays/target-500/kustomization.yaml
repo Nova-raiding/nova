@@ -18,10 +18,13 @@ replicas:
 images:
   - name: merchant-api
     newName: REPLACE_ME/merchant-api
-    digest: SET_IMAGE_DIGEST
+    digest: SET_API_IMAGE_DIGEST
   - name: merchant-worker
     newName: REPLACE_ME/merchant-worker
-    digest: SET_IMAGE_DIGEST
+    digest: SET_WORKER_IMAGE_DIGEST
   - name: merchant-ui
     newName: REPLACE_ME/merchant-ui
-    digest: SET_IMAGE_DIGEST
+    digest: SET_UI_IMAGE_DIGEST
+  - name: merchant-ops-ui
+    newName: REPLACE_ME/merchant-ops-ui
+    digest: SET_OPS_UI_IMAGE_DIGEST

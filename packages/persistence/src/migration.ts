@@ -1,21 +1,201 @@
 import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { SqlPool } from './repository.js'
 
 export interface Migration {
   version: number
   name: string
   sql: string
+  transactional?: boolean
 }
 
-type MigrationRow = { version: number }
+export interface AppliedMigration {
+  version: number
+  name: string
+  checksum?: string | null
+}
+
+type MigrationRow = AppliedMigration
 
 const migrationTable = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version integer PRIMARY KEY,
   name text NOT NULL,
+  checksum text,
   applied_at timestamptz NOT NULL DEFAULT now()
 )`
 const MIGRATION_ADVISORY_LOCK = 731942851
+
+export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN'
+
+export class MigrationIntegrityError extends Error {
+  constructor(
+    readonly code: MigrationIntegrityErrorCode,
+    readonly version: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'MigrationIntegrityError'
+  }
+}
+
+/** Computes the release-stable digest stored with an applied migration. */
+export function migrationChecksum(sql: string): string {
+  return createHash('sha256').update(sql, 'utf8').digest('hex')
+}
+
+/**
+ * Verifies the immutable identity of rows already recorded in schema_migrations.
+ * A null checksum is intentionally accepted for one-time legacy backfill.
+ */
+export function verifyAppliedMigrations(
+  applied: readonly AppliedMigration[],
+  expected: readonly Migration[],
+): void {
+  const expectedByVersion = new Map(expected.map(migration => [migration.version, migration]))
+  const orderedVersions = [...expectedByVersion.keys()].sort((left, right) => left - right)
+  const completeChain = orderedVersions[0] === 1 && orderedVersions.every((version, index) => version === index + 1)
+  for (const row of applied) {
+    const migration = expectedByVersion.get(row.version)
+    // Callers may intentionally run a filtered migration slice in upgrade
+    // fixtures. Those historical rows remain owned by the same database and
+    // must not make a later slice fail before it can be applied.
+    if (!migration) {
+      // A complete release run owns the whole version history. Silently
+      // ignoring a future/foreign row can make an incompatible database look
+      // upgradeable. Filtered prefix/single-version runners remain supported
+      // for isolated upgrade fixtures and controlled repair operations.
+      if (completeChain) throw new MigrationIntegrityError('MIGRATION_VERSION_UNKNOWN', row.version, `migration ${row.version} is not present in this release`)
+      continue
+    }
+    // Version 014 was published under the historical name
+    // `read_only_schedules` before the store-alias SQL was consolidated. The
+    // 071 repair migration makes the schema converge; preserve that recorded
+    // name instead of rewriting history, but never accept a non-null checksum
+    // for the legacy alias.
+    const legacy014Alias = row.version === 14 && row.name === 'read_only_schedules' && row.checksum == null
+    if (row.name !== migration.name && !legacy014Alias) {
+      throw new MigrationIntegrityError('MIGRATION_NAME_MISMATCH', row.version, `migration ${row.version} name mismatch: database=${row.name}, release=${migration.name}`)
+    }
+    if (row.checksum != null && row.checksum !== migrationChecksum(migration.sql)) {
+      throw new MigrationIntegrityError('MIGRATION_CHECKSUM_MISMATCH', row.version, `migration ${row.version} checksum mismatch: database=${row.checksum}, release=${migrationChecksum(migration.sql)}`)
+    }
+  }
+  if (completeChain) {
+    const appliedVersions = new Set(applied.map(row => row.version))
+    const highestApplied = Math.max(0, ...appliedVersions)
+    for (let version = 1; version <= highestApplied; version += 1) {
+      if (!appliedVersions.has(version)) throw new MigrationIntegrityError('MIGRATION_VERSION_UNKNOWN', version, `migration history is missing version ${version}`)
+    }
+  }
+}
+
+/**
+ * Splits a PostgreSQL script only at top-level semicolons. Quoted strings,
+ * identifiers, dollar-quoted function bodies, and nested comments stay intact.
+ */
+export function splitTopLevelSqlStatements(sql: string): string[] {
+  const statements: string[] = []
+  let statementStart = 0
+  let index = 0
+
+  const failUnterminated = (kind: string): never => {
+    throw new Error(`Unterminated ${kind} in non-transactional migration SQL`)
+  }
+
+  while (index < sql.length) {
+    const current = sql[index]
+    const next = sql[index + 1]
+
+    if (current === '-' && next === '-') {
+      const newline = sql.indexOf('\n', index + 2)
+      index = newline === -1 ? sql.length : newline + 1
+      continue
+    }
+
+    if (current === '/' && next === '*') {
+      let depth = 1
+      index += 2
+      while (index < sql.length && depth > 0) {
+        if (sql[index] === '/' && sql[index + 1] === '*') {
+          depth += 1
+          index += 2
+        } else if (sql[index] === '*' && sql[index + 1] === '/') {
+          depth -= 1
+          index += 2
+        } else {
+          index += 1
+        }
+      }
+      if (depth > 0) failUnterminated('block comment')
+      continue
+    }
+
+    if (current === "'") {
+      const previous = sql[index - 1]
+      const previousTwo = sql.slice(Math.max(0, index - 2), index).toUpperCase()
+      const prefixBoundary = index < 2 || !/[A-Za-z0-9_$]/.test(sql[index - 2] ?? '')
+      const backslashEscapes = (previous?.toUpperCase() === 'E' && prefixBoundary)
+        || (previousTwo === 'U&' && (index < 3 || !/[A-Za-z0-9_$]/.test(sql[index - 3] ?? '')))
+      index += 1
+      let closed = false
+      while (index < sql.length) {
+        if (backslashEscapes && sql[index] === '\\') {
+          index += 2
+        } else if (sql[index] === "'" && sql[index + 1] === "'") {
+          index += 2
+        } else if (sql[index] === "'") {
+          index += 1
+          closed = true
+          break
+        } else {
+          index += 1
+        }
+      }
+      if (!closed) failUnterminated('string literal')
+      continue
+    }
+
+    if (current === '"') {
+      index += 1
+      let closed = false
+      while (index < sql.length) {
+        if (sql[index] === '"' && sql[index + 1] === '"') {
+          index += 2
+        } else if (sql[index] === '"') {
+          index += 1
+          closed = true
+          break
+        } else {
+          index += 1
+        }
+      }
+      if (!closed) failUnterminated('quoted identifier')
+      continue
+    }
+
+    if (current === '$' && (index === 0 || !/[A-Za-z0-9_$]/.test(sql[index - 1] ?? ''))) {
+      const delimiter = sql.slice(index).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0]
+      if (delimiter) {
+        const closingIndex = sql.indexOf(delimiter, index + delimiter.length)
+        if (closingIndex === -1) failUnterminated(`dollar quote ${delimiter}`)
+        index = closingIndex + delimiter.length
+        continue
+      }
+    }
+
+    if (current === ';') {
+      const statement = sql.slice(statementStart, index + 1).trim()
+      if (statement) statements.push(statement)
+      statementStart = index + 1
+    }
+    index += 1
+  }
+
+  const tail = sql.slice(statementStart).trim()
+  if (tail) statements.push(tail)
+  return statements
+}
 
 /** Applies migrations in ascending version order in one deployment transaction. */
 export class MigrationRunner {
@@ -25,27 +205,45 @@ export class MigrationRunner {
     const client = await this.pool.connect()
     const applied: number[] = []
     try {
-      await client.query('BEGIN')
-      // Serialize migration runners across API replicas. The lock is scoped
-      // to this transaction and is released automatically on COMMIT/ROLLBACK.
-      await client.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_ADVISORY_LOCK])
+      await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_ADVISORY_LOCK])
       await client.query(migrationTable)
-      const result = await client.query<MigrationRow>('SELECT version FROM schema_migrations ORDER BY version ASC')
+      // Existing deployments may have created schema_migrations without checksum.
+      // Keep the column nullable so this compatibility upgrade never rewrites the
+      // historical migration chain or requires a new migration version.
+      await client.query('ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum text')
+      const result = await client.query<MigrationRow>('SELECT version, name, checksum FROM schema_migrations ORDER BY version ASC')
+      verifyAppliedMigrations(result.rows, this.migrations)
       const versions = new Set(result.rows.map(row => row.version))
       const pending = [...this.migrations].sort((a, b) => a.version - b.version)
+      for (const row of result.rows) {
+        if (row.checksum == null && !(row.version === 14 && row.name === 'read_only_schedules')) {
+          const migration = pending.find(item => item.version === row.version)
+          if (migration) await client.query('UPDATE schema_migrations SET checksum = $1 WHERE version = $2 AND checksum IS NULL', [migrationChecksum(migration.sql), row.version])
+        }
+      }
       for (const migration of pending) {
         if (versions.has(migration.version)) continue
-        await client.query(migration.sql)
-        await client.query(
-          'INSERT INTO schema_migrations (version, name) VALUES ($1, $2)',
-          [migration.version, migration.name],
-        )
+        const checksum = migrationChecksum(migration.sql)
+        if (migration.transactional === false) {
+          for (const statement of splitTopLevelSqlStatements(migration.sql)) {
+            await client.query(statement)
+          }
+          await client.query('BEGIN')
+          await client.query('INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)', [migration.version, migration.name, checksum])
+          await client.query('COMMIT')
+        } else {
+          await client.query('BEGIN')
+          await client.query(migration.sql)
+          await client.query('INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)', [migration.version, migration.name, checksum])
+          await client.query('COMMIT')
+        }
         applied.push(migration.version)
       }
-      await client.query('COMMIT')
+      await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_ADVISORY_LOCK])
       return applied
     } catch (error) {
       try { await client.query('ROLLBACK') } catch { /* preserve original error */ }
+      try { await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_ADVISORY_LOCK]) } catch { /* release also unlocks */ }
       throw error
     } finally {
       client.release?.()
@@ -107,6 +305,68 @@ export async function loadMigrations(): Promise<Migration[]> {
   const platformIdentityLifecycle = await readFile(new URL('./migrations/045_platform_identity_lifecycle.sql', import.meta.url), 'utf8')
   const modelUsageSettlement = await readFile(new URL('./migrations/046_model_usage_settlement.sql', import.meta.url), 'utf8')
   const routeBTaskProjection = await readFile(new URL('./migrations/047_route_b_task_projection.sql', import.meta.url), 'utf8')
+  const actionLedgerScopeLinks = await readFile(new URL('./migrations/048_action_ledger_scope_links.sql', import.meta.url), 'utf8')
+  const legacySnapshotBackfill = await readFile(new URL('./migrations/049_legacy_snapshot_backfill.sql', import.meta.url), 'utf8')
+  const paymentCallbackNonces = await readFile(new URL('./migrations/050_payment_callback_nonces.sql', import.meta.url), 'utf8')
+  const activeWorkspaceCatalog = await readFile(new URL('./migrations/051_active_workspace_catalog.sql', import.meta.url), 'utf8')
+  const workspaceContextSnapshots = await readFile(new URL('./migrations/052_workspace_context_snapshots.sql', import.meta.url), 'utf8')
+  const terminalGenerationOutboxCleanup = await readFile(new URL('./migrations/053_terminal_generation_outbox_cleanup.sql', import.meta.url), 'utf8')
+  const modelDailyCostBudget = await readFile(new URL('./migrations/054_model_daily_cost_budget.sql', import.meta.url), 'utf8')
+  const supportCrm = await readFile(new URL('./migrations/055_support_crm.sql', import.meta.url), 'utf8')
+  const incidents = await readFile(new URL('./migrations/056_incidents.sql', import.meta.url), 'utf8')
+  const featureFlags = await readFile(new URL('./migrations/057_feature_flags.sql', import.meta.url), 'utf8')
+  const financeSearchIndexes = await readFile(new URL('./migrations/058_finance_search_indexes.sql', import.meta.url), 'utf8')
+  const opsAuditCenter = await readFile(new URL('./migrations/059_ops_audit_center.sql', import.meta.url), 'utf8')
+  const merchantCollectionPaginationIndexes = await readFile(new URL('./migrations/060_merchant_collection_pagination_indexes.sql', import.meta.url), 'utf8')
+  const platformControlPlaneAcl = await readFile(new URL('./migrations/061_platform_control_plane_acl.sql', import.meta.url), 'utf8')
+  const removeDuplicatePaginationIndex = await readFile(new URL('./migrations/062_remove_duplicate_pagination_index.sql', import.meta.url), 'utf8')
+  const productListingBrandCanonicalIntegrity = await readFile(new URL('./migrations/063_product_listing_brand_canonical_integrity.sql', import.meta.url), 'utf8')
+  const workspaceIdentityBootstrap = await readFile(new URL('./migrations/064_workspace_identity_bootstrap.sql', import.meta.url), 'utf8')
+  const assetParseLeases = await readFile(new URL('./migrations/065_asset_parse_leases.sql', import.meta.url), 'utf8')
+  const platformMediaSpecRegistry = await readFile(new URL('./migrations/066_platform_media_spec_registry.sql', import.meta.url), 'utf8')
+  const platformMappingPreflightApprovals = await readFile(new URL('./migrations/067_platform_mapping_preflight_approvals.sql', import.meta.url), 'utf8')
+  const campaignLifecycleRuntimeGrants = await readFile(new URL('./migrations/068_campaign_lifecycle_runtime_grants.sql', import.meta.url), 'utf8')
+  const platformAccountScopeIntegrity = await readFile(new URL('./migrations/069_platform_account_scope_integrity.sql', import.meta.url), 'utf8')
+  const productAssetBindings = await readFile(new URL('./migrations/070_product_asset_bindings.sql', import.meta.url), 'utf8')
+  const runtimeIntegrity = await readFile(new URL('./migrations/071_runtime_integrity.sql', import.meta.url), 'utf8')
+  const productAssetBindingIntegrity = await readFile(new URL('./migrations/072_product_asset_binding_integrity.sql', import.meta.url), 'utf8')
+  const opsDataContracts = await readFile(new URL('./migrations/073_ops_data_contracts.sql', import.meta.url), 'utf8')
+  const modelUsageContextLinks = await readFile(new URL('./migrations/074_model_usage_context_links.sql', import.meta.url), 'utf8')
+  const modelUsageActionLookupIndex = await readFile(new URL('./migrations/075_model_usage_action_lookup_index.sql', import.meta.url), 'utf8')
+  const canonicalProductBackfillIndex = await readFile(new URL('./migrations/076_canonical_product_backfill_index.sql', import.meta.url), 'utf8')
+  const canonicalPublishScopeIntegrity = await readFile(new URL('./migrations/077_canonical_publish_scope_integrity.sql', import.meta.url), 'utf8')
+  const assetSnapshotBindingBackfill = await readFile(new URL('./migrations/078_asset_snapshot_binding_backfill.sql', import.meta.url), 'utf8')
+  const knowledgeHydrationSnapshots = await readFile(new URL('./migrations/079_knowledge_hydration_snapshots.sql', import.meta.url), 'utf8')
+  const storageQuota = await readFile(new URL('./migrations/080_storage_quota.sql', import.meta.url), 'utf8')
+  const reconciliationStatus = await readFile(new URL('./migrations/081_reconciliation_status.sql', import.meta.url), 'utf8')
+  const knowledgeHydrationRevisionRepair = await readFile(new URL('./migrations/082_knowledge_hydration_revision_repair.sql', import.meta.url), 'utf8')
+  const billingActorAttribution = await readFile(new URL('./migrations/083_billing_actor_attribution.sql', import.meta.url), 'utf8')
+  const assetScanReceipts = await readFile(new URL('./migrations/084_asset_scan_receipts.sql', import.meta.url), 'utf8')
+  const assetScanAttempts = await readFile(new URL('./migrations/085_asset_scan_attempts.sql', import.meta.url), 'utf8')
+  const trustedCleanAssetBackfill = await readFile(new URL('./migrations/086_trusted_clean_asset_backfill.sql', import.meta.url), 'utf8')
+  const assetPromotionCleanupTasks = await readFile(new URL('./migrations/087_asset_promotion_cleanup_tasks.sql', import.meta.url), 'utf8')
+  const imageGenerationContinuationLeases = await readFile(new URL('./migrations/088_image_generation_continuation_leases.sql', import.meta.url), 'utf8')
+  const merchantIntentSnapshots = await readFile(new URL('./migrations/089_merchant_intent_snapshots.sql', import.meta.url), 'utf8')
+  const isolateOpsWorkspaceDirectory = await readFile(new URL('./migrations/090_isolate_ops_workspace_directory.sql', import.meta.url), 'utf8')
+  const bindPlatformScopeToOpsRole = await readFile(new URL('./migrations/091_bind_platform_scope_to_ops_role.sql', import.meta.url), 'utf8')
+  const imageGenerationExecutions = await readFile(new URL('./migrations/092_image_generation_executions.sql', import.meta.url), 'utf8')
+  const runtimeDeletePrivilegeHardening = await readFile(new URL('./migrations/093_runtime_delete_privilege_hardening.sql', import.meta.url), 'utf8')
+  const imageGenerationReconciliationCursorIndex = await readFile(new URL('./migrations/094_image_generation_reconciliation_cursor_index.sql', import.meta.url), 'utf8')
+  const runtimeAppendOnlyPrivileges = await readFile(new URL('./migrations/095_runtime_append_only_privileges.sql', import.meta.url), 'utf8')
+  const reconciliationEvidence = await readFile(new URL('./migrations/096_reconciliation_evidence.sql', import.meta.url), 'utf8')
+  const reconciliationEvidenceUnknownErrors = await readFile(new URL('./migrations/097_reconciliation_evidence_unknown_errors.sql', import.meta.url), 'utf8')
+  const unifiedLinkAudit = await readFile(new URL('./migrations/098_unified_link_audit.sql', import.meta.url), 'utf8')
+  const canonicalLegacyBrandIntegrity = await readFile(new URL('./migrations/099_canonical_legacy_brand_integrity.sql', import.meta.url), 'utf8')
+  const operationAlertNotifications = await readFile(new URL('./migrations/100_operation_alert_notifications.sql', import.meta.url), 'utf8')
+  const canonicalBackfillRuns = await readFile(new URL('./migrations/101_canonical_backfill_runs.sql', import.meta.url), 'utf8')
+  const canonicalBackfillConflicts = await readFile(new URL('./migrations/102_canonical_backfill_conflicts.sql', import.meta.url), 'utf8')
+  const operationAlertNotificationAcl = await readFile(new URL('./migrations/103_operation_alert_notification_acl.sql', import.meta.url), 'utf8')
+  const interactiveConfirmationTickets = await readFile(new URL('./migrations/104_interactive_confirmation_tickets.sql', import.meta.url), 'utf8')
+  const durableAuthorizationGrants = await readFile(new URL('./migrations/105_durable_authorization_grants.sql', import.meta.url), 'utf8')
+  const canonicalLegacyBrandIntegrityGuard = await readFile(new URL('./migrations/106_canonical_legacy_brand_integrity_guard.sql', import.meta.url), 'utf8')
+  const canonicalBackfillConflictVerificationEvidence = await readFile(new URL('./migrations/107_canonical_backfill_conflict_verification_evidence.sql', import.meta.url), 'utf8')
+  const modelUsageSettledCostInvariant = await readFile(new URL('./migrations/108_model_usage_settled_cost_invariant.sql', import.meta.url), 'utf8')
+  const assetScanRedrive = await readFile(new URL('./migrations/109_asset_scan_redrive.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -155,6 +415,68 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 45, name: 'platform_identity_lifecycle', sql: platformIdentityLifecycle },
     { version: 46, name: 'model_usage_settlement', sql: modelUsageSettlement },
     { version: 47, name: 'route_b_task_projection', sql: routeBTaskProjection },
+    { version: 48, name: 'action_ledger_scope_links', sql: actionLedgerScopeLinks },
+    { version: 49, name: 'legacy_snapshot_backfill', sql: legacySnapshotBackfill },
+    { version: 50, name: 'payment_callback_nonces', sql: paymentCallbackNonces },
+    { version: 51, name: 'active_workspace_catalog', sql: activeWorkspaceCatalog },
+    { version: 52, name: 'workspace_context_snapshots', sql: workspaceContextSnapshots },
+    { version: 53, name: 'terminal_generation_outbox_cleanup', sql: terminalGenerationOutboxCleanup },
+    { version: 54, name: 'model_daily_cost_budget', sql: modelDailyCostBudget },
+    { version: 55, name: 'support_crm', sql: supportCrm },
+    { version: 56, name: 'incidents', sql: incidents },
+    { version: 57, name: 'feature_flags', sql: featureFlags },
+    { version: 58, name: 'finance_search_indexes', sql: financeSearchIndexes },
+    { version: 59, name: 'ops_audit_center', sql: opsAuditCenter },
+    { version: 60, name: 'merchant_collection_pagination_indexes', sql: merchantCollectionPaginationIndexes, transactional: false },
+    { version: 61, name: 'platform_control_plane_acl', sql: platformControlPlaneAcl },
+    { version: 62, name: 'remove_duplicate_pagination_index', sql: removeDuplicatePaginationIndex, transactional: false },
+    { version: 63, name: 'product_listing_brand_canonical_integrity', sql: productListingBrandCanonicalIntegrity },
+    { version: 64, name: 'workspace_identity_bootstrap', sql: workspaceIdentityBootstrap },
+    { version: 65, name: 'asset_parse_leases', sql: assetParseLeases },
+    { version: 66, name: 'platform_media_spec_registry', sql: platformMediaSpecRegistry },
+    { version: 67, name: 'platform_mapping_preflight_approvals', sql: platformMappingPreflightApprovals },
+    { version: 68, name: 'campaign_lifecycle_runtime_grants', sql: campaignLifecycleRuntimeGrants },
+    { version: 69, name: 'platform_account_scope_integrity', sql: platformAccountScopeIntegrity },
+    { version: 70, name: 'product_asset_bindings', sql: productAssetBindings },
+    { version: 71, name: 'runtime_integrity', sql: runtimeIntegrity },
+    { version: 72, name: 'product_asset_binding_integrity', sql: productAssetBindingIntegrity },
+    { version: 73, name: 'ops_data_contracts', sql: opsDataContracts },
+    { version: 74, name: 'model_usage_context_links', sql: modelUsageContextLinks },
+    { version: 75, name: 'model_usage_action_lookup_index', sql: modelUsageActionLookupIndex },
+    { version: 76, name: 'canonical_product_backfill_index', sql: canonicalProductBackfillIndex },
+    { version: 77, name: 'canonical_publish_scope_integrity', sql: canonicalPublishScopeIntegrity },
+    { version: 78, name: 'asset_snapshot_binding_backfill', sql: assetSnapshotBindingBackfill },
+    { version: 79, name: 'knowledge_hydration_snapshots', sql: knowledgeHydrationSnapshots },
+    { version: 80, name: 'storage_quota', sql: storageQuota },
+    { version: 81, name: 'reconciliation_status', sql: reconciliationStatus },
+    { version: 82, name: 'knowledge_hydration_revision_repair', sql: knowledgeHydrationRevisionRepair },
+    { version: 83, name: 'billing_actor_attribution', sql: billingActorAttribution },
+    { version: 84, name: 'asset_scan_receipts', sql: assetScanReceipts },
+    { version: 85, name: 'asset_scan_attempts', sql: assetScanAttempts },
+    { version: 86, name: 'trusted_clean_asset_backfill', sql: trustedCleanAssetBackfill },
+    { version: 87, name: 'asset_promotion_cleanup_tasks', sql: assetPromotionCleanupTasks },
+    { version: 88, name: 'image_generation_continuation_leases', sql: imageGenerationContinuationLeases },
+    { version: 89, name: 'merchant_intent_snapshots', sql: merchantIntentSnapshots },
+    { version: 90, name: 'isolate_ops_workspace_directory', sql: isolateOpsWorkspaceDirectory },
+    { version: 91, name: 'bind_platform_scope_to_ops_role', sql: bindPlatformScopeToOpsRole },
+    { version: 92, name: 'image_generation_executions', sql: imageGenerationExecutions },
+    { version: 93, name: 'runtime_delete_privilege_hardening', sql: runtimeDeletePrivilegeHardening },
+    { version: 94, name: 'image_generation_reconciliation_cursor_index', sql: imageGenerationReconciliationCursorIndex },
+    { version: 95, name: 'runtime_append_only_privileges', sql: runtimeAppendOnlyPrivileges },
+    { version: 96, name: 'reconciliation_evidence', sql: reconciliationEvidence },
+    { version: 97, name: 'reconciliation_evidence_unknown_errors', sql: reconciliationEvidenceUnknownErrors },
+    { version: 98, name: 'unified_link_audit', sql: unifiedLinkAudit },
+    { version: 99, name: 'canonical_legacy_brand_integrity', sql: canonicalLegacyBrandIntegrity },
+    { version: 100, name: 'operation_alert_notifications', sql: operationAlertNotifications },
+    { version: 101, name: 'canonical_backfill_runs', sql: canonicalBackfillRuns },
+    { version: 102, name: 'canonical_backfill_conflicts', sql: canonicalBackfillConflicts },
+    { version: 103, name: 'operation_alert_notification_acl', sql: operationAlertNotificationAcl },
+    { version: 104, name: 'interactive_confirmation_tickets', sql: interactiveConfirmationTickets },
+    { version: 105, name: 'durable_authorization_grants', sql: durableAuthorizationGrants },
+    { version: 106, name: 'canonical_legacy_brand_integrity_guard', sql: canonicalLegacyBrandIntegrityGuard },
+    { version: 107, name: 'canonical_backfill_conflict_verification_evidence', sql: canonicalBackfillConflictVerificationEvidence },
+    { version: 108, name: 'model_usage_settled_cost_invariant', sql: modelUsageSettledCostInvariant },
+    { version: 109, name: 'asset_scan_redrive', sql: assetScanRedrive },
   ]
 }
 

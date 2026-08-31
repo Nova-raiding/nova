@@ -1,21 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { financePermissions, runAuthorizedFinanceAction } from "./financePermissions.js";
+import { createAuthorizationProjection } from "../../authz/authorization.js";
+
+const authorization = (capabilities: string[], managed = true) => createAuthorizationProjection(
+  managed ? { actor_id: "actor_1", workspace_id: "ws_1", roles: [], workspace_granted: true, capabilities } : undefined,
+  managed,
+);
 
 describe("financePermissions", () => {
   it.each([
-    ["workspace_owner", { refund: true, paymentReconciliation: true, modelSettlement: false, billingExport: true }],
-    ["merchant_admin", { refund: true, paymentReconciliation: true, modelSettlement: false, billingExport: true }],
-    ["finance", { refund: true, paymentReconciliation: true, modelSettlement: true, billingExport: true }],
-    ["platform_ops", { refund: false, paymentReconciliation: true, modelSettlement: true, billingExport: true }],
-    ["operator", { refund: false, paymentReconciliation: false, modelSettlement: false, billingExport: false }],
-    ["support", { refund: false, paymentReconciliation: false, modelSettlement: false, billingExport: false }],
-    ["rules_admin", { refund: false, paymentReconciliation: false, modelSettlement: false, billingExport: false }],
-  ] as const)("matches the API finance matrix for %s", (role, expected) => {
-    expect(financePermissions([role], true)).toEqual(expected);
+    [["billing.refund.execute", "billing.reconcile.execute", "billing.export"], { refund: true, paymentReconciliation: true, modelSettlement: true, billingExport: true }],
+    [["billing.workspace.read"], { refund: false, paymentReconciliation: false, modelSettlement: false, billingExport: false }],
+    [["customer.content.read"], { refund: false, paymentReconciliation: false, modelSettlement: false, billingExport: false }],
+  ] as const)("matches the canonical API finance capabilities for %j", (capabilities, expected) => {
+    expect(financePermissions(authorization([...capabilities]))).toEqual(expected);
   });
 
-  it("keeps the unmanaged local console operable", () => {
-    expect(financePermissions([], false)).toEqual({ refund: true, paymentReconciliation: true, modelSettlement: true, billingExport: true });
+  it("fails closed before an unmanaged local session provides server permissions", () => {
+    expect(financePermissions(authorization([], false))).toEqual({ refund: false, paymentReconciliation: false, modelSettlement: false, billingExport: false });
   });
 
   it("allows the platform_ops model-settlement callback", async () => {
@@ -23,7 +25,7 @@ describe("financePermissions", () => {
     const onDenied = vi.fn();
 
     await expect(runAuthorizedFinanceAction(
-      financePermissions(["platform_ops"], true).modelSettlement,
+      financePermissions(authorization(["billing.reconcile.execute"])).modelSettlement,
       action,
       onDenied,
     )).resolves.toBe(true);
@@ -36,7 +38,7 @@ describe("financePermissions", () => {
     const onDenied = vi.fn();
 
     await expect(runAuthorizedFinanceAction(
-      financePermissions(["workspace_owner"], true).modelSettlement,
+      financePermissions(authorization(["billing.workspace.read"])).modelSettlement,
       action,
       onDenied,
     )).resolves.toBe(false);
@@ -49,7 +51,7 @@ describe("financePermissions", () => {
     const onDenied = vi.fn();
 
     await expect(runAuthorizedFinanceAction(
-      financePermissions(["operator"], true).billingExport,
+      financePermissions(authorization(["customer.content.read"])).billingExport,
       action,
       onDenied,
     )).resolves.toBe(false);

@@ -21,6 +21,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
       <Space wrap>
         <Select
           allowClear
+          aria-label="按告警平台筛选"
           placeholder="平台"
           style={{ width: 150 }}
           value={alertFilters.platform}
@@ -34,6 +35,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
         />
         <Select
           allowClear
+          aria-label="按告警店铺筛选"
           placeholder="店铺"
           style={{ width: 240 }}
           value={alertFilters.accountId}
@@ -47,6 +49,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
         />
         <Input
           allowClear
+          aria-label="按告警编码筛选"
           placeholder="告警编码"
           style={{ width: 180 }}
           value={alertFilters.code ?? ""}
@@ -59,6 +62,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
         />
         <Input
           allowClear
+          aria-label="按告警对象类型筛选"
           placeholder="对象类型"
           style={{ width: 180 }}
           value={alertFilters.entityType ?? ""}
@@ -71,6 +75,7 @@ export function AlertFiltersSection({ model }: AlertFiltersSectionProps) {
         />
         <Input
           allowClear
+          aria-label="按告警对象 ID 筛选"
           placeholder="对象 ID"
           style={{ width: 180 }}
           value={alertFilters.entityId ?? ""}

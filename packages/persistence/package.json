@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "dependencies": {
+    "@merchant-marketing/contracts": "0.1.0",
+    "@merchant-marketing/multimodal": "0.1.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && mkdir -p dist/migrations && cp src/migrations/*.sql dist/migrations/"
   }

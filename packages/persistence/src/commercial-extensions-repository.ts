@@ -12,6 +12,8 @@ export interface CommercialCoupon { id: string; code: string; discountType: Coup
 export interface CommercialRollout { id: string; offerCode: string; workspaceId?: string; percentage: number; enabled: boolean; reason: string; revision: number; updatedBy: string; updatedAt: string }
 export interface ModelMarkupPolicy { multiplier: number; reason: string; revision: number; updatedBy: string; updatedAt: string }
 export interface SubscriptionChange { id: string; workspaceId: string; fromPlanCode: string; toPlanCode: string; fromPriceCny: number; toPriceCny: number; billingCycle: CommercialBillingCycle; priceDifferenceCny: number; effectiveAt: string; status: SubscriptionChangeStatus; reason: string; createdBy: string; createdAt: string }
+export interface SubscriptionPlanEntitlements { workspaceId: string; planCode: string; planName: string; billingCycle: CommercialBillingCycle; priceCny: number; includedStores: number; includedTasks: number; currentPeriodStart: string; currentPeriodEnd: string; revision: number; updatedAt: string }
+export interface AppliedSubscriptionChange { change: SubscriptionChange; subscription: SubscriptionPlanEntitlements }
 
 export interface CommercialExtensionsRepository {
   listOffers(): Promise<CommercialOffer[]>
@@ -28,10 +30,23 @@ export interface CommercialExtensionsRepository {
   updateModelMarkupPolicy(input: { multiplier: number; reason: string; updatedBy: string; expectedRevision: number }): Promise<ModelMarkupPolicy>
   scheduleChange(input: Omit<SubscriptionChange, 'id' | 'createdAt' | 'status'>): Promise<SubscriptionChange>
   getPendingChange(workspaceId: string): Promise<SubscriptionChange | undefined>
+  applyDueSubscriptionChange(input: { workspaceId: string; at?: string }): Promise<AppliedSubscriptionChange | undefined>
 }
 
 const now = () => new Date().toISOString()
 const nextRevision = (revision: number | undefined) => (revision ?? 0) + 1
+const subscriptionChangeProjection = `id, workspace_id AS "workspaceId", from_plan_code AS "fromPlanCode", to_plan_code AS "toPlanCode", from_price_cny::float8 AS "fromPriceCny", to_price_cny::float8 AS "toPriceCny", billing_cycle AS "billingCycle", price_difference_cny::float8 AS "priceDifferenceCny", effective_at AS "effectiveAt", status, reason, created_by AS "createdBy", created_at AS "createdAt"`
+const subscriptionPlanProjection = `workspace_id AS "workspaceId", plan_code AS "planCode", plan_name AS "planName", billing_cycle AS "billingCycle", price_cny::float8 AS "priceCny", included_stores AS "includedStores", included_tasks AS "includedTasks", current_period_start AS "currentPeriodStart", current_period_end AS "currentPeriodEnd", revision, updated_at AS "updatedAt"`
+
+function nextPeriodEnd(start: string, cycle: CommercialBillingCycle) {
+  const value = new Date(start)
+  const originalDay = value.getUTCDate()
+  value.setUTCDate(1)
+  value.setUTCMonth(value.getUTCMonth() + (cycle === 'annual' ? 12 : 1))
+  const lastDay = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0)).getUTCDate()
+  value.setUTCDate(Math.min(originalDay, lastDay))
+  return value.toISOString()
+}
 
 export class MemoryCommercialExtensionsRepository implements CommercialExtensionsRepository {
   private readonly offers = new Map<string, CommercialOffer>()
@@ -39,6 +54,7 @@ export class MemoryCommercialExtensionsRepository implements CommercialExtension
   private readonly coupons = new Map<string, CommercialCoupon>()
   private readonly rollouts = new Map<string, CommercialRollout>()
   private readonly changes = new Map<string, SubscriptionChange>()
+  private readonly subscriptions = new Map<string, SubscriptionPlanEntitlements>()
   private modelMarkupPolicy: ModelMarkupPolicy = { multiplier: 2.5, reason: '系统默认倍率', revision: 1, updatedBy: 'system', updatedAt: now() }
   async listOffers() { return [...this.offers.values()].sort((a, b) => a.code.localeCompare(b.code)) }
   async upsertOffer(input: Omit<CommercialOffer, 'id' | 'revision' | 'updatedAt'> & { id?: string; expectedRevision?: number }) { const existing = this.offers.get(input.code); if (existing && input.expectedRevision !== undefined && existing.revision !== input.expectedRevision) throw new Error('commercial offer revision conflict'); const item: CommercialOffer = { ...input, id: existing?.id ?? input.id ?? `offer_${randomUUID()}`, revision: nextRevision(existing?.revision), updatedAt: now() }; this.offers.set(item.code, item); return item }
@@ -52,8 +68,28 @@ export class MemoryCommercialExtensionsRepository implements CommercialExtension
   async upsertRollout(input: Omit<CommercialRollout, 'id' | 'revision' | 'updatedAt'> & { id?: string; expectedRevision?: number }) { const key = `${input.offerCode}:${input.workspaceId ?? '*'}`; const existing = this.rollouts.get(key); if (existing && input.expectedRevision !== undefined && existing.revision !== input.expectedRevision) throw new Error('commercial rollout revision conflict'); const item: CommercialRollout = { ...input, id: existing?.id ?? input.id ?? `rollout_${randomUUID()}`, revision: nextRevision(existing?.revision), updatedAt: now() }; this.rollouts.set(key, item); return item }
   async getModelMarkupPolicy() { return { ...this.modelMarkupPolicy } }
   async updateModelMarkupPolicy(input: { multiplier: number; reason: string; updatedBy: string; expectedRevision: number }) { if (input.expectedRevision !== this.modelMarkupPolicy.revision) throw new Error('model markup policy revision conflict'); this.modelMarkupPolicy = { multiplier: input.multiplier, reason: input.reason, updatedBy: input.updatedBy, revision: this.modelMarkupPolicy.revision + 1, updatedAt: now() }; return { ...this.modelMarkupPolicy } }
-  async scheduleChange(input: Omit<SubscriptionChange, 'id' | 'createdAt' | 'status'>) { const existing = await this.getPendingChange(input.workspaceId); if (existing) this.changes.delete(existing.id); const item: SubscriptionChange = { ...input, id: `sub_change_${randomUUID()}`, status: 'scheduled', createdAt: now() }; this.changes.set(item.id, item); return item }
+  async scheduleChange(input: Omit<SubscriptionChange, 'id' | 'createdAt' | 'status'>) { const existing = await this.getPendingChange(input.workspaceId); if (existing) this.changes.delete(existing.id); const createdAt = now(); const item: SubscriptionChange = { ...input, id: `sub_change_${randomUUID()}`, status: 'scheduled', createdAt }; this.changes.set(item.id, item); if (!this.subscriptions.has(input.workspaceId)) { const offer = this.offers.get(input.fromPlanCode); this.subscriptions.set(input.workspaceId, { workspaceId: input.workspaceId, planCode: input.fromPlanCode, planName: offer?.name ?? input.fromPlanCode, billingCycle: input.billingCycle, priceCny: input.fromPriceCny, includedStores: offer?.includedStores ?? 0, includedTasks: offer?.includedTasks ?? 0, currentPeriodStart: createdAt, currentPeriodEnd: input.effectiveAt, revision: 1, updatedAt: createdAt }) } return item }
   async getPendingChange(workspaceId: string) { return [...this.changes.values()].find(item => item.workspaceId === workspaceId && item.status === 'scheduled') }
+  async applyDueSubscriptionChange(input: { workspaceId: string; at?: string }) {
+    const at = input.at ?? now()
+    const atMs = Date.parse(at)
+    if (!Number.isFinite(atMs)) throw new RangeError('subscription downgrade execution time is invalid')
+    const change = [...this.changes.values()]
+      .filter(item => item.workspaceId === input.workspaceId && item.status === 'scheduled' && Date.parse(item.effectiveAt) <= atMs)
+      .sort((left, right) => left.effectiveAt.localeCompare(right.effectiveAt) || left.createdAt.localeCompare(right.createdAt))[0]
+    if (!change) return undefined
+    const offer = this.offers.get(change.toPlanCode)
+    if (!offer || offer.billingCycle !== change.billingCycle) throw new Error('SUBSCRIPTION_DOWNGRADE_TARGET_OFFER_NOT_FOUND')
+    const current = this.subscriptions.get(input.workspaceId)
+    if (!current) throw new Error('SUBSCRIPTION_DOWNGRADE_SUBSCRIPTION_NOT_FOUND')
+    const subscription: SubscriptionPlanEntitlements = { ...current, planCode: change.toPlanCode, planName: offer.name, billingCycle: change.billingCycle, priceCny: change.toPriceCny, includedStores: offer.includedStores, includedTasks: offer.includedTasks, currentPeriodStart: change.effectiveAt, currentPeriodEnd: nextPeriodEnd(change.effectiveAt, change.billingCycle), revision: current.revision + 1, updatedAt: at }
+    const applied: SubscriptionChange = { ...change, status: 'applied' }
+    // No await occurs between the eligibility check and both writes. That makes
+    // this critical section atomic for competing calls in one JS process.
+    this.subscriptions.set(input.workspaceId, subscription)
+    this.changes.set(change.id, applied)
+    return { change: applied, subscription }
+  }
 }
 
 export class PostgresCommercialExtensionsRepository implements CommercialExtensionsRepository {
@@ -70,6 +106,23 @@ export class PostgresCommercialExtensionsRepository implements CommercialExtensi
   async upsertRollout(input: Omit<CommercialRollout, 'id' | 'revision' | 'updatedAt'> & { id?: string; expectedRevision?: number }) { const client = await this.pool.connect(); try { const result = await client.query<CommercialRollout>(`INSERT INTO commercial_rollouts (id, offer_code, workspace_id, percentage, enabled, reason, updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (offer_code, workspace_id) DO UPDATE SET percentage=$4, enabled=$5, reason=$6, revision=commercial_rollouts.revision+1, updated_by=$7, updated_at=now() WHERE ($8::int IS NULL OR commercial_rollouts.revision=$8) RETURNING id, offer_code AS "offerCode", NULLIF(workspace_id, '') AS "workspaceId", percentage, enabled, reason, revision, updated_by AS "updatedBy", updated_at AS "updatedAt"`, [input.id ?? randomUUID(), input.offerCode, input.workspaceId ?? '', input.percentage, input.enabled, input.reason, input.updatedBy, input.expectedRevision ?? null]); if (!result.rows[0]) throw new Error('commercial rollout revision conflict'); return result.rows[0] } finally { client.release?.() } }
   async getModelMarkupPolicy() { const client = await this.pool.connect(); try { const result = await client.query<ModelMarkupPolicy>('SELECT multiplier::float8 AS multiplier, reason, revision, updated_by AS "updatedBy", updated_at AS "updatedAt" FROM model_markup_policy WHERE singleton_key=true'); return result.rows[0] ?? { multiplier: 2.5, reason: '系统默认倍率', revision: 1, updatedBy: 'system', updatedAt: new Date(0).toISOString() } } finally { client.release?.() } }
   async updateModelMarkupPolicy(input: { multiplier: number; reason: string; updatedBy: string; expectedRevision: number }) { const client = await this.pool.connect(); try { const result = await client.query<ModelMarkupPolicy>('UPDATE model_markup_policy SET multiplier=$1, reason=$2, updated_by=$3, revision=revision+1, updated_at=now() WHERE singleton_key=true AND revision=$4 RETURNING multiplier::float8 AS multiplier, reason, revision, updated_by AS "updatedBy", updated_at AS "updatedAt"', [input.multiplier, input.reason, input.updatedBy, input.expectedRevision]); if (!result.rows[0]) throw new Error('model markup policy revision conflict'); return result.rows[0] } finally { client.release?.() } }
-  async scheduleChange(input: Omit<SubscriptionChange, 'id' | 'createdAt' | 'status'>) { requireWorkspaceScope(input.workspaceId); return withWorkspaceTransaction(this.pool, input.workspaceId, async client => { await client.query("UPDATE workspace_subscription_changes SET status='cancelled' WHERE workspace_id=$1 AND status='scheduled'", [input.workspaceId]); const result = await client.query<SubscriptionChange>(`INSERT INTO workspace_subscription_changes (id, workspace_id, from_plan_code, to_plan_code, from_price_cny, to_price_cny, billing_cycle, price_difference_cny, effective_at, status, reason, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'scheduled',$10,$11) RETURNING id, workspace_id AS "workspaceId", from_plan_code AS "fromPlanCode", to_plan_code AS "toPlanCode", from_price_cny::float8 AS "fromPriceCny", to_price_cny::float8 AS "toPriceCny", billing_cycle AS "billingCycle", price_difference_cny::float8 AS "priceDifferenceCny", effective_at AS "effectiveAt", status, reason, created_by AS "createdBy", created_at AS "createdAt"`, [randomUUID(), input.workspaceId, input.fromPlanCode, input.toPlanCode, input.fromPriceCny, input.toPriceCny, input.billingCycle, input.priceDifferenceCny, input.effectiveAt, input.reason, input.createdBy]); return result.rows[0]! }) }
-  async getPendingChange(workspaceId: string) { requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, workspaceId, async client => { const result = await client.query<SubscriptionChange>(`SELECT id, workspace_id AS "workspaceId", from_plan_code AS "fromPlanCode", to_plan_code AS "toPlanCode", from_price_cny::float8 AS "fromPriceCny", to_price_cny::float8 AS "toPriceCny", billing_cycle AS "billingCycle", price_difference_cny::float8 AS "priceDifferenceCny", effective_at AS "effectiveAt", status, reason, created_by AS "createdBy", created_at AS "createdAt" FROM workspace_subscription_changes WHERE workspace_id=$1 AND status='scheduled' ORDER BY created_at DESC LIMIT 1`, [workspaceId]); return result.rows[0] }) }
+  async scheduleChange(input: Omit<SubscriptionChange, 'id' | 'createdAt' | 'status'>) { requireWorkspaceScope(input.workspaceId); return withWorkspaceTransaction(this.pool, input.workspaceId, async client => { await client.query("UPDATE workspace_subscription_changes SET status='cancelled' WHERE workspace_id=$1 AND status='scheduled'", [input.workspaceId]); const result = await client.query<SubscriptionChange>(`INSERT INTO workspace_subscription_changes (id, workspace_id, from_plan_code, to_plan_code, from_price_cny, to_price_cny, billing_cycle, price_difference_cny, effective_at, status, reason, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'scheduled',$10,$11) RETURNING ${subscriptionChangeProjection}`, [randomUUID(), input.workspaceId, input.fromPlanCode, input.toPlanCode, input.fromPriceCny, input.toPriceCny, input.billingCycle, input.priceDifferenceCny, input.effectiveAt, input.reason, input.createdBy]); return result.rows[0]! }) }
+  async getPendingChange(workspaceId: string) { requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, workspaceId, async client => { const result = await client.query<SubscriptionChange>(`SELECT ${subscriptionChangeProjection} FROM workspace_subscription_changes WHERE workspace_id=$1 AND status='scheduled' ORDER BY created_at DESC LIMIT 1`, [workspaceId]); return result.rows[0] }) }
+  async applyDueSubscriptionChange(input: { workspaceId: string; at?: string }) {
+    requireWorkspaceScope(input.workspaceId)
+    const at = input.at ?? now()
+    if (!Number.isFinite(Date.parse(at))) throw new RangeError('subscription downgrade execution time is invalid')
+    return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      const due = await client.query<SubscriptionChange>(`SELECT ${subscriptionChangeProjection} FROM workspace_subscription_changes WHERE workspace_id=$1 AND status='scheduled' AND effective_at <= $2::timestamptz ORDER BY effective_at, created_at LIMIT 1 FOR UPDATE SKIP LOCKED`, [input.workspaceId, at])
+      const change = due.rows[0]
+      if (!change) return undefined
+      const offer = await client.query<Pick<CommercialOffer, 'name' | 'includedStores' | 'includedTasks'>>(`SELECT name, included_stores AS "includedStores", included_tasks AS "includedTasks" FROM commercial_offers WHERE code=$1 AND billing_cycle=$2`, [change.toPlanCode, change.billingCycle])
+      if (!offer.rows[0]) throw new Error('SUBSCRIPTION_DOWNGRADE_TARGET_OFFER_NOT_FOUND')
+      const subscription = await client.query<SubscriptionPlanEntitlements>(`UPDATE workspace_subscriptions SET plan_code=$2, plan_name=$3, billing_cycle=$4, price_cny=$5, included_stores=$6, included_tasks=$7, current_period_start=$8::timestamptz, current_period_end=$8::timestamptz + CASE WHEN $4='annual' THEN interval '1 year' ELSE interval '1 month' END, revision=revision+1, updated_at=$9::timestamptz WHERE workspace_id=$1 RETURNING ${subscriptionPlanProjection}`, [input.workspaceId, change.toPlanCode, offer.rows[0].name, change.billingCycle, change.toPriceCny, offer.rows[0].includedStores, offer.rows[0].includedTasks, change.effectiveAt, at])
+      if (!subscription.rows[0]) throw new Error('SUBSCRIPTION_DOWNGRADE_SUBSCRIPTION_NOT_FOUND')
+      const applied = await client.query<SubscriptionChange>(`UPDATE workspace_subscription_changes SET status='applied' WHERE workspace_id=$1 AND id=$2 AND status='scheduled' RETURNING ${subscriptionChangeProjection}`, [input.workspaceId, change.id])
+      if (!applied.rows[0]) throw new Error('SUBSCRIPTION_DOWNGRADE_CONCURRENT_CONFLICT')
+      return { change: applied.rows[0], subscription: subscription.rows[0] }
+    })
+  }
 }

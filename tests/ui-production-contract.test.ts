@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const app = readFileSync(new URL('../demo/merchant-studio/src/App.tsx', import.meta.url), 'utf8')
 const api = readFileSync(new URL('../demo/merchant-studio/src/api.ts', import.meta.url), 'utf8')
+const campaign = readFileSync(new URL('../demo/merchant-studio/src/CampaignLifecyclePanel.tsx', import.meta.url), 'utf8')
 const smoke = readFileSync(new URL('./merchant-studio-smoke.ts', import.meta.url), 'utf8')
 
 describe('Merchant Studio production UI contract', () => {
@@ -33,20 +34,57 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('preparePublish(apiBaseUrl, taskContext.task.id)')
     expect(app).toContain('fetchPublishJobs(baseUrl)')
     expect(app).toContain('disabled={!confirmed || loading || !preview || Boolean(identityError)}')
+    expect(app).toContain("window.localStorage.setItem('merchant-studio:last-publish-task', taskContext.task.id)")
+    expect(app).toContain("if (page === 'publish' && taskContext?.task)")
+    expect(app).toContain("fetchProduct(apiBaseUrl, task.productId)")
+    expect(app).toContain("task.state !== 'approved'")
+    expect(app).toContain("const version = versions.find(item => item.state === 'approved')")
+    expect(app).not.toContain("?? versions[0]")
   })
 
   it('restores existing tasks without creating duplicates or auto-generating content', () => {
     expect(app).toContain('? await fetchTask(baseUrl, target.taskId)')
-    expect(app).toContain(': await createTask(baseUrl, { product_id: targetProductId, platform: targetPlatform, account_id: target.accountId })')
+    expect(app).toContain('const current = target.taskId ? (target.resolvedTask ?? await fetchTask(baseUrl, target.taskId)) : null')
+    expect(app).toContain('createTaskFromIntent')
+    expect(app).toContain('createTaskOnce(baseUrl, resolvedTarget, requestText)')
+    expect(app).toContain('idempotency_key: intentKey')
+    expect(app).toContain('taskCreationRequests.get(lockKey)')
     expect(app).toContain('taskId: item.id')
     expect(app).toContain('只有从商品页点击“创建任务”才会新建任务')
     expect(app).toContain('确认制作方案并生成')
     expect(app).not.toContain("created.selectedDirectionId ? Promise.resolve(created) : selectDirection(baseUrl, created.id, 'A')")
   })
 
+  it('keeps intent confirmation and candidate selection actionable before task creation', () => {
+    expect(app).toContain('data-testid="task-create-confirmation"')
+    expect(app).toContain('确认需求并创建任务')
+    expect(app).toContain('selectedCandidateId === candidate.id')
+    expect(app).toContain('aria-pressed={selectedCandidateId === candidate.id}')
+    expect(app).toContain('使用同一幂等请求重试')
+  })
+
+  it('keeps advanced batch controls secondary to the conversational task queue', () => {
+    expect(campaign).toContain('const [showControls, setShowControls] = useState(false)')
+    expect(campaign).toContain('打开高级控制')
+    expect(campaign).toContain('暂停、恢复或重试失败项属于高级操作')
+  })
+
   it('shows durable duplicate-upload references in the asset library', () => {
     expect(app).toContain('同一文件已有 {asset.references.length} 个上传引用')
     expect(app).toContain('asset-reference-count-')
+  })
+
+  it('uses structured merchant-facing fact confirmation while preserving the server object preview', () => {
+    expect(app).toContain('data-testid="asset-facts-editor"')
+    expect(app).toContain('逐项填写你从素材中核对出的事实')
+    expect(app).toContain('查看服务端对象预览')
+    expect(app).not.toContain('已核对事实 JSON<textarea')
+  })
+
+  it('translates task history event codes before rendering the merchant timeline', () => {
+    expect(app).toContain('const timelineEventLabel')
+    expect(app).toContain('任务已创建')
+    expect(app).toContain('event_type: timelineEventLabel(event.event_type)')
   })
 
   it('shows the untrusted-document boundary before merchants use uploaded material', () => {
@@ -102,10 +140,12 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('返回商品列表分别选择')
   })
 
-  it('requires one explicit product per platform and confirms task-group creation', () => {
-    expect(app).toContain('current.filter(item => item.platform !== target.platform)')
-    expect(app).toContain('各子任务分别保存规则、版本与发布回执。确认创建吗？')
-    expect(app).toContain('每个平台只能选择一个商品')
+  it('preserves exact product/platform/store targets and confirms task-group creation', () => {
+    expect(app).toContain('batchTargetKey(item) === batchTargetKey(target)')
+    expect(app).toContain('task-group-confirm-dialog')
+    expect(app).toContain('每个“商品 + 平台 + 店铺”目标会创建独立子任务')
+    expect(app).not.toContain('window.confirm(')
+    expect(app).toContain('同一品可选择多个平台和多个店铺')
     expect(app).toContain('task-group-created')
   })
 
@@ -120,7 +160,7 @@ describe('Merchant Studio production UI contract', () => {
 
   it('renders progressive question controls and complete detail modules as merchant-facing output', () => {
     expect(app).toContain('确认商品事实准确')
-    expect(app).toContain('稍后补充')
+    expect(app).toContain('回答并继续')
     expect(app).toContain('为什么问：{question.why}')
     expect(app).toContain('不回答：{question.ifSkipped}')
     expect(app).toContain('完整详情模块')

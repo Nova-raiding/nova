@@ -27,6 +27,8 @@ export interface ConnectorContext {
   accountId: string
   credentialRef?: string
   traceId?: string
+  /** Cancels in-flight provider I/O when the durable worker loses its lease. */
+  signal?: AbortSignal
 }
 
 export interface AuthorizeInput {

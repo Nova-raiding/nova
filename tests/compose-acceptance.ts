@@ -5,6 +5,7 @@ import { loadMigrations, PostgresOutboxRepository, withWorkspaceTransaction } fr
 
 const compose = ['compose', '-f', 'infra/local/docker-compose.yml']
 const apiBase = process.env.COMPOSE_API_URL ?? 'http://127.0.0.1:8787'
+const opsUiBase = process.env.COMPOSE_OPS_UI_URL ?? 'http://127.0.0.1:18082'
 const workspaceCount = Number(process.env.COMPOSE_WORKSPACES ?? 50)
 
 function docker(args: string[]) {
@@ -46,6 +47,16 @@ async function waitForHealth() {
   throw new Error('Compose API did not become healthy within 60 seconds')
 }
 
+async function assertIndependentOpsUi() {
+  const response = await fetch(opsUiBase)
+  const html = await response.text()
+  assert.equal(response.status, 200, `Ops UI returned ${response.status}`)
+  assert.match(html, /<title>Merchant Operations Console<\/title>/, 'port 18082 must serve the Ops Console')
+  assert.doesNotMatch(html, /Merchant Studio · 商家营销工作台/, 'port 18082 must not serve Merchant Studio')
+  const apiResponse = await fetch(`${opsUiBase}/api/healthz`)
+  assert.equal(apiResponse.status, 200, `Ops UI same-origin API proxy returned ${apiResponse.status}`)
+}
+
 async function request(path: string, workspaceId: string, init?: RequestInit) {
   const headers = new Headers(init?.headers)
   headers.set('x-workspace-id', workspaceId)
@@ -58,6 +69,19 @@ async function request(path: string, workspaceId: string, init?: RequestInit) {
   return body.data
 }
 
+async function bootstrapWorkspace(index: number) {
+  const response = await fetch(`${apiBase}/mcp`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${process.env.COMPOSE_API_TOKEN ?? 'pilot-local-token'}`, 'content-type': 'application/json', 'x-workspace-bootstrap': 'true' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'workspace.bootstrap', params: { display_name: `Compose smoke ${index}` } }),
+  })
+  const body = await response.json() as { data?: { result?: { workspaceId?: string } }; error?: { code?: string; message?: string } | null }
+  assert.equal(response.status, 200, `workspace.bootstrap returned ${response.status}: ${body.error?.code ?? body.error?.message ?? 'unknown error'}`)
+  const workspaceId = body.data?.result?.workspaceId
+  assert.ok(workspaceId, 'workspace.bootstrap must return a workspace id')
+  return workspaceId
+}
+
 async function postgres() {
   const pool = new Pool({ connectionString: process.env.COMPOSE_DATABASE_URL ?? 'postgres://merchant:merchant_local_only@127.0.0.1:54329/merchant' })
   return { pool, outbox: new PostgresOutboxRepository(pool) }
@@ -68,15 +92,16 @@ export async function runComposeAcceptance() {
   const health = await waitForHealth()
   assert.equal(health.data.persistence?.mode, 'postgres')
   assert.equal(health.data.persistence?.ready, true)
-  for (const service of ['api', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'postgres', 'redis', 'ui']) {
+  for (const service of ['api', 'worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan', 'clamav', 'postgres', 'redis', 'ui', 'ops-ui']) {
     assertRunning(service)
     await assertHealthy(service)
   }
+  await assertIndependentOpsUi()
 
-  // New production workspaces must complete store onboarding before catalog
-  // access. Use the onboarding-exempt account directory to exercise the
-  // multi-tenant HTTP path without weakening that gate.
-  const workspaceResults = await Promise.all(Array.from({ length: workspaceCount }, (_, index) => request('/v1/platform-accounts', `ws_compose_smoke_${index}`)))
+  // Exercise the real first-run ownership path before reading each isolated
+  // workspace. Directly inventing ids would correctly fail membership checks.
+  const smokeWorkspaceIds = await Promise.all(Array.from({ length: workspaceCount }, (_, index) => bootstrapWorkspace(index)))
+  const workspaceResults = await Promise.all(smokeWorkspaceIds.map(workspaceId => request('/v1/platform-accounts', workspaceId)))
   assert.equal(workspaceResults.length, workspaceCount)
 
   const beforeRestart = docker(['ps', '-q', 'postgres'])

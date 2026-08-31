@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import ts from 'typescript'
 import { OutboxEventNotFoundError, PostgresOutboxRepository, SqlClient, SqlPool, TenantScopeError, withWorkspaceTransaction } from './repository.js'
 
 type Row = Record<string, unknown>
@@ -26,6 +28,14 @@ const row = (overrides: Partial<Row> = {}): Row => ({
   id: 'evt_1', workspace_id: 'ws_1', aggregate_id: 'task_1', event_type: 'task.created',
   sequence: 1, payload: { task: 'task_1' }, published_at: null, created_at: '2026-08-22T00:00:00.000Z', ...overrides,
 })
+
+async function loadCurrentRepositoryModule() {
+  const source = await readFile(new URL('./repository.ts', import.meta.url), 'utf8')
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText
+  return await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`) as typeof import('./repository.js')
+}
 
 describe('PostgresOutboxRepository', () => {
   it('rejects missing workspace before acquiring a pooled connection', async () => {
@@ -95,6 +105,51 @@ describe('PostgresOutboxRepository', () => {
     const repository = new PostgresOutboxRepository(new RecordingPool(client))
     await expect(repository.markPublished('ws_other', 'evt_1', '2026-08-22T02:00:00.000Z')).rejects.toBeInstanceOf(OutboxEventNotFoundError)
     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+  })
+
+  it('discovers active workspaces only through the restricted catalog function', async () => {
+    const client = new RecordingClient()
+    client.enqueue({ workspace_id: 'ws_a' }, { workspace_id: 'ws_b' })
+    const module = await loadCurrentRepositoryModule()
+    const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
+
+    await expect(repository.listActiveWorkspaceIds()).resolves.toEqual(['ws_a', 'ws_b'])
+    expect(client.calls).toEqual([{
+      text: 'SELECT workspace_id FROM public.worker_active_workspace_catalog()',
+      values: undefined,
+    }])
+    expect(client.calls[0]?.text).not.toContain('FROM workspaces')
+  })
+
+  it('persists a terminal dead letter so it cannot be claimed again', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue(row({ published_at: '2026-08-28T15:30:00.000Z', attempts: 2, last_error: { code: 'GENERATION_JOB_TERMINAL', retryable: false } })); client.enqueue()
+    const module = await loadCurrentRepositoryModule()
+    const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
+    const failure = { code: 'GENERATION_JOB_TERMINAL', message: 'already failed', retryable: false, unknown: false }
+    const event = await repository.deadLetter('ws_1', 'evt_1', failure, 'lease_1')
+    expect(event.publishedAt).toBe('2026-08-28T15:30:00.000Z')
+    const update = client.calls.find(call => call.text.includes('published_at = COALESCE'))
+    expect(update?.values).toEqual(['ws_1', 'evt_1', 'lease_1', JSON.stringify(failure)])
+  })
+
+  it('validates and renews only the current unexpired lease holder', async () => {
+    const client = new RecordingClient()
+    const leased = row({ lease_token: 'lease_1', lease_until: '2026-08-29T00:00:30.000Z' })
+    client.enqueue(); client.enqueue(); client.enqueue(leased); client.enqueue()
+    client.enqueue(); client.enqueue(); client.enqueue({ ...leased, lease_until: '2026-08-29T00:01:00.000Z' }); client.enqueue()
+    const module = await loadCurrentRepositoryModule()
+    const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
+    const now = '2026-08-29T00:00:00.000Z'
+
+    await expect(repository.validateLease('ws_1', 'evt_1', 'lease_1', now)).resolves.toMatchObject({ leaseToken: 'lease_1' })
+    await expect(repository.renewLease('ws_1', 'evt_1', 'lease_1', 60_000, now)).resolves.toMatchObject({ leaseUntil: '2026-08-29T00:01:00.000Z' })
+
+    const validation = client.calls.find(call => call.text.includes('SELECT id, workspace_id') && call.text.includes('lease_until > GREATEST'))
+    expect(validation?.values).toEqual(['ws_1', 'evt_1', 'lease_1', now])
+    const renewal = client.calls.find(call => call.text.includes('SET lease_until = GREATEST'))
+    expect(renewal?.values).toEqual(['ws_1', 'evt_1', 'lease_1', now, 60_000])
+    expect(renewal?.text).toContain('lease_token = $3 AND lease_until > GREATEST($4::timestamptz, now())')
   })
 
   it('rolls back and releases when scoped work fails', async () => {

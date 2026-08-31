@@ -140,4 +140,41 @@ describe('knowledge module', () => {
     expect(restored.listLearningSuggestions('ws-a', 'dismissed')).toEqual([dismissedSuggestion])
     expect(restored.queryCompetitorAnalyses({ workspaceId: 'ws-a' })).toHaveLength(1)
   })
+
+  it('rebuilds observed feedback and platform rejections deterministically without duplicate suggestions', () => {
+    const knowledge = createModule()
+    const taskObservation = {
+      workspaceId: 'ws-a', kind: 'feedback' as const, sourceKey: 'task_feedback:feedback-1',
+      contentId: 'content-1', reason: '不要夸大功效', metadata: { task_id: 'task-1' }, createdAt: '2026-08-25T00:00:00.000Z',
+    }
+    const rejectionObservation = {
+      workspaceId: 'ws-a', kind: 'platform_rejection' as const, sourceKey: 'publish_rejection:job-1:digest',
+      platform: 'jd', contentId: 'content-1', reason: '缺少依据', details: 'title: 功效词需要检测报告', createdAt: '2026-08-25T00:00:01.000Z',
+    }
+    const events = [
+      { eventType: 'task_feedback_submitted', payload: { knowledge_observation: taskObservation } },
+      { eventType: 'publish.observation', payload: { knowledge_observation: rejectionObservation } },
+    ]
+
+    knowledge.hydrate(events)
+    knowledge.hydrate(events)
+
+    expect(knowledge.listFeedback('ws-a')).toHaveLength(2)
+    expect(knowledge.listLearningSuggestions('ws-a')).toHaveLength(2)
+    expect(knowledge.listLearningSuggestions('ws-a').map(item => item.id).sort()).toEqual([
+      'learning_observed_publish_rejection:job-1:digest',
+      'learning_observed_task_feedback:feedback-1',
+    ])
+    expect(knowledge.queryRules({ workspaceId: 'ws-a' })).toHaveLength(0)
+  })
+
+  it('fails closed for unknown or out-of-order durable events', () => {
+    const restored = createModule()
+    expect(() => restored.hydrate([{ eventType: 'knowledge.future.event', payload: {} }])).toThrowError(expect.objectContaining({ code: 'KNOWLEDGE_EVENT_UNKNOWN' }))
+    const payload = { id: 'asset-1', workspaceId: 'ws-a', kind: 'brand', name: 'A', content: 'x', approvalStatus: 'pending', rightsStatus: 'unknown', tags: [], revision: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' } as Record<string, unknown>
+    expect(() => restored.hydrate([
+      { aggregateId: 'asset-1', sequence: 2, eventType: 'knowledge.asset.created', payload },
+      { aggregateId: 'asset-1', sequence: 1, eventType: 'knowledge.asset.updated', payload: { ...payload, revision: 2 } },
+    ])).toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_SEQUENCE_OUT_OF_ORDER'))
+  })
 })

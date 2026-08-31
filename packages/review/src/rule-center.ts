@@ -23,6 +23,8 @@ export interface RuleSource {
 export interface RuleChecks {
   forbiddenTerms?: string[]
   requiredFields?: string[]
+  /** Stable domain key for policies that cannot be represented as a term or field. */
+  conflictKeys?: string[]
 }
 
 /** Immutable, auditable version of a rule pack. The version is never edited in place. */
@@ -129,6 +131,32 @@ export interface RuleEvaluation {
 
 const clone = <T>(value: T): T => structuredClone(value)
 
+function normalizeConflictValue(value: string) {
+  return value.normalize('NFKC').trim().toLocaleLowerCase('zh-CN').replace(/\s+/gu, ' ')
+}
+
+function conflictKeys(checks: RuleChecks) {
+  return new Set([
+    ...(checks.forbiddenTerms ?? []).map(value => `term:${normalizeConflictValue(value)}`),
+    ...(checks.requiredFields ?? []).map(value => `field:${normalizeConflictValue(value)}`),
+    ...(checks.conflictKeys ?? []).map(value => `conflict:${normalizeConflictValue(value)}`),
+  ])
+}
+
+function intersectConflictKeys(higher: RuleChecks, lower: RuleChecks) {
+  const higherKeys = conflictKeys(higher)
+  return [...conflictKeys(lower)].filter(key => higherKeys.has(key)).sort()
+}
+
+function expirationPolicy(rule: Pick<RulePackVersion, 'scope' | 'severity' | 'action'>): Pick<RuleEvaluationFinding, 'severity' | 'action'> {
+  // A stale platform policy makes platform compliance unknowable, so the P0
+  // boundary remains fail-closed even if the imported rule was advisory.
+  if (rule.scope === 'platform') return { severity: 'error', action: 'block' }
+  const configuredAction = rule.action ?? 'block'
+  const blocking = rule.severity === 'error' || configuredAction === 'block'
+  return { severity: blocking ? 'error' : 'warning', action: blocking ? 'block' : configuredAction }
+}
+
 /**
  * Small rule registry used by the application layer.
  *
@@ -160,6 +188,8 @@ export class RuleCenter {
     if (!seed.packId.trim() || !seed.name.trim() || !seed.version.trim() || !seed.source.reference.trim()) throw new Error('RULE_VERSION_INVALID')
     if (!seed.source.checkedAt) throw new Error('RULE_SOURCE_CHECK_REQUIRED')
     for (const term of seed.checks?.forbiddenTerms ?? []) if (!term.trim()) throw new Error('RULE_CHECK_INVALID')
+    for (const field of seed.checks?.requiredFields ?? []) if (!field.trim()) throw new Error('RULE_CHECK_INVALID')
+    for (const key of seed.checks?.conflictKeys ?? []) if (!key.trim()) throw new Error('RULE_CHECK_INVALID')
   }
 
   private seed(seed: RuleCenterSeed) {
@@ -223,12 +253,13 @@ export class RuleCenter {
   }
 
   activeChecks(): RuleChecks {
-    const terms = new Set<string>(); const required = new Set<string>()
+    const terms = new Set<string>(); const required = new Set<string>(); const conflictKeys = new Set<string>()
     for (const items of this.versions.values()) for (const item of items) if (item.status === 'active') {
       for (const term of item.checks.forbiddenTerms ?? []) terms.add(term)
       for (const field of item.checks.requiredFields ?? []) required.add(field)
+      for (const key of item.checks.conflictKeys ?? []) conflictKeys.add(key)
     }
-    return { forbiddenTerms: [...terms], requiredFields: [...required] }
+    return { forbiddenTerms: [...terms], requiredFields: [...required], ...(conflictKeys.size ? { conflictKeys: [...conflictKeys] } : {}) }
   }
 
   /**
@@ -249,7 +280,8 @@ export class RuleCenter {
           const expected = scope === 'global' ? undefined : context[scope]
           if (scope !== 'global' && (!expected || (target && target !== expected) || !target)) continue
           if (item.status === 'expired') {
-            findings.push({ code: 'RULE_EXPIRED', severity: 'error', action: item.action ?? 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 已标记为过期，不能用于本次审核` })
+            const policy = expirationPolicy(item)
+            findings.push({ code: 'RULE_EXPIRED', ...policy, field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 已标记为过期，不能用于本次审核` })
             continue
           }
           const from = item.effectiveFrom ? Date.parse(item.effectiveFrom) : Number.NEGATIVE_INFINITY
@@ -260,7 +292,8 @@ export class RuleCenter {
             continue
           }
           if (now >= to) {
-            findings.push({ code: 'RULE_EXPIRED', severity: 'error', action: item.action ?? 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 已于 ${item.effectiveTo} 过期，不能用于本次审核` })
+            const policy = expirationPolicy(item)
+            findings.push({ code: 'RULE_EXPIRED', ...policy, field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 已于 ${item.effectiveTo} 过期，不能用于本次审核` })
             continue
           }
           applicable.push(clone(item))
@@ -271,17 +304,20 @@ export class RuleCenter {
       const higher = applicable[higherIndex]!
       for (let lowerIndex = higherIndex + 1; lowerIndex < applicable.length; lowerIndex += 1) {
         const lower = applicable[lowerIndex]!
-        if ((higher.action ?? 'block') === 'block' && lower.action === 'allow') findings.push({ code: 'RULE_PRIORITY_CONFLICT', severity: 'error', action: 'block', field: 'rules', ruleVersionId: lower.id, message: `低优先级规则 ${lower.version} 不能覆盖 ${higher.scope} 范围的硬阻断规则 ${higher.version}` })
+        if (higher.scope === lower.scope || (higher.action ?? 'block') !== 'block' || lower.action !== 'allow') continue
+        const sharedKeys = intersectConflictKeys(higher.checks, lower.checks)
+        if (sharedKeys.length) findings.push({ code: 'RULE_PRIORITY_CONFLICT', severity: 'error', action: 'block', field: 'rules', ruleVersionId: lower.id, message: `低优先级规则 ${lower.version} 不能覆盖 ${higher.scope} 范围的硬阻断规则 ${higher.version}（冲突键：${sharedKeys.join('、')}）` })
       }
     }
-    const terms = new Set<string>(); const required = new Set<string>()
+    const terms = new Set<string>(); const required = new Set<string>(); const conflictKeys = new Set<string>()
     const hits: RuleHit[] = []
     for (const item of applicable) {
       for (const term of item.checks.forbiddenTerms ?? []) terms.add(term)
       for (const field of item.checks.requiredFields ?? []) required.add(field)
-      hits.push({ ruleVersionId: item.id, version: item.version, scope: item.scope, action: item.action ?? 'block', severity: item.severity ?? 'error', matchedChecks: [...(item.checks.forbiddenTerms ?? []).map(() => 'forbiddenTerms'), ...(item.checks.requiredFields ?? []).map(() => 'requiredFields')] })
+      for (const key of item.checks.conflictKeys ?? []) conflictKeys.add(key)
+      hits.push({ ruleVersionId: item.id, version: item.version, scope: item.scope, action: item.action ?? 'block', severity: item.severity ?? 'error', matchedChecks: [...(item.checks.forbiddenTerms ?? []).map(() => 'forbiddenTerms'), ...(item.checks.requiredFields ?? []).map(() => 'requiredFields'), ...(item.checks.conflictKeys ?? []).map(() => 'conflictKeys')] })
     }
-    return { applicable, checks: { forbiddenTerms: [...terms], requiredFields: [...required] }, findings, hits }
+    return { applicable, checks: { forbiddenTerms: [...terms], requiredFields: [...required], ...(conflictKeys.size ? { conflictKeys: [...conflictKeys] } : {}) }, findings, hits }
   }
 
   publish(input: Omit<RuleCenterSeed, 'status'> & { actorId: string; reason?: string }): RulePack {

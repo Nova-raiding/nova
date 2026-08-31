@@ -1,28 +1,40 @@
-FROM node:22-alpine AS build
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps ./apps
 COPY packages ./packages
 COPY tests ./tests
+COPY demo ./demo
 COPY scripts ./scripts
 COPY tsconfig.json vitest.config.ts ./
-RUN npm ci
+COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
+RUN node infra/scripts/generate-container-source-manifest.mjs generate api /app \
+  /app/.release-source/api.manifest /app/.release-source/api.manifest.sha256 \
+  && node infra/scripts/generate-container-source-manifest.mjs generate worker /app \
+  /app/.release-source/worker.manifest /app/.release-source/worker.manifest.sha256
+RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
+  npm ci --prefer-offline --no-audit --fund=false
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 ENV NODE_ENV=production
 ENV PORT=8787
 WORKDIR /app
-RUN addgroup -S merchant && adduser -S merchant -G merchant
+RUN addgroup -g 10001 -S merchant && adduser -u 10001 -S -D -H -G merchant merchant \
+  && mkdir -p /var/lib/merchant-assets \
+  && chown 10001:10001 /var/lib/merchant-assets
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
+  npm ci --omit=dev --prefer-offline --no-audit --fund=false
 COPY --from=build /app/dist ./dist
 # TypeScript does not emit SQL assets; the migration loader resolves this
 # path relative to the compiled module at runtime.
 COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations
 COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
-USER merchant
+COPY --from=build /app/.release-source/api.manifest /app/.release-source/api.manifest
+COPY --from=build /app/.release-source/api.manifest.sha256 /app/.release-source/api.manifest.sha256
+USER 10001:10001
 EXPOSE 8787
-HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:8787/healthz || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:8787/readyz || exit 1
 CMD ["node", "dist/apps/api/src/server.js"]

@@ -1,6 +1,11 @@
-import { Button, Input, Layout, Space, Tag, Typography } from "antd";
-import { hasOpsConnection, hasOpsCredentials, opsApiBase } from "../api/opsClient.js";
+import { useState } from "react";
+import { Button, Drawer, Input, Layout, Space, Tag, Typography } from "antd";
+import { describeOpsError, hasOpsConnection, hasOpsCredentials, readOpsConnectionConfig, saveOpsConnectionConfig, type OpsConnectionConfigInput } from "../api/opsClient.js";
 import type { OpsDataSource } from "../types/ops.js";
+import type { OpsSession } from "../types/ops.js";
+import type { OpsWorkbench } from "../types/ops.js";
+import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
+import { RoleScopeBar } from "./authz/RoleScopeBar.js";
 
 interface OpsHeaderProps {
   managedSession: boolean;
@@ -8,6 +13,24 @@ interface OpsHeaderProps {
   sessionLoaded: boolean;
   onRefresh: () => void;
   dataSource?: OpsDataSource;
+  refreshing?: boolean;
+  session?: OpsSession;
+  authorization?: AuthorizationProjection;
+  activeWorkbench?: OpsWorkbench;
+  availableWorkbenches?: readonly OpsWorkbench[];
+  switchingWorkbench?: boolean;
+  onWorkbenchChange?: (workbench: OpsWorkbench) => void;
+  onJitExpired?: () => void;
+}
+
+export function saveAndRefreshOpsConnection(config: OpsConnectionConfigInput, onRefresh: () => void) {
+  const saved = saveOpsConnectionConfig(config);
+  onRefresh();
+  return saved;
+}
+
+export function OpsConfigError({ message }: { message?: string }) {
+  return message ? <span role="alert" aria-live="assertive" className="ops-config-error">{message}</span> : null;
 }
 
 export function OpsHeader({
@@ -16,8 +39,29 @@ export function OpsHeader({
   sessionLoaded,
   onRefresh,
   dataSource,
+  refreshing = false,
+  session,
+  authorization,
+  activeWorkbench,
+  availableWorkbenches,
+  switchingWorkbench,
+  onWorkbenchChange,
+  onJitExpired,
 }: OpsHeaderProps) {
-  const storage = managedSession ? sessionStorage : localStorage;
+  const resolvedAuthorization = authorization ?? createAuthorizationProjection(session, managedSession);
+  const [draft, setDraft] = useState<OpsConnectionConfigInput>(() => readOpsConnectionConfig());
+  const [configError, setConfigError] = useState<string>();
+  // Managed/OIDC production sessions lead with identity and scope. Connection
+  // details remain available on demand for diagnosis, but never dominate the
+  // desktop workbench first paint.
+  const [connectionOpen, setConnectionOpen] = useState(!managedSession);
+  const connectionState = !hasOpsCredentials()
+    ? "missing-credentials"
+    : !hasOpsConnection()
+      ? "missing-workspace"
+      : sessionLoaded
+        ? "ready"
+        : "loading";
 
   return (
     <Layout.Header className="ops-header">
@@ -26,55 +70,99 @@ export function OpsHeader({
           WORKSPACE OPERATIONS
         </Typography.Text>
         <Typography.Title level={2}>商业与平台控制台</Typography.Title>
+        <RoleScopeBar session={session} authorization={resolvedAuthorization} activeWorkbench={activeWorkbench} availableWorkbenches={availableWorkbenches} switching={switchingWorkbench} onWorkbenchChange={onWorkbenchChange} onJitExpired={onJitExpired} />
       </div>
+      <div className="ops-connection-toolbar">
+        <div className="ops-connection-summary" aria-live="polite">
+          <span className="ops-connection-summary-label">连接状态</span>
+          <Tag role="status" aria-live="polite" aria-busy={refreshing || undefined} data-state={connectionState} className="ops-status-tag" color={!hasOpsConnection() ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
+            {refreshing ? "正在刷新" : !hasOpsCredentials() ? "待配置" : !hasOpsConnection() ? "待填写工作区" : sessionLoaded ? "已连接" : "读取中"}
+          </Tag>
+        </div>
+        <Button
+          type="default"
+          className="ops-connection-toggle"
+          aria-expanded={connectionOpen}
+          aria-controls="ops-connection-fields"
+          onClick={() => setConnectionOpen(open => !open)}
+        >
+          {connectionOpen ? "收起连接诊断" : "连接诊断"}
+        </Button>
+      </div>
+      <Drawer
+        title="连接诊断"
+        // AntD's portal cannot mount during SSR. Keep the disclosure state on
+        // the button, but only mount the Drawer body in a browser so server
+        // rendering stays warning-free and hydration does not touch secrets.
+        open={typeof window !== "undefined" && connectionOpen}
+        onClose={() => setConnectionOpen(false)}
+        size="small"
+        getContainer={false}
+        destroyOnHidden={false}
+        className="ops-connection-drawer"
+        styles={{ body: { paddingTop: 16 } }}
+      >
       <form
+        id="ops-connection-fields"
         className="ops-connection-form"
         aria-label="运营 API 连接配置"
-        onSubmit={(event) => event.preventDefault()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          try {
+            saveAndRefreshOpsConnection(draft, onRefresh);
+            setConfigError(undefined);
+            setConnectionOpen(false);
+          } catch (cause) {
+            setConfigError(describeOpsError(cause));
+          }
+        }}
       >
-      <Space wrap>
-        <Input
-          aria-label="运营 API 地址"
-          defaultValue={opsApiBase()}
-          onChange={(event) =>
-            localStorage.setItem("ops_api_base", event.target.value)
-          }
-          placeholder="真实运营 API 地址"
-        />
-        <Input
-          aria-label="工作区 ID"
-          defaultValue={storage.getItem("ops_workspace_id") ?? ""}
-          onChange={(event) =>
-            storage.setItem("ops_workspace_id", event.target.value)
-          }
-          placeholder="工作区 ID"
-        />
+      <Space direction="vertical" size="middle" className="full-width">
+        <label className="ops-connection-field">
+          <span>运营 API 地址</span>
+          <Input
+            name="apiBase"
+            value={draft.apiBase}
+            onChange={(event) => setDraft(current => ({ ...current, apiBase: event.target.value }))}
+            placeholder="真实运营 API 地址"
+          />
+        </label>
+        <label className="ops-connection-field">
+          <span>工作区 ID</span>
+          <Input
+            name="workspaceId"
+            value={draft.workspaceId}
+            onChange={(event) => setDraft(current => ({ ...current, workspaceId: event.target.value }))}
+            placeholder="工作区 ID"
+          />
+        </label>
         {managedSession ? (
-          <Tag color="green">SSO 托管会话</Tag>
+          <Tag color="green" className="ops-status-tag">SSO 托管会话</Tag>
         ) : (
           <>
-            <Input
-              aria-label="操作员 ID"
-              autoComplete="username"
-              defaultValue={
-                localStorage.getItem("ops_actor_id") ?? ""
-              }
-              onChange={(event) =>
-                localStorage.setItem("ops_actor_id", event.target.value)
-              }
-              placeholder="操作员 ID"
-            />
-            <Input.Password
-              aria-label="运营 API Token"
-              autoComplete="current-password"
-              placeholder="运营 Bearer token（仅存本机）"
-              onChange={(event) =>
-                localStorage.setItem("ops_api_token", event.target.value)
-              }
-            />
+            <label className="ops-connection-field">
+              <span>操作员 ID</span>
+              <Input
+                name="actorId"
+                autoComplete="username"
+                value={draft.actorId ?? ""}
+                onChange={(event) => setDraft(current => ({ ...current, actorId: event.target.value }))}
+                placeholder="操作员 ID"
+              />
+            </label>
+            <label className="ops-connection-field">
+              <span>运营 API Token</span>
+              <Input.Password
+                name="token"
+                autoComplete="current-password"
+                value={draft.token ?? ""}
+                placeholder="Bearer token（仅存本机）"
+                onChange={(event) => setDraft(current => ({ ...current, token: event.target.value }))}
+              />
+            </label>
           </>
         )}
-        <Tag color={!hasOpsConnection() ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
+        <Tag role="status" aria-live="polite" data-state={connectionState} className="ops-status-tag" color={!hasOpsConnection() ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
           {!hasOpsCredentials()
             ? "请配置真实 API Token"
             : !hasOpsConnection()
@@ -86,7 +174,7 @@ export function OpsHeader({
               : "正在读取真实数据"}
         </Tag>
         {dataSource ? (
-          <Tag color={dataSource.fixtureDataPresent ? "orange" : dataSource.persistence === "postgres" ? "green" : "gold"}>
+          <Tag role="status" data-state={dataSource.fixtureDataPresent ? "warning" : dataSource.persistence === "postgres" ? "ready" : "unverified"} className="ops-status-tag" color={dataSource.fixtureDataPresent ? "orange" : dataSource.persistence === "postgres" ? "green" : "gold"}>
             {dataSource.fixtureDataPresent
               ? `Postgres/API · 含演示数据（真实店铺 ${dataSource.officialStoreCount ?? 0}，演示店铺 ${dataSource.fixtureStoreCount ?? 0}）`
               : dataSource.persistence === "postgres"
@@ -94,9 +182,11 @@ export function OpsHeader({
                 : `非生产数据：${dataSource.persistence ?? "未识别"}`}
           </Tag>
         ) : null}
-        <Button onClick={onRefresh}>刷新数据</Button>
+        <Button className="ops-refresh-button" htmlType="submit" loading={refreshing} disabled={refreshing} aria-busy={refreshing} aria-label="刷新数据（保存连接配置）">{refreshing ? "正在刷新" : "保存并刷新"}</Button>
       </Space>
+      <OpsConfigError message={configError} />
       </form>
+      </Drawer>
     </Layout.Header>
   );
 }
