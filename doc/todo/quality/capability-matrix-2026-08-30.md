@@ -57,6 +57,22 @@
 - UI 对账发现：Merchant Studio 与 Ops Console 尚未显式为 `provider_reserved`、`provider_dispatching` 提供状态字典映射；因此 Provider 状态的后端能力为本地代码已落地，桌面交互能力仍为部分完成。
 - 真实 Provider 幂等/query、PostgreSQL/RLS、多副本故障恢复、usage/cost/settlement、正式 ChatGPT Host/OIDC/canary 证据仍缺。该矩阵继续留在 `doc/todo`，结论保持 **NO-GO**。
 
+### 2026-09-01 Provider 状态投影事实矩阵（当前权威记录）
+
+本节覆盖此前“UI 尚未显式映射”类历史记录；历史记录保留用于审计，但不再代表当前代码快照。
+
+| 投影层 | 当前代码事实 | 当前测试证据 | 判定 |
+|---|---|---|---|
+| Persistence/Worker | 执行链为 `leased → provider_reserved → provider_dispatching → provider_started`；Provider 外呼前由 Worker 提交 `begin_provider_dispatch`；异常/超时可进入 `outcome_unknown`，已有 operation key 的任务不会普通重派 | 图片执行仓储、AI、Worker 定向测试已通过；仅为本地/契约证据 | 代码已落地，生产未证实 |
+| REST 详情 | `GET /v1/image-generation-jobs/:id` 返回 `execution_state`、`provider_request_id`、`execution_attempt`、`reconciliation_required` | API 定向回归通过 | 详情投影已落地 |
+| REST 列表 | `GET /v1/image-generation-jobs` 仍通过 `publicImageJob(job)`；该函数当前没有读取 execution repository，因此列表项不会稳定返回上述执行状态字段 | 当前源码为直接证据；现有 API 测试通过不等于列表字段已覆盖 | 列表投影未完成 |
+| Ops API 对账队列 | `ops.marketing.queue` 的 `imageExecutions` 当前仅查询 `provider_started`、`outcome_unknown`；`provider_reserved`、`provider_dispatching` 不会进入该队列 | 当前 API/Worker 测试未证明两个中间态可从队列读取 | 队列投影未完成 |
+| Merchant Studio | 状态字典与详情渲染已显式覆盖四个真实状态；`outcome_unknown` 禁止重复生成并提供刷新/对账语义 | `image-generation-state.test.ts` 通过，Merchant 构建/typecheck 已通过 | 前端映射已落地；列表受 API 缺口影响 |
+| Ops Console | `queueStateLabel` 已显式覆盖四个真实状态，且未知结果没有重试动作 | `MarketingQueuePanel.test.ts` 通过，Ops 构建/typecheck 已通过 | 前端字典已落地；队列数据受 API 缺口影响 |
+| CodeGraph | 当前索引统计为 **861 files / 12,199 nodes / 45,672 edges**；最近 `status` 仍报告 `Added: 1 files` 待索引，不能称为 clean/up to date；动态 operation 字符串到 API/repository 的边界仍需契约/运行证据补强 | `codegraph sync . && codegraph status .`；共享工作树 watcher 仍有 1 个 pending file | 可追踪性部分通过，不是运行成功证明 |
+
+当前 Provider 状态投影结论为：**后端状态机已落地，详情与两端字典已落地，REST 列表及 Ops 队列中间态投影未闭合；整体继续 TODO / NO-GO，不迁移到 `doc/done`。**
+
 ### 2026-08-31 增量复核
 
 - 发布执行前再校验 canonical scope：execution-check 和 publish media 在释放凭证/媒体前重新读取当前 canonical product、facts、唯一 listing 与 workspace read mode，旧任务 binding 失效时 fail-closed；API E2E 53/53、application 109/109 通过。真实 connector、生产 RLS 与 canary 仍缺失。

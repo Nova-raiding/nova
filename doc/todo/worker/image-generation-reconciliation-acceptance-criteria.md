@@ -216,3 +216,10 @@ provider_completed → archiving → archived / reconciliation_required
 
 - 图片执行链已实际经过 `leased → provider_reserved → provider_dispatching → provider_started`；Worker 在 Provider 外呼前提交 dispatch fence，异常/超时进入 `outcome_unknown`，不自动重派。migration 119 已注册并纳入发布契约。
 - 本地代码、契约和迁移测试不等同于真实 Provider request/status/query/replay、双副本 PostgreSQL/RLS 崩溃恢复或 usage/cost/settlement 证据；P0/P1 完成定义仍未满足，本文继续保持 **TODO / NO-GO**，不迁移到 `doc/done`。
+
+### 2026-09-01 Provider 状态投影对账
+
+- Worker/执行仓储事实仍为 `leased → provider_reserved → provider_dispatching → provider_started`，异常/超时进入 `outcome_unknown`；这是执行状态事实，不等同于 Provider 已确认结果。
+- REST 详情和 Merchant/Ops 前端状态字典已覆盖四个真实状态；但 REST 列表的 `publicImageJob` 尚未加入 execution repository 投影，Ops reconciliation queue 仍只扫描 `provider_started/outcome_unknown`，所以两个中间态尚不能从列表/队列完整追踪。
+- CodeGraph 当前统计为 **861 files / 12,199 nodes / 45,672 edges**，但最近 status 报告 `Added: 1 files` 待索引；相关测试是本地契约证据。真实 Provider query/replay、双副本故障恢复、PostgreSQL/RLS、usage/cost/settlement 和正式 Host 证据仍缺。
+- 因此本文验收项仍为 **TODO / NO-GO**，不得迁移到 `doc/done`。

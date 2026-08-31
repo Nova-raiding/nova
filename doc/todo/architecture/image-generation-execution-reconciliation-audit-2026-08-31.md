@@ -133,3 +133,18 @@ provider adapter 必须提供真实的 `queryStatus(providerRequestId)`，并保
 - migration 119 `image_generation_execution_dispatch_fence.sql` 已注册在 `loadMigrations()`，并已纳入 release metadata、历史尾部断言和 release-gates 专项测试；此前本文件所述“没有 dispatching fence/仍停留在 migration 117”的描述仅为历史记录，不是当前状态。
 - CodeGraph 本次复核后为 **861 files / 12,199 nodes / 45,668 edges**，`codegraph status .` 报告 index up to date；该索引证明源码关系可追踪，不证明真实数据库或 Provider 运行成功。
 - 当前仍缺：真实 Provider request/status/query/replay 与幂等计数、双副本 PostgreSQL/RLS 并发及崩溃恢复、usage/cost/settlement 唯一关联、正式 ChatGPT Host/OIDC/canary 和桌面浏览器全流程证据。因此本文件继续保持 **TODO / NO-GO**，不迁移到 `doc/done`。
+
+## 2026-09-01 Provider 状态投影事实矩阵
+
+以当前源码和 CodeGraph 为准，投影边界如下：
+
+| 边界 | 当前事实 | 未闭合项 |
+|---|---|---|
+| Worker/执行仓储 | `provider_reserved` 与 `provider_dispatching` 已进入持久化状态链；Provider 外呼前写入 dispatch fence；unknown 不普通重派 | 真实 Provider 幂等、跨进程崩溃与 PostgreSQL/RLS 并发 |
+| REST 详情 | 已返回执行状态、Provider request ID、attempt 和 reconciliation 标记 | 正式宿主与真实数据运行证据 |
+| REST 列表 | `publicImageJob` 当前不读取 execution repository，未形成 execution state 列表投影 | 补齐列表 payload 与 API 契约测试 |
+| Ops reconciliation queue | 当前只读取 `provider_started/outcome_unknown` | 纳入 `provider_reserved/provider_dispatching` 并验证队列/权限边界 |
+| Merchant/Ops UI | 两端字典已覆盖四个真实 Provider 状态；unknown 禁止重复生成 | 列表/队列上游投影、1440px 正式桌面流程 |
+| CodeGraph | 统计为 **861 files / 12,199 nodes / 45,672 edges**，但最近 status 报告 `Added: 1 files` 待索引 | 动态 operation 字符串和 pending file 仍需运行态/索引收敛证据 |
+
+因此当前是“状态机与前端字典已落地、列表/队列投影未闭合”，不是完整 reconciliation 上线；本文继续 **TODO / NO-GO**。

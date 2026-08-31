@@ -1480,3 +1480,5 @@ npm run dev:api
 2026-09-01 SLA 重开投影增量：客服工单从 `resolved/closed` 重开到 `open/in_progress/waiting_customer` 时清除 `resolvedAt`，避免错误保持 `met`；SLA/Worker 定向 10/10、TypeScript 与差异检查通过。真实 Postgres/RLS、调度和值班运行证据仍缺，相关 TODO 继续留在 `doc/todo`。
 
 2026-09-01 migration 119 一致性复核：CodeGraph 与源码确认 `119_image_generation_execution_dispatch_fence.sql` 已注册到 `loadMigrations()`；同步将 `release-metadata.json`、迁移尾部断言、release-gates 专项测试清单与 README 基线更新为 119，并新增 migration 119 注册/SQL 约束测试。该切片的仓库契约仍需通过定向测试与发布门禁；真实 PostgreSQL/RLS、跨副本崩溃恢复和 Provider/账务证据不受此更新替代，相关 TODO 不迁移到 `doc/done`。
+
+2026-09-01 Provider 状态投影当前事实（CodeGraph 复核）：当前源码已将 Merchant Studio 状态字典/详情与 Ops Console `queueStateLabel` 对齐到 `provider_reserved`、`provider_dispatching`、`provider_started`、`outcome_unknown`；相关定向测试已覆盖真实状态名。API 详情已返回 `execution_state` 等执行证据，但图片任务列表仍由不读取 execution repository 的 `publicImageJob` 生成，Ops `imageExecutions` 仍只读取 `provider_started/outcome_unknown`，因此列表与运营队列的中间态投影未完成。CodeGraph 当前统计为 **861 files / 12,199 nodes / 45,672 edges**，最近 status 仍报告 `Added: 1 files` 待索引；本地测试和索引不替代真实 Provider、PostgreSQL/RLS、多副本恢复、usage/cost/settlement、正式 ChatGPT Host/OIDC/canary 证据。整体继续 **TODO / NO-GO**，不迁移到 `doc/done`。

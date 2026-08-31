@@ -239,3 +239,10 @@
 - 代码核对发现：Merchant Studio 的当前状态字典覆盖 `dispatching`、`provider_started`、`outcome_unknown`，但没有显式覆盖后端真实状态名 `provider_reserved`、`provider_dispatching`；Ops Console 的 `queueStateLabel` 也仅覆盖 `dispatching`，未覆盖这两个真实名称。现有 UI 定向测试未证明这两个状态名能被正确展示，因此此前“`provider_reserved`、`provider_dispatching`、`provider_started` 已统一转译”的表述过宽，改判为 **UI 缺口未关闭**。
 - `outcome_unknown` 当前仍禁止再次生成，并提示进入运营台对账；但真实桌面浏览器、多状态切换、网络故障和正式宿主验收尚未完成。该复核只更新事实，不修改 UI 实现。
 - 当前结论：后端 dispatch fence 已落地，桌面状态字典尚未完整对齐；真实 Provider、OIDC/RLS、多副本恢复和生产证据仍缺，继续 **TODO / UI NO-GO**，不迁移到 `doc/done`。
+
+### 2026-09-01 Provider 状态投影复核（以当前源码为准）
+
+- 前一节是本轮早期只读快照，现已被后续代码提交覆盖：Merchant Studio 的状态字典/详情渲染和 Ops Console 的 `queueStateLabel` 当前均显式覆盖 `provider_reserved`、`provider_dispatching`、`provider_started`、`outcome_unknown`；对应状态测试已覆盖真实名称。
+- 尚未闭合的不是前端字典，而是数据投影：REST 图片任务列表的 `publicImageJob` 没有从 execution repository 读取 `execution_state`；`ops.marketing.queue` 的 `imageExecutions` 仍只查询 `provider_started`、`outcome_unknown`。因此两个中间态在真实列表/运营队列中仍不可观察。
+- Merchant 的 `outcome_unknown` 仍为只读、刷新/对账语义，禁止重复生成；Ops 也不提供未知结果的重试动作。该结论由源码和定向测试支持，但未由真实 Provider 或正式 ChatGPT Host 支持。
+- 当前事实矩阵：前端映射 **已落地（本地证据）**；REST 列表和 Ops 队列投影 **未完成**；真实 Provider、PostgreSQL/RLS、多副本恢复、正式桌面宿主证据仍缺。本文继续 **TODO / UI NO-GO**，不迁移到 `doc/done`。
