@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "repositoryVersion": "0.1.1",
   "pluginVersion": "0.1.0+codex.20260831225927",
-  "expectedMigrationVersion": 119,
+  "expectedMigrationVersion": 120,
   "mcpMethodCount": 254,
   "merchantBridgeToolCount": 150,
   "opsDomainCount": 13

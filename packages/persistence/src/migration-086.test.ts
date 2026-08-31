@@ -23,7 +23,7 @@ describe('migration 086 trusted clean asset backfill', () => {
     const sql = await readFile(new URL('./migrations/086_trusted_clean_asset_backfill.sql', import.meta.url), 'utf8')
     const migrations = await loadMigrations()
     expect(migrations.find(item => item.version === 86)).toMatchObject({ version: 86, name: 'trusted_clean_asset_backfill' })
-    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 119 }, (_, index) => index + 1))
+    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
     expect(sql).toContain("snapshot.entity_type = 'asset'")
     expect(sql).toContain("snapshot.payload->>'scanStatus' = 'clean'")
     expect(sql).toContain('FROM asset_scan_receipts receipt')

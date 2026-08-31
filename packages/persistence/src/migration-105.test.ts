@@ -6,7 +6,7 @@ describe('migration 105 durable authorization grants', () => {
   it('ships the complete migration chain and durable authorization tables', async () => {
     const migrations = await loadMigrations()
     expect(migrations.find(item => item.version === 105)).toMatchObject({ version: 105, name: 'durable_authorization_grants' })
-    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 119 }, (_, index) => index + 1))
+    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
     const sql = await readFile(new URL('./migrations/105_durable_authorization_grants.sql', import.meta.url), 'utf8')
     for (const table of ['authorization_revisions', 'platform_role_assignments', 'platform_role_assignment_events', 'ops_access_grants', 'ops_access_grant_events']) {
       expect(sql).toContain(`CREATE TABLE IF NOT EXISTS ${table}`)
