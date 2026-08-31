@@ -18,6 +18,14 @@ describe('image generator', () => {
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
   })
 
+  it('rejects a mismatched provider request id even when the provider reports failure', async () => {
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async () => new Response(JSON.stringify({ data: { id: 'provider-other', status: 'failed' } }), { status: 200 }),
+    })
+    await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
+  })
+
   it('maps URL and base64 provider results into safe image references', async () => {
     const generator = new OpenAICompatibleImageGenerator({
       baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model',
@@ -115,6 +123,20 @@ describe('image generator', () => {
     expect(keys[2]).not.toBe(keys[0])
     expect(first).toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerSucceeded: true, providerOutcome: 'unknown', reconciliationRequired: true, retryable: false, providerIdempotencyKey: keys[0], details: { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, provider_idempotency_key: keys[0] } })
     expect(second).toMatchObject({ providerIdempotencyKey: keys[0] })
+  })
+
+  it('uses the durable provider operation reservation verbatim', async () => {
+    let key = ''
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model',
+      fetch: (async (_url, init) => {
+        const headers = init?.headers as Record<string, string>
+        key = headers['idempotency-key'] ?? ''
+        return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      }) as typeof fetch,
+    })
+    await generator.generate({ productTitle: '外套', direction: '白底', count: 1 }, { providerOperationKey: 'image_provider_operation_reserved_1' })
+    expect(key).toBe('image_provider_operation_reserved_1')
   })
 
   it('classifies a client-side image generation timeout as an unknown provider outcome', async () => {

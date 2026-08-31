@@ -8,8 +8,18 @@ describe('memory image generation execution repository', () => {
     await expect(repository.claim({ workspaceId: 'ws_image', jobId: 'job_1', eventId: 'evt_1', leaseMs: 100, now: '2026-08-31T00:00:00.050Z' })).rejects.toMatchObject({ code: 'IMAGE_GENERATION_EXECUTION_BUSY' })
     const takeover = await repository.claim({ workspaceId: 'ws_image', jobId: 'job_1', eventId: 'evt_1', leaseMs: 100, now: '2026-08-31T00:00:00.101Z' })
     expect(takeover.attempt).toBe(2)
-    const started = await repository.markProviderStarted({ workspaceId: 'ws_image', jobId: 'job_1', ownerToken: takeover.ownerToken, providerRequestId: 'provider_1', now: '2026-08-31T00:00:00.110Z' })
+    const reserved = await repository.reserveProviderOperation({ workspaceId: 'ws_image', jobId: 'job_1', ownerToken: takeover.ownerToken, now: '2026-08-31T00:00:00.105Z' })
+    const dispatching = await repository.beginProviderDispatch({ workspaceId: 'ws_image', jobId: 'job_1', ownerToken: reserved.ownerToken, now: '2026-08-31T00:00:00.107Z' })
+    const started = await repository.markProviderStarted({ workspaceId: 'ws_image', jobId: 'job_1', ownerToken: dispatching.ownerToken, providerRequestId: 'provider_1', now: '2026-08-31T00:00:00.110Z' })
     await expect(repository.claim({ workspaceId: 'ws_image', jobId: 'job_1', eventId: 'evt_1', leaseMs: 100, now: '2026-08-31T00:01:00.000Z' })).rejects.toMatchObject({ code: 'IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN', execution: started })
+  })
+
+  it('blocks expired lease takeover once a durable provider operation is reserved', async () => {
+    const repository = new MemoryImageGenerationExecutionRepository()
+    const first = await repository.claim({ workspaceId: 'ws_image', jobId: 'job_reserved', eventId: 'evt_reserved', leaseMs: 100, now: '2026-08-31T00:00:00.000Z' })
+    const reserved = await repository.reserveProviderOperation({ workspaceId: 'ws_image', jobId: 'job_reserved', ownerToken: first.ownerToken, now: '2026-08-31T00:00:00.010Z' })
+    await expect(repository.claim({ workspaceId: 'ws_image', jobId: 'job_reserved', eventId: 'evt_reserved', leaseMs: 100, now: '2026-08-31T00:00:00.101Z' })).rejects.toMatchObject({ code: 'IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN', execution: reserved })
+    await expect(repository.reserveProviderOperation({ workspaceId: 'ws_image', jobId: 'job_reserved', ownerToken: first.ownerToken })).rejects.toMatchObject({ code: 'IMAGE_GENERATION_EXECUTION_LEASE_LOST' })
   })
 
   it('rejects a different event for the same scoped job', async () => {
@@ -21,7 +31,9 @@ describe('memory image generation execution repository', () => {
   it('reconciles an unknown provider outcome only from durable terminal job evidence', async () => {
     const repository = new MemoryImageGenerationExecutionRepository()
     const lease = await repository.claim({ workspaceId: 'ws_image', jobId: 'job_3', eventId: 'evt_3', leaseMs: 100, now: '2026-08-31T00:00:00.000Z' })
-    const started = await repository.markProviderStarted({ workspaceId: 'ws_image', jobId: 'job_3', ownerToken: lease.ownerToken, providerRequestId: 'provider_3', now: '2026-08-31T00:00:00.001Z' })
+    const reserved = await repository.reserveProviderOperation({ workspaceId: 'ws_image', jobId: 'job_3', ownerToken: lease.ownerToken, now: '2026-08-31T00:00:00.000Z' })
+    const dispatching = await repository.beginProviderDispatch({ workspaceId: 'ws_image', jobId: 'job_3', ownerToken: reserved.ownerToken, now: '2026-08-31T00:00:00.001Z' })
+    const started = await repository.markProviderStarted({ workspaceId: 'ws_image', jobId: 'job_3', ownerToken: dispatching.ownerToken, providerRequestId: 'provider_3', now: '2026-08-31T00:00:00.002Z' })
     await repository.markOutcomeUnknown({ workspaceId: 'ws_image', jobId: 'job_3', ownerToken: started.ownerToken, errorCode: 'CALLBACK_TIMEOUT', errorMessage: 'callback timed out', now: '2026-08-31T00:00:00.002Z' })
     const reconciled = await repository.reconcileCompleted({ workspaceId: 'ws_image', jobId: 'job_3', now: '2026-08-31T00:00:00.003Z' })
     expect(reconciled).toMatchObject({ state: 'completed', providerRequestId: 'provider_3' })
@@ -41,7 +53,9 @@ describe('memory image generation execution repository', () => {
     const repository = new MemoryImageGenerationExecutionRepository()
     for (const jobId of ['job_a', 'job_b', 'job_c']) {
       const lease = await repository.claim({ workspaceId: 'ws_cursor', jobId, eventId: `evt_${jobId}`, leaseMs: 100, now: '2026-08-31T00:00:00.000Z' })
-      await repository.markProviderStarted({ workspaceId: 'ws_cursor', jobId, ownerToken: lease.ownerToken, providerRequestId: `provider_${jobId}`, now: '2026-08-31T00:00:01.000Z' })
+      const reserved = await repository.reserveProviderOperation({ workspaceId: 'ws_cursor', jobId, ownerToken: lease.ownerToken, now: '2026-08-31T00:00:00.001Z' })
+      const dispatching = await repository.beginProviderDispatch({ workspaceId: 'ws_cursor', jobId, ownerToken: reserved.ownerToken, now: '2026-08-31T00:00:00.002Z' })
+      await repository.markProviderStarted({ workspaceId: 'ws_cursor', jobId, ownerToken: dispatching.ownerToken, providerRequestId: `provider_${jobId}`, now: '2026-08-31T00:00:01.000Z' })
     }
     const first = await repository.listPage({ workspaceId: 'ws_cursor', states: ['provider_started'], limit: 2 })
     expect(first.items.map(row => row.jobId)).toEqual(['job_a', 'job_b'])

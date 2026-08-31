@@ -10,6 +10,8 @@ describe('marketing queue delivery evidence', () => {
     expect(queueStateLabel('processing')).toBe('处理中')
     expect(queueStateLabel('failed')).toBe('失败')
     expect(queueStateLabel('unknown')).toBe('待对账')
+    expect(queueStateLabel('dispatching')).toBe('已提交模型请求，等待受理确认')
+    expect(queueStateLabel('provider_started')).toBe('模型已受理，等待结果确认')
     expect(queueStateLabel('future_state')).toBe('状态待确认')
   })
 
@@ -72,5 +74,12 @@ describe('marketing queue delivery evidence', () => {
     expect(panelSource).toContain('revision ${recovery.assetRevision ?? "未返回"}')
     expect(panelSource).toContain('扫描死信证据未返回，保持禁止人工重试')
     expect(panelSource).not.toContain('扫描重试后自动标记 clean')
+  })
+
+  it('does not offer manual close for observation states and exposes reconciliation only for unknown outcomes', () => {
+    expect(panelSource).toContain('仅观测，不可重复生成')
+    expect(panelSource).toContain('打开对账')
+    expect(panelSource).toContain('禁止重复生成')
+    expect(panelSource).toContain('不会创建第二个 Provider 请求')
   })
 })

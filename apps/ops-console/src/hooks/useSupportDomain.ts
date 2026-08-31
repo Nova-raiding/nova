@@ -12,6 +12,7 @@ import type {
   SupportTicketStatus,
   TransitionSupportTicketCommand,
 } from "../../../../packages/contracts/src/ops/support.js";
+import type { SupportSlaCorrectionApprovalProgress, SupportSlaCorrectionDecision, SupportSlaCorrectionRun, SupportSlaMonthlyReport } from "../../../../packages/contracts/src/ops/support-sla-report.js";
 
 export interface SupportTicketDetail {
   ticket: SupportTicketContract;
@@ -40,6 +41,9 @@ export interface SupportDomainClient {
   transition(command: TransitionSupportTicketCommand): Promise<SupportMutationResult>;
   comment(command: CommentOnSupportTicketCommand): Promise<SupportMutationResult>;
   exportCrm(workspaceId: string): Promise<SupportCrmExportContract>;
+  report(input: { workspaceId: string; periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }): Promise<SupportSlaMonthlyReport>;
+  createCorrection(input: { workspaceId: string; originalReportId: string; periodStart: string; periodEnd: string; cutoffAt: string; reason: string; idempotencyKey: string }): Promise<SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string }>;
+  decideCorrection(input: { workspaceId: string; correctionId: string; decision: "approved" | "rejected"; reason: string; idempotencyKey: string }): Promise<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>;
 }
 
 export interface SupportFilters {
@@ -69,6 +73,14 @@ export interface SupportDomainModel {
   transition(status: SupportTicketStatus, reason: string): Promise<void>;
   comment(body: string, visibility: "internal" | "customer"): Promise<void>;
   exportCrm(): Promise<SupportCrmExportContract>;
+  report?: SupportSlaMonthlyReport;
+  reportLoading: boolean;
+  loadReport(input: { periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }): Promise<void>;
+  correction?: SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string };
+  correctionDecision?: SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress;
+  correctionLoading?: boolean;
+  createCorrection?: (reason: string) => Promise<void>;
+  decideCorrection?: (decision: "approved" | "rejected", reason: string) => Promise<void>;
 }
 
 const errorMessage = (error: unknown) => error instanceof Error && error.message
@@ -85,6 +97,11 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   const [detailLoading, setDetailLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
+  const [report, setReport] = useState<SupportSlaMonthlyReport>();
+  const [reportLoading, setReportLoading] = useState(false);
+  const [correction, setCorrection] = useState<SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string }>();
+  const [correctionDecision, setCorrectionDecision] = useState<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>();
+  const [correctionLoading, setCorrectionLoading] = useState(false);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
   const mutationRequest = useRef(0);
@@ -198,6 +215,38 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     }));
   }, [client, selected, updateSelected, workspaceId]);
 
+  const loadReport = useCallback(async (input: { periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }) => {
+    setReportLoading(true);
+    setError("");
+    try {
+      setReport(await client.report({ workspaceId, ...input }));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setReportLoading(false);
+    }
+  }, [client, workspaceId]);
+
+  const createCorrection = useCallback(async (reason: string) => {
+    if (!report) throw new Error("请先生成月报，再创建 correction。");
+    setCorrectionLoading(true);
+    setError("");
+    try {
+      setCorrection(await client.createCorrection({ workspaceId, originalReportId: report.reportId, periodStart: report.periodStart, periodEnd: report.periodEnd, cutoffAt: report.cutoffAt, reason, idempotencyKey: crypto.randomUUID() }));
+    } catch (cause) { setError(errorMessage(cause)); throw cause; }
+    finally { setCorrectionLoading(false); }
+  }, [client, report, workspaceId]);
+
+  const decideCorrection = useCallback(async (decision: "approved" | "rejected", reason: string) => {
+    if (!correction || correction.status === "no_change") throw new Error("当前没有待审批 correction。");
+    setCorrectionLoading(true);
+    setError("");
+    try {
+      setCorrectionDecision(await client.decideCorrection({ workspaceId, correctionId: correction.correctionId, decision, reason, idempotencyKey: crypto.randomUUID() }));
+    } catch (cause) { setError(errorMessage(cause)); throw cause; }
+    finally { setCorrectionLoading(false); }
+  }, [client, correction, workspaceId]);
+
   useEffect(() => {
     listRequest.current += 1;
     detailRequest.current += 1;
@@ -210,6 +259,11 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     setLoadingMore(false);
     setDetailLoading(false);
     setMutating(false);
+    setReport(undefined);
+    setReportLoading(false);
+    setCorrection(undefined);
+    setCorrectionDecision(undefined);
+    setCorrectionLoading(false);
   }, [workspaceId]);
 
   useEffect(() => {
@@ -218,10 +272,11 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
   }, [reload]);
 
   return {
-    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error,
+    workspaceId, tickets, selected, filters, loading, loadingMore, detailLoading, mutating, error, report, reportLoading,
     hasMore: Boolean(cursor), setFilters, reload, loadMore, selectTicket,
     clearSelection: () => { detailRequest.current += 1; setSelected(undefined); },
     create, assign, transition, comment,
+    loadReport, correction, correctionDecision, correctionLoading, createCorrection, decideCorrection,
     exportCrm: () => client.exportCrm(workspaceId),
   };
 }

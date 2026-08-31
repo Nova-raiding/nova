@@ -367,6 +367,15 @@ export async function loadMigrations(): Promise<Migration[]> {
   const canonicalBackfillConflictVerificationEvidence = await readFile(new URL('./migrations/107_canonical_backfill_conflict_verification_evidence.sql', import.meta.url), 'utf8')
   const modelUsageSettledCostInvariant = await readFile(new URL('./migrations/108_model_usage_settled_cost_invariant.sql', import.meta.url), 'utf8')
   const assetScanRedrive = await readFile(new URL('./migrations/109_asset_scan_redrive.sql', import.meta.url), 'utf8')
+  const unifiedModelRunCostBudget = await readFile(new URL('./migrations/110_unified_model_run_cost_budget.sql', import.meta.url), 'utf8')
+  const hardenedModelRunBudgetLinkage = await readFile(new URL('./migrations/111_harden_model_run_budget_linkage.sql', import.meta.url), 'utf8')
+  const supportSlaSnapshot = await readFile(new URL('./migrations/112_support_sla_snapshot.sql', import.meta.url), 'utf8')
+  const supportSlaEvents = await readFile(new URL('./migrations/113_support_sla_events.sql', import.meta.url), 'utf8')
+  const supportSlaReporting = await readFile(new URL('./migrations/114_support_sla_reporting.sql', import.meta.url), 'utf8')
+  const supportSlaCorrectionDecisions = await readFile(new URL('./migrations/115_support_sla_correction_decisions.sql', import.meta.url), 'utf8')
+  const supportSlaCorrectionApprovals = await readFile(new URL('./migrations/116_support_sla_correction_approvals.sql', import.meta.url), 'utf8')
+  const imageGenerationProviderOperationReservation = await readFile(new URL('./migrations/117_image_generation_provider_operation_reservation.sql', import.meta.url), 'utf8')
+  const enforceModelUsageBudgetRunLinkage = await readFile(new URL('./migrations/118_enforce_model_usage_budget_run_linkage.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -477,6 +486,15 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 107, name: 'canonical_backfill_conflict_verification_evidence', sql: canonicalBackfillConflictVerificationEvidence },
     { version: 108, name: 'model_usage_settled_cost_invariant', sql: modelUsageSettledCostInvariant },
     { version: 109, name: 'asset_scan_redrive', sql: assetScanRedrive },
+    { version: 110, name: 'unified_model_run_cost_budget', sql: unifiedModelRunCostBudget },
+    { version: 111, name: 'harden_model_run_budget_linkage', sql: hardenedModelRunBudgetLinkage },
+    { version: 112, name: 'support_sla_snapshot', sql: supportSlaSnapshot },
+    { version: 113, name: 'support_sla_events', sql: supportSlaEvents },
+    { version: 114, name: 'support_sla_reporting', sql: supportSlaReporting },
+    { version: 115, name: 'support_sla_correction_decisions', sql: supportSlaCorrectionDecisions },
+    { version: 116, name: 'support_sla_correction_approvals', sql: supportSlaCorrectionApprovals },
+    { version: 117, name: 'image_generation_provider_operation_reservation', sql: imageGenerationProviderOperationReservation },
+    { version: 118, name: 'enforce_model_usage_budget_run_linkage', sql: enforceModelUsageBudgetRunLinkage },
   ]
 }
 

@@ -26,6 +26,8 @@ import { createClamAvScanner, type ClamAvScanner } from './clamav-scanner.js'
 import { ScannerHeartbeatController } from './scanner-heartbeat.js'
 import { createExecutionAuthorizationGuard, WorkerExecutionAuthorizationError, type WorkerAuthorizationRecheck } from '../../../packages/workers/src/execution-authorization.js'
 import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/scanner-heartbeat.js'
+import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
+import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 
 export interface WorkerConfig {
   databaseUrl: string
@@ -34,6 +36,8 @@ export interface WorkerConfig {
   pollIntervalMs: number
   storageReconciliationIntervalMs: number
   modelUsageReconciliationIntervalMs: number
+  supportSlaScanIntervalMs: number
+  supportSlaReportIntervalMs: number
   imageGenerationReconciliationIntervalMs: number
   workerApiTimeoutMs: number
   automationIntervalMs: number
@@ -90,6 +94,18 @@ export function isImageProviderOutcomeUnknown(error: unknown): boolean {
     || candidate.details?.reconciliation_required === true
 }
 
+export function requireImageGenerationActionId(payload: Record<string, unknown>): string {
+  const actionId = typeof payload.action_id === 'string' ? payload.action_id.trim() : ''
+  if (!actionId) throw Object.assign(new Error('image generation event is missing action_id'), { code: 'IMAGE_GENERATION_ACTION_ID_REQUIRED', retryable: false, unknown: false })
+  return actionId
+}
+
+export function requireModelRunKey(payload: Record<string, unknown>): string {
+  const runKey = typeof payload.run_key === 'string' ? payload.run_key.trim() : ''
+  if (!runKey) throw Object.assign(new Error('model generation event is missing run_key'), { code: 'MODEL_RUN_KEY_REQUIRED', retryable: false, unknown: false })
+  return runKey
+}
+
 function requirePublishExecutionConfig(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret' | 'environment'>) {
   if (config.environment !== 'production') return
   if (!config.apiBaseUrl || !config.apiToken || !config.apiSigningSecret) throw new Error('production publish execution requires WORKER_API_BASE_URL, WORKER_API_TOKEN and WORKER_API_SIGNING_SECRET')
@@ -107,6 +123,8 @@ const DEFAULT_WORKER_API_TIMEOUT_MS = 10_000
 const DEFAULT_WORKER_DEPENDENCY_CHECK_INTERVAL_MS = 10_000
 const DEFAULT_STORAGE_RECONCILIATION_INTERVAL_MS = 15 * 60_000
 const DEFAULT_MODEL_USAGE_RECONCILIATION_INTERVAL_MS = 5 * 60_000
+const DEFAULT_SUPPORT_SLA_SCAN_INTERVAL_MS = 60_000
+const DEFAULT_SUPPORT_SLA_REPORT_INTERVAL_MS = 60 * 60_000
 const MAX_WORKER_API_RESPONSE_BYTES = 24 * 1024 * 1024
 
 type WorkerReadinessDatabase = {
@@ -215,6 +233,7 @@ function workerRoleForRequest(method: string, requestTarget: string, body?: stri
     return 'generation'
   }
   if (path === '/v1/internal/automation/tick' || path === '/v1/ops/data-deletion/complete' || path === '/v1/internal/storage/orphans/cleanup') return 'automation'
+  if (path === '/v1/internal/support/sla-scan' || path === '/v1/internal/support/sla-report') return 'reconcile'
   if (path.includes('reconciliation')) return 'reconcile'
   if (path === '/v1/internal/model-usage') return 'generation'
   if (/^\/v1\/assets\/[^/]+\/scan$/u.test(path)) return 'scan'
@@ -260,6 +279,32 @@ export async function postStorageReconciliation(input: { apiBaseUrl: string; api
     signal: input.signal,
   })
   if (!response.ok) throw new Error(`storage reconciliation API returned ${response.status}`)
+  return await parseWorkerApiJson(response)
+}
+
+export async function postSupportSlaScan(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; signingSecret?: string; fetcher?: typeof fetch; signal?: AbortSignal }) {
+  const workspaceId = input.workspaceId.trim()
+  if (!workspaceId) throw new Error('support SLA scan requires workspaceId')
+  const limit = input.limit ?? 100
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('support SLA scan limit must be 1..1000')
+  const path = '/v1/internal/support/sla-scan'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify({ workspace_id: workspaceId, limit }), redirect: 'error', signal: input.signal,
+  })
+  if (!response.ok) throw new Error(`support SLA scan API returned ${response.status}`)
+  return await parseWorkerApiJson(response)
+}
+
+export async function postSupportSlaReport(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; periodStart: string; periodEnd: string; cutoffAt: string; reportId: string; signingSecret?: string; fetcher?: typeof fetch; signal?: AbortSignal }) {
+  const workspaceId = input.workspaceId.trim()
+  if (!workspaceId || !input.reportId.trim()) throw new Error('support SLA report requires workspaceId and reportId')
+  const path = '/v1/internal/support/sla-report'
+  const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': workspaceId, ...(input.signingSecret ? { 'x-internal-worker-signing-secret': input.signingSecret } : {}) },
+    body: JSON.stringify({ workspace_id: workspaceId, period_start: input.periodStart, period_end: input.periodEnd, cutoff_at: input.cutoffAt, report_id: input.reportId }), redirect: 'error', signal: input.signal,
+  })
+  if (!response.ok) throw new Error(`support SLA report API returned ${response.status}`)
   return await parseWorkerApiJson(response)
 }
 
@@ -452,18 +497,19 @@ export async function postGenerationResult(input: {
 }
 
 export async function postImageGenerationResult(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; result: { intent_hash: string; owner_token?: string; provider_request_id?: string; images?: string[]; error?: { code: string; message: string } }; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  const result = validateImageGenerationCallbackResult(input.result)
   const path = `/v1/internal/image-generation-jobs/${encodeURIComponent(input.event.aggregateId)}/result`
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
-    body: JSON.stringify({ event_id: input.event.id, ...input.result }),
+    body: JSON.stringify({ event_id: input.event.id, ...result }),
     redirect: 'error',
     signal: input.signal,
   })
   if (!response.ok) throw new Error(`image generation result API returned ${response.status}`)
 }
 
-async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; operation: 'claim' | 'provider_started' | 'completed' | 'failed' | 'outcome_unknown'; ownerToken?: string; providerRequestId?: string; errorCode?: string; errorMessage?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiToken: string; event: DurableOutboxEvent; operation: 'claim' | 'reserve_provider_operation' | 'begin_provider_dispatch' | 'provider_started' | 'completed' | 'failed' | 'outcome_unknown'; ownerToken?: string; providerRequestId?: string; errorCode?: string; errorMessage?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
   const path = `/v1/internal/image-generation-jobs/${encodeURIComponent(input.event.aggregateId)}/execution`
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
     method: 'POST',
@@ -473,7 +519,7 @@ async function updateImageGenerationExecution(input: { apiBaseUrl: string; apiTo
     signal: input.signal,
   })
   if (!response.ok) throw Object.assign(new Error(`image generation execution API returned ${response.status}`), { code: response.status === 409 ? 'IMAGE_GENERATION_EXECUTION_BUSY' : 'IMAGE_GENERATION_EXECUTION_GATE_UNAVAILABLE' })
-  const envelope = await parseWorkerApiJson(response) as { data?: { execution?: { ownerToken?: string } } }
+  const envelope = await parseWorkerApiJson(response) as { data?: { execution?: { ownerToken?: string; providerOperationKey?: string } } }
   return envelope.data?.execution
 }
 
@@ -481,6 +527,7 @@ export async function postModelUsage(input: { apiBaseUrl: string; apiToken: stri
   const workspaceId = input.usage.workspaceId?.trim()
   if (!workspaceId) throw new Error('model usage callback requires workspaceId')
   if (!input.usage.actionId?.trim()) throw new Error('model usage callback requires actionId')
+  if (!input.usage.runKey?.trim()) throw new Error('model usage callback requires runKey')
   const path = '/v1/internal/model-usage'
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/, '')}${path}`, {
     method: 'POST',
@@ -925,6 +972,8 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     pollIntervalMs: positiveInt(env.WORKER_POLL_INTERVAL_MS, 1_000, 'WORKER_POLL_INTERVAL_MS'),
     storageReconciliationIntervalMs: positiveInt(env.STORAGE_RECONCILIATION_INTERVAL_MS, DEFAULT_STORAGE_RECONCILIATION_INTERVAL_MS, 'STORAGE_RECONCILIATION_INTERVAL_MS'),
     modelUsageReconciliationIntervalMs: positiveInt(env.MODEL_USAGE_RECONCILIATION_INTERVAL_MS, DEFAULT_MODEL_USAGE_RECONCILIATION_INTERVAL_MS, 'MODEL_USAGE_RECONCILIATION_INTERVAL_MS'),
+    supportSlaScanIntervalMs: positiveInt(env.SUPPORT_SLA_SCAN_INTERVAL_MS, DEFAULT_SUPPORT_SLA_SCAN_INTERVAL_MS, 'SUPPORT_SLA_SCAN_INTERVAL_MS'),
+    supportSlaReportIntervalMs: positiveInt(env.SUPPORT_SLA_REPORT_INTERVAL_MS, DEFAULT_SUPPORT_SLA_REPORT_INTERVAL_MS, 'SUPPORT_SLA_REPORT_INTERVAL_MS'),
     imageGenerationReconciliationIntervalMs: positiveInt(env.IMAGE_GENERATION_RECONCILIATION_INTERVAL_MS, DEFAULT_MODEL_USAGE_RECONCILIATION_INTERVAL_MS, 'IMAGE_GENERATION_RECONCILIATION_INTERVAL_MS'),
     workerApiTimeoutMs,
     automationIntervalMs: positiveInt(env.WORKER_AUTOMATION_INTERVAL_MS, 30_000, 'WORKER_AUTOMATION_INTERVAL_MS'),
@@ -1050,19 +1099,19 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     credentialProvider: createVaultCredentialProviderFromEnv(),
     mappingPreflight: createPersistentWorkerMappingPreflightAdapter({ approvals: mappingApprovals, scopes: createPostgresWorkerMappingScopeLoader(pool), execution: mappingExecution }),
   })
-  const generationUsageContexts = new Map<string, { contextHash: string; contextLinkId?: string; taskId: string; campaignItemId?: string; signal?: AbortSignal }>()
-  const imageUsageContexts = new Map<string, { contextHash: string; signal?: AbortSignal; providerRequestId?: string }>()
+  const generationUsageContexts = new Map<string, { runKey: string; contextHash: string; contextLinkId?: string; taskId: string; campaignItemId?: string; signal?: AbortSignal }>()
+  const imageUsageContexts = new Map<string, { runKey: string; contextHash: string; signal?: AbortSignal; providerRequestId?: string }>()
   const contentGenerator = createContentGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage settlement')
     const execution = usage.actionId ? generationUsageContexts.get(usage.actionId) : undefined
-    const enriched = execution ? { ...usage, contextHash: execution.contextHash, ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId } : {}), metadata: { ...(usage.metadata ?? {}), task_id: execution.taskId, campaign_item_id: execution.campaignItemId ?? null } } : usage
+    const enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId } : {}), metadata: { ...(usage.metadata ?? {}), task_id: execution.taskId, campaign_item_id: execution.campaignItemId ?? null } } : usage
     await postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   })
   const imageGenerator = createImageGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image model usage settlement')
     const execution = usage.actionId ? imageUsageContexts.get(usage.actionId) : undefined
     if (execution && usage.providerRequestId) execution.providerRequestId = usage.providerRequestId
-    const enriched = execution ? { ...usage, contextHash: execution.contextHash, metadata: { ...(usage.metadata ?? {}), image_job: true } } : usage
+    const enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, metadata: { ...(usage.metadata ?? {}), image_job: true } } : usage
     await postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   })
   const requireImageProviderRequestId = (actionId: string) => {
@@ -1155,14 +1204,15 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!isObject(input)) throw new Error('generation event is missing input')
     const contextHash = event.payload.context_hash
     const actionId = event.payload.action_id
+    const runKey = requireModelRunKey(event.payload)
     if (typeof contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contextHash)) throw new Error('generation event is missing context_hash')
     if (contextEnvelopeHash(input) !== contextHash) throw new Error('generation event context hash mismatch')
-    if (typeof actionId !== 'string' || !actionId || !isObject(input.usageContext) || input.usageContext.workspaceId !== event.workspaceId || input.usageContext.actionId !== actionId) throw new Error('generation event usage context mismatch')
+    if (typeof actionId !== 'string' || !actionId || !isObject(input.usageContext) || input.usageContext.workspaceId !== event.workspaceId || input.usageContext.actionId !== actionId || input.usageContext.runKey !== runKey) throw new Error('generation event usage context mismatch')
     const taskId = event.payload.task_id
     if (typeof taskId !== 'string' || !taskId) throw new Error('generation event is missing task_id')
     const modelKey = process.env.AI_MODEL?.trim() ?? process.env.MODEL_ID?.trim() ?? 'configured-model'
     await quotaAdmission.admit({ namespace: 'model', key: modelKey, limitPerWindow: config.modelQuotaPerMinute })
-    generationUsageContexts.set(actionId, { contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), signal })
+    generationUsageContexts.set(actionId, { runKey, contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), signal })
     try { return await contentGenerator.generate(input as unknown as ContentGenerationInput, { signal }) }
     finally { generationUsageContexts.delete(actionId) }
   }
@@ -1177,23 +1227,31 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const countValue = payload.requested_count
     if (typeof intentHash !== 'string' || !/^[a-f0-9]{64}$/u.test(intentHash) || typeof productTitle !== 'string' || typeof direction !== 'string' || typeof countValue !== 'number' || !Number.isSafeInteger(countValue) || countValue < 1 || countValue > 6) throw Object.assign(new Error('image generation event is missing a frozen request payload'), { code: 'IMAGE_GENERATION_EVENT_INVALID', retryable: false, unknown: false })
     const count = countValue
-    const actionId = typeof payload.action_id === 'string' && payload.action_id ? payload.action_id : `image:${event.aggregateId}`
+    const actionId = requireImageGenerationActionId(payload)
+    const runKey = requireModelRunKey(payload)
     const execution = await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'claim', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     const ownerToken = execution?.ownerToken
     if (!ownerToken) throw new Error('image generation execution lease response is missing owner token')
-    imageUsageContexts.set(actionId, { contextHash: intentHash, ...(signal ? { signal } : {}) })
-    const input: ImageGenerationInput = { productTitle, direction, count, ...(typeof payload.category === 'string' && payload.category ? { category: payload.category } : {}), ...(payload.image_mode === 'create' || payload.image_mode === 'optimize' ? { mode: payload.image_mode } : {}), ...(Array.isArray(payload.source_asset_ids) ? { sourceAssetRefs: payload.source_asset_ids.filter((value): value is string => typeof value === 'string') } : {}), ...(payload.visual_brief && isObject(payload.visual_brief) ? { visualBrief: payload.visual_brief as ImageGenerationInput['visualBrief'] } : {}), usageContext: { workspaceId: event.workspaceId, actionId } }
+    const reserved = await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'reserve_provider_operation', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+    const providerOperationKey = reserved?.providerOperationKey
+    if (!providerOperationKey) throw new Error('image generation execution response is missing provider operation reservation')
+    await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+    imageUsageContexts.set(actionId, { runKey, contextHash: intentHash, ...(signal ? { signal } : {}) })
+    const input: ImageGenerationInput = { productTitle, direction, count, ...(typeof payload.category === 'string' && payload.category ? { category: payload.category } : {}), ...(payload.image_mode === 'create' || payload.image_mode === 'optimize' ? { mode: payload.image_mode } : {}), ...(Array.isArray(payload.source_asset_ids) ? { sourceAssetRefs: payload.source_asset_ids.filter((value): value is string => typeof value === 'string') } : {}), ...(payload.visual_brief && isObject(payload.visual_brief) ? { visualBrief: payload.visual_brief as ImageGenerationInput['visualBrief'] } : {}), usageContext: { workspaceId: event.workspaceId, actionId, runKey } }
     try {
       let images: string[]
       try {
-        images = await imageGenerator.generate(input, { signal })
+        images = await imageGenerator.generate(input, { signal, providerOperationKey })
         signal?.throwIfAborted()
       } catch (error) {
         if (signal?.aborted) throw error
         const candidate = error as { code?: unknown }
         const failure = { code: typeof candidate.code === 'string' ? candidate.code : 'IMAGE_GENERATION_FAILED', message: error instanceof Error ? error.message : 'image generation failed' }
         const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
-        if (!providerRequestId) throw Object.assign(error instanceof Error ? error : new Error(failure.message), { code: failure.code, retryable: false, unknown: true })
+        if (!providerRequestId) {
+          await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: failure.code, errorMessage: failure.message, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
+          throw Object.assign(error instanceof Error ? error : new Error(failure.message), { code: failure.code, retryable: false, unknown: true })
+        }
         await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'provider_started', ownerToken, providerRequestId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
         if (isImageProviderOutcomeUnknown(error)) {
           await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: typeof candidate.code === 'string' ? candidate.code : 'MODEL_PROVIDER_OUTCOME_UNKNOWN', errorMessage: failure.message, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
@@ -1271,6 +1329,8 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   let nextStorageReconciliationAt = 0
   let nextModelUsageReconciliationAt = 0
   let nextImageGenerationReconciliationAt = 0
+  let nextSupportSlaScanAt = 0
+  let nextSupportSlaReportAt = 0
   const readyFile = process.env.WORKER_READY_FILE ?? '/tmp/merchant-worker-ready'
   let scannerHeartbeat: ScannerHeartbeatController | undefined
   const stop = () => { stopping = true }
@@ -1375,6 +1435,21 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           const reconciliation = await Promise.allSettled(workspaces.map(workspaceId => reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: config.workerApiTimeoutMs, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
           nextImageGenerationReconciliationAt = Date.now() + config.imageGenerationReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { imageGenerationReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
+        }
+        if (config.role === 'reconcile' && startedAt >= nextSupportSlaScanAt) {
+          if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for support SLA scan')
+          const scans = await Promise.allSettled(workspaces.map(workspaceId => postSupportSlaScan({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(1000, config.batchSize), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
+          nextSupportSlaScanAt = Date.now() + config.supportSlaScanIntervalMs
+          Object.assign(result as unknown as Record<string, unknown>, { supportSlaScan: { completed: scans.filter(item => item.status === 'fulfilled').length, failed: scans.filter(item => item.status === 'rejected').length } })
+        }
+        if (config.role === 'reconcile' && startedAt >= nextSupportSlaReportAt) {
+          if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for support SLA report')
+          const schedule = planSupportSlaReportSchedule(new Date(startedAt))
+          const reports = schedule
+            ? await Promise.allSettled(workspaces.map(workspaceId => postSupportSlaReport({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, periodStart: schedule.periodStart, periodEnd: schedule.periodEnd, cutoffAt: schedule.cutoffAt, reportId: schedule.reportId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
+            : []
+          nextSupportSlaReportAt = Date.now() + config.supportSlaReportIntervalMs
+          Object.assign(result as unknown as Record<string, unknown>, { supportSlaReport: { scheduled: Boolean(schedule), completed: reports.filter(item => item.status === 'fulfilled').length, failed: reports.filter(item => item.status === 'rejected').length } })
         }
         if (!scannerHeartbeat) await writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, workspaces: workspaces.length, quotaAdmission: quotaConnection.mode, ...result }))
         log({ level: 'info', message: 'worker poll completed', ...result, durationMs: Date.now() - startedAt })

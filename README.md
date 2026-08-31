@@ -74,4 +74,4 @@ UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)�
 - fixture connector 的数据和写入只用于契约测试和本地演示，不能作为平台上线证据。
 - 未设置 `DATABASE_URL` 时应用默认使用内存 service，便于本地单测；设置 `DATABASE_URL` 后启动迁移并使用 PostgreSQL Outbox。生产必须保留 RLS、Outbox 和幂等约束。
 - 生产 API 必须同时提供不同凭据的 `DATABASE_URL` 与 `OPS_DATABASE_URL`；前者是强制 workspace RLS 的租户运行角色，后者只能访问平台 feature flag 控制面，不能访问租户业务表。
-发布元数据同步基线（2026-08-31）：MCP 契约注册表为 251 个唯一方法，商家插件运行态为 150 个 MCP 工具，PostgreSQL 迁移链已进入 109。
+发布元数据同步基线（2026-08-31）：MCP 契约注册表为 254 个唯一方法，商家插件运行态为 150 个 MCP 工具，PostgreSQL 迁移链已进入 118。

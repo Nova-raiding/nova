@@ -82,6 +82,8 @@ export function queueStateLabel(state: string) {
     queued: "排队中",
     running: "处理中",
     processing: "处理中",
+    dispatching: "已提交模型请求，等待受理确认",
+    provider_started: "模型已受理，等待结果确认",
     failed: "失败",
     rejected: "已驳回",
     unknown: "待对账",
@@ -411,7 +413,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       state: execution.state,
       detail: `${execution.assignedOperatorId ? `负责人：${execution.assignedOperatorId}；` : "未分配负责人；"}告警：${execution.alertState === "open" ? "超时待处理" : "观察中"}；最后动作：${execution.lastAction}；归档：${execution.archiveState}；Provider 请求：${execution.providerRequestId ?? "尚未确认"}；对账：${execution.reconciliationStatus ?? "未收口"}${execution.reconciliationEvidenceRef ? `（${execution.reconciliationEvidenceRef}）` : ""}；attempt ${execution.attempt}；${execution.errorMessage ?? execution.reconciliationReason ?? execution.nextAction}`,
       updatedAt: execution.updatedAt,
-      action: <Space wrap><Button type="link" onClick={() => setImageEvidenceTarget(execution)} aria-label={`查看图片任务 ${execution.jobId} 的执行证据`}>查看执行证据</Button><Button type="link" onClick={() => { setImageReconcileTarget(execution); setImageResolution("failed"); setImageReason(""); setImageEvidenceRef(""); }}>人工收口</Button><Button type="link" onClick={() => openAssignment({ itemType: "image", itemId: execution.jobId, revision: execution.revision, currentOperator: execution.assignedOperatorId })}>分配负责人</Button></Space>,
+      action: <Space wrap><Button type="link" onClick={() => setImageEvidenceTarget(execution)} aria-label={`查看图片任务 ${execution.jobId} 的执行证据`}>查看执行证据</Button>{["unknown", "outcome_unknown", "manual_attention"].includes(execution.state) || execution.reconciliationStatus === "required" ? <Button type="link" onClick={() => { setImageReconcileTarget(execution); setImageResolution("failed"); setImageReason(""); setImageEvidenceRef(""); }}>打开对账</Button> : <Typography.Text type="secondary">仅观测，不可重复生成</Typography.Text>}<Button type="link" onClick={() => openAssignment({ itemType: "image", itemId: execution.jobId, revision: execution.revision, currentOperator: execution.assignedOperatorId })}>分配负责人</Button></Space>,
     })),
     ...marketingQueue.uploadedAssetRisks.map((asset) => {
       const recovery = assetScanRecoveryEvidence(asset, marketingQueue.assetScanFailures);
@@ -466,7 +468,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
           <Descriptions.Item label="Provider request ID">{imageEvidenceTarget.providerRequestId ?? "尚未确认"}</Descriptions.Item>
           <Descriptions.Item label="请求事件 ID">{imageEvidenceTarget.eventId}</Descriptions.Item>
           <Descriptions.Item label="错误">{imageEvidenceTarget.errorCode ?? "无"}{imageEvidenceTarget.errorMessage ? `：${imageEvidenceTarget.errorMessage}` : ""}</Descriptions.Item>
-          <Descriptions.Item label="下一步">{imageEvidenceTarget.nextAction}</Descriptions.Item>
+          <Descriptions.Item label="下一步">{["unknown", "outcome_unknown", "manual_attention"].includes(imageEvidenceTarget.state) || imageEvidenceTarget.reconciliationStatus === "required" ? "打开对账并提供证据；禁止重复生成" : imageEvidenceTarget.nextAction}</Descriptions.Item>
           <Descriptions.Item label="告警/最后动作">{imageEvidenceTarget.alertState === "open" ? "超时待处理" : "观察中"} · {imageEvidenceTarget.lastAction}</Descriptions.Item>
           <Descriptions.Item label="关闭依据">{imageEvidenceTarget.closureEvidence ?? "尚未关闭"}</Descriptions.Item>
           <Descriptions.Item label="对账状态">{imageEvidenceTarget.reconciliationStatus ?? "未收口"} · revision {imageEvidenceTarget.reconciliationRevision ?? "—"}</Descriptions.Item>
@@ -477,7 +479,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       </Modal>
       <Modal open={Boolean(imageReconcileTarget)} title="人工收口图片执行" okText="提交收口" cancelText="取消" confirmLoading={imageReconcileSubmitting} okButtonProps={{ danger: imageResolution === "failed", disabled: imageReason.trim().length < 4 || !imageEvidenceRef.trim() }} onCancel={closeImageReconcile} onOk={() => void submitImageReconcile()} destroyOnHidden>
         <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-          <Alert type="warning" showIcon title="未知状态不能直接视为成功" description="完成收口仅在服务端确认任务成功、产物已归档且安全扫描通过时允许；失败收口必须留下可追溯证据。" />
+          <Alert type="warning" showIcon role="alert" title="未知状态不能直接视为成功或重试" description="完成收口仅在服务端确认任务成功、产物已归档且安全扫描通过时允许；失败收口必须留下可追溯证据。收口期间 Merchant 与 Ops 都不会创建第二个 Provider 请求。" />
           <Typography.Text type="secondary">{imageReconcileTarget ? `${imageReconcileTarget.jobId} · revision ${imageReconcileTarget.revision}` : ""}</Typography.Text>
           <Select aria-label="图片收口结果" value={imageResolution} onChange={setImageResolution} options={[{ value: "failed", label: "确认失败" }, { value: "completed", label: "确认完成（需产物门禁通过）" }]} style={{ width: "100%" }} />
           <Input aria-label="图片收口证据引用" value={imageEvidenceRef} onChange={(event) => setImageEvidenceRef(event.target.value)} placeholder="证据引用：工单、Provider 查询记录或审计附件 ID" maxLength={500} />

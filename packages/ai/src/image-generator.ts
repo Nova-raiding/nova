@@ -27,7 +27,7 @@ export interface ImageGenerationInput {
 }
 
 export interface ImageGenerator {
-  generate(input: ImageGenerationInput, options?: { signal?: AbortSignal }): Promise<string[]>
+  generate(input: ImageGenerationInput, options?: { signal?: AbortSignal; providerOperationKey?: string }): Promise<string[]>
   queryStatus?(providerRequestId: string, options?: { signal?: AbortSignal }): Promise<ImageGenerationStatus>
 }
 
@@ -88,7 +88,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
     this.fetchImpl = options.fetch ?? fetch
   }
 
-  async generate(input: ImageGenerationInput, options: { signal?: AbortSignal } = {}): Promise<string[]> {
+  async generate(input: ImageGenerationInput, options: { signal?: AbortSignal; providerOperationKey?: string } = {}): Promise<string[]> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 120_000)
     const abort = () => controller.abort()
@@ -130,7 +130,8 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         image_mode: input.mode ?? 'create',
         ...(sourceAssetRefs.length ? { source_asset_refs: sourceAssetRefs } : {}),
       })
-      const providerKey = providerIdempotencyKey({ operation: 'image_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
+      const providerKey = options.providerOperationKey?.trim() || providerIdempotencyKey({ operation: 'image_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
+      if (providerKey.length > 255 || /[\u0000-\u001f\u007f]/u.test(providerKey)) throw new Error('provider operation key is invalid')
       let response: Response
       try {
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
@@ -207,9 +208,9 @@ function parseImageGenerationStatus(payload: unknown, providerRequestId: string)
     if (typeof item.b64_json === 'string' && item.b64_json.trim()) return [`data:image/png;base64,${item.b64_json}`]
     return []
   }) : []
-  if (['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(rawStatus)) return { state: 'failed', providerRequestId, evidence: { observedAt: new Date().toISOString(), source: 'provider_status', providerStatus: rawStatus } }
   const responseId = typeof data.request_id === 'string' ? data.request_id : typeof data.id === 'string' ? data.id : typeof data.task_id === 'string' ? data.task_id : undefined
   if (responseId && responseId !== providerRequestId) throwProviderOutcomeUnknown(providerRequestId, 'image provider status returned a different request id')
+  if (['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(rawStatus)) return { state: 'failed', providerRequestId, evidence: { observedAt: new Date().toISOString(), source: 'provider_status', providerStatus: rawStatus } }
   if (['processing', 'queued', 'pending', 'running', 'in_progress'].includes(rawStatus)) return { state: 'processing', providerRequestId, evidence: { observedAt: new Date().toISOString(), source: 'provider_status', providerStatus: rawStatus } }
   if (['succeeded', 'success', 'completed', 'done'].includes(rawStatus)) {
     if (!images.length) throwProviderOutcomeUnknown(providerRequestId, 'image provider status completed without artifacts')
