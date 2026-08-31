@@ -13450,6 +13450,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
           if (!existing) await hydrateDurableIdempotentJob(workspaceId, 'publish_job', itemKey)
           existing = existing ?? [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
+          if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: confirmation })
           const reservationId = `publish:${itemKey}`
           let reserved = false
           let walletDebited = false
@@ -13553,6 +13554,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
           if (!existing) await hydrateDurableIdempotentJob(workspaceId, 'publish_job', itemKey)
           existing = existing ?? [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
+          if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: confirmation })
           const reservationId = `publish:${itemKey}`
           let reserved = false
           let walletDebited = false
