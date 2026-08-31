@@ -37,6 +37,33 @@ export interface WorkerExecutionAuthorizationGuard {
   assertAuthorized(event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal): Promise<WorkerAuthorizationRecheck>
 }
 
+/**
+ * The last in-process boundary before a worker is allowed to invoke an
+ * external system. Implementations must persist the reservation; an in-memory
+ * implementation is only suitable for unit tests.
+ */
+export interface WorkerExecutionReservation {
+  reservationId: string
+  eventId: string
+  workspaceId: string
+  operation: CriticalWorkerOperation
+  reservedAt: string
+}
+
+export type WorkerExecutionReservationPort = (input: {
+  reservationId: string
+  event: DurableOutboxEvent
+  operation: CriticalWorkerOperation
+  snapshot: WorkerAuthorizationSnapshot
+  recheck: WorkerAuthorizationRecheck
+  signal?: AbortSignal
+}) => Promise<WorkerExecutionReservation | undefined>
+
+export interface ReservedWorkerExecution {
+  reservation: WorkerExecutionReservation
+  authorization: WorkerAuthorizationRecheck
+}
+
 export type WorkerAuthorizationRecheckPort = (input: {
   event: DurableOutboxEvent
   operation: CriticalWorkerOperation
@@ -51,6 +78,39 @@ export class WorkerExecutionAuthorizationError extends Error {
     super(message)
     this.name = 'WorkerExecutionAuthorizationError'
     this.retryable = options.retryable
+  }
+}
+
+/**
+ * Compose the authoritative recheck and the durable reservation gate. This
+ * helper deliberately owns no side effect: callers must invoke their
+ * connector only after `reserve` resolves. Keeping that ordering in one
+ * small port makes it testable without editing a shared worker handler.
+ */
+export function createReservedExecutionGate(
+  guard: WorkerExecutionAuthorizationGuard,
+  reserve: WorkerExecutionReservationPort,
+): (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => Promise<ReservedWorkerExecution> {
+  return async (event, operation, signal) => {
+    const authorization = await guard.assertAuthorized(event, operation, signal)
+    const snapshot = parseWorkerAuthorizationSnapshot(event, operation)
+    const reservationId = `worker-execution:${operation}:${event.id}`
+    let reservation: WorkerExecutionReservation | undefined
+    try {
+      reservation = await reserve({ reservationId, event, operation, snapshot, recheck: authorization, ...(signal ? { signal } : {}) })
+    } catch (cause) {
+      if (signal?.aborted) signal.throwIfAborted()
+      if (cause instanceof WorkerExecutionAuthorizationError) throw cause
+      const code = isRecord(cause) && typeof cause.code === 'string' ? cause.code : 'AUTHZ_EXECUTION_RESERVATION_UNAVAILABLE'
+      const retryable = isRecord(cause) && typeof cause.retryable === 'boolean' ? cause.retryable : true
+      throw new WorkerExecutionAuthorizationError(code, `execution authorization reservation unavailable: ${cause instanceof Error ? cause.message : String(cause)}`, { retryable })
+    }
+    signal?.throwIfAborted()
+    if (!reservation) throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RESERVATION_CONFLICT', 'execution authorization reservation was not granted; no external side effect is permitted', { retryable: false })
+    if (reservation.reservationId !== reservationId || reservation.eventId !== event.id || reservation.workspaceId !== event.workspaceId || reservation.operation !== operation) {
+      throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RESERVATION_INVALID', 'execution authorization reservation binding mismatch', { retryable: false })
+    }
+    return { reservation, authorization }
   }
 }
 
