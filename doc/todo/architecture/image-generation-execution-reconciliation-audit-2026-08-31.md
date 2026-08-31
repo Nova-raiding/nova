@@ -121,7 +121,7 @@ provider adapter 必须提供真实的 `queryStatus(providerRequestId)`，并保
 
 新增 migration 117 与 execution reservation API，Provider 调用前已形成可持久化 operation key，并传递到 relay 幂等请求头；已存在 reservation 的过期执行不再允许普通 claim 重派，避免把 Provider 已受理但本地回执未落库的窗口误判为可重试。当前仍没有独立 operation 状态表、dispatching fence、真实 Provider query/replay 和跨进程故障注入证据，因此本项只记录为本地实现增量，不改变 `TODO / NO-GO` 判定。
 
-本轮进一步落地 `provider_reserved` 与 `provider_dispatching` 状态，并要求 dispatch fence 在 Provider 外呼前提交；失败/超时可从 dispatching 进入 unknown，旧租约不能普通接管。该实现仍属于 execution 内的渐进式 fence，不等同于独立 Provider operation 事实源，真实恢复与外部幂等证据仍缺。
+本轮进一步落地 `provider_reserved` 与 `provider_dispatching` 状态，并要求 dispatch fence 在 Provider 外呼前提交；失败/超时可从 dispatching 进入 unknown，旧租约不能普通接管。migration 119 已注册到可执行迁移链，并补齐发布元数据、历史尾部断言和 release-gates 专项测试；该实现仍属于 execution 内的渐进式 fence，不等同于独立 Provider operation 事实源，真实恢复与外部幂等证据仍缺。
 # 2026-08-31 实现增量
 
 - 已修复 Worker → API reconciliation evidence 的确定性协议断裂：Worker 现在发送服务端强制要求的 `idempotency_key`，并透传候选中的 `query_attempt`；幂等键由 `job_id/execution_attempt/query_attempt/provider_request_id` 规范化哈希生成，同一 Provider 观测可安全重放，意图变化仍由 API 按幂等冲突拒绝。Worker 定向测试 43/43、TypeScript、`git diff --check`、CodeGraph 通过。

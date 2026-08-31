@@ -6,8 +6,8 @@ describe('migration 106 canonical legacy brand integrity guard', () => {
   it('is contiguous and rejects historical NULL/mismatched brands without rewriting data', async () => {
     const migrations = await loadMigrations()
     expect(migrations.find(item => item.version === 106)).toMatchObject({ version: 106, name: 'canonical_legacy_brand_integrity_guard' })
-    expect(migrations.at(-1)).toMatchObject({ version: 109, name: 'asset_scan_redrive' })
-    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 109 }, (_, index) => index + 1))
+    expect(migrations.find(item => item.version === 109)).toMatchObject({ version: 109, name: 'asset_scan_redrive' })
+    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 119 }, (_, index) => index + 1))
     const sql = await readFile(new URL('./migrations/106_canonical_legacy_brand_integrity_guard.sql', import.meta.url), 'utf8')
     expect(sql).toContain('migration 106 blocked')
     expect(sql).toContain('p.brand_id IS NULL')

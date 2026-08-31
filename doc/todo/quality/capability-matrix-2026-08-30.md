@@ -25,7 +25,7 @@
 | 素材治理 | 上传、去重、扫描、解析、事实确认、权益、偏好 | `asset.upload` / `asset.scan` / `asset.rights.update` | 本地安全和 API 测试较完整 | 中 | 生产 scanner、对象存储、KMS、生命周期和恢复 |
 | 营销任务 | 意图理解、方向、Brief、方案确认、恢复、逐 SKU 任务 | `task.understand` → `task.plan.confirm` | 状态机、任务恢复、幂等测试存在 | 高 | 真实商家端完整黑盒回归 |
 | 文案生成 | 标题、卖点、详情和营销内容 | `content.generate` → relay → `content.review` | 文本 Relay 有本地成本/用量路径 | 中 | 生产 relay、provider、计量和成本证据 |
-| 图片/视频 | 主图、局部编辑、OCR、视频请求和状态查询 | `catalog.image.generate`、`multimodal.*` | 图片执行已具备 `leased → provider_reserved → provider_dispatching → provider_started` 状态语义；Worker 在调用前预约稳定 `provider_operation_key` 并透传 `Idempotency-Key`。但 CodeGraph 发现 `119_image_generation_execution_dispatch_fence.sql` 尚未注册到 `loadMigrations()`，`migration-117.test.ts` 当前因找不到 migration 119 失败 | 中低 | 先注册并执行 dispatch-fence migration，补 PostgreSQL/跨副本崩溃恢复证据；仍缺媒体 provider、价格门禁和生产可售证据 |
+| 图片/视频 | 主图、局部编辑、OCR、视频请求和状态查询 | `catalog.image.generate`、`multimodal.*` | 图片执行已具备 `leased → provider_reserved → provider_dispatching → provider_started` 状态语义；Worker 在调用前预约稳定 `provider_operation_key` 并透传 `Idempotency-Key`。migration 119 已注册并有专项测试；本地契约闭环通过 | 中 | 仍需真实 PostgreSQL/RLS、跨副本崩溃恢复、媒体 Provider 状态回读、价格门禁和生产可售证据 |
 | 内容审核 | 规则检查、品牌禁用词、P0/P1/P2、版本差异 | `content.review`、`content.modify`、`content.approve` | 审核和版本测试较完整 | 高 | 平台最终审核仍需外部回执，不能由本系统替代 |
 | 发布中心 | diff、选图冻结、哈希确认、幂等发布、状态回读 | `publish.prepare` → `publish.confirm` → `publish.get` | 状态机、未知状态和失败关闭已测试 | 中低 | 真实平台写入、媒体上传适配器、回读 canary |
 | 批量发布 | 批次准备、暂停、恢复、失败项重试 | `publish.batch.*` | 本地批次状态和确认测试存在 | 中 | 真实平台批量写入和运营审核证据 |
@@ -43,12 +43,12 @@
 
 ## 复核记录
 
-### 2026-09-01 CodeGraph 文档—代码映射复核
+### 2026-09-01 CodeGraph 文档—代码映射复核（migration 119 复核）
 
 - CodeGraph 当前索引为 **860 files / 12,187 nodes / 45,622 edges**，状态显示 index up to date。
 - 图片生成调用链已落到 `packages/persistence/src/image-generation-execution-repository.ts`、`packages/ai/src/image-generator.ts`、`apps/worker/src/main.ts`：普通 claim 后先预约 provider operation，再进入 dispatching，Provider 调用使用稳定幂等键；已有 reservation 的过期 lease 会 fail-closed 为 `IMAGE_GENERATION_PROVIDER_OUTCOME_UNKNOWN`。
-- 发现一个未闭环的持久化映射：`packages/persistence/src/migrations/119_image_generation_execution_dispatch_fence.sql` 文件存在，且 `migration-117.test.ts` 要求 migration 119，但 `packages/persistence/src/migration.ts` 的 `loadMigrations()` 仍登记到 118；定向命令 `npx vitest run packages/persistence/src/migration-117.test.ts --reporter=dot` 实际结果为 **1 failed / 1 test**。
-- 因此本项只更新 TODO 能力矩阵，不迁移到 `doc/done`；在 migration 注册、真实 PostgreSQL 非超级用户迁移、双副本崩溃恢复和 Provider/账务关联证据补齐前，发布判断仍为 **NO-GO**。
+- 本轮复核确认 `packages/persistence/src/migrations/119_image_generation_execution_dispatch_fence.sql` 已由 `packages/persistence/src/migration.ts` 注册，且 `migration-117.test.ts` 与新增 `migration-119.test.ts` 均覆盖该注册及约束；此前“未注册/专项失败”记录已过时，本轮同步修正发布元数据、基础迁移断言与 release-gates 清单。
+- 该修复只证明仓库迁移契约一致，不证明真实 PostgreSQL 非超级用户迁移、双副本崩溃恢复和 Provider/账务关联证据；能力矩阵继续留在 `doc/todo`，发布判断仍为 **NO-GO**。
 
 ### 2026-08-31 增量复核
 

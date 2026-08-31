@@ -1478,3 +1478,5 @@ npm run dev:api
 2026-09-01 Ops 桌面无障碍增量：Ops Console 增加键盘“跳转到主要内容”入口和高对比度焦点样式；定向 6/6、Ops Console 全量 72 文件/338 项、TypeScript、生产构建和差异检查通过。真实桌面浏览器、OIDC/权限矩阵与生产宿主证据仍缺，相关 TODO 不迁移到 `doc/done`。
 
 2026-09-01 SLA 重开投影增量：客服工单从 `resolved/closed` 重开到 `open/in_progress/waiting_customer` 时清除 `resolvedAt`，避免错误保持 `met`；SLA/Worker 定向 10/10、TypeScript 与差异检查通过。真实 Postgres/RLS、调度和值班运行证据仍缺，相关 TODO 继续留在 `doc/todo`。
+
+2026-09-01 migration 119 一致性复核：CodeGraph 与源码确认 `119_image_generation_execution_dispatch_fence.sql` 已注册到 `loadMigrations()`；同步将 `release-metadata.json`、迁移尾部断言、release-gates 专项测试清单与 README 基线更新为 119，并新增 migration 119 注册/SQL 约束测试。该切片的仓库契约仍需通过定向测试与发布门禁；真实 PostgreSQL/RLS、跨副本崩溃恢复和 Provider/账务证据不受此更新替代，相关 TODO 不迁移到 `doc/done`。
