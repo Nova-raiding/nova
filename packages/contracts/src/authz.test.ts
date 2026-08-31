@@ -21,6 +21,20 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('unknown.future.method')).toBeUndefined()
   })
 
+  it('keeps ambiguous allow_and_deny obligation gaps explicit and reviewable', () => {
+    const missing = Object.values(MCP_METHOD_POLICIES).filter(policy => policy.audit === 'allow_and_deny' && policy.obligations.length === 0)
+    expect(missing.every(policy => policy.audit === 'allow_and_deny' && policy.obligations.length === 0)).toBe(true)
+    expect(new Set(missing.map(policy => policy.method))).toEqual(new Set([
+      'ops.support.crm.export', 'ops.marketing.image.evidence.export',
+      'ops.canonical.backfill.create', 'ops.canonical.backfill.run',
+      'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume',
+      'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve',
+      'platform.media.spec.approve', 'content.export', 'content.approve',
+      'publish.prepare', 'publish.batch.prepare', 'publish.batch.pause',
+      'publish.batch.resume', 'publish.batch.retry_failed', 'delivery.bundle.verify',
+    ]))
+  })
+
   it('classifies ops console methods with explicit capability, scope, data and audit metadata', () => {
     const opsMethods = MCP_METHODS.filter(method => method.startsWith('ops.'))
     expect(opsMethods.length).toBeGreaterThan(0)
