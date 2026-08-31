@@ -1,4 +1,4 @@
-import type { ImageGenerationExecutionState } from './image-generation-state'
+import type { ImageGenerationExecutionState } from './image-generation-state.js'
 
 export interface ApiHealth {
   status: string
