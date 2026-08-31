@@ -4,16 +4,16 @@ import { createExecutionAuthorizationGuard, createReservedExecutionGate, type Wo
 
 const checkedAt = '2026-08-31T09:59:59.000Z'
 const baseRecheck: WorkerAuthorizationRecheck = {
-  recheckId: 'recheck-1', actorId: 'merchant-1', workspaceId: 'ws-a', contextId: 'workspace:ws-a',
-  contextVersion: 'ctx-2', policyVersion: 'policy-2', grantRevision: 'grant-2', scopeHash: 'a'.repeat(64),
-  capability: 'publish.execute', resourceId: 'job-1', authorized: true, checkedAt,
+  recheckId: 'recheck-1', actorId: 'merchant-1', identityId: 'identity-1', workspaceId: 'ws-a', workbench: 'workspace', contextId: 'workspace:ws-a',
+  contextVersion: 'ctx-2', policyVersion: 'policy-2', grantRevision: 'grant-2', grantIds: [], scopeHash: 'a'.repeat(64),
+  capability: 'publish.execute', resourceId: 'job-1', resourceRevision: '1', requestId: 'req-1', traceId: 'trace-1', authorized: true, checkedAt,
 }
 const event = (): DurableOutboxEvent => ({
   id: 'event-1', workspaceId: 'ws-a', aggregateId: 'job-1', eventType: 'publish.requested', sequence: 1, createdAt: checkedAt,
   payload: { authorization_snapshot: {
-    schema_version: 1, decision_id: 'decision-1', actor_id: 'merchant-1', workspace_id: 'ws-a', context_id: 'workspace:ws-a',
-    context_version: 'ctx-1', policy_version: 'policy-1', grant_revision: 'grant-1', scope_hash: 'a'.repeat(64),
-    capability: 'publish.execute', resource_id: 'job-1', authorized: true, decided_at: checkedAt,
+    schema_version: 1, decision_id: 'decision-1', actor_id: 'merchant-1', identity_id: 'identity-1', workspace_id: 'ws-a', workbench: 'workspace', context_id: 'workspace:ws-a',
+    context_version: 'ctx-1', policy_version: 'policy-1', grant_revision: 'grant-1', grant_ids: [], scope_hash: 'a'.repeat(64),
+    capability: 'publish.execute', resource_id: 'job-1', resource_revision: '1', request_id: 'req-1', trace_id: 'trace-1', authorized: true, decided_at: checkedAt,
   } },
 })
 

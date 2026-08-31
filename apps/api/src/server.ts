@@ -3680,17 +3680,25 @@ function workerAuthorizationSnapshot<T extends CriticalWorkerOperation>(req: Inc
   const grantRevision = grant
     ? `grant:${grant.id}:${grant.revision}:${principal.identityId}:${principal.authorizationRevision}`
     : `membership:${principal.identityId}:${principal.authorizationRevision}`
+  const resourceRevision = binding.resource_revision ?? binding.job_revision ?? binding.expected_asset_revision ?? binding.source_product_version ?? binding.task_version
+  if (typeof resourceRevision !== 'number' && typeof resourceRevision !== 'string' || String(resourceRevision).trim() === '') return undefined
   return {
     schemaVersion: 1 as const,
     decisionId: decision.decision_id,
     actorId: principal.actorId,
+    identityId: principal.identityId,
     workspaceId,
+    workbench: 'workspace' as const,
     contextId: `workspace:${workspaceId}`,
     contextVersion: decision.policy_version,
     policyVersion: decision.policy_version,
     grantRevision,
+    grantIds: grant ? [grant.id] : [],
     capability,
     resourceId,
+    resourceRevision: String(resourceRevision),
+    requestId: requestId(req),
+    traceId: getRequestCorrelation(req).traceId,
     authorized: true as const,
     decidedAt: new Date().toISOString(),
     scopeHash,
@@ -3702,7 +3710,7 @@ function publishAuthorizationSnapshot(req: IncomingMessage, workspaceId: string,
 }
 
 function serializedWorkerAuthorizationSnapshot<T extends CriticalWorkerOperation>(snapshot: WorkerAuthorizationSnapshot & { capability: T }) {
-  return { schema_version: snapshot.schemaVersion, decision_id: snapshot.decisionId, actor_id: snapshot.actorId, workspace_id: snapshot.workspaceId, context_id: snapshot.contextId, context_version: snapshot.contextVersion, policy_version: snapshot.policyVersion, grant_revision: snapshot.grantRevision, scope_hash: snapshot.scopeHash, capability: snapshot.capability, resource_id: snapshot.resourceId, authorized: snapshot.authorized, decided_at: snapshot.decidedAt }
+  return { schema_version: snapshot.schemaVersion, decision_id: snapshot.decisionId, actor_id: snapshot.actorId, identity_id: snapshot.identityId, workspace_id: snapshot.workspaceId, workbench: snapshot.workbench, context_id: snapshot.contextId, context_version: snapshot.contextVersion, policy_version: snapshot.policyVersion, grant_revision: snapshot.grantRevision, grant_ids: snapshot.grantIds, scope_hash: snapshot.scopeHash, capability: snapshot.capability, resource_id: snapshot.resourceId, resource_revision: snapshot.resourceRevision, request_id: snapshot.requestId, trace_id: snapshot.traceId, authorized: snapshot.authorized, decided_at: snapshot.decidedAt }
 }
 
 const workerEventOperations: Record<string, CriticalWorkerOperation> = {
@@ -3747,7 +3755,7 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
       throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队临时授权已撤销、过期或范围变化，已拒绝执行', 403)
     }
   }
-  const recheck = { recheck_id: `authz_recheck_${randomUUID()}`, actor_id: snapshot.actorId, workspace_id: workspaceId, context_id: snapshot.contextId, context_version: `${AUTHZ_POLICY_VERSION}:${currentAuthorizationRevision}`, policy_version: AUTHZ_POLICY_VERSION, grant_revision: snapshot.grantRevision, scope_hash: snapshot.scopeHash, capability: snapshot.capability, resource_id: resourceId, authorized: true, checked_at: new Date().toISOString() }
+  const recheck = { recheck_id: `authz_recheck_${randomUUID()}`, actor_id: snapshot.actorId, identity_id: snapshot.identityId, workspace_id: workspaceId, workbench: snapshot.workbench, context_id: snapshot.contextId, context_version: `${AUTHZ_POLICY_VERSION}:${currentAuthorizationRevision}`, policy_version: AUTHZ_POLICY_VERSION, grant_revision: snapshot.grantRevision, grant_ids: snapshot.grantIds, scope_hash: snapshot.scopeHash, capability: snapshot.capability, resource_id: resourceId, resource_revision: snapshot.resourceRevision, request_id: snapshot.requestId, trace_id: snapshot.traceId, authorized: true, checked_at: new Date().toISOString() }
   if (!execution) return recheck
   if (!execution.eventId.trim()) throw new DomainError('AUTHZ_EXECUTION_EVENT_REQUIRED', '执行授权预留缺少持久事件标识，已拒绝执行', 503)
   let reservation: Awaited<ReturnType<AuthorizationRepository['reserveExecution']>>
@@ -14177,6 +14185,15 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (httpOperationPolicy?.authentication === 'identity' && requestWorkspace !== 'unknown' && requestPrincipals.get(req)?.workbench === 'workspace'
     && !requestMemberChecks.has(req) && !exactConsumedGrantForRequest(req, requestWorkspace)) {
     await enforceActiveWorkspaceMember(req, requestWorkspace)
+  }
+  // MCP capability evaluation needs the workspace membership projection too.
+  // HTTP routes load it above, but MCP requests intentionally have no HTTP
+  // operation policy. Without this read-through, a strict-auth member's role
+  // is absent while the decision is evaluated; a later member check cannot
+  // repair the already-denied worker authorization snapshot.
+  if (path === '/mcp' && requestWorkspace !== 'unknown' && requestWorkspace && mcpMethodForHydration !== 'workspace.bootstrap'
+    && requestPrincipals.get(req)?.workbench === 'workspace' && !exactConsumedGrantForRequest(req, requestWorkspace)) {
+    await resolveActiveWorkspaceMember(req, requestWorkspace, false)
   }
   const normalizedPagedCollection = req.method === 'GET'
     && (path === '/v1/products' || path === '/v1/tasks')

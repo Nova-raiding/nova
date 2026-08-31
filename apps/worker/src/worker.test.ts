@@ -8,7 +8,7 @@ import type { WorkerExecutionAuthorizationGuard } from '../../../packages/worker
 
 const baseEnv = { DATABASE_URL: 'postgres://worker', WORKER_WORKSPACES: 'ws_a, ws_b,ws_a' }
 const testExecutionAuthorization = {
-  assertAuthorized: async (event, operation) => ({ recheckId: `recheck_${event.id}`, actorId: 'test_actor', workspaceId: event.workspaceId, contextId: `workspace:${event.workspaceId}`, contextVersion: 'test_context', policyVersion: 'test_policy', grantRevision: 'test_grant', scopeHash: 'a'.repeat(64), capability: operation, resourceId: event.aggregateId, authorized: true, checkedAt: new Date().toISOString() }),
+  assertAuthorized: async (event, operation) => ({ recheckId: `recheck_${event.id}`, actorId: 'test_actor', identityId: 'test_identity', workspaceId: event.workspaceId, workbench: 'workspace' as const, contextId: `workspace:${event.workspaceId}`, contextVersion: 'test_context', policyVersion: 'test_policy', grantRevision: 'test_grant', grantIds: [], scopeHash: 'a'.repeat(64), capability: operation, resourceId: event.aggregateId, resourceRevision: 'test_resource_revision', requestId: `request_${event.id}`, traceId: `trace_${event.id}`, authorized: true, checkedAt: new Date().toISOString() }),
 } satisfies WorkerExecutionAuthorizationGuard
 const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
   const handler = createOutboxHandler({ ...options, executionAuthorization: testExecutionAuthorization })
@@ -26,14 +26,20 @@ const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
         schema_version: 1,
         decision_id: `test_decision_${input.event.id}`,
         actor_id: 'test_actor',
+        identity_id: 'test_identity',
         workspace_id: input.event.workspaceId,
+        workbench: 'workspace',
         context_id: `workspace:${input.event.workspaceId}`,
         context_version: 'test_context',
         policy_version: 'test_policy',
         grant_revision: 'test_grant',
+        grant_ids: [],
         scope_hash: 'a'.repeat(64),
         capability: operation,
         resource_id: input.event.aggregateId,
+        resource_revision: 'test_resource_revision',
+        request_id: `request_${input.event.id}`,
+        trace_id: `trace_${input.event.id}`,
         authorized: true,
         decided_at: new Date().toISOString(),
       },
