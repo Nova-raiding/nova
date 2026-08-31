@@ -15,14 +15,20 @@ export interface WorkerAuthorizationSnapshot {
   schemaVersion: typeof WORKER_AUTHORIZATION_SNAPSHOT_SCHEMA
   decisionId: string
   actorId: string
+  identityId?: string
   workspaceId: string
+  workbench?: 'workspace'
   contextId: string
   contextVersion: string
   policyVersion: string
   grantRevision: string
+  grantIds?: string[]
   scopeHash: string
   capability: CriticalWorkerOperation
   resourceId: string
+  resourceRevision?: string
+  requestId?: string
+  traceId?: string
   authorized: true
   decidedAt: string
 }
@@ -156,14 +162,20 @@ export function parseWorkerAuthorizationSnapshot(event: DurableOutboxEvent, oper
     schemaVersion: requireExactInteger(raw.schema_version, 'schema_version', WORKER_AUTHORIZATION_SNAPSHOT_SCHEMA),
     decisionId: requireString(raw.decision_id, 'decision_id'),
     actorId: requireString(raw.actor_id, 'actor_id'),
+    identityId: requireString(raw.identity_id, 'identity_id'),
     workspaceId: requireString(raw.workspace_id, 'workspace_id'),
+    workbench: requireWorkbench(raw.workbench),
     contextId: requireString(raw.context_id, 'context_id'),
     contextVersion: requireString(raw.context_version, 'context_version'),
     policyVersion: requireString(raw.policy_version, 'policy_version'),
     grantRevision: requireString(raw.grant_revision, 'grant_revision'),
+    grantIds: requireStringArray(raw.grant_ids, 'grant_ids'),
     scopeHash: requireSha256(raw.scope_hash, 'scope_hash'),
     capability: requireCapability(raw.capability),
     resourceId: requireString(raw.resource_id, 'resource_id'),
+    resourceRevision: requireString(raw.resource_revision, 'resource_revision'),
+    requestId: requireString(raw.request_id, 'request_id'),
+    traceId: requireString(raw.trace_id, 'trace_id'),
     authorized: requireAuthorized(raw.authorized),
     decidedAt: requireTimestamp(raw.decided_at, 'decided_at'),
   }
@@ -171,6 +183,7 @@ export function parseWorkerAuthorizationSnapshot(event: DurableOutboxEvent, oper
   if (snapshot.contextId !== `workspace:${event.workspaceId}`) throw snapshotError('authorization snapshot context binding mismatch')
   if (snapshot.resourceId !== event.aggregateId) throw snapshotError('authorization snapshot resource binding mismatch')
   if (snapshot.capability !== operation) throw snapshotError('authorization snapshot capability binding mismatch')
+  if (snapshot.workbench !== 'workspace') throw snapshotError('authorization snapshot workbench binding mismatch')
   return snapshot
 }
 
@@ -181,9 +194,9 @@ function validateRecheck(current: WorkerAuthorizationRecheck, snapshot: WorkerAu
   if (current.authorized !== true) throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RECHECK_DENIED', 'execution authorization was revoked or denied', { retryable: false })
   if (!nonEmpty(current.recheckId) || current.recheckId === snapshot.decisionId) throw recheckInvalid('execution authorization recheck id is invalid')
   if (current.actorId !== snapshot.actorId) throw recheckInvalid('execution authorization actor binding mismatch')
-  if (current.workspaceId !== event.workspaceId || current.contextId !== snapshot.contextId) throw recheckInvalid('execution authorization context binding mismatch')
-  if (current.capability !== operation || current.resourceId !== event.aggregateId) throw recheckInvalid('execution authorization resource binding mismatch')
-  if (!nonEmpty(current.contextVersion) || !nonEmpty(current.policyVersion) || !nonEmpty(current.grantRevision) || current.scopeHash !== snapshot.scopeHash) throw recheckInvalid('execution authorization version or scope evidence is incomplete')
+  if (current.identityId !== snapshot.identityId || current.workspaceId !== event.workspaceId || current.contextId !== snapshot.contextId || current.workbench !== snapshot.workbench) throw recheckInvalid('execution authorization context binding mismatch')
+  if (current.capability !== operation || current.capability !== snapshot.capability || current.resourceId !== event.aggregateId || current.resourceId !== snapshot.resourceId) throw recheckInvalid('execution authorization resource binding mismatch')
+  if (!nonEmpty(current.contextVersion) || !nonEmpty(current.policyVersion) || !nonEmpty(current.grantRevision) || !nonEmpty(current.identityId) || current.workbench !== 'workspace' || current.scopeHash !== snapshot.scopeHash || current.resourceRevision !== snapshot.resourceRevision || current.requestId !== snapshot.requestId || current.traceId !== snapshot.traceId || !Array.isArray(current.grantIds) || current.grantIds.join(',') !== snapshot.grantIds?.join(',')) throw recheckInvalid('execution authorization version or scope evidence is incomplete')
 }
 
 function snapshotError(message: string) {
@@ -226,6 +239,16 @@ function requireCapability(value: unknown): CriticalWorkerOperation {
 function requireAuthorized(value: unknown): true {
   if (value !== true) throw snapshotError('authorization snapshot does not contain an allow decision')
   return true
+}
+
+function requireWorkbench(value: unknown): 'workspace' {
+  if (value !== 'workspace') throw snapshotError('authorization snapshot workbench is unsupported')
+  return 'workspace'
+}
+
+function requireStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some(item => !nonEmpty(item))) throw snapshotError(`authorization snapshot ${field} is invalid`)
+  return [...value]
 }
 
 function requireRecheckTimestamp(value: unknown): number {

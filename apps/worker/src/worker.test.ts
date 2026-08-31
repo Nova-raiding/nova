@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, publishIdempotencyKey, readWorkerConfig, reconcileImageGenerationWorkspace, runAutomationMaintenance, workerQueueKey } from './main.js'
+import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -47,9 +47,9 @@ describe('worker production entry', () => {
     const checkedAt = new Date().toISOString()
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       expect(String(input)).toContain('/v1/worker-events/evt_generation_auth/execution-check?aggregate_id=gen_auth&operation=generation.execute')
-      return new Response(JSON.stringify({ data: { authorization_recheck: { recheck_id: 'recheck_generation_auth', actor_id: 'test_actor', workspace_id: 'ws_a', context_id: 'workspace:ws_a', context_version: 'ctx_2', policy_version: 'policy_2', grant_revision: 'membership:identity_1:0', scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', authorized: true, checked_at: checkedAt } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      return new Response(JSON.stringify({ data: { authorization_recheck: { recheck_id: 'recheck_generation_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_2', policy_version: 'policy_2', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, checked_at: checkedAt } } }), { status: 200, headers: { 'content-type': 'application/json' } })
     }) as unknown as typeof fetch
-    const event = { id: 'evt_generation_auth', workspaceId: 'ws_a', aggregateId: 'gen_auth', eventType: 'generation.requested', sequence: 1, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_generation_auth', actor_id: 'test_actor', workspace_id: 'ws_a', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'membership:identity_1:0', scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', authorized: true, decided_at: checkedAt } } }
+    const event = { id: 'evt_generation_auth', workspaceId: 'ws_a', aggregateId: 'gen_auth', eventType: 'generation.requested', sequence: 1, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_generation_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
     await expect(createApiExecutionAuthorizationGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token' }, fetcher).assertAuthorized(event, 'generation.execute')).resolves.toMatchObject({ recheckId: 'recheck_generation_auth', scopeHash: 'a'.repeat(64) })
     expect(fetcher).toHaveBeenCalledOnce()
   })
@@ -59,9 +59,9 @@ describe('worker production entry', () => {
     const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       expect(String(input)).toContain('/v1/worker-events/evt_scan_redrive_auth/execution-check?aggregate_id=asset_auth&operation=asset.scan.execute')
       expect(new Headers(init?.headers).get('x-worker-role')).toBe('scan')
-      return new Response(JSON.stringify({ data: { authorization_recheck: { recheck_id: 'recheck_scan_auth', actor_id: 'operator_1', workspace_id: 'ws_a', context_id: 'workspace:ws_a', context_version: 'ctx_2', policy_version: 'policy_2', grant_revision: 'grant_2', scope_hash: 'b'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset_auth', authorized: true, checked_at: checkedAt } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      return new Response(JSON.stringify({ data: { authorization_recheck: { recheck_id: 'recheck_scan_auth', actor_id: 'operator_1', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_2', policy_version: 'policy_2', grant_revision: 'grant_1', grant_ids: [], scope_hash: 'b'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, checked_at: checkedAt } } }), { status: 200, headers: { 'content-type': 'application/json' } })
     }) as unknown as typeof fetch
-    const event: DurableOutboxEvent = { id: 'evt_scan_redrive_auth', workspaceId: 'ws_a', aggregateId: 'asset_auth', eventType: 'asset.scan_redrive_requested', sequence: 2, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_scan_auth', actor_id: 'operator_1', workspace_id: 'ws_a', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'grant_1', scope_hash: 'b'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset_auth', authorized: true, decided_at: checkedAt } } }
+    const event: DurableOutboxEvent = { id: 'evt_scan_redrive_auth', workspaceId: 'ws_a', aggregateId: 'asset_auth', eventType: 'asset.scan_redrive_requested', sequence: 2, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_scan_auth', actor_id: 'operator_1', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'grant_1', grant_ids: [], scope_hash: 'b'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
     await expect(createApiExecutionAuthorizationGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token', apiSigningSecret: 'scanner-signing-secret' }, fetcher).assertAuthorized(event, 'asset.scan.execute')).resolves.toMatchObject({ recheckId: 'recheck_scan_auth', capability: 'asset.scan.execute' })
     expect(fetcher).toHaveBeenCalledOnce()
   })
@@ -69,7 +69,7 @@ describe('worker production entry', () => {
   it('keeps an authoritative execution denial non-retryable', async () => {
     const checkedAt = new Date().toISOString()
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: { code: 'AUTHZ_EXECUTION_REVOKED', message: 'membership revoked' } }), { status: 403, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch
-    const event: DurableOutboxEvent = { id: 'evt_scan_auth_revoked', workspaceId: 'ws_a', aggregateId: 'asset_auth', eventType: 'asset.scan_redrive_requested', sequence: 2, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_scan_auth', actor_id: 'operator_1', workspace_id: 'ws_a', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'grant_1', scope_hash: 'b'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset_auth', authorized: true, decided_at: checkedAt } } }
+    const event: DurableOutboxEvent = { id: 'evt_scan_auth_revoked', workspaceId: 'ws_a', aggregateId: 'asset_auth', eventType: 'asset.scan_redrive_requested', sequence: 2, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_scan_auth', actor_id: 'operator_1', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'grant_1', grant_ids: [], scope_hash: 'b'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
     await expect(createApiExecutionAuthorizationGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token' }, fetcher).assertAuthorized(event, 'asset.scan.execute'))
       .rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED', retryable: false })
   })
@@ -79,10 +79,31 @@ describe('worker production entry', () => {
     expect(isImageProviderOutcomeUnknown({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { reconciliation_required: true } })).toBe(true)
     expect(isImageProviderOutcomeUnknown({ code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed', providerSucceeded: false })).toBe(false)
   })
+  it('requires the persisted image provider action instead of fabricating one in the worker', () => {
+    expect(requireImageGenerationActionId({ action_id: ' image:request_1 ' })).toBe('image:request_1')
+    expect(() => requireImageGenerationActionId({})).toThrow(expect.objectContaining({ code: 'IMAGE_GENERATION_ACTION_ID_REQUIRED', retryable: false, unknown: false }))
+  })
+  it('requires the persisted budget run instead of deriving it from an action in the worker', () => {
+    expect(requireModelRunKey({ run_key: ' task:content_1 ' })).toBe('task:content_1')
+    expect(() => requireModelRunKey({ action_id: 'model:generation:idem_1' })).toThrow(expect.objectContaining({ code: 'MODEL_RUN_KEY_REQUIRED', retryable: false, unknown: false }))
+  })
   it('isolates Redis outbox queues by worker role and workspace', () => {
     expect(workerQueueKey('sync', 'ws_a')).toBe('merchant:outbox:sync:ws_a')
     expect(workerQueueKey('generation', 'ws_a')).toBe('merchant:outbox:generation:ws_a')
     expect(workerQueueKey('sync', 'ws_b')).toBe('merchant:outbox:sync:ws_b')
+  })
+
+  it('posts the SLA scan through the reconcile API boundary', async () => {
+    let requestHeaders: Headers | undefined
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.method).toBe('POST')
+      requestHeaders = new Headers(init?.headers)
+      expect(requestHeaders.get('x-workspace-id')).toBe('ws_a')
+      expect(JSON.parse(String(init?.body))).toEqual({ workspace_id: 'ws_a', limit: 25 })
+      return new Response(JSON.stringify({ data: { workspaceId: 'ws_a', checked: 25 } }), { status: 200 })
+    }) as unknown as typeof fetch
+    await expect(postSupportSlaScan({ apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', signingSecret: 'reconcile-signing-secret', workspaceId: 'ws_a', limit: 25, fetcher })).resolves.toMatchObject({ data: { checked: 25 } })
+    expect(requestHeaders?.get('x-worker-role')).toBe('reconcile')
   })
 
   it('requires explicit tenant scope and deduplicates configured workspaces', () => {
@@ -178,10 +199,25 @@ describe('worker production entry', () => {
     expect(result).toEqual({ value: { provider_request_id: 'provider_1', images: ['data:image/png;base64,aA=='] } })
   })
 
+  it('rejects malformed image callbacks before network I/O', async () => {
+    const fetcher = vi.fn()
+    const event: DurableOutboxEvent = { id: 'evt_callback_schema', workspaceId: 'ws_a', aggregateId: 'img_1', eventType: 'image.generation.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
+    await expect(postImageGenerationResult({ apiBaseUrl: 'https://api.example', apiToken: 'token', event, fetcher, result: { intent_hash: 'a'.repeat(64), error: {} as { code: string; message: string } } })).rejects.toThrow('error')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it('moves publish.requested to unknown when no connector handler exists', async () => {
     const handler = createOutboxHandler()
     await expect(handler({ event: { id: 'evt_p', workspaceId: 'ws_a', aggregateId: 'job_1', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
       .rejects.toMatchObject({ error: { code: 'CONNECTOR_HANDLER_UNAVAILABLE', unknown: true, retryable: false } })
+  })
+
+  it('dispatches tenant-scoped SLA scan events to the injected API boundary', async () => {
+    const scan = vi.fn(async (event: DurableOutboxEvent) => ({ workspaceId: event.workspaceId, planned: 2 }))
+    const handler = createOutboxHandler({ slaScanRequested: scan })
+    const event: DurableOutboxEvent = { id: 'evt_sla_scan', workspaceId: 'ws_a', aggregateId: 'workspace', eventType: 'support.sla.scan_requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
+    await expect(handler({ event, attempt: 1, now: Date.now() })).resolves.toEqual({ value: { workspaceId: 'ws_a', planned: 2 } })
+    expect(scan).toHaveBeenCalledWith(event, expect.anything(), undefined)
   })
 
   it('fails closed before a critical side effect when no authorization authority is wired', async () => {
@@ -540,11 +576,11 @@ describe('worker production entry', () => {
     const requests: Array<{ url: string; body: string; headers: Headers }> = []
     await postModelUsage({
       apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret',
-      usage: { workspaceId: 'ws_a', actionId: 'model:generation:idem_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), modality: 'text', model: 'relay-text', providerRequestId: 'relay_req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.02, observedAt: '2026-08-28T00:00:00.000Z' },
+      usage: { workspaceId: 'ws_a', actionId: 'model:generation:idem_1', runKey: 'task:content_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), modality: 'text', model: 'relay-text', providerRequestId: 'relay_req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.02, observedAt: '2026-08-28T00:00:00.000Z' },
       fetcher: async (input, init) => { requests.push({ url: String(input), body: String(init?.body), headers: new Headers(init?.headers) }); return new Response('{}', { status: 200 }) },
     })
     expect(requests[0]?.url).toBe('https://api.test/v1/internal/model-usage')
-    expect(JSON.parse(requests[0]!.body)).toMatchObject({ workspaceId: 'ws_a', actionId: 'model:generation:idem_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), providerRequestId: 'relay_req_1', totalTokens: 15, costCny: 0.02 })
+    expect(JSON.parse(requests[0]!.body)).toMatchObject({ workspaceId: 'ws_a', actionId: 'model:generation:idem_1', runKey: 'task:content_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), providerRequestId: 'relay_req_1', totalTokens: 15, costCny: 0.02 })
     expect(requests[0]?.headers.get('x-workspace-id')).toBe('ws_a')
     expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
   })
@@ -628,6 +664,17 @@ describe('worker production entry', () => {
       usage: { workspaceId: 'ws-1', modality: 'text', model: 'test-model', costCny: 0.01, observedAt: '2026-08-29T00:00:00.000Z' },
       fetcher: async () => { called = true; return new Response('{}', { status: 200 }) },
     })).rejects.toThrow('requires actionId')
+    expect(called).toBe(false)
+  })
+
+  it('rejects model usage callbacks without a run key before network I/O', async () => {
+    let called = false
+    await expect(postModelUsage({
+      apiBaseUrl: 'http://api.test',
+      apiToken: 'worker-token',
+      usage: { workspaceId: 'ws-1', actionId: 'model:generation:idem_1', modality: 'text', model: 'test-model', costCny: 0.01, observedAt: '2026-08-29T00:00:00.000Z' },
+      fetcher: async () => { called = true; return new Response('{}', { status: 200 }) },
+    })).rejects.toThrow('requires runKey')
     expect(called).toBe(false)
   })
 

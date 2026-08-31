@@ -441,7 +441,7 @@ export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 
     const raw = envelope.data?.authorization_recheck
     if (!raw) throw new Error('execution authorization recheck evidence is missing')
     return {
-      recheckId: String(raw.recheck_id ?? ''), actorId: String(raw.actor_id ?? ''), workspaceId: String(raw.workspace_id ?? ''), contextId: String(raw.context_id ?? ''), contextVersion: String(raw.context_version ?? ''), policyVersion: String(raw.policy_version ?? ''), grantRevision: String(raw.grant_revision ?? ''), scopeHash: String(raw.scope_hash ?? ''), capability: String(raw.capability ?? '') as WorkerAuthorizationRecheck['capability'], resourceId: String(raw.resource_id ?? ''), authorized: raw.authorized === true, checkedAt: String(raw.checked_at ?? ''),
+      recheckId: String(raw.recheck_id ?? ''), actorId: String(raw.actor_id ?? ''), identityId: String(raw.identity_id ?? ''), workspaceId: String(raw.workspace_id ?? ''), workbench: raw.workbench === 'workspace' ? 'workspace' : '' as 'workspace', contextId: String(raw.context_id ?? ''), contextVersion: String(raw.context_version ?? ''), policyVersion: String(raw.policy_version ?? ''), grantRevision: String(raw.grant_revision ?? ''), grantIds: Array.isArray(raw.grant_ids) ? raw.grant_ids.filter((value): value is string => typeof value === 'string') : [], scopeHash: String(raw.scope_hash ?? ''), capability: String(raw.capability ?? '') as WorkerAuthorizationRecheck['capability'], resourceId: String(raw.resource_id ?? ''), resourceRevision: String(raw.resource_revision ?? ''), requestId: String(raw.request_id ?? ''), traceId: String(raw.trace_id ?? ''), authorized: raw.authorized === true, checkedAt: String(raw.checked_at ?? ''),
     }
   })
 }
