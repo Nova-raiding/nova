@@ -16202,6 +16202,11 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     await requireWorkerCredentialAuthorization(req)
     const workspaceId = resolveWorkspace(req)
     const job = service.assertPublishExecutionAllowed({ workspaceId, publishJobId: publishExecutionCheckMatch[1]! })
+    const eventId = url.searchParams.get('event_id')?.trim() ?? ''
+    if (!eventId) throw new DomainError('AUTHZ_EXECUTION_EVENT_REQUIRED', '发布执行缺少持久事件标识，已拒绝释放凭据', 400)
+    if (!persistence.outbox) throw new DomainError('AUTHORIZATION_EVENT_REPOSITORY_UNAVAILABLE', '持久事件仓储不可用，已拒绝发布执行', 503)
+    const publishEvent = (await persistence.outbox.listAggregateEvents(workspaceId, job.id, 1000)).find(candidate => candidate.id === eventId)
+    if (!publishEvent || publishEvent.eventType !== 'publish.requested' || publishEvent.aggregateId !== job.id) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '发布执行事件不存在或不属于当前发布任务', 404)
     // The durable publish binding protects the task snapshot, but it is not a
     // substitute for checking the current canonical product/listing chain.
     // Re-read it immediately before releasing the credential to the worker so
@@ -16211,7 +16216,10 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const account = service.getActivePlatformAccount(workspaceId, job.accountId!, job.platform)
     const snapshot = job.authorizationSnapshot
     if (!snapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '发布执行缺少入队授权快照，已拒绝释放凭据', 403)
-    const authorizationRecheck = await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, job.id)
+    let eventSnapshot: WorkerAuthorizationSnapshot
+    try { eventSnapshot = parseWorkerAuthorizationSnapshot(publishEvent, 'publish.execute') } catch { throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '发布事件缺少有效且精确绑定的授权快照', 403) }
+    if (JSON.stringify(serializedWorkerAuthorizationSnapshot(eventSnapshot)) !== JSON.stringify(serializedWorkerAuthorizationSnapshot(snapshot))) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '发布任务与持久事件的授权快照不一致', 403)
+    const authorizationRecheck = await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, job.id, { eventId: publishEvent.id })
     return send(res, 200, workspaceId, { allowed: true, job_id: job.id, account_id: job.accountId, account_revision: job.accountRevision, credential_ref: account.credentialRef, payload_hash: job.payloadHash, media_required: job.selectedVisuals.length > 0, authorization_snapshot: { ...serializedWorkerAuthorizationSnapshot(snapshot), resource_id: job.id }, authorization_recheck: authorizationRecheck }, null, req)
   }
   const publishMediaMatch = path.match(/^\/v1\/publish-jobs\/([^/]+)\/media$/)

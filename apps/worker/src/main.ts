@@ -395,7 +395,7 @@ export async function assertPublishExecution(input: {
 }): Promise<{ credentialRef: string; payloadHash: string; mediaRequired: boolean; authorizationSnapshot?: Record<string, unknown> }> {
   let response: Response
   try {
-    response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/, '')}/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/execution-check`, {
+    response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/, '')}/v1/publish-jobs/${encodeURIComponent(input.event.aggregateId)}/execution-check?event_id=${encodeURIComponent(input.event.id)}`, {
       method: 'GET',
       headers: { accept: 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.event.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
       redirect: 'error',
