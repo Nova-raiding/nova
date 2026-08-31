@@ -243,7 +243,13 @@ export class MemoryAuthorizationRepository implements AuthorizationRepository {
     if (input.grantId !== undefined) {
       if (!Number.isSafeInteger(input.expectedGrantRevision) || input.expectedGrantRevision! < 1) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
       const grant = this.grants.get(input.grantId)
-      if (!grant || grant.subjectIdentityId !== input.subjectIdentityId || grant.workspaceId !== input.workspaceId || grant.scopeHash !== input.scopeHash || !grant.capabilities.includes(input.capability) || grant.revokedAt || grant.revision !== input.expectedGrantRevision || grant.authorizationRevision !== input.expectedAuthorizationRevision || grant.useCount >= grant.maxUses) return undefined
+      // A grant is consumed when the durable event is admitted to the queue.
+      // Reservation must bind that admission, rather than consume another use
+      // or authorize an event directly from an issued grant.  In particular,
+      // useCount === maxUses is valid here: maxUses was enforced by
+      // consumeGrant, and this reservation represents that already-consumed
+      // queue admission.
+      if (!grant || grant.subjectIdentityId !== input.subjectIdentityId || grant.workspaceId !== input.workspaceId || grant.scopeHash !== input.scopeHash || !grant.capabilities.includes(input.capability) || grant.revokedAt || grant.revision !== input.expectedGrantRevision || grant.authorizationRevision !== input.expectedAuthorizationRevision || grant.useCount < 1) return undefined
       const at = input.at ?? this.clock().toISOString()
       if (Date.parse(grant.issuedAt) > Date.parse(at) || Date.parse(grant.expiresAt) <= Date.parse(at)) return undefined
       grantRevision = grant.revision
@@ -314,7 +320,10 @@ export class PostgresAuthorizationRepository implements AuthorizationRepository 
       const revisionRow = (await client.query<{ revision: number }>('SELECT revision FROM authorization_revisions WHERE subject_identity_id=$1 FOR UPDATE', [input.subjectIdentityId])).rows[0]
       const authorizationRevision = Number(revisionRow?.revision ?? 0)
       if (authorizationRevision !== input.expectedAuthorizationRevision) return undefined
-      if (input.grantId !== undefined && (!grant || grant.workspaceId !== input.workspaceId || !grant.capabilities.includes(input.capability) || grant.scopeHash !== input.scopeHash || grant.revokedAt || grant.revision !== input.expectedGrantRevision || grant.authorizationRevision !== input.expectedAuthorizationRevision || grant.useCount >= grant.maxUses || Date.parse(String(grant.issuedAt)) > Date.parse(at) || Date.parse(String(grant.expiresAt)) <= Date.parse(at))) return undefined
+      // The enqueue transaction must have consumed the grant before this
+      // execution reservation can be created.  Do not re-check maxUses here:
+      // a consumed maxUses=1 grant is the expected legal case.
+      if (input.grantId !== undefined && (!grant || grant.workspaceId !== input.workspaceId || !grant.capabilities.includes(input.capability) || grant.scopeHash !== input.scopeHash || grant.revokedAt || grant.revision !== input.expectedGrantRevision || grant.authorizationRevision !== input.expectedAuthorizationRevision || Number(grant.useCount) < 1 || Date.parse(String(grant.issuedAt)) > Date.parse(at) || Date.parse(String(grant.expiresAt)) <= Date.parse(at))) return undefined
       const grantRevision = grant?.revision
       const values = [input.reservationId, input.eventId, input.subjectIdentityId, input.workspaceId, input.capability, input.resourceId, input.scopeHash, input.grantId ?? null, authorizationRevision, grantRevision ?? null, at]
       const inserted = (await client.query<AuthorizationExecutionReservationRow>(`INSERT INTO authorization_execution_reservations (reservation_id,event_id,subject_identity_id,workspace_id,capability,resource_id,scope_hash,grant_id,authorization_revision,grant_revision,reserved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING ${authorizationExecutionReservationProjection}`, values)).rows[0]
