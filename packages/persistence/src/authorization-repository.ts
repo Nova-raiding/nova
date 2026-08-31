@@ -81,6 +81,31 @@ export interface IssueAuthorizationGrantInput {
 }
 export interface ConsumeAuthorizationGrantInput { id: string; subjectIdentityId: string; workspaceId: string; capability: string; scopeHash: string; expectedRevision: number; actorId: string; reason: string; at?: string }
 export interface RevokeAuthorizationGrantInput { id: string; subjectIdentityId: string; actorId: string; reason: string; expectedRevision: number; expectedAuthorizationRevision: number }
+export interface AuthorizationExecutionReservation {
+  reservationId: string
+  eventId: string
+  subjectIdentityId: string
+  workspaceId: string
+  capability: string
+  resourceId: string
+  scopeHash: string
+  authorizationRevision: number
+  grantRevision?: number
+  reservedAt: string
+}
+export interface ReserveAuthorizationExecutionInput {
+  reservationId: string
+  eventId: string
+  subjectIdentityId: string
+  workspaceId: string
+  capability: string
+  resourceId: string
+  scopeHash: string
+  expectedAuthorizationRevision: number
+  grantId?: string
+  expectedGrantRevision?: number
+  at?: string
+}
 
 export interface AuthorizationRepository {
   getAuthorizationRevision(subjectIdentityId: string): Promise<number>
@@ -95,6 +120,12 @@ export interface AuthorizationRepository {
   issueGrant(input: IssueAuthorizationGrantInput): Promise<AuthorizationGrant>
   consumeGrant(input: ConsumeAuthorizationGrantInput): Promise<AuthorizationGrant | undefined>
   revokeGrant(input: RevokeAuthorizationGrantInput): Promise<AuthorizationGrant>
+  /**
+   * Atomically reserves the right to cross a worker side-effect boundary.
+   * Revoke/role changes advance the subject authorization revision; a stale
+   * caller must lose this CAS. Repeating the same reservation is idempotent.
+   */
+  reserveExecution(input: ReserveAuthorizationExecutionInput): Promise<AuthorizationExecutionReservation | undefined>
 }
 
 export type AuthorizationRepositoryErrorCode =
@@ -106,6 +137,8 @@ export type AuthorizationRepositoryErrorCode =
   | 'AUTHORIZATION_GRANT_NOT_FOUND'
   | 'AUTHORIZATION_GRANT_REVISION_CONFLICT'
   | 'AUTHORIZATION_GRANT_INVALID'
+  | 'AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT'
+  | 'AUTHORIZATION_EXECUTION_RESERVATION_UNAVAILABLE'
 
 export class AuthorizationRepositoryError extends Error {
   constructor(readonly code: AuthorizationRepositoryErrorCode) { super(code); this.name = 'AuthorizationRepositoryError' }
@@ -147,6 +180,7 @@ export class MemoryAuthorizationRepository implements AuthorizationRepository {
   private readonly revisions = new Map<string, number>()
   private readonly roles = new Map<string, PlatformRoleAssignment>()
   private readonly grants = new Map<string, AuthorizationGrant>()
+  private readonly executionReservations = new Map<string, AuthorizationExecutionReservation>()
   constructor(private readonly clock: () => Date = () => new Date()) {}
   private bump(subject: string, expected: number) { requireExpectedRevision(expected); const current = this.revisions.get(subject) ?? 0; if (current !== expected) throw new AuthorizationRepositoryError('AUTHORIZATION_REVISION_CONFLICT'); const next = current + 1; this.revisions.set(subject, next); return next }
   async getAuthorizationRevision(subject: string) { return this.revisions.get(subject) ?? 0 }
@@ -194,6 +228,32 @@ export class MemoryAuthorizationRepository implements AuthorizationRepository {
     const revoked = { ...row, revokedAt: now, revokedBy: input.actorId, revocationReason: input.reason, revision: row.revision + 1, authorizationRevision, updatedAt: now }
     this.grants.set(row.id, revoked); return clone(revoked)
   }
+  async reserveExecution(input: ReserveAuthorizationExecutionInput) {
+    requireText(input.reservationId, 1, 255); requireText(input.eventId, 1, 255); requireText(input.subjectIdentityId, 1, 255); requireText(input.workspaceId, 1, 255); requireText(input.capability, 1, 255); requireText(input.resourceId, 1, 255); requireExpectedRevision(input.expectedAuthorizationRevision)
+    if (!/^[a-f0-9]{64}$/u.test(input.scopeHash)) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
+    const existing = this.executionReservations.get(input.reservationId)
+    if (existing) {
+      const same = existing.eventId === input.eventId && existing.subjectIdentityId === input.subjectIdentityId && existing.workspaceId === input.workspaceId && existing.capability === input.capability && existing.resourceId === input.resourceId && existing.scopeHash === input.scopeHash
+      if (!same) throw new AuthorizationRepositoryError('AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT')
+      return clone(existing)
+    }
+    const currentAuthorizationRevision = this.revisions.get(input.subjectIdentityId) ?? 0
+    if (currentAuthorizationRevision !== input.expectedAuthorizationRevision) return undefined
+    let grantRevision: number | undefined
+    if (input.grantId !== undefined) {
+      if (!Number.isSafeInteger(input.expectedGrantRevision) || input.expectedGrantRevision! < 1) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
+      const grant = this.grants.get(input.grantId)
+      if (!grant || grant.subjectIdentityId !== input.subjectIdentityId || grant.workspaceId !== input.workspaceId || grant.scopeHash !== input.scopeHash || !grant.capabilities.includes(input.capability) || grant.revokedAt || grant.revision !== input.expectedGrantRevision || grant.authorizationRevision !== input.expectedAuthorizationRevision || grant.useCount >= grant.maxUses) return undefined
+      const at = input.at ?? this.clock().toISOString()
+      if (Date.parse(grant.issuedAt) > Date.parse(at) || Date.parse(grant.expiresAt) <= Date.parse(at)) return undefined
+      grantRevision = grant.revision
+    } else if (input.expectedGrantRevision !== undefined) {
+      throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
+    }
+    const reservation: AuthorizationExecutionReservation = { reservationId: input.reservationId, eventId: input.eventId, subjectIdentityId: input.subjectIdentityId, workspaceId: input.workspaceId, capability: input.capability, resourceId: input.resourceId, scopeHash: input.scopeHash, authorizationRevision: currentAuthorizationRevision, ...(grantRevision === undefined ? {} : { grantRevision }), reservedAt: input.at ?? this.clock().toISOString() }
+    this.executionReservations.set(input.reservationId, reservation)
+    return clone(reservation)
+  }
 }
 
 type RoleRow = { id: string; subjectIdentityId: string; role: PlatformAssignedRole; assignedBy: string; reason: string; validFrom: string | Date; expiresAt: string | Date | null; revokedAt: string | Date | null; revokedBy: string | null; revocationReason: string | null; revision: number; authorizationRevision: number; createdAt: string | Date; updatedAt: string | Date }
@@ -222,4 +282,5 @@ export class PostgresAuthorizationRepository implements AuthorizationRepository 
   async issueGrant(input: IssueAuthorizationGrantInput) { const now = this.clock().toISOString(); const normalized = normalizeGrant(input, now); return this.transaction(async client => { const authorizationRevision = await this.bump(client, input.subjectIdentityId, input.expectedAuthorizationRevision, input.issuedBy, input.reason); let row: GrantRow | undefined; try { row = (await client.query<GrantRow>(`INSERT INTO ops_access_grants (id,grant_kind,access_mode,subject_identity_id,workspace_id,capabilities,resource_scope,scope_hash,reason,ticket_ref,issued_by,approved_by,approved_at,issued_at,expires_at,max_uses,authorization_revision,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$14,$14) RETURNING ${grantProjection}`, [randomUUID(), input.grantKind, input.accessMode, input.subjectIdentityId, input.workspaceId, normalized.capabilities, normalized.resourceScope, normalized.scopeHash, input.reason, input.ticketRef, input.issuedBy, input.approvedBy, input.approvedAt, now, input.expiresAt, input.maxUses, authorizationRevision])).rows[0] } catch (error) { if ((error as { code?: string }).code === '23505') throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_CONFLICT'); throw error } const value = grantFromRow(row!); await client.query(`INSERT INTO ops_access_grant_events (id,grant_id,subject_identity_id,workspace_id,event_type,actor_id,reason,authorization_revision,grant_revision,snapshot_json,created_at) VALUES ($1,$2,$3,$4,'issued',$5,$6,$7,$8,$9,$10)`, [randomUUID(), value.id, value.subjectIdentityId, value.workspaceId, input.issuedBy, input.reason, authorizationRevision, value.revision, value, now]); return value }) }
   async consumeGrant(input: ConsumeAuthorizationGrantInput) { requireText(input.actorId, 1, 255); requireText(input.reason, 3, 1000); const at = input.at ?? this.clock().toISOString(); return this.transaction(async client => { const row = (await client.query<GrantRow>(`UPDATE ops_access_grants SET use_count=use_count+1,revision=revision+1,updated_at=$7 WHERE id=$1 AND subject_identity_id=$2 AND workspace_id=$3 AND $4=ANY(capabilities) AND scope_hash=$5 AND revision=$6 AND revoked_at IS NULL AND issued_at <= $7 AND expires_at > $7 AND use_count < max_uses RETURNING ${grantProjection}`, [input.id, input.subjectIdentityId, input.workspaceId, input.capability, input.scopeHash, input.expectedRevision, at])).rows[0]; if (!row) return undefined; const current = Number((await client.query<{ revision: number }>('SELECT revision FROM authorization_revisions WHERE subject_identity_id=$1 FOR UPDATE', [input.subjectIdentityId])).rows[0]?.revision ?? 0); const authorizationRevision = await this.bump(client, input.subjectIdentityId, current, input.actorId, input.reason); const updated = (await client.query<GrantRow>(`UPDATE ops_access_grants SET authorization_revision=$2 WHERE id=$1 RETURNING ${grantProjection}`, [input.id, authorizationRevision])).rows[0]!; const value = grantFromRow(updated); await client.query(`INSERT INTO ops_access_grant_events (id,grant_id,subject_identity_id,workspace_id,event_type,actor_id,reason,authorization_revision,grant_revision,snapshot_json,created_at) VALUES ($1,$2,$3,$4,'used',$5,$6,$7,$8,$9,$10)`, [randomUUID(), value.id, value.subjectIdentityId, value.workspaceId, input.actorId, input.reason, authorizationRevision, value.revision, value, at]); return value }) }
   async revokeGrant(input: RevokeAuthorizationGrantInput) { requireText(input.actorId, 1, 255); requireText(input.reason, 3, 1000); const now = this.clock().toISOString(); return this.transaction(async client => { const existing = (await client.query<GrantRow>(`SELECT ${grantProjection} FROM ops_access_grants WHERE id=$1 AND subject_identity_id=$2 AND revoked_at IS NULL FOR UPDATE`, [input.id, input.subjectIdentityId])).rows[0]; if (!existing) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_NOT_FOUND'); if (existing.revision !== input.expectedRevision) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_REVISION_CONFLICT'); const authorizationRevision = await this.bump(client, input.subjectIdentityId, input.expectedAuthorizationRevision, input.actorId, input.reason); const row = (await client.query<GrantRow>(`UPDATE ops_access_grants SET revoked_at=$3,revoked_by=$4,revocation_reason=$5,revision=revision+1,authorization_revision=$6,updated_at=$3 WHERE id=$1 AND subject_identity_id=$2 AND revision=$7 AND revoked_at IS NULL RETURNING ${grantProjection}`, [input.id, input.subjectIdentityId, now, input.actorId, input.reason, authorizationRevision, input.expectedRevision])).rows[0]; if (!row) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_REVISION_CONFLICT'); const value = grantFromRow(row); await client.query(`INSERT INTO ops_access_grant_events (id,grant_id,subject_identity_id,workspace_id,event_type,actor_id,reason,authorization_revision,grant_revision,snapshot_json,created_at) VALUES ($1,$2,$3,$4,'revoked',$5,$6,$7,$8,$9,$10)`, [randomUUID(), value.id, value.subjectIdentityId, value.workspaceId, input.actorId, input.reason, authorizationRevision, value.revision, value, now]); return value }) }
+  async reserveExecution(_input: ReserveAuthorizationExecutionInput): Promise<AuthorizationExecutionReservation | undefined> { throw new AuthorizationRepositoryError('AUTHORIZATION_EXECUTION_RESERVATION_UNAVAILABLE') }
 }
