@@ -76,8 +76,8 @@ describe('merchant product response normalization', () => {
 
   it('reads the workspace-scoped image task discovery page without inventing demo rows', async () => {
     vi.stubGlobal('window', globalThis)
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ items: [{ jobId: 'img_1', productId: 'p1', state: 'succeeded', archiveState: 'archived', requestedCount: 2, candidateCount: 2, revision: 3, createdAt: '2026-08-31T00:00:00.000Z', updatedAt: '2026-08-31T00:00:00.000Z' }], total: 1, limit: 50, offset: 0 })))
-    await expect(fetchImageGenerationJobs('/api')).resolves.toMatchObject({ total: 1, items: [{ jobId: 'img_1', candidateCount: 2 }] })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ items: [{ jobId: 'img_1', productId: 'p1', state: 'running', archiveState: 'pending', executionState: 'provider_dispatching', reconciliationRequired: true, requestedCount: 2, candidateCount: 2, revision: 3, createdAt: '2026-08-31T00:00:00.000Z', updatedAt: '2026-08-31T00:00:00.000Z' }], total: 1, limit: 50, offset: 0 })))
+    await expect(fetchImageGenerationJobs('/api')).resolves.toMatchObject({ total: 1, items: [{ jobId: 'img_1', candidateCount: 2, executionState: 'provider_dispatching', reconciliationRequired: true }] })
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('/v1/image-generation-jobs?limit=50&offset=0'), expect.any(Object))
   })
 

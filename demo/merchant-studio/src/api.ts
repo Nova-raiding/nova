@@ -1,3 +1,5 @@
+import type { ImageGenerationExecutionState } from './image-generation-state'
+
 export interface ApiHealth {
   status: string
   writesEnabled: boolean
@@ -333,7 +335,7 @@ export interface ImageGenerationJob {
   sourceAssetIds: string[]
   sourceProductVersion: number
   intentHash: string
-  executionState?: string | null
+  executionState?: ImageGenerationExecutionState
   providerRequestId?: string | null
   executionAttempt?: number | null
   reconciliationRequired?: boolean
@@ -347,12 +349,12 @@ export interface ImageGenerationJob {
   nextAction: { type: string; label: string; allowed: boolean }
 }
 type ImageGenerationJobWire = {
-  job_id: string; revision: number; state: ImageGenerationJob['state']; archive_state: ImageGenerationJob['archiveState']; product_id: string; task_id?: string | null; content_version_id?: string | null; image_mode: string; direction: string; requested_count: number; source_asset_ids: string[]; source_product_version: number; intent_hash: string; execution_state?: string | null; provider_request_id?: string | null; execution_attempt?: number | null; reconciliation_required?: boolean; error_code?: string | null; error_message?: string | null; updated_at: string; created_at: string; outputs: Array<{ visual_ref: string; ordinal: number; asset_id?: string | null; archive_receipt_id?: string | null; archive_receipt_digest?: string | null; storage_key: string; mime_type: string; size_bytes: number; sha256: string; created_at: string; review_status: string; gate: ImageGenerationJob['outputs'][number]['gate'] }>; images?: string[]; availability_warning?: string; next_action: { type: string; label: string; allowed: boolean }
+  job_id: string; revision: number; state: ImageGenerationJob['state']; archive_state: ImageGenerationJob['archiveState']; product_id: string; task_id?: string | null; content_version_id?: string | null; image_mode: string; direction: string; requested_count: number; source_asset_ids: string[]; source_product_version: number; intent_hash: string; execution_state?: ImageGenerationExecutionState; provider_request_id?: string | null; execution_attempt?: number | null; reconciliation_required?: boolean; error_code?: string | null; error_message?: string | null; updated_at: string; created_at: string; outputs: Array<{ visual_ref: string; ordinal: number; asset_id?: string | null; archive_receipt_id?: string | null; archive_receipt_digest?: string | null; storage_key: string; mime_type: string; size_bytes: number; sha256: string; created_at: string; review_status: string; gate: ImageGenerationJob['outputs'][number]['gate'] }>; images?: string[]; availability_warning?: string; next_action: { type: string; label: string; allowed: boolean }
 }
 
 export type ImageGenerationJobListItem = {
   jobId: string; productId: string; taskId?: string | null; contentVersionId?: string | null; revision: number
-  state: string; archiveState: string; requestedCount: number; candidateCount: number; productTitle?: string | null; platform?: string | null; storeName?: string | null; createdAt: string; updatedAt: string
+  state: string; archiveState: string; executionState?: ImageGenerationExecutionState; providerRequestId?: string | null; executionAttempt?: number | null; reconciliationRequired?: boolean; requestedCount: number; candidateCount: number; productTitle?: string | null; platform?: string | null; storeName?: string | null; createdAt: string; updatedAt: string
   errorCode?: string; errorMessage?: string
 }
 
