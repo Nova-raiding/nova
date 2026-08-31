@@ -72,6 +72,11 @@
 - 本轮类型检查、品牌权限 E2E、CodeGraph 同步和 Compose 健康检查通过；图片回调/租约/对账定向测试 5 个文件、85 项通过；本地真实 PostgreSQL 执行迁移 092/094/096/097 与 migration integrity release 测试 5 个文件、7 项通过。
 - 图片回调的真实双 API 进程、PostgreSQL/RLS 故障注入、对象存储联合恢复和 provider 回执尚未执行。
 
+### 2026-09-01 Provider dispatch 状态事实校正
+
+- 当前源码与迁移契约已进一步落地 `provider_reserved`、`provider_dispatching`；Worker 只有在 `begin_provider_dispatch` 成功提交后才允许外呼 Provider，异常/超时可从 dispatching 进入 `outcome_unknown`。migration 119 已注册并纳入发布契约。
+- 本文件早先未包含上述 dispatching 状态的记录属于历史快照，不代表当前实现；真实 PostgreSQL/RLS、多副本故障注入、Provider query/replay/幂等、对象存储和账务关联证据仍缺，结论继续为 **TODO / NO-GO**。
+
 ## 2026-08-31 回调协议收紧增量
 
 - 新增 `packages/contracts/src/image-generation-callback.ts`，API 与 Worker 共用严格回调 schema：成功图片与错误互斥、错误必须包含非空 `code/message`、图片引用仅允许 HTTPS 或 image data URI、ID/错误字段有长度与控制字符边界、未知字段拒绝。

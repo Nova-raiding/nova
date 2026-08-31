@@ -126,3 +126,10 @@ provider adapter 必须提供真实的 `queryStatus(providerRequestId)`，并保
 
 - 已修复 Worker → API reconciliation evidence 的确定性协议断裂：Worker 现在发送服务端强制要求的 `idempotency_key`，并透传候选中的 `query_attempt`；幂等键由 `job_id/execution_attempt/query_attempt/provider_request_id` 规范化哈希生成，同一 Provider 观测可安全重放，意图变化仍由 API 按幂等冲突拒绝。Worker 定向测试 43/43、TypeScript、`git diff --check`、CodeGraph 通过。
 - durable query backoff 已补齐：API 读取任务最新 evidence 并在 `next_attempt_at` 前过滤，Worker 对 processing/unknown 计算有界指数退避并持久化回传；仍未宣称对账闭环完成，真实 Provider 状态回读、生产对象存储/计费证据和多副本并发验收仍在 TODO。
+
+## 2026-09-01 Provider 状态与索引事实复核
+
+- 当前执行状态链已实际扩展为 `leased → provider_reserved → provider_dispatching → provider_started`；`provider_dispatching` 外呼前由 Worker 通过 `begin_provider_dispatch` 持久化，Provider 异常/超时可进入 `outcome_unknown`，已有 reservation 的执行不会被普通 claim 重派。
+- migration 119 `image_generation_execution_dispatch_fence.sql` 已注册在 `loadMigrations()`，并已纳入 release metadata、历史尾部断言和 release-gates 专项测试；此前本文件所述“没有 dispatching fence/仍停留在 migration 117”的描述仅为历史记录，不是当前状态。
+- CodeGraph 本次复核后为 **861 files / 12,199 nodes / 45,668 edges**，`codegraph status .` 报告 index up to date；该索引证明源码关系可追踪，不证明真实数据库或 Provider 运行成功。
+- 当前仍缺：真实 Provider request/status/query/replay 与幂等计数、双副本 PostgreSQL/RLS 并发及崩溃恢复、usage/cost/settlement 唯一关联、正式 ChatGPT Host/OIDC/canary 和桌面浏览器全流程证据。因此本文件继续保持 **TODO / NO-GO**，不迁移到 `doc/done`。

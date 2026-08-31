@@ -233,3 +233,9 @@
 - Ops/商家桌面端将 `provider_reserved`、`provider_dispatching`、`provider_started` 统一转译为“处理中/模型已受理”，`outcome_unknown` 转译为“结果待对账”；未知状态只提供查看/对账，不提供再次生成。
 - 异步状态保留 `aria-live`，错误使用 `role=alert`；本地 UI 定向 14/14 通过，Ops/Merchant 构建与类型检查通过。
 - 真实 Provider、多副本故障恢复、正式 OIDC/RLS 和生产桌面浏览器证据仍缺，文档继续留在 `doc/todo`。
+
+### 2026-09-01 Provider 状态字典复核校正
+
+- 代码核对发现：Merchant Studio 的当前状态字典覆盖 `dispatching`、`provider_started`、`outcome_unknown`，但没有显式覆盖后端真实状态名 `provider_reserved`、`provider_dispatching`；Ops Console 的 `queueStateLabel` 也仅覆盖 `dispatching`，未覆盖这两个真实名称。现有 UI 定向测试未证明这两个状态名能被正确展示，因此此前“`provider_reserved`、`provider_dispatching`、`provider_started` 已统一转译”的表述过宽，改判为 **UI 缺口未关闭**。
+- `outcome_unknown` 当前仍禁止再次生成，并提示进入运营台对账；但真实桌面浏览器、多状态切换、网络故障和正式宿主验收尚未完成。该复核只更新事实，不修改 UI 实现。
+- 当前结论：后端 dispatch fence 已落地，桌面状态字典尚未完整对齐；真实 Provider、OIDC/RLS、多副本恢复和生产证据仍缺，继续 **TODO / UI NO-GO**，不迁移到 `doc/done`。

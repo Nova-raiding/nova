@@ -50,6 +50,13 @@
 - 本轮复核确认 `packages/persistence/src/migrations/119_image_generation_execution_dispatch_fence.sql` 已由 `packages/persistence/src/migration.ts` 注册，且 `migration-117.test.ts` 与新增 `migration-119.test.ts` 均覆盖该注册及约束；此前“未注册/专项失败”记录已过时，本轮同步修正发布元数据、基础迁移断言与 release-gates 清单。
 - 该修复只证明仓库迁移契约一致，不证明真实 PostgreSQL 非超级用户迁移、双副本崩溃恢复和 Provider/账务关联证据；能力矩阵继续留在 `doc/todo`，发布判断仍为 **NO-GO**。
 
+### 2026-09-01 Provider 状态与 CodeGraph 当前快照
+
+- CodeGraph 当前为 **861 files / 12,199 nodes / 45,668 edges**，`codegraph status .` 报告 index up to date；这是当前源码索引状态，不是生产运行证据。
+- Provider dispatch fence 的代码/迁移发布契约已统一到 migration 119，执行链为 `leased → provider_reserved → provider_dispatching → provider_started`，未知结果仍进入 `outcome_unknown` 并禁止普通重派。
+- UI 对账发现：Merchant Studio 与 Ops Console 尚未显式为 `provider_reserved`、`provider_dispatching` 提供状态字典映射；因此 Provider 状态的后端能力为本地代码已落地，桌面交互能力仍为部分完成。
+- 真实 Provider 幂等/query、PostgreSQL/RLS、多副本故障恢复、usage/cost/settlement、正式 ChatGPT Host/OIDC/canary 证据仍缺。该矩阵继续留在 `doc/todo`，结论保持 **NO-GO**。
+
 ### 2026-08-31 增量复核
 
 - 发布执行前再校验 canonical scope：execution-check 和 publish media 在释放凭证/媒体前重新读取当前 canonical product、facts、唯一 listing 与 workspace read mode，旧任务 binding 失效时 fail-closed；API E2E 53/53、application 109/109 通过。真实 connector、生产 RLS 与 canary 仍缺失。

@@ -211,3 +211,8 @@ provider_completed → archiving → archived / reconciliation_required
 
 - Worker → API 的 reconciliation evidence 请求已补齐稳定 `idempotency_key`，并使用候选记录中的 `query_attempt`（缺省才回退到 execution attempt）；同一观测重试会复用同一键，响应内容变化交由 API/持久化层返回幂等冲突。Worker 定向测试 43/43、类型检查、差异检查和 CodeGraph 通过。
 - 已补齐按 `next_attempt_at` 的 durable backoff/查询过滤：API 在冷却窗口内不返回待查询执行，Worker 对 processing/unknown 使用有界指数退避并写入下一次时间。仍未完成：真实 Provider 状态回读、对象归档/扫描/计费证据和多副本并发验收；因此本验收文档继续保留在 `doc/todo`。
+
+### 2026-09-01 Provider dispatch fence 当前事实
+
+- 图片执行链已实际经过 `leased → provider_reserved → provider_dispatching → provider_started`；Worker 在 Provider 外呼前提交 dispatch fence，异常/超时进入 `outcome_unknown`，不自动重派。migration 119 已注册并纳入发布契约。
+- 本地代码、契约和迁移测试不等同于真实 Provider request/status/query/replay、双副本 PostgreSQL/RLS 崩溃恢复或 usage/cost/settlement 证据；P0/P1 完成定义仍未满足，本文继续保持 **TODO / NO-GO**，不迁移到 `doc/done`。
