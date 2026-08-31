@@ -46,8 +46,17 @@ export function opsSessionGateState(
   sessionLoaded: boolean,
   sessionError?: string,
 ): "ready" | "loading" | "blocked" {
-  if (!managed || sessionLoaded) return "ready";
-  return sessionError ? "blocked" : "loading";
+  if (sessionLoaded) return "ready";
+  if (sessionError) return "blocked";
+  if (!managed) return "ready";
+  return "loading";
+}
+
+export function accessDeniedReasonCode(
+  evidence: { code?: string; details?: Readonly<Record<string, unknown>> } | undefined,
+): string | undefined {
+  const reasonCode = evidence?.details?.reason_code;
+  return typeof reasonCode === "string" && reasonCode.trim() ? reasonCode.trim() : evidence?.code;
 }
 
 export async function selectStoreScope(
@@ -75,7 +84,7 @@ function Dashboard({
 }) {
   const { activeDomain, navigate: navigateToRoute } = useOpsNavigation();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
-  const sessionError = managedOpsSession && !model.opsSession
+  const sessionError = !model.opsSession
     ? model.dataSetError("ops.session")
     : undefined;
   const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
@@ -103,9 +112,9 @@ function Dashboard({
     // every time the overview or refresh action runs.
     const canRead = (domain: Parameters<typeof canViewOpsDomain>[0]) =>
       canViewOpsDomain(domain, model.authorization);
-    if ((activeDomain === "overview" || activeDomain === "rules") && canRead("rules"))
+    if (activeDomain === "rules" && activeWorkbench === "workspace" && canRead("rules"))
       void model.loadRules();
-    if ((activeDomain === "overview" || activeDomain === "finance") && canRead("finance"))
+    if (activeDomain === "finance" && activeWorkbench === "platform" && canRead("finance"))
       void model.loadRechargeOrders();
     if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
     if (activeDomain === "users" && canRead("users")) void model.loadUsers();
@@ -113,6 +122,9 @@ function Dashboard({
 
   return (
     <Layout className="ops-shell">
+      <a className="ops-skip-link" href="#ops-main-content">
+        跳转到主要内容
+      </a>
       <OpsSidebar
         activeDomain={activeDomain}
         stores={model.storeDirectory}
@@ -139,6 +151,7 @@ function Dashboard({
           switchingWorkbench={switchingWorkbench}
           onWorkbenchChange={onWorkbenchChange}
           onJitExpired={() => { model.clearAuthorizationScopedData(); void model.load(); }}
+          onJitExit={() => { model.clearAuthorizationScopedData(); void model.load(); }}
           onRefresh={() => {
             void model.load();
             if (model.canModelMarkup && canViewOpsDomain("models", model.authorization) && readOpsConnectionConfig().workbench === "platform")
@@ -152,7 +165,7 @@ function Dashboard({
           }}
         />
         <Content id="ops-main-content" className="ops-content" tabIndex={-1}>
-          {model.error ? (
+          {model.error && sessionGate !== "blocked" ? (
             <Alert
               className="ops-global-load-warning"
               role="status"
@@ -184,7 +197,7 @@ function Dashboard({
               scope={model.authorization.scope}
               requestId={sessionErrorEvidence?.requestId}
               traceId={sessionErrorEvidence?.traceId}
-              reasonCode={sessionErrorEvidence?.code}
+              reasonCode={accessDeniedReasonCode(sessionErrorEvidence)}
               onBack={() => navigateToDomain("overview")}
               onRefresh={() => void model.load()}
             />
