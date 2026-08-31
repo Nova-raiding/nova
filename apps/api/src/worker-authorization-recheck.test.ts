@@ -23,12 +23,11 @@ describe('worker authorization recheck API', () => {
     setAuthorizationRepositoryForTests(repository)
     try {
       await expect(recheckWorkerAuthorizationSnapshot(snapshot(1, 1), 'ws_authz_api', 'task_authz_api')).resolves.toMatchObject({ authorized: true })
-      const reserved = await recheckWorkerAuthorizationSnapshot(snapshot(1, 1), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })
-      expect(reserved).toMatchObject({ authorized: true, reservation_id: 'worker-execution:evt_authz_api:generation.execute', event_id: 'evt_authz_api' })
-      await expect(recheckWorkerAuthorizationSnapshot(snapshot(1, 1), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).resolves.toMatchObject({ reservation_id: (reserved as { reservation_id: string }).reservation_id })
       const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: 'identity_authz_api', workspaceId: 'ws_authz_api', capability: 'customer.content.update', scopeHash: grant.scopeHash, expectedRevision: 1, actorId: 'operator_a', reason: 'execute approved task' })
       expect(consumed).toMatchObject({ revision: 2, authorizationRevision: 2, useCount: 1, maxUses: 1 })
-      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+      const reserved = await recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })
+      expect(reserved).toMatchObject({ authorized: true, reservation_id: 'worker-execution:evt_authz_api:generation.execute', event_id: 'evt_authz_api' })
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).resolves.toMatchObject({ reservation_id: (reserved as { reservation_id: string }).reservation_id })
     } finally {
       setAuthorizationRepositoryForTests()
     }

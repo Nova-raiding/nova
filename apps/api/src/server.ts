@@ -3742,7 +3742,6 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
       || !grant.capabilities.includes(requiredCapability)
       || grant.scopeHash !== snapshot.scopeHash
       || grant.revokedAt
-      || grant.useCount >= grant.maxUses
       || Date.parse(grant.issuedAt) > Date.now()
       || Date.parse(grant.expiresAt) <= Date.now()) {
       throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队临时授权已撤销、过期或范围变化，已拒绝执行', 403)
