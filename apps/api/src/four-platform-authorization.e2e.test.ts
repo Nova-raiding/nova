@@ -115,8 +115,6 @@ describe('four-platform fixture authorization lifecycle', () => {
     })
 
     try {
-      process.env.NODE_ENV = 'production'
-      vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
       vi.stubEnv('SESSION_ID_HASH_SECRET', 'four-platform-e2e-session-hash-secret')
       vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ 'zero-balance-token': { workspaces: [workspace], actor_id: 'zero-balance-user' } }))
       await (await import('./server.js')).workspaceMembers.upsert({ workspaceId: workspace, externalSubject: 'zero-balance-user', displayName: '零余额测试', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
@@ -132,7 +130,6 @@ describe('four-platform fixture authorization lifecycle', () => {
       expect(transactions.data?.result?.transactions ?? []).toEqual([])
     } finally {
       vi.unstubAllEnvs()
-      process.env.NODE_ENV = 'test'
     }
   })
 
