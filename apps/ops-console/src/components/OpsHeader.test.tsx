@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readOpsConnectionConfig, saveOpsConnectionConfig } from "../api/opsClient.js";
-import { OpsConfigError, OpsHeader, saveAndRefreshOpsConnection } from "./OpsHeader.js";
+import { OpsConfigError, OpsHeader, saveAndRefreshOpsConnection, workspaceFieldAccessibility } from "./OpsHeader.js";
 
 function storage() {
   const values = new Map<string, string>();
@@ -27,7 +27,7 @@ describe("OpsHeader accessibility", () => {
   it("provides an accessible mobile connection settings disclosure", () => {
     const markup = renderToStaticMarkup(<OpsHeader managedSession={false} sessionLoaded={false} onRefresh={() => undefined} />);
     expect(markup).toContain('aria-controls="ops-connection-fields"');
-    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain("连接诊断");
   });
 
@@ -64,9 +64,21 @@ describe("OpsHeader accessibility", () => {
 
   it("renders configuration failures as an assertive, visible alert", () => {
     const markup = renderToStaticMarkup(<OpsConfigError message="请填写真实工作区 ID。请修正连接配置后重试。" />);
+    expect(markup).toContain('id="ops-workspace-id-error"');
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain("请填写真实工作区 ID");
+  });
+
+  it("marks an invalid workspace field and associates it with the visible error", () => {
+    expect(workspaceFieldAccessibility("请填写真实工作区 ID。请修正连接配置后重试。")).toEqual({
+      "aria-invalid": true,
+      "aria-describedby": "ops-workspace-id-error",
+    });
+    expect(workspaceFieldAccessibility()).toEqual({
+      "aria-invalid": undefined,
+      "aria-describedby": undefined,
+    });
   });
 
   it("does not render Bearer or actor fields for a production OIDC session", () => {

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Button, Drawer, Input, Layout, Space, Tag, Typography } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Button, Drawer, Input, Layout, Space, Tag, Typography, type InputRef } from "antd";
 import { describeOpsError, hasOpsConnection, hasOpsCredentials, readOpsConnectionConfig, saveOpsConnectionConfig, type OpsConnectionConfigInput } from "../api/opsClient.js";
 import type { OpsDataSource } from "../types/ops.js";
 import type { OpsSession } from "../types/ops.js";
@@ -21,6 +21,7 @@ interface OpsHeaderProps {
   switchingWorkbench?: boolean;
   onWorkbenchChange?: (workbench: OpsWorkbench) => void;
   onJitExpired?: () => void;
+  onJitExit?: () => void;
 }
 
 export function saveAndRefreshOpsConnection(config: OpsConnectionConfigInput, onRefresh: () => void) {
@@ -30,7 +31,13 @@ export function saveAndRefreshOpsConnection(config: OpsConnectionConfigInput, on
 }
 
 export function OpsConfigError({ message }: { message?: string }) {
-  return message ? <span role="alert" aria-live="assertive" className="ops-config-error">{message}</span> : null;
+  return message ? <span id="ops-workspace-id-error" role="alert" aria-live="assertive" className="ops-config-error">{message}</span> : null;
+}
+
+export function workspaceFieldAccessibility(message?: string) {
+  return message
+    ? { "aria-invalid": true as const, "aria-describedby": "ops-workspace-id-error" }
+    : { "aria-invalid": undefined, "aria-describedby": undefined };
 }
 
 export function OpsHeader({
@@ -47,14 +54,17 @@ export function OpsHeader({
   switchingWorkbench,
   onWorkbenchChange,
   onJitExpired,
+  onJitExit,
 }: OpsHeaderProps) {
   const resolvedAuthorization = authorization ?? createAuthorizationProjection(session, managedSession);
   const [draft, setDraft] = useState<OpsConnectionConfigInput>(() => readOpsConnectionConfig());
   const [configError, setConfigError] = useState<string>();
+  const [workspaceIdError, setWorkspaceIdError] = useState<string>();
+  const workspaceIdRef = useRef<InputRef>(null);
   // Managed/OIDC production sessions lead with identity and scope. Connection
   // details remain available on demand for diagnosis, but never dominate the
   // desktop workbench first paint.
-  const [connectionOpen, setConnectionOpen] = useState(!managedSession);
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const connectionState = !hasOpsCredentials()
     ? "missing-credentials"
     : !hasOpsConnection()
@@ -63,6 +73,10 @@ export function OpsHeader({
         ? "ready"
         : "loading";
 
+  useEffect(() => {
+    if (workspaceIdError) workspaceIdRef.current?.focus();
+  }, [workspaceIdError]);
+
   return (
     <Layout.Header className="ops-header">
       <div>
@@ -70,7 +84,7 @@ export function OpsHeader({
           WORKSPACE OPERATIONS
         </Typography.Text>
         <Typography.Title level={2}>商业与平台控制台</Typography.Title>
-        <RoleScopeBar session={session} authorization={resolvedAuthorization} activeWorkbench={activeWorkbench} availableWorkbenches={availableWorkbenches} switching={switchingWorkbench} onWorkbenchChange={onWorkbenchChange} onJitExpired={onJitExpired} />
+        <RoleScopeBar session={session} authorization={resolvedAuthorization} activeWorkbench={activeWorkbench} availableWorkbenches={availableWorkbenches} switching={switchingWorkbench} onWorkbenchChange={onWorkbenchChange} onJitExpired={onJitExpired} onJitExit={onJitExit} />
       </div>
       <div className="ops-connection-toolbar">
         <div className="ops-connection-summary" aria-live="polite">
@@ -111,13 +125,16 @@ export function OpsHeader({
           try {
             saveAndRefreshOpsConnection(draft, onRefresh);
             setConfigError(undefined);
+            setWorkspaceIdError(undefined);
             setConnectionOpen(false);
           } catch (cause) {
-            setConfigError(describeOpsError(cause));
+            const message = describeOpsError(cause);
+            setConfigError(message);
+            setWorkspaceIdError(!draft.workspaceId.trim() ? message : undefined);
           }
         }}
       >
-      <Space direction="vertical" size="middle" className="full-width">
+      <Space orientation="vertical" size="middle" className="full-width">
         <label className="ops-connection-field">
           <span>运营 API 地址</span>
           <Input
@@ -130,10 +147,17 @@ export function OpsHeader({
         <label className="ops-connection-field">
           <span>工作区 ID</span>
           <Input
+            ref={workspaceIdRef}
             name="workspaceId"
             value={draft.workspaceId}
-            onChange={(event) => setDraft(current => ({ ...current, workspaceId: event.target.value }))}
+            onChange={(event) => {
+              setDraft(current => ({ ...current, workspaceId: event.target.value }));
+              setConfigError(undefined);
+              setWorkspaceIdError(undefined);
+            }}
             placeholder="工作区 ID"
+            status={workspaceIdError ? "error" : undefined}
+            {...workspaceFieldAccessibility(workspaceIdError)}
           />
         </label>
         {managedSession ? (
