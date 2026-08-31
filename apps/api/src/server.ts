@@ -6666,6 +6666,19 @@ function publicImageJob(job: import('../../../packages/application/src/service.j
   }
 }
 
+async function publicImageJobExecutionProjection(workspaceId: string, jobId: string) {
+  const execution = await persistence.imageGenerationExecutions?.get({ workspaceId, jobId })
+  return {
+    executionState: execution?.state ?? null,
+    providerRequestId: execution?.providerRequestId ?? null,
+    executionAttempt: execution?.attempt ?? null,
+    reconciliationRequired: execution?.state === 'provider_reserved'
+      || execution?.state === 'provider_dispatching'
+      || execution?.state === 'provider_started'
+      || execution?.state === 'outcome_unknown',
+  }
+}
+
 function assetForWorkspace(workspaceId: string, assetId: string) {
   const asset = service.assets.get(assetId)
   if (!asset || asset.workspaceId !== workspaceId) throw new DomainError('ASSET_NOT_FOUND', '素材不存在或不属于当前工作区', 404)
@@ -14577,7 +14590,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const olderThan = input.older_than === undefined ? undefined : typeof input.older_than === 'string' && Number.isFinite(Date.parse(input.older_than)) ? input.older_than : (() => { throw new DomainError(ERROR_CODES.INVALID_REQUEST, '图片对账 older_than 必须是合法时间', 400) })()
     const repository = persistence.imageGenerationExecutions
     if (!repository) throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片生成执行租约存储未配置', 503)
-    const page = await repository.listPage({ workspaceId, states: ['provider_started', 'outcome_unknown'], limit, ...(cursor ? { cursor } : {}), ...(olderThan ? { olderThan } : {}) })
+    const page = await repository.listPage({ workspaceId, states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown'], limit, ...(cursor ? { cursor } : {}), ...(olderThan ? { olderThan } : {}) })
     const executions = page.items
     const repaired: Array<Record<string, unknown>> = []
     const attention: Array<Record<string, unknown>> = []
@@ -15830,7 +15843,14 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       && (!state || job.state === state),
     )
     const page = paginationRequest(url)
-    return send(res, 200, workspaceId, { items: all.slice(page.offset, page.offset + page.limit).map(job => ({ ...publicImageJob(job), productTitle: service.products.get(job.productId)?.title ?? null, platform: service.products.get(job.productId)?.platform ?? null, storeName: service.products.get(job.productId)?.storeName ?? null })), total: all.length, ...page }, null, req)
+    const items = await Promise.all(all.slice(page.offset, page.offset + page.limit).map(async job => ({
+      ...publicImageJob(job),
+      ...await publicImageJobExecutionProjection(workspaceId, job.id),
+      productTitle: service.products.get(job.productId)?.title ?? null,
+      platform: service.products.get(job.productId)?.platform ?? null,
+      storeName: service.products.get(job.productId)?.storeName ?? null,
+    })))
+    return send(res, 200, workspaceId, { items, total: all.length, ...page }, null, req)
   }
   const imageGenerationJobGetMatch = path.match(/^\/v1\/image-generation-jobs\/([^/]+)$/u)
   if (req.method === 'GET' && imageGenerationJobGetMatch) {

@@ -10,7 +10,10 @@ describe('marketing queue delivery evidence', () => {
     expect(queueStateLabel('processing')).toBe('处理中')
     expect(queueStateLabel('failed')).toBe('失败')
     expect(queueStateLabel('unknown')).toBe('待对账')
-    expect(queueStateLabel('dispatching')).toBe('已提交模型请求，等待受理确认')
+    expect(queueStateLabel('outcome_unknown')).toBe('结果待对账')
+    expect(queueStateLabel('provider_reserved')).toBe('生成请求已登记，等待提交')
+    expect(queueStateLabel('provider_dispatching')).toBe('正在提交模型请求，等待受理确认')
+    expect(queueStateLabel('dispatching')).toBe('正在提交模型请求，等待受理确认')
     expect(queueStateLabel('provider_started')).toBe('模型已受理，等待结果确认')
     expect(queueStateLabel('future_state')).toBe('状态待确认')
   })
@@ -81,5 +84,18 @@ describe('marketing queue delivery evidence', () => {
     expect(panelSource).toContain('打开对账')
     expect(panelSource).toContain('禁止重复生成')
     expect(panelSource).toContain('不会创建第二个 Provider 请求')
+  })
+
+  it('keeps provider dispatch states observable and never adds a retry action for unknown outcomes', () => {
+    expect(panelSource).toContain('provider_reserved')
+    expect(panelSource).toContain('provider_dispatching')
+    expect(panelSource).toContain('outcome_unknown')
+    expect(panelSource).toContain('仅观测，不可重复生成')
+    const imageExecutionSection = panelSource.slice(
+      panelSource.indexOf('marketingQueue.imageExecutions.map'),
+      panelSource.indexOf('marketingQueue.uploadedAssetRisks.map'),
+    )
+    expect(imageExecutionSection).not.toContain('retryGeneration')
+    expect(imageExecutionSection).toContain('打开对账')
   })
 })

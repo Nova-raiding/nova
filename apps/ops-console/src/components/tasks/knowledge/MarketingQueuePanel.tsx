@@ -65,7 +65,7 @@ export function parsePublishBatchDetail(value: unknown): PublishBatchDetail {
 
 function stateColor(state: string) {
   if (
-    ["failed", "rejected", "unknown", "manual_attention", "blocked"].includes(
+    ["failed", "rejected", "unknown", "outcome_unknown", "manual_attention", "blocked"].includes(
       state,
     )
   )
@@ -82,11 +82,14 @@ export function queueStateLabel(state: string) {
     queued: "排队中",
     running: "处理中",
     processing: "处理中",
-    dispatching: "已提交模型请求，等待受理确认",
+    provider_reserved: "生成请求已登记，等待提交",
+    provider_dispatching: "正在提交模型请求，等待受理确认",
+    dispatching: "正在提交模型请求，等待受理确认",
     provider_started: "模型已受理，等待结果确认",
     failed: "失败",
     rejected: "已驳回",
     unknown: "待对账",
+    outcome_unknown: "结果待对账",
     manual_attention: "待人工处理",
     blocked: "已阻断",
     succeeded: "已完成",

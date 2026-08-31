@@ -269,6 +269,25 @@ describe('API application wiring', () => {
     expect(reconciliation).toContain('repository.reconcileFailed({ workspaceId, jobId: job.id')
   })
 
+  it('projects real Provider dispatch states through the image list and reconciliation APIs', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const listStart = source.indexOf("if (req.method === 'GET' && path === '/v1/image-generation-jobs')")
+    const listEnd = source.indexOf("const imageGenerationJobGetMatch", listStart)
+    expect(listStart).toBeGreaterThanOrEqual(0)
+    expect(listEnd).toBeGreaterThan(listStart)
+    const list = source.slice(listStart, listEnd)
+    expect(list).toContain('publicImageJobExecutionProjection(workspaceId, job.id)')
+    expect(source).toContain('executionState: execution?.state ?? null')
+    expect(source).toContain("states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown']")
+
+    const reconciliationStart = source.indexOf("if (req.method === 'POST' && path === '/v1/internal/image-generation-jobs/reconciliation')")
+    const reconciliationEnd = source.indexOf("path === '/v1/internal/model-usage/reconciliation'", reconciliationStart)
+    const reconciliation = source.slice(reconciliationStart, reconciliationEnd)
+    expect(reconciliation).toContain('execution_state: execution.state')
+    expect(reconciliation).toContain('provider_request_id: execution.providerRequestId ?? null')
+    expect(reconciliation).toContain('execution_attempt: execution.attempt')
+  })
+
   it('accepts only Worker-owned Provider evidence and reuses archive/CAS transitions', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const start = source.indexOf('const imageGenerationEvidenceMatch = path.match')
