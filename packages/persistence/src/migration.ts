@@ -375,6 +375,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const supportSlaCorrectionDecisions = await readFile(new URL('./migrations/115_support_sla_correction_decisions.sql', import.meta.url), 'utf8')
   const supportSlaCorrectionApprovals = await readFile(new URL('./migrations/116_support_sla_correction_approvals.sql', import.meta.url), 'utf8')
   const imageGenerationProviderOperationReservation = await readFile(new URL('./migrations/117_image_generation_provider_operation_reservation.sql', import.meta.url), 'utf8')
+  const imageGenerationExecutionDispatchFence = await readFile(new URL('./migrations/119_image_generation_execution_dispatch_fence.sql', import.meta.url), 'utf8')
   const enforceModelUsageBudgetRunLinkage = await readFile(new URL('./migrations/118_enforce_model_usage_budget_run_linkage.sql', import.meta.url), 'utf8')
   return [
     initial,
@@ -495,6 +496,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 116, name: 'support_sla_correction_approvals', sql: supportSlaCorrectionApprovals },
     { version: 117, name: 'image_generation_provider_operation_reservation', sql: imageGenerationProviderOperationReservation },
     { version: 118, name: 'enforce_model_usage_budget_run_linkage', sql: enforceModelUsageBudgetRunLinkage },
+    { version: 119, name: 'image_generation_execution_dispatch_fence', sql: imageGenerationExecutionDispatchFence },
   ]
 }
 

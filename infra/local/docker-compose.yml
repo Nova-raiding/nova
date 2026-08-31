@@ -403,7 +403,11 @@ services:
       PGPASSWORD: merchant_local_only
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
       OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
-    entrypoint: ["/bin/sh", "-c", "/bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/verify-runtime-db-role.sh && psql -v ON_ERROR_STOP=1 -f /ops/seed-demo.sql"]
+    # Bootstrap runtime roles before migrations: migrations such as 080 grant
+    # table privileges to merchant_app while creating their schema. Re-run the
+    # idempotent bootstrap afterward so post-migration grants/deny lists apply
+    # to every newly created relation as well.
+    entrypoint: ["/bin/sh", "-c", "psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/apply-migrations.sh && psql -v ON_ERROR_STOP=1 -f /ops/ensure-app-role.sql && /bin/sh /ops/verify-runtime-db-role.sh && psql -v ON_ERROR_STOP=1 -f /ops/seed-demo.sql"]
     volumes:
       - ../../packages/persistence/src/migrations:/migrations:ro
       - ../scripts/apply-migrations.sh:/ops/apply-migrations.sh:ro
