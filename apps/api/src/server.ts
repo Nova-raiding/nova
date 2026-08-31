@@ -10442,7 +10442,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return matchesTask(job.taskId ?? '', task?.platform ?? product?.platform, task?.accountId ?? product?.accountId, job.productId, 'visual_review')
       }).flatMap(job => (job.outputs ?? []).filter(output => output.reviewStatus !== 'passed').map(output => ({ jobId: job.id, visualRef: output.visualRef, ordinal: output.ordinal, productId: job.productId, taskId: job.taskId ?? null, contentVersionId: job.contentVersionId ?? null, skuIds: job.skuIds ?? [], reviewStatus: output.reviewStatus, archiveState: job.archiveState, assignedOperatorId: job.assignedOperatorId ?? null, assignedAt: job.assignedAt ?? null, revision: job.revision, updatedAt: job.updatedAt }))).slice(0, limit)
       const imageExecutions = persistence.imageGenerationExecutions
-        ? (await Promise.all((await persistence.imageGenerationExecutions.list({ workspaceId, states: ['provider_started', 'outcome_unknown'], limit })).map(async execution => {
+        ? (await Promise.all((await persistence.imageGenerationExecutions.list({ workspaceId, states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown'], limit })).map(async execution => {
           const job = service.getImageGenerationJob(workspaceId, execution.jobId)
           const task = job.taskId ? taskForQueue(job.taskId) : undefined
           const product = service.listProducts(workspaceId).find(item => item.id === job.productId)

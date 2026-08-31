@@ -90,6 +90,7 @@ describe('marketing queue delivery evidence', () => {
     expect(panelSource).toContain('provider_reserved')
     expect(panelSource).toContain('provider_dispatching')
     expect(panelSource).toContain('outcome_unknown')
+    expect(panelSource).toContain('provider_started')
     expect(panelSource).toContain('仅观测，不可重复生成')
     const imageExecutionSection = panelSource.slice(
       panelSource.indexOf('marketingQueue.imageExecutions.map'),

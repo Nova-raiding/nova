@@ -280,6 +280,13 @@ describe('API application wiring', () => {
     expect(source).toContain('executionState: execution?.state ?? null')
     expect(source).toContain("states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown']")
 
+    const queueStart = source.indexOf("case 'ops.marketing.queue':")
+    const queueEnd = source.indexOf("case 'ops.marketing.queue.assign':", queueStart)
+    expect(queueStart).toBeGreaterThanOrEqual(0)
+    expect(queueEnd).toBeGreaterThan(queueStart)
+    const queue = source.slice(queueStart, queueEnd)
+    expect(queue).toContain("states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown']")
+
     const reconciliationStart = source.indexOf("if (req.method === 'POST' && path === '/v1/internal/image-generation-jobs/reconciliation')")
     const reconciliationEnd = source.indexOf("path === '/v1/internal/model-usage/reconciliation'", reconciliationStart)
     const reconciliation = source.slice(reconciliationStart, reconciliationEnd)
