@@ -34,6 +34,10 @@ ops_directory_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
   "SELECT CASE WHEN has_table_privilege(current_user, 'public.ops_workspace_summaries', 'SELECT') THEN 'ops_workspace_summaries' ELSE '' END")
 [ -z "$ops_directory_exposure" ] || { echo 'tenant runtime role must not access the platform workspace directory projection' >&2; exit 1; }
 
+model_budget_delete_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT CASE WHEN has_table_privilege(current_user, 'public.model_cost_budget_reservations', 'DELETE,TRUNCATE') THEN 'model_cost_budget_reservations' ELSE '' END")
+[ -z "$model_budget_delete_exposure" ] || { echo 'tenant runtime role must not delete or truncate model cost budget reservations' >&2; exit 1; }
+
 # Catalog checks are non-vacuous even on a newly restored empty database. Every
 # ordinary tenant table must force RLS and expose only workspace-scoped policies.
 # workspaces and workspace_members have intentionally different command-specific
@@ -47,7 +51,7 @@ rls_failures=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
        JOIN pg_attribute a ON a.attrelid = c.oid
         AND a.attname = 'workspace_id' AND NOT a.attisdropped
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
-        AND c.relname NOT IN ('commercial_rollouts', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events')
+        AND c.relname NOT IN ('commercial_rollouts', 'workspace_members', 'workspace_identity_bindings', 'workspace_commercial_settings', 'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events', 'authorization_execution_reservations')
    ), scoped_policies AS (
      SELECT schemaname, tablename, count(*) AS policy_count,
             bool_or(
@@ -267,7 +271,7 @@ EOF
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
         AND has_table_privilege(current_user, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_media_specs','platform_media_spec_audit','authorization_revisions','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events')")
+        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_media_specs','platform_media_spec_audit','authorization_revisions','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events','authorization_execution_reservations')")
   [ -z "$ops_tenant_access" ] || { echo "Ops database role has unexpected tenant write access: $ops_tenant_access" >&2; exit 1; }
   echo "Ops database role verified: role=$ops_role control_plane=allowed tenant_reads=bounded tenant_writes=denied"
 fi
