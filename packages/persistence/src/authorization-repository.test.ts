@@ -63,6 +63,7 @@ describe('durable authorization repository', () => {
     const revoked = await repo.revokeGrant({ id: grant.id, subjectIdentityId: subject, actorId: 'security-admin', reason: 'customer withdrew consent', expectedRevision: 1, expectedAuthorizationRevision: 1 })
     expect(revoked).toMatchObject({ revokedBy: 'security-admin', revision: 2, authorizationRevision: 2 })
     expect(await repo.listActiveGrants(subject, 'ws-a')).toEqual([])
+    await expect(repo.getGrant(grant.id, subject)).resolves.toMatchObject({ id: grant.id, revokedBy: 'security-admin', revision: 2, authorizationRevision: 2 })
     await expect(repo.revokeGrant({ id: grant.id, subjectIdentityId: subject, actorId: 'security-admin', reason: 'repeat revoke rejected', expectedRevision: 2, expectedAuthorizationRevision: 2 })).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_NOT_FOUND' })
   })
 })
