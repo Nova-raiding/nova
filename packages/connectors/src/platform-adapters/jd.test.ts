@@ -36,4 +36,22 @@ describe('JD Open Platform adapter', () => {
       found: true, state: 'rejected', remoteId: '100', requestId: 'jd-provider-1', rejection: { rawCode: 'JD-400', message: '校验失败' },
     })
   })
+
+  it('drops malformed provider rejection fields without leaking control or oversized evidence', () => {
+    const result = mapJdWriteStatus({
+      error_code: 'JD-SAFE-400',
+      message: '安全错误\u0000\u0001',
+      field_errors: [
+        { field: 'title\u0000', code: 'FIELD-1', message: 'bad' },
+        { field: 'price', code: 'x'.repeat(257), message: 'bad' },
+        { field: 'sku', code: 'FIELD-2', message: '可展示的错误' },
+      ],
+    }, { idempotencyKey: 'jd-malformed-rejection' })
+
+    expect(result.rejection).toEqual({
+      rawCode: 'JD-SAFE-400',
+      fields: [{ path: 'sku', rawCode: 'FIELD-2', message: '可展示的错误' }],
+    })
+    expect(JSON.stringify(result)).not.toContain('\\u0000')
+  })
 })

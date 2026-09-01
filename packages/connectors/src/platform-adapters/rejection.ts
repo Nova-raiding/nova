@@ -27,7 +27,7 @@ export function providerRequestId(value: unknown): string | undefined {
   for (let depth = 0; root && depth < 3; depth += 1) {
     const candidate = root.request_id ?? root.requestId ?? root.provider_request_id
       ?? root.providerRequestId ?? root.task_id ?? root.taskId ?? root.transaction_id
-    const result = text(candidate)
+    const result = evidenceText(256, candidate)
     if (result && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(result) && result.length <= 256) return result
     // Error responses use a second, documented envelope after `data`/`result`.
     // Follow only provider error keys; never recursively search arbitrary data.
@@ -37,18 +37,27 @@ export function providerRequestId(value: unknown): string | undefined {
   return undefined
 }
 
-function text(...values: unknown[]): string | undefined {
+function evidenceText(maxLength: number, ...values: unknown[]): string | undefined {
   const value = values.find(item => typeof item === 'string' || typeof item === 'number')
-  return value === undefined ? undefined : String(value).trim() || undefined
+  if (value === undefined) return undefined
+  const result = String(value).trim()
+  if (!result || result.length > maxLength || /[\u0000-\u001f\u007f]/u.test(result)) return undefined
+  return result
 }
 
 function fieldError(value: unknown): PlatformRejectionField | undefined {
   const item = record(value)
   if (!item) return undefined
-  const path = text(item.path, item.field, item.property, item.param)
-  const message = text(item.message, item.msg, item.reason, item.error_message)
+  const pathCandidate = item.path ?? item.field ?? item.property ?? item.param
+  const messageCandidate = item.message ?? item.msg ?? item.reason ?? item.error_message
+  const rawCodeCandidate = item.raw_code ?? item.code ?? item.error_code ?? item.sub_code
+  const path = evidenceText(256, pathCandidate)
+  const message = evidenceText(1024, messageCandidate)
+  const rawCode = evidenceText(256, rawCodeCandidate)
+  if (pathCandidate !== undefined && !path) return undefined
+  if (messageCandidate !== undefined && !message) return undefined
+  if (rawCodeCandidate !== undefined && !rawCode) return undefined
   if (!path || !message) return undefined
-  const rawCode = text(item.raw_code, item.code, item.error_code, item.sub_code)
   return { path, ...(rawCode ? { rawCode } : {}), message }
 }
 
@@ -56,9 +65,9 @@ function fieldError(value: unknown): PlatformRejectionField | undefined {
 export function mapPlatformRejection(payload: unknown): PlatformRejection | undefined {
   const root = platformEnvelope(payload)
   const rejection = record(root?.platform_rejection) ?? record(root?.rejection) ?? record(root?.error_response) ?? record(root?.error) ?? root
-  const rawCode = text(rejection?.raw_code, rejection?.code, rejection?.error_code, rejection?.sub_code)
+  const rawCode = evidenceText(256, rejection?.raw_code, rejection?.code, rejection?.error_code, rejection?.sub_code)
   if (!rawCode) return undefined
-  const message = text(rejection?.message, rejection?.msg, rejection?.reason, rejection?.sub_msg, rejection?.error_message, rejection?.error_msg)
+  const message = evidenceText(1024, rejection?.message, rejection?.msg, rejection?.reason, rejection?.sub_msg, rejection?.error_message, rejection?.error_msg)
   const candidates = rejection?.fields ?? rejection?.field_errors ?? rejection?.errors
   const fields = (Array.isArray(candidates) ? candidates : []).map(fieldError).filter((item): item is PlatformRejectionField => Boolean(item))
   return { rawCode, ...(message ? { message } : {}), fields }
