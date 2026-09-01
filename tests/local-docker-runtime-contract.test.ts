@@ -13,6 +13,11 @@ type ComposeContainer = {
   ID?: string
 }
 
+type DockerHealth = {
+  Status?: string
+  Log?: Array<{ ExitCode?: number; Output?: string }>
+}
+
 function docker(args: string[], input?: string) {
   return execFileSync("docker", args, {
     cwd: process.cwd(),
@@ -27,6 +32,10 @@ function composeContainers() {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as ComposeContainer)
+}
+
+function composeLogs(service: string) {
+  return docker([...project, "logs", "--no-log-prefix", "--tail", "200", service])
 }
 
 const expectedServices = [
@@ -56,6 +65,48 @@ describe("local Docker runtime contract", () => {
       expect(container?.State, `${service} must be running`).toBe("running")
       expect(container?.Health, `${service} must report Docker health`).toBe("healthy")
     }
+  }, 15_000)
+
+  it("proves worker health checks and heartbeat evidence come from live containers", () => {
+    const workerServices = [
+      "worker-automation",
+      "worker-generation",
+      "worker-publish",
+      "worker-reconcile",
+      "worker-sync",
+    ]
+    const containers = composeContainers()
+    const byService = new Map(containers.map((container) => [container.Service, container]))
+
+    for (const service of [...workerServices, "worker-scan"]) {
+      const id = byService.get(service)?.ID
+      expect(id, `${service} must expose a container id`).toBeTruthy()
+      const health = JSON.parse(docker(["inspect", "--format", "{{json .State.Health}}", id!])) as DockerHealth
+      expect(health.Status, `${service} Docker health`).toBe("healthy")
+      expect(health.Log?.length, `${service} must retain health evidence`).toBeGreaterThan(0)
+      expect(health.Log?.slice(-3).every((entry) => entry.ExitCode === 0), `${service} latest health checks`).toBe(true)
+    }
+
+    for (const service of workerServices) {
+      const logs = composeLogs(service)
+      expect(logs, `${service} must emit live worker evidence`).toContain('"service":"worker"')
+      expect(logs, `${service} must emit a worker loop outcome`).toMatch(/"message":"worker poll completed"|"message":"automation workspace maintenance failed; continuing"/u)
+    }
+    expect(composeLogs("worker-scan"), "worker-scan must emit live heartbeat evidence").toContain('"message":"scanner heartbeat published"')
+
+    const heartbeatKey = docker([...project, "exec", "-T", "redis", "redis-cli", "--raw", "ZRANGE", "merchant:scanner:heartbeats:v1", "-1", "-1"])
+    expect(heartbeatKey, "scanner heartbeat index must contain a live instance").toMatch(/^merchant:scanner:heartbeats:v1:[A-Za-z0-9._:-]{1,160}$/u)
+    const heartbeat = JSON.parse(docker([...project, "exec", "-T", "redis", "redis-cli", "--raw", "GET", heartbeatKey])) as {
+      schemaVersion?: string
+      instanceId?: string
+      observedAt?: string
+      expiresAt?: string
+      recoveryCapable?: boolean
+    }
+    expect(heartbeat).toMatchObject({ schemaVersion: "scanner-heartbeat/1.0", recoveryCapable: true })
+    expect(heartbeatKey).toBe(`merchant:scanner:heartbeats:v1:${heartbeat.instanceId}`)
+    expect(Date.parse(heartbeat.observedAt ?? "")).toBeGreaterThan(Date.now() - 30_000)
+    expect(Date.parse(heartbeat.expiresAt ?? "")).toBeGreaterThan(Date.now())
   }, 15_000)
 
   it("proves API and replica use durable Postgres persistence and the complete migration tail", () => {
