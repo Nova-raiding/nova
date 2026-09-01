@@ -1899,15 +1899,16 @@ const catalogCategories = [
   { code: '1503', name: '运动 / 速干裤装', fields: ['面料', '版型', '弹性', '洗护', '尺码'], platforms: ['taobao', 'tmall'], status: 'active', updatedAt: '3 天前' },
 ] as const
 
-async function persistedRules(workspaceId: string) {
+async function persistedRules(workspaceId: string, fillMissingDefaults = false) {
   const repository = ruleRepository()
   if (!repository) return undefined
   const rows = await repository.list(workspaceId)
-  if (rows.length) return rows.map(publicRule)
+  if (rows.length && !fillMissingDefaults) return rows.map(publicRule)
   // Bootstrap only the first request for a new workspace. This keeps the
   // durable rule center usable after migration without silently changing the
   // in-memory fixture registry used by local tests.
   for (const seed of defaultRuleCenterSeeds) {
+    if (rows.some(row => row.id === `${seed.packId}@${seed.version}`)) continue
     const at = seed.createdAt ?? new Date().toISOString()
     const checksum = createHash('sha256').update(canonicalJson({ packId: seed.packId, version: seed.version, scope: seed.scope, source: seed.source, checks: seed.checks ?? {} })).digest('hex')
     try {
@@ -1925,12 +1926,11 @@ async function evaluationRules(workspaceId: string, context?: RuleEvaluationScop
   const repository = ruleRepository()
   if (!repository) return undefined
   let rows = await repository.list(workspaceId)
-  // A new durable workspace may reach content review before the merchant has
-  // opened the rule page. Bootstrap the immutable default packs on the first
-  // evaluation so the normal generate -> review -> approve flow is usable
-  // without an unrelated preliminary MCP call.
-  if (!rows.length) {
-    await persistedRules(workspaceId)
+  // Older and concurrently bootstrapped workspaces can contain only a subset
+  // of the immutable defaults. Fill missing packs before review; otherwise a
+  // task can freeze an in-memory default that the durable reviewer cannot see.
+  if (rows.length === 0 || defaultRuleCenterSeeds.some(seed => !rows.some(row => row.id === `${seed.packId}@${seed.version}`))) {
+    await persistedRules(workspaceId, true)
     rows = await repository.list(workspaceId)
   }
   const scopeOrder = ['global', 'platform', 'category', 'brand', 'store', 'campaign']
@@ -1959,7 +1959,11 @@ async function evaluationRules(workspaceId: string, context?: RuleEvaluationScop
     seenHits.add(hit.ruleVersionId)
     return true
   })
-  return { availableRuleVersionIds: active.map(row => row.version), forbiddenTerms: [...terms], ruleHits }
+  // Availability answers whether a frozen immutable version still exists and
+  // remains active; applicability is separately represented by the scoped
+  // terms and hits above. Comparing frozen category fallbacks only against the
+  // currently matched rows creates a false MISSING_RULE_VERSION finding.
+  return { availableRuleVersionIds: rows.filter(row => row.status === 'active').map(row => row.version), forbiddenTerms: [...terms], ruleHits }
 }
 
 function ruleContextForTask(task: import('../../../packages/application/src/service.js').Task): RuleEvaluationScope {
@@ -2031,7 +2035,7 @@ async function persistedRuleEvaluation(workspaceId: string, product: { platform:
   if (!repository) return { findings: [] as Array<{ code: 'RULE_EXPIRED' | 'RULE_NOT_YET_EFFECTIVE' | 'RULE_PRIORITY_CONFLICT'; severity: 'error' | 'warning'; action: 'block' | 'warn' | 'review' | 'allow'; field: 'rules'; ruleVersionId: string; message: string }>, hits: [] }
   let rows = await repository.list(workspaceId)
   if (!rows.length) {
-    await persistedRules(workspaceId)
+    await persistedRules(workspaceId, true)
     rows = await repository.list(workspaceId)
   }
   const scopeOrder = ['global', 'platform', 'category', 'brand', 'store', 'campaign']

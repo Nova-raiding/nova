@@ -258,6 +258,27 @@ describe('durable rule-center HTTP boundary', () => {
     expect((reviewed.data as { ruleHits: Array<{ ruleVersionId: string; version: string }> }).ruleHits).toContainEqual(expect.objectContaining({ ruleVersionId: `persisted-review-${workspaceId}`, version: '3.0.0' }))
   })
 
+  it('fills missing immutable default rule packs before reviewing a partially bootstrapped workspace', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = `ws_partial_default_rules_${Date.now()}`
+    await repository.insertVersion({ id: `custom-${workspaceId}`, workspaceId, packId: 'custom', name: '已有自定义规则', version: '1.0.0', scope: 'global', status: 'active', sourceKind: 'internal', sourceReference: 'internal://custom', sourceCheckedAt: new Date().toISOString(), checksum: 'f'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1 })
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `partial-default-store-${workspaceId}`, credentialRef: `vault://partial-default/${workspaceId}` })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: '默认规则补齐商品', stock: 3 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    const base = await start()
+
+    const reviewed = await fetch(`${base}/v1/content-versions/${draft.id}/review`, { headers: { 'x-workspace-id': workspaceId } }).then(json)
+
+    expect(reviewed.error).toBeNull()
+    const persisted = await repository.list(workspaceId)
+    expect(persisted.map(row => row.id)).toEqual(expect.arrayContaining(['cn-commerce@cn-commerce-1.0.0', 'taobao-mapping@taobao-apparel-1.0.0', 'apparel-facts@apparel-1.0.0']))
+    expect((reviewed.data as { findings: Array<{ code: string }> }).findings).not.toContainEqual(expect.objectContaining({ code: 'MISSING_RULE_VERSION' }))
+  })
+
   it('blocks ordinary text generation before wallet usage when a persisted platform rule is expired', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
