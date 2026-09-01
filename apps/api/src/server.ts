@@ -15434,7 +15434,10 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const workspaceId = resolveWorkspace(req)
     const query = url.searchParams.get('query')?.trim().toLocaleLowerCase()
     const items = query ? catalogCategories.filter(item => `${item.code}${item.name}${item.fields.join('')}`.toLocaleLowerCase().includes(query)) : catalogCategories
-    return send(res, 200, workspaceId, items, null, req)
+    // Keep the REST read model aligned with MCP `catalog.categories`. The
+    // legacy code/fields names remain for existing clients, while canonical
+    // aliases make transport parity explicit and machine-checkable.
+    return send(res, 200, workspaceId, items.map(item => ({ ...item, category_code: item.code, required_fields: item.fields })), null, req)
   }
   if (req.method === 'GET' && path === '/v1/rules/audit') {
     const workspaceId = resolveWorkspace(req)
