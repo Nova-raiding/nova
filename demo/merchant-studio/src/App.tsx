@@ -4384,6 +4384,7 @@ function Products({
   const [imageGenerationCount, setImageGenerationCount] = useState('1')
   const [imageGenerationBusy, setImageGenerationBusy] = useState(false)
   const [imageGenerationError, setImageGenerationError] = useState('')
+  const imageGenerationErrorRef = useRef<HTMLDivElement>(null)
   const [relationProductId, setRelationProductId] = useState('')
   const productListRef = useRef<HTMLElement>(null)
   const loadProducts = (resetSelection = false) => {
@@ -4758,6 +4759,10 @@ function Products({
     } catch (cause) { setImageGenerationError(describeApiError(cause)) }
     finally { setImageGenerationBusy(false) }
   }
+  useEffect(() => {
+    if (!imageGenerationError || imageGenerationBusy || !imageGenerationTarget) return
+    window.requestAnimationFrame(() => imageGenerationErrorRef.current?.focus({ preventScroll: true }))
+  }, [imageGenerationBusy, imageGenerationError, imageGenerationTarget])
   if (showAssetLibrary)
     return (
       <div className="page-stack" data-testid="asset-workspace">
@@ -5491,9 +5496,9 @@ function Products({
         >
           <div className="dialog-form">
             <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
-            <label htmlFor="image-generation-direction">生成方向<textarea id="image-generation-direction" data-dialog-initial-focus value={imageGenerationDirection} onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError('') }} maxLength={500} rows={4} /></label>
-            <label htmlFor="image-generation-count">候选数量<input id="image-generation-count" inputMode="numeric" value={imageGenerationCount} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError('') }} /></label>
-            {imageGenerationError && <div className="error-notice" role="alert">{imageGenerationError}</div>}
+            <label htmlFor="image-generation-direction">生成方向<textarea id="image-generation-direction" aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} data-dialog-initial-focus value={imageGenerationDirection} onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError('') }} maxLength={500} rows={4} /></label>
+            <label htmlFor="image-generation-count">候选数量<input id="image-generation-count" inputMode="numeric" aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} value={imageGenerationCount} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError('') }} /></label>
+            {imageGenerationError && <div id="image-generation-error" ref={imageGenerationErrorRef} className="error-notice" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true">{imageGenerationError}<span className="sr-only">请修正表单后重新提交。</span></div>}
           </div>
         </DialogFrame>
       )}

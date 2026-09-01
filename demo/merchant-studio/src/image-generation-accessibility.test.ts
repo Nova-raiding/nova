@@ -45,6 +45,15 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('请联系管理员完成测试环境配置后，再刷新此页面。')
   })
 
+  it('focuses image generation form errors and links them to both fields', () => {
+    expect(app).toContain('const imageGenerationErrorRef = useRef<HTMLDivElement>(null)')
+    expect(app).toContain('window.requestAnimationFrame(() => imageGenerationErrorRef.current?.focus({ preventScroll: true }))')
+    expect(app).toContain('id="image-generation-error" ref={imageGenerationErrorRef}')
+    expect(app).toContain('role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"')
+    expect(app).toContain('aria-describedby={imageGenerationError ? \'image-generation-error\' : undefined}')
+    expect(app).toContain('请修正表单后重新提交。')
+  })
+
   it('announces the six-candidate limit and blocked candidate recovery path', () => {
     expect(app).toContain('最多选择 6 张候选图，请先取消一张再继续。')
     expect(app).toContain('这张候选图尚未满足归档、安全扫描、权益、真实性或人工审核门禁，暂不能选择。')
