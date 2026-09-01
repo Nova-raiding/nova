@@ -13682,6 +13682,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const confirmed = service.confirmProductionPlan(workspaceId, task.id, requestActor(req, typeof params.actor_id === 'string' && params.actor_id.trim() ? params.actor_id.trim() : 'merchant'), typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined, priceImpactConfirmed)
       await persistSnapshot(workspaceId, 'task', confirmed, confirmed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, confirmed.id, 'task.plan_confirmed', confirmed.version, { task_id: confirmed.id, plan_id: confirmed.productionPlan?.id ?? null, actor_id: confirmed.productionPlan?.confirmedBy ?? null })
+      await recordOperationAudit({ workspaceId, actorId: confirmed.productionPlan?.confirmedBy ?? requestActor(req), action: 'task.plan_confirmed', resourceType: 'task', resourceId: confirmed.id, before: { state: task.state, version: task.version }, after: { state: confirmed.state, version: confirmed.version, plan_id: confirmed.productionPlan?.id ?? null }, reason: '确认生产方案' })
       return result({ ...confirmed, task_id: confirmed.id, expected_version: confirmed.version })
     }
     case 'content.generate': {
@@ -16282,6 +16283,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const confirmed = service.confirmProductionPlan(task.workspaceId, task.id, requestActor(req, typeof input.actor_id === 'string' && input.actor_id.trim() ? input.actor_id.trim() : 'merchant'), typeof input.expected_version === 'number' ? input.expected_version : undefined, priceImpactConfirmed)
     await persistSnapshot(task.workspaceId, 'task', confirmed, confirmed as unknown as Record<string, unknown>)
     await persistEvent(task.workspaceId, confirmed.id, 'task.plan_confirmed', confirmed.version, { task_id: confirmed.id, plan_id: confirmed.productionPlan?.id ?? null, actor_id: confirmed.productionPlan?.confirmedBy ?? null })
+    await recordOperationAudit({ workspaceId: task.workspaceId, actorId: confirmed.productionPlan?.confirmedBy ?? requestActor(req), action: 'task.plan_confirmed', resourceType: 'task', resourceId: confirmed.id, before: { state: task.state, version: task.version }, after: { state: confirmed.state, version: confirmed.version, plan_id: confirmed.productionPlan?.id ?? null }, reason: '确认生产方案' })
     return send(res, 200, task.workspaceId, confirmed, null, req)
   }
   async function runFixtureGenerationJob(workspaceId: string, jobId: string) {
