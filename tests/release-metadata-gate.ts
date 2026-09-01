@@ -107,6 +107,11 @@ export function validateReleaseMetadata(snapshot: ReleaseMetadataSnapshot): stri
   for (const version of [...new Set(duplicateVersions)]) {
     errors.push(`migration chain contains duplicate version ${String(version).padStart(3, '0')}`)
   }
+  const migrationNames = parsed.flatMap(item => item.match ? [item.match[0].replace(/^\d{3}_/u, '').replace(/\.sql$/u, '')] : [])
+  const duplicateNames = migrationNames.filter((name, index) => index > 0 && migrationNames.slice(0, index).includes(name))
+  for (const name of [...new Set(duplicateNames)]) {
+    errors.push(`migration chain contains duplicate name ${name}`)
+  }
   for (let index = 0; index < versions.length; index += 1) {
     const expected = index + 1
     if (versions[index] !== expected) { errors.push(`migration chain must be contiguous at ${String(expected).padStart(3, '0')}`); break }
