@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { createVideoGeneratorFromEnv, OpenAICompatibleVideoGenerator, validateVideoRelayPath, videoDurationSeconds } from './video-generator.js'
 
 describe('video generator relay', () => {
+  it('does not assemble a video provider from placeholder relay configuration', () => {
+    expect(createVideoGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: '${MODEL_RELAY_API_KEY}', VIDEO_MODEL: 'REPLACE_WITH_VIDEO_MODEL' })).toBeUndefined()
+    expect(createVideoGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', VIDEO_MODEL: 'your-video-model' })).toBeUndefined()
+  })
+
   it('rejects unsafe configurable relay paths', () => {
     expect(() => validateVideoRelayPath('https://evil.example/video', 'generation')).toThrow('safe relative path')
     expect(() => validateVideoRelayPath('/video/{other}', 'status')).toThrow('unsupported placeholder')

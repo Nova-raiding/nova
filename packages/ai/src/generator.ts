@@ -4,6 +4,7 @@ import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ContentGenerationInput {
   platform: string
@@ -468,5 +469,8 @@ export function createContentGeneratorFromEnv(source: Record<string, string | un
   if (thinkingMode && thinkingMode !== 'disabled') throw new Error('AI_THINKING_MODE must be disabled when configured')
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
-  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens: resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 4_000, 'input'), maxOutputTokens: resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output'), ...(thinkingMode === 'disabled' ? { disableThinking: true } : {}), ...(usageSink ? { usageSink } : {}) })
+  const maxInputTokens = resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 4_000, 'input')
+  const maxOutputTokens = resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output')
+  if (isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
+  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens, maxOutputTokens, ...(thinkingMode === 'disabled' ? { disableThinking: true } : {}), ...(usageSink ? { usageSink } : {}) })
 }

@@ -2,6 +2,7 @@ import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './r
 import { relaySecurityFromEnv, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface VideoGenerationInput {
   prompt: string
@@ -198,7 +199,7 @@ export function createVideoGeneratorFromEnv(source: Record<string, string | unde
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.VIDEO_MODEL_RELAY_API_KEY?.trim() || source.MODEL_RELAY_API_KEY?.trim()
   const model = source.VIDEO_MODEL?.trim() || source.AI_VIDEO_MODEL?.trim()
-  if (!relayUrl || !apiKey || !model) return undefined
+  if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
   return new OpenAICompatibleVideoGenerator({

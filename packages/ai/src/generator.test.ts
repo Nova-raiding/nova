@@ -20,6 +20,11 @@ function validGeneratedContent(input: Record<string, unknown> = {}) {
 }
 
 describe('content generator', () => {
+  it('does not assemble a text provider from placeholder relay configuration', () => {
+    expect(createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: '${MODEL_RELAY_API_KEY}', AI_MODEL: 'REPLACE_WITH_TEXT_MODEL' })).toBeUndefined()
+    expect(createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', AI_MODEL: 'your-text-model' })).toBeUndefined()
+  })
+
   it('calls an OpenAI-compatible provider and validates structured output', async () => {
     const calls: RequestInit[] = []
     const generator = new OpenAICompatibleContentGenerator({

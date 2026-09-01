@@ -2,6 +2,7 @@ import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './r
 import { relaySecurityFromEnv, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageEditInput {
   prompt: string
@@ -92,7 +93,7 @@ export function createImageEditGeneratorFromEnv(source: Record<string, string | 
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = relayUrl ? source.MODEL_RELAY_API_KEY?.trim() : undefined
   const model = source.IMAGE_EDIT_MODEL?.trim() || source.IMAGE_MODEL?.trim() || source.AI_IMAGE_MODEL?.trim()
-  if (!relayUrl || !apiKey || !model) return undefined
+  if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
   try { return new OpenAICompatibleImageEditGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, ...(source.IMAGE_EDIT_PATH?.trim() ? { path: source.IMAGE_EDIT_PATH.trim() } : {}), timeoutMs: Number(source.IMAGE_EDIT_TIMEOUT_MS ?? 300_000), ...(usageSink ? { usageSink } : {}) }) } catch { return undefined }

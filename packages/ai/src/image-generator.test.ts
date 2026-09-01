@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { OpenAICompatibleImageGenerator, createImageGeneratorFromEnv } from './image-generator.js'
-import { OpenAICompatibleImageEditGenerator } from './image-editor.js'
+import { OpenAICompatibleImageEditGenerator, createImageEditGeneratorFromEnv } from './image-editor.js'
 
 describe('image generator', () => {
+  it('does not assemble an image edit provider from placeholder relay configuration', () => {
+    expect(createImageEditGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: '${MODEL_RELAY_API_KEY}', IMAGE_EDIT_MODEL: 'REPLACE_WITH_IMAGE_EDIT_MODEL' })).toBeUndefined()
+    expect(createImageEditGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', IMAGE_EDIT_MODEL: 'your-image-edit-model' })).toBeUndefined()
+  })
+
   it('queries provider status fail-closed and returns verified artifacts', async () => {
     let method = ''
     const generator = new OpenAICompatibleImageGenerator({
