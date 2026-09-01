@@ -1,8 +1,9 @@
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
+import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
@@ -13,6 +14,17 @@ describe('canonical read rollout safety', () => {
     expect(featureFlagRequestsCanonicalRead({ key: 'canonical.product.read_mode', defaultValue: { value: 'legacy_shadow' }, targets: [{ override: { value: 'canonical_read' } }] })).toBe(true)
     expect(featureFlagRequestsCanonicalRead({ key: 'canonical.product.read_mode', defaultValue: { value: 'dual_verify' } })).toBe(false)
     expect(featureFlagRequestsCanonicalRead({ key: 'canonical.product.read_mode', defaultValue: { value: 'legacy_shadow' }, targets: 'not-an-array' as unknown as Array<{ override?: { value?: unknown } }> })).toBe(false)
+  })
+})
+
+describe('brand scope capability derivation', () => {
+  it('never upgrades a workspace temporary grant into a durable brand resource grant', () => {
+    const policy = getMcpMethodPolicy('catalog.product.update')!
+    const temporary = { capability: policy.capability, effect: 'allow' as const, scope: { type: 'workspace' as const, ids: ['ws_1'] }, source: 'temporary_grant' as const, sourceId: 'grant_1', obligations: [] as const }
+    const membership = { ...temporary, source: 'workspace_membership' as const, sourceId: 'membership_1' }
+
+    expect(workspaceCapabilitySourceForBrandScope(policy, 'ws_1', [temporary])).toBeUndefined()
+    expect(workspaceCapabilitySourceForBrandScope(policy, 'ws_1', [temporary, membership])).toEqual(membership)
   })
 })
 
