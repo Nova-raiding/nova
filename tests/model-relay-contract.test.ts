@@ -25,13 +25,28 @@ describe('production model relay contract', () => {
     expect(extractProviderRequestId({ data: { task_id: 'job_1', data: { request_id: 'nested_request_1' } } }, new Headers())).toBe('nested_request_1')
   })
 
-  it('does not invent media usage evidence from a successful response shape', async () => {
+  it('keeps fixed-price image usage separate from a provider cost receipt', async () => {
     await expect(evaluateRelayUsageEvidence(
       { data: [{ url: 'https://cdn.example/image.png' }], cost_cny: 0.02 },
       new Headers(),
       'image',
       'image-v1',
-    )).resolves.toEqual({ usageObserved: false, costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
+    )).resolves.toEqual({ usageObserved: true, costObserved: true, costSource: 'provider_receipt', costCny: 0.02 })
+  })
+
+  it('uses the bounded request unit as fixed-price image usage evidence', async () => {
+    const pricing = { quote: async () => ({ costCny: 0.12, metadata: {
+      cost_source: 'relay_pricing_snapshot' as const, pricing_version: 'pricing-v1', pricing_group: 'VIP', group_ratio: 1,
+      usd_exchange_rate: 7, quota_per_unit: 500_000, quota_type: 1, model_ratio: 0, model_price: 0.12,
+      completion_ratio: 1, raw_quota: 60_000, rounded_quota: 60_000, formula_version: 'new-api-quota-v1' as const,
+    } }) }
+    await expect(evaluateRelayUsageEvidence(
+      { data: [{ url: 'https://cdn.example/image.png' }] },
+      new Headers(),
+      'image',
+      'image-v1',
+      { pricing },
+    )).resolves.toEqual({ usageObserved: true, costObserved: true, costSource: 'relay_pricing_snapshot', costCny: 0.12, pricingVersion: 'pricing-v1', pricingGroup: 'VIP' })
   })
 
   it('requires a numeric non-negative provider cost receipt', async () => {

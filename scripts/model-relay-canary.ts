@@ -106,10 +106,16 @@ export async function evaluateRelayUsageEvidence(
       ? { context: { billingUnits: 1 } }
       : modality === 'video' ? { context: { durationSeconds: options.durationSeconds ?? videoDurationSeconds } } : {}),
   })
+  const requestUsageObserved = modality === 'image' || modality === 'image_edit'
+    ? parsed?.metadata?.billing_units === 1
+    : modality === 'video'
+      ? typeof parsed?.metadata?.duration_seconds === 'number' && parsed.metadata.duration_seconds > 0
+      : false
   // Cost alone proves money, not consumption units. Keep the two evidence
   // dimensions separate so a media response cannot pass usage gates merely
   // because it contains cost_cny.
-  const usageObserved = parsed?.inputTokens !== undefined
+  const usageObserved = requestUsageObserved
+    || parsed?.inputTokens !== undefined
     || parsed?.outputTokens !== undefined
     || parsed?.totalTokens !== undefined
     || Boolean(rawUsage && Object.keys(rawUsage).length)
