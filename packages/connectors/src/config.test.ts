@@ -70,6 +70,18 @@ describe('platform HTTP configuration', () => {
     expect(receipt?.requestId).not.toContain('local-key')
   })
 
+  it('rejects malformed provider request evidence in generic write receipts', () => {
+    const result = buildHttpConnectorConfigs({
+      ...base,
+      XHS_CLIENT_ID: 'xhs-app', XHS_OAUTH_AUTHORIZE_URL: 'https://xhs.test/authorize', XHS_OAUTH_TOKEN_URL: 'https://xhs.test/token', XHS_API_BASE_URL: 'https://xhs.test/api',
+    })
+    const mapWriteReceipt = result.allConfigs.xiaohongshu?.mapWriteReceipt!
+    const input = { fields: { title: '商品', category: 'cat', price: 1, stock: 1 }, idempotencyKey: 'local-key' }
+    expect(mapWriteReceipt({ remoteId: 'remote-1', requestId: 'provider\nforged' }, input, 'create', 'xiaohongshu').requestId).toBe('')
+    expect(mapWriteReceipt({ remoteId: 'remote-1', requestId: 'x'.repeat(257) }, input, 'create', 'xiaohongshu').requestId).toBe('')
+    expect(mapWriteReceipt({ remoteId: 'remote-1', requestId: '__proto__' }, input, 'create', 'xiaohongshu').requestId).toBe('')
+  })
+
   it('does not read inherited or malformed provider mapping paths as evidence', () => {
     const result = buildHttpConnectorConfigsFromStructured({
       xiaohongshu: {

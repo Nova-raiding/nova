@@ -3,6 +3,7 @@ import { validateConnectorReadiness, type ConnectorReadiness } from './readiness
 import { createAlibabaTopSigner, mapAlibabaTopProducts, mapAlibabaTopWriteReceipt, mapAlibabaTopWriteStatus } from './platform-adapters/alibaba-top.js'
 import { createJdSigner, mapJdProducts, mapJdWriteReceipt, mapJdWriteStatus } from './platform-adapters/jd.js'
 import { createPinduoduoSigner, mapPinduoduoProducts, mapPinduoduoWriteReceipt, mapPinduoduoWriteStatus } from './platform-adapters/pinduoduo.js'
+import { providerRequestId } from './platform-adapters/rejection.js'
 
 /**
  * The application may provide this port from a secret/config service.  The
@@ -129,7 +130,9 @@ function genericWriteReceipt(payload: unknown, input: { idempotencyKey: string; 
   // A local idempotency key is not provider evidence.  Leave the receipt
   // uncorrelated when the provider omits its request identity; the HTTP
   // connector will reject it before recording or exposing a write receipt.
-  return { platform, operation, remoteId: text(pathValue(item, mapping?.remoteIdPath)) ?? text(item.remoteId) ?? text(item.id) ?? input.remoteId ?? '', requestId: text(pathValue(item, mapping?.requestIdPath)) ?? text(item.requestId) ?? text(item.request_id) ?? '', status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
+  const rawRequestId = text(pathValue(item, mapping?.requestIdPath)) ?? text(item.requestId) ?? text(item.request_id)
+  const requestId = providerRequestId({ request_id: rawRequestId }) ?? ''
+  return { platform, operation, remoteId: text(pathValue(item, mapping?.remoteIdPath)) ?? text(item.remoteId) ?? text(item.id) ?? input.remoteId ?? '', requestId, status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
 }
 
 function genericWriteStatus(payload: unknown, request: WriteIdentity, _platform: Platform, mapping?: GenericResponseMapping): WriteStatus {
