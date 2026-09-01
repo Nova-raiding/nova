@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope, workspaceAccountPermissionAtoms } from './server.js'
-import { AUTHZ_POLICY_VERSION, MCP_METHODS, getMcpMethodPolicy, type MethodPolicy } from '../../../packages/contracts/src/index.js'
+import { registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope, resolveLoadedAuthorizationResourceScope, service, workspaceAccountPermissionAtoms } from './server.js'
+import { AUTHZ_POLICY_VERSION, MCP_METHODS, getHttpOperationPolicy, getMcpMethodPolicy, type MethodPolicy } from '../../../packages/contracts/src/index.js'
 
 describe('registered MCP authorization coverage', () => {
+  it('keeps HTTP account/task routes on the same MCP scope contract', () => {
+    const cases = [
+      ['DELETE', '/v1/platform-accounts/taobao', 'platform.revoke', 'account'],
+      ['POST', '/v1/platform-accounts/taobao/sync', 'catalog.sync', 'workspace'],
+      ['GET', '/v1/tasks/task_scope/timeline', 'task.timeline', 'brand'],
+      ['POST', '/v1/tasks/task_scope/content', 'content.generate', 'brand'],
+    ] as const
+    for (const [method, path, mcpMethod, scope] of cases) {
+      const http = getHttpOperationPolicy(method, path)
+      expect(http, `${method} ${path}`).toMatchObject({ mcpMethod })
+      expect(getMcpMethodPolicy(mcpMethod)).toMatchObject({ scope })
+    }
+  })
+
   it('projects a workspace role to an exact account only when the account belongs to that workspace', () => {
     const policy = getMcpMethodPolicy('platform.store.alias.set')!
     const workspaceAtom = {
@@ -33,6 +47,37 @@ describe('registered MCP authorization coverage', () => {
       obligations: [] as const,
     }
     expect(workspaceAccountPermissionAtoms(policy, 'ws_scope', 'account_a', ['account_a'], [temporaryWorkspaceAtom])).toEqual([temporaryWorkspaceAtom])
+  })
+
+  it('uses the authoritative task account instead of a caller-selected account', async () => {
+    const workspaceId = `ws_task_account_scope_${Date.now()}`
+    const productId = `product_task_account_scope_${Date.now()}`
+    service.products.set(productId, {
+      ...service.products.get('prod_fixture_1')!,
+      id: productId,
+      workspaceId,
+      accountId: 'account_a',
+    })
+    const task = service.createTask({ workspaceId, productId, platform: 'taobao', accountId: 'account_a' })
+    const policy = getMcpMethodPolicy('platform.store.alias.set')!
+
+    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'account_b' })).resolves.toEqual({ type: 'account', id: 'account_a' })
+  })
+
+  it('does not resolve a foreign task into a local account scope', async () => {
+    const workspaceId = `ws_task_account_scope_local_${Date.now()}`
+    const foreignWorkspaceId = `${workspaceId}_foreign`
+    const productId = `product_task_account_scope_foreign_${Date.now()}`
+    service.products.set(productId, {
+      ...service.products.get('prod_fixture_1')!,
+      id: productId,
+      workspaceId: foreignWorkspaceId,
+      accountId: 'foreign_account',
+    })
+    const task = service.createTask({ workspaceId: foreignWorkspaceId, productId, platform: 'taobao', accountId: 'foreign_account' })
+    const policy = getMcpMethodPolicy('platform.store.alias.set')!
+
+    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'local_account' })).resolves.toEqual({ type: 'account', id: 'local_account' })
   })
 
   it('produces one unique strict authorization decision for every live MCP method', () => {
