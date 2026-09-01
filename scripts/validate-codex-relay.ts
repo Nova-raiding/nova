@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -53,9 +54,43 @@ export function runCodexRelayValidation(configPath: string, env: RelayEnvironmen
   return result
 }
 
+function readDotEnv(path: string): RelayEnvironment {
+  if (!existsSync(path)) return {}
+  const values: RelayEnvironment = {}
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/u)) {
+    const match = line.match(/^\s*(MODEL_RELAY_BASE_URL|MODEL_RELAY_API_KEY|AI_MODEL|IMAGE_MODEL|IMAGE_EDIT_MODEL|OCR_MODEL|VIDEO_MODEL)\s*=\s*(.*)\s*$/u)
+    if (!match) continue
+    const value = match[2]!.trim().replace(/^(['"])(.*)\1$/u, '$2')
+    if (value) values[match[1]!] = value
+  }
+  return values
+}
+
+function readKeychainSecret(service: string): string | undefined {
+  if (process.platform !== 'darwin') return undefined
+  try {
+    const value = execFileSync('/usr/bin/security', ['find-generic-password', '-a', process.env.USER ?? '', '-s', service, '-w'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return value || undefined
+  } catch { return undefined }
+}
+
+function resolveCliEnvironment(): RelayEnvironment {
+  const local = readDotEnv(resolve(process.cwd(), '.env'))
+  const merged: RelayEnvironment = { ...local, ...process.env }
+  // The host Codex provider uses the env_key declared in config.toml. The API
+  // launch script already reads this Keychain item; validation must use the
+  // same source so a key configured in another desktop tab is not mistaken for
+  // a missing shell variable. Existing process variables always win.
+  if (!merged.WORMHOLE_API_KEY) {
+    const key = readKeychainSecret('com.merchant.codex.model-relay')
+    if (key) merged.WORMHOLE_API_KEY = key
+  }
+  return merged
+}
+
 if (resolve(process.argv[1] ?? '') === resolve(fileURLToPath(import.meta.url))) {
   const path = resolve(process.env.CODEX_CONFIG_PATH?.trim() || `${homedir()}/.codex/config.toml`)
-  const result = runCodexRelayValidation(path)
+  const result = runCodexRelayValidation(path, resolveCliEnvironment())
   if (result.errors.length) {
     console.error('codex relay validation failed')
     for (const error of result.errors) console.error(`- ${error}`)
