@@ -1,4 +1,5 @@
-import { Alert, Card, Col, Row, Statistic, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Row, Skeleton, Statistic, Tag, Typography } from "antd";
+import { useEffect, useRef } from "react";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { ModelReadinessTable } from "./ModelReadinessTable";
 
@@ -8,18 +9,31 @@ interface ModelStatusSectionProps {
 
 export function ModelStatusSection({ model }: ModelStatusSectionProps) {
   const { modelStatus, modelStatusLoading } = model;
+  const modelError = model.dataSetError("platform.model.status");
+  const errorRef = useRef<HTMLDivElement>(null);
   const statusLabel = modelStatus?.state ?? (modelStatusLoading ? "加载中" : "不可用");
   const statusColor = !modelStatus ? (modelStatusLoading ? "processing" : "red") : modelStatus.state === "ready" ? "green" : "red";
+
+  useEffect(() => {
+    if (modelError) errorRef.current?.focus({ preventScroll: true });
+  }, [modelError]);
 
   return (
     <Card
       title="模型服务诊断"
+      aria-busy={modelStatusLoading}
       extra={
         <Tag color={statusColor} aria-live="polite">
           {statusLabel}
         </Tag>
       }
     >
+      {modelStatusLoading ? (
+        <div role="status" aria-live="polite" aria-label="正在加载平台模型状态">
+          <Skeleton active paragraph={{ rows: 3 }} />
+        </div>
+      ) : null}
+      {!modelStatusLoading ? <>
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={6}>
           <Statistic title="模型归属" value="平台统一" />
@@ -52,22 +66,38 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
         {modelStatus?.release_metadata_ready ? "已就绪" : "未就绪"}。
       </Typography.Paragraph>
       <ModelReadinessTable status={modelStatus} />
-      {!modelStatus ? (
-        <Alert
-          type="info"
-          showIcon
-          title={modelStatusLoading ? "正在加载平台模型状态" : "平台模型状态不可用"}
-          description={
-            modelStatusLoading
-              ? "请稍候，正在读取中转站与成本门禁。"
-              : "请检查页面顶部错误并重试，当前状态不能视为配置完成。"
-          }
-        />
-      ) : modelStatus.next_actions.length ? (
-        <Alert type="warning" showIcon title="模型上线门禁" description={modelStatus.next_actions.join("；")} />
-      ) : (
-        <Alert type="success" showIcon title="平台模型配置完整" />
-      )}
+      {modelError ? (
+        <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true">
+          <Alert
+            type="error"
+            showIcon
+            title="平台模型状态读取失败"
+            description="当前状态不能视为配置完成。请重试读取平台模型状态；中转站未确认前，生成能力保持阻断。"
+            action={(
+              <Button type="primary" size="small" style={{ minHeight: 44 }} aria-label="重试加载平台模型状态" onClick={() => void model.load()}>
+                重试
+              </Button>
+            )}
+          />
+        </div>
+      ) : null}
+      {!modelError ? (
+        !modelStatus ? (
+          <Alert
+            type="info"
+            role="status"
+            aria-live="polite"
+            showIcon
+            title="平台模型状态不可用"
+            description="请检查页面顶部错误并重试，当前状态不能视为配置完成。"
+          />
+        ) : modelStatus.next_actions.length ? (
+          <Alert type="warning" showIcon title="模型上线门禁" description={modelStatus.next_actions.join("；")} />
+        ) : (
+          <Alert type="success" showIcon title="平台模型配置完整" />
+        )
+      ) : null}
+      </> : null}
     </Card>
   );
 }
