@@ -67,6 +67,7 @@ beforeEach(() => {
   vi.stubEnv('NODE_ENV', 'production')
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'ops-rbac-acceptance-session-secret')
   vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
+  vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
 })
 
 afterEach(async () => {
