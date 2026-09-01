@@ -16526,6 +16526,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     await requireWorkerAuthorization(req)
     const input = await body(req)
     const workspaceId = resolveWorkspace(req, input.workspace_id)
+    const workerId = headerRequired(req, 'x-worker-id')
     await persistenceReady
     const cleanup = await cleanObjectStorageOrphans({
       workspaceId,
@@ -16543,7 +16544,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       const alert = await (persistence.alerts ?? memoryAlerts).upsert({ workspaceId, alertKey: `storage-orphans:${workspaceId}`, code: 'OBJECT_STORAGE_ORPHAN_MANUAL_ATTENTION', severity: 'high', entityType: 'object_storage', entityId: workspaceId, title: `${cleanup.manualAttention} 个对象清理失败，需人工处理`, observedAt: new Date().toISOString(), evidence: cleanup as unknown as Record<string, unknown>, nextAction: '在运营后台核对对象键和存储服务状态，人工删除后关闭告警。' })
       void persistOperationalAlertNotification(alert)
     }
-    return send(res, 200, workspaceId, cleanup, null, req)
+    return send(res, 200, workspaceId, { ...cleanup, worker_id: workerId }, null, req)
   }
   const syncProgressMatch = path.match(/^\/v1\/sync-jobs\/([^/]+)\/progress$/)
   if (req.method === 'POST' && syncProgressMatch) {

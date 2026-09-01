@@ -437,6 +437,8 @@ describe('API application wiring', () => {
     expect(source).toContain('const quota = persistence.storageQuota')
     expect(source).toContain('onDeleted: async row =>')
     expect(source).toContain('releaseAfterPhysicalDeletion')
+    expect(source).toContain("const workerId = headerRequired(req, 'x-worker-id')")
+    expect(source).toContain('worker_id: workerId')
     const dataDeletionStart = source.indexOf("path === '/v1/ops/data-deletion/complete'")
     const orphanCleanupStart = source.indexOf("path === '/v1/internal/storage/orphans/cleanup'")
     expect(dataDeletionStart).toBeGreaterThanOrEqual(0)
