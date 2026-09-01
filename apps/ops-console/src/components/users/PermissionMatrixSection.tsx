@@ -1,5 +1,5 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Alert, App, Button, Input, Select, Space, Table, Tag, Typography, type TableColumnsType } from "antd";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Input, Select, Skeleton, Space, Table, Tag, Typography, type TableColumnsType } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { rpc } from "../../api/opsClient";
 
@@ -50,9 +50,10 @@ function AccessTag({ access }: { access: PermissionAccess }) {
 }
 
 export function PermissionMatrixSection() {
-  const { message } = App.useApp();
   const [matrix, setMatrix] = useState<PermissionMatrix>();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
+  const errorRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [workbench, setWorkbench] = useState<string>();
@@ -61,16 +62,21 @@ export function PermissionMatrixSection() {
 
   const load = async () => {
     setLoading(true);
+    setError(undefined);
     try {
       const value = await rpc<PermissionMatrix>("ops.authorization.matrix.get");
       if (!value || value.method_count !== value.items.length || value.role_count !== value.roles.length) throw new Error("权限矩阵响应不完整");
       setMatrix(value);
       setVisibleRoles((current) => current.filter((role) => value.roles.includes(role)).length ? current.filter((role) => value.roles.includes(role)) : value.roles.slice(0, 10));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "权限矩阵读取失败");
+      setError(error instanceof Error ? error.message : "权限矩阵读取失败");
     } finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (!error) return;
+    window.requestAnimationFrame(() => errorRef.current?.focus({ preventScroll: true }));
+  }, [error]);
 
   const items = useMemo(() => filterPermissionMatrixItems(matrix?.items ?? [], { query: deferredQuery, workbench, effect }), [matrix?.items, deferredQuery, workbench, effect]);
   const columns = useMemo<TableColumnsType<PermissionMatrixItem>>(() => [
@@ -83,6 +89,11 @@ export function PermissionMatrixSection() {
 
   return <Space orientation="vertical" size="middle" className="full-width">
     <Alert showIcon type="info" title="插件功能权限矩阵" description="数据直接生成自服务端 MCP_METHOD_POLICIES；不可见表示该角色没有对应能力，最终执行仍由当前工作台、资源范围、显式 deny 和义务条件共同决定。" />
+    {error ? <div ref={errorRef} tabIndex={-1} className="ops-form-error-summary" role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby="permission-matrix-error-title" aria-describedby="permission-matrix-error-description">
+      <Typography.Text strong id="permission-matrix-error-title">权限矩阵读取失败</Typography.Text>
+      <Typography.Paragraph id="permission-matrix-error-description" type="danger" style={{ marginBottom: 8 }}>{error}。当前筛选和已读取的矩阵仍保留，修复连接后可重试。</Typography.Paragraph>
+      <Button className="ops-error-retry" type="primary" onClick={() => void load()} loading={loading}>重试读取</Button>
+    </div> : null}
     <Space wrap aria-label="权限矩阵筛选">
       <Input.Search allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索方法、能力或数据类型" aria-label="搜索插件方法或能力" style={{ width: 300 }} />
       <Select allowClear value={workbench} onChange={setWorkbench} placeholder="全部工作台" aria-label="筛选工作台" style={{ width: 140 }} options={[{ value: "platform", label: "平台工作台" }, { value: "workspace", label: "商家工作台" }]} />
@@ -91,6 +102,6 @@ export function PermissionMatrixSection() {
       <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新矩阵</Button>
     </Space>
     <Typography.Text type="secondary">策略 {matrix?.policy_version ?? "读取中"} · {items.length}/{matrix?.method_count ?? 0} 个插件方法 · 当前显示 {visibleRoles.length} 个角色</Typography.Text>
-    <Table<PermissionMatrixItem> rowKey="method" size="small" loading={loading} dataSource={items} columns={columns} pagination={{ pageSize: 25, showSizeChanger: true, pageSizeOptions: [25, 50, 100], showTotal: (total) => `共 ${total} 个方法` }} scroll={{ x: 830 + visibleRoles.length * 116, y: 560 }} sticky />
+    {loading && !matrix ? <div className="ops-data-state" data-state="loading" aria-label="正在读取权限矩阵"><Skeleton active paragraph={{ rows: 7 }} /></div> : <Table<PermissionMatrixItem> rowKey="method" size="small" loading={loading} dataSource={items} columns={columns} pagination={{ pageSize: 25, showSizeChanger: true, pageSizeOptions: [25, 50, 100], showTotal: (total) => `共 ${total} 个方法` }} scroll={{ x: 830 + visibleRoles.length * 116, y: 560 }} sticky />}
   </Space>;
 }
