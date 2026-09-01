@@ -83,6 +83,16 @@ export function readCommercialView(search: string): CommercialView {
   return commercialViews.includes(value as CommercialView) ? value as CommercialView : "blocks";
 }
 
+export function readCommercialTargetWorkspace(search: string, authorization: AuthorizationProjection): string {
+  if (typeof search === "string") {
+    const requested = new URLSearchParams(search).get("workspace")?.trim();
+    if (requested) return requested;
+  }
+  return authorization.scope.kind === "workspace" || authorization.scope.kind === "controlled_support"
+    ? authorization.scope.id?.trim() ?? ""
+    : "";
+}
+
 export function commercialViewUrl(location: Pick<Location, "pathname" | "search" | "hash">, view: CommercialView): string {
   const params = new URLSearchParams(location.search);
   params.set("view", view);
@@ -103,6 +113,7 @@ export function useCommercialOperations(
   const summaryRequestRef = useRef(0);
   const summaryControllerRef = useRef<AbortController | undefined>(undefined);
   const privateSkuReadable = authorization.can(commercialCapabilities.privateSkuRead);
+  const targetWorkspaceId = readCommercialTargetWorkspace(typeof window === "undefined" ? "" : window.location.search, authorization);
 
   const setView = useCallback((next: CommercialView) => {
     setViewState(next);
@@ -127,12 +138,12 @@ export function useCommercialOperations(
     summaryControllerRef.current = controller;
     setSummary({ status: "loading" });
     try {
-      const result = await client.summary(controller.signal);
+      const result = await client.summary(targetWorkspaceId, controller.signal);
       if (request === summaryRequestRef.current) setSummary({ status: "ready", data: result });
     } catch (cause) {
       if (request === summaryRequestRef.current && !(cause instanceof DOMException && cause.name === "AbortError")) setSummary({ status: "error", error: errorEvidence(cause) });
     }
-  }, [authorization, client]);
+  }, [authorization, client, targetWorkspaceId]);
 
   const loadView = useCallback(async (target: CommercialView = view) => {
     const capability = commercialViewCapability[target];
@@ -150,10 +161,10 @@ export function useCommercialOperations(
     try {
       let result: CommercialDataMap[CommercialView];
       if (target === "catalog") {
-        const catalog = await client.catalog(privateSkuReadable, controller.signal);
+        const catalog = await client.catalog(targetWorkspaceId, privateSkuReadable, controller.signal);
         result = privateSkuReadable ? catalog : { ...catalog, items: catalog.items.filter((item) => item.visibility !== "private") };
       } else {
-        result = await client[target](controller.signal);
+        result = await client[target](targetWorkspaceId, controller.signal);
       }
       if (request !== requestRef.current) return;
       setData((current) => ({ ...current, [target]: { status: "ready", data: result } }));
@@ -161,7 +172,7 @@ export function useCommercialOperations(
       if (request !== requestRef.current || cause instanceof DOMException && cause.name === "AbortError") return;
       setData((current) => ({ ...current, [target]: { status: "error", data: current[target].data, error: errorEvidence(cause) } }));
     }
-  }, [authorization, client, privateSkuReadable, view]);
+  }, [authorization, client, privateSkuReadable, targetWorkspaceId, view]);
 
   useEffect(() => {
     void loadSummary();

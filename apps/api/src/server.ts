@@ -4025,6 +4025,11 @@ const workerEventOperations: Record<string, CriticalWorkerOperation> = {
   'asset.generation_continuations.ready': 'asset.continuation.execute',
 }
 
+export function requiresWorkerActorAuthorization(eventType: string, operation: CriticalWorkerOperation): boolean {
+  return !(operation === 'asset.scan.execute'
+    && ['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined'].includes(eventType))
+}
+
 export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthorizationSnapshot, workspaceId: string, resourceId: string, execution?: { eventId: string }) {
   const membershipMatch = /^membership:([^:]+):(\d+)$/u.exec(snapshot.grantRevision)
   const grantMatch = /^grant:([^:]+):(\d+):([^:]+):(\d+)$/u.exec(snapshot.grantRevision)
@@ -17255,17 +17260,22 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     if (!event) throw new DomainError('AUTHORIZATION_EVENT_NOT_FOUND', '执行授权事件不存在或不属于当前工作区', 404)
     const expectedOperation = workerEventOperations[event.eventType]
     if (!expectedOperation || expectedOperation !== requestedOperation) throw new DomainError('AUTHZ_EXECUTION_OPERATION_MISMATCH', '事件类型与执行操作不匹配', 403)
-    let snapshot: WorkerAuthorizationSnapshot
-    try {
-      snapshot = parseWorkerAuthorizationSnapshot(event, requestedOperation)
-    } catch {
-      throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '持久事件缺少有效且精确绑定的授权快照', 403)
-    }
+    const commercialOnlySystemScan = !requiresWorkerActorAuthorization(event.eventType, requestedOperation)
     let commercialSnapshot: WorkerCommercialAccessSnapshot
     try {
       commercialSnapshot = parseWorkerCommercialAccessSnapshot(event, requestedOperation)
     } catch {
       throw new DomainError('COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', '持久事件缺少有效且精确绑定的商业访问快照', 403)
+    }
+    if (commercialOnlySystemScan) {
+      const commercialRecheck = await recheckWorkerCommercialAccess(event, commercialSnapshot)
+      return send(res, 200, workspaceId, { commercial_access_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
+    }
+    let snapshot: WorkerAuthorizationSnapshot
+    try {
+      snapshot = parseWorkerAuthorizationSnapshot(event, requestedOperation)
+    } catch {
+      throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '持久事件缺少有效且精确绑定的授权快照', 403)
     }
     const [authorizationRecheck, commercialRecheck] = await Promise.all([
       recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId, { eventId: event.id }),
@@ -17401,10 +17411,24 @@ function publishCommitDomainError(error: unknown) {
   return new DomainError(error.code, error.message, 503, { retryable: false, reconciliation_required: true, next_action: 'query_publish_job' })
 }
 
-function modelSettlementDomainError(error: unknown) {
+export function modelSettlementDomainError(error: unknown) {
   const code = (error as { code?: unknown })?.code
   if (code === 'MODEL_TASK_COST_ACTUAL_EXCEEDED' || code === 'MODEL_DAILY_COST_ACTUAL_EXCEEDED') return new DomainError(String(code), '模型供应商已完成调用，但实际成本超过安全上限；结果已进入费用核对，不会自动退款或重试', 409, { provider_succeeded: true, reconciliation_required: true })
   if (code === 'MODEL_USAGE_SETTLEMENT_PENDING' || code === 'MODEL_USAGE_COST_MISSING') return new DomainError(String(code), '模型供应商已完成调用，但本地用量结算尚未完成；为避免重复计费，当前结果已阻断且不会自动退款', 503, { provider_succeeded: true, reconciliation_required: true, ...((error as { receiptKey?: unknown }).receiptKey ? { receipt_key: String((error as { receiptKey: unknown }).receiptKey) } : {}) })
+  if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
+    const source = error as { details?: unknown; providerIdempotencyKey?: unknown; providerRequestId?: unknown; status?: unknown }
+    const details = source.details && typeof source.details === 'object' && !Array.isArray(source.details) ? source.details as Record<string, unknown> : {}
+    const providerStatus = Number.isInteger(source.status) && source.status >= 400 && source.status <= 599 ? source.status : details.provider_status
+    const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
+    const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
+    return new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型中转请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试，请先查询结果或人工对账', 503, {
+      provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, retryable: false,
+      next_action: 'reconcile_model_request',
+      ...(Number.isInteger(providerStatus) ? { provider_status: providerStatus } : {}),
+      ...(typeof providerRequestId === 'string' && providerRequestId.length <= 256 ? { provider_request_id: providerRequestId } : {}),
+      ...(typeof providerIdempotencyKey === 'string' && providerIdempotencyKey.length <= 256 ? { provider_idempotency_key: providerIdempotencyKey } : {}),
+    })
+  }
   return undefined
 }
 

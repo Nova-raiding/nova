@@ -317,14 +317,14 @@ export function parseServices(value: unknown): CommercialPage<ServiceFulfillment
 }
 
 export const commercialOperationsClient = {
-  summary: async (signal?: AbortSignal) => parseCommercialAccessSummary(await rpc(commercialOperationsMethods.accessSummary, {}, { signal })),
-  blocks: async (signal?: AbortSignal) => parseAccessBlocks(await rpc(commercialOperationsMethods.accessBlocks, { status: "open", limit: "100" }, { signal })),
-  entitlements: async (signal?: AbortSignal) => parseEntitlements(await rpc(commercialOperationsMethods.entitlements, { limit: "100" }, { signal })),
-  ledger: async (signal?: AbortSignal) => parseLedger(await rpc(commercialOperationsMethods.ledger, { limit: "100" }, { signal })),
-  catalog: async (includePrivate: boolean, signal?: AbortSignal) => parseCatalog(await rpc(commercialOperationsMethods.catalog, { limit: "100", include_private: String(includePrivate) }, { signal })),
-  orders: async (signal?: AbortSignal) => parseOrders(await rpc(commercialOperationsMethods.orders, { limit: "100" }, { signal })),
-  rates: async (signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
-  services: async (signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { limit: "100" }, { signal })),
+  summary: async (targetWorkspaceId: string, signal?: AbortSignal) => parseCommercialAccessSummary(await rpc(commercialOperationsMethods.accessSummary, { target_workspace_id: targetWorkspaceId }, { signal })),
+  blocks: async (targetWorkspaceId: string, signal?: AbortSignal) => parseAccessBlocks(await rpc(commercialOperationsMethods.accessBlocks, { target_workspace_id: targetWorkspaceId, status: "open", limit: "100" }, { signal })),
+  entitlements: async (targetWorkspaceId: string, signal?: AbortSignal) => parseEntitlements(await rpc(commercialOperationsMethods.entitlements, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  ledger: async (targetWorkspaceId: string, signal?: AbortSignal) => parseLedger(await rpc(commercialOperationsMethods.ledger, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  catalog: async (targetWorkspaceId: string, includePrivate: boolean, signal?: AbortSignal) => parseCatalog(await rpc(commercialOperationsMethods.catalog, { target_workspace_id: targetWorkspaceId, limit: "100", include_private: String(includePrivate) }, { signal })),
+  orders: async (targetWorkspaceId: string, signal?: AbortSignal) => parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  rates: async (targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
 };
 
 export type CommercialOperationsClient = typeof commercialOperationsClient;
