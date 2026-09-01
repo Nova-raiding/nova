@@ -31,6 +31,33 @@ const nextActionCopy = (finding: CanonicalProductConsistencyReport["findings"][n
   if (!action.permission.allowed) return `${action.label}（需要 ${action.permission.requiredRole ?? "指定角色"} 权限）`;
   return `服务端动作：${action.label}`;
 };
+function NextActionEvidence({
+  finding,
+  onExecute,
+}: {
+  finding: CanonicalProductConsistencyReport["findings"][number];
+  onExecute?: (finding: CanonicalProductConsistencyReport["findings"][number]) => void;
+}) {
+  const action = finding.nextAction;
+  if (!action) return <Typography.Text type={finding.status === "verified" ? "secondary" : "warning"}>{nextActionCopy(finding)}</Typography.Text>;
+  const executable = action.permission.allowed && Boolean(onExecute);
+  return <Space orientation="vertical" size={2}>
+    <Typography.Text type={finding.status === "verified" ? "secondary" : "warning"}>{nextActionCopy(finding)}</Typography.Text>
+    <Typography.Text type="secondary" aria-label="服务端动作证据">
+      {action.method} · {action.reason}
+      {action.requiredInputs.length > 0 ? ` · 输入：${action.requiredInputs.join("、")}` : " · 无额外输入"}
+      {action.confirmation === "interactive_confirmation" ? " · 需要交互确认" : " · 无需交互确认"}
+    </Typography.Text>
+    {action.permission.allowed && <Button
+      size="small"
+      type="link"
+      disabled={!executable}
+      aria-disabled={!executable}
+      aria-label={executable ? `执行：${action.label}` : `服务端动作 ${action.label} 尚未接入`}
+      onClick={() => { if (executable && onExecute) onExecute(finding); }}
+    >{executable ? action.label : `${action.label}（待接入）`}</Button>}
+  </Space>;
+}
 const freshnessMeta = {
   fresh: { label: "报告新鲜", color: "success" },
   stale: { label: "报告已变旧", color: "warning" },
@@ -45,7 +72,7 @@ const orphanEntityMeta = {
   publish_job: "发布任务",
 } as const;
 
-export function CanonicalProductConsistencySection({ report, onRefresh, loading = false, canRead = true }: { report?: PresentationReport; onRefresh?: () => void; loading?: boolean; canRead?: boolean }) {
+export function CanonicalProductConsistencySection({ report, onRefresh, onNextAction, loading = false, canRead = true }: { report?: PresentationReport; onRefresh?: () => void; onNextAction?: (finding: CanonicalProductConsistencyReport["findings"][number]) => void; loading?: boolean; canRead?: boolean }) {
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [selected, setSelected] = useState<CanonicalProductConsistencyReport["findings"][number]>();
   const [selectedOrphan, setSelectedOrphan] = useState<CanonicalProductConsistencyReport["orphanFindings"][number]>();
@@ -90,9 +117,15 @@ export function CanonicalProductConsistencySection({ report, onRefresh, loading 
           { title: "证据时间", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.evidence?.generatedAt ?? "未返回" },
           { title: "原因", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.codes.length ? row.codes.map(codeMessage).join("、") : "关系链已验证" },
           { title: "状态", dataIndex: "status", render: (value: Status) => <Tag color={statusMeta[value].color} icon={value === "verified" ? <CheckCircleOutlined /> : <WarningOutlined />}>{statusMeta[value].label}</Tag> },
-          { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <Typography.Text type={row.status === "verified" ? "secondary" : "warning"}>{nextActionCopy(row)}</Typography.Text> },
+          { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <NextActionEvidence finding={row} onExecute={onNextAction} /> },
           { title: "操作", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <Button type="link" aria-label={`查看 ${row.legacyProductId} 一致性详情`} onClick={() => setSelected(row)}>查看详情</Button> },
-        ]} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前筛选没有商品" />}
+        ]} /> : report.findings.length === 0 && report.orphanFindings.length === 0 ? <Alert
+          type={report.status === "clean" && !hasAttention ? "success" : "warning"}
+          showIcon
+          role={report.status === "clean" && !hasAttention ? "status" : "alert"}
+          title={report.status === "clean" && !hasAttention ? "当前没有关系问题" : "没有可验证的关系记录"}
+          description={report.status === "clean" && !hasAttention ? "服务端返回了空的一致性结果；这不是客户端未加载。" : "服务端未返回可验证商品关系，当前不能据此判断已通过。请重新检查或转人工处理。"}
+        /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前筛选没有商品；请调整状态筛选" />}
         {orphanFindings.length > 0 && <>
           <Typography.Text strong>未挂接关系对象</Typography.Text>
           <Typography.Text type="secondary">这些对象不属于任何可验证的商品行，必须单独处理；系统不会根据数量摘要推断其已通过。</Typography.Text>
@@ -118,7 +151,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, loading 
           <Descriptions.Item label="批次 / 任务 / 发布">{selected.relation ? `${selected.relation.campaignItemIds.length} / ${selected.relation.taskIds.length} / ${selected.relation.publishJobIds.length}` : `${selected.campaignItemIds.length} / ${selected.taskIds.length} / ${selected.publishJobIds.length}`}</Descriptions.Item>
           <Descriptions.Item label="检查证据">{selected.evidence ? `${selected.evidence.generatedAt} · revision ${selected.evidence.revision ?? "—"}` : "服务端未返回证据摘要"}</Descriptions.Item>
         </Descriptions>
-        <Alert type={selected.status === "verified" ? "info" : "warning"} showIcon title="下一步" description={nextActionCopy(selected)} />
+        <Alert type={selected.status === "verified" ? "info" : "warning"} showIcon title="下一步" description={<NextActionEvidence finding={selected} onExecute={onNextAction} />} />
         {selected.blocking && <Alert type="error" showIcon title={`阻断：${selected.blocking.code}`} description={`${selected.blocking.message} ${selected.blocking.impact}`} />}
         {selected.codes.length ? <Alert type="error" showIcon title="阻断原因" description={<ul>{selected.codes.map(code => <li key={code}><Typography.Text code>{code}</Typography.Text>：{codeMessage(code)}</li>)}</ul>} /> : selected.evidence ? <Alert type="success" showIcon title="关系链已验证" /> : <Alert type="warning" showIcon title="验证证据不完整" description="服务端未返回该商品的证据摘要，当前不能作为发布依据。" />}
       </Space>}

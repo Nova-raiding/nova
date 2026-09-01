@@ -72,4 +72,22 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain("重新检查");
     expect(markup).not.toContain("关系链已验证");
   });
+
+  it("renders the server next_action contract without inventing a repair action", () => {
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, findings: [{ ...report.findings[0]!, nextAction: { ...report.findings[0]!.nextAction!, permission: { allowed: true, requiredRole: null }, requiredInputs: ["canonical_product_id"], confirmation: "interactive_confirmation" } }] }} />);
+    expect(markup).toContain("canonical.product.consistency");
+    expect(markup).toContain("关系缺失");
+    expect(markup).toContain("输入：canonical_product_id");
+    expect(markup).toContain("需要交互确认");
+    expect(markup).toContain("补齐规范商品映射（待接入）");
+    expect(markup).toContain('aria-disabled="true"');
+  });
+
+  it("distinguishes a server-confirmed empty result from a filtered empty result", () => {
+    const emptyReport = { ...report, status: "clean" as const, counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 }, findings: [], orphanFindings: [], freshness: "fresh" as const };
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={emptyReport} />);
+    expect(markup).toContain("当前没有关系问题");
+    expect(markup).toContain("这不是客户端未加载");
+    expect(markup).not.toContain("当前筛选没有商品");
+  });
 });
