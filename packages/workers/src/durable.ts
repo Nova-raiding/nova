@@ -172,6 +172,17 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     const events = await this.store.claimPending(workspaceId, { limit, leaseMs: this.leaseMs, now: new Date(this.now()).toISOString(), ...this.claim })
     let added = 0
     for (const event of events) {
+      // RLS/repository scope is a defense-in-depth boundary, not an implicit
+      // trust boundary. A faulty store must never hydrate another tenant's
+      // event into this worker's queue.
+      if (event.workspaceId !== workspaceId) {
+        throw Object.assign(new Error('outbox event workspace scope mismatch'), {
+          code: 'OUTBOX_EVENT_SCOPE_MISMATCH',
+          workspaceId,
+          eventId: event.id,
+          eventWorkspaceId: event.workspaceId,
+        })
+      }
       if (await this.queue.contains?.(event.id)) continue
       await this.queue.enqueue({ id: event.id, value: event })
       added += 1

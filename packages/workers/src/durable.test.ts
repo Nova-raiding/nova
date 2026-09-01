@@ -95,6 +95,14 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_1')?.publishedAt).toBeTruthy()
   })
 
+  it('fails closed when persistence returns an event outside the requested RLS workspace', async () => {
+    const store = new Store(event({ workspaceId: 'ws_other' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }))
+
+    await expect(dispatcher.restore('ws_1')).rejects.toMatchObject({ code: 'OUTBOX_EVENT_SCOPE_MISMATCH', eventId: 'evt_1', workspaceId: 'ws_1', eventWorkspaceId: 'ws_other' })
+    expect(queue.size).toBe(0)
+  })
+
   it('persists retry backoff and does not write/ack unknown outcomes', async () => {
     const store = new Store(event({ id: 'evt_unknown' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const handler = vi.fn(async () => { throw Object.assign(new Error('timeout'), { code: 'TIMEOUT', retryable: true, unknown: true }) })
