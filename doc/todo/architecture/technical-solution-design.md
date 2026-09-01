@@ -547,9 +547,9 @@ Release 1 的 50 并发指 50 个工作区保持在线并可在同一分钟各�
 ```text
 [ ] app 权限截图/审批编号
 [ ] OAuth 正常、拒绝、过期、撤权
-[ ] 商品与 SKU 分页读取
-[ ] 增量或时间窗同步与去重
-[ ] raw fixture + canonical golden fixture
+[x] 本地商品与 SKU 分页读取契约：游标格式、游标推进和重复游标 fail-closed（`0d78ae7`，`sync-contract.test.ts`）
+[x] 本地增量/时间窗同步与去重契约：时间窗传递、同页去重、remote ID 内容冲突和重复 next cursor fail-closed（`0d78ae7`，`sync-contract.test.ts`）
+[x] 可重放 raw fixture + canonical golden fixture：六平台 raw 字段白名单、精确映射和重放一致性（`f2cef8d`，`connector-fixture-golden.test.ts`）
 [ ] create/update 字段白名单
 [x] 本地 connector preflight：placeholder、HTTPS、scope/host、tenant binding 和 production-canary evidence fail-closed（`7774064`，`platform-preflight.test.ts`）
 [x] 本地 400/401/403/409/429/5xx/timeout 错误映射契约（`60f16c3`，`http-connector.test.ts`）
