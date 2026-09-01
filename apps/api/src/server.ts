@@ -4714,7 +4714,12 @@ async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<Retur
     if (direct.type === 'brand') {
       const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
       const canonicalBrandIds = [...new Set(canonical.filter(item => item.sourceProductId === task.productId).map(item => item.brandId))]
-      return { type: 'brand' as const, id: canonicalBrandIds.length === 1 && canonicalBrandIds[0] === task.brandId ? canonicalBrandIds[0] : undefined }
+      if (task.brandId && canonicalBrandIds.length === 1 && canonicalBrandIds[0] === task.brandId) return { type: 'brand' as const, id: task.brandId }
+      // Legacy/fixture tasks may be intentionally unbranded. Keep the
+      // operation task-bound and auditable instead of treating a missing
+      // brand as an arbitrary caller-selected scope.
+      if (!task.brandId && canonicalBrandIds.length === 0) return { type: 'brand' as const, id: `task:${task.id}` }
+      return { type: 'brand' as const, id: undefined }
     }
     return { type: 'account' as const, id: task.accountId }
   }
@@ -5327,7 +5332,10 @@ const CUSTOMER_DATA_METHOD_PREFIXES = [
 const CUSTOMER_DATA_EXACT_METHODS = new Set([
   'platform.store.list',
   'platform.connect',
-  'platform.sync',
+  // Keep the HTTP platform-account sync surface bound to the same live MCP
+  // method used by the registered HTTP authorization policy. `platform.sync`
+  // is not a MCP method and would make temporary customer-data grants/audits
+  // diverge from the actual authorization contract.
   'platform.revoke',
   'canonical.product.consistency',
   'ops.audit.detail',
@@ -5369,7 +5377,7 @@ export function customerDataMethodForHttp(method: string | undefined, path: stri
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method ?? '')) return undefined
   if (method === 'GET' && path === '/v1/platform-accounts') return 'platform.store.list'
   if (method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/authorize$/u.test(path)) return 'platform.connect'
-  if (method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/sync$/u.test(path)) return 'platform.sync'
+  if (method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/sync$/u.test(path)) return 'catalog.sync'
   if (method === 'DELETE' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)$/u.test(path)) return 'platform.revoke'
   const customerPath = /^\/v1\/(?:products|assets|tasks|content-versions|content|brand-profile|knowledge|sync-jobs|generation-jobs|image-generation-jobs|publish-jobs|delivery-readiness|canonical)(?:\/|$)/u.test(path)
   if (!customerPath) return undefined
