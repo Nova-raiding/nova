@@ -81,6 +81,7 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .role-scope-bar .ant-tag { margin-inline-end: 0; }
 .ops-role-summary { position: relative; display: inline-flex; align-items: center; }
 .ops-role-summary-trigger { min-height: 44px; padding-inline: 8px; }
+.ops-connection-toggle, .ops-refresh-button, .ops-jit-status .ant-btn { min-height: 44px; }
 .ops-role-list { position: absolute; z-index: 2; top: calc(100% + 4px); left: 0; min-width: 200px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; box-shadow: 0 4px 12px rgb(15 23 42 / 16%); color: #0f172a; }
 .ops-role-list ul { margin: 4px 0 0; padding-left: 20px; }
 .ops-role-list li { line-height: 24px; }
