@@ -70,6 +70,23 @@ describe('platform HTTP configuration', () => {
     expect(receipt?.requestId).not.toContain('local-key')
   })
 
+  it('does not read inherited or malformed provider mapping paths as evidence', () => {
+    const result = buildHttpConnectorConfigsFromStructured({
+      xiaohongshu: {
+        clientId: 'xhs',
+        oauth: { authorizeUrl: 'https://xhs.test/a', tokenUrl: 'https://xhs.test/t' },
+        api: { baseUrl: 'https://xhs.test/api', syncPath: '/i', createPath: '/c', updatePath: '/u', queryPath: '/q' },
+        responseMapping: { itemsPath: 'data.items', remoteIdPath: 'constructor.name', requestIdPath: '__proto__.requestId' },
+      },
+    })
+    const mapProducts = result.allConfigs.xiaohongshu?.mapProducts!
+    expect(mapProducts({ data: { items: [{ title: '商品' }] } }, 'xiaohongshu')[0]?.remoteId).toBe('xiaohongshu-remote-0')
+    const receipt = result.allConfigs.xiaohongshu?.mapWriteReceipt?.({ remoteId: 'safe-id', requestId: 'provider-request' }, { fields: { title: '商品', category: 'cat', price: 1, stock: 1 }, idempotencyKey: 'local-key' }, 'create', 'xiaohongshu')
+    expect(receipt?.requestId).toBe('provider-request')
+    expect(result.allConfigs.xiaohongshu?.mapProducts?.({ data: { items: [{ id: 'safe-id' }] } }, 'xiaohongshu')[0]?.remoteId).toBe('safe-id')
+    expect(result.allConfigs.xiaohongshu?.mapProducts?.({ data: { items: [{ id: 'safe-id' }] } }, 'xiaohongshu')[0]?.platformFields).toMatchObject({ id: 'safe-id' })
+  })
+
   it('does not create a partial connector config', () => {
     const result = buildHttpConnectorConfigs({ JD_APP_KEY: 'jd-only' })
     expect(result.configs.jd).toBeUndefined()

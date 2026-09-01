@@ -74,12 +74,18 @@ function finiteNumber(value: unknown): number | undefined {
   return undefined
 }
 
+const UNSAFE_MAPPING_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor'])
+
 function pathValue(value: unknown, path: string | undefined): unknown {
-  if (!path?.trim()) return undefined
-  return path.split('.').reduce<unknown>((current, segment) => {
+  const normalizedPath = path?.trim()
+  if (!normalizedPath || normalizedPath.length > 512 || /[\u0000-\u001f\u007f\r\n]/u.test(normalizedPath)) return undefined
+  return normalizedPath.split('.').reduce<unknown>((current, segment) => {
     const match = segment.match(/^([^[]+)(?:\[(\d+)\])?$/u)
-    if (!match || !record(current)) return undefined
-    const next = record(current)![match[1]!]
+    const currentRecord = record(current)
+    if (!match || !currentRecord) return undefined
+    const key = match[1]!
+    if (UNSAFE_MAPPING_SEGMENTS.has(key) || key.length > 128 || !Object.prototype.hasOwnProperty.call(currentRecord, key)) return undefined
+    const next = currentRecord[key]
     return match[2] === undefined ? next : Array.isArray(next) ? next[Number(match[2])] : undefined
   }, value)
 }
