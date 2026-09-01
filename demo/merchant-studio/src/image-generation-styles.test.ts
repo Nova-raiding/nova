@@ -32,4 +32,10 @@ describe('image candidate selection accessibility styles', () => {
     expect(styles).toContain('@media (prefers-reduced-motion:reduce){.image-generation-job-panel *')
     expect(styles).toContain('animation-iteration-count:1!important')
   })
+
+  it('provides a stable candidate skeleton for the initial desktop load', () => {
+    expect(styles).toContain('.image-candidate-loading{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))')
+    expect(styles).toContain('.image-candidate-skeleton-media{width:100%;aspect-ratio:4/3')
+    expect(styles).toContain('@media (prefers-reduced-motion:no-preference){.image-candidate-skeleton-media')
+  })
 })

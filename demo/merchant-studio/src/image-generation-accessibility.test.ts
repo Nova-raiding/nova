@@ -25,6 +25,12 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('ref={selectionErrorRef} tabIndex={selectionState === \'failed\' ? -1 : undefined}')
   })
 
+  it('keeps the initial async wait visibly occupied without adding duplicate announcements', () => {
+    expect(app).toContain('{!job && loading && <div className="image-candidate-loading" aria-hidden="true">')
+    expect(app).toContain('image-candidate-skeleton-${slot}')
+    expect(app).toContain('aria-busy={loading}')
+  })
+
   it('announces the six-candidate limit and blocked candidate recovery path', () => {
     expect(app).toContain('最多选择 6 张候选图，请先取消一张再继续。')
     expect(app).toContain('这张候选图尚未满足归档、安全扫描、权益、真实性或人工审核门禁，暂不能选择。')

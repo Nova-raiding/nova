@@ -65,7 +65,7 @@ const output = (overrides = {}) => ({
   ...overrides,
 })
 
-async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailureOnce = false } = {}) {
+async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailureOnce = false, detailDelayMs = 0 } = {}) {
   await page.route('**/healthz', route => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify(envelope({ status: 'ok', writesEnabled: true, connectors: {}, persistence: { mode: 'postgres', ready: true } })),
@@ -85,7 +85,8 @@ async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailur
     contentType: 'application/json',
     body: JSON.stringify(envelope({ items: jobs, total: jobs.length, limit: 50, offset: 0 })),
   }))
-  await page.route('**/v1/image-generation-jobs/*', route => {
+  await page.route('**/v1/image-generation-jobs/*', async route => {
+    if (detailDelayMs) await new Promise(resolve => setTimeout(resolve, detailDelayMs))
     if (!detail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify(envelope(null)) })
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope(detail)) })
   })
@@ -103,6 +104,22 @@ async function installApiRoutes(page, { jobs = [], detail, retryJob, imageFailur
   await page.route('**/v1/task-groups*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [], total: 0, limit: 50, offset: 0 })) }))
   await page.route('**/v1/workspaces/*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(envelope({ items: [] })) }))
 }
+
+test('keeps the desktop candidate area occupied while the first task read is pending', async () => {
+  const detail = baseJob({ outputs: [output()], images: ['data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>'] })
+  const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail, detailDelayMs: 400 })
+  try {
+    const panel = page.locator('.image-generation-job-panel')
+    await expect(panel).toHaveAttribute('aria-busy', 'true')
+    await expect(panel.locator('.image-candidate-skeleton')).toHaveCount(3)
+    await expect(panel.locator('.image-candidate-skeleton-media').first()).toHaveCSS('aspect-ratio', '4 / 3')
+    await expect(panel.getByText('正在读取任务状态…')).toBeVisible()
+    await expect(panel.locator('.image-candidate-skeleton')).toHaveCount(0)
+    await expect(panel.getByRole('img', { name: /图片候选 1/ })).toBeVisible()
+  } finally {
+    await context.close(); await browser.close()
+  }
+})
 
 async function openPage(path, setup) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })

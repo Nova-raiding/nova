@@ -6059,6 +6059,9 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     {job && <dl className="image-job-evidence" aria-label="图片执行证据"><div><dt>执行状态</dt><dd>{labels[job.executionState ?? ''] ?? job.executionState ?? '未记录'}</dd></div><div><dt>归档状态</dt><dd>{archiveLabels[job.archiveState] ?? '状态未知'}</dd></div><div><dt>执行尝试</dt><dd>{job.executionAttempt ?? '未记录'}</dd></div><div><dt>Provider 请求</dt><dd>{job.providerRequestId ?? '尚未确认'}</dd></div><div><dt>任务版本</dt><dd>{job.revision}</dd></div></dl>}
     {job?.errorMessage && <div id="image-job-error" className="error-notice" role="alert" tabIndex={-1}><AlertCircle size={16} /><span>{job.errorCode ?? 'IMAGE_GENERATION_FAILED'}：{job.errorMessage}</span></div>}
     {job?.availabilityWarning && <div className="info-notice"><ShieldCheck size={16} /><span>{job.availabilityWarning}</span></div>}
+    {!job && loading && <div className="image-candidate-loading" aria-hidden="true">
+      {[0, 1, 2].map((slot) => <div className="image-candidate-skeleton" key={`image-candidate-skeleton-${slot}`}><div className="image-candidate-skeleton-media" /><div className="image-candidate-skeleton-line image-candidate-skeleton-line-wide" /><div className="image-candidate-skeleton-line" /></div>)}
+    </div>}
     {job?.images?.length ? <div className="image-candidate-grid" aria-label="已归档图片候选">{job.images.map((src, index) => {
       const output = job.outputs[index]
       const visualRef = output?.visualRef ?? `ordinal-${index}`
