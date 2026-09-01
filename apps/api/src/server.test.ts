@@ -34,6 +34,14 @@ describe('brand scope capability derivation', () => {
   })
 })
 
+describe('worker publish authorization scope', () => {
+  it('accepts exact brand publish decisions without widening other worker capabilities', () => {
+    const brandDecision = { authorized: true, capability: 'customer.publish.execute', workbench: 'workspace', scope: { required: 'brand', resource_id: 'brand-1' } } as Parameters<typeof workerAuthorizationDecisionMatches>[0]
+    expect(workerAuthorizationDecisionMatches(brandDecision, 'ws-1', 'customer.publish.execute')).toBe(true)
+    expect(workerAuthorizationDecisionMatches(brandDecision, 'ws-1', 'customer.content.update')).toBe(false)
+  })
+})
+
 describe('HTTP authorization path binding', () => {
   it('maps exact resource placeholders to MCP parameter names', () => {
     expect(httpAuthorizationPathParams('/v1/tasks/{taskId}/publish-preview', '/v1/tasks/task-1/publish-preview', 'publish.prepare')).toEqual({ task_id: 'task-1' })

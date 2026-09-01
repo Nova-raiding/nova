@@ -403,7 +403,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('customer.content.update', 'brand', 'customer_content', ['brand-unit.product.create', 'brand-unit.access.grant', 'catalog.product.update', 'catalog.image.generate', 'catalog.image.retry', 'catalog.image.select', 'catalog.image.review', 'task.answer', 'task.resume', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.review', 'content.review.decide', 'content.modify', 'content.restore', 'content.visual.select']),
   write('customer.publish.execute', 'workspace', 'customer_content', ['content.export', 'publish.batch.prepare', 'publish.batch.pause', 'publish.batch.resume', 'publish.batch.retry_failed', 'delivery.bundle.verify'], 'allow_and_deny'),
   write('customer.publish.execute', 'brand', 'customer_content', ['content.approve', 'publish.prepare'], 'allow_and_deny'),
-  write('customer.publish.execute', 'workspace', 'customer_content', ['publish.confirm'], 'allow_and_deny', ['confirmation', 'idempotency']),
+  write('customer.publish.execute', 'brand', 'customer_content', ['publish.confirm'], 'allow_and_deny', ['confirmation', 'idempotency']),
   write('customer.publish.execute', 'workspace', 'customer_content', ['publish.batch.confirm'], 'allow_and_deny', ['confirmation']),
   read('automation.read', 'workspace', 'customer_metadata', ['automation.policy.get', 'automation.policy.list', 'automation.scan']),
   write('automation.update', 'workspace', 'customer_metadata', ['automation.policy.update', 'automation.tick', 'automation.pause']),

@@ -3703,12 +3703,17 @@ const workerOperationCapabilities: Record<CriticalWorkerOperation, CapabilityId>
 }
 
 export function workerAuthorizationDecisionMatches(decision: AuthorizationDecision | undefined, workspaceId: string, requiredCapability: CapabilityId) {
+  const scopeMatches = decision?.scope.required === 'workspace'
+    ? decision.scope.resource_id === workspaceId
+    : requiredCapability === 'customer.publish.execute'
+      && decision?.scope.required === 'brand'
+      && typeof decision.scope.resource_id === 'string'
+      && decision.scope.resource_id.trim().length > 0
   return Boolean(decision
     && decision.authorized
     && decision.capability === requiredCapability
     && decision.workbench === 'workspace'
-    && decision.scope.required === 'workspace'
-    && decision.scope.resource_id === workspaceId)
+    && scopeMatches)
 }
 
 function workerAuthorizationSnapshot<T extends CriticalWorkerOperation>(req: IncomingMessage, workspaceId: string, resourceId: string, capability: T, binding: Record<string, unknown>): (WorkerAuthorizationSnapshot & { capability: T }) | undefined {
@@ -3742,7 +3747,7 @@ function workerAuthorizationSnapshot<T extends CriticalWorkerOperation>(req: Inc
     identityId: principal.identityId,
     workspaceId,
     workbench: 'workspace' as const,
-    contextId: `workspace:${workspaceId}`,
+    contextId: decision.scope.required === 'brand' ? `brand:${decision.scope.resource_id}` : `workspace:${workspaceId}`,
     contextVersion: decision.policy_version,
     policyVersion: decision.policy_version,
     grantRevision,
@@ -3800,6 +3805,11 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
     const canonicalMemberRole = canonicalizeRole(member.role, 'membership')
     const requiredCapability = workerOperationCapabilities[snapshot.capability]
     if (!canonicalMemberRole || !capabilitiesForRoles([canonicalMemberRole]).includes(requiredCapability)) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '当前成员角色不再具备该 worker 操作能力，已拒绝执行', 403)
+    const brandContext = snapshot.capability === 'publish.execute' ? /^brand:(.+)$/u.exec(snapshot.contextId) : undefined
+    if (brandContext && canonicalMemberRole !== 'workspace_owner') {
+      const stillPublisher = await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: brandContext[1]!, externalSubject: snapshot.actorId, minimumRole: 'publisher' })
+      if (!stillPublisher) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队后品牌发布权限已撤销，已拒绝执行', 403)
+    }
   } else {
     const grant = await authzRepository.getGrant(grantMatch![1]!, subjectIdentityId)
     const expectedGrantRevision = Number(grantMatch![2])
@@ -4660,7 +4670,11 @@ async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<Retur
           ? service.tasks.get(publishJob.taskId)
         : undefined
   if (task?.workspaceId === workspaceId) {
-    if (direct.type === 'brand') return { type: 'brand' as const, id: task.brandId }
+    if (direct.type === 'brand') {
+      const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
+      const canonicalBrandIds = [...new Set(canonical.filter(item => item.sourceProductId === task.productId).map(item => item.brandId))]
+      return { type: 'brand' as const, id: canonicalBrandIds.length === 1 && canonicalBrandIds[0] === task.brandId ? canonicalBrandIds[0] : undefined }
+    }
     return { type: 'account' as const, id: task.accountId }
   }
   const productId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : undefined

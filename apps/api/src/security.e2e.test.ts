@@ -1067,7 +1067,7 @@ describe('security and access-control acceptance gates', () => {
     expect([...service.imageGenerationJobs.entries()]).toEqual(imageJobsBeforeDeniedRetries)
     expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const protectedTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
-    const hiddenTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
+    const hiddenTask = service.createTask({ workspaceId, productId: hiddenSource.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
     protectedTask.state = 'plan_confirmed'
     hiddenTask.state = 'plan_confirmed'
     const protectedGenerationJob = service.enqueueGeneration({ workspaceId, taskId: protectedTask.id, idempotencyKey: `protected-generation-${workspaceId}` })
@@ -1118,12 +1118,20 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 7.101, 'content.generate', { task_id: protectedTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.102, 'content.generate', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect(service.generationJobs.size).toBe(generationJobsBeforeDeniedBrandCalls)
+    const publishJobsBeforeDeniedConfirm = structuredClone([...service.publishJobs.entries()])
+    const mcpPublishDenied = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...editorHeaders, 'idempotency-key': 'brand-editor-mcp-publish-denied' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 7.103, method: 'publish.confirm', params: { workspace_id: workspaceId, task_id: protectedTask.id, content_version_id: 'cv-not-reached', confirmation_hash: 'hash-not-reached', remote_snapshot_hash: 'snapshot-not-reached' } }),
+    }).then(response => response.json() as Promise<Envelope>)
+    expect(mcpPublishDenied.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const restPublishDenied = await fetch(`${base}/v1/publish-jobs`, {
       method: 'POST',
       headers: { ...editorHeaders, 'idempotency-key': 'brand-editor-publish-denied' },
       body: JSON.stringify({ workspace_id: workspaceId, task_id: protectedTask.id, content_version_id: 'cv-not-reached', confirmation_hash: 'hash-not-reached', remote_snapshot_hash: 'snapshot-not-reached' }),
     }).then(response => response.json() as Promise<Envelope>)
-    expect(restPublishDenied.error?.code).toBe('BRAND_ACCESS_REQUIRED')
+    expect(restPublishDenied.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect([...service.publishJobs.entries()]).toEqual(publishJobsBeforeDeniedConfirm)
     expect(service.listPublishJobs(workspaceId)).toHaveLength(0)
     expect((await mcp(editorHeaders, 7.1, 'task.history', {})).data?.result.items).toEqual([expect.objectContaining({ id: protectedTask.id })])
     expect((await mcp(editorHeaders, 7.11, 'task.resume', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
