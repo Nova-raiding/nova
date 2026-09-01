@@ -67,6 +67,17 @@ describe('durable authorization repository', () => {
     await expect(repo.revokeGrant({ id: grant.id, subjectIdentityId: subject, actorId: 'security-admin', reason: 'repeat revoke rejected', expectedRevision: 2, expectedAuthorizationRevision: 2 })).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_NOT_FOUND' })
   })
 
+  it('rejects a stale grant revoke without partially changing the grant lifecycle', async () => {
+    const repo = repository()
+    const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'read', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.read'], resourceScope: { task_ids: ['t-stale-revoke'] }, reason: 'inspect a failed task', ticketRef: 'OPS-STALE-REVOKE', issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 1 })
+
+    await expect(repo.revokeGrant({ id: grant.id, subjectIdentityId: subject, actorId: 'security-admin', reason: 'stale revoke attempt', expectedRevision: grant.revision, expectedAuthorizationRevision: 99 })).rejects.toMatchObject({ code: 'AUTHORIZATION_REVISION_CONFLICT' })
+
+    await expect(repo.getGrant(grant.id, subject)).resolves.toMatchObject({ id: grant.id, revision: 1, authorizationRevision: 1 })
+    await expect(repo.listActiveGrants(subject, 'ws-a')).resolves.toHaveLength(1)
+    await expect(repo.revokeGrant({ id: grant.id, subjectIdentityId: subject, actorId: 'security-admin', reason: 'current revoke', expectedRevision: grant.revision, expectedAuthorizationRevision: 1 })).resolves.toMatchObject({ revokedBy: 'security-admin', revision: 2, authorizationRevision: 2 })
+  })
+
   it('atomically reserves a grant execution and rejects a reservation after revoke', async () => {
     const repo = repository()
     const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.update'], resourceScope: { task_ids: ['task-cas'] }, reason: 'execute approved task', ticketRef: 'CAS-1', issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 1 })
