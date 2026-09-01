@@ -89,6 +89,20 @@ VALUES
   '[]',false,'2026-08-29T00:00:00Z','2026-08-29T00:00:00Z','小红书未验证 Fixture','2026-08-29T00:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO brands (id, workspace_id, name, status, revision, data)
+VALUES ('brand_release_qa', 'ws_demo', 'Release QA Brand', 'active', 1, '{"source":"local_compose_seed"}')
+ON CONFLICT (workspace_id, id) DO UPDATE SET
+  name = EXCLUDED.name,
+  status = EXCLUDED.status,
+  data = EXCLUDED.data,
+  updated_at = now();
+
+INSERT INTO brand_store_bindings (workspace_id, brand_id, platform, platform_account_id, status, revision)
+VALUES ('ws_demo', 'brand_release_qa', 'taobao', 'fixture-store-ws_demo-taobao', 'active', 1)
+ON CONFLICT (workspace_id, brand_id, platform_account_id) DO UPDATE SET
+  status = EXCLUDED.status,
+  updated_at = now();
+
 INSERT INTO products (
  id,workspace_id,platform,platform_account_id,store_name,remote_product_id,title,sku_count,stock,price,
  category,images,attributes,facts_confirmed,source,version,data,created_at,updated_at
