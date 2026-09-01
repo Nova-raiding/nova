@@ -794,6 +794,7 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **品牌权限授予 exact brand scope（本地切片）。** `7d6ab84`；`brand-unit.access.grant` 迁移为 brand policy。统一 evaluator 先要求服务端派生的 exact brand write atom，handler 再要求品牌 admin 并校验目标 active member；只有 viewer grant 的成员尝试自提权时在 handler 前以 `AUTHZ_SCOPE_MISMATCH` 拒绝。定向测试 142/142、全项目 TypeScript 通过。完整品牌方法与加载后资源 resolver 仍待迁移，P1-BE-003 保持 TODO。
 - [x] **Task 加载后 exact brand scope（本地切片）。** `5c0586a`；`task.timeline` 迁移为 brand read policy。授权前按 `task_id` 从服务端任务仓储加载，仅在任务 workspace 与当前路由一致时提取任务 brand ID；客户端无需也不能用独立 `brand_id` 改写该范围。显式 enforce 测试证明 viewer grant 可读取授权品牌任务，同 workspace 未授权品牌任务以 `AUTHZ_SCOPE_MISMATCH` 拒绝。定向测试 142/142、全项目 TypeScript 通过。其他 task/product 方法、account 加载解析和 platform aggregate/customer detail 边界仍待迁移，P1-BE-003 保持 TODO。
 - [x] **Task 恢复加载后 exact brand scope（本地切片）。** `ce7fe68`；`task.resume` 迁移为 brand write policy并复用服务端 task resolver。viewer 即使可读该品牌也不能恢复任务，升级为持久 editor grant 后可恢复已授权品牌任务；未授权品牌保持 evaluator 阶段拒绝。定向测试 142/142、全项目 TypeScript 通过。其余 task/product 方法与 platform aggregate/customer detail 边界仍待迁移，P1-BE-003 保持 TODO。
+- [x] **Task 回答加载后 exact brand scope（本地切片）。** `1cc4a0a`；`task.answer` 迁移为 brand write policy并复用服务端 task resolver。显式 enforce 测试证明 viewer 对可读品牌仍不能提交任务回答、未授权品牌同样拒绝，workspace owner 的全品牌权限可正常执行；拒绝均发生在 handler 解析 `answers_json` 前。定向测试 90/90、全项目 TypeScript 通过。其余 task/product 方法仍待迁移，P1-BE-003 保持 TODO。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
