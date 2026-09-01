@@ -3602,8 +3602,10 @@ async function hydrateWorkspaceFromPersistence(workspaceId: string, options: { e
       try { service.hydrateSnapshot({ entityType: snapshot.entityType, entity: snapshot.payload }) }
       catch (error) {
         const candidate = error as { code?: string; details?: { missing?: unknown } }
-        if (candidate.code !== 'PUBLISH_JOB_SNAPSHOT_INVALID') throw error
-        const missing = Array.isArray(candidate.details?.missing) ? candidate.details.missing.filter((item): item is string => typeof item === 'string') : ['unknown']
+        // A malformed durable entity must remain unavailable, but it must not
+        // prevent unrelated entities in the same workspace from hydrating.
+        // Keep the invalid-snapshot evidence for Ops/metrics and continue.
+        const missing = Array.isArray(candidate.details?.missing) ? candidate.details.missing.filter((item): item is string => typeof item === 'string') : [candidate.code ?? 'unknown']
         const warnings = invalidDurableSnapshots.get(workspaceId) ?? []
         if (!warnings.some(item => item.entityType === snapshot.entityType && item.entityId === snapshot.entityId)) warnings.push({ entityType: snapshot.entityType, entityId: snapshot.entityId, missing })
         invalidDurableSnapshots.set(workspaceId, warnings)
