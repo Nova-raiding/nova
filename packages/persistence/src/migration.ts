@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 )`
 const MIGRATION_ADVISORY_LOCK = 731942851
 
-export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION'
+export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION' | 'MIGRATION_VERSION_INVALID'
 
 export class MigrationIntegrityError extends Error {
   constructor(
@@ -52,8 +52,14 @@ export function verifyAppliedMigrations(
   applied: readonly AppliedMigration[],
   expected: readonly Migration[],
 ): void {
+  const assertVersion = (version: number): void => {
+    if (!Number.isInteger(version) || version < 1) {
+      throw new MigrationIntegrityError('MIGRATION_VERSION_INVALID', version, `migration version must be a positive integer: ${String(version)}`)
+    }
+  }
   const expectedVersions = new Set<number>()
   for (const migration of expected) {
+    assertVersion(migration.version)
     if (expectedVersions.has(migration.version)) {
       throw new MigrationIntegrityError('MIGRATION_DUPLICATE_VERSION', migration.version, `release contains duplicate migration version ${migration.version}`)
     }
@@ -61,6 +67,7 @@ export function verifyAppliedMigrations(
   }
   const appliedVersions = new Set<number>()
   for (const row of applied) {
+    assertVersion(row.version)
     if (appliedVersions.has(row.version)) {
       throw new MigrationIntegrityError('MIGRATION_DUPLICATE_VERSION', row.version, `migration history contains duplicate version ${row.version}`)
     }
