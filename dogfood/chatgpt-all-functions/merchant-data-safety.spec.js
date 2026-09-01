@@ -468,7 +468,7 @@ test('task list keeps error distinct from empty and retry can recover to data', 
   await expect(page.getByRole('alert').filter({ hasText: '任务列表读取失败' })).toBeVisible()
   await expect(page.getByText('暂无营销任务', { exact: true })).toHaveCount(0)
   mode = 'success'
-  await page.getByRole('alert').getByRole('button', { name: '重新读取' }).click()
+  await page.getByRole('alert').filter({ hasText: '任务列表读取失败' }).getByRole('button', { name: '重新读取' }).last().click()
   await expect(page.getByRole('button', { name: /继续任务|恢复任务/ })).toBeVisible()
   await expect(page.getByText('1 个任务', { exact: true })).toBeVisible()
 })
