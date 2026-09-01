@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CAPACITY_WORKLOAD_READ_PATH, buildCapacityEvidenceDocument, isExpectedCapacityStatus, readCapacityWorkloadConfig, selectCapacityAccount, validateLocalCapacityEvidence } from './capacity-workload.js'
+import { CAPACITY_WORKLOAD_READ_PATH, LOCAL_CAPACITY_REQUIRED_SERVICES, buildCapacityEvidenceDocument, isExpectedCapacityStatus, readCapacityWorkloadConfig, selectCapacityAccount, validateLocalCapacityEvidence } from './capacity-workload.js'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 describe('capacity workload contract', () => {
@@ -39,11 +39,25 @@ describe('capacity workload contract', () => {
         { workspace: 'ws_capacity_0', phase: 'sustained', elapsedMs: 12, ok: true, status: 200 },
         { workspace: 'ws_capacity_1', phase: 'sustained', elapsedMs: 20, ok: true, status: 200 },
       ],
+      runtimeServices: LOCAL_CAPACITY_REQUIRED_SERVICES.map(service => ({ service, state: 'running', health: 'healthy' })),
     })
 
     expect(validateCapacityEvidence(report, { requireEvidenceBinding: true })).toEqual([])
     expect(report).toMatchObject({ environment: 'test', cloud_gate: false, platform_mock_ratio: 1, model_mock_ratio: 1, status: 'pass', software_version: '0.1.1', data_version: 'local-fixture-v1' })
     expect(validateLocalCapacityEvidence(report)).toEqual([])
+  })
+
+  it('fails closed when local capacity evidence omits or degrades a Docker service', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_MODE: 'compose' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0,
+      timings: [{ workspace: 'ws_capacity_0', phase: 'sustained', elapsedMs: 12, ok: true, status: 200 }],
+      runtimeServices: LOCAL_CAPACITY_REQUIRED_SERVICES.filter(service => service !== 'worker-scan').map(service => ({ service, state: 'running', health: 'healthy' })),
+    })
+
+    expect(validateLocalCapacityEvidence(report)).toEqual(expect.arrayContaining([
+      'runtime_services is missing worker-scan',
+    ]))
   })
 
   it('rejects a report that tries to use local evidence as a cloud attestation', () => {

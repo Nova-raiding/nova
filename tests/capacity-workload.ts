@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 
 export type CapacityWorkloadProfile = 'pilot_50' | 'wave_100' | 'wave_250' | 'target_500'
 export type CapacityWorkloadMode = 'compose' | 'real_cloud'
 export const CAPACITY_WORKLOAD_READ_PATH = '/v1/platform-accounts'
+export const LOCAL_CAPACITY_REQUIRED_SERVICES = ['api', 'api-replica', 'clamav', 'ops-ui', 'postgres', 'redis', 'ui', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'] as const
 export function isExpectedCapacityStatus(status: number): boolean { return status === 429 }
 export function selectCapacityAccount(items: readonly { platform?: string; accountId?: string }[]): string {
   const accountId = items.find(item => item.platform === 'taobao' && item.accountId)?.accountId
@@ -29,6 +31,25 @@ export interface CapacityWorkloadConfig {
   noiseMultiplier: number
   setupJobs: boolean
   output?: string
+}
+
+export type LocalRuntimeService = { service: string; state: string; health: string }
+
+/** Capture the Compose state that the local capacity report is allowed to claim. */
+export function readLocalDockerRuntimeSnapshot(cwd = process.cwd()): LocalRuntimeService[] {
+  const compose = ['compose', '-p', 'local', '--env-file', '.env', '-f', 'infra/local/docker-compose.yml', 'ps', '--format', 'json']
+  try {
+    const rows = execFileSync('docker', compose, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      .trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { Service?: string; State?: string; Health?: string })
+    const byService = new Map(rows.map(row => [row.Service, row]))
+    return LOCAL_CAPACITY_REQUIRED_SERVICES.map(service => ({
+      service,
+      state: byService.get(service)?.State ?? 'missing',
+      health: byService.get(service)?.Health ?? 'missing',
+    }))
+  } catch {
+    return LOCAL_CAPACITY_REQUIRED_SERVICES.map(service => ({ service, state: 'unavailable', health: 'unavailable' }))
+  }
 }
 
 const defaults = {
@@ -102,6 +123,22 @@ export function validateLocalCapacityEvidence(document: unknown): string[] {
     if (target.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1'].includes(target.hostname)) errors.push('target_url must be a local HTTP endpoint for local capacity evidence')
   } catch {
     errors.push('target_url must be a local HTTP endpoint for local capacity evidence')
+  }
+  const runtimeServices = value.runtime_services
+  if (!Array.isArray(runtimeServices)) {
+    errors.push('runtime_services must contain the local Docker service snapshot')
+  } else {
+    const rows = runtimeServices.filter((service): service is Record<string, unknown> => Boolean(service) && typeof service === 'object')
+    const names = rows.map(service => typeof service.service === 'string' ? service.service : '')
+    for (const required of LOCAL_CAPACITY_REQUIRED_SERVICES) {
+      const service = rows.find(row => row.service === required)
+      if (!service) errors.push(`runtime_services is missing ${required}`)
+      else {
+        if (service.state !== 'running') errors.push(`runtime_services.${required}.state must be running`)
+        if (service.health !== 'healthy') errors.push(`runtime_services.${required}.health must be healthy`)
+      }
+    }
+    if (new Set(names.filter(Boolean)).size !== names.filter(Boolean).length) errors.push('runtime service names must be unique')
   }
   return errors
 }
@@ -186,7 +223,7 @@ function percentile(values: number[], fraction: number) {
 
 export function buildCapacityEvidenceDocument(
   config: CapacityWorkloadConfig,
-  input: { timings: readonly CapacityWorkloadTiming[]; acceptedJobs: number; startedAt: string; endedAt: string },
+  input: { timings: readonly CapacityWorkloadTiming[]; acceptedJobs: number; startedAt: string; endedAt: string; runtimeServices?: readonly LocalRuntimeService[] },
 ) {
   const timings = [...input.timings]
   const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length
@@ -236,6 +273,7 @@ export function buildCapacityEvidenceDocument(
     accepted_jobs: input.acceptedJobs,
     coverage: 'api_http_and_job_admission',
     platform_traffic_exercised: false,
+    ...(config.mode === 'compose' ? { runtime_services: input.runtimeServices ? [...input.runtimeServices] : [] } : {}),
   }
 }
 
@@ -249,7 +287,13 @@ export async function runCapacityWorkload(config = readCapacityWorkloadConfig())
   const accepted = config.setupJobs ? await submitJobs(config, tasks, timings) : []
   if (stabilitySeconds > 0 && process.env.CAPACITY_WORKLOAD_SKIP_STABILITY !== 'true') await runRate(config, config.sustainedRps, stabilitySeconds, 'stability', timings)
   const endedAt = new Date().toISOString()
-  const report = buildCapacityEvidenceDocument(config, { timings, acceptedJobs: accepted.length, startedAt, endedAt })
+  const report = buildCapacityEvidenceDocument(config, {
+    timings,
+    acceptedJobs: accepted.length,
+    startedAt,
+    endedAt,
+    ...(config.mode === 'compose' ? { runtimeServices: readLocalDockerRuntimeSnapshot() } : {}),
+  })
   const errors = report.metrics.error_count
   if (config.output) writeFileSync(config.output, `${JSON.stringify(report, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
   assert.equal(errors, 0, `capacity workload had ${errors} failed requests`)
