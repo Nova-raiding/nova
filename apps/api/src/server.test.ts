@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requirePublishAuthorizationSnapshot } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
@@ -60,6 +60,28 @@ describe('central commercial access gate', () => {
 })
 
 describe('canonical read rollout safety', () => {
+  it('projects task reads from canonical facts, listing fields, and platform identity', () => {
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    const view = canonicalTaskReadView({
+      task: { ...task, canonicalProductId: 'canonical-task-read', listingId: 'listing-task-read', accountId: 'account-task-read' },
+      canonical: { id: 'canonical-task-read', brandId: 'brand-task-read', title: '标准商品', facts: { material: '棉' }, factsVersion: 3 },
+      listing: { id: 'listing-task-read', platform: 'taobao', accountId: 'account-task-read', remoteProductId: 'remote-1', state: 'active' },
+      platformAccount: { id: 'account-task-read', platform: 'taobao', remoteAccountId: 'remote-account-1', tokenState: 'connected', storeAlias: '主店铺' },
+    })
+
+    expect(view).toMatchObject({
+      productId: 'prod_fixture_1',
+      canonical_scope: {
+        read_mode: 'canonical_read',
+        canonical_product_id: 'canonical-task-read',
+        facts: { material: '棉' },
+        listing: { id: 'listing-task-read', platform: 'taobao', remote_product_id: 'remote-1' },
+        platform_account: { id: 'account-task-read', remote_account_id: 'remote-account-1', token_state: 'connected' },
+      },
+    })
+    expect(JSON.stringify(view)).not.toContain('credential')
+  })
+
   it('isolates malformed legacy outbox snapshots from unrelated hydration', () => {
     expect(() => hydrateOutboxSnapshot('ws_invalid_outbox_test', {
       aggregateId: 'task_invalid_outbox', sequence: 1,

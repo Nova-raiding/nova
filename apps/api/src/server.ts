@@ -8700,6 +8700,53 @@ async function assertCanonicalTaskScopeForAction(task: Pick<Task, 'workspaceId' 
   return { ...scope, readMode: readControl.mode as 'legacy_shadow' | 'dual_verify' | 'canonical_read', canonicalReadRevision: String(report.revision) }
 }
 
+export function canonicalTaskReadView(input: {
+  task: Task
+  canonical: { id: string; brandId: string; title: string; facts: Record<string, unknown>; factsVersion: number }
+  listing: { id: string; platform: string; accountId: string; remoteProductId?: string; state: string }
+  platformAccount: { id: string; platform: string; remoteAccountId: string; tokenState: string; storeAlias?: string }
+}) {
+  return {
+    ...input.task,
+    canonical_scope: {
+      read_mode: 'canonical_read' as const,
+      canonical_product_id: input.canonical.id,
+      brand_id: input.canonical.brandId,
+      facts: input.canonical.facts,
+      facts_version: input.canonical.factsVersion,
+      listing: {
+        id: input.listing.id,
+        platform: input.listing.platform,
+        account_id: input.listing.accountId,
+        ...(input.listing.remoteProductId ? { remote_product_id: input.listing.remoteProductId } : {}),
+        state: input.listing.state,
+      },
+      platform_account: {
+        id: input.platformAccount.id,
+        platform: input.platformAccount.platform,
+        remote_account_id: input.platformAccount.remoteAccountId,
+        token_state: input.platformAccount.tokenState,
+        ...(input.platformAccount.storeAlias ? { store_alias: input.platformAccount.storeAlias } : {}),
+      },
+    },
+  }
+}
+
+async function projectCanonicalTaskForRead(task: Task) {
+  const readControl = await canonicalProductReadControl(task.workspaceId)
+  // A task without canonical bindings is historical work. Its frozen snapshot
+  // remains the source of truth until an explicit rebind creates a new task.
+  if (readControl.mode !== 'canonical_read' || !task.canonicalProductId || !task.listingId || !task.accountId) return task
+  const repository = persistence.brandUnits ?? memoryBrandUnits
+  const canonical = await repository.getCanonicalProduct({ workspaceId: task.workspaceId, id: task.canonicalProductId })
+  if (!canonical || !canonical.facts || Object.keys(canonical.facts).length === 0) throw new DomainError('CANONICAL_TASK_READ_UNAVAILABLE', '标准商品事实不可用，已阻断任务读取', 503, { task_id: task.id, canonical_product_id: task.canonicalProductId, next_action: 'canonical.product.consistency' })
+  const listings = await repository.listListings({ workspaceId: task.workspaceId, canonicalProductId: canonical.id, listingId: task.listingId, platform: task.platform, accountId: task.accountId })
+  if (listings.length !== 1 || listings[0]!.state !== 'active') throw new DomainError('CANONICAL_TASK_READ_SCOPE_INVALID', '任务 listing 不属于当前标准商品或已不可发布，已阻断读取', 409, { task_id: task.id, listing_id: task.listingId, next_action: 'canonical.product.consistency' })
+  const platformAccount = service.listPlatformAccounts(task.workspaceId).find(account => account.id === task.accountId && account.platform === task.platform)
+  if (!platformAccount) throw new DomainError('CANONICAL_TASK_ACCOUNT_UNAVAILABLE', '任务店铺身份不可用，已阻断读取', 409, { task_id: task.id, account_id: task.accountId, platform: task.platform, next_action: 'platform.accounts' })
+  return canonicalTaskReadView({ task, canonical, listing: listings[0]!, platformAccount })
+}
+
 async function accessibleAssetIds(req: IncomingMessage, workspaceId: string): Promise<ReadonlySet<string> | undefined> {
   const productIds = await accessibleProductIds(req, workspaceId)
   if (productIds === undefined) return undefined
@@ -16742,7 +16789,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   const taskGetMatch = path.match(/^\/v1\/tasks\/([^/]+)$/)
   if (req.method === 'GET' && taskGetMatch) {
     const task = scopeTask(req, taskGetMatch[1]!)
-    return send(res, 200, task.workspaceId, task, null, req)
+    return send(res, 200, task.workspaceId, await projectCanonicalTaskForRead(task), null, req)
   }
   const directionMatch = path.match(/^\/v1\/tasks\/([^/]+)\/directions$/)
   if (req.method === 'GET' && directionMatch) {
