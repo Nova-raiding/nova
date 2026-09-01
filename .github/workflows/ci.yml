@@ -121,6 +121,11 @@ jobs:
           packages/persistence/src/migration-130-release.postgres.test.ts
           packages/persistence/src/migration-131-release.postgres.test.ts
           packages/persistence/src/migration-132.test.ts
+          packages/persistence/src/migration-133.test.ts
+          packages/persistence/src/migration-134.test.ts
+          packages/persistence/src/migration-135.test.ts
+          packages/persistence/src/migration-136.test.ts
+          packages/persistence/src/migration-136-workspace-audit.postgres.test.ts
           packages/persistence/src/storage-quota-repository.postgres.test.ts
           packages/persistence/src/platform-media-spec-repository.test.ts
           packages/persistence/src/mapping-preflight-approval-repository.test.ts
