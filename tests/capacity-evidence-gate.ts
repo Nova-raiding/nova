@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 type Profile = 'pilot_50' | 'wave_100' | 'wave_250' | 'target_500'
 type CapacityEvidence = {
-  schema_version?: string; status?: string; release_id?: string; config_version?: string; environment?: string; target_url?: string
+  schema_version?: string; status?: string; release_id?: string; software_version?: string; config_version?: string; data_version?: string; environment?: string; target_url?: string
   started_at?: string; ended_at?: string; expires_at?: string; profile?: Profile; cloud_gate?: boolean; raw_metrics_ref?: string
   metrics?: Record<string, number>; platform_mock_ratio?: number; model_mock_ratio?: number
   duration?: { sustained_minutes?: number; burst_seconds?: number; stability_hours?: number }
@@ -26,11 +26,14 @@ const isIsoInstant = (value: unknown): value is string => nonEmpty(value)
   && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
   && !Number.isNaN(Date.parse(value))
 
-export function validateCapacityEvidence(document: unknown, options: { requireCloudGate?: boolean; expectedReleaseId?: string; expectedProfile?: Profile; now?: Date } = {}): string[] {
+export function validateCapacityEvidence(document: unknown, options: { requireCloudGate?: boolean; requireEvidenceBinding?: boolean; expectedReleaseId?: string; expectedProfile?: Profile; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as CapacityEvidence
   for (const field of ['schema_version', 'status', 'release_id', 'config_version', 'environment', 'target_url', 'started_at', 'ended_at', 'raw_metrics_ref'] as const) if (!nonEmpty(value[field])) errors.push(`${field} is required`)
+  if (options.requireEvidenceBinding || options.requireCloudGate) {
+    for (const field of ['software_version', 'data_version'] as const) if (!nonEmpty(value[field])) errors.push(`${field} is required for evidence binding`)
+  }
   if (value.schema_version !== '1') errors.push('schema_version must be 1')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (options.expectedProfile && value.profile !== options.expectedProfile) errors.push(`profile must match ${options.expectedProfile}`)

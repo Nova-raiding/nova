@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 const base = {
-  schema_version: '1', status: 'pass', release_id: 'release-1', config_version: 'config-1', environment: 'preproduction', target_url: 'https://capacity.example.com', started_at: '2026-08-23T00:00:00Z', ended_at: '2026-08-23T06:00:00Z', expires_at: '2026-09-30T00:00:00Z', profile: 'pilot_50', cloud_gate: true, raw_metrics_ref: 'artifact://metrics/1', platform_mock_ratio: 0, model_mock_ratio: 0, duration: { sustained_minutes: 30, burst_seconds: 60, stability_hours: 6 }, tenant: { workspace_count: 50, noise_multiplier: 10, isolation_verified: true, max_p95_degradation_percent: 20 }, fault: { injected: true, scenarios: ['redis_restart', 'db_pool_exhaustion', 'platform_timeout'], passed: true }, steady_state: { verified: true, queue_converged: true, stability_hours: 6 }, sign_off: { verified_by: 'qa', verified_at: '2026-08-23T06:00:00Z' }, metrics: { workspaces: 50, client_connections: 150, sustained_rps: 30, sustained_duration_minutes: 30, burst_rps: 60, burst_duration_seconds: 60, async_jobs_per_minute: 50, p95_ms: 100, p99_ms: 150, error_count: 0, duplicate_writes: 0, lost_jobs: 0, fairness_p95_degradation_percent: 10, stability_hours: 6 },
+  schema_version: '1', status: 'pass', release_id: 'release-1', software_version: 'rc-1', config_version: 'config-1', data_version: 'fixture-v1', environment: 'preproduction', target_url: 'https://capacity.example.com', started_at: '2026-08-23T00:00:00Z', ended_at: '2026-08-23T06:00:00Z', expires_at: '2026-09-30T00:00:00Z', profile: 'pilot_50', cloud_gate: true, raw_metrics_ref: 'artifact://metrics/1', platform_mock_ratio: 0, model_mock_ratio: 0, duration: { sustained_minutes: 30, burst_seconds: 60, stability_hours: 6 }, tenant: { workspace_count: 50, noise_multiplier: 10, isolation_verified: true, max_p95_degradation_percent: 20 }, fault: { injected: true, scenarios: ['redis_restart', 'db_pool_exhaustion', 'platform_timeout'], passed: true }, steady_state: { verified: true, queue_converged: true, stability_hours: 6 }, sign_off: { verified_by: 'qa', verified_at: '2026-08-23T06:00:00Z' }, metrics: { workspaces: 50, client_connections: 150, sustained_rps: 30, sustained_duration_minutes: 30, burst_rps: 60, burst_duration_seconds: 60, async_jobs_per_minute: 50, p95_ms: 100, p99_ms: 150, error_count: 0, duplicate_writes: 0, lost_jobs: 0, fairness_p95_degradation_percent: 10, stability_hours: 6 },
 }
 
 describe('capacity evidence gate', () => {
+  it('requires software and data bindings when evidence is used as a release input', () => {
+    const value = { ...base, software_version: undefined, data_version: undefined }
+    expect(validateCapacityEvidence(value, { requireEvidenceBinding: true })).toEqual(expect.arrayContaining([
+      'software_version is required for evidence binding',
+      'data_version is required for evidence binding',
+    ]))
+  })
   it('accepts a complete real-cloud pilot report', () => expect(validateCapacityEvidence(base, { requireCloudGate: true })).toEqual([]))
   it('rejects a report that does not meet the target profile', () => expect(validateCapacityEvidence({ ...base, profile: 'target_500' }, { requireCloudGate: true }).some(error => error.includes('workspaces'))).toBe(true))
   it('accepts the intermediate wave profiles when their thresholds are met', () => {

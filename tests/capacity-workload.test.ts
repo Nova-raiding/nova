@@ -41,8 +41,8 @@ describe('capacity workload contract', () => {
       ],
     })
 
-    expect(validateCapacityEvidence(report)).toEqual([])
-    expect(report).toMatchObject({ environment: 'test', cloud_gate: false, platform_mock_ratio: 1, model_mock_ratio: 1, status: 'pass' })
+    expect(validateCapacityEvidence(report, { requireEvidenceBinding: true })).toEqual([])
+    expect(report).toMatchObject({ environment: 'test', cloud_gate: false, platform_mock_ratio: 1, model_mock_ratio: 1, status: 'pass', software_version: '0.1.1', data_version: 'local-fixture-v1' })
   })
 
   it('keeps an HTTP failure visible in local evidence instead of claiming pass', () => {
