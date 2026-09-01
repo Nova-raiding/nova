@@ -101,17 +101,18 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
 
 export class InMemoryQueue<T> implements QueuePort<T> {
   private readonly messages: QueueMessage<T>[] = []
+  constructor(private readonly now: () => number = () => Date.now()) {}
   async enqueue(message: QueueMessage<T>): Promise<void> {
     if (!this.messages.some(candidate => candidate.id === message.id)) this.messages.push({ ...message })
   }
   async dequeue(): Promise<QueueMessage<T> | undefined> {
-    const index = this.messages.findIndex(message => (message.notBefore ?? 0) <= Date.now())
+    const index = this.messages.findIndex(message => (message.notBefore ?? 0) <= this.now())
     if (index < 0) return undefined
     return this.messages.splice(index, 1)[0]
   }
   async ack(_message: QueueMessage<T>): Promise<void> {}
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
-    await this.enqueue({ ...message, ...(delayMs > 0 ? { notBefore: Date.now() + delayMs } : {}) })
+    await this.enqueue({ ...message, ...(delayMs > 0 ? { notBefore: this.now() + delayMs } : {}) })
   }
   async contains(id: string): Promise<boolean> { return this.messages.some(message => message.id === id) }
   get size(): number { return this.messages.length }

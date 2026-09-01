@@ -115,7 +115,7 @@ describe('durable outbox dispatcher', () => {
   })
 
   it('does not replay a side effect before the failed lease expires', async () => {
-    const store = new Store(event()); const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const store = new Store(event()); const queue = new InMemoryQueue<DurableOutboxEvent>(() => 1_000)
     vi.spyOn(store, 'ack').mockRejectedValueOnce(new Error('database unavailable'))
     const nack = vi.spyOn(queue, 'nack')
     const dispatcher = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }), { now: () => 1_000, leaseMs: 500, baseDelayMs: 17 })
