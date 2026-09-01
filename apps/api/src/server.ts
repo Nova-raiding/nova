@@ -4627,7 +4627,9 @@ function resolveLoadedAuthorizationResourceScope(policy: NonNullable<ReturnType<
   const direct = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
   if (direct?.id || (direct?.type !== 'brand' && direct?.type !== 'account')) return direct
   const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
-  const task = taskId ? service.tasks.get(taskId) : undefined
+  const contentVersionId = typeof params.content_version_id === 'string' && params.content_version_id.trim() ? params.content_version_id.trim() : undefined
+  const contentVersion = contentVersionId ? service.contentVersions.get(contentVersionId) : undefined
+  const task = taskId ? service.tasks.get(taskId) : contentVersion ? service.tasks.get(contentVersion.taskId) : undefined
   if (!task || task.workspaceId !== workspaceId) return direct
   if (direct.type === 'brand') return { type: 'brand' as const, id: task.brandId }
   return { type: 'account' as const, id: task.accountId }
