@@ -62,6 +62,8 @@ describe("managed session gate", () => {
 
     expect(source).toContain('aria-label="重试权限验证"');
     expect(source).toContain("style={{ minHeight: 44 }}");
+    expect(source).toContain('className="ops-session-error" role="alert" aria-live="assertive" aria-atomic="true" tabIndex={-1}');
+    expect(source).toContain('sessionErrorRef.current?.focus({ preventScroll: true })');
   });
 });
 

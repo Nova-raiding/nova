@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, App as AntApp, Button, Layout, Modal, Result, Skeleton } from "antd";
 import { OpsHeader } from "../components/OpsHeader";
 import { mainItems, OpsSidebar } from "../components/OpsSidebar";
@@ -141,6 +141,7 @@ function Dashboard({
   const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
   const sessionAccessDeniedEvidence = accessDeniedEvidence(sessionErrorEvidence);
   const sessionGate = opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError);
+  const sessionErrorRef = useRef<HTMLDivElement>(null);
   const loadingMessage = opsContentLoadingMessage(sessionGate, switchingWorkbench, model.loading);
   const sessionReady = sessionGate === "ready";
   const visibleDomains = visibleOpsDomains(model.authorization);
@@ -175,6 +176,12 @@ function Dashboard({
     if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
     if (activeDomain === "users" && canRead("users")) void model.loadUsers();
   }, [activeDomain, model.canUserGovernance, model.opsSession?.actor_id]);
+
+  useEffect(() => {
+    if (sessionGate !== "blocked") return;
+    const focusTimer = window.requestAnimationFrame(() => sessionErrorRef.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(focusTimer);
+  }, [sessionGate]);
 
   return (
     <Layout className="ops-shell">
@@ -235,12 +242,14 @@ function Dashboard({
             />
           ) : null}
           {sessionGate === "blocked" ? (
-            <Result
-              status="error"
-              title="无法验证运营权限"
-              subTitle={`${sessionError ?? "权限会话加载失败"}。为保护运营数据，当前会话已拒绝所有页面与动作。`}
-              extra={<Button type="primary" aria-label="重试权限验证" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试权限验证</Button>}
-            />
+            <div ref={sessionErrorRef} className="ops-session-error" role="alert" aria-live="assertive" aria-atomic="true" tabIndex={-1} aria-labelledby="ops-session-error-title">
+              <Result
+                status="error"
+                title={<span id="ops-session-error-title">无法验证运营权限</span>}
+                subTitle={`${sessionError ?? "权限会话加载失败"}。为保护运营数据，当前会话已拒绝所有页面与动作。`}
+                extra={<Button type="primary" aria-label="重试权限验证" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试权限验证</Button>}
+              />
+            </div>
           ) : sessionGate === "loading" ? (
             <Skeleton active paragraph={{ rows: 8 }} aria-label="正在验证运营权限" />
           ) : authorized ? (
