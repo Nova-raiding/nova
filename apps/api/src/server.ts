@@ -4691,12 +4691,17 @@ export function workspaceCapabilitySourceForBrandScope(policy: NonNullable<Retur
     && atom.source !== 'temporary_grant')
 }
 
+export function minimumBrandRoleForPolicy(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>): BrandAccessRole {
+  if (policy.capability === 'customer.publish.execute') return 'publisher'
+  return policy.effect === 'write' ? 'editor' : 'viewer'
+}
+
 async function permissionAtomsForResolvedResource(req: IncomingMessage, workspaceId: string, policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, resourceScope: ReturnType<typeof resolveAuthorizationResourceScope>, atoms: readonly PermissionAtom[]) {
   if (resourceScope?.type !== 'brand' || !resourceScope.id) return atoms
   const principal = requestPrincipals.get(req)
   const capabilitySource = workspaceCapabilitySourceForBrandScope(policy, workspaceId, atoms)
   if (!principal?.actorId || !capabilitySource) return atoms
-  const minimumRole: BrandAccessRole = policy.effect === 'write' ? 'editor' : 'viewer'
+  const minimumRole = minimumBrandRoleForPolicy(policy)
   const granted = hasWorkspaceWideBrandAccess(req) || await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: resourceScope.id, externalSubject: principal.actorId, minimumRole })
   if (!granted) return atoms
   return [...atoms, { capability: policy.capability, effect: 'allow' as const, scope: { type: 'brand' as const, ids: [resourceScope.id] }, source: 'resource_grant' as const, sourceId: `brand-access:${principal.actorId}:${resourceScope.id}`, obligations: capabilitySource.obligations, ...(capabilitySource.effectLimit ? { effectLimit: capabilitySource.effectLimit } : {}), ...(capabilitySource.expiresAt ? { expiresAt: capabilitySource.expiresAt } : {}), ...(capabilitySource.revision ? { revision: capabilitySource.revision } : {}) }]
