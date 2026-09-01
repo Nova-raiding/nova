@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { composeServiceHealth, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
 
 type Level = 'pass' | 'warn' | 'fail'
 type Check = { id: string; level: Level; message: string; next?: string }
@@ -67,11 +68,35 @@ const productionConfigPath = productionConfig ? resolve(root, productionConfig) 
 const productionConfigReady = Boolean(productionConfigPath && existsSync(productionConfigPath) && !/example/iu.test(productionConfigPath) && !/REPLACE_ME|SET_[A-Z_]+|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8')))
 add('production_config', productionConfigReady ? 'pass' : production ? 'fail' : 'warn', productionConfigReady ? '显式生产配置路径存在' : '未提供非示例 PRODUCTION_CONFIG_PATH', '渲染真实生产配置并运行 npm run infra:launch-preflight。')
 
-for (const [id, url] of [['api', 'http://127.0.0.1:8787/healthz'], ['merchant_ui', 'http://127.0.0.1:18081/'], ['ops_ui', 'http://127.0.0.1:18082/']] as const) {
+if (composeReady) {
+  const compose = run('docker', ['compose', '-f', 'infra/local/docker-compose.yml', 'ps', '--format', 'json'])
+  const rows = compose.status === 0 ? parseComposeServiceStates(compose.stdout) : []
+  const requiredServices = [
+    'api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish',
+    'worker-reconcile', 'worker-automation', 'worker-scan', 'postgres', 'redis', 'ui', 'ops-ui', 'clamav',
+  ]
+  for (const service of requiredServices) {
+    const state = composeServiceHealth(rows, service)
+    const level: Level = state.healthy ? 'pass' : state.present || production ? 'fail' : 'warn'
+    add(`container:${service}`, level, `${service}: ${state.detail}`, `重建并启动 ${service}，确认迁移尾、镜像源码和依赖健康后重试。`)
+  }
+}
+
+for (const [id, url] of [['api', 'http://127.0.0.1:8787/healthz'], ['api_ready', 'http://127.0.0.1:8787/readyz'], ['merchant_ui', 'http://127.0.0.1:18081/'], ['ops_ui', 'http://127.0.0.1:18082/']] as const) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1500) })
     add(`runtime:${id}`, response.ok ? 'pass' : 'warn', `${id} ${url} -> HTTP ${response.status}`)
   } catch { add(`runtime:${id}`, 'warn', `${id} ${url} 未运行`, id === 'ops_ui' ? '运行 npm run dev:ops-console。' : '运行 npm run dev:stack。') }
+}
+
+try {
+  const response = await fetch('http://127.0.0.1:8787/releasez', { signal: AbortSignal.timeout(1500) })
+  const payload = await response.json() as unknown
+  const releaseReady = releaseReadiness(payload)
+  const ready = response.ok && releaseReady === true
+  add('runtime:release', ready ? 'pass' : production ? 'fail' : 'warn', `releasez -> HTTP ${response.status}, ready=${String(releaseReady)}`, '注入与当前不可变发布一致的版本、迁移、图像 digest 和证据元数据。')
+} catch {
+  add('runtime:release', production ? 'fail' : 'warn', 'releasez 未运行或返回无效 JSON', '启动 API 并确认 /releasez 可达。')
 }
 
 const summary = { mode: production ? 'production' : 'local', passed: checks.filter(item => item.level === 'pass').length, warnings: checks.filter(item => item.level === 'warn').length, failures: checks.filter(item => item.level === 'fail').length, checks }
