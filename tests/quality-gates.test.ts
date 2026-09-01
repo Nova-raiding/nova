@@ -37,8 +37,7 @@ describe('quality gates', () => {
       const taskId = created.body.data.id as string
       await request(base, owner, `/v1/tasks/${taskId}/directions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ direction_id: 'A' }) })
       await request(base, owner, `/v1/tasks/${taskId}/plan/confirm`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expected_version: 2 }) })
-      const draft = await request(base, owner, `/v1/tasks/${taskId}/content`, { method: 'POST' })
-      const contentVersionId = draft.body.data.id as string
+      const contentVersionId = service.createDraft(taskId).id
       await request(base, owner, `/v1/tasks/${taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content_version_id: contentVersionId }) })
       const preview = await request(base, owner, `/v1/tasks/${taskId}/publish-preview`, { method: 'POST' })
       const deniedPublish = await request(base, attacker, '/v1/publish-jobs', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': `attacker-${suffix}` }, body: JSON.stringify({ workspace_id: attacker, task_id: taskId, content_version_id: contentVersionId, confirmation_hash: preview.body.data.confirmationHash, remote_snapshot_hash: preview.body.data.remoteSnapshotHash }) })
