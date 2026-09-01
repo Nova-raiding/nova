@@ -230,6 +230,31 @@ describe('new commercial and operations capabilities', () => {
     expect(sku.error).toBeNull(); expect(sku.data.result.skus[0]).toMatchObject({ id: 'sku-a', price: 209, stock: 7 }); expect(sku.data.result.factsConfirmationRequired).toBe(true)
   })
 
+  it('rejects duplicate product identities before MCP or REST batch import writes', async () => {
+    const base = await start()
+    const mcpWorkspaceId = `ws_import_identity_mcp_${Date.now()}`
+    const mcp = await call(base, mcpWorkspaceId, 'catalog.import.batch', {
+      products_json: JSON.stringify([
+        { platform: 'taobao', local_product_key: 'same-product', title: '商品 A', stock: 1 },
+        { platform: 'taobao', local_product_key: 'same-product', title: '商品 B', stock: 2 },
+      ]),
+    })
+    expect(mcp.error).toMatchObject({ code: 'PRODUCT_IMPORT_IDENTITY_CONFLICT' })
+    expect(service.listProducts(mcpWorkspaceId)).toHaveLength(0)
+
+    const restWorkspaceId = `ws_import_identity_rest_${Date.now()}`
+    const rest = await fetch(`${base}/v1/products/import/batch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': restWorkspaceId },
+      body: JSON.stringify({ products: [
+        { platform: 'jd', remote_id: 'remote-same', title: '商品 A', stock: 1 },
+        { platform: 'jd', remote_id: 'remote-same', title: '商品 B', stock: 2 },
+      ] }),
+    }).then(response => response.json() as Promise<Envelope>)
+    expect(rest.error).toMatchObject({ code: 'PRODUCT_IMPORT_IDENTITY_CONFLICT' })
+    expect(service.listProducts(restWorkspaceId)).toHaveLength(0)
+  })
+
   it('binds uploaded workspace assets to imported products for later image optimization', async () => {
     const base = await start(); const workspaceId = `ws_product_asset_binding_${Date.now()}`
     const asset = service.registerAsset({ workspaceId, name: '商品原图.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'b'.repeat(64), storageKey: `quarantine/${workspaceId}/product.png` })

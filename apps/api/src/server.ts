@@ -103,6 +103,26 @@ const MAX_MCP_EXPORT_BYTES = 25 * 1024 * 1024
 // for production until official OAuth, mapping and canary evidence exists.
 const SUPPORTED_PLATFORMS: readonly Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
 const PLATFORM_LABELS: Record<Platform, string> = { jd: '京东', taobao: '淘宝', tmall: '天猫', pinduoduo: '拼多多', xiaohongshu: '小红书', douyin: '抖音' }
+
+function productImportIdentity(input: { platform: Platform; accountId?: string; remoteId?: string; localProductKey?: string; title: string; storeName?: string }) {
+  const remoteId = input.remoteId?.trim()
+  if (remoteId) return `${input.platform}:account=${input.accountId ?? ''}:remote=${remoteId}`
+  const localKey = input.localProductKey?.trim() || `${input.accountId ?? (input.storeName?.trim() || '导入店铺')}:${input.title.trim()}`
+  return `${input.platform}:account=${input.accountId ?? ''}:local=${localKey}`
+}
+
+function assertUniqueBatchProductImportIdentities(items: Array<{ platform: Platform; accountId?: string; remoteId?: string; localProductKey?: string; title: string; storeName?: string }>) {
+  const seen = new Map<string, number>()
+  const duplicates: Array<{ identity: string; first_index: number; duplicate_index: number }> = []
+  for (const [index, item] of items.entries()) {
+    const identity = productImportIdentity(item)
+    const firstIndex = seen.get(identity)
+    if (firstIndex !== undefined) duplicates.push({ identity, first_index: firstIndex + 1, duplicate_index: index + 1 })
+    else seen.set(identity, index)
+  }
+  if (duplicates.length) throw new DomainError('PRODUCT_IMPORT_IDENTITY_CONFLICT', '批量导入包含重复商品身份，已在写入前阻断', 409, { duplicates })
+}
+
 const knowledgeByWorkspace = new Map<string, KnowledgeModule>()
 function knowledgeForWorkspace(workspaceId: string): KnowledgeModule {
   const existing = knowledgeByWorkspace.get(workspaceId)
@@ -11967,6 +11987,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }) : undefined
         return { platform, ...(accountId ? { accountId } : {}), ...(typeof item.remote_id === 'string' && item.remote_id.trim() ? { remoteId: item.remote_id.trim() } : {}), ...(typeof item.local_product_key === 'string' ? { localProductKey: item.local_product_key } : {}), title, ...(typeof item.category === 'string' ? { category: item.category } : {}), ...(typeof item.store_name === 'string' ? { storeName: item.store_name } : {}), ...(typeof item.store_differentiation === 'string' ? { storeDifferentiation: item.store_differentiation } : {}), ...(images ? { images } : {}), ...(sourceAssetIds ? { sourceAssetIds } : {}), ...(attributes ? { attributes } : {}), ...(sellingPoints ? { sellingPoints } : {}), ...(skus ? { skus, skuCount: skus.length } : {}), ...(numeric(item.price, 'price', index) !== undefined ? { price: numeric(item.price, 'price', index) } : {}), ...(numeric(item.stock, 'stock', index) !== undefined ? { stock: numeric(item.stock, 'stock', index) } : {}), ...(numeric(item.sku_count, 'sku_count', index) !== undefined ? { skuCount: numeric(item.sku_count, 'sku_count', index) } : {}) }
       })
+      assertUniqueBatchProductImportIdentities(items)
       const created: ReturnType<typeof service.importProduct>[] = []
       const writes: BatchProductWrite[] = []
       const beforeProducts = new Map([...service.products.entries()]
@@ -15304,6 +15325,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       const sellingPoints = Array.isArray(raw.selling_points) ? raw.selling_points.map((point: any, pointIndex: number) => ({ id: typeof point?.id === 'string' ? point.id : `sp_${pointIndex + 1}`, text: typeof point?.text === 'string' ? point.text : '', proofStatus: point?.proof_status === 'confirmed' || point?.proof_status === 'rejected' ? point.proof_status : 'pending', sourceIds: Array.isArray(point?.source_ids) ? point.source_ids.filter((value: unknown): value is string => typeof value === 'string') : [] })) : undefined
       return { workspaceId, platform, ...(accountId ? { accountId } : {}), ...(typeof raw.remote_id === 'string' && raw.remote_id.trim() ? { remoteId: raw.remote_id.trim() } : {}), ...(typeof raw.local_product_key === 'string' ? { localProductKey: raw.local_product_key } : {}), title, ...(typeof raw.sku_count === 'number' ? { skuCount: raw.sku_count } : {}), ...(skus ? { skus } : {}), ...(typeof raw.stock === 'number' ? { stock: raw.stock } : {}), ...(typeof raw.price === 'number' ? { price: raw.price } : {}), ...(typeof raw.category === 'string' ? { category: raw.category } : {}), ...(Array.isArray(raw.images) ? { images: raw.images.filter((value): value is string => typeof value === 'string') } : {}), ...(sourceAssetIds ? { sourceAssetIds } : {}), ...(raw.attributes && typeof raw.attributes === 'object' && !Array.isArray(raw.attributes) ? { attributes: Object.fromEntries(Object.entries(raw.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) } : {}), ...(sellingPoints ? { sellingPoints } : {}), ...(typeof raw.store_name === 'string' ? { storeName: raw.store_name } : {}), ...(typeof raw.store_differentiation === 'string' ? { storeDifferentiation: raw.store_differentiation } : {}) }
     })
+    assertUniqueBatchProductImportIdentities(items)
     const beforeProducts = new Map([...service.products.entries()].filter(([, product]) => product.workspaceId === workspaceId).map(([id, product]) => [id, structuredClone(product)] as const))
     const created: ReturnType<typeof service.importProduct>[] = []
     const writes: BatchProductWrite[] = []
