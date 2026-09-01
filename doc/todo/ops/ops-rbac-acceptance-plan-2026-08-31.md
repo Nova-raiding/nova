@@ -803,6 +803,7 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **内容审阅 exact brand editor scope（本地切片）。** `cc3ac0f`；`content.review` 迁移为 brand write policy并复用 content-version resolver。viewer 无法借规则审阅接口读取完整正文、事实证据或命中规则，未授权品牌同样在 canonical scope 与规则评估前以 `AUTHZ_SCOPE_MISMATCH` 拒绝。定向测试 142/142、全项目 TypeScript 通过。审阅决策、修改/恢复及 product resolver 仍待迁移，P1-BE-003 保持 TODO。
 - [x] **审阅决定 exact brand editor scope（本地切片）。** `d3b7a02`；`content.review.decide` 迁移为 brand write policy并复用 content-version resolver。viewer 与未授权品牌在 finding code、revision、reason 和 P0/P1/P2 规则判断前以 `AUTHZ_SCOPE_MISMATCH` 拒绝，不能探测 finding 是否存在或写入审阅决定。定向测试 142/142、全项目 TypeScript 通过。修改/恢复、视觉选择及 product resolver 仍待迁移，P1-BE-003 保持 TODO。
 - [x] **内容修改 exact brand editor scope（本地切片）。** `4137845`；`content.modify` 迁移为 brand write policy并复用 content-version resolver。测试故意提交非法 `changes_json`，证明 viewer 与未授权品牌先以 `AUTHZ_SCOPE_MISMATCH` 拒绝，不暴露 JSON/module/revision 校验差异；拒绝前后 content version 数量保持不变。定向测试 142/142、全项目 TypeScript 通过。恢复、视觉选择及 product resolver 仍待迁移，P1-BE-003 保持 TODO。
+- [x] **内容恢复 exact brand editor scope（本地切片）。** `649118d`；`content.restore` 迁移为 brand write policy并复用 content-version resolver。viewer 与未授权品牌在 source version、expected version、canonical scope 和任何持久写入前以 `AUTHZ_SCOPE_MISMATCH` 拒绝；拒绝前后 content version 数量保持不变。定向测试 142/142 通过；全项目 TypeScript 被并行工作区的 `demo/merchant-studio/src/App.tsx` 可空图片与 `tests/capacity-workload.ts` 缺失 `Timing` 类型阻断，均不在本提交文件范围。视觉选择及 product resolver 仍待迁移，P1-BE-003 保持 TODO。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
