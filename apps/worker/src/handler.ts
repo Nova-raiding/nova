@@ -93,8 +93,15 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
     }
 
     if (event.eventType === 'task.created') {
-      const taskId = typeof event.payload.id === 'string' ? event.payload.id : event.aggregateId
-      if (!taskId) throw unknownFailure('MALFORMED_TASK_CREATED', `Event ${event.id} has no task id`)
+      const taskId = typeof event.payload.id === 'string' ? event.payload.id : undefined
+      const payloadWorkspaceId = typeof event.payload.workspaceId === 'string'
+        ? event.payload.workspaceId
+        : typeof event.payload.workspace_id === 'string' ? event.payload.workspace_id : undefined
+      const snakeWorkspaceId = typeof event.payload.workspace_id === 'string' ? event.payload.workspace_id : undefined
+      if (!taskId || taskId !== event.aggregateId || !payloadWorkspaceId || payloadWorkspaceId !== event.workspaceId
+        || (snakeWorkspaceId !== undefined && snakeWorkspaceId !== event.workspaceId)) {
+        throw unknownFailure('MALFORMED_TASK_CREATED', `Event ${event.id} is not scoped to its task and workspace`)
+      }
       projection.tasks.set(taskId, event.payload)
       await options.onTaskCreated?.(event, projection, signal)
       throwIfLeaseLost(signal)

@@ -226,6 +226,23 @@ describe('worker production entry', () => {
     expect(onStateSnapshot).not.toHaveBeenCalled()
   })
 
+  it('fails closed when task.created crosses aggregate or workspace scope', async () => {
+    const projection = createWorkerProjection()
+    const onTaskCreated = vi.fn()
+    const handler = createOutboxHandler({ projection, onTaskCreated })
+    const base = { id: 'evt_invalid_task', workspaceId: 'ws_a', aggregateId: 'task_1', eventType: 'task.created' as const, sequence: 1, createdAt: new Date().toISOString() }
+
+    await expect(handler({ event: { ...base, payload: { id: 'task_2', workspaceId: 'ws_a' } }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'MALFORMED_TASK_CREATED', unknown: true } })
+    await expect(handler({ event: { ...base, payload: { id: 'task_1', workspaceId: 'ws_other' } }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'MALFORMED_TASK_CREATED', unknown: true } })
+    await expect(handler({ event: { ...base, payload: { id: 'task_1', workspaceId: 'ws_a', workspace_id: 'ws_other' } }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'MALFORMED_TASK_CREATED', unknown: true } })
+
+    expect(projection.tasks.size).toBe(0)
+    expect(onTaskCreated).not.toHaveBeenCalled()
+  })
+
   it('executes each ready image continuation once through the signed worker boundary', async () => {
     const requests: Array<{ url: string; signature: string | null }> = []
     const event = { id: 'evt_continuation', workspaceId: 'ws_a', aggregateId: 'asset_1', eventType: 'asset.generation_continuations.ready', sequence: 2, payload: { continuation_job_ids: ['img_1', 'img_1', 'img_2'] }, createdAt: new Date().toISOString() }
