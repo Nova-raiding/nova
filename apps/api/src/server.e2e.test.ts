@@ -1516,6 +1516,21 @@ describe('API HTTP vertical slice', () => {
     expect(denied.data).toBeNull()
   })
 
+  it('keeps a real empty collection distinct from 403 and 503 envelopes', async () => {
+    const base = await start()
+    const workspaceId = `ws_empty_products_${Date.now()}`
+    const response = await fetch(`${base}/v1/products`, { headers: {
+      'x-workspace-id': workspaceId, 'x-request-id': 'req-empty-products', 'x-trace-id': 'trace-empty-products',
+    } })
+    const envelope = await response.json() as Envelope<{ items: unknown[]; total: number; limit: number; offset: number }>
+
+    expect(response.status).toBe(200)
+    expect(envelope).toMatchObject({
+      request_id: 'req-empty-products', trace_id: 'trace-empty-products', workspace_id: workspaceId,
+      data: { items: [], total: 0, limit: 20, offset: 0 }, error: null,
+    })
+  })
+
   it('exposes a six-platform capability evidence matrix without credential material', async () => {
     const base = await start()
     const response = await fetch(`${base}/v1/platform-capabilities`, { headers: { 'x-workspace-id': 'ws_demo' } }).then(json)

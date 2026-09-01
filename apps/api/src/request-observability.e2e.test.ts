@@ -67,6 +67,10 @@ describe('API request observability wiring', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'unknown.method', params: { workspace_id: workspaceId, task_id: 'untrusted-task', attempt: '3', platform: 'douyin', account_id: 'untrusted-store' }, token: 'body-token-secret' }),
     })
     expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({
+      request_id: 'req-failed-observed', trace_id: 'req-failed-observed', data: null,
+      error: { code: 'FORBIDDEN' },
+    })
     const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
     expect(events.map(event => event.event)).toEqual(['request.received', 'request.failed'])
     expect(events[0]).toMatchObject({ workspace_id: null, task_id: null, attempt: null, platform: null, account_id: null, actor_id: null })
@@ -86,6 +90,10 @@ describe('API request observability wiring', () => {
     const response = await fetch(`${base}/healthz`, { headers: { 'x-request-id': 'req-readiness-failed' } })
 
     expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({
+      request_id: 'req-readiness-failed', trace_id: 'req-readiness-failed', data: null,
+      error: { code: expect.stringMatching(/^(?:RELEASE_METADATA_UNAVAILABLE|REDIS_UNAVAILABLE)$/u) },
+    })
     const events = lines.map(line => JSON.parse(line) as Record<string, unknown>)
     expect(events.map(event => event.event)).toEqual(['request.received', 'request.failed'])
     expect(events[1]).toMatchObject({ request_id: 'req-readiness-failed', workspace_id: 'system', status: 503, error_code: expect.stringMatching(/^(?:RELEASE_METADATA_UNAVAILABLE|REDIS_UNAVAILABLE)$/u) })
