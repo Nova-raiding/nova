@@ -2786,15 +2786,15 @@ async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: Worke
   if (balance.availablePoints === null) {
     throw new DomainError(ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE, '创意点余额未知，已拒绝 worker 执行', 503, { retryable: true, balance_state: 'unknown', available_points: null })
   }
-  const subscriptionFact = currentPointAccessExecutionFact(event.workspaceId, balance)
+  const entitlementFact = currentPointAccessExecutionFact(event.workspaceId, balance)
   const accessRevision = String(balance.revision)
-  const entitlementMatches = snapshot.entitlementSnapshotId === subscriptionFact.id
-    && snapshot.entitlementSnapshotChecksum === subscriptionFact.checksum
+  const entitlementMatches = snapshot.entitlementSnapshotId === entitlementFact.id
+    && snapshot.entitlementSnapshotChecksum === entitlementFact.checksum
   const accessMatches = snapshot.accessRevision === accessRevision
   if (snapshot.accessMode === 'POINT_CHARGED') {
-    // The repository currently exposes no authoritative reservation read. Do
-    // not turn the queued snapshot into self-authenticating payment evidence.
-    throw new DomainError('COMMERCIAL_EXECUTION_RESERVATION_RECHECK_UNAVAILABLE', '当前仓储不能复核创意点预留事实，已拒绝收费 worker 执行', 503, {
+    // All charged entry operations remain registry-disabled until enqueue,
+    // compensation and settlement are wired as one end-to-end protocol.
+    throw new DomainError('COMMERCIAL_EXECUTION_CHARGED_DISABLED', '收费 worker 协议尚未完成端到端上线门禁，已拒绝执行', 503, {
       retryable: true,
       balance_state: 'known',
       available_points: balance.availablePoints,
@@ -2809,8 +2809,8 @@ async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: Worke
     accessMode: snapshot.accessMode,
     accessRevision,
     balanceState: 'known',
-    entitlementSnapshotId: subscriptionFact.id,
-    entitlementSnapshotChecksum: subscriptionFact.checksum,
+    entitlementSnapshotId: entitlementFact.id,
+    entitlementSnapshotChecksum: entitlementFact.checksum,
     rateVersion: null,
     quotedPoints: 0,
     reservationState: 'not_required',
@@ -2871,7 +2871,7 @@ async function withCommercialWorkerSnapshot(workspaceId: string, eventType: stri
   const balance = await persistence.creativePoints.getBalance(workspaceId)
   if (balance.availablePoints === null) throw new DomainError(ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE, '创意点余额未知，已拒绝入队', 503, { balance_state: 'unknown', available_points: null })
   if (balance.availablePoints === 0) throw new DomainError(ERROR_CODES.CREATIVE_POINTS_EXHAUSTED, '创意点已用尽，已拒绝入队', 402, { balance_state: 'known', available_points: 0, access_revision: String(balance.revision) })
-  const subscriptionFact = currentPointAccessExecutionFact(workspaceId, balance)
+  const entitlementFact = currentPointAccessExecutionFact(workspaceId, balance)
   return {
     ...payload,
     commercial_access_snapshot: {
@@ -2882,8 +2882,8 @@ async function withCommercialWorkerSnapshot(workspaceId: string, eventType: stri
       access_mode: 'POINT_REQUIRED_NO_CHARGE',
       access_revision: String(balance.revision),
       balance_state: 'known',
-      entitlement_snapshot_id: subscriptionFact.id,
-      entitlement_snapshot_checksum: subscriptionFact.checksum,
+      entitlement_snapshot_id: entitlementFact.id,
+      entitlement_snapshot_checksum: entitlementFact.checksum,
       rate_version: null,
       quoted_points: 0,
       decided_at: new Date().toISOString(),
@@ -11013,15 +11013,22 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const targetWorkspaceId = required(params, 'target_workspace_id')
       const access = await commercialAccessService.decide({ surface: 'MCP', operation: 'merchant.start', workspace_id: targetWorkspaceId })
       const balance = await persistence.creativePoints?.getBalance(targetWorkspaceId)
+      const decision = access.outcome === 'DECISION' ? access.decision : null
       return result({
         schema_version: 'commercial.access-summary.v1',
+        decision_id: decision?.decision_id ?? `commercial_unavailable_${randomUUID()}`,
         workspace_id: targetWorkspaceId,
         balance_state: balance?.availablePoints === null || !balance ? 'unknown' : 'known',
         available_points: balance?.availablePoints ?? null,
         reserved_points: balance?.reservedPoints ?? null,
         settled_points: balance?.settledPoints ?? null,
         access_revision: balance?.availablePoints === null || !balance ? null : String(balance.revision),
-        decision: access.outcome === 'DECISION' ? access.decision : null,
+        quoted_points: decision?.quoted_points ?? null,
+        rate_card_version: decision?.rate_card_version ?? null,
+        error_code: decision?.error_code ?? (access.outcome === 'DENY_DISABLED' ? 'COMMERCIAL_OPERATION_DISABLED' : access.outcome === 'DENY_UNCLASSIFIED' ? 'COMMERCIAL_OPERATION_UNCLASSIFIED' : null),
+        allowed: decision?.allowed ?? false,
+        verified_at: decision?.decided_at ?? new Date().toISOString(),
+        next_actions: decision?.next_actions ?? ['commercial.access.get', 'creative-points.balance.get'],
         decision_outcome: access.outcome,
       })
     }
@@ -11036,14 +11043,26 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const requestedPrivate = params.include_private === 'true'
       const catalog = await persistence.commercialCatalog.list({ includePrivate: requestedPrivate && mayReadPrivate, capabilities: [...capabilities] })
       if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可读取的 V2 商业目录版本', 503, { catalog: null })
-      return result({ schema_version: 'commercial.catalog.v2', items: catalog, private_entries_included: requestedPrivate && mayReadPrivate })
+      const items = catalog.map(item => {
+        const name = typeof item.payload.name === 'string' && item.payload.name.trim() ? item.payload.name.trim() : item.code
+        const priceLabel = item.priceFen === null ? item.priceMode === 'custom' ? '按合同定价' : '价格未决' : `${item.priceMode === 'starts_at' ? '起价 ' : ''}¥${(item.priceFen / 100).toFixed(2)}`
+        const benefitsSummary = item.benefits.map(benefit => `${benefit.code}:${benefit.quantity ?? benefit.rawValue ?? '未决'}${benefit.rawUnit ? ` ${benefit.rawUnit}` : ''}`).join('；') || '无已持久化权益项'
+        return { id: item.versionId, sku_code: item.code, name, type: item.kind, visibility: item.visibility, version: `v${item.version}`, price_label: priceLabel, cycle_label: item.durationDays === null ? null : `${item.durationDays} 天`, benefits_summary: benefitsSummary, approval_state: item.lifecycle, valid_from: item.effectiveAt, valid_to: null, unresolved: Array.isArray(item.payload.blockers) ? item.payload.blockers.filter((value): value is string => typeof value === 'string') : [], checksum: item.checksum, executable: item.executable }
+      })
+      return result({ schema_version: 'commercial.catalog.v2', items, total: items.length, private_entries_included: requestedPrivate && mayReadPrivate })
     }
     case 'ops.commercial.access-blocks.list':
       throw new DomainError('COMMERCIAL_ACCESS_BLOCK_REPOSITORY_UNAVAILABLE', '商业阻断事实仓储尚未实现，不能返回伪造的空列表', 503)
     case 'ops.commercial.entitlements.list':
       throw new DomainError('COMMERCIAL_ENTITLEMENT_V2_REPOSITORY_UNAVAILABLE', 'V2 权益快照仓储尚未实现，不能回退到旧任务额度', 503)
-    case 'ops.commercial.points-ledger.list':
-      throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未实现，不能返回伪造的空列表', 503)
+    case 'ops.commercial.points-ledger.list': {
+      if (!persistence.creativePoints) throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未配置', 503)
+      const targetWorkspaceId = required(params, 'target_workspace_id')
+      const statementLimit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 50
+      const statement = await persistence.creativePoints.listStatement(targetWorkspaceId, { limit: statementLimit })
+      const items = statement.items.map(entry => ({ id: entry.id, workspace_id: entry.workspaceId, event_type: entry.eventType, points_delta: entry.pointsDelta, balance_after: entry.availableAfter, source: entry.grantSourceType ?? entry.eventType, operation_id: entry.operationId, status: entry.eventType, occurred_at: entry.createdAt, evidence: { reserved_after: entry.reservedAfter, settled_after: entry.settledAfter, access_revision: entry.accessRevision, grant_source_id: entry.grantSourceId, intent: entry.intent } }))
+      return result({ schema_version: 'creative-points.statement.v1', items, total: items.length, next_cursor: statement.nextCursor ? Buffer.from(JSON.stringify(statement.nextCursor)).toString('base64url') : null })
+    }
     case 'ops.commercial.orders-v2.list':
       throw new DomainError('COMMERCIAL_ORDER_V2_REPOSITORY_UNAVAILABLE', 'V2 订单与支付快照仓储尚未实现，不能回退到钱包订单', 503)
     case 'ops.commercial.rate-cards.list':
@@ -15117,7 +15136,12 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     return send(res, 200, workspaceId, { schema_version: 'creative-points.balance.v1', workspace_id: workspaceId, balance_state: balance?.availablePoints === null || !balance ? 'unknown' : 'known', available_points: balance?.availablePoints ?? null, reserved_points: balance?.reservedPoints ?? null, settled_points: balance?.settledPoints ?? null, access_revision: balance?.availablePoints === null || !balance ? null : String(balance.revision), updated_at: balance?.updatedAt ?? null }, null, req)
   }
   if (req.method === 'GET' && path === '/v1/creative-points/statement') {
-    throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未实现，不能返回伪造的空流水', 503, { entries: null })
+    const workspaceId = resolveWorkspace(req)
+    if (!persistence.creativePoints) throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未配置', 503, { entries: null })
+    const requestedLimit = url.searchParams.get('limit')
+    const statementLimit = requestedLimit !== null && /^\d+$/u.test(requestedLimit) ? Math.min(100, Math.max(1, Number(requestedLimit))) : 50
+    const statement = await persistence.creativePoints.listStatement(workspaceId, { limit: statementLimit })
+    return send(res, 200, workspaceId, { schema_version: 'creative-points.statement.v1', entries: statement.items, next_cursor: statement.nextCursor ? Buffer.from(JSON.stringify(statement.nextCursor)).toString('base64url') : null }, null, req)
   }
   if (req.method === 'GET' && path === '/v1/commercial/catalog') {
     const workspaceId = resolveWorkspace(req)

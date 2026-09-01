@@ -22,7 +22,53 @@ tags:
   - name: Versioning
   - name: OAuth
   - name: MCP
+  - name: Commercial
 paths:
+  /v1/commercial/access:
+    get:
+      tags: [Commercial]
+      operationId: getCommercialAccess
+      description: Returns the server-owned creative-point access decision. Unknown balance remains null and fails closed for business execution.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/CommercialAccessErrorEnvelope' }
+  /v1/commercial/catalog:
+    get:
+      tags: [Commercial]
+      operationId: getCommercialCatalog
+      description: Returns only persisted public V2 catalog entries. Missing controlled ops-database access is explicit and never falls back to legacy offers.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/creative-points/balance:
+    get:
+      tags: [Commercial]
+      operationId: getCreativePointBalance
+      description: Returns the authoritative workspace balance and access revision; unknown is null, never zero.
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/creative-points/statement:
+    get:
+      tags: [Commercial]
+      operationId: listCreativePointStatement
+      description: Reads authoritative ledger evidence. Until a V2 ledger reader is available this endpoint returns 503 and never fabricates an empty statement.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/platform-capabilities:
     get:
       summary: Read the six-platform capability evidence matrix
@@ -1686,7 +1732,7 @@ components:
       additionalProperties: true
     WorkerCommercialRecheck:
       type: object
-      required: [recheck_id, workspace_id, operation, access_mode, access_revision, balance_state, subscription_snapshot_id, subscription_snapshot_checksum, rate_version, quoted_points, reservation_state, allowed, ready, checked_at]
+      required: [recheck_id, workspace_id, operation, access_mode, access_revision, balance_state, entitlement_snapshot_id, entitlement_snapshot_checksum, rate_version, quoted_points, reservation_state, allowed, ready, checked_at]
       properties:
         recheck_id: { type: string }
         workspace_id: { type: string }
@@ -1694,8 +1740,8 @@ components:
         access_mode: { type: string, enum: [POINT_CHARGED, POINT_REQUIRED_NO_CHARGE] }
         access_revision: { type: string }
         balance_state: { type: string, enum: [known] }
-        subscription_snapshot_id: { type: string }
-        subscription_snapshot_checksum: { type: string, pattern: '^[a-f0-9]{64}$' }
+        entitlement_snapshot_id: { type: string, description: Server-derived creative-point access fact identifier; legacy subscription/task quota snapshots are not accepted. }
+        entitlement_snapshot_checksum: { type: string, pattern: '^[a-f0-9]{64}$' }
         rate_version: { oneOf: [{ type: string }, { type: 'null' }] }
         quoted_points: { type: integer, minimum: 0 }
         reservation_id: { type: string }
@@ -1711,10 +1757,10 @@ components:
           properties:
             data:
               type: object
-              required: [authorization_recheck, commercial_recheck]
+              required: [authorization_recheck, commercial_access_recheck]
               properties:
                 authorization_recheck: { type: object, additionalProperties: true }
-                commercial_recheck: { $ref: '#/components/schemas/WorkerCommercialRecheck' }
+                commercial_access_recheck: { $ref: '#/components/schemas/WorkerCommercialRecheck' }
     ApiWarning:
       type: object
       required: [code, message]
