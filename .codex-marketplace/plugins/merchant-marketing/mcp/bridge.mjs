@@ -733,6 +733,8 @@ const METHODS = {
         confirmation_hash: { type: 'string' },
         remote_snapshot_hash: { type: 'string' },
         account_id: { type: 'string' },
+        confirmation_ticket_nonce_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+        confirmation_ticket_intent_hash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
       },
       required: ['task_id', 'content_version_id', 'confirmation_hash', 'remote_snapshot_hash'],
       additionalProperties: false,
