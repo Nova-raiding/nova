@@ -1153,7 +1153,18 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
-function contentVersionVector(input: { task: Task; product: Product; factVersionIds: string[]; ruleVersionIds: string[]; knowledgeVersionIds?: string[]; createdBy: ContentVersionVector['createdBy']; reason: string; modelId?: string; taskInputSnapshotId?: string }): ContentVersionVector {
+function contentVersionVector(input: {
+  task: Task
+  product: Product
+  factVersionIds: string[]
+  ruleVersionIds: string[]
+  knowledgeVersionIds?: string[]
+  createdBy: ContentVersionVector['createdBy']
+  reason: string
+  modelId?: string
+  taskInputSnapshotId?: string
+  skuIds?: string[]
+}): ContentVersionVector {
   const pluginVersion = process.env.PLUGIN_VERSION?.trim() || '0.1.0'
   const skillBundleVersion = process.env.SKILL_BUNDLE_VERSION?.trim() || pluginVersion
   const mcpVersion = process.env.MCP_VERSION?.trim() || pluginVersion
@@ -1161,8 +1172,8 @@ function contentVersionVector(input: { task: Task; product: Product; factVersion
   const promptBundleVersion = process.env.PROMPT_BUNDLE_VERSION?.trim() || 'fixture-1.0.0'
   return {
     assetVersionIds: [...input.factVersionIds],
-    skuIds: input.product.skus?.map(sku => sku.id) ?? [],
-    taskInputSnapshotId: input.taskInputSnapshotId ?? `task:${input.task.id}:v${input.task.version}`,
+    skuIds: [...(input.skuIds ?? input.task.inputSnapshot?.skuIds ?? input.task.productionPlan?.skuIds ?? input.product.skus?.map(sku => sku.id) ?? [])],
+    taskInputSnapshotId: input.taskInputSnapshotId ?? input.task.inputSnapshotId ?? `task:${input.task.id}:v${input.task.version}`,
     ruleSnapshotId: `rules:${input.ruleVersionIds.join(',')}`,
     mappingVersion: `${input.task.platform}.mapping.v1`,
     pluginVersion,
@@ -2831,7 +2842,7 @@ export class MerchantService {
     const version: ContentVersion = {
       id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(input.workspaceId, task.id), body: clone(source.body), lockedFields: source.lockedFields ? [...source.lockedFields] : undefined,
       factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}),
-      versionVector: contentVersionVector({ task, product, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, taskInputSnapshotId: source.versionVector?.taskInputSnapshotId, createdBy: 'user', reason: `visual_selection:${reason}`, modelId: source.versionVector?.modelId }),
+      versionVector: contentVersionVector({ task, product, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, taskInputSnapshotId: source.versionVector?.taskInputSnapshotId, skuIds: source.versionVector?.skuIds, createdBy: 'user', reason: `visual_selection:${reason}`, modelId: source.versionVector?.modelId }),
       state: 'review_required', revision: 1,
       visualSelection: { items, selectionHash, selectedAt: now(), selectedBy: input.selectedBy.trim() || 'merchant', idempotencyKey: input.idempotencyKey, intentHash },
     }
@@ -3454,7 +3465,7 @@ export class MerchantService {
       factVersionIds: [...source.factVersionIds],
       ruleVersionIds: [...source.ruleVersionIds],
       ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}),
-      versionVector: contentVersionVector({ task, product: this.products.get(task.productId)!, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, createdBy: 'user', reason: `restore:${source.id}`, modelId: source.versionVector?.modelId }),
+      versionVector: contentVersionVector({ task, product: this.products.get(task.productId)!, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, taskInputSnapshotId: source.versionVector?.taskInputSnapshotId, skuIds: source.versionVector?.skuIds, createdBy: 'user', reason: `restore:${source.id}`, modelId: source.versionVector?.modelId }),
       state: 'review_required',
       revision: source.revision + 1,
     }
@@ -3548,7 +3559,7 @@ export class MerchantService {
     if (!existingModules.some(module => module.key === moduleKey)) throw new DomainError('CONTENT_MODULE_NOT_FOUND', `源版本不存在模块: ${moduleKey}`, 404, { module_key: moduleKey })
     const regeneratedModules = existingModules.map(module => module.key === moduleKey ? clone(replacement) : clone(module))
     const body = { ...clone(source.body), modules: orchestrateContentModules(regeneratedModules, frozenProduct) }
-    const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product: frozenProduct, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, taskInputSnapshotId: source.versionVector?.taskInputSnapshotId, createdBy: 'user', reason: input.reason, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
+    const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product: frozenProduct, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, taskInputSnapshotId: source.versionVector?.taskInputSnapshotId, skuIds: source.versionVector?.skuIds, createdBy: 'user', reason: input.reason, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id
     task.state = 'review_required'

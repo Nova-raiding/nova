@@ -1517,6 +1517,14 @@ describe('MerchantService', () => {
     expect(draft.body.title).toContain('快照外套')
     expect(draft.body.detail).toContain('当前库存 12')
     expect(draft.versionVector).toMatchObject({ taskInputSnapshotId: snapshot?.id, skuIds: ['sku-blue-m'], ruleSnapshotId: expect.stringContaining('cn-commerce-1.0.0') })
+
+    const modules = draft.body.modules?.map(module => ({
+      ...module,
+      ...(module.decisionContract?.claim.skuIds ? { referencedSkuIds: module.decisionContract.claim.skuIds.length ? [...module.decisionContract.claim.skuIds] : ['sku-blue-m'] } : {}),
+    }))
+    const modified = service.modifyContentVersion({ workspaceId: 'ws_snapshot', sourceVersionId: draft.id, changes: { title: '快照外套修正版', modules }, reason: '并发商品变更后修订' }).version
+    expect(modified.versionVector).toMatchObject({ taskInputSnapshotId: snapshot?.id, skuIds: ['sku-blue-m'] })
+    expect(modified.versionVector?.skuIds).not.toContain('sku-new')
   })
 
   it('blocks explicitly selected assets that are not authorized for generation', () => {
