@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CloudObjectNotFoundError, LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, isRetryableObjectStorageReadError, parseS3CompatibleObjectStorageConfig, type CloudObjectTransport, withObjectStorageReadRetry } from './object-storage.js'
 
 const digest = (body: Uint8Array) => createHash('sha256').update(body).digest('hex')
@@ -27,6 +27,14 @@ describe('object storage read retry policy', () => {
     let calls = 0
     await expect(withObjectStorageReadRetry(async () => { calls += 1; throw Object.assign(new Error('missing'), { code: 'NoSuchKey', status: 404 }) }, { baseDelayMs: 0 })).rejects.toMatchObject({ code: 'NoSuchKey' })
     expect(calls).toBe(1)
+  })
+
+  it('rejects unsafe retry schedules before invoking storage', async () => {
+    const operation = vi.fn(async () => 'ok')
+    await expect(withObjectStorageReadRetry(operation, { baseDelayMs: Number.NaN })).rejects.toMatchObject({ code: 'OBJECT_RETRY_CONFIG_INVALID' })
+    await expect(withObjectStorageReadRetry(operation, { baseDelayMs: 1.5 })).rejects.toMatchObject({ code: 'OBJECT_RETRY_CONFIG_INVALID' })
+    await expect(withObjectStorageReadRetry(operation, { baseDelayMs: 60_001 })).rejects.toMatchObject({ code: 'OBJECT_RETRY_CONFIG_INVALID' })
+    expect(operation).not.toHaveBeenCalled()
   })
 })
 

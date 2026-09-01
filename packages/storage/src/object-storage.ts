@@ -212,7 +212,7 @@ export function isRetryableObjectStorageReadError(error: unknown) {
 export async function withObjectStorageReadRetry<T>(operation: () => Promise<T>, options: { attempts?: number; baseDelayMs?: number } = {}) {
   const attempts = options.attempts ?? 3
   const baseDelayMs = options.baseDelayMs ?? 25
-  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 10 || !Number.isFinite(baseDelayMs) || baseDelayMs < 0) throw new ObjectStorageError('OBJECT_RETRY_CONFIG_INVALID', '对象存储重试参数无效', 500)
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 10 || !Number.isSafeInteger(baseDelayMs) || baseDelayMs < 0 || baseDelayMs > 60_000) throw new ObjectStorageError('OBJECT_RETRY_CONFIG_INVALID', '对象存储重试参数无效', 500)
   let lastError: unknown
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try { return await operation() } catch (error) {
