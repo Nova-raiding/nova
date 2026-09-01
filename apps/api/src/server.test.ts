@@ -328,6 +328,7 @@ describe('API application wiring', () => {
     expect(list).toContain('...await publicImageJobExecutionProjection(workspaceId, job.id)')
     expect(source).toContain('executionState: execution?.state ?? null')
     expect(source).toContain('reconciliationRequired: execution?.state === \'provider_reserved\'')
+    expect(source).toContain("reconciliation_required: execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching'")
     expect(source).toContain("states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown']")
 
     const queueStart = source.indexOf("case 'ops.marketing.queue':")
