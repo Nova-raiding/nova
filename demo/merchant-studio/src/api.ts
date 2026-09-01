@@ -23,7 +23,11 @@ export type TaskState = string
 export type PublishState = string
 
 const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {}
-const runtimeConfig = (key: string) => runtimeEnv[key] ?? ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key])
+const runtimeConfig = (key: string) => {
+  const injected = runtimeEnv[key]?.trim()
+  if (injected) return injected
+  return ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key])?.trim()
+}
 
 export interface ApiEnvelope<T> {
   request_id: string
