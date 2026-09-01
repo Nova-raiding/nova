@@ -44,6 +44,16 @@ describe('worker execution-time authorization', () => {
     await expect(createExecutionAuthorizationGuard(async () => ({ ...base, identityId: 'identity_2' }), { now: () => now }).assertAuthorized(event(), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID' })
   })
 
+  it('fails closed for future-dated execution evidence before any provider call', async () => {
+    const provider = vi.fn(async () => 'sent')
+    const guard = createExecutionAuthorizationGuard(async ({ snapshot }) => ({
+      recheckId: 'decision_execute', actorId: snapshot.actorId, identityId: snapshot.identityId, workspaceId: 'ws_a', workbench: 'workspace', contextId: 'workspace:ws_a', contextVersion: 'ctx_8', policyVersion: 'policy_4', grantRevision: 'grant_12', grantIds: [], scopeHash: snapshot.scopeHash, capability: 'publish.execute', resourceId: 'publish_1', resourceRevision: snapshot.resourceRevision, requestId: snapshot.requestId, traceId: snapshot.traceId, authorized: true, checkedAt: '2026-08-31T10:00:06.000Z',
+    }), { now: () => now })
+
+    await expect(executeAfterAuthorizationCheck({ guard, event: event(), operation: 'publish.execute', providerCall: provider })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID', retryable: true })
+    expect(provider).not.toHaveBeenCalled()
+  })
+
   it('does not call the provider for a queued event after its grant is revoked', async () => {
     const provider = vi.fn(async () => 'sent')
     const guard = createExecutionAuthorizationGuard(async () => ({
