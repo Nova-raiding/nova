@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
 import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
@@ -612,6 +613,13 @@ describe('worker production entry', () => {
     expect(JSON.parse(requests[0]!.body)).toMatchObject({ workspaceId: 'ws_a', actionId: 'model:generation:idem_1', runKey: 'task:content_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), providerRequestId: 'relay_req_1', totalTokens: 15, costCny: 0.02 })
     expect(requests[0]?.headers.get('x-workspace-id')).toBe('ws_a')
     expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
+  })
+
+  it('returns settlement attestations from both provider usage sinks', async () => {
+    const source = await readFile(new URL('./main.ts', import.meta.url), 'utf8')
+    const usageSinkSection = source.slice(source.indexOf('const contentGenerator ='), source.indexOf('const requireImageProviderRequestId'))
+    expect(usageSinkSection.match(/return postModelUsage\(/gu)).toHaveLength(2)
+    expect(usageSinkSection).not.toContain('await postModelUsage(')
   })
 
   it('rejects a successful model usage callback without settlement evidence', async () => {

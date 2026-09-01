@@ -1153,14 +1153,14 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage settlement')
     const execution = usage.actionId ? generationUsageContexts.get(usage.actionId) : undefined
     const enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId } : {}), metadata: { ...(usage.metadata ?? {}), task_id: execution.taskId, campaign_item_id: execution.campaignItemId ?? null } } : usage
-    await postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
+    return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   })
   const imageGenerator = createImageGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image model usage settlement')
     const execution = usage.actionId ? imageUsageContexts.get(usage.actionId) : undefined
     if (execution && usage.providerRequestId) execution.providerRequestId = usage.providerRequestId
     const enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, metadata: { ...(usage.metadata ?? {}), image_job: true } } : usage
-    await postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
+    return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   })
   const requireImageProviderRequestId = (actionId: string) => {
     const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
