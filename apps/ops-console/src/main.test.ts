@@ -7,6 +7,8 @@ describe("Ops Console root providers", () => {
     expect(source).toContain('import { App as AntdApp, ConfigProvider } from "antd"')
     expect(source).toContain("<ConfigProvider theme={opsTheme}>")
     expect(source).toContain("<AntdApp>")
+    expect(source).toContain("purgeLocalOpsCredentialsForManagedSession(localStorage)")
+    expect(source).toContain("purgeLocalOpsCredentialsForManagedSession(sessionStorage)")
     expect(source).toContain("</AntdApp>")
   })
 })

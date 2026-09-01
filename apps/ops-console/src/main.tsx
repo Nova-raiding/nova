@@ -8,6 +8,7 @@ import { opsTheme } from "./theme/opsTheme.js";
 import { purgeLocalOpsCredentialsForManagedSession } from "./api/opsClient.js";
 
 purgeLocalOpsCredentialsForManagedSession(localStorage);
+purgeLocalOpsCredentialsForManagedSession(sessionStorage);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
