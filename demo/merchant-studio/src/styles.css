@@ -310,6 +310,8 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
    parent at every supported desktop width, while opaque user content remains
    readable instead of widening the grid or being clipped. */
 .image-generation-job-panel{inline-size:100%;max-inline-size:100%;min-inline-size:0;overflow-x:clip}
+.image-generation-discovery-config-blocker{display:grid;gap:8px}
+.image-generation-discovery-config-blocker button{min-height:44px;justify-self:start}
 .image-candidate-grid{inline-size:100%;min-inline-size:0;grid-template-columns:repeat(3,minmax(0,1fr))}
 .image-candidate-grid figure,.image-candidate-grid figcaption{min-inline-size:0}
 .image-generation-job-row,.image-generation-job-row>div{min-inline-size:0}

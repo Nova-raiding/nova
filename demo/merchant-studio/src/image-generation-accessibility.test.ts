@@ -48,6 +48,14 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('setConfigurationError(isImageGenerationConfigurationError(cause))')
   })
 
+  it('focuses the task discovery configuration blocker and prevents fake tasks', () => {
+    expect(app).toContain('const configurationBlockerRef = useRef<HTMLDivElement>(null)')
+    expect(app).toContain('configurationBlockerRef.current?.focus()')
+    expect(app).toContain('role="alert" tabIndex={-1} aria-labelledby="image-job-discovery-config-title"')
+    expect(app).toContain('系统不会读取、创建演示任务、生成或扣费。')
+    expect(app).toContain('onClick={() => window.location.reload()}')
+  })
+
   it('names and assertively announces task-read failures while retaining recovery', () => {
     expect(app).toContain('aria-live="assertive" aria-atomic="true" aria-labelledby="image-job-read-error-title" aria-describedby="image-job-read-error-description"')
     expect(app).toContain('id="image-job-read-error-title">图片任务状态暂时不可用</strong>')

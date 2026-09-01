@@ -5979,6 +5979,7 @@ function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
   const [loading, setLoading] = useState(Boolean(baseUrl))
   const [reload, setReload] = useState(0)
   const lastSuccessfulJobsRef = useRef<ImageGenerationJobListItem[]>([])
+  const configurationBlockerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!baseUrl) {
       lastSuccessfulJobsRef.current = []
@@ -6022,8 +6023,15 @@ function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
     const timer = window.setInterval(() => load(false), 5_000)
     return () => { active = false; window.clearInterval(timer) }
   }, [baseUrl, reload])
+  useEffect(() => {
+    if (!baseUrl) window.requestAnimationFrame(() => configurationBlockerRef.current?.focus())
+  }, [baseUrl])
   const stateLabels: Record<string, string> = { queued: '排队中', running: '处理中', succeeded: '生成完成，等待审查', failed: '生成失败', pending: '归档中，等待安全扫描', partial: '部分归档，等待补偿', external_unarchived: '归档未确认，等待对账', provider_reserved: imageGenerationExecutionLabel('provider_reserved'), provider_dispatching: imageGenerationExecutionLabel('provider_dispatching'), provider_started: imageGenerationExecutionLabel('provider_started'), outcome_unknown: imageGenerationExecutionLabel('outcome_unknown') }
-  if (!baseUrl) return <div className="info-notice" role="status">配置 API 后才能发现真实图片任务。</div>
+  if (!baseUrl) return <div ref={configurationBlockerRef} className="error-notice image-generation-discovery-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-discovery-config-title" aria-describedby="image-job-discovery-config-description">
+    <strong id="image-job-discovery-config-title">图片任务发现暂不可用</strong>
+    <span id="image-job-discovery-config-description">尚未配置商家 API 或模型中转，系统不会读取、创建演示任务、生成或扣费。请联系管理员完成测试环境配置后，再刷新此页面。</span>
+    <button className="secondary-button" type="button" onClick={() => window.location.reload()}>刷新页面</button>
+  </div>
   const listReady = !loading && jobs !== null
   return <section className="panel image-generation-discovery" aria-labelledby="image-job-discovery-title" aria-busy={loading}>
     <div className="detail-section-head"><div><span className="section-kicker">IMAGE TASKS</span><h3 id="image-job-discovery-title">图片任务</h3></div><StatusChip tone="blue">{loading ? '读取中…' : `${jobs?.length ?? 0} 个任务`}</StatusChip></div>
