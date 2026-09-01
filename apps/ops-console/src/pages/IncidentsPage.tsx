@@ -6,6 +6,7 @@ import { IncidentsTable } from '../components/incidents/IncidentsTable'
 import { OpsPage } from '../components/OpsPage'
 import { useIncidents, type IncidentFilters, type IncidentSeverity, type IncidentsClient } from '../hooks/useIncidents'
 import type { AuthorizationProjection } from '../authz/authorization.js'
+import { useUnsavedChanges } from '../components/authz/UnsavedChangesContext.js'
 
 type CreateValues = { title: string; summary: string; severity: IncidentSeverity; commanderId?: string; affectedComponents?: string; affectedWorkspaceIds?: string }
 const list = (value?: string) => [...new Set((value ?? '').split(',').map((item) => item.trim()).filter(Boolean))]
@@ -16,7 +17,9 @@ export function IncidentsPage({ client, authorization }: { client: IncidentsClie
   const model = useIncidents(client, {}, platformScope)
   const [draftFilters, setDraftFilters] = useState<IncidentFilters>({})
   const [createOpen, setCreateOpen] = useState(false)
+  const [createDirty, setCreateDirty] = useState(false)
   const [createForm] = Form.useForm<CreateValues>()
+  useUnsavedChanges(createOpen && createDirty, '事故创建表单')
   const canMutate = authorization.canAny(['incident.update', 'incident.administer'])
   const selected = model.selected
   const initialLoadFailed = Boolean(model.error && !model.loading && model.incidents.length === 0)
@@ -58,11 +61,11 @@ export function IncidentsPage({ client, authorization }: { client: IncidentsClie
         onUpdateScope={async (affectedComponents, affectedWorkspaceIds, note) => { if (selected) await model.updateScope({ incidentId: selected.id, expectedRevision: selected.revision, affectedComponents, affectedWorkspaceIds, note, idempotencyKey: mutationKey('scope') }) }}
       />
 
-      <Modal title="创建事故" open={createOpen} confirmLoading={model.mutating} onCancel={() => setCreateOpen(false)} onOk={() => createForm.submit()} okText="创建事故" cancelText="取消" destroyOnHidden>
-        <Form<CreateValues> form={createForm} layout="vertical" onFinish={async (values) => {
+      <Modal title="创建事故" open={createOpen} confirmLoading={model.mutating} onCancel={() => { setCreateDirty(false); createForm.resetFields(); setCreateOpen(false) }} onOk={() => createForm.submit()} okText="创建事故" cancelText="取消" destroyOnHidden>
+        <Form<CreateValues> form={createForm} layout="vertical" onValuesChange={() => setCreateDirty(true)} onFinish={async (values) => {
           try {
             await model.create({ title: values.title.trim(), summary: values.summary.trim(), severity: values.severity, ...(values.commanderId?.trim() ? { commanderId: values.commanderId.trim() } : {}), affectedComponents: list(values.affectedComponents), affectedWorkspaceIds: list(values.affectedWorkspaceIds), idempotencyKey: mutationKey('create') })
-            createForm.resetFields(); setCreateOpen(false)
+            createForm.resetFields(); setCreateDirty(false); setCreateOpen(false)
           } catch { /* Keep the dialog open; the page alert explains the failure. */ }
         }}>
           <Form.Item name="title" label="事故标题" rules={[{ required: true, min: 3, max: 160, message: '请输入 3–160 个字符的事故标题' }]}><Input autoFocus maxLength={160} /></Form.Item>

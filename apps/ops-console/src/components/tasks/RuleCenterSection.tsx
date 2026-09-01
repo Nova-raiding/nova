@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Alert, Button, Card, Form, Input, Modal, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Rule } from "../../types/ops";
+import { useUnsavedChanges } from "../authz/UnsavedChangesContext.js";
 
 interface RuleCenterSectionProps {
   model: OpsConsoleModel;
@@ -12,6 +13,8 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
     model;
   const [activationTarget, setActivationTarget] = useState<Rule>();
   const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string }>();
+  const [draftDirty, setDraftDirty] = useState(false);
+  useUnsavedChanges(draftDirty, "规则草稿表单");
 
   const activateRule = async () => {
     if (!activationTarget) return;
@@ -44,7 +47,11 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         name="rule-draft-create"
         form={ruleForm}
         layout="inline"
-        onFinish={publishRuleDraft}
+        onValuesChange={() => setDraftDirty(true)}
+        onFinish={async (values) => {
+          await publishRuleDraft(values);
+          setDraftDirty(false);
+        }}
         onFinishFailed={({ errorFields }) => {
           const first = errorFields[0]?.name;
           if (first) ruleForm.scrollToField(first, { block: "center", focus: true });

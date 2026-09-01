@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState, type ReactNode } from "react";
-import { Alert, App as AntApp, Button, Layout, Result, Skeleton } from "antd";
+import { Alert, App as AntApp, Button, Layout, Modal, Result, Skeleton } from "antd";
 import { OpsHeader } from "../components/OpsHeader";
 import { mainItems, OpsSidebar } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
@@ -14,6 +14,7 @@ import { AccessDeniedResult } from "../components/authz/AccessDeniedResult.js";
 import { domainReadCapabilities } from "../authz/authorization.js";
 import type { OpsWorkbench } from "../types/ops.js";
 import { urlForWorkbench, workbenchIntentFromLocation } from "../navigation/opsWorkbenchLocation.js";
+import { UnsavedChangesProvider, useUnsavedChangesState } from "../components/authz/UnsavedChangesContext.js";
 
 const { Content } = Layout;
 
@@ -39,6 +40,14 @@ export function commitOpsWorkbenchTransition(
   const target = urlForWorkbench(dependencies.location, next);
   (pushHistory ? dependencies.push : dependencies.replace)(target);
   return target;
+}
+
+export function shouldConfirmWorkbenchTransition(
+  current: OpsWorkbench,
+  next: OpsWorkbench,
+  unsavedLabels: readonly string[],
+) {
+  return next !== current && unsavedLabels.length > 0;
 }
 
 export function opsSessionGateState(
@@ -224,6 +233,10 @@ function Dashboard({
 }
 
 export function OpsConsoleController() {
+  return <UnsavedChangesProvider><OpsConsoleControllerContent /></UnsavedChangesProvider>;
+}
+
+function OpsConsoleControllerContent() {
   const [activeWorkbench, setActiveWorkbench] = useState<OpsWorkbench>(() =>
     workbenchIntentFromLocation(window.location)
       ?? requiredWorkbenchForDomain(domainFromLocation(window.location))
@@ -232,14 +245,23 @@ export function OpsConsoleController() {
   const [contextReady, setContextReady] = useState(false);
   const [switchingWorkbench, setSwitchingWorkbench] = useState(false);
   const [availableWorkbenches, setAvailableWorkbenches] = useState<readonly OpsWorkbench[]>([activeWorkbench]);
+  const [pendingWorkbench, setPendingWorkbench] = useState<{ next: OpsWorkbench; pushHistory: boolean }>();
+  const { labels: unsavedLabels } = useUnsavedChangesState();
 
-  const activateWorkbench = (next: OpsWorkbench, pushHistory: boolean) => {
+  const commitWorkbench = (next: OpsWorkbench, pushHistory: boolean) => {
     if (next === activeWorkbench && contextReady) return;
     setSwitchingWorkbench(true);
     commitOpsWorkbenchTransition(next, pushHistory);
     setActiveWorkbench(next);
     setContextReady(true);
     window.requestAnimationFrame(() => setSwitchingWorkbench(false));
+  };
+  const activateWorkbench = (next: OpsWorkbench, pushHistory: boolean) => {
+    if (shouldConfirmWorkbenchTransition(activeWorkbench, next, unsavedLabels)) {
+      setPendingWorkbench({ next, pushHistory });
+      return;
+    }
+    commitWorkbench(next, pushHistory);
   };
 
   useEffect(() => {
@@ -267,6 +289,22 @@ export function OpsConsoleController() {
           onWorkbenchChange={(next, pushHistory = true) => activateWorkbench(next, pushHistory)}
         />
       ) : <Skeleton active paragraph={{ rows: 8 }} aria-label="正在初始化运营工作台" />}
+      <Modal
+        open={Boolean(pendingWorkbench)}
+        title="放弃未保存内容并切换工作台？"
+        okText="放弃并切换"
+        cancelText="继续编辑"
+        okButtonProps={{ danger: true }}
+        onCancel={() => setPendingWorkbench(undefined)}
+        onOk={() => {
+          if (!pendingWorkbench) return;
+          const target = pendingWorkbench;
+          setPendingWorkbench(undefined);
+          commitWorkbench(target.next, target.pushHistory);
+        }}
+      >
+        当前未保存：{unsavedLabels.join("、")}。切换后这些内容会被清除且无法恢复。
+      </Modal>
     </OpsAntAppBoundary>
   );
 }

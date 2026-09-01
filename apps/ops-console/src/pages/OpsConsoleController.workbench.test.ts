@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { commitOpsWorkbenchTransition } from "./OpsConsoleController.js";
+import { commitOpsWorkbenchTransition, shouldConfirmWorkbenchTransition } from "./OpsConsoleController.js";
 
 describe("ops workbench transition", () => {
   it("aborts before committing context and URL atomically", () => {
@@ -15,5 +15,11 @@ describe("ops workbench transition", () => {
 
     expect(target).toBe("/ops/overview?tab=health&workbench=platform");
     expect(events).toEqual(["abort", "persist:platform", `push:${target}`]);
+  });
+
+  it("requires explicit confirmation only when a switch would discard dirty forms", () => {
+    expect(shouldConfirmWorkbenchTransition("workspace", "platform", ["事故创建表单"])).toBe(true);
+    expect(shouldConfirmWorkbenchTransition("workspace", "platform", [])).toBe(false);
+    expect(shouldConfirmWorkbenchTransition("workspace", "workspace", ["规则草稿表单"])).toBe(false);
   });
 });

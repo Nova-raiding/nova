@@ -1,7 +1,8 @@
 import { Alert, Button, Checkbox, Form, Input, Modal, Select, Space, Switch, Typography } from "antd";
 import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FeatureFlag, FeatureFlagMutationRequest, FeatureFlagTarget, FeatureFlagValueType } from "../../../../../packages/contracts/src/ops/feature-flags.js";
+import { useUnsavedChanges } from "../authz/UnsavedChangesContext.js";
 
 interface EditorForm { key: string; environment: string; description: string; valueType: FeatureFlagValueType; valueText: string; enabled: boolean; validFrom?: string; validTo?: string; reason: string; targets: Array<{ type: FeatureFlagTarget["type"]; value: string; enabled: boolean; overrideText?: string }> }
 interface Props { open: boolean; flag?: FeatureFlag; saving: boolean; defaultEnvironment?: string; environments?: readonly string[]; onCancel(): void; onSave(input: FeatureFlagMutationRequest): Promise<unknown> }
@@ -49,6 +50,8 @@ export function canonicalReadModeWarning(input: { key?: string; environment?: st
 
 export function FeatureFlagEditor({ open, flag, saving, defaultEnvironment = "production", environments = MANAGED_FEATURE_FLAG_ENVIRONMENTS, onCancel, onSave }: Props) {
   const [form] = Form.useForm<EditorForm>();
+  const [dirty, setDirty] = useState(false);
+  useUnsavedChanges(open && dirty, "功能开关编辑表单");
   const valueType = Form.useWatch("valueType", form) ?? flag?.defaultValue.type ?? "boolean";
   const flagKey = Form.useWatch("key", form);
   const flagEnvironment = Form.useWatch("environment", form);
@@ -56,15 +59,16 @@ export function FeatureFlagEditor({ open, flag, saving, defaultEnvironment = "pr
   const flagTargets = Form.useWatch("targets", form);
   const canonicalWarning = canonicalReadModeWarning({ key: flagKey, environment: flagEnvironment, valueText: flagValueText, targets: flagTargets });
   const initialValues = useMemo<Partial<EditorForm>>(() => ({ key: flag?.key ?? "", environment: flag?.environment ?? defaultEnvironment, description: flag?.description ?? "", valueType: flag?.defaultValue.type ?? "boolean", valueText: displayValue(flag), enabled: flag?.enabled ?? false, validFrom: featureFlagDateTimeInput(flag?.validFrom), validTo: featureFlagDateTimeInput(flag?.validTo), reason: "", targets: flag?.targets.map(target => ({ type: target.type, value: target.value, enabled: target.enabled, overrideText: target.override ? (target.override.type === "string" ? String(target.override.value) : JSON.stringify(target.override.value)) : undefined })) ?? [] }), [defaultEnvironment, flag]);
-  useEffect(() => { if (open) form.setFieldsValue(initialValues); }, [form, initialValues, open]);
+  useEffect(() => { if (open) { form.setFieldsValue(initialValues); setDirty(false); } }, [form, initialValues, open]);
 
   return <Modal open={open} title={flag ? `编辑 ${flag.key}` : "新建功能开关"} onCancel={onCancel} footer={null} destroyOnHidden width={720} aria-labelledby="feature-flag-editor-title">
     <Typography.Paragraph id="feature-flag-editor-title" type="secondary">仅支持布尔、字符串、数字和 16KiB 内 JSON；不执行脚本或表达式。新开关默认关闭。</Typography.Paragraph>
     {canonicalWarning && <Alert role="alert" type="warning" showIcon title="Canonical 商品链切读前置条件" description={canonicalWarning} style={{ marginBottom: 16 }} />}
-    <Form form={form} layout="vertical" initialValues={initialValues} scrollToFirstError={{ focus: true }} onFinish={async values => {
+    <Form form={form} layout="vertical" initialValues={initialValues} scrollToFirstError={{ focus: true }} onValuesChange={() => setDirty(true)} onFinish={async values => {
       const defaultValue = { type: values.valueType, value: parseFeatureFlagValue(values.valueType, values.valueText) };
       const targets = (values.targets ?? []).map(target => ({ type: target.type, value: target.value.trim(), enabled: target.enabled, ...(target.overrideText?.trim() ? { override: { type: values.valueType, value: parseFeatureFlagValue(values.valueType, target.overrideText) } } : {}) }));
       await onSave({ id: flag?.id, key: values.key.trim(), environment: values.environment.trim(), description: values.description.trim(), defaultValue, enabled: values.enabled, targets, validFrom: values.validFrom ? new Date(values.validFrom).toISOString() : undefined, validTo: values.validTo ? new Date(values.validTo).toISOString() : undefined, expectedRevision: flag?.revision, idempotencyKey: crypto.randomUUID(), reason: values.reason.trim() });
+      setDirty(false);
       onCancel();
     }}>
       <Space wrap size={16} style={{ width: "100%" }} align="start">
