@@ -3,6 +3,10 @@ import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { merchantConnectionPresentation } from './platform-connection-status'
 import {
+  DetailDecisionContract,
+  moduleDecisionContract,
+} from './DetailDecisionContract'
+import {
   AlertCircle,
   ArrowLeftRight,
   ArrowRight,
@@ -5963,6 +5967,9 @@ function ProductDetailPreview({
                     {module.imageGuidance && (
                       <small>配图：{module.imageGuidance}</small>
                     )}
+                    <DetailDecisionContract
+                      contract={moduleDecisionContract(module)}
+                    />
                   </article>
                 )
               })}
