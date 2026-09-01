@@ -4756,16 +4756,27 @@ async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: st
     authorizationCapability: decision.capability,
   })
   if (!workspaceId || !requestPrincipals.get(req)?.actorId || (!decision.enforced || (decision.authorized && getMcpMethodPolicy(decision.method)?.audit !== 'allow_and_deny'))) return
-  await recordOperationAudit({
-    workspaceId,
-    actorId: requestPrincipals.get(req)!.actorId,
-    action: 'authz.decision',
-    resourceType: 'mcp_method',
-    resourceId: decision.method,
-    before: {},
-    after: authorizationDecisionAuditEvidence(decision, correlation),
-    reason: decision.reason_code,
-  })
+  try {
+    await recordOperationAudit({
+      workspaceId,
+      actorId: requestPrincipals.get(req)!.actorId,
+      action: 'authz.decision',
+      resourceType: 'mcp_method',
+      resourceId: decision.method,
+      before: {},
+      after: authorizationDecisionAuditEvidence(decision, correlation),
+      reason: decision.reason_code,
+    })
+  } catch (error) {
+    // An enforced authorization decision without durable audit evidence is not
+    // safe to continue: callers must see a stable retry/operational signal,
+    // while the sink's internal error and customer data stay server-side.
+    console.error(`AUTHZ_AUDIT_UNAVAILABLE decision=${decision.decision_id} method=${decision.method}`, error)
+    throw new DomainError('AUTHZ_AUDIT_UNAVAILABLE', '授权审计暂不可用，操作已拒绝且未执行', 503, {
+      decision_id: decision.decision_id,
+      policy_version: decision.policy_version,
+    })
+  }
 }
 
 export function authorizationDenialDetails(decision: AuthorizationDecision) {
