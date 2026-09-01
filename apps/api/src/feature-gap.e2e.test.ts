@@ -9,7 +9,7 @@ async function start() {
   return `http://127.0.0.1:${address.port}`
 }
 async function call(base: string, workspaceId: string, method: string, params: Record<string, unknown>, role?: string) {
-  return await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, ...(role ? { 'x-role': role } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope>)
+  return await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, ...(role ? { 'x-role': role } : {}), ...(role === 'platform_ops' ? { 'x-ops-workbench': 'platform' } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope>)
 }
 
 describe('new commercial and operations capabilities', () => {
