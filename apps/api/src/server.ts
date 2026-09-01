@@ -172,7 +172,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
   const durableAuthorizationActionKey = durableAuthorizationLookup?.actionKey ?? usage.actionId
   const effectiveMultiplier = durableAuthorization?.multiplier ?? policy.multiplier
   let pricingFailure: { code: string; message: string } | undefined
-  if (isProduction() && usage.costCny === undefined && relayPricing) {
+  if (usage.costCny === undefined && relayPricing) {
     try {
       const quote = await relayPricing.quote(usage)
       usage.costCny = quote.costCny
@@ -181,7 +181,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
       pricingFailure = { code: (error as { code?: string })?.code ?? 'MODEL_PRICING_DERIVATION_FAILED', message: error instanceof Error ? error.message : String(error) }
     }
   }
-  if (isProduction() && usage.costCny === undefined) {
+  if (usage.costCny === undefined) {
     if (durableAuthorization && durableAuthorizationActionKey) await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: durableAuthorizationActionKey, from: ['authorized', 'pending_receipt'], to: 'pending_receipt' })
     const pending = await persistence.modelUsage.record({ receiptKey, workspaceId, ...(usage.actionId ? { actionId: usage.actionId, ...(isProduction() ? { budgetReservationKey: usage.actionId, budgetRunKey: usage.runKey! } : {}) } : {}), ...(usage.contextLinkId && usage.contextHash ? { contextLinkId: usage.contextLinkId, contextHash: usage.contextHash } : {}), modality: usage.modality, model: usage.model, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}), ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {}), settlementStatus: 'pending_cost', lastError: { code: pricingFailure?.code ?? 'MODEL_USAGE_COST_MISSING', message: pricingFailure?.message ?? 'provider receipt omitted actual cost' }, nextAttemptAt: new Date().toISOString(), metadata: { ...(usage.metadata ?? {}), settlement_reason: pricingFailure?.code ?? 'provider_cost_missing' } })
     const alert = await (persistence.alerts ?? memoryAlerts).upsert({ workspaceId, alertKey: `model-cost-missing:${receiptKey}`, code: pricingFailure?.code ?? 'MODEL_USAGE_COST_MISSING', severity: 'high', entityType: 'model_usage', entityId: pending.id, title: '模型中转成本证据不足，结果已阻断交付', observedAt: usage.observedAt, evidence: { receipt_key: receiptKey, modality: usage.modality, model: usage.model, provider_request_id: usage.providerRequestId ?? null, action_id: usage.actionId ?? null, pricing_error: pricingFailure ?? null }, nextAction: '核对中转站回执成本或价格快照、计费分组和汇率；完成待结算记录后再恢复模型交付。' })
@@ -1575,7 +1575,7 @@ async function settlePendingModelUsage(input: { workspaceId: string; usageId: st
     const actionKey = actionLookup?.actionKey ?? usage.actionId
     if (action.settlement === 'wallet' || action.settlement === 'wallet_overage') {
       await settlePluginWalletDebit({ workspaceId: input.workspaceId, debitIdempotencyKey: actionKey, finalAmountFen: Math.max(1, Math.ceil(usageCustomerChargeCny * 100)), actorId: input.actorId, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
-    } else if (action.settlement === 'entitlement') {
+    } else if (action.settlement === 'entitlement' || action.settlement === 'included_quota') {
       if (action.settlementStatus === 'authorized') await persistence.actionLedger?.transitionSettlementStatus({ workspaceId: input.workspaceId, actionKey, from: ['authorized'], to: 'pending_receipt' })
       await persistence.actionLedger?.settleProviderUsage({ workspaceId: input.workspaceId, actionKey, actualAmountFen: 0, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
     }
