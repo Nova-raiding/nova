@@ -15,8 +15,10 @@ describe('worker authorization recheck API', () => {
     })
     const snapshot = (revision: number, authorizationRevision: number) => ({
       schemaVersion: 1 as const, decisionId: `decision_${revision}`, actorId: 'operator_a', workspaceId: 'ws_authz_api',
+      identityId: 'identity_authz_api',
       contextId: 'workspace:ws_authz_api', contextVersion: 'policy_context', policyVersion: 'policy_1',
       grantRevision: `grant:${grant.id}:${revision}:identity_authz_api:${authorizationRevision}`, scopeHash: grant.scopeHash,
+      grantIds: [grant.id],
       capability: 'generation.execute' as const, resourceId: 'task_authz_api', authorized: true as const, decidedAt: now.toISOString(),
     })
 
@@ -28,6 +30,10 @@ describe('worker authorization recheck API', () => {
       const reserved = await recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })
       expect(reserved).toMatchObject({ authorized: true, reservation_id: 'worker-execution:evt_authz_api:generation.execute', event_id: 'evt_authz_api' })
       await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).resolves.toMatchObject({ reservation_id: (reserved as { reservation_id: string }).reservation_id })
+      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), grantIds: ['forged-grant'] }, 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), identityId: 'other-identity' }, 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws-other', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task-other')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
     } finally {
       setAuthorizationRepositoryForTests()
     }

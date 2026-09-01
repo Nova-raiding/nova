@@ -3787,6 +3787,9 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
   if (!membershipMatch && !grantMatch) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '执行授权来源格式无效', 403)
   const subjectIdentityId = (membershipMatch?.[1] ?? grantMatch?.[3])!
   const expectedAuthorizationRevision = Number(membershipMatch?.[2] ?? grantMatch?.[4])
+  if (snapshot.identityId !== subjectIdentityId || snapshot.workspaceId !== workspaceId || snapshot.resourceId !== resourceId) {
+    throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '执行授权快照未绑定当前身份、工作区或资源，已拒绝执行', 403)
+  }
   const authzRepository = authorizationRepository()
   if (!authzRepository) throw new DomainError('AUTHORIZATION_REPOSITORY_UNAVAILABLE', '执行前授权仓储不可用，已拒绝执行', 503)
   const currentAuthorizationRevision = await authzRepository.getAuthorizationRevision(subjectIdentityId)
@@ -3802,6 +3805,9 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
     const expectedGrantRevision = Number(grantMatch![2])
     const requiredCapability = workerOperationCapabilities[snapshot.capability]
     if (!grant
+      || !Array.isArray(snapshot.grantIds)
+      || snapshot.grantIds.length !== 1
+      || snapshot.grantIds[0] !== grant.id
       || grant.revision !== expectedGrantRevision
       || grant.subjectIdentityId !== subjectIdentityId
       || grant.workspaceId !== workspaceId
