@@ -25,6 +25,18 @@ describe('OAuth security', () => {
     expect(hashPkceVerifier('verifier')).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 
+  it('bounds audit redaction for circular and deeply nested evidence', () => {
+    const circular: Record<string, unknown> = { safe: 'ok', accessToken: 'secret' }
+    circular.self = circular
+    expect(redactSecrets(circular)).toEqual({ safe: 'ok', accessToken: '[REDACTED]', self: '[CIRCULAR]' })
+
+    let nested: Record<string, unknown> = { value: 'leaf' }
+    for (let depth = 0; depth < 12; depth++) nested = { nested }
+    let bounded: unknown = redactSecrets(nested)
+    for (let depth = 0; depth < 9; depth++) bounded = (bounded as { nested: unknown }).nested
+    expect(bounded).toBe('[TRUNCATED]')
+  })
+
   it('uses TTL-backed Redis state with one-time atomic consumption semantics', async () => {
     const data = new Map<string, string>()
     const redis: OAuthRedisPort = {

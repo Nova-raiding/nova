@@ -56,10 +56,20 @@ export class OAuthStateStore {
 // value is never inspected or partially retained once a secret-shaped field
 // is encountered.
 const SECRET_KEYS = /(?:access[\s_-]?token|refresh[\s_-]?token|client[\s_-]?secret|app[\s_-]?secret|(?:authorization|auth)[\s_-]?(?:code|token)|api[\s_-]?key|private[\s_-]?key|code[\s_-]?(?:verifier|challenge)|credential|password|passphrase)/iu
+const REDACTION_MAX_DEPTH = 8
+const REDACTION_MAX_STRING = 2048
 export function redactSecrets(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactSecrets)
-  if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, SECRET_KEYS.test(key) ? '[REDACTED]' : redactSecrets(child)]))
+  const seen = new WeakSet<object>()
+  const visit = (current: unknown, depth: number): unknown => {
+    if (depth > REDACTION_MAX_DEPTH) return '[TRUNCATED]'
+    if (typeof current === 'string') return current.length > REDACTION_MAX_STRING ? `${current.slice(0, REDACTION_MAX_STRING)}...[TRUNCATED]` : current
+    if (!current || typeof current !== 'object') return current
+    if (seen.has(current)) return '[CIRCULAR]'
+    seen.add(current)
+    if (Array.isArray(current)) return current.slice(0, 100).map(item => visit(item, depth + 1))
+    return Object.fromEntries(Object.entries(current).map(([key, child]) => [key, SECRET_KEYS.test(key) ? '[REDACTED]' : visit(child, depth + 1)]))
+  }
+  return visit(value, 0)
 }
 
 export function hashPkceVerifier(verifier: string) { return createHash('sha256').update(verifier).digest('base64url') }
