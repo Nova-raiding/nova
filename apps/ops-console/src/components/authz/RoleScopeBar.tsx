@@ -106,11 +106,13 @@ export function RoleScopeBar({
         {roles.length > 1 ? (
           <span className="ops-role-summary">
             <Button
+              htmlType="button"
               type="link"
               size="small"
               className="ops-role-summary-trigger"
               aria-expanded={rolesOpen}
               aria-controls={rolesPanelId}
+              aria-label={rolesOpen ? "收起已验证角色列表" : `展开其余 ${roles.length - 1} 个已验证角色`}
               onClick={() => setRolesOpen((open) => !open)}
             >
               +{roles.length - 1} 个角色

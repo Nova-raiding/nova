@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button, Drawer, Input, Layout, Space, Tag, Typography, type InputRef } from "antd";
 import { describeOpsError, hasOpsConnection, hasOpsCredentials, readOpsConnectionConfig, saveOpsConnectionConfig, type OpsConnectionConfigInput } from "../api/opsClient.js";
 import type { OpsDataSource } from "../types/ops.js";
@@ -70,6 +70,10 @@ export function OpsHeader({
   const [configError, setConfigError] = useState<string>();
   const [workspaceIdError, setWorkspaceIdError] = useState<string>();
   const workspaceIdRef = useRef<InputRef>(null);
+  const configErrorRef = useRef<HTMLDivElement>(null);
+  const connectionToggleRef = useRef<HTMLButtonElement>(null);
+  const connectionTitleId = useId();
+  const connectionDescriptionId = useId();
   // Managed/OIDC production sessions lead with identity and scope. Connection
   // details remain available on demand for diagnosis, but never dominate the
   // desktop workbench first paint.
@@ -83,8 +87,10 @@ export function OpsHeader({
         : "loading";
 
   useEffect(() => {
-    if (workspaceIdError) workspaceIdRef.current?.focus();
-  }, [workspaceIdError]);
+    if (!configError) return undefined;
+    const focusTimer = window.requestAnimationFrame(() => configErrorRef.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(focusTimer);
+  }, [configError]);
 
   return (
     <Layout.Header className="ops-header">
@@ -103,6 +109,7 @@ export function OpsHeader({
           </Tag>
         </div>
         <Button
+          ref={connectionToggleRef}
           type="default"
           className="ops-connection-toggle"
           aria-expanded={connectionOpen}
@@ -113,7 +120,9 @@ export function OpsHeader({
         </Button>
       </div>
       <Drawer
-        title="连接诊断"
+        title={<span id={connectionTitleId}>连接诊断</span>}
+        aria-labelledby={connectionTitleId}
+        aria-describedby={connectionDescriptionId}
         // AntD's portal cannot mount during SSR. Keep the disclosure state on
         // the button, but only mount the Drawer body in a browser so server
         // rendering stays warning-free and hydration does not touch secrets.
@@ -122,6 +131,10 @@ export function OpsHeader({
         size="small"
         getContainer={false}
         destroyOnHidden={false}
+        afterOpenChange={(open) => {
+          if (open || typeof window === "undefined") return;
+          window.requestAnimationFrame(() => connectionToggleRef.current?.focus({ preventScroll: true }));
+        }}
         className="ops-connection-drawer"
         styles={{ body: { paddingTop: 16 } }}
       >
@@ -143,6 +156,7 @@ export function OpsHeader({
           }
         }}
       >
+      <p id={connectionDescriptionId} className="sr-only">修改本机运营 API 连接配置后保存并刷新。连接失败时请修正字段并重试。</p>
       <Space orientation="vertical" size="middle" className="full-width">
         <label className="ops-connection-field">
           <span>运营 API 地址</span>
@@ -217,7 +231,7 @@ export function OpsHeader({
         ) : null}
         <Button className="ops-refresh-button" htmlType="submit" loading={refreshing} disabled={refreshing} aria-busy={refreshing} aria-label="刷新数据（保存连接配置）">{refreshing ? "正在刷新" : "保存并刷新"}</Button>
       </Space>
-      <OpsConfigError message={configError} />
+      {configError ? <div ref={configErrorRef} tabIndex={-1} aria-label="连接配置错误" className="ops-config-error-summary"><OpsConfigError message={configError} /></div> : null}
       </form>
       </Drawer>
     </Layout.Header>

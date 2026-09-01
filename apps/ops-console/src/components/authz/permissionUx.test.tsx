@@ -73,6 +73,7 @@ describe("desktop permission UX", () => {
     expect(html).toContain("+2 个角色");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls=');
+    expect(html).toContain('aria-label="展开其余 2 个已验证角色"');
   });
 
   it("announces whether the server authorization projection is verified", () => {

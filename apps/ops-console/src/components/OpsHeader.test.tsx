@@ -92,6 +92,21 @@ describe("OpsHeader accessibility", () => {
     expect(markup).toContain("请填写真实工作区 ID");
   });
 
+  it("provides a focus target for every connection configuration failure", async () => {
+    const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
+    expect(source).toContain('ref={configErrorRef} tabIndex={-1}');
+    expect(source).toContain('configErrorRef.current?.focus({ preventScroll: true })');
+    expect(source).toContain('aria-label="连接配置错误"');
+  });
+
+  it("restores focus to the connection diagnostic trigger after drawer close", async () => {
+    const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
+    expect(source).toContain("ref={connectionToggleRef}");
+    expect(source).toContain("afterOpenChange={(open) => {");
+    expect(source).toContain("connectionToggleRef.current?.focus({ preventScroll: true })");
+    expect(source).toContain("aria-labelledby={connectionTitleId}");
+  });
+
   it("marks an invalid workspace field and associates it with the visible error", () => {
     expect(workspaceFieldAccessibility("请填写真实工作区 ID。请修正连接配置后重试。")).toEqual({
       "aria-invalid": true,
