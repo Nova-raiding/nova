@@ -1,5 +1,6 @@
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Empty, Flex, Grid, Space, Table, Tag, Typography } from 'antd'
+import { useEffect, useRef } from 'react'
 import type { ColumnsType } from 'antd/es/table'
 import type { AuditCenterRecord } from '../../../../../packages/contracts/src/ops/audit-center.js'
 import type { useAuditCenter } from '../../hooks/useAuditCenter.js'
@@ -20,8 +21,20 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
   // The full table is intentionally reserved for wide screens; 844px landscape stays operable as cards.
   const compact = !screens.lg
   const selected = controller.selected
+  const errorRef = useRef<HTMLDivElement>(null)
+  const exportErrorRef = useRef<HTMLDivElement>(null)
   const initialLoadFailed = Boolean(controller.error && !controller.loading && controller.records.length === 0)
   const canViewDetails = !platformScope
+  const exportDisabled = !canExport || platformScope || !controller.records.length || controller.exporting
+  const exportUnavailableReason = !canExport
+    ? platformScope ? '平台聚合视图暂不支持跨租户导出，请切换到具体工作区。' : '当前会话没有 audit.export 能力，无法导出审计记录。'
+    : !controller.records.length ? '当前筛选条件没有可导出的审计记录。' : undefined
+  useEffect(() => {
+    if (controller.error) errorRef.current?.focus()
+  }, [controller.error])
+  useEffect(() => {
+    if (controller.exportError) exportErrorRef.current?.focus()
+  }, [controller.exportError])
   const openDetail = (record: AuditCenterRecord, target: HTMLElement) =>
     void controller.openDetail(record, target)
   const columns: ColumnsType<AuditCenterRecord> = [
@@ -43,19 +56,27 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
       <Space wrap size={8}>
         <Button icon={<ReloadOutlined aria-hidden />} loading={controller.loading} onClick={() => void controller.reload()} style={{ minHeight: 44 }}>刷新</Button>
         <Button icon={<DownloadOutlined aria-hidden />} loading={controller.exporting}
-          disabled={!canExport || !controller.records.length}
-          title={canExport ? undefined : platformScope ? '平台聚合视图暂不支持跨租户导出，请切换到具体工作区' : '需要平台运营或财务权限'}
-          onClick={() => void controller.downloadCsv()} style={{ minHeight: 44 }}>
+          aria-disabled={exportDisabled || undefined} aria-busy={controller.exporting}
+          aria-describedby="audit-export-help" tabIndex={0}
+          title={exportUnavailableReason}
+          onClick={() => { if (!exportDisabled) void controller.downloadCsv() }} style={{ minHeight: 44 }}>
           导出当前筛选
         </Button>
       </Space>
     </Flex>
+    <Typography.Text id="audit-export-help" type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+      {exportUnavailableReason ?? '导出仅使用当前工作区和筛选条件，并受服务端 audit.export 能力控制。'}
+    </Typography.Text>
 
     <AuditFilters value={controller.filters} onChange={controller.setFilters} />
-    {controller.error ? <Alert role="alert" type="error" showIcon title="审计记录加载失败" description={controller.error}
-      action={<Button onClick={() => void controller.reload()} style={{ minHeight: 44 }}>重试</Button>} /> : null}
-    {controller.exportError ? <Alert role="alert" type="error" showIcon title="审计导出失败" description={controller.exportError}
-      action={<Button onClick={() => void controller.downloadCsv()} style={{ minHeight: 44 }}>重试导出</Button>} /> : null}
+    {controller.error ? <div ref={errorRef} tabIndex={-1} role="alert" aria-labelledby="audit-load-error-title">
+      <Alert type="error" showIcon message={<span id="audit-load-error-title">审计记录加载失败</span>} description={controller.error}
+        action={<Button onClick={() => void controller.reload()} style={{ minHeight: 44 }}>重试</Button>} />
+    </div> : null}
+    {controller.exportError ? <div ref={exportErrorRef} tabIndex={-1} role="alert" aria-labelledby="audit-export-error-title">
+      <Alert type="error" showIcon message={<span id="audit-export-error-title">审计导出失败</span>} description={controller.exportError}
+        action={<Button onClick={() => void controller.downloadCsv()} style={{ minHeight: 44 }}>重试导出</Button>} />
+    </div> : null}
     {!initialLoadFailed && !controller.loading ? <Alert type={controller.truncated ? "info" : "success"} showIcon title={controller.truncated ? `已加载 ${controller.records.length} / ${controller.totalRecords} 条审计记录` : `已加载全部 ${controller.totalRecords} 条审计记录`} description={controller.truncated ? platformScope ? "平台聚合结果按服务端上限返回；请缩小时间或租户筛选范围，记录内容为服务端脱敏投影。" : "当前结果按服务端游标分页，点击“加载更多”继续查看；总量来自同一租户和筛选条件。" : "当前结果已完整覆盖同一租户和筛选条件，记录内容为服务端脱敏投影。"} /> : null}
     <div aria-live="polite" aria-atomic="true" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>
       {controller.loading ? '正在加载审计记录' : initialLoadFailed ? '审计记录不可用，当前空列表不代表没有审计事件' : controller.truncated ? `已加载 ${controller.records.length} 条，共 ${controller.totalRecords} 条，仍有未加载记录` : `已加载全部 ${controller.totalRecords} 条审计记录`}

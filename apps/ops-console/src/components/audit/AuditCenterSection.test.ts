@@ -31,6 +31,12 @@ describe('audit center UI contract', () => {
     expect(section).toContain('仍有未加载记录')
     expect(section).toContain('审计记录加载失败')
     expect(section).toContain('重试导出')
+    expect(section).toContain('audit-export-help')
+    expect(section).toContain('aria-describedby="audit-export-help"')
+    expect(section).toContain('aria-disabled={exportDisabled || undefined}')
+    expect(section).toContain('当前会话没有 audit.export 能力')
+    expect(section).toContain('errorRef.current?.focus()')
+    expect(section).toContain('exportErrorRef.current?.focus()')
     expect(drawer).toContain('服务端已脱敏')
     expect(drawer).toContain('不会下发到前端')
   })
@@ -49,7 +55,7 @@ describe('audit center UI contract', () => {
     expect(markup).toContain('不可变审计记录')
     expect(markup).toContain('当前筛选条件下没有审计记录')
     expect(markup).toContain('aria-live="polite"')
-    expect(markup).toContain('disabled=""')
+    expect(markup).toContain('aria-disabled="true"')
   })
 
   it('uses card layout through 844px landscape and prevents viewport overflow at 375px', async () => {
@@ -86,5 +92,14 @@ describe('audit center UI contract', () => {
     expect(drawer).toContain('aria-labelledby="audit-detail-error-title"')
     expect(drawer).toContain('详情加载失败')
     expect(drawer).toContain('重试')
+  })
+
+  it('keeps export permission and scope failures keyboard reachable with recovery semantics', async () => {
+    const section = await readFile(new URL('./AuditCenterSection.tsx', import.meta.url), 'utf8')
+    expect(section).toContain('tabIndex={0}')
+    expect(section).toContain('if (!exportDisabled) void controller.downloadCsv()')
+    expect(section).toContain('平台聚合视图暂不支持跨租户导出，请切换到具体工作区。')
+    expect(section).toContain('导出仅使用当前工作区和筛选条件')
+    expect(section).toContain('aria-labelledby="audit-export-error-title"')
   })
 })
