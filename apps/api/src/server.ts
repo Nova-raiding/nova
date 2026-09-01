@@ -4782,8 +4782,18 @@ export function authorizationDecisionRequiresAudit(decision: AuthorizationDecisi
   return decision.enforced && (!decision.authorized || getMcpMethodPolicy(decision.method)?.audit === 'allow_and_deny')
 }
 
+const authorizationAuditIdentity = /^[^\u0000-\u001f\u007f]+$/u
+
 export function authorizationDecisionAuditContextIsValid(decision: AuthorizationDecision, workspaceId: string, actorId: string | undefined) {
-  return !authorizationDecisionRequiresAudit(decision) || Boolean(workspaceId && actorId)
+  if (!authorizationDecisionRequiresAudit(decision)) return true
+  return typeof workspaceId === 'string'
+    && workspaceId.trim() === workspaceId
+    && workspaceId.length > 0
+    && authorizationAuditIdentity.test(workspaceId)
+    && typeof actorId === 'string'
+    && actorId.trim() === actorId
+    && actorId.length > 0
+    && authorizationAuditIdentity.test(actorId)
 }
 
 async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: string, decision: AuthorizationDecision) {
