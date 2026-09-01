@@ -100,6 +100,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     const tokens = {
       ownerA: `owner-a-${suffix}`,
       adminA: `admin-a-${suffix}`,
+      secondAdminA: `admin-second-a-${suffix}`,
       operatorA: `operator-a-${suffix}`,
       supportA: `support-a-${suffix}`,
       financeA: `finance-a-${suffix}`,
@@ -112,6 +113,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     await configureBearerMembers([
       { token: tokens.ownerA, workspaceId: workspaceA, actorId: `owner-a-${suffix}`, role: 'workspace_owner' },
       { token: tokens.adminA, workspaceId: workspaceA, actorId: `admin-a-${suffix}`, role: 'merchant_admin' },
+      { token: tokens.secondAdminA, workspaceId: workspaceA, actorId: `admin-second-a-${suffix}`, role: 'merchant_admin' },
       { token: tokens.operatorA, workspaceId: workspaceA, actorId: `operator-a-${suffix}`, role: 'operator' },
       { token: tokens.supportA, workspaceId: workspaceA, actorId: `support-a-${suffix}`, role: 'support' },
       { token: tokens.financeA, workspaceId: workspaceA, actorId: `finance-a-${suffix}`, role: 'finance' },
@@ -275,7 +277,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       request_id: approveRequest.id, reason: '管理员复核通过',
     }))
     expect(firstApproval).toMatchObject({ status: 'pending', approvals: [expect.objectContaining({ actorId: `admin-a-${suffix}` })] })
-    const secondApproval = resultOf<any>(await callMcp(base, tokens.platformA, workspaceA, 'ops.data.delete.approve', {
+    const secondApproval = resultOf<any>(await callMcp(base, tokens.secondAdminA, workspaceA, 'ops.data.delete.approve', {
       request_id: approveRequest.id, reason: '平台运营二次复核通过',
     }))
     expect(secondApproval).toMatchObject({ status: 'approved' })
