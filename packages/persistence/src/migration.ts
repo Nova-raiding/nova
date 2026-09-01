@@ -432,6 +432,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const platformAuthorizationAudit = await readFile(new URL('./migrations/147_platform_authorization_audit.sql', import.meta.url), 'utf8')
   const hardenCreativePointReservations = await readFile(new URL('./migrations/148_harden_creative_point_reservations.sql', import.meta.url), 'utf8')
   const objectStorageOrphanLeases = await readFile(new URL('./migrations/149_object_storage_orphan_leases.sql', import.meta.url), 'utf8')
+  const repairLegacyCreativePointAllocations = await readFile(new URL('./migrations/150_repair_legacy_creative_point_allocations.sql', import.meta.url), 'utf8')
+  const repairLegacyCreativePointAllocationConstraint = await readFile(new URL('./migrations/151_repair_legacy_creative_point_allocation_constraint.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -582,6 +584,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 147, name: 'platform_authorization_audit', sql: platformAuthorizationAudit },
     { version: 148, name: 'harden_creative_point_reservations', sql: hardenCreativePointReservations },
     { version: 149, name: 'object_storage_orphan_leases', sql: objectStorageOrphanLeases },
+    { version: 150, name: 'repair_legacy_creative_point_allocations', sql: repairLegacyCreativePointAllocations },
+    { version: 151, name: 'repair_legacy_creative_point_allocation_constraint', sql: repairLegacyCreativePointAllocationConstraint },
   ]
 }
 
