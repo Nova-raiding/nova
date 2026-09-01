@@ -25,9 +25,18 @@ interface OpsHeaderProps {
 }
 
 export function saveAndRefreshOpsConnection(config: OpsConnectionConfigInput, onRefresh: () => void) {
-  const saved = saveOpsConnectionConfig(config);
+  const existing = readOpsConnectionConfig();
+  const saved = saveOpsConnectionConfig({
+    ...config,
+    token: config.token?.trim() || existing.token,
+  });
   onRefresh();
   return saved;
+}
+
+export function readOpsConnectionDraft(): OpsConnectionConfigInput {
+  const config = readOpsConnectionConfig();
+  return { ...config, token: "" };
 }
 
 export function OpsConfigError({ message }: { message?: string }) {
@@ -57,7 +66,7 @@ export function OpsHeader({
   onJitExit,
 }: OpsHeaderProps) {
   const resolvedAuthorization = authorization ?? createAuthorizationProjection(session, managedSession);
-  const [draft, setDraft] = useState<OpsConnectionConfigInput>(() => readOpsConnectionConfig());
+  const [draft, setDraft] = useState<OpsConnectionConfigInput>(readOpsConnectionDraft);
   const [configError, setConfigError] = useState<string>();
   const [workspaceIdError, setWorkspaceIdError] = useState<string>();
   const workspaceIdRef = useRef<InputRef>(null);
@@ -180,7 +189,7 @@ export function OpsHeader({
                 name="token"
                 autoComplete="current-password"
                 value={draft.token ?? ""}
-                placeholder="Bearer token（仅存本机）"
+                placeholder={hasOpsCredentials() ? "已配置；留空保持不变" : "Bearer token（仅存本机）"}
                 onChange={(event) => setDraft(current => ({ ...current, token: event.target.value }))}
               />
             </label>

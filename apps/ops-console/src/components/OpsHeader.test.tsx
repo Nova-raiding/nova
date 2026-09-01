@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readOpsConnectionConfig, saveOpsConnectionConfig } from "../api/opsClient.js";
-import { OpsConfigError, OpsHeader, saveAndRefreshOpsConnection, workspaceFieldAccessibility } from "./OpsHeader.js";
+import { OpsConfigError, OpsHeader, readOpsConnectionDraft, saveAndRefreshOpsConnection, workspaceFieldAccessibility } from "./OpsHeader.js";
 
 function storage() {
   const values = new Map<string, string>();
@@ -51,6 +51,28 @@ describe("OpsHeader accessibility", () => {
       expect(setItem).not.toHaveBeenCalledWith(legacyKey, expect.any(String));
     }
     expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("never copies a stored bearer token into the diagnostic form draft", () => {
+    saveOpsConnectionConfig({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", actorId: "actor_demo", token: "stored-secret" });
+
+    expect(readOpsConnectionDraft()).toEqual({
+      apiBase: "http://127.0.0.1:8787",
+      workspaceId: "ws_demo",
+      actorId: "actor_demo",
+      token: "",
+      workbench: "workspace",
+    });
+  });
+
+  it("retains the stored bearer token when the diagnostic field is left blank", () => {
+    saveOpsConnectionConfig({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", actorId: "actor_demo", token: "stored-secret" });
+    const onRefresh = vi.fn();
+
+    const saved = saveAndRefreshOpsConnection({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", actorId: "actor_demo", token: "" }, onRefresh);
+
+    expect(saved.token).toBe("stored-secret");
+    expect(onRefresh).toHaveBeenCalledOnce();
   });
 
   it("keeps the previous tuple and does not refresh when validation fails", () => {
