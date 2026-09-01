@@ -4602,6 +4602,17 @@ export function authorizationDenialDetails(decision: AuthorizationDecision) {
   }
 }
 
+export function authorizationGrantFailureDetails(decision: AuthorizationDecision, grantId?: string) {
+  return {
+    decision_id: decision.decision_id,
+    capability: decision.capability,
+    required_scope: decision.scope.required,
+    workbench: decision.workbench,
+    policy_version: decision.policy_version,
+    ...(grantId ? { grant_id: grantId } : {}),
+  }
+}
+
 async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId: string, method: string, params: Record<string, unknown>) {
   const policy = getMcpMethodPolicy(method)
   if (!policy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前方法缺少服务端授权策略，已拒绝执行', 503)
@@ -4644,9 +4655,9 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
     if (grantAtom) {
       const grant = principal.activeAuthorizationGrants?.find(item => item.id === grantAtom.sourceId)
       const repository = authorizationRepository()
-      if (!grant || !repository) throw new DomainError('AUTHORIZATION_GRANT_RECHECK_UNAVAILABLE', '临时授权无法在执行前复核，已拒绝操作', 503)
+      if (!grant || !repository) throw new DomainError('AUTHORIZATION_GRANT_RECHECK_UNAVAILABLE', '临时授权无法在执行前复核，已拒绝操作', 503, authorizationGrantFailureDetails(decision, grant?.id))
       const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: principal.identityId, workspaceId, capability: policy.capability, scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: principal.actorId, reason: `mcp:${method}` })
-      if (!consumed) throw new DomainError('AUTHORIZATION_GRANT_REVOKED', '临时授权已撤销、过期、耗尽或版本变化，已拒绝操作', 403, { grant_id: grant.id })
+      if (!consumed) throw new DomainError('AUTHORIZATION_GRANT_REVOKED', '临时授权已撤销、过期、耗尽或版本变化，已拒绝操作', 403, authorizationGrantFailureDetails(decision, grant.id))
       principal.activeAuthorizationGrants = principal.activeAuthorizationGrants?.map(item => item.id === consumed.id ? consumed : item)
       principal.authorizationRevision = consumed.authorizationRevision
       requestConsumedAuthorizationGrants.set(req, { grant: consumed, decisionId: decision.decision_id, method, capability: policy.capability, workspaceId })

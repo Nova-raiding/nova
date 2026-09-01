@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
@@ -74,6 +74,17 @@ describe('authorization denial error details', () => {
       decision_id: 'authz_denied', capability: 'customer.content.update', reason_code: reasonCode,
       required_scope: 'workspace', workbench: 'workspace', explicit_deny: reasonCode === 'AUTHZ_EXPLICIT_DENY',
       obligations_missing: ['reason'], policy_version: '2026-08-31.v2',
+    })
+    expect(JSON.stringify(details)).not.toContain('secret-resource-id')
+    expect(JSON.stringify(details)).not.toContain('secret-workspace-id')
+  })
+
+  it('keeps JIT recheck failures correlated without exposing grant scope or resource ids', () => {
+    const details = authorizationGrantFailureDetails({ ...base, authorized: true, allowed: true, result: 'allow', reason_code: 'AUTHZ_ALLOWED' }, 'grant_safe_id')
+
+    expect(details).toEqual({
+      decision_id: 'authz_denied', capability: 'customer.content.update', required_scope: 'workspace',
+      workbench: 'workspace', policy_version: '2026-08-31.v2', grant_id: 'grant_safe_id',
     })
     expect(JSON.stringify(details)).not.toContain('secret-resource-id')
     expect(JSON.stringify(details)).not.toContain('secret-workspace-id')
