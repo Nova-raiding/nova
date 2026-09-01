@@ -141,6 +141,26 @@ for (const width of [1280, 1440, 1920]) {
       expect(layout.height).toBeGreaterThan(layout.lineHeight)
       expect(layout.overflowWrap).toBe('anywhere')
       expect(layout.whiteSpace).toBe('normal')
+
+      const panelContract = await page.locator('.image-generation-job-panel').evaluate((panel) => {
+        const controls = [...panel.querySelectorAll('button')]
+        const focusable = [...panel.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')]
+        const errors = [...panel.querySelectorAll('[role="alert"]')]
+        const overflowCandidates = [...panel.querySelectorAll('.image-candidate-metadata span, .image-job-evidence dd, .image-generation-job-row span')]
+        return {
+          controlsHaveNames: controls.every((control) => Boolean(control.getAttribute('aria-label') || control.textContent?.trim())),
+          focusableTargetsHave44pxHeight: focusable.filter((element) => element instanceof HTMLElement).every((element) => {
+            const target = element.matches('input[type="checkbox"]') ? element.closest('label') : element
+            return target instanceof HTMLElement && target.getBoundingClientRect().height >= 44
+          }),
+          errorsAreAnnounced: errors.every((element) => element.getAttribute('aria-atomic') === 'true' || element.getAttribute('aria-live')),
+          identifiersCanWrap: overflowCandidates.every((element) => getComputedStyle(element).overflowWrap === 'anywhere' && getComputedStyle(element).whiteSpace === 'normal'),
+        }
+      })
+      expect(panelContract.controlsHaveNames).toBe(true)
+      expect(panelContract.focusableTargetsHave44pxHeight).toBe(true)
+      expect(panelContract.errorsAreAnnounced).toBe(true)
+      expect(panelContract.identifiersCanWrap).toBe(true)
     } finally {
       await context.close()
       await browser.close()

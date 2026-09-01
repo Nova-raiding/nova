@@ -111,7 +111,7 @@
 
 ### 桌面视觉与性能
 
-- [ ] 1280、1440、1920 宽度下不出现横向滚动；长商品名、任务 ID 和错误码可换行。
+- [x] 1280、1440、1920 宽度下不出现横向滚动；长商品名、任务 ID 和错误码可换行。（Playwright `image-generation-desktop-responsive.spec.js` 覆盖三种桌面宽度，并验证任务行、证据卡片、候选元数据的换行与 44px/ARIA 错误恢复契约。）
 - [x] 画廊图片有 `aspect-ratio`/尺寸占位，并处理单图加载失败。（桌面布局与失败恢复：`819f705`、`182d7cf`、`980f985`。）
 - [x] 画廊非首屏候选的懒加载在完整桌面矩阵中验证。（本地测试 `image-generation-desktop-responsive.spec.js` 已覆盖 1280、1440、1920 宽度：首张候选为 `loading=eager/fetchpriority=high`，其余候选为 `loading=lazy/fetchpriority=low`；仅代表测试环境浏览器证据，不代表真实 CDN 网络性能或生产验收。）
 - [x] 画廊超过 50 个候选时分页或虚拟化；状态刷新不重排整个页面。（`fe3f192` 已完成候选分页；本次 `image-job-list` 合并器保留已存在任务行顺序，仅追加新任务；桌面刷新回归测试 2/2。）

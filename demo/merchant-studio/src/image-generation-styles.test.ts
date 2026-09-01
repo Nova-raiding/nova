@@ -46,6 +46,7 @@ describe('image candidate selection accessibility styles', () => {
   it('provides a usable target for candidate selection', () => {
     expect(styles).toContain('.candidate-select-control{min-height:44px')
     expect(styles).toContain('.candidate-select-control input{width:24px;height:24px')
+    expect(styles).toContain('.image-generation-job-panel button{min-height:44px}')
   })
 
   it('keeps the gallery usable across desktop widths', () => {
@@ -82,6 +83,8 @@ describe('image candidate selection accessibility styles', () => {
   it('uses one cancellable semantic transition for candidate selection', () => {
     expect(styles).toContain('.image-generation-job-panel{--image-state-transition:180ms ease-out}')
     expect(styles).toContain('transition:border-color var(--image-state-transition),box-shadow var(--image-state-transition),background-color var(--image-state-transition)')
+    expect(styles).not.toContain('transition:all var(--image-state-transition)')
+    expect(styles).not.toContain('transition:width var(--image-state-transition)')
     expect(styles).toContain('.image-candidate-grid figure.candidate-selected')
     expect(styles).toContain('@media (prefers-reduced-motion:reduce){.image-generation-job-panel{--image-state-transition:.01ms linear}')
   })
