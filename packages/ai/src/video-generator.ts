@@ -69,7 +69,7 @@ function httpsOutput(value: unknown, depth = 0): string | undefined {
 
 export function videoDurationSeconds(value: string | undefined): number {
   const parsed = Number(value ?? 5)
-  return Number.isFinite(parsed) ? Math.max(1, Math.min(100, Math.trunc(parsed))) : 5
+  return Number.isFinite(parsed) ? Math.max(3, Math.min(15, Math.trunc(parsed))) : 5
 }
 
 export function validateVideoRelayPath(value: string | undefined, kind: 'generation' | 'status'): string | undefined {
@@ -179,7 +179,7 @@ function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerati
     ?? httpsOutput(nestedData?.output)
   const providerJobId = typeof data.task_id === 'string' && data.task_id.trim() ? data.task_id.trim() : typeof data.job_id === 'string' && data.job_id.trim() ? data.job_id.trim() : typeof data.id === 'string' && data.id.trim() ? data.id.trim() : undefined
   const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase() : typeof nestedData?.status === 'string' ? nestedData.status.toLowerCase() : ''
-  if (['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(rawStatus)) {
+  if (['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(rawStatus)) {
     if (providerKey) throw new ProviderRequestFailedError(providerKey, 200, `video provider job failed: ${rawStatus}`)
     throw new Error(`video provider job failed: ${rawStatus}`)
   }

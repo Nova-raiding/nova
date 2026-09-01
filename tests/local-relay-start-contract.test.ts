@@ -26,5 +26,7 @@ describe('local relay start contract', () => {
     expect(script).toContain('export OCR_MODEL=${OCR_MODEL:-agnes-2.5-flash}')
     expect(compose).toContain('OCR_MODEL: ${OCR_MODEL:-agnes-2.5-flash}')
     expect(compose).toContain('VIDEO_MODEL: ${VIDEO_MODEL:-happyhorse-1.1-t2v}')
+    expect(script).toContain('export VIDEO_DURATION_SECONDS=${VIDEO_DURATION_SECONDS:-5}')
+    expect(compose).toContain('VIDEO_DURATION_SECONDS: ${VIDEO_DURATION_SECONDS:-5}')
   })
 })

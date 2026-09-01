@@ -29,7 +29,7 @@ export OCR_MODEL=${OCR_MODEL:-agnes-2.5-flash}
 # sends text-only prompts, so use T2V until the I2V first-frame payload is
 # implemented end-to-end.
 export VIDEO_MODEL=${VIDEO_MODEL:-happyhorse-1.1-t2v}
-export VIDEO_DURATION_SECONDS=${VIDEO_DURATION_SECONDS:-100}
+export VIDEO_DURATION_SECONDS=${VIDEO_DURATION_SECONDS:-5}
 export VIDEO_GENERATION_PATH=${VIDEO_GENERATION_PATH:-/video/generations}
 export VIDEO_STATUS_PATH=${VIDEO_STATUS_PATH:-/video/generations/{job_id}}
 export MODEL_RELAY_COST_EVIDENCE=${MODEL_RELAY_COST_EVIDENCE:-false}

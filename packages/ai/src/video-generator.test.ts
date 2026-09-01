@@ -96,8 +96,9 @@ describe('video generator relay', () => {
   })
 
   it('accepts the configured 100-second maximum without exceeding it', () => {
-    expect(videoDurationSeconds('100')).toBe(100)
-    expect(videoDurationSeconds('101')).toBe(100)
+    expect(videoDurationSeconds('1')).toBe(3)
+    expect(videoDurationSeconds('15')).toBe(15)
+    expect(videoDurationSeconds('100')).toBe(15)
   })
 
   it('reuses a stable provider key and exposes timeout ambiguity to the server', async () => {

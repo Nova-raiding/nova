@@ -33,7 +33,7 @@ const videoKey = process.env.VIDEO_MODEL_RELAY_API_KEY?.trim() || key
 const confirmCost = process.env.MODEL_RELAY_CANARY_CONFIRM === 'true'
 const timeoutMs = Math.min(120_000, Math.max(2_000, Number(process.env.MODEL_RELAY_CANARY_TIMEOUT_MS ?? 120_000)))
 const rawVideoDurationSeconds = Number(process.env.VIDEO_DURATION_SECONDS ?? 5)
-const videoDurationSeconds = Number.isFinite(rawVideoDurationSeconds) ? Math.max(1, Math.min(100, rawVideoDurationSeconds)) : 5
+const videoDurationSeconds = Number.isFinite(rawVideoDurationSeconds) ? Math.max(3, Math.min(15, rawVideoDurationSeconds)) : 5
 const base = source.replace(/\/+$/u, '')
 const pricingClient = createRelayPricingClientFromEnv(process.env)
 const relaySecurity = relaySecurityFromEnv(process.env)
@@ -140,10 +140,10 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
   const nestedData = data.data && typeof data.data === 'object' && !Array.isArray(data.data) ? data.data as Record<string, unknown> : {}
   const providerJobId = nonEmptyText(data.task_id) ?? nonEmptyText(data.job_id) ?? nonEmptyText(data.id)
   const relayCode = typeof root.code === 'number' || typeof root.code === 'string' ? String(root.code).trim() : undefined
-  if (relayCode && relayCode !== '0' && relayCode !== '200') return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_relay_error_code' }
+  if (relayCode && !['0', '200', 'success'].includes(relayCode.toLowerCase())) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_relay_error_code' }
   const status = (nonEmptyText(data.status) ?? nonEmptyText(nestedData.status))?.toLowerCase()
   const artifact = [data.result_url, data.video_url, data.output_url, data.url, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url].some(value => typeof value === 'string' && /^https:\/\//u.test(value)) || hasHttpsOutput(nestedData.output)
-  if (status && ['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_failed' }
+  if (status && ['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_failed' }
   if (status && ['queued', 'pending', 'processing', 'running', 'submitted'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_pending' }
   if (status && ['completed', 'succeeded', 'success'].includes(status) && !artifact) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_completed_without_https_artifact' }
   if (artifact) return { ready: true, ...(providerJobId ? { providerJobId } : {}) }
