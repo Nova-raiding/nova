@@ -93,6 +93,9 @@ export class MemoryActionLedgerRepository implements ActionLedgerRepository {
   async refund(input: { workspaceId: string; actionKey: string; reason: string }) {
     const row = this.rows.get(`${input.workspaceId}:${input.actionKey}`)
     if (!row || row.state === 'refunded') return { refunded: false, ...(row ? { record: row } : {}) }
+    if (row.actionKind.startsWith('model_') || row.actionKind === 'image_edit') {
+      if (row.settlementStatus !== 'authorized' || row.providerRequestId) return { refunded: false, record: row }
+    }
     row.state = 'refunded'; row.settlementStatus = 'refunded'; row.refundedAt = new Date().toISOString(); row.refundReason = input.reason
     return { refunded: true, record: row }
   }
@@ -112,6 +115,7 @@ export class MemoryActionLedgerRepository implements ActionLedgerRepository {
   async settleProviderUsage(input: { workspaceId: string; actionKey: string; providerRequestId?: string; actualAmountFen: number }) {
     const row = this.rows.get(`${requireWorkspaceScope(input.workspaceId)}:${input.actionKey}`)
     if (!row) throw new Error('ACTION_LEDGER_RECORD_NOT_FOUND')
+    if (row.state === 'refunded') throw new ActionLedgerSettlementConflictError()
     if (row.settlementStatus === 'settled' && row.providerRequestId === input.providerRequestId && row.amountFen === input.actualAmountFen) return
     if ((row.providerRequestId !== undefined && row.providerRequestId !== input.providerRequestId) || row.settlementStatus === 'settled') throw new ActionLedgerSettlementConflictError()
     row.providerRequestId = input.providerRequestId
@@ -148,7 +152,7 @@ export class PostgresActionLedgerRepository implements ActionLedgerRepository {
   }
   async refund(input: { workspaceId: string; actionKey: string; reason: string }) {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
-      const result = await client.query<ActionRow>(`UPDATE action_ledger SET state='refunded', settlement_status='refunded', refunded_at=now(), refund_reason=$3 WHERE workspace_id=$1 AND action_key=$2 AND state='settled' RETURNING ${projection}`, [input.workspaceId, input.actionKey, input.reason])
+      const result = await client.query<ActionRow>(`UPDATE action_ledger SET state='refunded', settlement_status='refunded', refunded_at=now(), refund_reason=$3 WHERE workspace_id=$1 AND action_key=$2 AND state='settled' AND provider_request_id IS NULL AND (action_kind NOT IN ('model_text','model_image','model_ocr','model_video','image_edit') OR settlement_status='authorized') RETURNING ${projection}`, [input.workspaceId, input.actionKey, input.reason])
       if (!result.rows[0]) return { refunded: false }
       return { refunded: true, record: map(result.rows[0]) }
     })
@@ -180,6 +184,7 @@ export class PostgresActionLedgerRepository implements ActionLedgerRepository {
       const selected = await client.query<ActionRow>(`SELECT ${projection} FROM action_ledger WHERE workspace_id=$1 AND action_key=$2 FOR UPDATE`, [input.workspaceId, input.actionKey])
       const row = selected.rows[0]
       if (!row) throw new Error('ACTION_LEDGER_RECORD_NOT_FOUND')
+      if (row.state === 'refunded') throw new ActionLedgerSettlementConflictError()
       const existingProviderRequestId = row.provider_request_id ?? undefined
       if (row.settlement_status === 'settled' && existingProviderRequestId === input.providerRequestId && Number(row.amount_fen) === input.actualAmountFen) return
       if ((existingProviderRequestId !== undefined && existingProviderRequestId !== input.providerRequestId) || row.settlement_status === 'settled') throw new ActionLedgerSettlementConflictError()

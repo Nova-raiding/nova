@@ -27,9 +27,9 @@ const postgresRow = (overrides: Row = {}) => ({
 describe('MemoryActionLedgerRepository', () => {
   it('keeps settlement idempotent and records refund state', async () => {
     const repository = new MemoryActionLedgerRepository()
-    const first = await repository.record({ workspaceId: 'ws_action', actionKey: 'model:one', actionKind: 'model_text', settlement: 'included_quota', units: 1, amountFen: 0, actorId: 'merchant', description: '套餐行动额度' })
+    const first = await repository.record({ workspaceId: 'ws_action', actionKey: 'model:one', actionKind: 'model_text', settlement: 'included_quota', units: 1, amountFen: 0, actorId: 'merchant', description: '套餐行动额度', settlementStatus: 'authorized' })
     await expect(repository.record({ workspaceId: 'ws_action', actionKey: 'model:one', actionKind: 'model_text', settlement: 'wallet', units: 1, amountFen: 1, actorId: 'other', description: '不应覆盖' })).rejects.toThrow('ACTION_LEDGER_IDEMPOTENCY_CONFLICT')
-    await expect(repository.record({ workspaceId: 'ws_action', actionKey: 'model:one', actionKind: 'model_text', settlement: 'included_quota', units: 1, amountFen: 0, actorId: 'merchant', description: '套餐行动额度' })).resolves.toEqual(first)
+    await expect(repository.record({ workspaceId: 'ws_action', actionKey: 'model:one', actionKind: 'model_text', settlement: 'included_quota', units: 1, amountFen: 0, actorId: 'merchant', description: '套餐行动额度', settlementStatus: 'authorized' })).resolves.toEqual(first)
     expect(await repository.refund({ workspaceId: 'ws_action', actionKey: 'model:one', reason: 'provider failed' })).toMatchObject({ refunded: true, record: { state: 'refunded', refundReason: 'provider failed' } })
     expect((await repository.refund({ workspaceId: 'ws_action', actionKey: 'model:one', reason: 'retry' })).refunded).toBe(false)
   })
@@ -68,6 +68,13 @@ describe('MemoryActionLedgerRepository', () => {
     await expect(repository.settleProviderUsage({ workspaceId: 'ws_action', actionKey: 'model:receipt', providerRequestId: 'relay_2', actualAmountFen: 5 })).rejects.toBeInstanceOf(ActionLedgerSettlementConflictError)
     await expect(repository.settleProviderUsage({ workspaceId: 'ws_action', actionKey: 'model:receipt', providerRequestId: 'relay_1', actualAmountFen: 6 })).rejects.toThrow('ACTION_LEDGER_SETTLEMENT_CONFLICT')
     await expect(repository.settleProviderUsage({ workspaceId: 'ws_action', actionKey: 'missing', providerRequestId: 'relay_1', actualAmountFen: 5 })).rejects.toThrow('ACTION_LEDGER_RECORD_NOT_FOUND')
+  })
+
+  it('does not settle a refunded provider action', async () => {
+    const repository = new MemoryActionLedgerRepository()
+    await repository.record({ workspaceId: 'ws_action', actionKey: 'model:refunded', actionKind: 'model_text', settlement: 'included_quota', units: 1, amountFen: 0, actorId: 'merchant', description: '套餐行动额度', settlementStatus: 'authorized' })
+    await repository.refund({ workspaceId: 'ws_action', actionKey: 'model:refunded', reason: 'provider 调用前失败' })
+    await expect(repository.settleProviderUsage({ workspaceId: 'ws_action', actionKey: 'model:refunded', providerRequestId: 'relay_late', actualAmountFen: 0 })).rejects.toBeInstanceOf(ActionLedgerSettlementConflictError)
   })
 
   it('advances authorization status idempotently without skipping state boundaries', async () => {

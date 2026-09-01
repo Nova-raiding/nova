@@ -27,6 +27,8 @@ describe('daily model budget provider boundary', () => {
   })
 
   it('reserves async generation before context freezing and releases fixture completion', () => {
+    expect(source).toContain("return isProduction() || process.env.LOCAL_COMPOSE === 'true'")
+    expect(source).toContain('if (durableContentGenerationEnvironment()) {')
     const mcpCreate = source.slice(source.indexOf("case 'content.generate'"), source.indexOf("case 'content.codex.prepare'"))
     const restCreate = source.slice(source.indexOf("const generationJobCreateMatch"))
     for (const region of [mcpCreate, restCreate]) {
@@ -48,7 +50,8 @@ describe('daily model budget provider boundary', () => {
     expect(source).not.toContain('image-addon:')
     expect(source.match(/consumeEntitlement\(\{ workspaceId, kind: 'image_generation', actionKey: walletDebitKey, actionKind: 'model_image', modelRunKey:/gu)).toHaveLength(3)
     expect(source).toContain("settlement: 'entitlement', amountFen: 0, reservedAmountFen: 0")
-    expect(source).toContain("const durableEntitlementAuthorization = durableAuthorization?.settlement === 'entitlement'")
+    expect(source).toContain("const zeroCustomerChargeAuthorization = durableAuthorization?.settlement === 'entitlement' || durableAuthorization?.settlement === 'included_quota'")
+    expect(source).toContain('const durableZeroChargeAuthorization = zeroCustomerChargeAuthorization ? durableAuthorization : undefined')
     expect(source).toContain('settleProviderUsage({ workspaceId: input.workspaceId, actionKey, actualAmountFen: 0')
     expect(source).toContain('await releaseDailyModelBudget(input.workspaceId, input.actionKey)')
     expect(source).not.toContain('amountFen: 0, idempotencyKey: walletDebitKey')

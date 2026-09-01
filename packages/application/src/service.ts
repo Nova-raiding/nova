@@ -4211,6 +4211,9 @@ export class MerchantService {
       if (code === 'MODEL_USAGE_SETTLEMENT_PENDING' || code === 'MODEL_USAGE_COST_MISSING') {
         throw new DomainError(String(code), '模型供应商已完成调用，但本地用量结算尚未完成；为避免重复计费，当前结果已阻断且不会自动退款', 503, { provider_succeeded: true, ...((error as { receiptKey?: unknown }).receiptKey ? { receipt_key: String((error as { receiptKey: unknown }).receiptKey) } : {}) })
       }
+      if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
+        throw new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试并等待对账', 503, { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, ...((error as { providerIdempotencyKey?: unknown }).providerIdempotencyKey ? { provider_idempotency_key: String((error as { providerIdempotencyKey: unknown }).providerIdempotencyKey) } : {}) })
+      }
       throw new DomainError('AI_GENERATION_FAILED', '内容生成服务暂时不可用，请稍后重试', 503)
     }
     const validatedGenerated = this.validateGeneratedBody(generated, 'content.generate', task.platform, product)
@@ -4253,6 +4256,9 @@ export class MerchantService {
       }
       if (code === 'MODEL_USAGE_SETTLEMENT_PENDING' || code === 'MODEL_USAGE_COST_MISSING') {
         throw new DomainError(String(code), '模型供应商已完成调用，但本地用量结算尚未完成；为避免重复计费，当前结果已阻断且不会自动退款', 503, { provider_succeeded: true, ...((error as { receiptKey?: unknown }).receiptKey ? { receipt_key: String((error as { receiptKey: unknown }).receiptKey) } : {}) })
+      }
+      if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
+        throw new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试并等待对账', 503, { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, ...((error as { providerIdempotencyKey?: unknown }).providerIdempotencyKey ? { provider_idempotency_key: String((error as { providerIdempotencyKey: unknown }).providerIdempotencyKey) } : {}) })
       }
       throw new DomainError('AI_GENERATION_FAILED', '内容生成服务暂时不可用，请稍后重试', 503)
     }

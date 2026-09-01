@@ -1422,6 +1422,26 @@ describe('MerchantService', () => {
     })
   })
 
+  it('preserves an ambiguous provider outcome so callers do not refund or retry it', async () => {
+    const contentGenerator = {
+      generate: async () => { throw Object.assign(new Error('relay timed out'), { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerIdempotencyKey: 'model_provider_stable_1', providerSucceeded: true }) },
+    }
+    const service = new MerchantService({ fixtureMode: true, contentGenerator })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant')
+    await expect(service.generateDraft(task.id)).rejects.toMatchObject({
+      code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN',
+      status: 503,
+      details: {
+        provider_succeeded: true,
+        provider_outcome: 'unknown',
+        reconciliation_required: true,
+        provider_idempotency_key: 'model_provider_stable_1',
+      },
+    })
+  })
+
   it('rejects malformed content.generate output before materializing a version', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })

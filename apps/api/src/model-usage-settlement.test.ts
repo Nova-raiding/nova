@@ -192,7 +192,7 @@ async function authorizeAction(workspaceId: string, actionId: string, settlement
     description: '模型生成调用',
     reservedAmountFen: settlement === 'entitlement' ? 0 : 1,
     multiplier: 1,
-    settlementStatus: settlement === 'wallet' || settlement === 'entitlement' ? 'authorized' : 'settled',
+    settlementStatus: 'authorized',
   })
   await harness.modelUsage!.reserveDailyBudget({ workspaceId, reservationKey: actionId, runKey, modality: 'text', model: 'relay-text-test', estimateCny: 1, estimateVersion: 'test-v1', dailyLimitCny: 100, runLimitCny: 10 })
 }
@@ -357,8 +357,9 @@ describe('API model usage settlement invariants', () => {
     const rows = await harness.modelUsage!.list(workspaceId, 10)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ receiptKey: harness.providerRequestId, actionId, costCny: 0.02, settlementStatus: 'settled' })
-    expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlement: 'included_quota', settlementStatus: 'settled' })
-    expect(harness.walletSettlementCalls).toBe(0)
+    expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlement: 'included_quota', amountFen: 0, settlementStatus: 'settled', providerRequestId: harness.providerRequestId })
+    expect(rows[0]).toMatchObject({ customerChargeCny: 0 })
+    expect(harness.walletSettlementCalls).toBe(1)
     expect(harness.refundCalls).toBe(0)
     expect(harness.budgetSettlements).toContainEqual(expect.objectContaining({ workspaceId, reservationKey: actionId, actualCostCny: 0.02, providerRequestId: harness.providerRequestId }))
   })
@@ -511,13 +512,16 @@ describe('API model usage settlement invariants', () => {
     expect(harness.modelCalls).toBe(0)
   })
 
-  it('does not hide a later business validation behind a released provider action', async () => {
+  it('never reuses a refunded provider action key', async () => {
     const workspaceId = `ws_released_retry_${Date.now()}`
     const actionId = `model:released-retry-${Date.now()}`
     await authorizeAction(workspaceId, actionId, 'wallet')
     await harness.actionLedger!.refund({ workspaceId, actionKey: actionId, reason: 'provider 调用前失败' })
 
-    await expect(api.assertProviderActionCanStart(workspaceId, actionId)).resolves.toBeUndefined()
+    await expect(api.assertProviderActionCanStart(workspaceId, actionId)).rejects.toMatchObject({
+      code: 'MODEL_ACTION_ALREADY_STARTED',
+      details: { settlement_status: 'refunded' },
+    })
   })
 
   it('replays the same provider receipt idempotently without a second settlement or ledger row', async () => {

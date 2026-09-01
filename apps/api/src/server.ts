@@ -188,8 +188,8 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
     void persistOperationalAlertNotification(alert)
     throw Object.assign(new Error('model relay usage is missing actual cost'), { code: 'MODEL_USAGE_COST_MISSING' })
   }
-  const entitlementFunded = durableAuthorization?.settlement === 'entitlement'
-  const customerChargeCny = usage.costCny === undefined ? undefined : entitlementFunded ? 0 : Number((usage.costCny * effectiveMultiplier).toFixed(6))
+  const zeroCustomerChargeAuthorization = durableAuthorization?.settlement === 'entitlement' || durableAuthorization?.settlement === 'included_quota'
+  const customerChargeCny = usage.costCny === undefined ? undefined : zeroCustomerChargeAuthorization ? 0 : Number((usage.costCny * effectiveMultiplier).toFixed(6))
   const usageInput = { receiptKey, workspaceId, ...(usage.actionId ? { actionId: usage.actionId } : {}), ...(usage.contextLinkId && usage.contextHash ? { contextLinkId: usage.contextLinkId, contextHash: usage.contextHash } : {}), modality: usage.modality, model: usage.model, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}), ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {}), ...(usage.metadata || usage.runKey ? { metadata: { ...(usage.metadata ?? {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {}) }
   let recordedUsage
   if (isProduction() && usage.actionId && usage.costCny !== undefined) {
@@ -208,13 +208,13 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
   if (recordedUsage.settlementStatus === 'settled' || recordedUsage.settlementStatus === 'waived') return
   const reservation = usage.actionId ? modelBillingReservations.get(`${workspaceId}:${usage.actionId}`) : undefined
   const durableWalletAuthorization = durableAuthorization && (durableAuthorization.settlement === 'wallet' || durableAuthorization.settlement === 'wallet_overage') ? durableAuthorization : undefined
-  const durableEntitlementAuthorization = durableAuthorization?.settlement === 'entitlement' ? durableAuthorization : undefined
+  const durableZeroChargeAuthorization = zeroCustomerChargeAuthorization ? durableAuthorization : undefined
   try {
-    if (durableEntitlementAuthorization && durableAuthorizationActionKey) {
-      if (durableEntitlementAuthorization.settlementStatus === 'authorized') {
+    if (durableZeroChargeAuthorization && durableAuthorizationActionKey) {
+      if (durableZeroChargeAuthorization.settlementStatus === 'authorized') {
         await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: durableAuthorizationActionKey, from: ['authorized'], to: 'pending_receipt' })
-      } else if (durableEntitlementAuthorization.settlementStatus !== 'pending_receipt' && durableEntitlementAuthorization.settlementStatus !== 'settled') {
-        throw Object.assign(new Error(`model action settlement is ${durableEntitlementAuthorization.settlementStatus}`), { code: 'MODEL_USAGE_ENTITLEMENT_SETTLEMENT_BLOCKED' })
+      } else if (durableZeroChargeAuthorization.settlementStatus !== 'pending_receipt' && durableZeroChargeAuthorization.settlementStatus !== 'settled') {
+        throw Object.assign(new Error(`model action settlement is ${durableZeroChargeAuthorization.settlementStatus}`), { code: 'MODEL_USAGE_ZERO_CHARGE_SETTLEMENT_BLOCKED' })
       }
       await persistence.actionLedger?.settleProviderUsage({ workspaceId, actionKey: durableAuthorizationActionKey, actualAmountFen: 0, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
     } else if ((durableWalletAuthorization || reservation) && recordedUsage.customerChargeCny !== undefined) {
@@ -681,6 +681,10 @@ async function contentExecutionEvidence(workspaceId: string, actionId: string) {
 
 function controlledRelayEnvironment() {
   return ['staging', 'preview', 'production'].includes(process.env.NODE_ENV ?? '')
+}
+
+function durableContentGenerationEnvironment() {
+  return isProduction() || process.env.LOCAL_COMPOSE === 'true'
 }
 
 async function requireSettledContentExecutionEvidence(workspaceId: string, actionId: string) {
@@ -1401,7 +1405,7 @@ export async function assertProviderActionCanStart(workspaceId: string, actionKe
   await persistenceReady
   const existing = await persistence.actionLedger?.get(workspaceId, actionKey)
   const settlementStatus = existing?.settlementStatus ?? existing?.state
-  if (!existing || settlementStatus === 'released' || settlementStatus === 'refunded') return
+  if (!existing) return
   throw new DomainError(
     'MODEL_ACTION_ALREADY_STARTED',
     '这次模型操作已经受理或正在结算，禁止重复调用模型；请刷新任务状态，待结算异常由运营后台处理',
@@ -8280,7 +8284,8 @@ async function consumeTaskUsage(workspaceId: string, taskId: string, idempotency
     const charged = await (persistence.usage ?? memoryUsage).consume({ workspaceId, taskId, idempotencyKey, actorId })
     if (charged.charged) {
       try {
-        await recordActionSettlement({ workspaceId, actionKey: `model:${idempotencyKey}`, actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, actorId, description: '模型生成调用（套餐行动额度）', ...taskScope })
+        const policy = await (persistence.commercialExtensions ?? memoryCommercialExtensions).getModelMarkupPolicy()
+        await recordActionSettlement({ workspaceId, actionKey: `model:${idempotencyKey}`, actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, reservedAmountFen: 0, multiplier: policy.multiplier, settlementStatus: 'authorized', actorId, description: '模型生成调用（套餐行动额度）', ...taskScope })
       } catch (ledgerError) {
         await (persistence.usage ?? memoryUsage).refund({ workspaceId, taskId, idempotencyKey, actorId, reason: '行动账本写入失败，回滚套餐额度' })
         throw ledgerError
@@ -8298,11 +8303,22 @@ async function consumeTaskUsage(workspaceId: string, taskId: string, idempotency
   }
 }
 
+async function markTaskUsageProviderOutcomePending(workspaceId: string, idempotencyKey: string) {
+  await persistenceReady
+  const actionKey = `model:${idempotencyKey}`
+  const action = await persistence.actionLedger?.get(workspaceId, actionKey)
+  if (action?.settlementStatus !== 'authorized') return
+  await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey, from: ['authorized'], to: 'pending_receipt' })
+}
+
 async function refundTaskUsage(workspaceId: string, taskId: string, idempotencyKey: string, actorId: string, reason: string) {
-  modelBillingReservations.delete(`${workspaceId}:model:${idempotencyKey}`)
+  const actionKey = `model:${idempotencyKey}`
+  modelBillingReservations.delete(`${workspaceId}:${actionKey}`)
   const refunded = await (persistence.usage ?? memoryUsage).refund({ workspaceId, taskId, idempotencyKey, actorId, reason })
-  await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: `model:${idempotencyKey}`, actorId, reason })
-  await releaseDailyModelBudget(workspaceId, `model:${idempotencyKey}`)
+  const action = await persistence.actionLedger?.get(workspaceId, actionKey)
+  if (action?.settlement === 'included_quota') await refundActionSettlement({ workspaceId, actionKey, reason })
+  else await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: actionKey, actorId, reason })
+  await releaseDailyModelBudget(workspaceId, actionKey)
   return refunded
 }
 
@@ -13394,10 +13410,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await assertCanonicalTaskScopeForAction(task)
       await requirePluginWalletAccess(workspaceId)
       await requireGenerationRulePreflight(workspaceId, task.productId)
-      if (isProduction()) {
+      if (durableContentGenerationEnvironment()) {
         requirePlatformModelCostGate('text')
         const idempotencyKey = header(req, 'idempotency-key')?.trim() || (typeof params.idempotency_key === 'string' ? params.idempotency_key.trim() : '')
-        if (!idempotencyKey) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '生产内容生成必须携带 Idempotency-Key', 400)
+        if (!idempotencyKey) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '持久化内容生成必须携带 Idempotency-Key', 400)
         const product = service.products.get(task.productId)
         if (!product || product.workspaceId !== task.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品快照不存在或不属于当前工作区', 404)
         let existing = [...service.generationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === idempotencyKey)
@@ -13427,7 +13443,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const usageKey = `content.generate:${task.id}`
       const usage = await consumeTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
       let draft
-      try { draft = await service.generateDraft(task.id, undefined, `model:${usageKey}`) } catch (error) { if ((usage.charged || usage.walletDebited) && !providerSucceededButSettlementPending(error)) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '内容生成失败'); throw error }
+      try { draft = await service.generateDraft(task.id, undefined, `model:${usageKey}`) } catch (error) { if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(workspaceId, usageKey); else if (usage.charged || usage.walletDebited) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '内容生成失败'); throw error }
       const execution = await requireSettledContentExecutionEvidence(workspaceId, 'model:' + usageKey)
       await persistSnapshot(workspaceId, 'content_version', draft, draft as unknown as Record<string, unknown>)
       await persistSnapshot(workspaceId, 'task', service.getTask(task.id), service.getTask(task.id) as unknown as Record<string, unknown>)
@@ -16202,7 +16218,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const usageKey = `content.rest.generate:${idempotencyKey || task.id}`
     const usage = await consumeTaskUsage(task.workspaceId, task.id, usageKey, actorId)
     let draft
-    try { draft = await service.generateDraft(contentMatch[1]!, idempotencyKey || undefined, `model:${usageKey}`) } catch (error) { if ((usage.charged || usage.walletDebited) && !providerSucceededButSettlementPending(error)) await refundTaskUsage(task.workspaceId, task.id, usageKey, actorId, 'REST 内容生成失败'); throw error }
+    try { draft = await service.generateDraft(contentMatch[1]!, idempotencyKey || undefined, `model:${usageKey}`) } catch (error) { if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(task.workspaceId, usageKey); else if (usage.charged || usage.walletDebited) await refundTaskUsage(task.workspaceId, task.id, usageKey, actorId, 'REST 内容生成失败'); throw error }
     const execution = await requireSettledContentExecutionEvidence(task.workspaceId, 'model:' + usageKey)
     await persistSnapshot(task.workspaceId, 'content_version', draft, draft as unknown as Record<string, unknown>)
     await persistSnapshot(task.workspaceId, 'task', service.getTask(task.id), service.getTask(task.id) as unknown as Record<string, unknown>)
