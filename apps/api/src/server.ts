@@ -4636,7 +4636,15 @@ async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<Retur
   const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
   const contentVersionId = typeof params.content_version_id === 'string' && params.content_version_id.trim() ? params.content_version_id.trim() : undefined
   const contentVersion = contentVersionId ? service.contentVersions.get(contentVersionId) : undefined
-  const task = taskId ? service.tasks.get(taskId) : contentVersion ? service.tasks.get(contentVersion.taskId) : undefined
+  const generationJobId = policy.method === 'generation.get' && typeof params.job_id === 'string' && params.job_id.trim() ? params.job_id.trim() : undefined
+  const generationJob = generationJobId ? service.generationJobs.get(generationJobId) : undefined
+  const task = taskId
+    ? service.tasks.get(taskId)
+    : contentVersion
+      ? service.tasks.get(contentVersion.taskId)
+      : generationJob?.workspaceId === workspaceId
+        ? service.tasks.get(generationJob.taskId)
+        : undefined
   if (task?.workspaceId === workspaceId) {
     if (direct.type === 'brand') return { type: 'brand' as const, id: task.brandId }
     return { type: 'account' as const, id: task.accountId }

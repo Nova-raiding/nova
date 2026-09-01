@@ -1058,6 +1058,16 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const protectedTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
     const hiddenTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
+    protectedTask.state = 'plan_confirmed'
+    hiddenTask.state = 'plan_confirmed'
+    const protectedGenerationJob = service.enqueueGeneration({ workspaceId, taskId: protectedTask.id, idempotencyKey: `protected-generation-${workspaceId}` })
+    const hiddenGenerationJob = service.enqueueGeneration({ workspaceId, taskId: hiddenTask.id, idempotencyKey: `hidden-generation-${workspaceId}` })
+    protectedTask.state = 'ready_for_direction'
+    hiddenTask.state = 'ready_for_direction'
+    expect((await mcp(editorHeaders, 7.001, 'generation.get', { job_id: protectedGenerationJob.id })).error).toBeNull()
+    expect((await mcp(editorHeaders, 7.002, 'generation.get', { job_id: hiddenGenerationJob.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    protectedGenerationJob.state = 'failed'
+    hiddenGenerationJob.state = 'failed'
     service.contentVersions.set('content_protected_brand', { id: 'content_protected_brand', taskId: protectedTask.id, version: 1, body: { title: '授权品牌内容', detail: '授权品牌详情', sellingPoints: [] }, factVersionIds: [], ruleVersionIds: [], state: 'draft', revision: 1 })
     service.contentVersions.set('content_hidden_brand', { id: 'content_hidden_brand', taskId: hiddenTask.id, version: 1, body: { title: '隐藏品牌内容', detail: '隐藏品牌详情', sellingPoints: [] }, factVersionIds: [], ruleVersionIds: [], state: 'draft', revision: 1 })
     expect((await mcp(editorHeaders, 7.01, 'task.timeline', { task_id: protectedTask.id })).error).toBeNull()
