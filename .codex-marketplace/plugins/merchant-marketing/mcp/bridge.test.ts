@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { afterAll, describe, expect, it } from 'vitest'
-import { MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
+import { MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
 
 const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
 const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
@@ -868,7 +868,13 @@ describe('Codex stdio MCP bridge', () => {
       expect(mediaCreate.inputSchema.properties.spec_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object' })
       expect(mediaCreate.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'delivery.bundle.verify').inputSchema.properties.files_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array' })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
+      const publishConfirm = listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm')
+      expect(publishConfirm.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
+      expect(publishConfirm.inputSchema.properties.confirmation_ticket_nonce_hash).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_nonce_hash)
+      expect(publishConfirm.inputSchema.properties.confirmation_ticket_intent_hash).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_intent_hash)
+      expect(publishConfirm.inputSchema.required).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].required)
+      expect(publishConfirm.inputSchema.required).not.toContain('confirmation_ticket_nonce_hash')
+      expect(publishConfirm.inputSchema.required).not.toContain('confirmation_ticket_intent_hash')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
       expect(requests).toHaveLength(0)
@@ -1243,6 +1249,21 @@ describe('Codex stdio MCP bridge', () => {
         expect(html).toContain('@media(prefers-reduced-motion:reduce)')
         expect(html).not.toContain('context-v2')
         expect(html).not.toContain('大麦商家工作台')
+        if (uri === 'ui://merchant-marketing/publish-confirm-v1.html') {
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_REQUIRED'")
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_INVALID'")
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_INTENT_MISMATCH'")
+          expect(html).toContain("primary.textContent='重新核对并确认'")
+          expect(html).toContain('本次确认已失效，发布请求未提交。请重新核对以上内容，勾选确认后再提交。')
+          expect(html).toContain('ackInput.checked=false')
+          expect(html).toContain('ackInput.focus()')
+          expect(html).toContain("publishIdempotencyKey=publishIdempotencyKey||'publish-card-'")
+          expect(html).toContain("primary.dataset.recovery='status'")
+          expect(html).toContain("primary.textContent='查询发布状态'")
+          expect(html).toContain('提交结果尚未确认，请先查询发布状态，不要重复提交。')
+          expect(html).toContain("primary.dataset.recovery==='status'")
+          expect(html).toContain("window.openai.sendFollowUpMessage({prompt:prompt})")
+        }
       }
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'store', platform: 'taobao', account_id: 'acct_1' } } })}\n`)
       const response = await nextLine(child.stdout)
@@ -2006,7 +2027,14 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'API_UNAVAILABLE',
+          details: { operation_status: 'unknown', retryable: false },
+        },
+      })
+      expect(response.result.content[0].text).toBe('服务连接中断，尚未确认操作是否完成。请先查看任务状态，再决定是否重试。')
       expect(attempts).toBe(1)
     } finally {
       child.kill()
