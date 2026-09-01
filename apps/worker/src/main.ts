@@ -720,6 +720,7 @@ function statusEvidenceFromError(error: unknown): ImageGenerationReconciliationE
 }
 
 async function queryImageProviderStatus(input: { queryStatus: (providerRequestId: string, options?: { signal?: AbortSignal }) => Promise<ImageGenerationStatus>; providerRequestId: string; signal?: AbortSignal; timeoutMs?: number }) {
+  if (input.timeoutMs !== undefined && (!Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1 || input.timeoutMs > 5 * 60 * 1000)) throw new RangeError('image provider status query timeout must be between 1 and 300000 milliseconds')
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 30_000)
   const abort = () => controller.abort()
@@ -730,6 +731,8 @@ async function queryImageProviderStatus(input: { queryStatus: (providerRequestId
 }
 
 export async function reconcileImageGenerationWorkspace(input: Parameters<typeof postImageGenerationReconciliation>[0] & { maxPages?: number; queryStatus?: (providerRequestId: string, options?: { signal?: AbortSignal }) => Promise<ImageGenerationStatus>; queryTimeoutMs?: number }) {
+  if (input.maxPages !== undefined && (!Number.isSafeInteger(input.maxPages) || input.maxPages < 1 || input.maxPages > 1000)) throw new RangeError('image reconciliation maxPages must be between 1 and 1000')
+  if (input.queryTimeoutMs !== undefined && (!Number.isSafeInteger(input.queryTimeoutMs) || input.queryTimeoutMs < 1 || input.queryTimeoutMs > 5 * 60 * 1000)) throw new RangeError('image provider status query timeout must be between 1 and 300000 milliseconds')
   let cursor: string | undefined
   let pages = 0
   const results: unknown[] = []

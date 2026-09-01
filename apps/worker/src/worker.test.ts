@@ -649,6 +649,14 @@ describe('worker production entry', () => {
     expect(imageReconciliationNextAttemptAt({ observedAt: '2026-08-31T00:00:00.000Z', state: 'succeeded', queryAttempt: 3 })).toBeUndefined()
   })
 
+  it('rejects invalid reconciliation page and provider timeout limits before network I/O', async () => {
+    let called = false
+    const fetcher: typeof fetch = async () => { called = true; return new Response('{}', { status: 200 }) }
+    await expect(reconcileImageGenerationWorkspace({ apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a', maxPages: 0, fetcher })).rejects.toThrow('maxPages')
+    await expect(reconcileImageGenerationWorkspace({ apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a', queryTimeoutMs: 0, queryStatus: async () => ({ state: 'processing', providerRequestId: 'provider_1', evidence: { observedAt: '2026-08-31T00:00:00.000Z', source: 'provider_status' } }), fetcher: async () => new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_1', event_id: 'event_1', intent_hash: 'a'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_1' }] }), { status: 200 }) })).rejects.toThrow('timeout')
+    expect(called).toBe(false)
+  })
+
   it('submits unknown evidence on a status query timeout and never retries generation', async () => {
     const requests: Record<string, unknown>[] = []
     await reconcileImageGenerationWorkspace({
