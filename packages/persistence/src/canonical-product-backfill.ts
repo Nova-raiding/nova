@@ -20,6 +20,7 @@ export type CanonicalBackfillConflictCode =
   | 'MISSING_BRAND'
   | 'CANONICAL_MAPPING_AMBIGUOUS'
   | 'CANONICAL_BRAND_MISMATCH'
+  | 'CANONICAL_LEGACY_PRODUCT_MISSING'
   | 'CANONICAL_ID_COLLISION'
   | 'TASK_ACCOUNT_MISMATCH'
 
@@ -62,6 +63,7 @@ export function planCanonicalProductBackfill(input: {
   const creates: CanonicalBackfillRow[] = []
   const unchanged: string[] = []
   const conflicts: CanonicalBackfillConflict[] = []
+  const productIds = new Set(products.map(product => product.id))
   for (const product of products) {
     const brandId = product.brandId?.trim()
     if (!brandId) { conflicts.push({ legacyProductId: product.id, code: 'MISSING_BRAND', canonicalIds: [] }); continue }
@@ -77,6 +79,14 @@ export function planCanonicalProductBackfill(input: {
     if (collision && (collision.legacyProductId !== product.id || collision.brandId !== brandId)) { conflicts.push({ legacyProductId: product.id, code: 'CANONICAL_ID_COLLISION', canonicalIds: [id] }); continue }
     creates.push({ id, workspaceId, brandId, title: product.title, legacyProductId: product.id })
     byId.set(id, creates.at(-1)!)
+  }
+  // Inventory the reverse direction as well. A canonical row that points at
+  // no legacy product would otherwise be invisible to the product-driven
+  // loop, yet migration 106 must reject it before the FK can be validated.
+  for (const row of canonical) {
+    if (row.legacyProductId && !productIds.has(row.legacyProductId)) {
+      conflicts.push({ legacyProductId: row.legacyProductId, code: 'CANONICAL_LEGACY_PRODUCT_MISSING', canonicalIds: [row.id] })
+    }
   }
   return { workspaceId, creates, unchanged: sort(unchanged), conflicts: conflicts.sort((a, b) => a.legacyProductId.localeCompare(b.legacyProductId) || a.code.localeCompare(b.code)) }
 }

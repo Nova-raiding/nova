@@ -33,7 +33,18 @@ describe('canonical product backfill memory contract', () => {
       ],
     })
     expect(report.creates).toEqual([])
-    expect(report.conflicts.map(item => item.code).sort()).toEqual(['CANONICAL_MAPPING_AMBIGUOUS', 'CANONICAL_ID_COLLISION', 'MISSING_BRAND', 'CANONICAL_BRAND_MISMATCH'].sort())
+    expect(report.conflicts.map(item => item.code).sort()).toEqual(['CANONICAL_MAPPING_AMBIGUOUS', 'CANONICAL_ID_COLLISION', 'CANONICAL_LEGACY_PRODUCT_MISSING', 'MISSING_BRAND', 'CANONICAL_BRAND_MISMATCH'].sort())
+    expect(report.conflicts.find(item => item.code === 'CANONICAL_LEGACY_PRODUCT_MISSING')).toMatchObject({ legacyProductId: 'other', canonicalIds: [canonicalProductIdFor('ws_a', 'collision', 'brand_a')] })
+  })
+
+  it('inventories a dangling canonical legacy reference before constraint validation', () => {
+    const report = planCanonicalProductBackfill({
+      workspaceId: 'ws_a',
+      products: [{ id: 'p_1', workspaceId: 'ws_a', brandId: 'brand_a', title: '商品一' }],
+      canonicalProducts: [{ id: 'c_dangling', workspaceId: 'ws_a', brandId: 'brand_a', title: '孤儿', legacyProductId: 'missing_legacy' }],
+    })
+    expect(report.creates).toEqual([{ id: canonicalProductIdFor('ws_a', 'p_1', 'brand_a'), workspaceId: 'ws_a', brandId: 'brand_a', title: '商品一', legacyProductId: 'p_1' }])
+    expect(report.conflicts).toEqual([{ legacyProductId: 'missing_legacy', code: 'CANONICAL_LEGACY_PRODUCT_MISSING', canonicalIds: ['c_dangling'] }])
   })
 })
 
