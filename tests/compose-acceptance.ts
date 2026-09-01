@@ -64,7 +64,7 @@ async function request(path: string, workspaceId: string, init?: RequestInit) {
   headers.set('authorization', `Bearer ${process.env.COMPOSE_API_TOKEN ?? 'workspace-local-token'}`)
   const response = await fetch(`${apiBase}${path}`, { ...init, headers })
   const body = await response.json() as { workspace_id: string; data: unknown; error: unknown }
-  assert.ok([200, 201, 202].includes(response.status), `${path} returned ${response.status}`)
+  assert.ok([200, 201, 202].includes(response.status), `${path} returned ${response.status}: ${JSON.stringify(body.error)}`)
   assert.equal(body.workspace_id, workspaceId)
   assert.equal(body.error, null)
   return body.data
