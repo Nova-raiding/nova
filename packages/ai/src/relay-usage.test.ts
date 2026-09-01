@@ -180,4 +180,10 @@ describe('relay usage normalization', () => {
   it('fails closed when neither provider request nor provider attempt identity exists', () => {
     expect(() => relayUsageReceiptKey({ workspaceId: 'ws_1', actionId: 'action_1', modality: 'text', model: 'm' })).toThrow(expect.objectContaining({ code: 'MODEL_USAGE_RECEIPT_IDENTITY_MISSING' }))
   })
+
+  it('does not use unsafe provider identities as settlement keys', () => {
+    expect(() => relayUsageReceiptKey({ workspaceId: 'ws_1', actionId: 'action_1', modality: 'text', model: 'm', providerRequestId: `relay-\u0001-injected`, providerAttemptId: 'attempt_safe' })).not.toThrow()
+    expect(relayUsageReceiptKey({ workspaceId: 'ws_1', actionId: 'action_1', modality: 'text', model: 'm', providerRequestId: `relay-\u0001-injected`, providerAttemptId: 'attempt_safe' })).toMatch(/^relay_usage_[a-f0-9]{64}$/u)
+    expect(() => relayUsageReceiptKey({ workspaceId: 'ws_1', actionId: 'action_1', modality: 'text', model: 'm', providerRequestId: 'x'.repeat(257), providerAttemptId: 'attempt_safe' })).not.toThrow()
+  })
 })

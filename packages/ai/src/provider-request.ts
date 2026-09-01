@@ -101,6 +101,10 @@ export function isAmbiguousProviderTransportFailure(error: unknown): boolean {
 }
 
 export function rethrowProviderTransportFailure(error: unknown, providerKey: string, label: string): never {
+  // Preserve the original evidence when a caller has already classified the
+  // provider outcome. Re-wrapping here would discard its status and request id
+  // and make later reconciliation less reliable.
+  if (error instanceof ProviderOutcomeUnknownError) throw error
   if (isAmbiguousProviderTransportFailure(error)) {
     throw new ProviderOutcomeUnknownError(providerKey, `${label} outcome is unknown and requires reconciliation`, error)
   }

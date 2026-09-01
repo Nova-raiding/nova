@@ -114,9 +114,9 @@ function firstNumber(...values: unknown[]): number | undefined {
 }
 
 export function relayUsageReceiptKey(usage: Pick<RelayUsageRecord, 'workspaceId' | 'actionId' | 'model' | 'modality' | 'providerRequestId' | 'providerAttemptId'>) {
-  const providerRequestId = usage.providerRequestId?.trim()
+  const providerRequestId = evidenceIdentity(usage.providerRequestId)
   if (providerRequestId) return providerRequestId
-  const providerAttemptId = usage.providerAttemptId?.trim()
+  const providerAttemptId = evidenceIdentity(usage.providerAttemptId)
   if (!providerAttemptId) throw new ModelUsageReceiptIdentityError()
   const identity = JSON.stringify([
     usage.workspaceId?.trim() ?? '',

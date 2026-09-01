@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertProviderResponseAccepted, ProviderOutcomeUnknownError, ProviderRequestFailedError } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderOutcomeUnknownError, ProviderRequestFailedError, rethrowProviderTransportFailure } from './provider-request.js'
 
 describe('provider request outcome evidence', () => {
   it('preserves a 503 relay response status while failing closed', () => {
@@ -49,5 +49,18 @@ describe('provider request outcome evidence', () => {
       return
     }
     throw new Error('expected provider request to be rejected')
+  })
+
+  it('preserves existing unknown outcome evidence when transport handling is layered', () => {
+    const original = new ProviderOutcomeUnknownError('model_provider_test', 'requires reconciliation', undefined, 503, 'relay-preserved')
+    let caught: unknown
+    try {
+      rethrowProviderTransportFailure(original, 'model_provider_test', 'model relay')
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBe(original)
+    expect(caught).toMatchObject({ status: 503, providerRequestId: 'relay-preserved' })
+    expect((caught as ProviderOutcomeUnknownError).details).toMatchObject({ provider_request_id: 'relay-preserved' })
   })
 })
