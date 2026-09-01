@@ -199,6 +199,12 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
     if (['MODEL_USAGE_COST_MISSING', 'MODEL_TASK_COST_ACTUAL_EXCEEDED', 'MODEL_DAILY_COST_ACTUAL_EXCEEDED'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
     throw new ModelUsageSettlementPendingError(relayUsageReceiptKey(usage))
   }
+  // A sink may be implemented outside this package (or arrive through a
+  // JavaScript boundary), so the TypeScript receipt type is not enough at
+  // runtime. Never turn a malformed receipt into a successful settlement.
+  if (usage.costCny !== undefined && settlementReceipt !== undefined && (settlementReceipt.recorded !== true || settlementReceipt.costEvidence !== true)) {
+    throw new ModelUsageEvidenceMissingError('sink')
+  }
   // Some relays return tokens but omit currency. Only a trusted settlement
   // sink may fill that gap from a versioned pricing snapshot; a plain sink
   // success is not sufficient cost evidence.

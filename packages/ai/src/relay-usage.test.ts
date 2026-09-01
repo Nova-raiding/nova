@@ -92,6 +92,15 @@ describe('relay usage normalization', () => {
     )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
   })
 
+  it('fails closed on a malformed settlement receipt even when provider cost exists', async () => {
+    await expect(emitRelayUsage(
+      async () => ({ recorded: false, costEvidence: false } as never),
+      { id: 'req_malformed_receipt', usage: { total_tokens: 3, cost_cny: 0.01 } },
+      new Headers(),
+      { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_malformed_receipt' } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'sink' })
+  })
+
   it('wraps settlement failure without exposing provider or sink details', async () => {
     const providerSecret = 'provider-response-secret'
     let caught: unknown
