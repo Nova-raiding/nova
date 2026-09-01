@@ -24,6 +24,11 @@ describe('relay usage normalization', () => {
     expect(usage).not.toHaveProperty('costCny')
   })
 
+  it('normalizes provider usage and request identity inside the API envelope result', () => {
+    const usage = parseRelayUsage({ data: { result: { request_id: 'request_result', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10, cost_cny: '0.02' } } } }, new Headers(), { modality: 'text', model: 'relay-text' })
+    expect(usage).toMatchObject({ providerRequestId: 'request_result', inputTokens: 7, outputTokens: 3, totalTokens: 10, costCny: 0.02, metadata: { usage_observed: true } })
+  })
+
   it('records an unmetered provider response instead of silently losing cost evidence', () => {
     expect(parseRelayUsage({ data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ modality: 'image', model: 'image-v1', metadata: { usage_observed: false } })
   })

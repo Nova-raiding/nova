@@ -123,7 +123,12 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const root = record(payload) ? payload : {}
   const data = record(root.data) ? root.data : undefined
   const nestedData = data && record(data.data) ? data.data : undefined
-  const usage = record(root.usage) ? root.usage : data && record(data.usage) ? data.usage : nestedData && record(nestedData.usage) ? nestedData.usage : undefined
+  // Some local/API relay adapters preserve the common API envelope and put
+  // the provider response below data.result. Keep this explicit and bounded;
+  // arbitrary recursive traversal could accidentally treat unrelated data as
+  // metering evidence.
+  const result = data && record(data.result) ? data.result : undefined
+  const usage = record(root.usage) ? root.usage : data && record(data.usage) ? data.usage : nestedData && record(nestedData.usage) ? nestedData.usage : result && record(result.usage) ? result.usage : undefined
   const inputTokens = tokenFrom(usage?.prompt_tokens) ?? tokenFrom(usage?.input_tokens) ?? tokenFrom(usage?.inputTokens)
   const outputTokens = tokenFrom(usage?.completion_tokens) ?? tokenFrom(usage?.output_tokens) ?? tokenFrom(usage?.outputTokens)
   const reportedTotal = tokenFrom(usage?.total_tokens) ?? tokenFrom(usage?.totalTokens)
@@ -143,6 +148,8 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     || (typeof data?.request_id === 'string' && data.request_id.trim() ? data.request_id.trim() : undefined)
     || (typeof nestedData?.provider_request_id === 'string' && nestedData.provider_request_id.trim() ? nestedData.provider_request_id.trim() : undefined)
     || (typeof nestedData?.request_id === 'string' && nestedData.request_id.trim() ? nestedData.request_id.trim() : undefined)
+    || (typeof result?.provider_request_id === 'string' && result.provider_request_id.trim() ? result.provider_request_id.trim() : undefined)
+    || (typeof result?.request_id === 'string' && result.request_id.trim() ? result.request_id.trim() : undefined)
   // Cost is not usage. A relay that reports only a price has not provided
   // enough metering evidence to settle a model call safely.
   const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined

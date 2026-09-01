@@ -70,6 +70,7 @@ export function extractProviderRequestId(payload: unknown, headers: Headers): st
   const root = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
   const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : {}
   const nestedData = data.data && typeof data.data === 'object' && !Array.isArray(data.data) ? data.data as Record<string, unknown> : {}
+  const result = data.result && typeof data.result === 'object' && !Array.isArray(data.result) ? data.result as Record<string, unknown> : {}
   return nonEmptyText(headers.get('x-oneapi-request-id'))
     ?? nonEmptyText(headers.get('x-request-id'))
     ?? nonEmptyText(headers.get('x-provider-request-id'))
@@ -80,6 +81,8 @@ export function extractProviderRequestId(payload: unknown, headers: Headers): st
     ?? nonEmptyText(data.request_id)
     ?? nonEmptyText(nestedData.provider_request_id)
     ?? nonEmptyText(nestedData.request_id)
+    ?? nonEmptyText(result.provider_request_id)
+    ?? nonEmptyText(result.request_id)
 }
 
 type PricingClient = Pick<NonNullable<ReturnType<typeof createRelayPricingClientFromEnv>>, 'quote'>
@@ -94,11 +97,13 @@ export async function evaluateRelayUsageEvidence(
   const record = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
   const nested = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
   const nestedData = nested?.data && typeof nested.data === 'object' && !Array.isArray(nested.data) ? nested.data as Record<string, unknown> : undefined
+  const result = nested?.result && typeof nested.result === 'object' && !Array.isArray(nested.result) ? nested.result as Record<string, unknown> : undefined
   const rawUsage = record.usage && typeof record.usage === 'object' && !Array.isArray(record.usage)
     ? record.usage as Record<string, unknown>
     : nested?.usage && typeof nested.usage === 'object' && !Array.isArray(nested.usage)
       ? nested.usage as Record<string, unknown>
-      : nestedData?.usage && typeof nestedData.usage === 'object' && !Array.isArray(nestedData.usage) ? nestedData.usage as Record<string, unknown> : undefined
+      : nestedData?.usage && typeof nestedData.usage === 'object' && !Array.isArray(nestedData.usage) ? nestedData.usage as Record<string, unknown>
+        : result?.usage && typeof result.usage === 'object' && !Array.isArray(result.usage) ? result.usage as Record<string, unknown> : undefined
   const parsed = parseRelayUsage(payload, headers, {
     modality,
     model,

@@ -23,6 +23,7 @@ describe('production model relay contract', () => {
     expect(extractProviderRequestId({ provider_request_id: 'provider_req_1' }, new Headers())).toBe('provider_req_1')
     expect(extractProviderRequestId({}, new Headers({ 'x-oneapi-request-id': 'header_req_1' }))).toBe('header_req_1')
     expect(extractProviderRequestId({ data: { task_id: 'job_1', data: { request_id: 'nested_request_1' } } }, new Headers())).toBe('nested_request_1')
+    expect(extractProviderRequestId({ data: { result: { request_id: 'envelope_request_1' } } }, new Headers())).toBe('envelope_request_1')
   })
 
   it('keeps fixed-price image usage separate from a provider cost receipt', async () => {
@@ -105,6 +106,15 @@ describe('production model relay contract', () => {
       'video',
       'video-v1',
     )).resolves.toEqual({ usageObserved: true, costObserved: false })
+  })
+
+  it('reads usage from the API envelope result without requiring real relay configuration', async () => {
+    await expect(evaluateRelayUsageEvidence(
+      { data: { result: { request_id: 'envelope_request_1', usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6, cost_cny: 0.03 } } } },
+      new Headers(),
+      'text',
+      'relay-text',
+    )).resolves.toMatchObject({ usageObserved: true, costObserved: true, costCny: 0.03, costSource: 'provider_receipt' })
   })
 
   it('treats relay gateway failures as unknown outcomes requiring reconciliation', () => {
