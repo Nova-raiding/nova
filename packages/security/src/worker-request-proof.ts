@@ -40,13 +40,22 @@ function safeEqualHex(left: string, right: string): boolean {
 }
 
 export function verifyWorkerRequestProof(input: ProofBase & { timestamp: string; nonce: string; bodySha256: string; signature: string; nowSeconds?: number; maxSkewSeconds?: number }): boolean {
-  const timestampSeconds = Number(input.timestamp)
-  if (!WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !input.requestTarget.startsWith('/')
-    || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
-    || Math.abs((input.nowSeconds ?? Math.floor(Date.now() / 1000)) - timestampSeconds) > (input.maxSkewSeconds ?? WORKER_REQUEST_PROOF_MAX_SKEW_SECONDS)
-    || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
-  const actualDigest = workerRequestBodySha256(input.body)
-  if (!safeEqualHex(input.bodySha256.toLowerCase(), actualDigest)) return false
-  const canonical = canonicalWorkerRequestProof({ role: input.role, method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp: input.timestamp, nonce: input.nonce, bodySha256: input.bodySha256.toLowerCase() })
-  return safeEqualHex(input.signature.toLowerCase(), createHmac('sha256', input.secret).update(canonical).digest('hex'))
+  try {
+    if (!input || typeof input !== 'object' || typeof input.secret !== 'string' || input.secret.length === 0
+      || typeof input.role !== 'string' || typeof input.method !== 'string' || typeof input.requestTarget !== 'string'
+      || typeof input.workspaceId !== 'string' || typeof input.timestamp !== 'string' || typeof input.nonce !== 'string'
+      || typeof input.bodySha256 !== 'string' || typeof input.signature !== 'string'
+      || (input.body !== undefined && typeof input.body !== 'string' && !(input.body instanceof Uint8Array))) return false
+    const timestampSeconds = Number(input.timestamp)
+    const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000)
+    const maxSkewSeconds = input.maxSkewSeconds ?? WORKER_REQUEST_PROOF_MAX_SKEW_SECONDS
+    if (!WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !input.requestTarget.startsWith('/')
+      || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
+      || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0
+      || Math.abs(nowSeconds - timestampSeconds) > maxSkewSeconds || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
+    const actualDigest = workerRequestBodySha256(input.body)
+    if (!safeEqualHex(input.bodySha256.toLowerCase(), actualDigest)) return false
+    const canonical = canonicalWorkerRequestProof({ role: input.role, method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp: input.timestamp, nonce: input.nonce, bodySha256: input.bodySha256.toLowerCase() })
+    return safeEqualHex(input.signature.toLowerCase(), createHmac('sha256', input.secret).update(canonical).digest('hex'))
+  } catch { return false }
 }

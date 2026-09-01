@@ -35,4 +35,11 @@ describe('scanner request proof', () => {
     const post = createScannerRequestProof({ ...vector, timestampSeconds: Number(vector.timestamp) })
     expect(verifyScannerRequestProof({ ...vector, workspaceId: '../other', bodySha256: post.bodySha256, signature: post.signature, nowSeconds: Number(vector.timestamp) })).toBe(false)
   })
+
+  it('fails closed for malformed runtime verification input', () => {
+    const proof = createScannerRequestProof({ ...vector, timestampSeconds: Number(vector.timestamp) })
+    expect(verifyScannerRequestProof({ ...vector, requestTarget: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyScannerRequestProof({ ...vector, secret: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyScannerRequestProof({ ...vector, maxSkewSeconds: Number.NaN, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+  })
 })

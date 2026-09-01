@@ -15,4 +15,11 @@ describe('worker request proof', () => {
     const proof = createWorkerRequestProof(base)
     expect(verifyWorkerRequestProof({ ...base, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature, nowSeconds: 1_800_000_061 })).toBe(false)
   })
+
+  it('fails closed for malformed runtime verification input', () => {
+    const proof = createWorkerRequestProof(base)
+    expect(verifyWorkerRequestProof({ ...base, requestTarget: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyWorkerRequestProof({ ...base, secret: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyWorkerRequestProof({ ...base, maxSkewSeconds: Number.NaN, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+  })
 })

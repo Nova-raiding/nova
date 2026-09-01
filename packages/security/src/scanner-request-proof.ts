@@ -86,16 +86,24 @@ function safeEqualHex(left: string, right: string): boolean {
 }
 
 export function verifyScannerRequestProof(input: ScannerRequestProofVerificationInput): boolean {
-  const timestampSeconds = Number(input.timestamp)
-  const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000)
-  if (!/^[A-Z]+$/u.test(input.method) || !input.requestTarget.startsWith('/')
-    || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId)
-    || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
-    || Math.abs(nowSeconds - timestampSeconds) > (input.maxSkewSeconds ?? SCANNER_REQUEST_PROOF_MAX_SKEW_SECONDS)
-    || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
-  const actualBodySha256 = scannerRequestBodySha256(input.body)
-  if (!safeEqualHex(input.bodySha256.toLowerCase(), actualBodySha256)) return false
-  const canonical = canonicalScannerRequestProof({ method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp: input.timestamp, nonce: input.nonce, bodySha256: input.bodySha256.toLowerCase() })
-  const expected = createHmac('sha256', input.secret).update(canonical).digest('hex')
-  return safeEqualHex(input.signature.toLowerCase(), expected)
+  try {
+    if (!input || typeof input !== 'object' || typeof input.secret !== 'string' || input.secret.length === 0
+      || typeof input.method !== 'string' || typeof input.requestTarget !== 'string' || typeof input.workspaceId !== 'string'
+      || typeof input.timestamp !== 'string' || typeof input.nonce !== 'string' || typeof input.bodySha256 !== 'string'
+      || typeof input.signature !== 'string'
+      || (input.body !== undefined && typeof input.body !== 'string' && !(input.body instanceof Uint8Array))) return false
+    const timestampSeconds = Number(input.timestamp)
+    const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000)
+    const maxSkewSeconds = input.maxSkewSeconds ?? SCANNER_REQUEST_PROOF_MAX_SKEW_SECONDS
+    if (!/^[A-Z]+$/u.test(input.method) || !input.requestTarget.startsWith('/')
+      || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId)
+      || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
+      || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0
+      || Math.abs(nowSeconds - timestampSeconds) > maxSkewSeconds || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
+    const actualBodySha256 = scannerRequestBodySha256(input.body)
+    if (!safeEqualHex(input.bodySha256.toLowerCase(), actualBodySha256)) return false
+    const canonical = canonicalScannerRequestProof({ method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp: input.timestamp, nonce: input.nonce, bodySha256: input.bodySha256.toLowerCase() })
+    const expected = createHmac('sha256', input.secret).update(canonical).digest('hex')
+    return safeEqualHex(input.signature.toLowerCase(), expected)
+  } catch { return false }
 }
