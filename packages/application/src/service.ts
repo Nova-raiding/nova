@@ -2149,7 +2149,7 @@ export class MerchantService {
       const version = input.entity as ContentVersion
       this.validateHydratedContentVersion(version)
       const prior = this.contentVersions.get(entity.id)
-      if (prior && hash(prior) !== hash(version)) throw new DomainError('VERSION_CONFLICT', '同一内容版本 ID 对应了冲突内容，已拒绝覆盖', 409, { content_version_id: entity.id, current_revision: prior.revision, incoming_revision: version.revision })
+      if (prior && !isDeepStrictEqual(prior, version)) throw new DomainError('VERSION_CONFLICT', '同一内容版本 ID 对应了冲突内容，已拒绝覆盖', 409, { content_version_id: entity.id, current_revision: prior.revision, incoming_revision: version.revision })
       this.contentVersions.set(entity.id, version)
       const generationWorkspaceId = version.generationWorkspaceId ?? this.tasks.get(version.taskId)?.workspaceId
       if (generationWorkspaceId && version.generationKeyHash && version.generationIntentHash) this.contentGenerationIdempotency.set(`${generationWorkspaceId}:${version.generationKeyHash}`, { taskId: version.taskId, contentVersionId: version.id, intentHash: version.generationIntentHash })

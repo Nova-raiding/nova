@@ -53,12 +53,13 @@ describe('content version provenance vector', () => {
       .toThrowError(expect.objectContaining({ code: 'VERSION_CONFLICT', status: 409 }))
   })
 
-  it('rejects conflicting content revision hydration', () => {
+  it('accepts reordered content snapshots while rejecting conflicting revisions', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
     const version = service.createDraft(task.id)
-    service.hydrateSnapshot({ entityType: 'content_version', entity: structuredClone(version) })
+    const reordered = Object.fromEntries(Object.entries(structuredClone(version)).reverse())
+    expect(() => service.hydrateSnapshot({ entityType: 'content_version', entity: reordered })).not.toThrow()
     expect(() => service.hydrateSnapshot({ entityType: 'content_version', entity: { ...version, revision: version.revision + 1 } }))
       .toThrowError(expect.objectContaining({ code: 'VERSION_CONFLICT', status: 409 }))
   })
