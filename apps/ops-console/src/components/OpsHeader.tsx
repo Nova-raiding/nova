@@ -102,7 +102,7 @@ export function OpsHeader({
         <RoleScopeBar session={session} authorization={resolvedAuthorization} activeWorkbench={activeWorkbench} availableWorkbenches={availableWorkbenches} switching={switchingWorkbench} onWorkbenchChange={onWorkbenchChange} onJitExpired={onJitExpired} onJitExit={onJitExit} />
       </div>
       <div className="ops-connection-toolbar">
-        <div className="ops-connection-summary" aria-live="polite">
+        <div className="ops-connection-summary">
           <span className="ops-connection-summary-label">连接状态</span>
           <Tag role="status" aria-live="polite" aria-busy={refreshing || undefined} data-state={connectionState} className="ops-status-tag" color={!hasOpsConnection() ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
             {refreshing ? "正在刷新" : !hasOpsCredentials() ? "待配置" : !hasOpsConnection() ? "待填写工作区" : sessionLoaded ? "已连接" : "读取中"}

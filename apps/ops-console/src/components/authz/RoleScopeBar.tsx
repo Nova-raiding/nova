@@ -131,11 +131,14 @@ export function RoleScopeBar({
         <Typography.Text>{scopeLabel(authorization)}</Typography.Text>
         <Typography.Text type="secondary">策略 {authorization.policyVersion ?? "未返回"}</Typography.Text>
         {activeGrant ? (
-          <span className="ops-jit-status" aria-live="polite">
-            <Tag color="gold" icon={<ClockCircleOutlined aria-hidden="true" />}>
+          <span className="ops-jit-status">
+            <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              临时授权已启用：{activeGrant.access_mode === "write" ? "可写" : "只读"}。
+            </span>
+            <Tag color="gold" icon={<ClockCircleOutlined aria-hidden="true" />} aria-hidden="true">
               临时授权 · {activeGrant.access_mode === "write" ? "可写" : "只读"} · 剩余 {activeGrant.expires_at ? formatJitRemaining(Date.parse(activeGrant.expires_at) - now) : "会话结束"}
             </Tag>
-            <Typography.Text type="secondary">
+            <Typography.Text type="secondary" aria-hidden="true">
               范围 {activeGrant.resource_scope?.type ?? "workspace"}:{activeGrant.resource_scope?.ids?.join(", ") ?? activeGrant.workspace_id ?? "未返回"}
               {activeGrant.max_uses !== undefined ? ` · 使用 ${activeGrant.use_count ?? 0}/${activeGrant.max_uses}` : ""}
             </Typography.Text>

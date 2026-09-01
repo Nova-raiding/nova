@@ -5,6 +5,15 @@ export interface CanonicalBackfillConflictQueueFailure {
 }
 
 /**
+ * A failed run is retryable only when the durable result contains an executor
+ * error. Conflict-bearing runs deliberately stay terminal until a human has
+ * reviewed their queued evidence.
+ */
+export function canonicalBackfillRunCanRetry(lastResult: Record<string, unknown>): boolean {
+  return typeof lastResult.error === 'string' && lastResult.error.trim().length > 0
+}
+
+/**
  * Conflicts are actionable only when a durable repair queue is available.
  * Returning a stable failure contract keeps the API boundary fail-closed and
  * lets the rule be tested without importing the server's runtime state.

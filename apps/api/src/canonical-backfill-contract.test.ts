@@ -43,7 +43,7 @@ async function call<T>(input: {
   return { response, body: await response.json() as RpcBody<T> }
 }
 
-async function seedRun(workspaceId: string, input: { dryRun: boolean; status?: BackfillRun['status'] } = { dryRun: true }) {
+async function seedRun(workspaceId: string, input: { dryRun: boolean; status?: BackfillRun['status']; lastResult?: Record<string, unknown> } = { dryRun: true }) {
   const id = `backfill_contract_${Date.now()}_${Math.random().toString(16).slice(2)}`
   const client = await fixturePool.connect()
   try {
@@ -52,8 +52,8 @@ async function seedRun(workspaceId: string, input: { dryRun: boolean; status?: B
     await client.query(`INSERT INTO workspaces (id, status) VALUES ($1, 'active') ON CONFLICT (id) DO NOTHING`, [workspaceId])
     await client.query(
       `INSERT INTO canonical_backfill_runs (id, workspace_id, status, dry_run, batch_limit, last_result, revision, created_by, reason)
-       VALUES ($1, $2, $3, $4, 25, '{}'::jsonb, 1, 'canonical-backfill-contract-actor', 'canonical backfill contract test')`,
-      [id, workspaceId, input.status ?? 'planned', input.dryRun],
+       VALUES ($1, $2, $3, $4, 25, $5::jsonb, 1, 'canonical-backfill-contract-actor', 'canonical backfill contract test')`,
+      [id, workspaceId, input.status ?? 'planned', input.dryRun, JSON.stringify(input.lastResult ?? {})],
     )
     await client.query('COMMIT')
     return { id, workspaceId, status: input.status ?? 'planned', dryRun: input.dryRun, revision: 1, reason: 'canonical backfill contract test' } satisfies BackfillRun
@@ -136,6 +136,21 @@ describe('canonical data governance backfill API contract', () => {
     })
     expect(resumed.response.status).toBe(200)
     expect(resumed.body.data?.result).toMatchObject({ id: run.id, workspaceId, status: 'running', revision: 3 })
+  })
+
+  it('retries an executor failure but keeps conflict failures terminal', async () => {
+    const retryWorkspace = `ws_canonical_backfill_retry_${Date.now()}`
+    const failed = await seedRun(retryWorkspace, { dryRun: true, status: 'failed', lastResult: { error: 'temporary executor failure' } })
+    const retried = await call<{ run: BackfillRun }>({ method: 'ops.canonical.backfill.run', workspaceId: retryWorkspace, params: { run_id: failed.id, expected_revision: '1' } })
+    expect(retried.response.status).toBe(200)
+    expect(retried.body.error).toBeNull()
+    expect(retried.body.data?.result.run).toMatchObject({ id: failed.id, status: 'completed', revision: 3 })
+
+    const conflictWorkspace = `ws_canonical_backfill_retry_conflict_${Date.now()}`
+    const conflicted = await seedRun(conflictWorkspace, { dryRun: true, status: 'failed', lastResult: { conflicts: [{ code: 'MISSING_BRAND' }] } })
+    const blocked = await call({ method: 'ops.canonical.backfill.run', workspaceId: conflictWorkspace, params: { run_id: conflicted.id, expected_revision: '1' } })
+    expect(blocked.response.status).toBe(409)
+    expect(blocked.body.error).toMatchObject({ code: 'CANONICAL_BACKFILL_RUN_STATE_INVALID' })
   })
 
   it('does not reveal a run from another workspace and keeps the error code stable', async () => {

@@ -19,7 +19,7 @@ const allowedTransitions: Record<CanonicalBackfillRunStatus, readonly CanonicalB
   running: ['running', 'paused', 'completed', 'failed'],
   paused: ['paused', 'running', 'failed'],
   completed: ['completed'],
-  failed: ['failed'],
+  failed: ['failed', 'running'],
 }
 const validateTransition = (current: CanonicalBackfillRunStatus, next: CanonicalBackfillRunStatus) => {
   if (!allowedTransitions[current].includes(next)) throw new CanonicalBackfillRunStateError(current, next)

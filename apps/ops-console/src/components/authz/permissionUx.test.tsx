@@ -46,6 +46,10 @@ describe("desktop permission UX", () => {
     expect(html).toContain("范围 workspace:ws_1");
     expect(html).toContain("使用 1/3");
     expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('class="sr-only" role="status" aria-live="polite" aria-atomic="true"');
+    expect(html).toContain('class="ops-jit-status"');
+    expect(html).not.toContain('class="ops-jit-status" aria-live="polite"');
+    expect(html).toContain('aria-hidden="true"');
   });
   it("offers an explicit exit action while a JIT grant is active", () => {
     const html = renderToStaticMarkup(<RoleScopeBar

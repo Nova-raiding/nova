@@ -6,7 +6,7 @@ import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
-import { canonicalBackfillConflictQueueFailure } from '../../../packages/application/src/canonical-backfill-queue.js'
+import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } from '../../../packages/application/src/canonical-backfill-queue.js'
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
@@ -10228,7 +10228,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!current) throw new DomainError('CANONICAL_BACKFILL_RUN_NOT_FOUND', 'canonical backfill 批次不存在', 404)
       if (method === 'ops.canonical.backfill.get') return result(current)
       if (method === 'ops.canonical.backfill.run') {
-        if (!['planned', 'running'].includes(current.status)) throw new DomainError('CANONICAL_BACKFILL_RUN_STATE_INVALID', `当前状态 ${current.status} 不允许执行批次`, 409, { status: current.status })
+        const retryableFailure = current.status === 'failed' && canonicalBackfillRunCanRetry(current.lastResult)
+        if (!['planned', 'running'].includes(current.status) && !retryableFailure) throw new DomainError('CANONICAL_BACKFILL_RUN_STATE_INVALID', `当前状态 ${current.status} 不允许执行批次`, 409, { status: current.status, next_action: current.status === 'failed' ? '人工复核冲突后重新创建批次' : null })
         const executor = persistence.executeCanonicalBackfill
         if (!executor) throw new DomainError('CANONICAL_BACKFILL_EXECUTOR_UNAVAILABLE', 'canonical backfill 执行器未配置', 503)
         const claimed = current.status === 'running' ? current : await repository.update({ id: current.id, workspaceId, expectedRevision: optionalNumberValue(params, 'expectedRevision', 'expected_revision') ?? 0, status: 'running' })
@@ -15433,10 +15434,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const workspaceId = resolveWorkspace(req)
     const query = url.searchParams.get('query')?.trim().toLocaleLowerCase()
     const items = query ? catalogCategories.filter(item => `${item.code}${item.name}${item.fields.join('')}`.toLocaleLowerCase().includes(query)) : catalogCategories
-    // Keep the REST read model aligned with MCP `catalog.categories`. The
-    // legacy code/fields names remain for existing clients, while canonical
-    // aliases make transport parity explicit and machine-checkable.
-    return send(res, 200, workspaceId, items.map(item => ({ ...item, category_code: item.code, required_fields: item.fields })), null, req)
+    return send(res, 200, workspaceId, items, null, req)
   }
   if (req.method === 'GET' && path === '/v1/rules/audit') {
     const workspaceId = resolveWorkspace(req)

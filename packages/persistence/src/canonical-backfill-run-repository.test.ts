@@ -26,4 +26,13 @@ describe('canonical backfill run repository', () => {
     const completed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: resumed.revision, status: 'completed' })
     await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: completed.revision, status: 'running' })).rejects.toBeInstanceOf(CanonicalBackfillRunStateError)
   })
+
+  it('permits a failed executor run to resume with a revision check', async () => {
+    const repository = new MemoryCanonicalBackfillRunRepository()
+    const run = await repository.create({ workspaceId: 'ws_retry', dryRun: false, createdBy: 'ops', reason: '重试失败批次' })
+    const failed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: run.revision, status: 'failed', lastResult: { error: 'temporary database timeout' } })
+    const retried = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })
+    expect(retried).toMatchObject({ status: 'running', revision: 3, lastResult: { error: 'temporary database timeout' } })
+    await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })).rejects.toBeInstanceOf(CanonicalBackfillRunRevisionConflictError)
+  })
 })

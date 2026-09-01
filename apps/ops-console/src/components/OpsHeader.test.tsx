@@ -133,4 +133,10 @@ describe("OpsHeader accessibility", () => {
     expect(markup).toContain("正在刷新");
     expect(markup).toContain('aria-busy="true"');
   });
+
+  it("does not nest the connection status live region inside another live region", () => {
+    const markup = renderToStaticMarkup(<OpsHeader managedSession={false} sessionLoaded={false} onRefresh={() => undefined} />);
+    expect(markup).toContain('class="ops-connection-summary"');
+    expect(markup).not.toContain('class="ops-connection-summary" aria-live="polite"');
+  });
 });
