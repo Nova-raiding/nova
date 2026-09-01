@@ -1,5 +1,6 @@
 import type { DurableOutboxEvent } from './durable.js'
 import type { CriticalWorkerOperation } from './execution-authorization.js'
+import type { WorkerError } from './types.js'
 
 export const WORKER_COMMERCIAL_ACCESS_SNAPSHOT_SCHEMA = 1 as const
 
@@ -47,6 +48,29 @@ export class WorkerCommercialAccessError extends Error {
     super(message)
     this.name = 'WorkerCommercialAccessError'
   }
+}
+
+const COMMERCIAL_RETRYABLE_CODES = new Set([
+  'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE',
+  'COMMERCIAL_EXECUTION_NOT_READY',
+])
+
+/**
+ * Converts an authority result into the only retry semantics safe at the
+ * durable boundary. A caller-supplied retryable bit is not trusted: access,
+ * quote, revision, reservation and scope changes must not replay a charge or
+ * external side effect. Unknown outcomes require manual reconciliation.
+ */
+export function normalizeCommercialAccessFailure(error: unknown): WorkerError {
+  const candidate = error as { code?: unknown; message?: unknown; unknown?: unknown } | undefined
+  const code = typeof candidate?.code === 'string' && /^COMMERCIAL_EXECUTION_[A-Z0-9_]{2,63}$/u.test(candidate.code)
+    ? candidate.code
+    : 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE'
+  const unknown = candidate?.unknown === true
+  const message = typeof candidate?.message === 'string' && candidate.message.trim()
+    ? candidate.message.replace(/[\u0000-\u001F\u007F]/gu, ' ').slice(0, 512)
+    : 'worker commercial access recheck failed'
+  return { code, message, retryable: !unknown && COMMERCIAL_RETRYABLE_CODES.has(code), unknown }
 }
 
 export function createCommercialAccessGuard(

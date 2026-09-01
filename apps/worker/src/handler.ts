@@ -5,7 +5,7 @@ import { buildPublishObservationRequest, PublishObservationReportError } from '.
 import type { GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import { createUnavailableExecutionAuthorizationGuard, parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
-import { createUnavailableCommercialAccessGuard, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
+import { createUnavailableCommercialAccessGuard, normalizeCommercialAccessFailure, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
 
 export interface WorkerProjection {
   snapshots: Map<string, { sequence: number; payload: Record<string, unknown> }>
@@ -58,12 +58,12 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
       const snapshot = (() => {
         try { return parseWorkerCommercialAccessSnapshot(event, operation) } catch { return undefined }
       })()
-      const candidate = error as { code?: unknown; retryable?: unknown; unknown?: unknown }
+      const normalized = normalizeCommercialAccessFailure(error)
       throw new WorkerFailure({
-        code: typeof candidate.code === 'string' ? candidate.code : 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE',
-        message: error instanceof Error ? error.message : 'worker commercial access recheck failed',
-        retryable: candidate.retryable === true,
-        unknown: candidate.unknown === true,
+        code: normalized.code,
+        message: normalized.message,
+        retryable: normalized.retryable,
+        unknown: normalized.unknown,
         ...(snapshot ? {
           decisionId: snapshot.decisionId,
           accessRevision: snapshot.accessRevision,

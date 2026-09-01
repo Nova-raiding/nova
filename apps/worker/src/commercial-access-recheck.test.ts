@@ -71,4 +71,21 @@ describe('worker commercial recheck ordering', () => {
     await handler({ event: { id: 'evt_snapshot', workspaceId: 'ws_a', aggregateId: 'task_1', eventType: 'state.snapshot', sequence: 1, createdAt: new Date().toISOString(), payload: { entityType: 'task', entity: { id: 'task_1', workspaceId: 'ws_a' } } }, attempt: 1, now: Date.now() })
     expect(commercialAccess.assertCommercialAccess).not.toHaveBeenCalled()
   })
+
+  it('does not turn entitlement drift into an automatic retry or dead-letter replay', async () => {
+    const executionAuthorization = { assertAuthorized: vi.fn(async () => ({} as never)) } satisfies WorkerExecutionAuthorizationGuard
+    const commercialAccess = {
+      assertCommercialAccess: vi.fn(async () => {
+        throw Object.assign(new Error('entitlement snapshot changed'), {
+          code: 'COMMERCIAL_EXECUTION_ENTITLEMENT_STALE', retryable: true, unknown: false,
+        })
+      }),
+    } satisfies WorkerCommercialAccessGuard
+    const provider = vi.fn()
+    const handler = createOutboxHandler({ executionAuthorization, commercialAccess, generationRequested: provider })
+    await expect(handler({ event: event(), attempt: 1, now: Date.now() })).rejects.toMatchObject({
+      error: { code: 'COMMERCIAL_EXECUTION_ENTITLEMENT_STALE', retryable: false, unknown: false, decisionId: 'commercial_enqueue', eventId: 'evt_generation.requested', workspaceId: 'ws_a' },
+    })
+    expect(provider).not.toHaveBeenCalled()
+  })
 })

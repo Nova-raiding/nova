@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DurableOutboxEvent } from './durable.js'
-import { createCommercialAccessGuard, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessSnapshot } from './commercial-access.js'
+import { createCommercialAccessGuard, normalizeCommercialAccessFailure, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessSnapshot } from './commercial-access.js'
 
 const now = Date.parse('2026-09-01T10:00:00.000Z')
 function event(overrides: Record<string, unknown> = {}): DurableOutboxEvent {
@@ -55,5 +55,20 @@ describe('worker commercial execution gate', () => {
     await expect(createCommercialAccessGuard(async () => ({ ...live(snapshot), accessRevision: 'access_8' }), { now: () => now }).assertCommercialAccess(event(), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_REVISION_STALE', retryable: false })
     await expect(createCommercialAccessGuard(async () => ({ ...live(snapshot), ready: false }), { now: () => now }).assertCommercialAccess(event(), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_NOT_READY', retryable: true })
     await expect(createCommercialAccessGuard(async () => ({ ...live(snapshot), reservationState: 'consumed' }), { now: () => now }).assertCommercialAccess(event(), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_RESERVATION_INVALID', retryable: false })
+  })
+
+  it('allows retries only for authority availability and readiness, never for access drift', () => {
+    expect(normalizeCommercialAccessFailure({ code: 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', retryable: false, message: 'temporary' })).toMatchObject({ retryable: true, unknown: false })
+    expect(normalizeCommercialAccessFailure({ code: 'COMMERCIAL_EXECUTION_NOT_READY', retryable: false, message: 'wait' })).toMatchObject({ retryable: true, unknown: false })
+    for (const code of ['COMMERCIAL_EXECUTION_ENTITLEMENT_STALE', 'COMMERCIAL_EXECUTION_REVISION_STALE', 'COMMERCIAL_EXECUTION_RATE_STALE', 'COMMERCIAL_EXECUTION_RESERVATION_INVALID', 'COMMERCIAL_EXECUTION_DENIED']) {
+      expect(normalizeCommercialAccessFailure({ code, retryable: true, message: 'must not replay' })).toMatchObject({ code, retryable: false, unknown: false })
+    }
+  })
+
+  it('forces unknown authority failures to reconciliation and bounds unsafe messages', () => {
+    expect(normalizeCommercialAccessFailure({ code: 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', retryable: true, unknown: true, message: 'timeout\u0000\n' + 'x'.repeat(1000) })).toMatchObject({ retryable: false, unknown: true })
+    const result = normalizeCommercialAccessFailure({ code: 'not-safe', message: 'fallback' })
+    expect(result).toMatchObject({ code: 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', retryable: true, unknown: false })
+    expect(result.message).toHaveLength(8)
   })
 })
