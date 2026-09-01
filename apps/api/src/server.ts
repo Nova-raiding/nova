@@ -8091,7 +8091,7 @@ async function reservePublishConfirmationTicket(req: IncomingMessage, workspaceI
   const sessionIntent = interactiveSessionIntentHash(workspaceId, actorId, sessionId)
   if (intentHash !== expectedIntent && intentHash !== sessionIntent) throw new DomainError('INTERACTIVE_CONFIRMATION_INTENT_MISMATCH', '交互确认票据与当前发布意图不一致', 409)
   const reservationId = `publish:${randomUUID()}`
-  const reservationToken = randomUUID()
+  const reservationToken = randomBytes(32).toString('hex')
   const storedNonceHash = createHash('sha256').update(rawNonce).digest('hex')
   const ticket = { workspaceId, actorId, sessionId, intentHash, nonceHash: storedNonceHash, legacyNonceHash: rawNonce, reservationId, reservationToken, reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() }
   const reservation = await (repository as TransactionalInteractiveConfirmationTicketRepository).reserve(ticket)

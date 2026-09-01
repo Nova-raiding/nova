@@ -76,6 +76,10 @@ BEGIN
     EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE outbox_events FROM merchant_app';
     EXECUTE 'GRANT UPDATE (published_at,attempts,next_attempt_at,lease_token,lease_until,last_error,unknown_at) ON TABLE outbox_events TO merchant_app';
   END IF;
+  IF to_regclass('public.interactive_confirmation_tickets') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE interactive_confirmation_tickets FROM merchant_app';
+    EXECUTE 'GRANT UPDATE (consumed_at,consumed_operation_id,reservation_id,reservation_token,reserved_at,reservation_expires_at,reservation_revision) ON TABLE interactive_confirmation_tickets TO merchant_app';
+  END IF;
   IF to_regclass('public.asset_scan_redrives') IS NOT NULL THEN
     EXECUTE 'REVOKE ALL ON TABLE asset_scan_redrives FROM merchant_app';
     EXECUTE 'GRANT SELECT, INSERT ON TABLE asset_scan_redrives TO merchant_app';

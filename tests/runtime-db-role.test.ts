@@ -65,6 +65,12 @@ describe('runtime database role verification', () => {
     expect(source).toContain('tenant runtime role must not delete or truncate model cost budget reservations')
   })
 
+  it('re-applies the interactive confirmation ticket ACL guard after local compatibility grants', () => {
+    const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
+    expect(bootstrap).toContain('REVOKE UPDATE, DELETE, TRUNCATE ON TABLE interactive_confirmation_tickets FROM merchant_app')
+    expect(bootstrap).toContain('GRANT UPDATE (consumed_at,consumed_operation_id,reservation_id,reservation_token,reserved_at,reservation_expires_at,reservation_revision) ON TABLE interactive_confirmation_tickets TO merchant_app')
+  })
+
   it('remains valid POSIX shell', () => {
     expect(execFileSync('sh', ['-n', scriptPath], { encoding: 'utf8' })).toBe('')
   })
