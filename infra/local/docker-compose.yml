@@ -152,6 +152,7 @@ services:
       # Local Compose defaults to the six-platform connector mock. Release
       # simulation and production manifests keep fixture mode disabled.
       CONNECTOR_FIXTURE_MODE: ${CONNECTOR_FIXTURE_MODE:-true}
+      PERSISTENCE_MODE: ${PERSISTENCE_MODE:-postgres}
       ALLOW_LOCAL_PAYMENT_FIXTURE: "true"
       PLUGIN_WRITE_ENABLED: "false"
       # Keep direct `docker compose up` aligned with the relay launcher. An
