@@ -60,6 +60,28 @@ describe('BrandUnitService', () => {
     expect(() => service.preflightCampaign({ workspaceId: 'ws_1', idempotencyKey: 'too-many', items: Array.from({ length: 51 }, () => input.items[0]!) })).toThrowError(expect.objectContaining({ code: 'CAMPAIGN_LIMIT_EXCEEDED' }))
   })
 
+  it('preflights a task and publish target without allowing workspace identity to leak', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, id: 'canonical-task-1', title: '外套' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-task-1' })
+    const target = { taskId: 'task-1', workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }
+
+    expect(service.preflightTaskTarget(target)).toEqual({ ...target, state: 'ready', blockers: [] })
+    expect(service.preflightTaskTarget({ ...target, workspaceId: 'ws_2' })).toMatchObject({ state: 'blocked', blockers: ['BRAND_UNIT_NOT_FOUND'] })
+    expect(service.preflightTaskTarget({ ...target, taskId: 'task-2', listingId: 'listing-from-another-workspace' })).toMatchObject({ state: 'blocked', blockers: ['LISTING_NOT_FOUND'] })
+  })
+
+  it('reports every target scope mismatch instead of treating a foreign listing as publishable', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, title: '外套' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id })
+    const result = service.preflightTaskTarget({ taskId: 'task-1', workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'jd', accountId: store.id })
+    expect(result).toMatchObject({ state: 'blocked', blockers: expect.arrayContaining(['PLATFORM_MISMATCH']) })
+    expect(result.blockers).toContain('LISTING_TARGET_MISMATCH')
+  })
+
   it('rejects invalid input with a stable domain error', () => {
     expect(() => new BrandUnitService().createBrandUnit({ workspaceId: 'ws_1', name: ' ' })).toThrowError(new BrandUnitError('INVALID_INPUT', 'name is required'))
   })

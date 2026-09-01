@@ -74,6 +74,23 @@ export interface BatchCampaignManifest {
   aggregate: { total: number; ready: number; blocked: number; state: 'ready' | 'blocked' }
 }
 
+export interface CanonicalTaskTargetInput extends BatchCampaignItemInput {
+  workspaceId: string
+  taskId: string
+}
+
+export interface CanonicalTaskTargetPreflight {
+  taskId: string
+  workspaceId: string
+  brandId: string
+  state: 'ready' | 'blocked'
+  blockers: string[]
+  canonicalProductId: string
+  listingId: string
+  platform: BrandUnitPlatform
+  accountId: string
+}
+
 const now = () => new Date().toISOString()
 const text = (value: string, field: string) => {
   const result = value.trim()
@@ -187,7 +204,34 @@ export class BrandUnitService {
     return this.cloneCampaign(manifest)
   }
 
+  /**
+   * Validate the immutable canonical target before a task or publish-preflight
+   * action is allowed to proceed. This is deliberately read-only: it never
+   * promotes a legacy product, guesses a listing, or changes campaign state.
+   */
+  preflightTaskTarget(input: CanonicalTaskTargetInput): CanonicalTaskTargetPreflight {
+    const workspaceId = text(input.workspaceId, 'workspaceId')
+    const taskId = text(input.taskId, 'taskId')
+    const blockers = this.checkTarget(workspaceId, input)
+    return {
+      taskId,
+      workspaceId,
+      brandId: input.brandId,
+      state: blockers.length ? 'blocked' : 'ready',
+      blockers,
+      canonicalProductId: input.canonicalProductId,
+      listingId: input.listingId,
+      platform: input.platform,
+      accountId: input.accountId,
+    }
+  }
+
   private checkItem(workspaceId: string, input: BatchCampaignItemInput): BatchCampaignItem {
+    const blockers = this.checkTarget(workspaceId, input)
+    return { ...input, state: blockers.length ? 'blocked' : 'ready', blockers }
+  }
+
+  private checkTarget(workspaceId: string, input: BatchCampaignItemInput): string[] {
     const blockers: string[] = []
     try {
       const brand = this.requireBrand(workspaceId, input.brandId)
@@ -203,7 +247,7 @@ export class BrandUnitService {
       if (account.platform !== input.platform) blockers.push('PLATFORM_MISMATCH')
       if (!this.storeBindings.has(`${workspaceId}:${brand.id}:${input.accountId}`)) blockers.push('STORE_NOT_BOUND_TO_BRAND')
     } catch (error) { blockers.push(error instanceof BrandUnitError ? error.code : 'INVALID_SCOPE') }
-    return { ...input, state: blockers.length ? 'blocked' : 'ready', blockers }
+    return blockers
   }
 
   private requireBrand(workspaceId: string, brandId: string): BrandUnit {
