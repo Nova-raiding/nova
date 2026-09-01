@@ -142,8 +142,7 @@ export class PublishConfirmationLedger {
       if (!samePreparation(existing.preparation, preparation)) fail('PUBLISH_IDEMPOTENCY_CONFLICT', 'idempotency key is bound to another publish intent')
       return existing
     }
-    const second = input.secondConfirmation
-    if (!second) fail('PUBLISH_CONFIRMATION_REQUIRED', 'explicit second confirmation is required')
+    const second = input.secondConfirmation ?? fail('PUBLISH_CONFIRMATION_REQUIRED', 'explicit second confirmation is required')
     if (text(second.confirmationHash) !== preparation.confirmationHash) fail('PUBLISH_CONFIRMATION_STALE', 'second confirmation does not match the prepared snapshot')
     requireId(second.confirmedBy, 'confirmedBy')
     requireTimestamp(second.confirmedAt, 'confirmedAt')
@@ -166,6 +165,6 @@ export function bindPublishReceipt(preparation: PublishPreparation, receipt: Pub
     return Object.freeze({ ...trace.receipt, preparationConfirmationHash: preparation.confirmationHash })
   } catch (error) {
     if (error instanceof PublishPrepareConfirmError) throw error
-    fail('PUBLISH_RECEIPT_UNBOUND', 'publish receipt is invalid or unbound')
+    return fail('PUBLISH_RECEIPT_UNBOUND', 'publish receipt is invalid or unbound')
   }
 }
