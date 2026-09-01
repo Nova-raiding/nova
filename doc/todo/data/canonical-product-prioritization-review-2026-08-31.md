@@ -65,7 +65,7 @@
 ### A. 数据与身份
 
 - [ ] 每个可进入生产任务的商品都具备：`workspace_id`、`brand_id`、唯一 `canonical_product_id`。
-- [x] 每个可发布的平台/店铺目标都具备唯一 `listing_id`，并能校验 `workspace + brand + canonical + platform + platform_account` 五元组。（本地 L2：`d936ed6` 事务/advisory-lock 与唯一性测试，`171e8fc` 精确发布目标测试；不代表全量数据已清理。）
+- [x] 每个可发布的平台/店铺目标都具备唯一 `listing_id`，并能校验 `workspace + brand + canonical + platform + platform_account` 五元组。（本地 L2：`d936ed6` 事务/advisory-lock 与唯一性测试，`171e8fc` 精确发布目标测试；`f2cef8d` 提供跨平台 canonical fixture 对照；不代表全量数据已清理。）
 - [ ] `campaign_item` 的生产目标是 `listing_id`；`legacy_product_id` 仅作追溯字段，不作为发布主键。
 - [ ] canonical→legacy 的品牌组合关系有数据库级约束或等价的事务性校验；冲突数据在约束验证前已列出并有处理结果。
 - [x] 未绑定或多绑定记录不会被自动猜测、覆盖或伪造为 `planned-listing:*` 生产身份。（本地 L2：`1418a10` 歧义 listing 阻断、`171e8fc` 精确目标校验及 canonical consistency 测试。）
@@ -75,14 +75,14 @@
 - [x] 对每个 workspace 运行只读一致性检查，报告包含 `verified`、`legacy_only`、`conflict`、`blocked` 数量、稳定错误码和实体 ID。（本地 L2：canonical consistency coverage/report 测试；尚无真实 workspace 全量结果。）
 - [x] `listing`、`campaign_item`、`task`、`publish_job` 的孤儿关系单独报告，不因从 legacy product 出发而漏报。（本地 L2：`629d05f` queue 作用域/孤儿过滤与 consistency 测试。）
 - [ ] 所有活跃可发布对象和待执行任务均为 `verified`；`legacy_only/conflict/blocked` 数量为 0，或明确不在本次切读范围并被发布门禁阻断。
-- [ ] backfill 具备 dry-run、幂等重跑、暂停/继续、批次审计和失败重试；只写入可证明关系，不覆盖人工维护字段。
-- [ ] canonical facts 与 legacy 兼容投影、listing 与旧平台字段、task/campaign 五元组、版本/context hash 均有可重放的比较证据。
+- [ ] backfill 具备 dry-run、幂等重跑、暂停/继续、批次审计和失败重试；只写入可证明关系，不覆盖人工维护字段。（`99fa182` 已补充 API 契约测试：dry-run、冲突、pause/resume、workspace 隔离和缺参错误；尚无全量真实 backfill 报告及 unresolved 处理证据。）
+- [ ] canonical facts 与 legacy 兼容投影、listing 与旧平台字段、task/campaign 五元组、版本/context hash 均有可重放的比较证据。（`f2cef8d` 已提供六平台 raw→canonical golden fixture 和确定性重放测试，`0d78ae7` 已补充分页/增量同步冲突门禁；仍未覆盖完整 task/campaign 五元组、真实平台字段和连续 shadow 周期。）
 
 ### C. 业务链路
 
 - [ ] 新建商品、listing、campaign、task、内容生成、规则预检、发布准备和计费关联使用统一 canonical scope。
 - [x] legacy `product_id` 兼容请求必须先解析到唯一 `verified listing`；0 个或多个候选均 fail-closed，并返回可修复错误。（本地 L2：`171e8fc` 精确 platform/account listing 目标、`1418a10` 多绑定阻断、`629d05f` queue 过滤测试。）
-- [x] worker 不得绕过 API execution gate；执行、用量、发布回执至少可追溯到 task、campaign item、canonical、listing 和 context hash。（本地 L2：`6378205` receipt/usage trace 测试及既有 execution binding 回归；未证明真实 worker/平台链路。）
+- [x] worker 不得绕过 API execution gate；执行、用量、发布回执至少可追溯到 task、campaign item、canonical、listing 和 context hash。（本地 L2：`6378205` receipt/usage trace 测试及既有 execution binding 回归；`59c0df1` 补充 queued 后授权撤销、scope/revision 漂移时禁止 provider 外呼；未证明真实 worker/平台链路。）
 - [ ] 新任务读取 canonical facts，平台字段读取 listing，店铺身份读取 platform account；历史任务继续读取冻结快照。
 - [ ] 标准链写入与旧投影同步失败有 outbox/retry/reconciliation，且不制造“已发布但来源不明”的成功状态。
 
