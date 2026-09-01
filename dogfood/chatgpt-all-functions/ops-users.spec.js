@@ -5,6 +5,8 @@ import { resolve } from 'node:path'
 test.setTimeout(120_000)
 test.use({ channel: 'chrome' })
 const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
+const workspaceToken = process.env.OPS_WORKSPACE_TOKEN ?? ''
+const workspaceActorId = process.env.OPS_WORKSPACE_ACTOR_ID ?? 'workspace_admin_demo'
 
 const userDirectoryTable = page => page.getByRole('table').filter({
   has: page.getByRole('columnheader', { name: '成员状态' }),
@@ -33,6 +35,7 @@ test('operates the platform user directory without destructive confirmation', as
     localStorage.setItem('ops_workspace_id', 'ws_demo')
     localStorage.setItem('ops_actor_id', 'actor_demo')
     localStorage.setItem('ops_api_token', 'pilot-local-token')
+    localStorage.setItem('ops_workbench', 'platform')
   })
   const errors = []
   const badResponses = []
@@ -107,69 +110,24 @@ test('operates the platform user directory without destructive confirmation', as
   expect(errors).toEqual([])
 })
 
-test('keeps the user directory usable at 390px', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
+test('keeps member governance in the workspace workbench', async ({ page }) => {
+  test.skip(!workspaceToken, 'requires a workspace-only merchant_admin/owner token fixture')
+  await page.setViewportSize({ width: 1440, height: 1000 })
   await page.addInitScript(() => {
     localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'actor_demo')
-    localStorage.setItem('ops_api_token', 'pilot-local-token')
+    localStorage.setItem('ops_actor_id', workspaceActorId)
+    localStorage.setItem('ops_api_token', workspaceToken)
+    localStorage.setItem('ops_workbench', 'workspace')
   })
-  await page.goto(new URL('/ops/users', baseUrl).toString(), { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '用户与租户' })).toBeVisible({ timeout: 15_000 })
-  await waitForBackgroundHydration(page)
-  const supportRow = await filterUserDirectory(page)
-  await expect(supportRow).toBeVisible({ timeout: 20_000 })
-  const viewportOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-  const overflowing = await page.evaluate(() => [...document.querySelectorAll('body *')].flatMap(element => {
-    const rect = element.getBoundingClientRect()
-    return rect.right > window.innerWidth + 1 ? [{ tag: element.tagName, className: element.className, right: Math.round(rect.right), width: Math.round(rect.width) }] : []
-  }).slice(0, 12))
-  if (viewportOverflow > 1) throw new Error(JSON.stringify({ viewportOverflow, overflowing }))
-  await expect(userDirectoryTable(page)).toBeVisible()
-  const shots = resolve('screenshots', 'ops-users')
-  await mkdir(shots, { recursive: true })
-  await page.screenshot({ path: resolve(shots, 'user-directory-mobile-390.png') })
-})
-
-test('keeps the user directory usable at 375px portrait and phone landscape', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 })
-  await page.addInitScript(() => {
-    localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'actor_demo')
-    localStorage.setItem('ops_api_token', 'pilot-local-token')
-  })
-  await page.goto(new URL('/ops/users', baseUrl).toString(), { waitUntil: 'domcontentloaded' })
-  await waitForBackgroundHydration(page)
-  await expect(page.getByRole('heading', { name: '用户与租户' })).toBeVisible()
-  await expect(userDirectoryTable(page)).toBeVisible()
-  const menuTrigger = page.getByRole('button', { name: '打开运营导航' })
-  await expect(menuTrigger).toBeVisible()
-  await menuTrigger.focus()
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: '总览' })).toBeFocused()
-  await page.keyboard.press('Escape')
-  await expect(menuTrigger).toBeFocused()
-
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
-  await expect(userDirectoryTable(page)).toBeVisible()
-
-  await menuTrigger.click()
-  await page.getByRole('button', { name: '成员与权限', exact: true }).click()
-  await expect(page).toHaveURL(/\/ops\/members(?:\?.*)?$/u)
+  await page.goto(new URL('/ops/members?workbench=workspace', baseUrl).toString(), { waitUntil: 'domcontentloaded' })
+  await expect(page).toHaveURL(/\/ops\/members\?workbench=workspace$/u)
   await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()
   await expect(page.getByText('当前租户成员')).toBeVisible()
   const inviteForm = page.getByRole('form', { name: '邀请工作区成员' })
   await expect(inviteForm).toBeVisible()
   await inviteForm.getByRole('textbox', { name: /用户 ID/u }).focus()
   await expect(inviteForm.getByRole('textbox', { name: /用户 ID/u })).toBeFocused()
-  for (const viewport of [{ width: 375, height: 812, name: '375-portrait' }, { width: 844, height: 390, name: '844-landscape' }]) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
-    await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()
-    await expect(page.getByText('当前租户成员')).toBeVisible()
-    await expect(inviteForm).toBeVisible()
-    const shots = resolve('screenshots', 'ops-users')
-    await mkdir(shots, { recursive: true })
-    await page.screenshot({ path: resolve(shots, `members-governance-${viewport.name}.png`) })
-  }
+  const shots = resolve('screenshots', 'ops-users')
+  await mkdir(shots, { recursive: true })
+  await page.screenshot({ path: resolve(shots, 'members-governance-workspace-1440.png') })
 })

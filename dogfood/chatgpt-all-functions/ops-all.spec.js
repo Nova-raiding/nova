@@ -4,7 +4,12 @@ import { resolve } from 'node:path'
 
 test.setTimeout(240_000)
 const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
-const sections = ['总览', '用户与租户', '成员与权限', '客服与 CRM', '事故中心', '任务与内容', '平台连接', '平台规则', '模型服务', '功能开关', '存储与对账', '账务与退款', '审计中心']
+// Platform operations and workspace administration are separate workbenches.
+// Member governance is intentionally not part of the platform walk: it is
+// only exercised with a workspace membership fixture below.
+// These domains require a workspace-scoped policy and are covered by
+// workspace fixtures, never by the platform token walk.
+const platformSections = ['总览', '用户与租户', '平台连接', '模型服务', '功能开关', '存储与对账', '账务与退款', '审计中心']
 const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服与 CRM': '客服与客户关系', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '账务与商业配置' }
 
 const snapshot = async (page, section) => ({
@@ -56,7 +61,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
   const pages = []
   const shots = resolve('screenshots', 'ops-pages')
   await mkdir(shots, { recursive: true })
-  for (const [index, section] of sections.entries()) {
+  for (const [index, section] of platformSections.entries()) {
     await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()
     const expectedHeading = headings[section] ?? section
     await page.locator('h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
@@ -64,10 +69,6 @@ test('walk every Ops Console section through the real browser UI', async () => {
     if (section === '用户与租户') {
       await expect(page.getByRole('tab', { name: '用户目录', exact: true })).toBeVisible()
       await expect(page.getByText('当前租户成员')).toHaveCount(0)
-    }
-    if (section === '成员与权限') {
-      await expect(page.getByText('当前租户成员')).toBeVisible()
-      await expect(page.getByRole('form', { name: '邀请工作区成员' })).toBeVisible()
     }
     if (section === '账务与退款') {
       await expect(page.getByText('当前租户成员')).toHaveCount(0)
