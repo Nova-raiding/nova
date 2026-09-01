@@ -194,6 +194,7 @@ import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
 import { resolveProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
+import { resolveDetailSopSteps } from './detail-sop.js'
 
 const MERCHANT_READ_ONLY_ROLES = new Set(['viewer', 'knowledge_reader'])
 const merchantRole = (import.meta.env.VITE_MERCHANT_ROLE ?? '').trim().toLowerCase()
@@ -5667,6 +5668,7 @@ function ProductDetailPreview({
   const visibleModules = detailModules.filter(
     (module) => moduleFilter === 'all' || moduleKind(module) === moduleFilter,
   )
+  const detailSopSteps = resolveDetailSopSteps(detailModules)
   const moduleLabels = {
     all: '全部',
     fact: '事实内容',
@@ -5782,6 +5784,28 @@ function ProductDetailPreview({
         </div>
       </div>
       <div className="detail-sections">
+        <section className="detail-sop-overview" aria-labelledby="detail-sop-title">
+          <div className="detail-section-head">
+            <div>
+              <span className="section-kicker">DETAIL PAGE SOP</span>
+              <h4 id="detail-sop-title">按买家问题审阅 8 屏详情页</h4>
+            </div>
+            <small>文字讲卖点，证据负责证明</small>
+          </div>
+          <ol className="detail-sop-steps">
+            {detailSopSteps.map(step => (
+              <li key={step.key} className={`detail-sop-step sop-${step.disposition}`}>
+                <span className="detail-sop-number" aria-hidden="true">{step.position}</span>
+                <div>
+                  <b>{step.label}</b>
+                  <span>{step.question}</span>
+                  <small title={step.statusDetail}>{step.statusLabel}</small>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <p className="detail-sop-note" role="note">未生成、缺证或待确认的屏幕只显示状态，不会被当作已验证卖点。</p>
+        </section>
         <div className="detail-section-head">
           <span>顶层详情与卖点</span>
           <small>{content ? '证据边界检查' : '生成后检查'}</small>
