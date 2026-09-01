@@ -76,6 +76,15 @@ export interface ReconciliationInput {
   quota?: { limitBytes: number; reservedBytes?: number }
 }
 
+function validateReconciliationInput(input: ReconciliationInput): void {
+  if (typeof input.workspaceId !== 'string' || !input.workspaceId.trim()) throw new Error('RECONCILIATION_WORKSPACE_REQUIRED')
+  if (!input.quota) return
+  if (!Number.isSafeInteger(input.quota.limitBytes) || input.quota.limitBytes < 0 ||
+    (input.quota.reservedBytes !== undefined && (!Number.isSafeInteger(input.quota.reservedBytes) || input.quota.reservedBytes < 0))) {
+    throw new Error('RECONCILIATION_QUOTA_INVALID')
+  }
+}
+
 function findingOrder(left: ReconciliationFinding, right: ReconciliationFinding) {
   return left.code.localeCompare(right.code) || (left.storageKey ?? '').localeCompare(right.storageKey ?? '') || (left.assetId ?? '').localeCompare(right.assetId ?? '')
 }
@@ -97,6 +106,7 @@ function hasValidObjectMetadata(value: { sha256: string; sizeBytes: number }): b
  * local acceptance, cloud adapters, and a future scheduled reconciliation job.
  */
 export function reconcileObjectInventory(input: ReconciliationInput): ReconciliationReport {
+  validateReconciliationInput(input)
   const findings: ReconciliationFinding[] = []
   const references = new Map<string, DurableObjectReference>()
   for (const reference of input.references) {

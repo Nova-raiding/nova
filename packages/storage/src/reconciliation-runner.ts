@@ -61,7 +61,7 @@ function safeReconciliationErrorMessage(error: unknown): string {
   message = message
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [REDACTED]')
     .replace(/([?&](?:access_token|api[_-]?key|token|secret|signature|password|authorization|code)=)[^&\s]+/giu, '$1[REDACTED]')
-    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization)\s*[:=]\s*[^,;\s]+/giu, '$1=[REDACTED]')
+    .replace(/\b(api[_-]?key|access[_-]?token|accessToken|refresh[_-]?token|refreshToken|client[_-]?secret|clientSecret|private[_-]?key|privateKey|authorizationCode|codeVerifier|password|authorization)\s*[:=]\s*[^,;\s}]+/giu, '$1=[REDACTED]')
     .replace(/https?:\/\/[^\s]+/giu, value => value.replace(/([?&]).*$/u, '$1[REDACTED]'))
   return message.trim().slice(0, 1_000) || 'reconciliation provider failed'
 }

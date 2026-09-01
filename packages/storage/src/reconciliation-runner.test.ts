@@ -67,6 +67,19 @@ describe('storage reconciliation runner', () => {
     expect(report?.error?.message).not.toContain('another-secret')
   })
 
+  it('redacts camelCase credentials from persisted error evidence', async () => {
+    const status = new MemoryReconciliationStatusStore()
+    await runReconciliationCycle({
+      workspaces: ['ws_camel_case'],
+      inventory: { list: async () => { throw new Error('request accessToken=secret-a apiKey:secret-b clientSecret=secret-c codeVerifier=secret-d') } },
+      references: { list: async () => refs },
+      status,
+    })
+    const message = (await status.get('ws_camel_case'))?.error?.message ?? ''
+    expect(message).toBe('request accessToken=[REDACTED] apiKey=[REDACTED] clientSecret=[REDACTED] codeVerifier=[REDACTED]')
+    expect(message).not.toMatch(/secret-[a-d]/u)
+  })
+
   it('coalesces overlapping timer ticks and can be stopped', async () => {
     const callbacks: Array<() => void> = []
     const cleared: unknown[] = []

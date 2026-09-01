@@ -61,4 +61,13 @@ describe('object inventory reconciliation', () => {
     expect(report.findings.map(finding => finding.code)).toEqual(['DUPLICATE_REFERENCE'])
     expect(report.counts).toMatchObject({ references: 1, matched: 1 })
   })
+
+  it('rejects malformed workspace and quota inputs before calculating usage', () => {
+    expect(() => reconcileObjectInventory({ workspaceId: ' ', references: [], inventory: [] }))
+      .toThrow('RECONCILIATION_WORKSPACE_REQUIRED')
+    expect(() => reconcileObjectInventory({ workspaceId: 'ws_a', references: [], inventory: [], quota: { limitBytes: -1 } }))
+      .toThrow('RECONCILIATION_QUOTA_INVALID')
+    expect(() => reconcileObjectInventory({ workspaceId: 'ws_a', references: [], inventory: [], quota: { limitBytes: 10, reservedBytes: Number.NaN } }))
+      .toThrow('RECONCILIATION_QUOTA_INVALID')
+  })
 })
