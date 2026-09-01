@@ -113,10 +113,9 @@ describe('complete commercial operation registry E1 totality', () => {
     for (const method of ['ops.marketing.summary', 'ops.marketing.queue', 'ops.marketing.queue.assign', 'ops.marketing.image.reconcile', 'ops.marketing.image.evidence.export', 'ops.marketing.image.archive.audit', 'ops.marketing.image.billing.audit']) {
       expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { domain: 'OPS_CONTROL', classification: null } })
     }
-    for (const method of ['ops.marketing.visual.review', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create']) {
+    for (const method of ['ops.marketing.asset_scan.retry', 'ops.marketing.visual.review', 'ops.marketing.publish.acknowledge', 'ops.marketing.revision.create']) {
       expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { domain: 'COMMERCIAL', classification: 'POINT_REQUIRED_NO_CHARGE' } })
     }
-    expect(resolveMcp('ops.marketing.asset_scan.retry')).toMatchObject({ outcome: 'DENY_DISABLED', policy: { domain: 'COMMERCIAL', classification: 'POINT_REQUIRED_NO_CHARGE' } })
     expect(resolveMcp('ops.marketing.generation.retry')).toMatchObject({ outcome: 'DENY_DISABLED', policy: { domain: 'COMMERCIAL', classification: 'POINT_CHARGED' } })
   })
 
@@ -155,6 +154,6 @@ describe('complete commercial operation registry E1 totality', () => {
   })
 
   it('publishes a deterministic reviewed-registry checksum', () => {
-    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:4a0b3f42')
+    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:d1169331')
   })
 })

@@ -111,6 +111,8 @@ interface CommercialEntryRegistration {
 
 平台连接/授权/同步、品牌/商品/listing/任务创建、上传、规则、生成、编辑、审核、批量、发布和服务预约均不属于恢复白名单。
 
+`ops.marketing.asset_scan.retry` 分类为 `POINT_REQUIRED_NO_CHARGE`，不是 `RECOVERY_CONTROL`。它仅在创意点余额为已知正数时开放；API 必须验证 recovery-capable scanner 心跳与 quarantine object binding，保留旧 dead-letter/outbox 事实，并在新 `asset.scan_redrive_requested` 中同时写入 actor authorization snapshot 和 commercial access snapshot。缺任一快照、余额为 0/unknown 或对象绑定漂移均 fail-closed。
+
 现有 `merchant.start`、`platform.connect`、`catalog.sync` 和 `content.export` 明确不是恢复入口；PRD 允许的是独立、workspace-scoped、可审计的数据导出，不是内容业务导出。实现已补齐 4 个 identity、workspace-scoped HTTP 恢复读契约：商业访问状态、商业目录、创意点余额和创意点流水。它们与 MCP/Bridge 恢复白名单等价；任一处缺少真实仓储事实时仍必须 fail-closed。
 
 每次构建必须验证：`MCP_METHODS`、Bridge merchant tools、注册 HTTP routes、Worker event+operation 与 registry 一一对应；新入口缺分类、重复分类、checksum 不一致或收费动作缺 action code 时构建失败。HTTP 使用 exact method+normalized-path key，不允许宽泛 prefix 放行。

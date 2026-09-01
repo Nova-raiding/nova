@@ -93,7 +93,7 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.model-markup.update',
   'subscription.order.create', 'subscription.change', 'billing.recharge.create',
   'catalog.image.generate', 'multimodal.image.edit',
-  'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'merchant.first_value',
+  'ops.marketing.generation.retry', 'merchant.first_value',
   'campaign.batch.generate', 'campaign.batch.retry_failed',
   'catalog.title.optimize', 'catalog.image.retry', 'brand.extract',
   'brand.tone.preview', 'task.understand', 'creative.directions',
@@ -1183,6 +1183,7 @@ function userFacingErrorText(code, details) {
     if (missing.includes('cost_cny') || missing.includes('settlement')) return '平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。'
     return '平台暂时无法确认本次生成结果，已安全停止。当前任务和已有产物已保留，没有重复调用、扣费或发布；平台恢复后可继续。'
   }
+  if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次模型请求结果尚未确认，已安全停止。请先查询 Provider 状态或提交人工对账；在确认前不会重试、扣费或发布。'
   if (code === 'MCP_HTTPS_REQUIRED') return '当前服务的安全连接尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_STRICT_AUTH_REQUIRED') return '当前服务的安全鉴权尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_GATEWAY_ERROR' && typeof details?.safe_message === 'string') return details.safe_message
@@ -2061,7 +2062,8 @@ async function callRemote(method, params) {
         // the same protocol boundary so authz/evidence details are not
         // downgraded to a generic missing-result error.
         const remoteError = payload?.error ?? payload?.data?.error
-        const transient = retrySafe && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
+        const providerOutcomeUnknown = remoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+        const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
           const error = remoteError ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
@@ -2461,7 +2463,7 @@ async function handle(request) {
   }
   if (request.method === 'resources/list') {
     return jsonRpc(id, { resources: [
-      { uri: RECHARGE_UI_URI, name: '大麦充值', title: '大麦钱包充值', description: '显示钱包余额、额度不足提醒、充值渠道和订单状态。', mimeType: 'text/html;profile=mcp-app' },
+      { uri: RECHARGE_UI_URI, name: '创意点恢复', title: '大麦创意点恢复中心', description: '显示创意点准入、服务端授权恢复入口及历史账务证据；不接受客户端自填金额。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CREATIVE_CHOICE_UI_URI, name: '创意方向选择', title: '选择创意方向', description: '比较三个创意方向并明确确认其中一个；初始不默认选择。', mimeType: 'text/html;profile=mcp-app' },
       { uri: CONTENT_DIFF_UI_URI, name: '内容版本差异', title: '比较内容版本', description: '逐字段比较两个内容版本并明确保留其中一个。', mimeType: 'text/html;profile=mcp-app' },
       { uri: PUBLISH_CONFIRM_UI_URI, name: '最终发布确认', title: '确认发布内容', description: '核对单项或批量发布对象、变化、费用和影响后最终确认。', mimeType: 'text/html;profile=mcp-app' },
@@ -2482,7 +2484,7 @@ async function handle(request) {
     return jsonRpc(id, { tools: Object.entries(METHODS).filter(([name]) => isMerchantTool(name) && !COMMERCIAL_DISABLED_METHODS.has(name)).map(([name, value]) => ({
       name,
       ...value,
-      ...(RECHARGE_UI_METHODS.has(name) || MERCHANT_CONTEXT_COMPONENT_METHODS.has(name) || IMAGE_EDIT_UI_METHODS.has(name) ? { _meta: { ...(RECHARGE_UI_METHODS.has(name) ? { ui: { resourceUri: RECHARGE_UI_URI }, 'openai/outputTemplate': RECHARGE_UI_URI, 'openai/toolInvocation/invoking': name.startsWith('billing.') ? '正在读取钱包…' : '正在检查余额与额度…', 'openai/toolInvocation/invoked': name.startsWith('billing.') ? '钱包已更新' : '余额检查完成' } : {}), ...(toolUiMetadata(name) ?? {}) } } : {}),
+      ...(RECHARGE_UI_METHODS.has(name) || MERCHANT_CONTEXT_COMPONENT_METHODS.has(name) || IMAGE_EDIT_UI_METHODS.has(name) ? { _meta: { ...(RECHARGE_UI_METHODS.has(name) ? { ui: { resourceUri: RECHARGE_UI_URI }, 'openai/outputTemplate': RECHARGE_UI_URI, 'openai/toolInvocation/invoking': '正在读取创意点准入与账务证据…', 'openai/toolInvocation/invoked': '创意点准入状态已更新' } : {}), ...(toolUiMetadata(name) ?? {}) } } : {}),
       annotations: toolAnnotations(name),
     })) })
   }
@@ -2521,7 +2523,7 @@ async function handle(request) {
     if ((!SAFE_WITHOUT_INTERACTIVE_WRITE.has(name) && !allowsWriteTools()) || (ALWAYS_INTERACTIVE_WRITE_METHODS.has(name) && interactiveWriteUntil <= Date.now())) {
       const structuredContent = {
         code: 'INTERACTIVE_WRITE_DISABLED',
-        message: '当前操作需要商家明确确认。请先确认后继续；如果套餐额度或钱包余额不足，我会提示充值。',
+        message: '当前操作需要商家明确确认。请先确认后继续；如果创意点余额为零、未知或不足，系统只会返回服务端授权的恢复入口。',
         technical_hint: 'interactive_write_session_required',
       }
       return jsonRpc(id, { content: [{ type: 'text', text: userFacingErrorText(structuredContent.code) }], structuredContent, ...(toolResultUiMetadata(name) ? { _meta: toolResultUiMetadata(name) } : {}), isError: true })

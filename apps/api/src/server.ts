@@ -11710,7 +11710,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
 
       try {
-        const redrive = await repository.redrive({ workspaceId, assetId, deadLetterOutboxEventId: eventId, expectedAssetRevision, recoveryKey, actorId, reason, scanMaxAttempts: configuredAssetScanMaxAttempts(), authorizationSnapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot) })
+        const commercialEnvelope = await withCommercialWorkerSnapshot(workspaceId, 'asset.scan_redrive_requested', {})
+        const redrive = await repository.redrive({ workspaceId, assetId, deadLetterOutboxEventId: eventId, expectedAssetRevision, recoveryKey, actorId, reason, scanMaxAttempts: configuredAssetScanMaxAttempts(), authorizationSnapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot), commercialAccessSnapshot: commercialEnvelope.commercial_access_snapshot as import('../../../packages/persistence/src/asset-scan-redrive-repository.js').SerializedAssetScanCommercialAccessSnapshot })
         const durableAsset = redrive.asset as unknown as import('../../../packages/application/src/service.js').AssetMetadata
         service.assets.set(assetId, durableAsset)
         invalidateWorkspaceHydration(workspaceId)

@@ -34,6 +34,7 @@ describe('migration 109 asset scan redrive', () => {
     expect(repository).toContain("'asset.scan_redrive_requested'")
     expect(repository).toContain("const SCAN_EVENT_TYPES = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'])")
     expect(repository).toContain('authorization_snapshot: input.authorizationSnapshot')
+    expect(repository).toContain('commercial_access_snapshot: input.commercialAccessSnapshot')
     expect(repository).toContain('mime_type: mimeType')
     expect(repository).toContain('listRetryableFailures')
     expect(repository).toContain('INSERT INTO workspace_operation_audit')
@@ -45,6 +46,6 @@ describe('migration 109 asset scan redrive', () => {
 
   it('fails invalid requests before opening a database transaction', async () => {
     const repository = new PostgresAssetScanRedriveRepository({ connect: async () => { throw new Error('must not connect') } })
-    await expect(repository.redrive({ workspaceId: 'ws', assetId: 'asset', deadLetterOutboxEventId: 'evt', expectedAssetRevision: 1, recoveryKey: 'short', actorId: 'actor', reason: 'retry scan', scanMaxAttempts: 12, authorizationSnapshot: { schema_version: 1, decision_id: 'decision', actor_id: 'actor', workspace_id: 'ws', context_id: 'workspace:ws', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'grant_1', scope_hash: 'a'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset', authorized: true, decided_at: '2026-08-31T00:00:00.000Z' } })).rejects.toBeInstanceOf(AssetScanRedriveError)
+    await expect(repository.redrive({ workspaceId: 'ws', assetId: 'asset', deadLetterOutboxEventId: 'evt', expectedAssetRevision: 1, recoveryKey: 'short', actorId: 'actor', reason: 'retry scan', scanMaxAttempts: 12, authorizationSnapshot: { schema_version: 1, decision_id: 'decision', actor_id: 'actor', workspace_id: 'ws', context_id: 'workspace:ws', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'grant_1', scope_hash: 'a'.repeat(64), capability: 'asset.scan.execute', resource_id: 'asset', authorized: true, decided_at: '2026-08-31T00:00:00.000Z' }, commercialAccessSnapshot: { schema_version: 1, decision_id: 'commercial-decision', workspace_id: 'ws', operation: 'asset.scan.execute', access_mode: 'POINT_REQUIRED_NO_CHARGE', access_revision: '1', balance_state: 'known', entitlement_snapshot_id: 'creative-point-access:ws:1', entitlement_snapshot_checksum: 'b'.repeat(64), rate_version: null, quoted_points: 0, decided_at: '2026-08-31T00:00:00.000Z' } })).rejects.toBeInstanceOf(AssetScanRedriveError)
   })
 })

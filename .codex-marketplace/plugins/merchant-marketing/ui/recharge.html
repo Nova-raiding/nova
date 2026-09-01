@@ -179,7 +179,6 @@
       .tab:focus-visible,
       .scope button:focus-visible,
       .btn:focus-visible,
-      .choice:focus-visible,
       input:focus-visible {
         outline: 3px solid var(--focus);
         outline-offset: 2px;
@@ -234,17 +233,6 @@
         color: var(--muted);
         font-size: 11px;
       }
-      .amounts,
-      .channels {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        margin-top: 12px;
-      }
-      .channels {
-        grid-template-columns: 1fr 1fr;
-      }
-      .choice,
       .btn {
         min-height: 44px;
         border: 1px solid var(--line);
@@ -252,12 +240,6 @@
         background: var(--bg);
         color: var(--text);
         cursor: pointer;
-      }
-      .choice[aria-pressed="true"],
-      .choice[aria-checked="true"] {
-        border: 2px solid var(--accent);
-        color: var(--accent);
-        font-weight: 650;
       }
       .field {
         width: 100%;
@@ -291,12 +273,6 @@
       }
       .field-label .field {
         margin-top: 5px;
-      }
-      .field-error {
-        min-height: 18px;
-        margin-top: 3px;
-        color: var(--danger);
-        font-size: 12px;
       }
       .bill-controls {
         display: flex;
@@ -394,21 +370,6 @@
         overflow: hidden;
         clip: rect(0, 0, 0, 0);
       }
-      dialog {
-        width: min(440px, calc(100% - 28px));
-        padding: 22px;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        background: var(--bg);
-        color: var(--text);
-      }
-      dialog::backdrop {
-        background: #0009;
-      }
-      .pay {
-        font-size: 34px;
-        font-weight: 650;
-      }
       @media (max-width: 680px) {
         .top,
         .panel {
@@ -445,18 +406,18 @@
       <header class="top">
         <div class="title-row">
           <div>
-            <p class="eyebrow">订单与账单</p>
-            <h1>大麦账务中心</h1>
+            <p class="eyebrow">商业访问与账单</p>
+            <h1>创意点恢复中心</h1>
           </div>
-          <span class="shared">工作区共享钱包</span>
+          <span class="shared">工作区共享创意点</span>
         </div>
         <div class="balance-row">
           <div>
-            <div class="balance-label">钱包可用余额</div>
-            <div class="balance">¥<span id="balance">—</span></div>
+            <div class="balance-label">可用创意点</div>
+            <div class="balance"><span id="balance">未知</span></div>
           </div>
           <div class="settlement" id="settlement">
-            余额属于当前工作区；订单和用量默认只展示你本人。
+            创意点是业务准入的唯一余额事实；旧钱包仅用于历史对账。
           </div>
         </div>
       </header>
@@ -479,7 +440,7 @@
           tabindex="0"
           data-tab="overview"
         >
-          概览与充值</button
+          概览与恢复</button
         ><button
           class="tab"
           id="tab-orders"
@@ -525,62 +486,26 @@
             <p id="overviewText">正在读取账务状态…</p>
             <div class="metrics">
               <div class="metric">
-                <strong id="taskRemaining">—</strong><span>剩余行动额度</span>
+                <strong id="reservedPoints">未知</strong><span>已预占创意点</span>
               </div>
               <div class="metric">
-                <strong id="pendingAmount">¥0.00</strong><span>待确认金额</span>
+                <strong id="accessRevision">未知</strong><span>准入修订</span>
               </div>
               <div class="metric">
-                <strong id="accessState">—</strong><span>模型能力</span>
+                <strong id="accessState">阻断</strong><span>业务准入</span>
               </div>
             </div>
             <div class="notice">
-              钱包余额由工作区共享；“我的”范围只影响订单、流水与模型用量。
+              `balance_state=unknown` 会保持“未知”，绝不显示为 0。人民币钱包、历史任务额度和 add-on 不会解锁任何业务功能。
             </div>
           </article>
           <article class="card">
-            <h2>钱包充值</h2>
-            <p>到账后可用于内容、图片、OCR 与视频等能力。</p>
-            <div class="amounts" aria-label="充值金额">
-              <button class="choice" data-amount="50.00" aria-pressed="false">
-                ¥50</button
-              ><button class="choice" data-amount="100.00" aria-pressed="true">
-                ¥100</button
-              ><button class="choice" data-amount="300.00" aria-pressed="false">
-                ¥300
-              </button>
-            </div>
-            <label class="field-label" for="customAmount"
-              >其他充值金额（元）<input
-                class="field"
-                id="customAmount"
-                inputmode="decimal"
-                aria-describedby="amountError"
-                placeholder="例如 200.00"
-            /></label>
-            <div class="field-error" id="amountError" aria-live="polite"></div>
-            <div class="channels" role="radiogroup" aria-label="支付方式">
-              <button
-                class="choice"
-                role="radio"
-                data-channel="alipay"
-                aria-checked="true"
-                tabindex="0"
-              >
-                支付宝</button
-              ><button
-                class="choice"
-                role="radio"
-                data-channel="wechat"
-                aria-checked="false"
-                tabindex="-1"
-              >
-                微信支付
-              </button>
-            </div>
+            <h2>服务端授权的恢复入口</h2>
+            <p>这里只展示服务端返回的目录、余额与恢复动作。点包价格和点数必须来自已发布 SKU，客户端不能自填金额；支付成功也必须等待 grant 到账和新 access revision。</p>
+            <div class="notice" id="recoveryState" role="status">正在读取恢复入口…</div>
+            <div class="list" id="recoveryActions" aria-label="可用恢复动作"></div>
             <div class="actions">
-              <button class="btn primary" id="createOrder">立即充值</button
-              ><button class="btn" id="refreshStatus">刷新</button>
+              <button class="btn primary" id="refreshStatus">刷新准入状态</button>
             </div>
           </article>
         </div>
@@ -594,7 +519,7 @@
       >
         <div class="section-head">
           <h2 id="ordersTitle">我的订单</h2>
-          <p>充值与套餐订单按时间排列；历史未归属订单不会被猜测为本人订单。</p>
+          <p>套餐、点包和旧充值订单只作为真实账务证据；历史未归属订单不会被猜测为本人订单。</p>
         </div>
         <div class="list" id="ordersList"></div>
       </section>
@@ -607,7 +532,7 @@
       >
         <div class="section-head">
           <h2 id="transactionsTitle">我的流水</h2>
-          <p>显示可归属到当前成员的充值、消费和退款记录。</p>
+          <p>显示可归属到当前成员的收款、消费和退款证据；这些人民币记录不参与创意点准入。</p>
         </div>
         <div class="list" id="transactionsList"></div>
       </section>
@@ -632,25 +557,12 @@
       </section>
       <div class="sr" id="live" role="status" aria-live="polite"></div>
     </main>
-    <dialog id="checkout" aria-labelledby="checkoutTitle">
-      <h2 id="checkoutTitle">充值订单已创建</h2>
-      <p id="checkoutChannel"></p>
-      <div class="pay">¥<span id="checkoutAmount"></span></div>
-      <p id="checkoutMessage"></p>
-      <div class="actions">
-        <button class="btn" id="closeCheckout">稍后支付</button
-        ><button class="btn primary" id="checkPayment">查询支付状态</button>
-      </div>
-    </dialog>
     <script>
       const today = new Date(),
         initialPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`,
         S = {
           scope: "mine",
           tab: "overview",
-          amount: "100.00",
-          channel: "alipay",
-          orderId: "",
           period: initialPeriod,
           busy: 0,
         },
@@ -729,37 +641,40 @@
       }
       function status(d) {
         if (!d) return;
-        $("balance").textContent = money(d.balance_cny);
-        $("pendingAmount").textContent =
-          `¥${money(d.pending_authorization_cny)}`;
-        $("taskRemaining").textContent =
-          d.action_entitlement?.remaining_tasks ?? "—";
-        $("accessState").textContent = d.plugin_access?.unlocked
-          ? "已解锁"
-          : "待充值";
-        $("overviewText").textContent =
-          d.settlement_message || d.model_access?.message || "账务状态已更新";
-        $("settlement").textContent =
-          d.settlement_message ||
-          "余额属于当前工作区；订单和用量默认只展示你本人。";
+        const known = d.balance_state === "known" && Number.isSafeInteger(d.available_points);
+        $("balance").textContent = known ? Number(d.available_points).toLocaleString("zh-CN") : "未知";
+        $("reservedPoints").textContent = known && Number.isSafeInteger(d.reserved_points) ? Number(d.reserved_points).toLocaleString("zh-CN") : "未知";
+        $("accessRevision").textContent = d.access_revision ?? "未知";
+        $("accessState").textContent = d.allowed === true ? "允许" : "阻断";
+        $("overviewText").textContent = d.allowed === true
+          ? "当前创意点事实允许继续业务操作；具体动作仍需执行各自权限和运行门禁。"
+          : known && d.available_points === 0
+            ? "创意点已用尽，只开放服务端授权的恢复/控制入口。"
+            : "创意点余额未知，所有商家业务已安全阻断。";
+        $("settlement").textContent = "创意点是业务准入的唯一余额事实；旧钱包与任务额度仅供历史对账。";
+        const actions = Array.isArray(d.next_actions) ? d.next_actions : [];
+        $("recoveryState").textContent = actions.length ? "以下入口由本次服务端 decision 精确授权。" : "当前没有可执行的恢复入口，请联系运营核对目录、支付或点数 grant。";
+        $("recoveryActions").innerHTML = actions.length
+          ? actions.map((action) => `<div class="item"><div class="item-title">${esc(action)}</div><div class="item-detail">恢复入口仍会执行身份、租户、RLS 和自身幂等校验。</div></div>`).join("")
+          : empty("没有服务端授权的恢复动作");
         document.querySelector("[data-scope=workspace]").hidden =
           !d.viewer?.available_scopes?.includes("workspace");
       }
       async function loadStatus() {
-        busy(true, "正在刷新钱包");
+        busy(true, "正在刷新创意点准入状态");
         try {
           status(await call("billing.status"));
           fail();
-          busy(false, "钱包已更新");
+          busy(false, "创意点准入状态已更新");
         } catch (e) {
-          fail(e.message || "钱包状态暂时不可用");
-          busy(false, "钱包更新失败");
+          fail(e.message || "创意点准入状态暂时不可用");
+          busy(false, "创意点准入状态更新失败");
         }
       }
       function orderHtml(r, s) {
         const a = [
           ...(r?.orders ?? []).map((o) => ({
-            kind: "钱包充值",
+            kind: "旧钱包充值证据",
             id: o.id,
             amount: o.amount_cny,
             state: o.state,
@@ -915,51 +830,6 @@
             load();
           }),
       );
-      document.querySelectorAll("[data-amount]").forEach(
-        (b) =>
-          (b.onclick = () => {
-            S.amount = b.dataset.amount;
-            $("customAmount").value = "";
-            $("customAmount").setAttribute("aria-invalid", "false");
-            $("amountError").textContent = "";
-            document
-              .querySelectorAll("[data-amount]")
-              .forEach((x) => x.setAttribute("aria-pressed", x === b));
-          }),
-      );
-      $("customAmount").oninput = (e) => {
-        S.amount = e.target.value.trim();
-        $("customAmount").setAttribute("aria-invalid", "false");
-        $("amountError").textContent = "";
-        document
-          .querySelectorAll("[data-amount]")
-          .forEach((x) => x.setAttribute("aria-pressed", "false"));
-      };
-      const channels = [...document.querySelectorAll("[data-channel]")];
-      function selectChannel(b, focus = false) {
-        S.channel = b.dataset.channel;
-        channels.forEach((x) => {
-          const selected = x === b;
-          x.setAttribute("aria-checked", selected);
-          x.tabIndex = selected ? 0 : -1;
-        });
-        if (focus) b.focus();
-      }
-      channels.forEach((b, index) => {
-        b.onclick = () => selectChannel(b);
-        b.onkeydown = (e) => {
-          let next = index;
-          if (e.key === "ArrowRight" || e.key === "ArrowDown")
-            next = (index + 1) % channels.length;
-          else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
-            next = (index - 1 + channels.length) % channels.length;
-          else if (e.key === "Home") next = 0;
-          else if (e.key === "End") next = channels.length - 1;
-          else return;
-          e.preventDefault();
-          selectChannel(channels[next], true);
-        };
-      });
       $("billingPeriod").value = S.period;
       $("billingPeriod").onchange = (e) => {
         if (!/^\d{4}-\d{2}$/u.test(e.target.value)) return;
@@ -994,72 +864,7 @@
           button.disabled = false;
         }
       };
-      $("createOrder").onclick = async () => {
-        if (!/^\d+(?:\.\d{1,2})?$/.test(S.amount) || Number(S.amount) < 1) {
-          $("customAmount").setAttribute("aria-invalid", "true");
-          $("amountError").textContent = "请输入不少于 1 元的正确金额";
-          $("customAmount").focus();
-          return;
-        }
-        let button = $("createOrder");
-        button.disabled = true;
-        busy(true, "正在创建充值订单");
-        try {
-          let d = await call("billing.recharge.create", {
-            amount_cny: Number(S.amount).toFixed(2),
-            channel: S.channel,
-            idempotency_key: `chatgpt-billing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          });
-          S.orderId = d.id ?? d.order_id;
-          $("checkoutAmount").textContent = d.amount_cny ?? S.amount;
-          $("checkoutChannel").textContent =
-            d.channel === "wechat" ? "微信支付" : "支付宝";
-          $("checkoutMessage").textContent =
-            d.warning || "到账以服务端状态为准。";
-          let url = d.payment_url ?? d.paymentUrl;
-          $("checkout").showModal();
-          if (d.payment_mode === "provider" && /^https:/u.test(url ?? "")) {
-            if (window.openai?.openExternal) {
-              try {
-                await window.openai.openExternal({ href: url });
-              } catch {
-                $("checkoutMessage").textContent =
-                  "订单已创建，但支付页面未能打开。请稍后查询本订单，避免重复下单。";
-              }
-            } else {
-              $("checkoutMessage").textContent =
-                "订单已创建，当前宿主无法打开支付页面。请稍后查询本订单，避免重复下单。";
-            }
-          }
-          fail();
-        } catch (e) {
-          fail(e.message || "暂时无法创建充值订单");
-        } finally {
-          button.disabled = false;
-          busy(false, "订单处理完成");
-        }
-      };
       $("refreshStatus").onclick = loadStatus;
-      $("closeCheckout").onclick = () => $("checkout").close();
-      $("checkPayment").onclick = async () => {
-        if (!S.orderId) return;
-        let button = $("checkPayment");
-        button.disabled = true;
-        try {
-          let d = await call("billing.recharge.get", { order_id: S.orderId });
-          if (d.state === "paid") {
-            $("checkout").close();
-            await loadStatus();
-            tab($("tab-orders"), false);
-          } else
-            $("checkoutMessage").textContent =
-              "订单仍在等待支付，到账以服务端状态为准。";
-        } catch (e) {
-          fail(e.message || "暂时无法查询订单");
-        } finally {
-          button.disabled = false;
-        }
-      };
       status(window.openai?.toolOutput);
       loadStatus();
     </script>

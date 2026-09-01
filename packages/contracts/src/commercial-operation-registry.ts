@@ -176,6 +176,7 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
+  'ops.marketing.asset_scan.retry',
   'ops.marketing.visual.review',
   'ops.marketing.publish.acknowledge',
   'ops.marketing.revision.create',
@@ -293,7 +294,6 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS = [
-  'ops.marketing.asset_scan.retry',
   'workspace.commercial.get',
   'workspace.commercial.update',
   'workspace.usage.get',

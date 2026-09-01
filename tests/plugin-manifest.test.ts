@@ -127,7 +127,7 @@ describe('Codex plugin package', () => {
 
     expect(prompts).toEqual([
       '开始使用大麦：先读取当前工作区和店铺连接状态，再让我选择一家店铺',
-      '查看插件钱包余额；余额不足时告诉我唯一的下一步',
+      '查看当前工作区的创意点余额和准入状态；余额为零或未知时只显示服务端授权的恢复入口',
       '开始商品营销：先让我选择一个平台和商品，然后每一步都等我确认',
     ])
     expect(prompts.length).toBeLessThanOrEqual(3)

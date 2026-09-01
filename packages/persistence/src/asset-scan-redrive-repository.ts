@@ -3,6 +3,7 @@ import { requireWorkspaceScope, withWorkspaceTransaction, type OutboxEvent, type
 
 const SCAN_EVENT_TYPES = new Set(['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'])
 const RECOVERABLE_SCAN_FAILURE_CODES = new Set([
+  'ASSET_NOT_FOUND',
   'ASSET_SCAN_RECEIPT_INVALID',
   'ASSET_SCAN_RECEIPT_EXPIRED',
   'ASSET_SCAN_RECEIPT_DEFINITIONS_STALE',
@@ -46,6 +47,22 @@ export interface AssetScanRedriveInput {
   reason: string
   scanMaxAttempts: number
   authorizationSnapshot: SerializedAssetScanAuthorizationSnapshot
+  commercialAccessSnapshot: SerializedAssetScanCommercialAccessSnapshot
+}
+
+export interface SerializedAssetScanCommercialAccessSnapshot {
+  schema_version: 1
+  decision_id: string
+  workspace_id: string
+  operation: 'asset.scan.execute'
+  access_mode: 'POINT_REQUIRED_NO_CHARGE'
+  access_revision: string
+  balance_state: 'known'
+  entitlement_snapshot_id: string
+  entitlement_snapshot_checksum: string
+  rate_version: null
+  quoted_points: 0
+  decided_at: string
 }
 
 export interface SerializedAssetScanAuthorizationSnapshot {
@@ -126,6 +143,7 @@ function validate(raw: AssetScanRedriveInput): AssetScanRedriveInput {
   const input = { ...raw, workspaceId: requireWorkspaceScope(raw.workspaceId), assetId: text(raw.assetId, 1, 255), deadLetterOutboxEventId: text(raw.deadLetterOutboxEventId, 1, 255), recoveryKey: text(raw.recoveryKey, 8, 255), actorId: text(raw.actorId, 1, 255), reason: text(raw.reason, 3, 1000) }
   if (![input.expectedAssetRevision, input.scanMaxAttempts].every(value => Number.isSafeInteger(value) && value > 0)) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_INPUT_INVALID')
   input.authorizationSnapshot = validateAuthorizationSnapshot(raw.authorizationSnapshot, input)
+  input.commercialAccessSnapshot = validateCommercialAccessSnapshot(raw.commercialAccessSnapshot, input)
   return input
 }
 
@@ -134,6 +152,16 @@ function validateAuthorizationSnapshot(raw: SerializedAssetScanAuthorizationSnap
   const requiredStrings = [raw.decision_id, raw.actor_id, raw.workspace_id, raw.context_id, raw.context_version, raw.policy_version, raw.grant_revision, raw.scope_hash, raw.resource_id, raw.decided_at]
   if (raw.schema_version !== 1 || raw.authorized !== true || raw.capability !== 'asset.scan.execute' || requiredStrings.some(value => typeof value !== 'string' || !value.trim())) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_INPUT_INVALID')
   if (raw.workspace_id !== input.workspaceId || raw.context_id !== `workspace:${input.workspaceId}` || raw.resource_id !== input.assetId || raw.actor_id !== input.actorId || !SHA256.test(raw.scope_hash) || !Number.isFinite(Date.parse(raw.decided_at))) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_INPUT_INVALID')
+  return structuredClone(raw)
+}
+
+function validateCommercialAccessSnapshot(raw: SerializedAssetScanCommercialAccessSnapshot, input: Pick<AssetScanRedriveInput, 'workspaceId'>): SerializedAssetScanCommercialAccessSnapshot {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_INPUT_INVALID')
+  const requiredStrings = [raw.decision_id, raw.workspace_id, raw.access_revision, raw.entitlement_snapshot_id, raw.entitlement_snapshot_checksum, raw.decided_at]
+  if (raw.schema_version !== 1 || raw.operation !== 'asset.scan.execute' || raw.access_mode !== 'POINT_REQUIRED_NO_CHARGE'
+    || raw.balance_state !== 'known' || raw.rate_version !== null || raw.quoted_points !== 0
+    || requiredStrings.some(value => typeof value !== 'string' || !value.trim())) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_INPUT_INVALID')
+  if (raw.workspace_id !== input.workspaceId || !SHA256.test(raw.entitlement_snapshot_checksum) || !Number.isFinite(Date.parse(raw.decided_at))) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_INPUT_INVALID')
   return structuredClone(raw)
 }
 
@@ -174,6 +202,12 @@ function isRecoverableLegacyWorkerAuthWiring(eventType: string, failure: Record<
     && Boolean(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot))
 }
 
+function isRecoverableLegacyCommercialWiring(eventType: string, failure: Record<string, unknown> | undefined, payload: Record<string, unknown>): boolean {
+  return SCAN_EVENT_TYPES.has(eventType)
+    && failure?.code === 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID'
+    && payload.commercial_access_snapshot === undefined
+}
+
 export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepository {
   constructor(private readonly pool: SqlPool) {}
 
@@ -200,7 +234,8 @@ export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepos
           legacyExpired = isExpiredBoundLegacyReceipt({ attempt, workspaceId: scope, eventId: row.id, assetId: row.aggregate_id, storageKey: String(asset.storageKey), sha256: String(asset.sha256), sizeBytes: Number(asset.sizeBytes), mimeType: String(asset.mimeType).toLowerCase(), sourceRevision })
         }
         const legacyAuthWiring = isRecoverableLegacyWorkerAuthWiring(row.event_type, failure, payload)
-        failures.push({ assetId: row.aggregate_id, assetRevision: Number(row.asset_revision), sourceRevision, event: eventFromRow(row), failure: { code: legacyExpired ? 'ASSET_SCAN_RECEIPT_EXPIRED' : legacyAuthWiring ? 'ASSET_SCAN_WORKER_AUTH_WIRING_FAILED' : code, message: legacyExpired ? '历史扫描回执已过期，需要创建新的扫描事件' : legacyAuthWiring ? '历史扫描 worker 的角色凭据接线错误，需要以当前授权重新扫描' : typeof failure.message === 'string' ? failure.message : '', retryable: RECOVERABLE_SCAN_FAILURE_CODES.has(code) || legacyExpired || legacyAuthWiring } })
+        const legacyCommercialWiring = isRecoverableLegacyCommercialWiring(row.event_type, failure, payload)
+        failures.push({ assetId: row.aggregate_id, assetRevision: Number(row.asset_revision), sourceRevision, event: eventFromRow(row), failure: { code: legacyExpired ? 'ASSET_SCAN_RECEIPT_EXPIRED' : legacyAuthWiring ? 'ASSET_SCAN_WORKER_AUTH_WIRING_FAILED' : legacyCommercialWiring ? 'ASSET_SCAN_WORKER_COMMERCIAL_WIRING_FAILED' : code, message: legacyExpired ? '历史扫描回执已过期，需要创建新的扫描事件' : legacyAuthWiring ? '历史扫描 worker 的角色凭据接线错误，需要以当前授权重新扫描' : legacyCommercialWiring ? '历史扫描事件缺少商业访问快照，需要以当前创意点事实重新扫描' : typeof failure.message === 'string' ? failure.message : '', retryable: RECOVERABLE_SCAN_FAILURE_CODES.has(code) || legacyExpired || legacyAuthWiring || legacyCommercialWiring } })
       }
       return failures
     })
@@ -247,7 +282,8 @@ export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepos
         legacyExpired = isExpiredBoundLegacyReceipt({ attempt, workspaceId: input.workspaceId, eventId: oldEvent.id, assetId: input.assetId, storageKey, sha256, sizeBytes, mimeType, sourceRevision: oldSourceRevision })
       }
       const legacyAuthWiring = isRecoverableLegacyWorkerAuthWiring(oldEvent.event_type, oldFailure, oldPayload)
-      const recoverable = typeof oldFailure?.code === 'string' && (RECOVERABLE_SCAN_FAILURE_CODES.has(oldFailure.code) || legacyExpired || legacyAuthWiring)
+      const legacyCommercialWiring = isRecoverableLegacyCommercialWiring(oldEvent.event_type, oldFailure, oldPayload)
+      const recoverable = typeof oldFailure?.code === 'string' && (RECOVERABLE_SCAN_FAILURE_CODES.has(oldFailure.code) || legacyExpired || legacyAuthWiring || legacyCommercialWiring)
       const terminal = oldEvent.published_at !== null && oldEvent.unknown_at === null && oldEvent.lease_token === null && oldEvent.lease_until === null && Boolean(oldFailure) && recoverable && (oldFailure.retryable === false || Number(oldEvent.attempts) >= input.scanMaxAttempts)
       if (!terminal) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_NOT_DEAD_LETTER')
 
@@ -265,11 +301,11 @@ export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepos
       if (!updated.rows[0]) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_REVISION_CONFLICT')
 
       const eventId = `evt_${randomUUID()}`
-      const newPayload = { asset_id: input.assetId, storage_key: storageKey, sha256, size_bytes: sizeBytes, mime_type: mimeType, source_revision: nextSourceRevision, rescan: true, recovery_from_outbox_event_id: input.deadLetterOutboxEventId, recovery_key: input.recoveryKey, authorization_snapshot: input.authorizationSnapshot }
+      const newPayload = { asset_id: input.assetId, storage_key: storageKey, sha256, size_bytes: sizeBytes, mime_type: mimeType, source_revision: nextSourceRevision, rescan: true, recovery_from_outbox_event_id: input.deadLetterOutboxEventId, recovery_key: input.recoveryKey, authorization_snapshot: input.authorizationSnapshot, commercial_access_snapshot: input.commercialAccessSnapshot }
       const newEvent = (await client.query<EventRow>(`INSERT INTO outbox_events (id,workspace_id,aggregate_id,event_type,sequence,payload) VALUES ($1,$2,$3,'asset.scan_redrive_requested',$4,$5::jsonb) RETURNING ${eventProjection}`, [eventId, input.workspaceId, input.assetId, nextRevision, JSON.stringify(newPayload)])).rows[0]!
 
       const auditId = randomUUID()
-      await client.query(`INSERT INTO workspace_operation_audit (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason) VALUES ($1,$2,$3,'asset.scan.recovery_requested','asset',$4,$5::jsonb,$6::jsonb,$7)`, [auditId, input.workspaceId, input.actorId, input.assetId, JSON.stringify({ outbox_event_id: input.deadLetterOutboxEventId, asset_revision: input.expectedAssetRevision, source_revision: oldSourceRevision, error_code: legacyExpired ? 'ASSET_SCAN_RECEIPT_EXPIRED' : legacyAuthWiring ? 'ASSET_SCAN_WORKER_AUTH_WIRING_FAILED' : typeof oldFailure?.code === 'string' ? oldFailure.code : 'UNKNOWN', original_error_code: typeof oldFailure?.code === 'string' ? oldFailure.code : 'UNKNOWN' }), JSON.stringify({ outbox_event_id: eventId, asset_revision: nextRevision, source_revision: nextSourceRevision, recovery_key: input.recoveryKey, authorization_decision_id: input.authorizationSnapshot.decision_id, grant_revision: input.authorizationSnapshot.grant_revision }), input.reason])
+      await client.query(`INSERT INTO workspace_operation_audit (id,workspace_id,actor_id,action,resource_type,resource_id,before_json,after_json,reason) VALUES ($1,$2,$3,'asset.scan.recovery_requested','asset',$4,$5::jsonb,$6::jsonb,$7)`, [auditId, input.workspaceId, input.actorId, input.assetId, JSON.stringify({ outbox_event_id: input.deadLetterOutboxEventId, asset_revision: input.expectedAssetRevision, source_revision: oldSourceRevision, error_code: legacyExpired ? 'ASSET_SCAN_RECEIPT_EXPIRED' : legacyAuthWiring ? 'ASSET_SCAN_WORKER_AUTH_WIRING_FAILED' : legacyCommercialWiring ? 'ASSET_SCAN_WORKER_COMMERCIAL_WIRING_FAILED' : typeof oldFailure?.code === 'string' ? oldFailure.code : 'UNKNOWN', original_error_code: typeof oldFailure?.code === 'string' ? oldFailure.code : 'UNKNOWN' }), JSON.stringify({ outbox_event_id: eventId, asset_revision: nextRevision, source_revision: nextSourceRevision, recovery_key: input.recoveryKey, authorization_decision_id: input.authorizationSnapshot.decision_id, grant_revision: input.authorizationSnapshot.grant_revision, commercial_decision_id: input.commercialAccessSnapshot.decision_id, commercial_access_revision: input.commercialAccessSnapshot.access_revision }), input.reason])
       const redriveId = `scan_redrive_${randomUUID()}`
       await client.query(`INSERT INTO asset_scan_redrives (id,workspace_id,recovery_key,asset_id,old_outbox_event_id,new_outbox_event_id,expected_asset_revision,source_revision_before,source_revision_after,actor_id,reason,scan_max_attempts,audit_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, [redriveId, input.workspaceId, input.recoveryKey, input.assetId, input.deadLetterOutboxEventId, eventId, input.expectedAssetRevision, oldSourceRevision, nextSourceRevision, input.actorId, input.reason, input.scanMaxAttempts, auditId])
       return { redriveId, auditId, replayed: false, asset: next, event: eventFromRow(newEvent) }

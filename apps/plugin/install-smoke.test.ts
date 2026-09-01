@@ -36,7 +36,7 @@ describe('Codex plugin installation package', () => {
     expect(manifest.mcpServers).toBe('./.mcp.json')
     expect(manifest.interface.defaultPrompt).toEqual([
       '开始使用大麦：先读取当前工作区和店铺连接状态，再让我选择一家店铺',
-      '查看插件钱包余额；余额不足时告诉我唯一的下一步',
+      '查看当前工作区的创意点余额和准入状态；余额为零或未知时只显示服务端授权的恢复入口',
       '开始商品营销：先让我选择一个平台和商品，然后每一步都等我确认',
     ])
     expect(manifest.interface.defaultPrompt).toHaveLength(3)
@@ -137,23 +137,21 @@ describe('Codex plugin installation package', () => {
     expect(result.stderr).toContain(expectedMessage)
   })
 
-  it('renders an accessible ChatGPT recharge card with clear payment states', () => {
+  it('renders an accessible ChatGPT creative-point recovery card without client-authored payment actions', () => {
     const recharge = readFileSync(resolve(root, 'ui/recharge.html'), 'utf8')
-    expect(recharge).toContain('到账以服务端状态为准')
-    expect(recharge).toContain('call("billing.recharge.create"')
-    expect(recharge).toContain('call("billing.recharge.get"')
+    expect(recharge).toContain('支付成功也必须等待 grant 到账和新 access revision')
+    expect(recharge).not.toContain('call("billing.recharge.create"')
+    expect(recharge).not.toMatch(/data-amount|customAmount|createOrder/u)
+    expect(recharge).toContain('服务端授权的恢复入口')
+    expect(recharge).toContain('call("billing.recharge.list"')
     expect(recharge).toContain('call("billing.export"')
     expect(recharge.toLowerCase()).not.toContain('mock')
     expect(recharge).not.toMatch(/Codex/iu)
-    expect(recharge).toContain('role="radiogroup"')
-    expect(recharge).toContain('role="radio"')
-    expect(recharge).toContain('aria-checked="true"')
     expect(recharge).toContain('aria-pressed="true"')
     expect(recharge).toContain('role="alert"')
+    expect(recharge).toContain('role="status"')
     expect(recharge).toContain('aria-busy="false"')
-    expect(recharge).toContain('aria-labelledby="checkoutTitle"')
-    expect(recharge).toContain('data-channel="alipay"')
-    expect(recharge).toMatch(/payment_mode\s*===\s*["']provider["']/u)
+    expect(recharge).not.toMatch(/role="radio(group)?"|aria-checked|checkoutTitle|data-channel|payment_mode/u)
     for (const status of ['已到账', '待支付', '未成功', '已关闭', '已退款']) expect(recharge).toContain(status)
   })
 

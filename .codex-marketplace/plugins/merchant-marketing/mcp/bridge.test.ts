@@ -746,7 +746,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260901225111' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260902004800' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -757,15 +757,15 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'resources/read', params: { uri: 'ui://merchant-marketing/recharge-v1.html' } })}\n`)
       const rechargeUi = await nextLine(child.stdout)
       expect(rechargeUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' })
-      expect(rechargeUi.result.contents[0].text).toContain('订单与账单')
-      expect(rechargeUi.result.contents[0].text).toContain('充值订单已创建')
-      expect(rechargeUi.result.contents[0].text).toContain('立即充值')
+      expect(rechargeUi.result.contents[0].text).toContain('商业访问与账单')
+      expect(rechargeUi.result.contents[0].text).toContain('服务端授权的恢复入口')
+      expect(rechargeUi.result.contents[0].text).not.toContain('立即充值')
       expect(rechargeUi.result.contents[0].text).toContain('call("billing.status")')
       expect(rechargeUi.result.contents[0].text).toContain('call("billing.export"')
       expect(rechargeUi.result.contents[0].text).not.toMatch(/mock/iu)
       expect(rechargeUi.result.contents[0].text).not.toMatch(/Codex/iu)
-      expect(rechargeUi.result.contents[0].text).toContain('role="radiogroup"')
-      expect(rechargeUi.result.contents[0].text).toContain('aria-labelledby="checkoutTitle"')
+      expect(rechargeUi.result.contents[0].text).toContain('role="status"')
+      expect(rechargeUi.result.contents[0].text).not.toMatch(/role="radio(group)?"|aria-checked|checkoutTitle|data-channel|payment_mode/u)
       expect(rechargeUi.result.contents[0].text).toContain('aria-busy="false"')
       expect(rechargeUi.result.contents[0].text).toMatch(/failed:\s*["']未成功["']/u)
       expect(rechargeUi.result.contents[0].text).toContain('已退款')
@@ -2034,6 +2034,32 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'API_UNAVAILABLE' } })
       expect(response.result.content[0].text).toContain('请稍后重试')
       expect(response.result.content[0].text).not.toContain('write outcome is unknown')
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not retry an idempotent write when the model provider outcome is unknown', async () => {
+    let attempts = 0
+    const server = createServer(async (_req, res) => {
+      attempts += 1
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', message: 'provider result not confirmed', details: { retryable: false, reconciliation_required: true } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.confirm', arguments: { task_id: 'task_1', confirmation_token: 'confirm_1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' } })
+      expect(response.result.content[0].text).toContain('查询 Provider 状态或提交人工对账')
+      expect(response.result.content[0].text).not.toContain('请稍后重试')
       expect(attempts).toBe(1)
     } finally {
       child.kill()

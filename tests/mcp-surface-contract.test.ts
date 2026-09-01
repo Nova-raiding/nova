@@ -37,7 +37,7 @@ const commercialDisabledMethods = new Set([
   'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list',
   'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get', 'ops.commercial.model-markup.update',
   'subscription.order.create', 'subscription.change', 'billing.recharge.create', 'catalog.image.generate',
-  'multimodal.image.edit', 'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'merchant.first_value',
+  'multimodal.image.edit', 'ops.marketing.generation.retry', 'merchant.first_value',
   'campaign.batch.generate', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.image.retry',
   'brand.extract', 'brand.tone.preview', 'task.understand', 'creative.directions', 'creative.brief', 'creative.preview',
   'content.generate', 'content.codex.prepare', 'content.codex.commit', 'content.review', 'content.modify',
