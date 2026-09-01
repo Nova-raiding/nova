@@ -78,6 +78,23 @@ describe('generation context and request contracts', () => {
     const restored = parseGenerationContext(serializeGenerationContext(context))
     expect(restored).toEqual({ ok: true, value: context })
   })
+
+  it('fails closed for hostile snapshot identifiers instead of accepting runtime JSON', () => {
+    expect(createTextGenerationRequest({
+      prompt: '写文案',
+      context: { ...context, product: { id: 'product\u0000-9', version: 'v2' } },
+    })).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: 'INVALID_SNAPSHOT_REFERENCE', path: 'product' })],
+    })
+    expect(createTextGenerationRequest({
+      prompt: '写文案',
+      context: { ...context, brand: { id: 'b'.repeat(201), version: 'v3' } },
+    })).toMatchObject({
+      ok: false,
+      issues: [expect.objectContaining({ code: 'INVALID_SNAPSHOT_REFERENCE', path: 'brand' })],
+    })
+  })
 })
 
 describe('image local edit invariants', () => {

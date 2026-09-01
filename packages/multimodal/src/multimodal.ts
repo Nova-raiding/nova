@@ -200,15 +200,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const nonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0
 
+const boundedReferenceString = (value: unknown): value is string =>
+  nonEmptyString(value) && value.length <= 200 && !/[\u0000-\u001f\u007f]/u.test(value)
+
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
 const validateSnapshotRef = (value: unknown, path: string): ValidationIssue[] => {
-  if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.version)) {
-    return [issue('INVALID_SNAPSHOT_REFERENCE', path, '快照引用必须包含非空 id 和 version。')]
+  if (!isRecord(value) || !boundedReferenceString(value.id) || !boundedReferenceString(value.version)) {
+    return [issue('INVALID_SNAPSHOT_REFERENCE', path, '快照引用的 id 和 version 必须是 1 至 200 个字符，且不得包含控制字符。')]
   }
-  if (value.hash !== undefined && !nonEmptyString(value.hash)) {
-    return [issue('INVALID_SNAPSHOT_REFERENCE', `${path}.hash`, '快照 hash 为空时应省略，而不是传空字符串。')]
+  if (value.hash !== undefined && !boundedReferenceString(value.hash)) {
+    return [issue('INVALID_SNAPSHOT_REFERENCE', `${path}.hash`, '快照 hash 为空、超长或包含控制字符时应省略。')]
   }
   return []
 }
