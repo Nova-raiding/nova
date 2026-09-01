@@ -185,6 +185,7 @@ describe('Ops session and grant API local contracts', () => {
     }, { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' })
     expect(denied.response.status).toBe(403)
     expect(denied.body.data).toBeNull()
+    expect(JSON.stringify(denied.body)).not.toContain('identity-not-readable')
     expect(denied.body.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: expect.any(String), decision_id: expect.any(String), policy_version: AUTHZ_POLICY_VERSION } })
     expect(denied.body.request_id).toMatch(/^req_/)
     expect(denied.body.trace_id).toBe(denied.body.request_id)

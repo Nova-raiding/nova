@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createAuthorizationProjection } from "../../authz/authorization.js";
 import { AuthorizationProvider } from "../../authz/AuthorizationProvider.js";
 import type { OpsSession } from "../../types/ops.js";
-import { AccessDeniedResult } from "./AccessDeniedResult.js";
+import { AccessDeniedResult, explainAccessDeniedReason } from "./AccessDeniedResult.js";
 import { PermissionGate } from "./PermissionGate.js";
 import { focusActiveWorkbenchControl, OpsWorkbenchSwitcher } from "./OpsWorkbenchSwitcher.js";
 import { activeJitGrantForNow, formatJitRemaining, RoleScopeBar, workbenchBoundaryMessage } from "./RoleScopeBar.js";
@@ -169,5 +169,14 @@ describe("desktop permission UX", () => {
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain('aria-labelledby="access-denied-evidence-title"');
     expect(html).toContain("权限拒绝详情");
+  });
+
+  it("explains the server reason without exposing object existence", () => {
+    expect(explainAccessDeniedReason("AUTHZ_SCOPE_MISMATCH")).toContain("工作区或资源范围");
+    expect(explainAccessDeniedReason("UNRECOGNIZED_REASON")).toBe("服务端权限策略拒绝了此操作。");
+    const html = renderToStaticMarkup(<AccessDeniedResult domainLabel="用户与租户" capability="identity.read" scope={{ kind: "workspace", id: "ws_1" }} reasonCode="AUTHZ_SCOPE_MISMATCH" onBack={() => undefined} onRefresh={() => undefined} />);
+    expect(html).toContain("当前会话的工作区或资源范围与此操作不匹配");
+    expect(html).toContain("AUTHZ_SCOPE_MISMATCH");
+    expect(html).not.toContain("对象存在");
   });
 });
