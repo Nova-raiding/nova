@@ -103,6 +103,7 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
     else {
       if (fault.injected !== true) errors.push('fault.injected must be true')
       if (!Array.isArray(fault.scenarios) || fault.scenarios.length === 0 || fault.scenarios.some(scenario => !nonEmpty(scenario))) errors.push('fault.scenarios must contain at least one named scenario')
+      else if (new Set(fault.scenarios.map(scenario => scenario.trim())).size !== fault.scenarios.length) errors.push('fault.scenarios must contain unique scenario names')
       if (fault.passed !== true) errors.push('fault.passed must be true')
     }
 

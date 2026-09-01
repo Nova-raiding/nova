@@ -60,4 +60,8 @@ describe('capacity evidence gate', () => {
       'capacity evidence is expired', 'fault.passed must be true', 'steady_state.queue_converged must be true',
     ]))
   })
+  it('rejects duplicate fault scenarios after trimming names', () => {
+    const value = { ...base, fault: { ...base.fault, scenarios: ['redis_restart', ' redis_restart '] } }
+    expect(validateCapacityEvidence(value, { requireCloudGate: true })).toContain('fault.scenarios must contain unique scenario names')
+  })
 })
