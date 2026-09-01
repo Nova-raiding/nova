@@ -5,7 +5,7 @@ import { AUTHZ_POLICY_VERSION, MCP_METHODS, getHttpOperationPolicy, getMcpMethod
 describe('registered MCP authorization coverage', () => {
   it('keeps HTTP account/task routes on the same MCP scope contract', () => {
     const cases = [
-      ['DELETE', '/v1/platform-accounts/taobao', 'platform.revoke', 'account'],
+      ['DELETE', '/v1/platform-accounts/taobao', 'platform.revoke', 'workspace'],
       ['POST', '/v1/platform-accounts/taobao/sync', 'catalog.sync', 'workspace'],
       ['GET', '/v1/tasks/task_scope/timeline', 'task.timeline', 'brand'],
       ['POST', '/v1/tasks/task_scope/content', 'content.generate', 'brand'],
@@ -52,29 +52,33 @@ describe('registered MCP authorization coverage', () => {
   it('uses the authoritative task account instead of a caller-selected account', async () => {
     const workspaceId = `ws_task_account_scope_${Date.now()}`
     const productId = `product_task_account_scope_${Date.now()}`
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: 'remote_task_account_scope', credentialRef: 'vault://task-account-scope' })
+    const accountId = service.listPlatformAccounts(workspaceId)[0]!.id
     service.products.set(productId, {
       ...service.products.get('prod_fixture_1')!,
       id: productId,
       workspaceId,
-      accountId: 'account_a',
+      accountId,
     })
-    const task = service.createTask({ workspaceId, productId, platform: 'taobao', accountId: 'account_a' })
+    const task = service.createTask({ workspaceId, productId, platform: 'taobao', accountId })
     const policy = getMcpMethodPolicy('platform.store.alias.set')!
 
-    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'account_b' })).resolves.toEqual({ type: 'account', id: 'account_a' })
+    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'account_b' })).resolves.toEqual({ type: 'account', id: accountId })
   })
 
   it('does not resolve a foreign task into a local account scope', async () => {
     const workspaceId = `ws_task_account_scope_local_${Date.now()}`
     const foreignWorkspaceId = `${workspaceId}_foreign`
     const productId = `product_task_account_scope_foreign_${Date.now()}`
+    service.registerPlatformAccount({ workspaceId: foreignWorkspaceId, platform: 'taobao', remoteAccountId: 'remote_foreign_task_scope', credentialRef: 'vault://foreign-task-scope' })
+    const foreignAccountId = service.listPlatformAccounts(foreignWorkspaceId)[0]!.id
     service.products.set(productId, {
       ...service.products.get('prod_fixture_1')!,
       id: productId,
       workspaceId: foreignWorkspaceId,
-      accountId: 'foreign_account',
+      accountId: foreignAccountId,
     })
-    const task = service.createTask({ workspaceId: foreignWorkspaceId, productId, platform: 'taobao', accountId: 'foreign_account' })
+    const task = service.createTask({ workspaceId: foreignWorkspaceId, productId, platform: 'taobao', accountId: foreignAccountId })
     const policy = getMcpMethodPolicy('platform.store.alias.set')!
 
     await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'local_account' })).resolves.toEqual({ type: 'account', id: 'local_account' })
