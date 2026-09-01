@@ -54,7 +54,7 @@ function NextActionEvidence({
       disabled={!executable}
       aria-disabled={!executable}
       aria-label={executable ? `执行：${action.label}` : `服务端动作 ${action.label} 尚未接入`}
-      onClick={() => { if (executable && onExecute) onExecute(finding); }}
+      onClick={() => { if (executable) onExecute?.(finding); }}
     >{executable ? action.label : `${action.label}（待接入）`}</Button>}
   </Space>;
 }
