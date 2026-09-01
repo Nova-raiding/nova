@@ -786,6 +786,7 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **Worker execution-check 本地契约。** `59c0df1`；Worker 定向测试 13/13、workers build 通过，验证 queued 后 grant revoke、scope mismatch、revision mismatch 均拒绝执行且 provider 外呼为 0。该证据不等于全部 critical worker 的生产授权快照、跨副本竞态或完整运行矩阵。
 - [x] **逐方法 authorization decision 契约。** `c1460f5`；生产执行路径与测试共用 `registeredMcpAuthorizationDecision()`，测试从实时 `MCP_METHODS` 遍历全部方法，逐项验证唯一 decision ID、当前 policy version、enforce mode、deny result 与稳定 reason code。`workspace.bootstrap` 也先经过同一 evaluator，首次成员例外仍只保留在授权函数内的显式契约层。API 定向测试 5/5、全项目 TypeScript 通过。
 - [x] **动态 enforce 覆盖率报告。** `1c63946`；`mcpAuthorizationCoverageReport()` 从实时 `MCP_METHODS`、policy capability domain 和运行模式计算方法总数、enforce/shadow 数量、比例及 enforce/shadow 域。生产 readiness 直接携带该无密钥报告，并要求 `mode=enforce`、无 staged domain 覆盖；测试移除历史 `17` 方法断言，动态证明生产方法和 capability domain 均 100% enforce。非法配置在 readiness 中稳定报告 unavailable/not-ready，运行时仍 fail-closed 拒绝启动。定向测试 81/81、全项目 TypeScript 通过。
+- [x] **精确 scope resolver 基础契约（本地切片）。** `c157184`；生产授权路径统一使用可测试的 `resolveAuthorizationResourceScope()`，对 workspace/self/brand/account ID 做非空 trim 规范化，缺失 ID 保持 unresolved 并由 evaluator fail-closed，platform 仅解析为显式 `*` aggregate。五类 resolver 定向回归与授权安全套件共 75/75、全项目 TypeScript 通过。实时 policy inventory 当前仍只有 workspace 184、platform 63、self 7，brand/account 为 0；具体方法迁移、加载后资源归属复核及 cross-brand/cross-account 运行证据未完成，因此 P1-BE-003 保持 TODO。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
