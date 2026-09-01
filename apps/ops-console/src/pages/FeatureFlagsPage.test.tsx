@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { getFeatureFlagEnvironmentConfig } from "./FeatureFlagsPage";
+import { featureFlagPermissionNotice, getFeatureFlagEnvironmentConfig } from "./FeatureFlagsPage";
 import { canonicalReadModeWarning } from "../components/feature-flags/FeatureFlagEditor";
 
 describe("FeatureFlagsPage environment configuration", () => {
+  it("explains server-projected read-only and partially restricted states", () => {
+    expect(featureFlagPermissionNotice(false, false)).toContain("feature_flag.update 或 feature_flag.emergency");
+    expect(featureFlagPermissionNotice(false, true)).toContain("feature_flag.update");
+    expect(featureFlagPermissionNotice(true, false)).toContain("feature_flag.emergency");
+    expect(featureFlagPermissionNotice(true, true)).toBeUndefined();
+  });
+
   it("defaults local builds to the seeded local_demo environment", () => {
     const config = getFeatureFlagEnvironmentConfig(false);
     expect(config.defaultEnvironment).toBe("local_demo");

@@ -11,6 +11,13 @@ import type { FeatureFlag } from "../../../../packages/contracts/src/ops/feature
 
 interface Props { client: FeatureFlagsClient; canWrite: boolean; canEmergency: boolean }
 
+export function featureFlagPermissionNotice(canWrite: boolean, canEmergency: boolean) {
+  if (canWrite && canEmergency) return undefined;
+  if (!canWrite && !canEmergency) return "当前仅可查看功能开关；服务端未授予 feature_flag.update 或 feature_flag.emergency 能力。";
+  if (!canWrite) return "当前仅可查看功能开关；服务端未授予 feature_flag.update 能力。";
+  return "当前可执行日常编辑；服务端未授予 feature_flag.emergency 能力，紧急操作不可用。";
+}
+
 export function getFeatureFlagEnvironmentConfig(managedSession: boolean) {
   return managedSession
     ? { defaultEnvironment: "production", environments: MANAGED_FEATURE_FLAG_ENVIRONMENTS }
@@ -22,8 +29,10 @@ export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {
   const model = useFeatureFlags(client, { environment: environmentConfig.defaultEnvironment });
   const [editing, setEditing] = useState<FeatureFlag | "new">(); const [audit, setAudit] = useState<FeatureFlag>(); const [emergencyTarget, setEmergencyTarget] = useState<FeatureFlag>(); const [emergencyReason, setEmergencyReason] = useState("");
   const initialLoadFailed = Boolean(model.error && !model.loading && model.items.length === 0);
+  const permissionNotice = featureFlagPermissionNotice(canWrite, canEmergency);
   return <OpsPage eyebrow="FEATURE FLAGS" title="功能开关" description="按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。">
     {model.error && <Alert role="alert" type="error" showIcon title="功能开关操作失败" description={model.error} action={<Button style={{ minHeight: 44 }} onClick={() => void model.load()}>重试</Button>} />}
+    {permissionNotice ? <Alert type="info" showIcon role="status" title="当前为受限操作状态" description={permissionNotice} /> : null}
     <Space wrap aria-label="功能开关筛选">
       <Input.Search allowClear aria-label="搜索开关键或说明" placeholder="搜索开关键或说明" style={{ width: 280 }} onSearch={query => model.setFilters({ ...model.filters, query })} />
       <Select aria-label="功能开关环境筛选" value={model.filters.environment} style={{ width: 200 }} onChange={environment => model.setFilters({ ...model.filters, environment })} options={featureFlagEnvironmentOptions(environmentConfig.environments)} />
