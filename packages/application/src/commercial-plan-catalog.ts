@@ -17,8 +17,8 @@ const GB = 1024 ** 3
 /** Local catalog contract. Values are inputs for an Ops-created offer version,
  * never a replacement for the persisted offer or a production readiness claim. */
 export const LOCAL_PLAN_ENTITLEMENTS: readonly CommercialPlanEntitlements[] = Object.freeze([
-  { planCode: 'basic', maxBrands: 1, maxStores: 5, creativePoints: 2000, storageBytes: 50 * GB, serviceHours: 5, firstResponseBusinessHours: 4, reviewCadence: 'none', availability: 'included' },
-  { planCode: 'growth', maxBrands: 3, maxStores: 15, creativePoints: 6500, storageBytes: 50 * GB, serviceHours: 10, firstResponseBusinessHours: 2, reviewCadence: 'monthly', availability: 'included' },
+  { planCode: 'basic', maxBrands: 1, maxStores: 5, creativePoints: 5000, storageBytes: 50 * GB, serviceHours: 5, firstResponseBusinessHours: 4, reviewCadence: 'none', availability: 'included' },
+  { planCode: 'growth', maxBrands: 3, maxStores: 15, creativePoints: 12500, storageBytes: 50 * GB, serviceHours: 10, firstResponseBusinessHours: 2, reviewCadence: 'monthly', availability: 'included' },
   { planCode: 'custom', maxBrands: null, maxStores: null, creativePoints: null, storageBytes: null, serviceHours: null, firstResponseBusinessHours: null, reviewCadence: 'contract', availability: 'custom_quote' },
 ])
 

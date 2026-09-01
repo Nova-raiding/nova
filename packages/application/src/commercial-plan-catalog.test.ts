@@ -4,8 +4,8 @@ import { LOCAL_PLAN_ENTITLEMENTS, validatePlanEntitlements, validateResolvedPlan
 describe('local commercial plan catalog', () => {
   it('exposes auditable basic and growth brand, store, creative and storage limits', () => {
     expect(LOCAL_PLAN_ENTITLEMENTS).toEqual(expect.arrayContaining([
-      expect.objectContaining({ planCode: 'basic', maxBrands: 1, maxStores: 5, creativePoints: 2000, serviceHours: 5, firstResponseBusinessHours: 4 }),
-      expect.objectContaining({ planCode: 'growth', maxBrands: 3, maxStores: 15, creativePoints: 6500, serviceHours: 10, firstResponseBusinessHours: 2 }),
+      expect.objectContaining({ planCode: 'basic', maxBrands: 1, maxStores: 5, creativePoints: 5000, serviceHours: 5, firstResponseBusinessHours: 4 }),
+      expect.objectContaining({ planCode: 'growth', maxBrands: 3, maxStores: 15, creativePoints: 12500, serviceHours: 10, firstResponseBusinessHours: 2 }),
     ]))
     expect(LOCAL_PLAN_ENTITLEMENTS[0]?.storageBytes).toBe(50 * 1024 ** 3)
   })
