@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
@@ -31,6 +31,14 @@ describe('brand scope capability derivation', () => {
     expect(minimumBrandRoleForPolicy(getMcpMethodPolicy('content.approve')!)).toBe('publisher')
     expect(minimumBrandRoleForPolicy(getMcpMethodPolicy('catalog.product.update')!)).toBe('editor')
     expect(minimumBrandRoleForPolicy(getMcpMethodPolicy('publish.get')!)).toBe('viewer')
+  })
+})
+
+describe('HTTP authorization path binding', () => {
+  it('maps exact resource placeholders to MCP parameter names', () => {
+    expect(httpAuthorizationPathParams('/v1/tasks/{taskId}/publish-preview', '/v1/tasks/task-1/publish-preview', 'publish.prepare')).toEqual({ task_id: 'task-1' })
+    expect(httpAuthorizationPathParams('/v1/publish-jobs/{jobId}', '/v1/publish-jobs/job-1', 'publish.get')).toEqual({ publish_job_id: 'job-1' })
+    expect(httpAuthorizationPathParams('/v1/content-versions/{contentVersionId}/diff', '/v1/content-versions/version-1/diff', 'content.diff')).toEqual({ content_version_id: 'version-1' })
   })
 })
 

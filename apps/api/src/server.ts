@@ -4867,6 +4867,23 @@ export function registeredMcpAuthorizationDecision(input: {
   })
 }
 
+export function httpAuthorizationPathParams(pathTemplate: string, pathname: string, mcpMethod: string): Record<string, string> {
+  const templateSegments = pathTemplate.split('/').filter(Boolean)
+  const pathSegments = pathname.split('/').filter(Boolean)
+  if (templateSegments.length !== pathSegments.length) return {}
+  const params: Record<string, string> = {}
+  for (let index = 0; index < templateSegments.length; index += 1) {
+    const placeholder = /^\{([A-Za-z][A-Za-z0-9]*)\}$/u.exec(templateSegments[index]!)
+    if (!placeholder) continue
+    const name = placeholder[1]!
+    const snakeName = name === 'jobId'
+      ? (mcpMethod.startsWith('publish.') ? 'publish_job_id' : 'job_id')
+      : name.replace(/([a-z0-9])([A-Z])/gu, '$1_$2').toLowerCase()
+    params[snakeName] = decodeURIComponent(pathSegments[index]!)
+  }
+  return params
+}
+
 async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, workspaceId: string): Promise<HttpOperationPolicy | undefined> {
   const httpPolicy = getHttpOperationPolicy(req.method, url.pathname)
   if (!httpPolicy || httpPolicy.authentication !== 'identity' || !httpPolicy.mcpMethod) return httpPolicy
@@ -4878,6 +4895,13 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
     && req.method !== 'GET'
     && (header(req, 'content-type') ?? '').toLowerCase().includes('application/json')
   if (hasJsonAuthorizationParams) Object.assign(params, await body(req))
+  const pathParams = httpAuthorizationPathParams(httpPolicy.pathTemplate, url.pathname, httpPolicy.mcpMethod)
+  for (const [name, value] of Object.entries(pathParams)) {
+    if (typeof params[name] === 'string' && params[name]!.trim() && params[name]!.trim() !== value) {
+      throw new DomainError('FORBIDDEN', '请求路径资源与授权参数不一致', 403, { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: mcpPolicy.scope })
+    }
+    params[name] = value
+  }
   // HTTP routes do not carry the MCP envelope's workspace_id. Bind the
   // already-resolved request scope before evaluating the shared policy so a
   // missing body/query field cannot silently widen or bypass tenant scope.
