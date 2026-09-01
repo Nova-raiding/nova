@@ -5,6 +5,10 @@ import { WorkerFailure } from '../packages/workers/src/runner.js'
 
 export type LocalFaultEvidence = {
   schema_version: '1'
+  release_id: string
+  software_version: string
+  config_version: string
+  data_version: string
   environment: 'test'
   cloud_gate: false
   status: 'pass' | 'fail'
@@ -36,6 +40,9 @@ export function validateLocalFaultEvidence(value: unknown): string[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return ['document must be a JSON object']
   const evidence = value as Partial<LocalFaultEvidence>
   if (evidence.schema_version !== '1') errors.push('schema_version must be 1')
+  for (const field of ['release_id', 'software_version', 'config_version', 'data_version'] as const) {
+    if (typeof evidence[field] !== 'string' || evidence[field].trim() === '') errors.push(`${field} is required`)
+  }
   if (evidence.environment !== 'test') errors.push('environment must be test')
   if (evidence.cloud_gate !== false) errors.push('cloud_gate must be false for local fault evidence')
   if (evidence.status !== 'pass' && evidence.status !== 'fail') errors.push('status must be pass or fail')

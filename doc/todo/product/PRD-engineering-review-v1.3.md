@@ -193,6 +193,7 @@ Synthesized from this review's findings. Run with Codex; checkbox as you ship.
 - Durable storage/备份证据字段及 artifact checksum：`57b7e03`，定向测试 5/5 通过。
 - Worker migration/source manifest freshness：`eb815ea`，定向测试 2/2 通过。
 - Health/ready correlation 与观测终态去重：`4a3b4fc`，定向测试 4/4 通过；覆盖 request/trace/workspace/job/connector/receipt 关联、敏感字段不泄露和依赖失败时非 200 readiness。
+- Local fault evidence 的 release/software/config/data 绑定：本地 Redis 停止/恢复证据现在强制携带 `release_id`、软件版本、Compose 配置版本和 migration/data 版本，并固定 `environment=test`、`cloud_gate=false`；缺失绑定会被门禁拒绝。该项只证明本地测试证据可追溯，不代表云端故障或生产恢复已通过。
 
 上述四项只证明本地合同和证据门禁可拒绝不完整/过期/不一致输入，不证明目标环境已经运行通过。仍未勾选 T6：50 家真实负载/故障/soak、真实连续 6 小时运行、噪声租户指标、目标部署报告、真实平台 canary、模型/支付/外部 OAuth 证据均未由本地测试替代。
 

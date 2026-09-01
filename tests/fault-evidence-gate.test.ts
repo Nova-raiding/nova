@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { validateLocalFaultEvidence, type LocalFaultEvidence } from './fault-acceptance.js'
 
 const base: LocalFaultEvidence = {
-  schema_version: '1', environment: 'test', cloud_gate: false, status: 'pass',
+  schema_version: '1', release_id: 'local-test-release', software_version: 'local-api@workspace', config_version: 'compose-test-v1', data_version: 'migration-128', environment: 'test', cloud_gate: false, status: 'pass',
   generated_at: '2026-09-01T00:00:00.000Z', ended_at: '2026-09-01T00:00:03.000Z',
   scenarios: [{ name: 'redis_restart', status: 'pass', degraded_status: 503, degraded_code: 'REDIS_UNAVAILABLE', recovered_status: 200, recovered_ready: true, request_id: 'req-local-fault', trace_id: 'trace-local-fault' }],
 }
@@ -22,5 +22,15 @@ describe('local fault evidence gate', () => {
 
   it('rejects a recovery result that did not prove the dependency became ready', () => {
     expect(validateLocalFaultEvidence({ ...base, scenarios: [{ ...base.scenarios[0], recovered_ready: false }] })).toContain('scenarios[0].recovered_ready must be true')
+  })
+
+  it('rejects evidence that is not bound to the tested release and local versions', () => {
+    const unbound = { ...base, release_id: '', software_version: '', config_version: '', data_version: '' }
+    expect(validateLocalFaultEvidence(unbound)).toEqual(expect.arrayContaining([
+      'release_id is required',
+      'software_version is required',
+      'config_version is required',
+      'data_version is required',
+    ]))
   })
 })

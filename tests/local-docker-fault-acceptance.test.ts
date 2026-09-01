@@ -62,6 +62,10 @@ describe('local Docker fault acceptance', () => {
 
       const evidence = {
         schema_version: '1' as const,
+        release_id: process.env.RELEASE_ID?.trim() || 'local-test-release',
+        software_version: process.env.SOFTWARE_VERSION?.trim() || 'local-api@workspace',
+        config_version: process.env.CONFIG_VERSION?.trim() || 'compose-test-v1',
+        data_version: process.env.DATA_VERSION?.trim() || 'migration-128',
         environment: 'test' as const,
         cloud_gate: false as const,
         status: 'pass' as const,
