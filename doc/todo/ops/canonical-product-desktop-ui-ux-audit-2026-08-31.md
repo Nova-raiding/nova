@@ -123,7 +123,7 @@ UI 必须让用户区分以下事实，而不能将“已读取”误认为“�
 - [ ] 主动作在执行中有 loading/成功/失败反馈；失败后恢复焦点并保留稳定错误码。
 - [ ] 运营台能从汇总数字钻取到具体商品和关系链，商家端能从商品状态进入对应详情。
 - [ ] 所有动作由服务端权限和 `next_actions` 决定；UI 不自行推断可执行修复。
-- [ ] 桌面浏览器验收覆盖空态、阻断态、冲突态、过期态、无权限态和正常 verified 态。
+- [x] 本地 1440px 桌面浏览器验收已覆盖空态、阻断态、冲突态、过期态、无权限态和正常 verified 态，并额外覆盖 `legacy_only`；证据见 `5ef4a54` 的 Playwright 8/8。
 - [ ] 在上述证据和桌面验收完成前，本文件不得迁移到 `doc/done`。
 
 ## 7. 审计结论
@@ -156,3 +156,10 @@ UI 必须让用户区分以下事实，而不能将“已读取”误认为“�
 - Ops Console 的商品级一致性表现在行内同时展示关系引用数量、证据生成时间、稳定 finding 原因、状态和服务端下一步；无需先打开详情抽屉才能判断阻断原因或证据新鲜度。
 - `CanonicalProductConsistencySection` 与 `StoresPage` 定向回归 18/18，Ops Console production build、TypeScript 与 `git diff --check` 通过。该增量只改善证据可见性，不改变服务端只读/权限/发布 fail-closed 边界。
 - 真实桌面多状态、生产 OIDC/RLS、完整 campaign 链和正式 ChatGPT Host 仍未验收，本文件继续保持 `TODO / UI NO-GO`，不迁移到 `doc/done`。
+
+### 2026-09-01 增量：canonical 桌面状态矩阵与错误重试
+
+- `5ef4a54` 新增本地 Playwright 桌面状态矩阵，8/8 通过，覆盖 `verified`、`legacy_only`、`conflict`、`blocked`、`expired`、`empty`、`error` 和 `permission`。
+- `error` 状态已验证使用可访问的 `role="alert"`、稳定错误码对应的失败文案和明确的“重试”按钮；失败不再伪装为空结果或成功状态。
+- 本地证据仅证明 1440px、模拟 workspace/session 与 API 响应下的桌面交互；1280/1920 全宽度、真实 OIDC/RLS、真实权限矩阵、正式宿主和生产数据仍未完成。
+- 主动作的真实执行 loading/成功/失败闭环及服务端授权动作仍未完成，因此不勾选完整动作验收项，本文件继续保持 `TODO / UI NO-GO`。
