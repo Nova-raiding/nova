@@ -900,8 +900,10 @@ function EnvironmentStatusBanner({
   const unavailable = Boolean(apiBaseUrl) && apiOnline === false
   const ready = Boolean(apiBaseUrl) && apiOnline === true
   const tone = ready ? 'ready' : 'warning'
-  const title = ready
-    ? '已连接真实 API'
+  const title = modelStatus && modelStatus.state !== 'ready'
+    ? '模型中转未就绪'
+    : ready
+      ? '已连接真实 API'
     : offline
       ? '当前为离线演示模式'
       : 'API 暂不可用'
@@ -913,7 +915,9 @@ function EnvironmentStatusBanner({
         : modelStatusRead
           ? '模型中转状态读取失败，生成能力不会被放行。'
           : '正在读取模型中转状态。'
-  const detail = ready
+  const detail = modelStatus && modelStatus.state !== 'ready'
+    ? modelDetail
+    : ready
     ? `商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。${modelDetail}`
     : unavailable
       ? '当前不会伪造同步、生成或发布成功；请检查 API 地址和服务状态。'
