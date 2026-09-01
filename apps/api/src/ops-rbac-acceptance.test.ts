@@ -182,6 +182,35 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     expect(body.trace_id).toBe(body.request_id)
   })
 
+  it('rejects conflicting path and query resource scopes before object lookup', async () => {
+    const workspaceId = `ws_ops_http_path_scope_${Date.now()}`
+    const actorId = `ops-http-path-scope-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: 'HTTP scope operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'ops-http-path-scope-token': { workspaces: [workspaceId], actor_id: actorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+
+    const response = await fetch(`${base}/v1/products/path-product/assets?product_id=query-product`, {
+      headers: {
+        authorization: 'Bearer ops-http-path-scope-token',
+        'x-workspace-id': workspaceId,
+        'x-ops-workbench': 'workspace',
+      },
+    })
+    const body = await response.json() as RpcBody
+
+    expect(response.status).toBe(403)
+    expect(body.data).toBeNull()
+    expect(body.error).toMatchObject({
+      code: 'FORBIDDEN',
+      details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: expect.any(String) },
+    })
+    expect(body.error?.details).not.toHaveProperty('product_id')
+    expect(body.request_id).toMatch(/^req_/)
+    expect(body.trace_id).toBe(body.request_id)
+  })
+
   it('projects one selected workbench in session and keeps rejection evidence stable', async () => {
     const workspaceId = `ws_ops_session_contract_${Date.now()}`
     const actorId = `ops-session-actor-${Date.now()}`
