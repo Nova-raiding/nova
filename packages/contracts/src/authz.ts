@@ -122,6 +122,20 @@ export interface AuthorizationDecision {
   obligations: { required: readonly AuthorizationObligation[]; satisfied: readonly AuthorizationObligation[]; missing: readonly AuthorizationObligation[] }
 }
 
+function isSafeAuthorizationIdentifier(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value === value.trim()
+    && !/[\u0000-\u001f\u007f]/u.test(value)
+}
+
+function isSafeAuthorizationScope(scope: { type: AuthorizationScopeType; ids: readonly string[] }): boolean {
+  if (!['self', 'workspace', 'brand', 'account', 'platform'].includes(scope.type)) return false
+  if (scope.ids.length === 0 || scope.ids.some(id => !isSafeAuthorizationIdentifier(id))) return false
+  // A wildcard is an aggregate platform grant, never a tenant/resource grant.
+  return scope.type === 'platform' || !scope.ids.includes('*')
+}
+
 export function evaluateAuthorizationDecision(input: {
   decisionId: string
   policy: MethodPolicy
@@ -135,11 +149,16 @@ export function evaluateAuthorizationDecision(input: {
 }): AuthorizationDecision {
   const explicitDeny = input.explicitDenies?.includes(input.policy.capability) === true
   const capabilityMatched = input.capabilities.includes(input.policy.capability)
-  const resourceId = input.resourceScope?.id
+  const resourceScopeValid = input.resourceScope === undefined
+    || (['self', 'workspace', 'brand', 'account', 'platform'].includes(input.resourceScope.type)
+      && (input.resourceScope.id === undefined || isSafeAuthorizationIdentifier(input.resourceScope.id))
+      && (input.resourceScope.type === 'platform' || input.resourceScope.id !== '*'))
+  const resourceId = resourceScopeValid ? input.resourceScope?.id : undefined
+  const usableScopes = input.scopes.filter(isSafeAuthorizationScope)
   const workbenchMatched = input.policy.scope === 'self'
     || input.workbench === 'platform' && input.policy.scope === 'platform'
     || input.workbench === 'workspace' && input.policy.scope !== 'platform'
-  const scopeMatched = input.resourceScope?.type === input.policy.scope && input.scopes.some(scope => scope.type === input.policy.scope && (
+  const scopeMatched = resourceScopeValid && input.resourceScope?.type === input.policy.scope && usableScopes.some(scope => scope.type === input.policy.scope && (
     scope.type === 'platform' && scope.ids.includes('*')
       || resourceId !== undefined && (scope.ids.includes(resourceId) || scope.ids.includes('*'))
   ))
@@ -163,7 +182,7 @@ export function evaluateAuthorizationDecision(input: {
     method: input.policy.method,
     capability: input.policy.capability,
     workbench: input.workbench,
-    scope: { required: input.policy.scope, ...(resourceId ? { resource_id: resourceId } : {}), resolved: input.scopes.map(scope => ({ type: scope.type, ids: [...scope.ids] })) },
+    scope: { required: input.policy.scope, ...(resourceId ? { resource_id: resourceId } : {}), resolved: usableScopes.map(scope => ({ type: scope.type, ids: [...scope.ids] })) },
     mode: input.mode,
     enforced,
     authorized,

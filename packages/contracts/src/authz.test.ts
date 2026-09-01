@@ -136,6 +136,35 @@ describe('authorization policy registry', () => {
     expect(evaluateAuthorizationDecision({ decisionId: 'platform-to-workspace', policy: workspacePolicy, capabilities: [workspacePolicy.capability], scopes: [{ type: 'workspace', ids: ['ws_1'] }], resourceScope: { type: 'workspace', id: 'ws_1' }, workbench: 'platform', mode: 'shadow' })).toMatchObject({ allowed: false, enforced: true, result: 'deny', reason_code: 'AUTHZ_WORKBENCH_MISMATCH' })
   })
 
+  it('fails closed when a direct evaluator caller supplies malformed scope identifiers', () => {
+    const policy = getMcpMethodPolicy('catalog.search')!
+    const evaluate = (scope: { type: 'workspace'; ids: readonly string[] }, resourceId: string) => evaluateAuthorizationDecision({
+      decisionId: 'malformed-scope',
+      policy,
+      capabilities: [policy.capability],
+      scopes: [scope],
+      resourceScope: { type: 'workspace', id: resourceId },
+      workbench: 'workspace',
+      mode: 'enforce',
+    })
+
+    expect(evaluate({ type: 'workspace', ids: ['ws_1\u0000'] }, 'ws_1\u0000')).toMatchObject({
+      allowed: false,
+      authorized: false,
+      reason_code: 'AUTHZ_SCOPE_MISMATCH',
+    })
+    expect(evaluate({ type: 'workspace', ids: ['*'] }, 'ws_1')).toMatchObject({
+      allowed: false,
+      authorized: false,
+      reason_code: 'AUTHZ_SCOPE_MISMATCH',
+    })
+    expect(evaluate({ type: 'workspace', ids: ['   '] }, 'ws_1')).toMatchObject({
+      allowed: false,
+      authorized: false,
+      reason_code: 'AUTHZ_SCOPE_MISMATCH',
+    })
+  })
+
   it('keeps capability and scope in one permission atom and enforces read-only grant limits', () => {
     const readPolicy = getMcpMethodPolicy('catalog.search')!
     expect(evaluatePermissionAtoms({
