@@ -62,7 +62,9 @@ describe('authorization RLS/ACL boundary PostgreSQL probe', () => {
       const eventIds = await database.query<{ role_event_id: string; grant_event_id: string }>(`SELECT
         (SELECT id FROM platform_role_assignment_events WHERE assignment_id=$1) AS role_event_id,
         (SELECT id FROM ops_access_grant_events WHERE grant_id=$2) AS grant_event_id`, [assignmentId, grantId])
-      const { role_event_id: roleEventId, grant_event_id: grantEventId } = eventIds.rows[0]
+      const eventRow = eventIds.rows[0]
+      expect(eventRow).toBeDefined()
+      const { role_event_id: roleEventId, grant_event_id: grantEventId } = eventRow!
       await expect(database.query(`UPDATE platform_role_assignment_events SET reason='tampered' WHERE id=$1`, [roleEventId])).rejects.toThrow(/append-only/u)
       await expect(database.query(`DELETE FROM ops_access_grant_events WHERE id=$1`, [grantEventId])).rejects.toThrow(/append-only/u)
       const acl = await database.query(`SELECT
