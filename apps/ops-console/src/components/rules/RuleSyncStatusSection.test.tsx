@@ -28,4 +28,33 @@ describe("RuleSyncStatusSection", () => {
     expect(html).toContain("已过期");
     expect(html).toContain("规则来源已超过 24 小时未检查");
   });
+
+  it("announces loading without replacing the last known status", () => {
+    const html = renderToStaticMarkup(
+      <RuleSyncStatusSection
+        loading
+        onRefresh={() => undefined}
+        statuses={[{
+          platform: "douyin",
+          label: "抖音",
+          officialUrl: "https://example.test/rules",
+          configured: true,
+          machineReadable: true,
+          latestVersion: "2026.08",
+          sourceCheckedAt: "2026-08-31T00:00:00.000Z",
+          ageHours: 1,
+          stale: false,
+          state: "ready",
+          reason: "规则来源在检查窗口内",
+        }]}
+      />,
+    );
+
+    expect(html).toContain('aria-label="六平台规则同步"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain("正在刷新六个平台规则同步状态，请稍候");
+    expect(html).toContain('aria-label="正在刷新规则同步状态"');
+    expect(html).toContain("2026.08");
+  });
 });

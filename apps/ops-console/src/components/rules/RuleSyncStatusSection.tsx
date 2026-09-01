@@ -22,20 +22,25 @@ export function RuleSyncStatusSection({
   const blocked = statuses.filter((item) => item.state !== "ready").length;
 
   return (
-    <Card
-      title="六平台规则同步"
-      extra={
-        <Button
-          icon={<ReloadOutlined aria-hidden="true" />}
-          loading={loading}
-          disabled={loading}
-          aria-busy={loading}
-          onClick={onRefresh}
-        >
-          刷新状态
-        </Button>
-      }
-    >
+    <section aria-label="六平台规则同步" aria-busy={loading}>
+      <span className="ops-visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {loading ? "正在刷新六个平台规则同步状态，请稍候" : statuses.length > 0 ? `已读取 ${statuses.length} 个平台的规则同步状态` : ""}
+      </span>
+      <Card
+        title="六平台规则同步"
+        extra={
+          <Button
+            icon={<ReloadOutlined aria-hidden="true" />}
+            loading={loading}
+            disabled={loading}
+            aria-busy={loading}
+            aria-label={loading ? "正在刷新规则同步状态" : "刷新规则同步状态"}
+            onClick={onRefresh}
+          >
+            {loading ? "刷新中" : "刷新状态"}
+          </Button>
+        }
+      >
       <Alert
         type={statuses.length > 0 && blocked === 0 ? "success" : "warning"}
         showIcon
@@ -97,6 +102,7 @@ export function RuleSyncStatusSection({
           },
         ]}
       />
-    </Card>
+      </Card>
+    </section>
   );
 }
