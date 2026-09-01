@@ -45,7 +45,7 @@ function productionRuntimeValue(key: string): string | undefined {
 
 const config = compose()
 const services = config.services ?? {}
-const workerServices = ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation']
+const workerServices = ['worker-sync', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-automation', 'worker-scan']
 const expectedServices = ['ui', 'api', ...workerServices, 'migrate', 'postgres', 'redis']
 for (const name of expectedServices) assert.ok(services[name], `Compose service ${name} is required`)
 
