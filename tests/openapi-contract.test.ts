@@ -38,6 +38,14 @@ describe('OpenAPI security contract', () => {
     expect(source).toContain('name: X-Workspace-Id')
     expect(source).toContain('name: Idempotency-Key')
     expect(source).toContain('publish.confirm')
+    const publishConfirmSchema = source.slice(
+      source.indexOf('    PublishConfirmRequest:'),
+      source.indexOf('    PublishObservationRequest:'),
+    )
+    expect(publishConfirmSchema).toContain("confirmation_ticket_nonce_hash: { type: string, pattern: '^[a-f0-9]{64}$'")
+    expect(publishConfirmSchema).toContain("confirmation_ticket_intent_hash: { type: string, pattern: '^[a-f0-9]{64}$'")
+    expect(publishConfirmSchema).toContain('required: [task_id, content_version_id, confirmation_hash, remote_snapshot_hash]')
+    expect(publishConfirmSchema).not.toMatch(/required: \[[^\]]*confirmation_ticket_/u)
     expect(source).toContain('X-Rule-Approval-Token')
     expect(source).toContain('rules_admin')
     expect(source).not.toContain('admin.raw_sql')

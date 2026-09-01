@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { afterAll, describe, expect, it } from 'vitest'
-import { MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
+import { MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
 
 const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
 const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
@@ -868,7 +868,13 @@ describe('Codex stdio MCP bridge', () => {
       expect(mediaCreate.inputSchema.properties.spec_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'object' })
       expect(mediaCreate.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'delivery.bundle.verify').inputSchema.properties.files_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array' })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm').annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
+      const publishConfirm = listed.result.tools.find((tool: { name: string }) => tool.name === 'publish.confirm')
+      expect(publishConfirm.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
+      expect(publishConfirm.inputSchema.properties.confirmation_ticket_nonce_hash).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_nonce_hash)
+      expect(publishConfirm.inputSchema.properties.confirmation_ticket_intent_hash).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].properties.confirmation_ticket_intent_hash)
+      expect(publishConfirm.inputSchema.required).toEqual(MCP_METHOD_SCHEMAS['publish.confirm'].required)
+      expect(publishConfirm.inputSchema.required).not.toContain('confirmation_ticket_nonce_hash')
+      expect(publishConfirm.inputSchema.required).not.toContain('confirmation_ticket_intent_hash')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'tools/call', params: { name: 'billing.recharge.get', arguments: { order_id: 'order_test', confirm_test_payment: 'true' } } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, message: 'Unsupported tool argument: confirm_test_payment' })
       expect(requests).toHaveLength(0)
