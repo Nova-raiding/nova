@@ -42,4 +42,12 @@ describe('scanner request proof', () => {
     expect(verifyScannerRequestProof({ ...vector, secret: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
     expect(verifyScannerRequestProof({ ...vector, maxSkewSeconds: Number.NaN, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
   })
+
+  it('rejects control characters and oversized request targets', () => {
+    expect(() => createScannerRequestProof({ ...vector, requestTarget: '/v1/assets\r\nX-Injected: 1' })).toThrow()
+    expect(() => createScannerRequestProof({ ...vector, requestTarget: `/${'a'.repeat(2_048)}` })).toThrow()
+    const proof = createScannerRequestProof({ ...vector, timestampSeconds: Number(vector.timestamp) })
+    expect(verifyScannerRequestProof({ ...vector, requestTarget: '/v1/assets\n', timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyScannerRequestProof({ ...vector, requestTarget: `/${'a'.repeat(2_048)}`, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+  })
 })

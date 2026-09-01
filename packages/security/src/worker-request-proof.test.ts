@@ -22,4 +22,12 @@ describe('worker request proof', () => {
     expect(verifyWorkerRequestProof({ ...base, secret: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
     expect(verifyWorkerRequestProof({ ...base, maxSkewSeconds: Number.NaN, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
   })
+
+  it('rejects control characters and oversized request targets', () => {
+    expect(() => createWorkerRequestProof({ ...base, requestTarget: '/v1/jobs\r\nX-Injected: 1' })).toThrow()
+    expect(() => createWorkerRequestProof({ ...base, requestTarget: `/${'a'.repeat(2_048)}` })).toThrow()
+    const proof = createWorkerRequestProof(base)
+    expect(verifyWorkerRequestProof({ ...base, requestTarget: '/v1/jobs\n', timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyWorkerRequestProof({ ...base, requestTarget: `/${'a'.repeat(2_048)}`, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+  })
 })

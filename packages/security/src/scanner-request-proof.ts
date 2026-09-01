@@ -1,6 +1,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const SCANNER_REQUEST_PROOF_MAX_SKEW_SECONDS = 60
+const MAX_REQUEST_TARGET_LENGTH = 2_048
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u
 
 export interface ScannerRequestProofInput {
   secret: string
@@ -52,10 +54,14 @@ export function canonicalScannerRequestProof(input: {
 function assertGenerationInput(input: ScannerRequestProofInput, timestamp: string, nonce: string): void {
   if (!input.secret) throw new Error('scanner request proof secret is required')
   if (!/^[A-Z]+$/u.test(input.method)) throw new Error('scanner request proof method is invalid')
-  if (!input.requestTarget.startsWith('/')) throw new Error('scanner request proof target is invalid')
+  if (!isSafeRequestTarget(input.requestTarget)) throw new Error('scanner request proof target is invalid')
   if (!/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId)) throw new Error('scanner request proof workspace is invalid')
   if (!/^\d{10}$/u.test(timestamp)) throw new Error('scanner request proof timestamp is invalid')
   if (!/^[A-Za-z0-9_-]{16,128}$/u.test(nonce)) throw new Error('scanner request proof nonce is invalid')
+}
+
+function isSafeRequestTarget(value: string): boolean {
+  return value.length > 0 && value.length <= MAX_REQUEST_TARGET_LENGTH && value.startsWith('/') && !CONTROL_CHARACTER.test(value)
 }
 
 export function createScannerRequestProof(input: ScannerRequestProofInput): ScannerRequestProof {
@@ -95,7 +101,7 @@ export function verifyScannerRequestProof(input: ScannerRequestProofVerification
     const timestampSeconds = Number(input.timestamp)
     const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000)
     const maxSkewSeconds = input.maxSkewSeconds ?? SCANNER_REQUEST_PROOF_MAX_SKEW_SECONDS
-    if (!/^[A-Z]+$/u.test(input.method) || !input.requestTarget.startsWith('/')
+    if (!/^[A-Z]+$/u.test(input.method) || !isSafeRequestTarget(input.requestTarget)
       || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId)
       || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
       || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0

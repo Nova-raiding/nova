@@ -4,6 +4,13 @@ export const WORKER_REQUEST_PROOF_MAX_SKEW_SECONDS = 60
 export const WORKER_ROLES = ['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan'] as const
 export type WorkerRequestRole = typeof WORKER_ROLES[number]
 
+const MAX_REQUEST_TARGET_LENGTH = 2_048
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u
+
+function isSafeRequestTarget(value: string): boolean {
+  return value.length > 0 && value.length <= MAX_REQUEST_TARGET_LENGTH && value.startsWith('/') && !CONTROL_CHARACTER.test(value)
+}
+
 type ProofBase = {
   secret: string
   role: WorkerRequestRole
@@ -24,7 +31,7 @@ export function canonicalWorkerRequestProof(input: Omit<ProofBase, 'secret' | 'b
 export function createWorkerRequestProof(input: ProofBase & { timestampSeconds?: number; nonce?: string }) {
   const timestamp = String(input.timestampSeconds ?? Math.floor(Date.now() / 1000))
   const nonce = input.nonce ?? randomBytes(24).toString('base64url')
-  if (!input.secret || !WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !input.requestTarget.startsWith('/')
+  if (!input.secret || !WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !isSafeRequestTarget(input.requestTarget)
     || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !/^\d{10}$/u.test(timestamp) || !/^[A-Za-z0-9_-]{16,128}$/u.test(nonce)) {
     throw new Error('worker request proof input is invalid')
   }
@@ -49,7 +56,7 @@ export function verifyWorkerRequestProof(input: ProofBase & { timestamp: string;
     const timestampSeconds = Number(input.timestamp)
     const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000)
     const maxSkewSeconds = input.maxSkewSeconds ?? WORKER_REQUEST_PROOF_MAX_SKEW_SECONDS
-    if (!WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !input.requestTarget.startsWith('/')
+    if (!WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !isSafeRequestTarget(input.requestTarget)
       || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
       || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0
       || Math.abs(nowSeconds - timestampSeconds) > maxSkewSeconds || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
