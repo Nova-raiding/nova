@@ -14014,8 +14014,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
         reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
         const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot, deferCommit: true })
+        const currentTask = existing ? service.getTask(taskId) : { ...task, state: 'publishing' as const, version: task.version + 1 }
         await persistSnapshotsAndEvent({ workspaceId, snapshots: [
-          { entityType: 'task', entityId: task.id, entityVersion: task.version, payload: task as unknown as Record<string, unknown> },
+          { entityType: 'task', entityId: currentTask.id, entityVersion: currentTask.version, payload: currentTask as unknown as Record<string, unknown> },
           { entityType: 'publish_job', entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown> },
         ], aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job) })
         service.commitPublishConfirmation(job)
