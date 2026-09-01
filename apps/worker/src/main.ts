@@ -28,6 +28,7 @@ import { createExecutionAuthorizationGuard, WorkerExecutionAuthorizationError, t
 import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/scanner-heartbeat.js'
 import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
 import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
+import { assertGenerationInput } from './generation-input.js'
 
 export interface WorkerConfig {
   databaseUrl: string
@@ -1276,19 +1277,19 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for generation execution')
     await assertGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     const input = event.payload.input
-    if (!isObject(input)) throw new Error('generation event is missing input')
     const contextHash = event.payload.context_hash
     const actionId = event.payload.action_id
     const runKey = requireModelRunKey(event.payload)
     if (typeof contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contextHash)) throw new Error('generation event is missing context_hash')
-    if (contextEnvelopeHash(input) !== contextHash) throw new Error('generation event context hash mismatch')
-    if (typeof actionId !== 'string' || !actionId || !isObject(input.usageContext) || input.usageContext.workspaceId !== event.workspaceId || input.usageContext.actionId !== actionId || input.usageContext.runKey !== runKey) throw new Error('generation event usage context mismatch')
+    if (typeof actionId !== 'string' || !actionId) throw new Error('generation event is missing action_id')
+    const validatedInput = assertGenerationInput(input, event.workspaceId, actionId, runKey)
+    if (contextEnvelopeHash(validatedInput as unknown as Record<string, unknown>) !== contextHash) throw new Error('generation event context hash mismatch')
     const taskId = event.payload.task_id
     if (typeof taskId !== 'string' || !taskId) throw new Error('generation event is missing task_id')
     const modelKey = process.env.AI_MODEL?.trim() ?? process.env.MODEL_ID?.trim() ?? 'configured-model'
     await quotaAdmission.admit(quotaAdmissionForEvent(event, 'model', modelKey, config.modelQuotaPerMinute))
     generationUsageContexts.set(actionId, { runKey, contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), signal })
-    try { return await contentGenerator.generate(input as unknown as ContentGenerationInput, { signal }) }
+    try { return await contentGenerator.generate(validatedInput, { signal }) }
     finally { generationUsageContexts.delete(actionId) }
   }
   const imageGenerationRequested = async (event: DurableOutboxEvent, _projection: unknown, signal?: AbortSignal) => {
