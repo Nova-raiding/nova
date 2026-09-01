@@ -52,6 +52,28 @@ describe('content generator', () => {
     expect(attempts).toBe(3)
   })
 
+  it('repairs provider SKU references that escape the frozen product scope', async () => {
+    let attempts = 0
+    const invalid = validGeneratedContent({
+      modules: [{
+        ...validModules[0],
+        referencedSkuIds: ['product-1'],
+        decisionContract: { ...decisionContract, claim: { ...decisionContract.claim, skuIds: ['product-1'] } },
+      }],
+    })
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => {
+        attempts += 1
+        const content = attempts === 1 ? invalid : validGeneratedContent()
+        return new Response(JSON.stringify({ id: `scope-${attempts}`, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200 })
+      },
+    })
+
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { id: 'product-1', title: '商品', stock: 1, skuCount: 1, skuIds: ['sku-m'] }, confirmedFactSourceIds: ['product:p:v1'] })).resolves.toMatchObject({ modules: [{ referencedSkuIds: ['sku-m'] }] })
+    expect(attempts).toBe(2)
+  })
+
   it('cancels an in-flight model provider request when the caller signal aborts', async () => {
     const controller = new AbortController()
     let providerSignal: AbortSignal | undefined

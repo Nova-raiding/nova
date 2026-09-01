@@ -4160,7 +4160,7 @@ export class MerchantService {
     const generationInput: ContentGenerationInput = {
       platform: task.platform,
       directionId: task.selectedDirectionId ?? 'default',
-      product: { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, ...(product.attributes ? { attributes: product.attributes } : {}) },
+      product: { id: product.id, title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, skuIds: [...snapshot.skuIds], ...(product.attributes ? { attributes: product.attributes } : {}) },
       confirmedFactSourceIds: [`product:${product.id}:v${product.version ?? 1}`],
       ...(snapshot.brand?.visualRules ? { brandVisualRules: snapshot.brand.visualRules } : {}),
       ...(snapshot.assets.length ? { referenceAssets: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision, ...(asset.preference ? { preference: asset.preference } : {}) })) } : {}),
