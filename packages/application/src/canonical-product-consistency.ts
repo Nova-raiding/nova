@@ -372,6 +372,8 @@ export function buildCanonicalChainConsistencyReport(input: CanonicalChainConsis
     const task = scopedTasks.find(candidate => candidate.id === job.taskId)
     const codes = [
       ...(!task ? ['PUBLISH_TASK_ORPHAN'] : []),
+      ...(task && !task.canonicalProductId ? ['PUBLISH_CANONICAL_SCOPE_MISSING'] : []),
+      ...(task && !task.listingId ? ['PUBLISH_LISTING_SCOPE_MISSING'] : []),
       ...(task && job.platform && task.platform && job.platform !== task.platform ? ['PUBLISH_PLATFORM_SCOPE_MISMATCH'] : []),
       ...(task && job.accountId && task.accountId && job.accountId !== task.accountId ? ['PUBLISH_ACCOUNT_SCOPE_MISMATCH'] : []),
       ...(task && job.canonicalProductId && task.canonicalProductId !== job.canonicalProductId ? ['PUBLISH_CANONICAL_SCOPE_MISMATCH'] : []),

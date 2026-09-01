@@ -76,6 +76,22 @@ describe('canonical product consistency report', () => {
     expect(report.orphanFindings.every(finding => finding.blocking && finding.nextAction)).toBe(true)
   })
 
+  it('blocks publish jobs whose task has not been bound to the canonical scope', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      tasks: [{ id: 'task_unbound', workspaceId: 'ws_1', productId: 'legacy_1' }],
+      publishJobs: [{ id: 'publish_unbound', workspaceId: 'ws_1', taskId: 'task_unbound' }],
+    })
+
+    expect(report.orphanFindings).toContainEqual(expect.objectContaining({
+      entityType: 'publish_job',
+      entityId: 'publish_unbound',
+      status: 'conflict',
+      codes: ['PUBLISH_CANONICAL_SCOPE_MISSING', 'PUBLISH_LISTING_SCOPE_MISSING'],
+    }))
+    expect(report.status).toBe('attention_required')
+  })
+
   it('does not report a canonical-only root as clean during legacy cutover', () => {
     const report = buildCanonicalChainConsistencyReport({
       workspaceId: 'ws_1', legacyProducts: [],
