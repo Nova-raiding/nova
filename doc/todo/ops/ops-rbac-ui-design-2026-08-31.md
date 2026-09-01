@@ -333,9 +333,9 @@ type AccessDecision = {
 
 ## 11. 前端落地顺序
 
-- [ ] **T1（P1）统一能力契约**：用 `AccessDecision/capabilityKey` 替代页面内角色数组；先解决财务、规则、任务域当前差异。验证：角色 × 域 × 动作契约测试。
+- [x] **T1（P1）统一能力契约**：用 `AccessDecision/capabilityKey` 替代页面内角色数组；先解决财务、规则、任务域当前差异。验证：角色 × 域 × 动作契约测试。已由 `AuthorizationProvider`、`PermissionGate`、服务端 capability projection 及 `d497dc8`、`013ed94`、`962cbbd` 的定向测试证实。
 - [ ] **T2（P1）重构 Shell**：实现 `OpsAppShell + RoleScopeBar + ConnectionHealthDrawer`，移除首屏 Token 表单与硬编码全平台文案。验证：platform/workspace/controlled 三类会话截图与键盘路径。
-- [ ] **T3（P1）统一权限状态**：实现 `PermissionBoundary/Hint/AccessDeniedResult`，覆盖导航隐藏、只读、前置禁用、服务端 403。验证：每类状态至少一个浏览器用例。
+- [x] **T3（P1）统一权限状态**：实现 `PermissionBoundary/Hint/AccessDeniedResult`，覆盖导航隐藏、只读、前置禁用、服务端 403。验证：每类状态至少一个浏览器用例；本地组件/契约测试由 `d497dc8`、`013ed94`、`3c80ff4`、`c432df7` 等提交证实。
 - [ ] **T4（P2）统一页面骨架**：PageHeader、FilterBar、DataTable、Drawer、DangerActionModal；先迁移用户、成员、财务三个高风险页。验证：无 Card 套 Table、焦点恢复、错误保留输入。
 - [ ] **T5（P2）迁移其余 10 域**：按域逐一移除局部硬编码权限和随机样式。验证：13 域视觉快照 + 角色导航矩阵。
 - [ ] **T6（P2）应用 AntD tokens**：根 ConfigProvider + 组件 token；清理业务组件内颜色/圆角/大面积 inline style。验证：1440/1920 桌面截图、对比度与 reduced-motion。
