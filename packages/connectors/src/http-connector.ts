@@ -9,7 +9,7 @@ import { douyinProfile } from './profiles/douyin.js'
 import { validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConnectorReadiness } from './readiness.js'
 import { assertOutboundUrl, inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
 import { deduplicateSyncProducts, SyncContractError, validateNextSyncCursor, validateSyncCursor, validateSyncWindow } from './sync-safety.js'
-import { platformEnvelope } from './platform-adapters/rejection.js'
+import { mapPlatformRejection, platformEnvelope, providerRequestId } from './platform-adapters/rejection.js'
 import type {
   AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, CredentialProvider, CredentialRef, Cursor,
   HttpConnectorConfig, HttpRequestBodyEncoding, HttpRequestDescriptor, MappingVersion, NormalizedPlatformError, Platform, PlatformConnector,
@@ -146,7 +146,8 @@ function redact(value: unknown, depth = 0): unknown {
   // Provider error codes are non-secret correlation evidence.  Do not redact
   // them merely because the word "code" appears in the field name; token,
   // authorization and credential-shaped fields remain redacted.
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) && !['code', 'platformCode', 'rawCode'].includes(key) ? '[REDACTED]' : redact(item, depth + 1)]))
+  const safeEvidenceKeys = new Set(['code', 'platformCode', 'rawCode', 'requestId', 'rejection', 'fields', 'path', 'message'])
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, safeEvidenceKeys.has(key) ? item : secretKey.test(key) ? '[REDACTED]' : redact(item, depth + 1)]))
 }
 
 function defaultProducts(payload: unknown, platform: Platform): RawProduct[] {
@@ -462,14 +463,18 @@ export class HttpPlatformConnector implements PlatformConnector {
       try { payload = text ? JSON.parse(text) : undefined } catch { payload = text }
       if (!response.ok) {
         const errorPayload = isRecord(payload) && isRecord(payload.error) ? payload.error : payload
-        const rejection = this.parseRejection(errorPayload)
+        const errorEnvelope = platformEnvelope(errorPayload)
+        const providerError = errorEnvelope
+          ? platformEnvelope(errorEnvelope.error_response ?? errorEnvelope.platform_rejection ?? errorEnvelope.rejection ?? errorEnvelope.error) ?? errorEnvelope
+          : undefined
+        const rejection = mapPlatformRejection(errorPayload)
         throw {
           status: response.status,
           message: `platform HTTP ${response.status}`,
           details: isRecord(errorPayload)
             ? {
-                ...(readString(errorPayload.code) ? { platformCode: readString(errorPayload.code) } : {}),
-                ...(readRequestId(errorPayload.requestId) ? { requestId: readRequestId(errorPayload.requestId) } : {}),
+                ...(readString(providerError?.code) || readString(providerError?.error_code) ? { platformCode: readString(providerError?.code) ?? readString(providerError?.error_code) } : {}),
+                ...(providerRequestId(errorPayload) ? { requestId: providerRequestId(errorPayload) } : {}),
                 ...(rejection ? { rejection } : {}),
               }
             : undefined,
@@ -486,10 +491,15 @@ export class HttpPlatformConnector implements PlatformConnector {
   }
 
   private parseRejection(value: unknown): WriteStatus['rejection'] | undefined {
-    if (!isRecord(value)) return undefined
-    const rawCode = readString(value.code) ?? readString(value.error_code)
-    const fields = Array.isArray(value.fields)
-      ? value.fields.flatMap(item => {
+    const root = platformEnvelope(value)
+    if (!root) return undefined
+    const rawCode = readString(root.code) ?? readString(root.error_code)
+    const rawFields: unknown[] = Array.isArray(root.fields)
+      ? root.fields
+      : Array.isArray(root.field_errors)
+        ? root.field_errors
+        : []
+    const fields = rawFields.flatMap(item => {
           if (!isRecord(item)) return []
           const path = readString(item.path) ?? readString(item.field) ?? readString(item.name)
           const message = readString(item.message) ?? readString(item.error)
@@ -497,9 +507,8 @@ export class HttpPlatformConnector implements PlatformConnector {
           const rawFieldCode = readString(item.code) ?? readString(item.error_code)
           return [{ path, message, ...(rawFieldCode ? { rawCode: rawFieldCode } : {}) }]
         })
-      : []
     if (!rawCode && fields.length === 0) return undefined
-    return { rawCode: rawCode ?? 'PLATFORM_VALIDATION_FAILED', ...(readString(value.message) ? { message: readString(value.message) } : {}), fields }
+    return { rawCode: rawCode ?? 'PLATFORM_VALIDATION_FAILED', ...(readString(root.message) || readString(root.error_msg) ? { message: readString(root.message) ?? readString(root.error_msg) } : {}), fields }
   }
 }
 

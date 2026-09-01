@@ -306,6 +306,32 @@ describe('HttpPlatformConnector', () => {
       .rejects.toMatchObject({ normalized: { code: 'VALIDATION_FAILED', status: 422, retryable: false, details: { platformCode: 'SKU_INVALID', requestId: 'req-safe', rejection: { rawCode: 'SKU_INVALID', fields: [{ path: 'sku[0].price', rawCode: 'PRICE_INVALID', message: 'must be positive' }] } } } })
   })
 
+  it('retains provider identity and error code from nested HTTP rejection envelopes', async () => {
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async () => response({
+        data: {
+          error_response: {
+            error_code: 'JD-RATE-001',
+            request_id: 'jd-provider-request-42',
+            message: '请求被平台拒绝',
+            field_errors: [{ field: 'sku', error_code: 'SKU_INVALID', message: 'SKU 不合法' }],
+          },
+        },
+      }, 422),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+
+    await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' }))
+      .rejects.toMatchObject({ normalized: { code: 'VALIDATION_FAILED', status: 422, details: {
+        platformCode: 'JD-RATE-001',
+        requestId: 'jd-provider-request-42',
+        rejection: { rawCode: 'JD-RATE-001', fields: [{ path: 'sku', rawCode: 'SKU_INVALID', message: 'SKU 不合法' }] },
+      } } })
+  })
+
   it('rejects oversized platform responses before parsing them', async () => {
     const connector = createConfiguredConnector('jd', {
       config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },

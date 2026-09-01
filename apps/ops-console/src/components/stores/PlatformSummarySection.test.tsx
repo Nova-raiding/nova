@@ -23,5 +23,15 @@ describe("platform operations summary", () => {
     const error = renderToStaticMarkup(<PlatformSummarySection stores={[]} error="权限不足" platformLabels={{}} onRetry={vi.fn()} onOpenSupport={vi.fn()} />);
     expect(error).toContain('role="alert"');
     expect(error).toContain("权限不足");
+    expect(error).toContain('tabindex="-1"');
+    expect(error).toContain('aria-label="重试平台汇总"');
+  });
+
+  it("keeps the last trusted summary visible while refreshing or reporting an error", () => {
+    const refreshing = renderToStaticMarkup(<PlatformSummarySection stores={[...stores]} loading error="连接暂时不可用" platformLabels={{ jd: "京东" }} onRetry={vi.fn()} onOpenSupport={vi.fn()} />);
+    expect(refreshing).toContain("上次可信的平台连接汇总");
+    expect(refreshing).toContain("正在更新平台连接汇总");
+    expect(refreshing).toContain('aria-busy="true"');
+    expect(refreshing).toContain('aria-live="assertive"');
   });
 });
