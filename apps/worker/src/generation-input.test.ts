@@ -13,6 +13,10 @@ describe('durable generation prompt schema', () => {
     ['wrong workspace usage', { usageContext: { workspaceId: 'ws_other', actionId: 'model:job_1', runKey: 'task_1' } }],
     ['invalid stock', { product: { title: '商品', stock: -1, skuCount: 1 } }],
     ['invalid asset revision', { referenceAssets: [{ id: 'asset_1', revision: 0 }] }],
+    ['duplicate frozen SKU references', { product: { ...valid().product, skuIds: ['sku-1', 'sku-1'] } }],
+    ['control character in product identity', { product: { ...valid().product, id: 'product\u0001' } }],
+    ['malformed asset preference', { referenceAssets: [{ id: 'asset_1', revision: 1, preference: { verdict: 'excellent', reasons: [] } }] }],
+    ['control character in asset preference', { referenceAssets: [{ id: 'asset_1', revision: 1, preference: { verdict: 'disliked', reasons: ['bad\u0001'] } }] }],
   ])('rejects %s before provider input is accepted', (_label, override) => {
     expect(() => assertGenerationInput({ ...valid(), ...override }, 'ws_1', 'model:job_1', 'task_1')).toThrowError(expect.objectContaining({ code: 'GENERATION_INPUT_SCHEMA_INVALID' }))
   })
