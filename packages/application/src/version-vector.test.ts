@@ -31,6 +31,29 @@ describe('content version provenance vector', () => {
     expect(restored.versionVector?.createdAt).not.toBe(version.versionVector?.createdAt)
   })
 
+  it('fails closed when a hydrated task snapshot is stale or crosses task scope', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: { ...task, inputSnapshotId: `task:${task.id}:v${task.version + 1}` } }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_SNAPSHOT_VERSION_INVALID', status: 409 }))
+    const snapshot = service.getTask(task.id)
+    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: { ...snapshot, inputSnapshot: { id: snapshot.inputSnapshotId, taskId: snapshot.id, capturedAt: snapshot.createdAt, rulesCheckedAt: snapshot.createdAt, product: { ...service.products.get(task.productId)!, id: 'other-product' }, skuIds: [], ruleVersionIds: [], assets: [], promotions: [], stock: 1 } } }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_SNAPSHOT_INVALID', status: 409 }))
+  })
+
+  it('rejects conflicting rehydration instead of overwriting a newer task or content revision', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.hydrateSnapshot({ entityType: 'task', entity: structuredClone(task) })
+    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: { ...task, version: task.version + 1 } }))
+      .toThrowError(expect.objectContaining({ code: 'VERSION_CONFLICT', status: 409 }))
+    service.selectDirection(task.id, 'A')
+    const version = service.createDraft(task.id)
+    service.hydrateSnapshot({ entityType: 'content_version', entity: structuredClone(version) })
+    expect(() => service.hydrateSnapshot({ entityType: 'content_version', entity: { ...version, revision: version.revision + 1 } }))
+      .toThrowError(expect.objectContaining({ code: 'VERSION_CONFLICT', status: 409 }))
+  })
+
   it('rejects stale task mutations instead of overwriting a newer client version', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })

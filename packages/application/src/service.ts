@@ -1297,6 +1297,24 @@ export class MerchantService {
     if (task.version !== expectedVersion) throw new DomainError('VERSION_CONFLICT', '任务已被其他操作更新，请刷新后重试', 409, { current_version: task.version, expected_version: expectedVersion, task_id: task.id })
   }
 
+  private validateHydratedTask(task: Task) {
+    if (!Number.isInteger(task.version) || task.version < 1) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务快照版本必须是正整数', 400, { task_id: task.id })
+    if (typeof task.inputSnapshotId !== 'string' || !task.inputSnapshotId.trim()) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务快照缺少冻结上下文 ID', 400, { task_id: task.id })
+    const snapshotVersion = new RegExp(`^task:${task.id.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}:v([1-9][0-9]*)$`, 'u').exec(task.inputSnapshotId)?.[1]
+    if (!snapshotVersion || Number(snapshotVersion) > task.version) throw new DomainError('TASK_SNAPSHOT_VERSION_INVALID', '任务快照版本必须是任务当前版本或更早版本', 409, { task_id: task.id, task_version: task.version, input_snapshot_id: task.inputSnapshotId })
+    const snapshot = task.inputSnapshot
+    if (!snapshot) return
+    if (snapshot.id !== task.inputSnapshotId || snapshot.taskId !== task.id || snapshot.product?.workspaceId !== task.workspaceId || snapshot.product.id !== task.productId) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文与任务作用域不一致，已拒绝恢复', 409, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
+    if (!Number.isFinite(Date.parse(snapshot.capturedAt)) || !Number.isFinite(Date.parse(snapshot.rulesCheckedAt))) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文时间戳无效', 400, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
+    if (!Array.isArray(snapshot.skuIds) || !Array.isArray(snapshot.ruleVersionIds) || !Array.isArray(snapshot.assets) || !Array.isArray(snapshot.promotions)) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文缺少必要版本集合', 400, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
+    if (snapshot.skuIds.some(id => typeof id !== 'string') || snapshot.ruleVersionIds.some(id => typeof id !== 'string')) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文包含非法版本引用', 400, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
+  }
+
+  private validateHydratedContentVersion(version: ContentVersion) {
+    if (!Number.isInteger(version.version) || version.version < 1 || !Number.isInteger(version.revision) || version.revision < 1) throw new DomainError('CONTENT_VERSION_SNAPSHOT_INVALID', '内容版本号和修订号必须是正整数', 400, { content_version_id: version.id })
+    if (version.versionVector?.taskInputSnapshotId !== undefined && typeof version.versionVector.taskInputSnapshotId !== 'string') throw new DomainError('CONTENT_VERSION_SNAPSHOT_INVALID', '内容版本的任务快照引用无效', 400, { content_version_id: version.id })
+  }
+
   private parsePromotionSnapshot(task: Pick<Task, 'id' | 'platform' | 'accountId' | 'productId' | 'answers'>, product: Product): PromotionSnapshot[] {
     const raw = task.answers.promotion_json
     if (raw === undefined) return []
@@ -2106,13 +2124,20 @@ export class MerchantService {
     if (input.entityType === 'product') this.products.set(entity.id, input.entity as Product)
     if (input.entityType === 'task') {
       const task = input.entity as Task
-      this.tasks.set(entity.id, { ...task, inputSnapshotId: task.inputSnapshotId || `task:${task.id}:v${task.version || 1}`, answers: task.answers ?? {}, missingQuestions: task.missingQuestions ?? [], deferredQuestionIds: task.deferredQuestionIds ?? [], deferredQuestions: task.deferredQuestions ?? [] })
+      const normalizedTask = { ...task, inputSnapshotId: task.inputSnapshotId || `task:${task.id}:v${task.version || 1}`, answers: task.answers ?? {}, missingQuestions: task.missingQuestions ?? [], deferredQuestionIds: task.deferredQuestionIds ?? [], deferredQuestions: task.deferredQuestions ?? [] }
+      this.validateHydratedTask(normalizedTask)
+      const prior = this.tasks.get(entity.id)
+      if (prior && hash(prior) !== hash(normalizedTask)) throw new DomainError('VERSION_CONFLICT', '同一任务快照 ID 对应了冲突内容，已拒绝覆盖', 409, { task_id: entity.id, current_version: prior.version, incoming_version: normalizedTask.version })
+      this.tasks.set(entity.id, normalizedTask)
       if (task.inputSnapshot && task.inputSnapshot.id === task.inputSnapshotId && task.inputSnapshot.taskId === task.id && task.inputSnapshot.product?.workspaceId === task.workspaceId) this.taskInputSnapshots.set(task.inputSnapshot.id, deepFreeze(structuredClone(task.inputSnapshot)))
       if (task.taskGroupId && task.taskGroupKeyHash && task.taskGroupIntentHash) this.taskGroupIdempotency.set(`${task.workspaceId}:${task.taskGroupKeyHash}`, { groupId: task.taskGroupId, intentHash: task.taskGroupIntentHash, createdAt: task.createdAt })
       if (task.taskRequestKeyHash && task.taskRequestIntentHash) this.taskRequestIdempotency.set(`${task.workspaceId}:${task.taskRequestKeyHash}`, { taskId: task.id, intentHash: task.taskRequestIntentHash })
     }
     if (input.entityType === 'content_version') {
       const version = input.entity as ContentVersion
+      this.validateHydratedContentVersion(version)
+      const prior = this.contentVersions.get(entity.id)
+      if (prior && hash(prior) !== hash(version)) throw new DomainError('VERSION_CONFLICT', '同一内容版本 ID 对应了冲突内容，已拒绝覆盖', 409, { content_version_id: entity.id, current_revision: prior.revision, incoming_revision: version.revision })
       this.contentVersions.set(entity.id, version)
       const generationWorkspaceId = version.generationWorkspaceId ?? this.tasks.get(version.taskId)?.workspaceId
       if (generationWorkspaceId && version.generationKeyHash && version.generationIntentHash) this.contentGenerationIdempotency.set(`${generationWorkspaceId}:${version.generationKeyHash}`, { taskId: version.taskId, contentVersionId: version.id, intentHash: version.generationIntentHash })
