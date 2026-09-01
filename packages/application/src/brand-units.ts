@@ -213,6 +213,8 @@ export class BrandUnitService {
     const workspaceId = text(input.workspaceId, 'workspaceId')
     const taskId = text(input.taskId, 'taskId')
     const blockers = this.checkTarget(workspaceId, input)
+    const listing = this.listings.get(input.listingId)
+    if (listing?.workspaceId === workspaceId && listing.state !== 'active') blockers.push('LISTING_NOT_ACTIVE')
     return {
       taskId,
       workspaceId,

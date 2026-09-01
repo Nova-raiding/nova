@@ -64,7 +64,7 @@ describe('BrandUnitService', () => {
     const { service, a, store } = setup()
     service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
     const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, id: 'canonical-task-1', title: '外套' })
-    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-task-1' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-task-1', state: 'active' })
     const target = { taskId: 'task-1', workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }
 
     expect(service.preflightTaskTarget(target)).toEqual({ ...target, state: 'ready', blockers: [] })
@@ -80,6 +80,19 @@ describe('BrandUnitService', () => {
     const result = service.preflightTaskTarget({ taskId: 'task-1', workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'jd', accountId: store.id })
     expect(result).toMatchObject({ state: 'blocked', blockers: expect.arrayContaining(['PLATFORM_MISMATCH']) })
     expect(result.blockers).toContain('LISTING_TARGET_MISMATCH')
+  })
+
+  it('blocks draft listings at the task and publish preflight boundary', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, title: '外套' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id })
+    const target = { taskId: 'task-draft-listing', workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }
+
+    expect(service.preflightTaskTarget(target)).toMatchObject({ state: 'blocked', blockers: ['LISTING_NOT_ACTIVE'] })
+
+    service.listings.set(listing.id, { ...listing, state: 'active' })
+    expect(service.preflightTaskTarget(target)).toMatchObject({ state: 'ready', blockers: [] })
   })
 
   it('rejects invalid input with a stable domain error', () => {
