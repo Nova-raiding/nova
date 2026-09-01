@@ -1,5 +1,5 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
-import { relaySecurityFromEnv, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
+import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
@@ -84,6 +84,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
   private readonly fetchImpl: typeof fetch
   constructor(private readonly options: OpenAICompatibleImageGeneratorOptions) {
     if (!options.baseUrl.trim() || !options.apiKey.trim() || !options.model.trim()) throw new Error('image provider URL, API key and model are required')
+    assertRelayBaseUrl(options.baseUrl)
     validateImageRelayPath(options.path)
     validateImageRelayPath(options.statusPath)
     this.fetchImpl = options.fetch ?? fetch

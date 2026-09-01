@@ -5,6 +5,18 @@ export interface RelaySecurityPolicy {
   allowedHosts?: readonly string[]
 }
 
+/**
+ * Every model adapter is a relay-only boundary, including adapters created by
+ * trusted in-process callers. Keep the constructor guard synchronous so a
+ * misconfigured adapter cannot exist before its first request.
+ */
+export function assertRelayBaseUrl(value: string): void {
+  let url: URL
+  try { url = new URL(value) } catch { throw new Error('model relay URL must be a valid HTTPS URL') }
+  if (url.protocol !== 'https:') throw new Error('model relay URL must use HTTPS')
+  if (url.username || url.password || url.search || url.hash) throw new Error('model relay URL must not contain credentials, query parameters, or fragments')
+}
+
 export function relaySecurityFromEnv(source: Record<string, string | undefined>): RelaySecurityPolicy | undefined {
   const environment = source.NODE_ENV
   if (!/^https:\/\//u.test(source.MODEL_RELAY_BASE_URL?.trim() ?? '')) return undefined

@@ -1,5 +1,5 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
-import { relaySecurityFromEnv, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
+import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, ProviderRequestFailedError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
@@ -90,6 +90,7 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
 
   constructor(private readonly options: OpenAICompatibleVideoGeneratorOptions) {
     if (!options.baseUrl.trim() || !options.apiKey.trim() || !options.model.trim()) throw new Error('video provider URL, API key and model are required')
+    assertRelayBaseUrl(options.baseUrl)
     validateVideoRelayPath(options.path, 'generation')
     validateVideoRelayPath(options.statusPath, 'status')
     this.fetchImpl = options.fetch ?? fetch

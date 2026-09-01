@@ -1,5 +1,5 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
-import { relaySecurityFromEnv, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
+import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
@@ -50,7 +50,7 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
 
   constructor(private readonly options: ImageFactsExtractorOptions) {
     if (!options.baseUrl.trim() || !options.apiKey.trim() || !options.model.trim()) throw new Error('OCR relay URL, API key and model are required')
-    if (new URL(options.baseUrl).protocol !== 'https:') throw new Error('OCR relay URL must use HTTPS')
+    assertRelayBaseUrl(options.baseUrl)
     this.fetchImpl = options.fetch ?? fetch
   }
 
