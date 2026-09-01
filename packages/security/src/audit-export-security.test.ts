@@ -52,4 +52,12 @@ describe('audit export security boundary', () => {
     rejectsWithCode(() => store.resolve(link.token, { ...scope, workspaceId: null as unknown as string }), 'AUDIT_EXPORT_SCOPE_INVALID')
     rejectsWithCode(() => store.resolve(link.token, { ...scope, platformId: '\n' }), 'AUDIT_EXPORT_SCOPE_INVALID')
   })
+
+  it('fails closed for unsafe signing configuration and clock evidence', () => {
+    rejectsWithCode(() => new AuditExportLinkStore({ secret: '' }), 'AUDIT_EXPORT_SCOPE_INVALID')
+    rejectsWithCode(() => new AuditExportLinkStore({ secret: 'secret\nvalue' }), 'AUDIT_EXPORT_SCOPE_INVALID')
+    rejectsWithCode(() => new AuditExportLinkStore({ secret: 'x'.repeat(4097) }), 'AUDIT_EXPORT_SCOPE_INVALID')
+    const invalidClock = new AuditExportLinkStore({ now: () => Number.NaN, secret: 'local-test-secret' })
+    rejectsWithCode(() => invalidClock.issue({ exportId: 'export_1', scope }), 'AUDIT_EXPORT_SCOPE_INVALID')
+  })
 })

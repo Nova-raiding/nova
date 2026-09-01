@@ -36,6 +36,7 @@ export interface AuthorizedAuditExportScope {
 const WILDCARD = /[*?]/u
 const CONTROL = /[\u0000-\u001f\u007f]/u
 const MAX_LINK_TOKEN_LENGTH = 4096
+const MAX_LINK_SECRET_LENGTH = 4096
 
 function exactIdentifier(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 256 || CONTROL.test(value) || WILDCARD.test(value)) {
@@ -90,13 +91,17 @@ export class AuditExportLinkStore {
     this.now = options.now ?? (() => Date.now())
     this.ttlMs = options.ttlMs ?? 5 * 60_000
     this.secret = options.secret ?? randomBytes(32).toString('hex')
+    if (typeof this.now !== 'function') throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_INVALID', 'link clock is invalid')
+    if (typeof this.secret !== 'string' || !this.secret || this.secret.length > MAX_LINK_SECRET_LENGTH || CONTROL.test(this.secret)) throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_INVALID', 'link secret is invalid')
     if (!Number.isSafeInteger(this.ttlMs) || this.ttlMs < 1_000 || this.ttlMs > 15 * 60_000) throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_INVALID', 'link TTL is invalid')
   }
 
   issue(input: { exportId: string; scope: AuditExportScope }): AuditExportLinkRecord {
     const exportId = exactIdentifier(input.exportId, 'exportId')
     const scope = validateAuditExportRequest({ scope: input.scope }, { tenantId: input.scope.tenantId, workspaceIds: [input.scope.workspaceId], platformIds: input.scope.platformId ? [input.scope.platformId] : undefined })
-    const expiresAt = this.now() + this.ttlMs
+    const issuedAt = this.now()
+    if (!Number.isSafeInteger(issuedAt) || issuedAt < 0) throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_INVALID', 'link clock is invalid')
+    const expiresAt = issuedAt + this.ttlMs
     const unsigned = `${exportId}.${scope.tenantId}.${scope.workspaceId}.${scope.platformId ?? ''}.${expiresAt}.${randomBytes(18).toString('base64url')}`
     const signature = createHmac('sha256', this.secret).update(unsigned).digest('base64url')
     const token = `${unsigned}.${signature}`
