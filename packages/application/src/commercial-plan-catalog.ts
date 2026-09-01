@@ -28,6 +28,21 @@ export function validatePlanEntitlements(value: CommercialPlanEntitlements): Com
     const item = value[field]
     if (item !== null && (!Number.isFinite(item) || item < 0 || !Number.isInteger(item))) throw new Error(`PLAN_${field.toUpperCase()}_INVALID`)
   }
-  if (value.planCode !== 'custom' && (value.maxBrands === null || value.maxStores === null || value.creativePoints === null || value.storageBytes === null)) throw new Error('PLAN_STANDARD_ENTITLEMENTS_INCOMPLETE')
+  if (value.planCode !== 'custom' && [value.maxBrands, value.maxStores, value.creativePoints, value.storageBytes, value.serviceHours, value.firstResponseBusinessHours].some(item => item === null)) throw new Error('PLAN_STANDARD_ENTITLEMENTS_INCOMPLETE')
   return structuredClone(value)
+}
+
+/**
+ * Validates the representation that may cross the order/subscription boundary.
+ * A custom plan can be displayed as "按需" in the catalog, but it must never
+ * reach activation with null/unlimited quantities. The caller must resolve the
+ * negotiated values from the signed order/SOW first.
+ */
+export function validateResolvedPlanEntitlements(value: CommercialPlanEntitlements): CommercialPlanEntitlements {
+  const validated = validatePlanEntitlements(value)
+  const quantitativeFields = ['maxBrands', 'maxStores', 'creativePoints', 'storageBytes', 'serviceHours', 'firstResponseBusinessHours'] as const
+  for (const field of quantitativeFields) {
+    if (validated[field] === null) throw new Error(`PLAN_${field.toUpperCase()}_REQUIRED_FOR_ACTIVATION`)
+  }
+  return validated
 }
