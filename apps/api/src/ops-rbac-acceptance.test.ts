@@ -172,7 +172,7 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     const response = await fetch(`${base}/v1/products`, {
       headers: { authorization: 'Bearer ops-http-missing-scope-token' },
     })
-    const body = await response.json() as RpcBody
+    const body = await response.json() as RpcBody & { workspace_id?: string }
     expect(response.status).toBe(403)
     expect(body.data).toBeNull()
     expect(body.workspace_id).toBe('unknown')
