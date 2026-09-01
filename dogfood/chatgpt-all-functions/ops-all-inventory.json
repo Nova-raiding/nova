@@ -10,7 +10,7 @@
         "商业与平台控制台",
         "运营总览"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nOVERVIEW\n运营总览\n查看套餐、模型、平台告警和上线状态。\n当前套餐\n-\n订阅状态\n-\n平台已启用\n0 / 6\n钱包余额\n-\n工作区与财务总览\n工作区\t状态\t套餐\t订阅\t任务用量\t成员数\nws_atomic_cross_day_pg_1788191112333_ea6477f158931\tactive\tStarter\ttrialing\t0 / 30\t0\nws_atomic_overrun_pg_1788191112170_3f31bd5a0bce2\tactive\tStarter\ttrialing\t0 / 30\t0\nws_atomic_pg_1788191111902_e2f13a597560d\tactive\tStarter\ttrialing\t0 / 30\t0\nws_run_budget_pg_1788191111795_1b0e4e1de8f38\tactive\tStarter\ttrialing\t0 / 30\t0\nws_budget_pg_1788191111617_74d5256d42cbe\tactive\tStarter\ttrialing\t0 / 30\t0\nws_atomic_cross_day_pg_1788189528041_279b4f557524b\tactive\tStarter\ttrialing\t0 / 30\t0\n1\n2\n3\n4\n渠道转化漏斗\n仅统计业务事件\n事件总数\n0\n模型服务\n进入模型服务\n已就绪能力\n0/ 5\n阻断能力\n5\n状态不可用Provider 配置不代表可用，最终状态同时受成本证据与计费组门禁控制。\n存储与对账\n查看对账\n已使用\n—\n预计占用\n—\n尚未接入\n仅展示 workspace 汇总\n暂无最近对账时间；不展示客户对象、key 或下载入口。\n待处理平台告警\n19 条未确认\n导出运营审计\n刷新告警\n级别\t平台\t告警\t对象\t下一步\t通知\t操作\n中\tTAOBAO\t18 条平台告警（AUTOMATION_LOW_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tPINDUODUO\t1 条平台告警（AUTOMATION_LOW_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tJD\t4 条平台告警（AUTOMATION_LOW_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tJD\t1 条平台告警（AUTOMATION_OUT_OF_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tTMALL\t1 条平台告警（AUTOMATION_UNCONFIRMED_FACTS）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tTAOBAO\t12 条平台告警（AUTOMATION_UNCONFIRMED_FACTS）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n1\n2\n3\n4\n平台上线 readiness\n真实 canary 前保持只读\n平台\t店铺授权\t读取\t写入\t能力证据\t生产发布\t主/副图媒体\t阻断原因\nJD\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nPINDUODUO\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nTAOBAO\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nTMALL\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nXIAOHONGSHU\trefresh_required\t未开启\t已阻断\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\n数据生命周期 readiness\n非生产模式\n业务保留\n-天\n隔离区\n-天\nClean\n-天\n删除宽限\n-天\n备份保留\n-天\n对象版本化\n未开启\n生命周期数值和策略引用不包含 Secret，仅用于上线门禁和运营核对。\n生产证据 readiness\n未通过门禁\n证据类型\t状态\t环境\tRelease\t版本/Profile\t核验人/时间\t阻断原因\n六平台 capability\tnot_required\t-\t-\t-\t-\t无\n容量压测\tnot_required\t-\t-\t-\t-\t无\n仅显示脱敏元数据；示例、fixture、test_e2e 或本地容量结果不会被计为生产通过。\n数据删除申请\n双人审批后仍需外部删除证明\n范围\t原因\t申请人\t审批数\t计划执行\t状态\t操作\n\nNo data",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n正在刷新运营数据\nOVERVIEW\n运营总览\n查看套餐、模型、平台告警和上线状态。\n当前套餐\n-\n订阅状态\n-\n平台已启用\n0 / 6\n钱包余额\n-\n工作区与财务总览\n工作区\t状态\t套餐\t订阅\t任务用量\t成员数\n\nNo data\n渠道转化漏斗\n仅统计业务事件\n事件总数\n0\n模型服务\n进入模型服务\n已就绪能力\n0/ 5\n阻断能力\n5\n状态不可用Provider 配置不代表可用，最终状态同时受成本证据与计费组门禁控制。\n存储与对账\n查看对账\n已使用\n—\n预计占用\n—\n尚未接入\n仅展示 workspace 汇总\n暂无最近对账时间；不展示客户对象、key 或下载入口。\n待处理平台告警\n0 条未确认\n导出运营审计\n刷新告警\n级别\t平台\t告警\t对象\t下一步\t通知\t操作\n\nNo data\n平台上线 readiness\n真实 canary 前保持只读\n平台\t店铺授权\t读取\t写入\t能力证据\t生产发布\t主/副图媒体\t阻断原因\n\nNo data\n数据生命周期 readiness\n非生产模式\n业务保留\n-天\n隔离区\n-天\nClean\n-天\n删除宽限\n-天\n备份保留\n-天\n对象版本化\n未开启\n生命周期数值和策略引用不包含 Secret，仅用于上线门禁和运营核对。\n生产证据 readiness\n未通过门禁\n证据类型\t状态\t环境\tRelease\t版本/Profile\t核验人/时间\t阻断原因\n六平台 capability\tnot_required\t-\t-\t-\t-\t无\n容量压测\tnot_required\t-\t-\t-\t-\t无\n仅显示脱敏元数据；示例、fixture、test_e2e 或本地容量结果不会被计为生产通过。\n数据删除申请\n双人审批后仍需外部删除证明\n范围\t原因\t申请人\t审批数\t计划执行\t状态\t操作\n\nNo data",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -95,30 +95,6 @@
         {
           "text": "刷新告警",
           "disabled": false
-        },
-        {
-          "text": "确认",
-          "disabled": false
-        },
-        {
-          "text": "确认",
-          "disabled": false
-        },
-        {
-          "text": "确认",
-          "disabled": false
-        },
-        {
-          "text": "确认",
-          "disabled": false
-        },
-        {
-          "text": "确认",
-          "disabled": false
-        },
-        {
-          "text": "确认",
-          "disabled": false
         }
       ],
       "inputs": [
@@ -148,7 +124,7 @@
         "商业与平台控制台",
         "用户与租户"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nPLATFORM GOVERNANCE\n用户与租户\n按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。\n用户目录\n租户治理\n权限与角色\n用户身份\n4\n成员关系\n160\n涉及租户\n157\n用户目录\n关键词\n状态\n全部状态\n租户\n查 询\n清 空\n导出当前筛选\n批量停用（0）\n结果超过 500 条，请增加筛选条件。\n\t身份标识\t\n显示名\n\t租户\t角色\t数据来源\t套餐 / 消耗\t\n成员状态\n\t租户状态\t\n创建时间\n\t操作\n\n\t\n身份标识\n\t\n显示名\n\t\n租户\n\t\n角色\n\t\n数据来源\n\t\n套餐 / 消耗\n\t\n成员状态\n\t\n租户状态\n\t\n创建时间\n\t\n操作\n\n\n\tworkspace_admin_demo\t本地演示工作区所有者\tws_demo\t工作区所有者\t本地种子\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/09/01 08:33\t\n详 情\n停 用\n\n\n\tactor_demo\t本地演示平台运营\tws_demo\t平台运营\t本地种子\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/08/28 07:53\t\n详 情\n停 用\n\n\n\tcodex-app-user\tjaap Odin\tws_demo\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/08/29 16:55\t\n详 情\n停 用\n\n\n\tsupport_demo\t本地演示支持专员\tws_demo\t支持\t本地种子\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/08/28 10:14\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 40\tws_65e93b2a884e44e8bcf03d62\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 34\tws_4f2d9330552e4aada048d3df\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 33\tws_218040acdffe447f9177fe96\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 39\tws_02d69d8273504d52b9039820\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 38\tws_d18a3d8291114e128c9d2fd6\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 37\tws_31d43b64276d408e9d04a1b2\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 36\tws_db170122ea1942a382cc879b\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 47\tws_249a673e1d144e548590c532\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 32\tws_878c6eaa143446c7adee8f0a\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 35\tws_092c3a8e83fe41e499a49782\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 48\tws_c5936fe67a9e403badeb043d\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 46\tws_77bfd64cfcb343a382a6655b\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 45\tws_8dcb6f4000024ba8a8438095\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 43\tws_e23a084a25374af1807d137e\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 31\tws_21aaea1ce44e48cb8ab66374\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 42\tws_3b98bceb0815471f9ae617eb\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n共 160 条成员关系\n1\n2\n3\n4\n5\n8\n20 / page",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n正在刷新运营数据\nPLATFORM GOVERNANCE\n用户与租户\n按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。\n当前下一步\n先确认服务端能力投影与当前工作区范围，再执行需要原因、修订号和审计的治理操作。\n用户治理能力已由服务端确认\n页面分区、只读状态和写入入口均依据 ops.session 返回的 capability projection；页面不会从角色名称推断权限。\n用户目录\n租户治理\n权限与角色\n用户身份\n0\n成员关系\n0\n涉及租户\n0\n用户目录\n关键词\n状态\n全部状态\n租户\n查 询\n清 空\n导出当前筛选\n批量停用（0）\n\t身份标识\t\n显示名\n\t租户\t角色\t数据来源\t套餐 / 消耗\t\n成员状态\n\t租户状态\t\n创建时间\n\t操作\n\n\t\n身份标识\n\t\n显示名\n\t\n租户\n\t\n角色\n\t\n数据来源\n\t\n套餐 / 消耗\n\t\n成员状态\n\t\n租户状态\n\t\n创建时间\n\t\n操作\n\n\n没有符合条件的用户成员关系",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -233,166 +209,6 @@
         {
           "text": "批量停用（0）",
           "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": false
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": false
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": false
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": true
         }
       ],
       "inputs": [
@@ -444,153 +260,6 @@
           "placeholder": null,
           "label": "Select all",
           "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 1",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 2",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 3",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 4",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 5",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 6",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 7",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 8",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 9",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 10",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 11",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 12",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 13",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 14",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 15",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 16",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 17",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 18",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 19",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "checkbox",
-          "placeholder": null,
-          "label": "Select row 20",
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "Page Size",
-          "value": ""
         }
       ]
     },
@@ -604,7 +273,7 @@
         "商业与平台控制台",
         "平台连接汇总"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nSTORE OPERATIONS\n平台连接汇总\n平台运营查看平台级连接健康，并通过受控支持入口处理客户问题。\n平台连接汇总\n受控支持入口\n平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单按授权范围受控处理。\n京东\n登记店铺\n1\n官方 API\n0\n连接正常\n拼多多\n登记店铺\n1\n官方 API\n0\n连接正常\n淘宝\n登记店铺\n1\n官方 API\n0\n连接正常\n天猫\n登记店铺\n1\n官方 API\n0\n连接正常\n小红书\n登记店铺\n1\n官方 API\n0\n1 个需关注\n 品牌治理聚合 平台级脱敏\n仅展示数量和链路健康，不返回品牌名称、商品标题、内容或令牌。\n品牌数\n2\n已绑定店铺\n2\n未绑定品牌\n1\n刊登映射\n1\n规范商品一致性\n当前会话无权读取一致性证据\n这不是空结果；当前账号缺少 customer.content.read，服务端不会返回商品关系数据，也不能通过本页面发起重新检查。\nCanonical 回填人工冲突队列\n扫描并刷新队列\n刷新队列\n仅展示服务端入队的冲突；认领和解决均要求最新 revision，不能绕过商品关系校验。\n暂无待处理冲突；空结果不代表全量回填已完成\n平台连接与授权健康\n5 个已登记店铺\n平台\t店铺\t授权\t数据模式\t同步\t读/写\t操作\nJD\t\n1 个京东店铺\nplatform-aggregate:jd:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nPINDUODUO\t\n1 个拼多多店铺\nplatform-aggregate:pinduoduo:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nTAOBAO\t\n2 个淘宝店铺\nplatform-aggregate:taobao:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nTMALL\t\n1 个天猫店铺\nplatform-aggregate:tmall:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nXIAOHONGSHU\t\n1 个小红书店铺\nplatform-aggregate:xiaohongshu:refresh_required:fixture\n\t演示授权\tfixture 演示\t暂无记录\t— / —\t\n改别名\n撤销\n1\n此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。\n已配置的店铺自动化策略\n0 条\n店铺\t状态\t模式\t频率\t下次执行\t暂停原因\n暂无自动化策略；当前不会执行定时扫描或自动重试。\n店铺优化建议\n状态待确认\n优先级\t建议\t下一步\t入口\t边界\n尚未取得扫描结果；可在策略配置完成后手动扫描。\n店铺自动化运营\n未配置\n立即扫描\n保存策略\n尚未配置自动化策略\n当前不会执行自动扫描、同步或重试；取得真实策略后才会开放操作。\n扫描商品\n-\n发布任务\n-\n风险项\n-\n模式：同步扫描 + 风险告警 + 人工重试\n不会无人值守自动重发\n执行频率（分钟）\n重试上限\n执行窗口\n至\n留空表示全天；窗口外仅延期并记录审计。\n暂无扫描风险。",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n部分运营数据未刷新\n部分数据集刷新失败（ops.audit.platform.list、ops.brand-units.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。\nSTORE OPERATIONS\n平台连接汇总\n平台运营查看平台级连接健康，并通过受控支持入口处理客户问题。\n平台连接汇总\n受控支持入口\n平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单按授权范围受控处理。\n抖音\n登记店铺\n1\n官方 API\n0\n连接正常\n京东\n登记店铺\n1\n官方 API\n0\n连接正常\n拼多多\n登记店铺\n1\n官方 API\n0\n连接正常\n淘宝\n登记店铺\n1\n官方 API\n0\n连接正常\n天猫\n登记店铺\n1\n官方 API\n0\n连接正常\n小红书\n登记店铺\n1\n官方 API\n0\n1 个需关注\n 品牌治理聚合\n尚未取得平台品牌聚合数据\n规范商品一致性\n当前会话无权读取一致性证据\n这不是空结果；当前账号缺少 customer.content.read，服务端不会返回商品关系数据，也不能通过本页面发起重新检查。\nCanonical 回填人工冲突队列\n扫描并刷新队列\n刷新队列\n仅展示服务端入队的冲突；认领和解决均要求最新 revision，不能绕过商品关系校验。\n旧商品\t冲突码\t状态\t操作\n\nNo data\n平台连接与授权健康\n6 个已登记店铺\n平台\t店铺\t授权\t数据模式\t同步\t读/写\t操作\nDOUYIN\t\n1 个抖音店铺\nplatform-aggregate:douyin:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nJD\t\n1 个京东店铺\nplatform-aggregate:jd:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nPINDUODUO\t\n1 个拼多多店铺\nplatform-aggregate:pinduoduo:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nTAOBAO\t\n2 个淘宝店铺\nplatform-aggregate:taobao:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nTMALL\t\n1 个天猫店铺\nplatform-aggregate:tmall:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nXIAOHONGSHU\t\n1 个小红书店铺\nplatform-aggregate:xiaohongshu:refresh_required:fixture\n\t演示授权\tfixture 演示\t暂无记录\t— / —\t\n改别名\n撤销\n1\n此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。\n已配置的店铺自动化策略\n0 条\n店铺\t状态\t模式\t频率\t下次执行\t暂停原因\n暂无自动化策略；当前不会执行定时扫描或自动重试。\n店铺优化建议\n状态待确认\n优先级\t建议\t下一步\t入口\t边界\n尚未取得扫描结果；可在策略配置完成后手动扫描。\n店铺自动化运营\n未配置\n立即扫描\n保存策略\n尚未配置自动化策略\n当前不会执行自动扫描、同步或重试；取得真实策略后才会开放操作。\n扫描商品\n-\n发布任务\n-\n风险项\n-\n模式：同步扫描 + 风险告警 + 人工重试\n不会无人值守自动重发\n执行频率（分钟）\n重试上限\n执行窗口\n至\n留空表示全天；窗口外仅延期并记录审计。\n暂无扫描风险。",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -727,6 +396,14 @@
           "disabled": true
         },
         {
+          "text": "改别名",
+          "disabled": true
+        },
+        {
+          "text": "撤销",
+          "disabled": true
+        },
+        {
           "text": "立即扫描",
           "disabled": true
         },
@@ -794,7 +471,7 @@
         "商业与平台控制台",
         "模型服务"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nMODEL SERVICES\n模型服务\n集中查看文本、图片、编辑、OCR 与视频能力的最终 readiness、成本证据和上线阻断。\n当前下一步\n先处理阻断项，再核对成本证据与五模态 readiness。\n模型服务诊断\n不可用\n模型归属\n平台统一\n自有中转站\n未配置\n文案模型\n-\n图片模型\n-\nOCR 模型\n-\n视频模型\n-\nRPM\n-\n日成本上限（元）\n-\n用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站 -，TPM -，发布元数据 未就绪。\n能力\tProvider 配置\t最终 readiness\t阻断原因\n\n能力\n\t\nProvider 配置\n\t\n最终 readiness\n\t\n阻断原因\n\n文案\t未配置\t阻断\t尚未通过最终运行与商业门禁\n图片\t未配置\t阻断\t尚未通过最终运行与商业门禁\n局部编辑\t未配置\t阻断\t尚未通过最终运行与商业门禁\nOCR\t未配置\t阻断\t尚未通过最终运行与商业门禁\n视频\t未配置\t阻断\t尚未通过最终运行与商业门禁\n平台模型状态不可用\n请检查页面顶部错误并重试，当前状态不能视为配置完成。\n模型渠道与 SVIP 上线门禁\n部分模态缺少实际计费组成本证据\n控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。\n能力\t模型渠道\tProvider\t实际成本证据\t最终状态\t阻断原因\n\n能力\n\t\n模型渠道\n\t\nProvider\n\t\n实际成本证据\n\t\n最终状态\n\t\n阻断原因\n\n文本\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片编辑\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\nOCR\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n视频\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n平台模型用量汇总\n调用记录\n63\n总 Token\n69,827\nProvider 成本\n¥15.079981\n未结算\n36\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n部分运营数据未刷新\n部分数据集刷新失败（ops.audit.platform.list、ops.brand-units.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。\nMODEL SERVICES\n模型服务\n集中查看文本、图片、编辑、OCR 与视频能力的最终 readiness、成本证据和上线阻断。\n当前下一步\n先处理阻断项，再核对成本证据与五模态 readiness。\n模型服务诊断\n不可用\n模型归属\n平台统一\n自有中转站\n未配置\n文案模型\n-\n图片模型\n-\nOCR 模型\n-\n视频模型\n-\nRPM\n-\n日成本上限（元）\n-\n用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站 -，TPM -，发布元数据 未就绪。\n能力\tProvider 配置\t最终 readiness\t阻断原因\n\n能力\n\t\nProvider 配置\n\t\n最终 readiness\n\t\n阻断原因\n\n文案\t未配置\t阻断\t尚未通过最终运行与商业门禁\n图片\t未配置\t阻断\t尚未通过最终运行与商业门禁\n局部编辑\t未配置\t阻断\t尚未通过最终运行与商业门禁\nOCR\t未配置\t阻断\t尚未通过最终运行与商业门禁\n视频\t未配置\t阻断\t尚未通过最终运行与商业门禁\n平台模型状态不可用\n请检查页面顶部错误并重试，当前状态不能视为配置完成。\n模型渠道与 SVIP 上线门禁\n部分模态缺少实际计费组成本证据\n控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。\n能力\t模型渠道\tProvider\t实际成本证据\t最终状态\t阻断原因\n\n能力\n\t\n模型渠道\n\t\nProvider\n\t\n实际成本证据\n\t\n最终状态\n\t\n阻断原因\n\n文本\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片编辑\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\nOCR\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n视频\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -910,7 +587,7 @@
         "商业与平台控制台",
         "功能开关"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nFEATURE FLAGS\n功能开关\n按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。\n本地演示（local_demo）\n刷新\n新建开关\n开关\t环境\t状态\t规则\tRevision\t更新时间\t操作\n\n开关\n\t\n环境\n\t\n状态\n\t\n规则\n\t\nRevision\n\t\n更新时间\n\t\n操作\n\n\ndemo.fixture.ops_readiness\n本地 Fixture 展示开关；保持禁用，不是生产 capability evidence。\n\tlocal_demo\t紧急关闭\t1 条\t1\t8/29/2026, 8:24:00 AM\t\n审 计\n编 辑\n恢 复",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n部分运营数据未刷新\n部分数据集刷新失败（ops.audit.platform.list、ops.brand-units.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。\nFEATURE FLAGS\n功能开关\n按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。\n本地演示（local_demo）\n刷新\n新建开关\n开关\t环境\t状态\t规则\tRevision\t更新时间\t操作\n\n开关\n\t\n环境\n\t\n状态\n\t\n规则\n\t\nRevision\n\t\n更新时间\n\t\n操作\n\n\ndemo.fixture.ops_readiness\n本地 Fixture 展示开关；保持禁用，不是生产 capability evidence。\n\tlocal_demo\t紧急关闭\t1 条\t1\t8/29/2026, 8:24:00 AM\t\n审 计\n编 辑\n恢 复",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -1042,7 +719,7 @@
         "商业与平台控制台",
         "存储与对账"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nSTORAGE & RECONCILIATION\n存储与对账\n按 workspace 查看容量、对象引用一致性和对账新鲜度；客户对象内容与下载入口不在运营台展示。\n对象存储容量与对账\n未接入对账\n暂无可验证的对象清单对账结果\n该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。\n已使用\n—\n配额上限\n—\n预留中\n—\n预计占用\n—\n最近对账：暂无 · 新鲜度未知。仅显示 workspace 级汇总和问题数量，不暴露客户对象下载能力。\nworkspace 对账列表（340）\nws_atomic_cross_day_pg_1788191112333_ea6477f158931\n最近对账：2026-09-01T00:46:16.493Z\n正常\nws_atomic_overrun_pg_1788191112170_3f31bd5a0bce2\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_atomic_pg_1788191111902_e2f13a597560d\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_run_budget_pg_1788191111795_1b0e4e1de8f38\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_budget_pg_1788191111617_74d5256d42cbe\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_atomic_cross_day_pg_1788189528041_279b4f557524b\n最近对账：2026-09-01T00:46:16.494Z\n正常\nws_atomic_overrun_pg_1788189527934_f7a122ecdd17f\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_atomic_pg_1788189527774_2e9c706f280fd\n最近对账：2026-09-01T00:46:16.498Z\n正常\nws_run_budget_pg_1788189527671_9e5efa8de96e5\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_budget_pg_1788189527236_fc2231f252c5c\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_atomic_cross_day_pg_1788184299639_e90990a90514d\n最近对账：2026-09-01T00:46:16.494Z\n正常\nws_atomic_overrun_pg_1788184299574_d6dcb5aefc0a5\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_atomic_pg_1788184299502_2ac490df76786\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_run_budget_pg_1788184299444_fe6d4384239c9\n最近对账：2026-09-01T00:46:16.559Z\n正常\nws_budget_pg_1788184299357_e106330914df5\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_run_budget_pg_1788182491289_c3e2dfedbcd56\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_budget_pg_1788182491216_f470dbe0d5ffd\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_run_budget_pg_1788181975803_2d136b1b8d086\n最近对账：2026-09-01T00:46:16.562Z\n正常\nws_budget_pg_1788181975717_f5b7c92e68273\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_runtime_budget_1788181795652\n最近对账：2026-09-01T00:46:16.560Z\n正常\nws_runtime_budget_1788181768492\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_run_budget_pg_1788181506259_11deb755b3d74\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_budget_pg_1788181506151_fc57220fe4daa\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_run_budget_pg_1788181479610_b547cf85d2392\n最近对账：2026-09-01T00:46:16.551Z\n正常\nws_storage_f88c7261-c6fe-429d-9bf5-a7d12daae435\n最近对账：2026-09-01T00:46:16.557Z\n正常\nws_storage_46b16760-5d31-422b-aec5-bf350a375d77\n最近对账：2026-09-01T00:46:16.559Z\n正常\nws_storage_00f056d4-f960-49f0-86a0-664a9b9bd903\n最近对账：2026-09-01T00:46:16.571Z\n正常\nws_storage_10bba714-a472-472c-96b7-61de607a3423\n最近对账：2026-09-01T00:46:16.566Z\n正常\nws_storage_678bf7ed-7741-4b29-8ce5-f3c3f843d50a\n最近对账：2026-09-01T00:46:16.555Z\n正常\nws_storage_2bbbe76e-9db8-4902-9c47-a0fee5ace7c8\n最近对账：2026-09-01T00:46:16.554Z\n正常\nws_storage_9bafe9db-c2be-4d01-b84e-13b5f35b505e\n最近对账：2026-09-01T00:46:16.555Z\n正常\nws_cleanup_a_mte196fj\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_cleanup_b_mte196fj\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_cleanup_a_mtdnuedh\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_cleanup_b_mtdnuedh\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_projection_1787958598213\n最近对账：2026-09-01T00:46:16.544Z\n正常\nws_projection_1787957935470\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_budget_pg\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_a\n最近对账：2026-09-01T00:46:16.490Z\n正常\nws_b\n最近对账：2026-09-01T00:46:16.496Z\n正常\nws_cleanup_a_mtdgirxh\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_cleanup_b_mtdgirxh\n最近对账：2026-09-01T00:46:16.506Z\n正常\ndemo-workspace\n最近对账：2026-09-01T00:46:16.458Z\n正常\nws_ops_browser\n最近对账：2026-09-01T00:46:16.538Z\n正常\nws_65e93b2a884e44e8bcf03d62\n最近对账：2026-09-01T00:46:16.482Z\n正常\nws_02d69d8273504d52b9039820\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_d18a3d8291114e128c9d2fd6\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_31d43b64276d408e9d04a1b2\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_db170122ea1942a382cc879b\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_092c3a8e83fe41e499a49782\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_4f2d9330552e4aada048d3df\n最近对账：2026-09-01T00:46:16.479Z\n正常\nws_218040acdffe447f9177fe96\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_c5936fe67a9e403badeb043d\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_249a673e1d144e548590c532\n最近对账：2026-09-01T00:46:16.470Z\n正常\nws_77bfd64cfcb343a382a6655b\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_878c6eaa143446c7adee8f0a\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_8dcb6f4000024ba8a8438095\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_e23a084a25374af1807d137e\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_21aaea1ce44e48cb8ab66374\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_5206f4b473d34d2db343a60e\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_ae7d21f677ed46aab40e6af0\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_c232f12c54b041c3862698d4\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_2edb96c57f734aba85f083ed\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_3b5e1de810b149e0b7678ca2\n最近对账：2026-09-01T00:46:16.475Z\n正常\nws_3b98bceb0815471f9ae617eb\n最近对账：2026-09-01T00:46:16.480Z\n正常\nws_ffdeaa539ec3447091566598\n最近对账：2026-09-01T00:46:16.526Z\n正常\nws_1302169179104e15bb21cfc7\n最近对账：2026-09-01T00:46:16.466Z\n正常\nws_9fd25e926f424898b8994411\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_2ee3993195cd44ddb4fd8dfc\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_ba2b94519c0a486283b63d4b\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_c8dbc1a5acb44764a82e1959\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_5903f4b5dcb543d3bfe98817\n最近对账：2026-09-01T00:46:16.479Z\n正常\nws_eef8acc226f94a138d637445\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_747d74296b764677b54d8b45\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_fedcf3108abe418dbcaa1768\n最近对账：2026-09-01T00:46:16.525Z\n正常\nws_5546ce16fdab49e398673cf6\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_b9c29373658f400f961885c4\n最近对账：2026-09-01T00:46:16.497Z\n正常\nws_5eb74f99213d4846b03a0e12\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_12ed53c7e7c2490a8893d9bf\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_b8d8fe2d29804a7599c1b969\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_88d36c3ac63644fdb045f530\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_11de659199954bc58a8df2d7\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_fb25a7966d6a4a629891e582\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_10534eefd9074226b64168f1\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_cf7daeae8c5d4dd0a6a2c3fa\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_2819db0479324be0814eafbb\n最近对账：2026-09-01T00:46:16.474Z\n正常\nws_6086537d0b7c40f3b2e2a358\n最近对账：2026-09-01T00:46:16.482Z\n正常\nws_d53481cad2714c7eadaf2239\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_a5a45a867e15444bb7ed4bd6\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_26629a85daef43ea86c38039\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_bc05b3153cd543efbf40695e\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_1801f6e9176249b08a4006da\n最近对账：2026-09-01T00:46:16.465Z\n正常\nws_f3bc4bf14ccc418e849e83d9\n最近对账：2026-09-01T00:46:16.528Z\n正常\nws_d7a5d747156048b782aa7359\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_f8ce67444d044da8abf62301\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_13673eea41814cbe958dbc43\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_6c202e47a20d4dfa95cbd7cc\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_aaea577d667c410cbeeb86f7\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_0deab54b96c749d6a2a033e7\n最近对账：2026-09-01T00:46:16.475Z\n正常\nws_9003ac86513f4ac09f1d195b\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_d0efe063316e48e79cce1a55\n最近对账：2026-09-01T00:46:16.520Z\n正常\nws_65c9bd955a4f46678f169310\n最近对账：2026-09-01T00:46:16.484Z\n正常\nws_481b8659f443461fb711895a\n最近对账：2026-09-01T00:46:16.476Z\n正常\nws_dc1a92b0cb484a6b9b3e7834\n最近对账：2026-09-01T00:46:16.525Z\n正常\nws_b012f132ac9844debaa9cc92\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_dd1c8405d29c40109a764929\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_6c1f5a3804bf4cbfbaf1064c\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_108e2109d0f545928fcdfd23\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_eee430cf1dc142898c6ed7e5\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_4f1bfb39f51149429fa641c6\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_68843ad7aac0444284da6047\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_2d01ccdb276443bfa671fa19\n最近对账：2026-09-01T00:46:16.473Z\n正常\nws_d20bb869efbd495996f0a3f8\n最近对账：2026-09-01T00:46:16.520Z\n正常\nws_096c70d027ab4c58b720b4c3\n最近对账：2026-09-01T00:46:16.475Z\n正常\nws_84a54d1f642b4ce686971d2a\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_e065e49d75c643e1bd6a11c3\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_6f00813669e14bea8af3feaf\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_c50067d136544fbe936552e4\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_552c6333833d4a8e8963ff5a\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_ea560b70eca340e786b9e23f\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_a4e58da4a8f1472fa2836800\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_24ea9ddfadd54032ba7f1432\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_54ff29925d724987adc2ea95\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_a6f2ca386eb34054aa080267\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_4be930bece3b4da2b3f56cd6\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_9fc11ff2d88c4b85bbb8e0b4\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_a0c2cdddaff14a0988024e48\n最近对账：2026-09-01T00:46:16.493Z\n正常\nws_0838eca4b3124185b38b1b39\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_359c30852a59406682483f95\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_c42f8b6c5152458c93079d9a\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_842565cfd0d14ebbbe633cf5\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_fec23d22a0af49a093753187\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_61d2e0f10dd04bb5b8c6c5d9\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_250556c1974342e38570c3d4\n最近对账：2026-09-01T00:46:16.470Z\n正常\nws_5acf092b9fd746838e89f8ca\n最近对账：2026-09-01T00:46:16.479Z\n正常\nws_94c00e066f614f3f8bc08bd1\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_5d0f928711ba4eed810c6b7e\n最近对账：2026-09-01T00:46:16.482Z\n正常\nws_ddf9f4ad48b440f0a196a466\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_404a0c10f2f24d1cbdca5068\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_9fb44d67521f4be79220cd95\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_3e9c65630f414b2abfc4f1a5\n最近对账：2026-09-01T00:46:16.474Z\n正常\nws_01e13ff538044598852f9fd1\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_0e4fa06d6ce54ef0b85edae3\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_8ac82bf6654b4da5b5ab18dd\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_2629d4df763f43fea4fccd09\n最近对账：2026-09-01T00:46:16.473Z\n正常\nws_fcfac3afc5c8438c9e639b06\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_2436d5ff343a4ea093abc6c7\n最近对账：2026-09-01T00:46:16.466Z\n正常\nws_bf4bc6211b764b408f20a496\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_91c4de0cbfe74824beb1ff8f\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_93e594334db94bbfb7722fe7\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_fab6943fa15a4aefad1fe574\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_2d7469e1a388423b8990b687\n最近对账：2026-09-01T00:46:16.473Z\n正常\nws_8670bdf2cdd74ce1a9e08358\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_cb7f08e879534c46bb179ce5\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_1bd2e4b57a33432db3bbe2b8\n最近对账：2026-09-01T00:46:16.459Z\n正常\nws_c68d744a2b4e43879d6ef671\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_d3cdb5be891c411bb1da527b\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_672d19b7ba974e629fbe4305\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_078760c6aac44da0bdd2a09c\n最近对账：2026-09-01T00:46:16.470Z\n正常\nws_c3b75c92b7ca489a9a29a5d9\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_dae2595df7594e0e9846cff3\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_91d022f83f4a4dad991f7719\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_85aad9fbbea144d08a76dacb\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_fa80f4e64058469bb79e6176\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_85f74c126fc84778aa0e7357\n最近对账：2026-09-01T00:46:16.490Z\n正常\nws_6dc543a52d194381ac451ebd\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_85804287317545399ce28ece\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_6b3062bf56394f8eb81545ac\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_20f7f65d70044ee99e5de73b\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_373d0a78197a4770a8e75fea\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_bc2ab0f4b5f647009d28bffd\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_e3cd60878fb44af79109b4a6\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_bee2a0cbb56c43cebd8d6d30\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_9235716ce5e1488e93d93b6a\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_33f33979b70d48bb98a2ebf7\n最近对账：2026-09-01T00:46:16.474Z\n正常\nws_fa10e13b7ed54ffb81d27ab7\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_489142e021f741db8b7ffac8\n最近对账：2026-09-01T00:46:16.480Z\n正常\nws_c7586a5faf514b2b90b1c345\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_f5b89a832af84393b82ae9ba\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_cee2c08aefbe46dd8391570e\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_d329b7a583324fc4bc172327\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_82c65dd574c44007903ebe1a\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_7c623f32d6f64fb786aab8fb\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_fcb12302d7974c1aa94a8274\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_b13d174bf86e4ea38ce9c918\n最近对账：2026-09-01T00:46:16.498Z\n正常\nws_56a1c0cba26e46a2bf027bcb\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_4aab4e487cab4f24b4f71842\n最近对账：2026-09-01T00:46:16.484Z\n正常\nws_bc0aac6c966545ad84152401\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_bbecb27aebbb481fb4fd33be\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_00a132705d8047d39dcb4b67\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_a57b82d1b8ed47b0a5189e51\n最近对账：2026-09-01T00:46:16.493Z\n正常\nws_77110e20240b44fc8e70d30b\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_cb526a241d504e74bd9e1cd3\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_930e59da4e6940ff808280b4\n最近对账：2026-09-01T00:46:16.490Z\n正常\nws_66ce028a4e2941f78af05a90\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_fd16faa753034669842f84bd\n最近对账：2026-09-01T00:46:16.526Z\n正常\nws_13b97001232a4901af3a4b66\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_0eef8c9d71734c818ed5f10b\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_884ec3ae14934f6798894dc5\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_compose_debug\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_compose_smoke_49\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_40\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_47\n最近对账：2026-09-01T00:46:16.516Z\n正常\nws_compose_smoke_42\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_46\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_48\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_44\n最近对账：2026-09-01T00:46:16.516Z\n正常\nws_compose_smoke_43\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_compose_smoke_45\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_36\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_30\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_39\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_37\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_29\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_38\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_35\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_compose_smoke_41\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_2\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_33\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_34\n最近对账：2026-09-01T00:46:16.512Z\n正常\nws_compose_smoke_31\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_28\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_25\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_26\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_24\n最近对账：2026-09-01T00:46:16.512Z\n正常\nws_compose_smoke_22\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_27\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_32\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_23\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_19\n最近对账：2026-09-01T00:46:16.512Z\n正常\nws_compose_smoke_20\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_3\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_18\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_17\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_16\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_compose_smoke_4\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_15\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_14\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_1\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_compose_smoke_13\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_compose_smoke_10\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_12\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_9\n最近对账：2026-09-01T00:46:16.520Z\n正常\nws_compose_smoke_11\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_compose_smoke_8\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_5\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_compose_smoke_6\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_7\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_21\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_0\n最近对账：2026-09-01T00:46:16.507Z\n正常\nworkspace_demo\n最近对账：2026-09-01T00:46:16.459Z\n正常\nws_3fd1b414debc42d586493423\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_projection_1787879959239\n最近对账：2026-09-01T00:46:16.546Z\n正常\nws_projection_1787873448782\n最近对账：2026-09-01T00:46:16.543Z\n正常\nws_projection_1787840790835\n最近对账：2026-09-01T00:46:16.543Z\n正常\nws_projection_1787837876497\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_projection_1787834346609\n最近对账：2026-09-01T00:46:16.537Z\n正常\nws_projection_1787834316252\n最近对账：2026-09-01T00:46:16.545Z\n正常\nws_projection_1787829313615\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787826214934\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_projection_1787815190828\n最近对账：2026-09-01T00:46:16.543Z\n正常\nws_projection_1787813795706\n最近对账：2026-09-01T00:46:16.545Z\n正常\nws_projection_1787811811725\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_visual_runtime_1787623165\n最近对账：2026-09-01T00:46:16.564Z\n正常\nws_runtime_review\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_manual_reprobe_1787577772903_other\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_manual_reprobe_1787577772903\n最近对账：2026-09-01T00:46:16.530Z\n需处理\nws_manual_probe_1787577664159_other\n最近对账：2026-09-01T00:46:16.531Z\n正常\nws_manual_probe_1787577664159\n最近对账：2026-09-01T00:46:16.529Z\n需处理\nws_codex_manual_runtime\n最近对账：2026-09-01T00:46:16.510Z\n需处理\nws_runtime_complete_1787576299405\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_four_platform_mock_20260824_final\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_four_platform_debug_20260824\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_four_platform_mock_20260824\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_projection_1787511137257\n最近对账：2026-09-01T00:46:16.545Z\n正常\nws_prod_check\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_full_coverage2\n最近对账：2026-09-01T00:46:16.532Z\n需处理\nws_full_coverage\n最近对账：2026-09-01T00:46:16.535Z\n需处理\nws_probe_1787497662275\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_audit_1787497650458\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_audit_1787497629520\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_dbg_1787497538658\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_dbg_1787497511321\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_audit_1787497461692\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_catalog_fields_1787497235300\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_asset_codex_1787496958430\n最近对账：2026-09-01T00:46:16.493Z\n需处理\nws_brand_codex_1787496488201\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_smoke_final_1787496082\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_status_semantics_1787495\n最近对账：2026-09-01T00:46:16.560Z\n正常\nws_task_bind_1787495318193\n最近对账：2026-09-01T00:46:16.560Z\n正常\nws_codex_image_1787495193866\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_codex_image_1787495170707\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_probe_1787495153225\n最近对账：2026-09-01T00:46:16.531Z\n正常\nws_codex_final_1787495133096\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_smoke_codex_1787493\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_replica_final\n最近对账：2026-09-01T00:46:16.544Z\n正常\nws_replica_smoke_1787494383000\n最近对账：2026-09-01T00:46:16.550Z\n正常\nws_projection_1787493934587\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_revoke_final_1787493809004\n最近对账：2026-09-01T00:46:16.546Z\n正常\nws_revoke_fixed_1787493592466\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_revoke_probe_1787493513690\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_four_platform_1787493417744\n最近对账：2026-09-01T00:46:16.530Z\n正常\nws_account_binding_1787493058558\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_account_binding_1787492988114\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_matrix_1787492577997\n最近对账：2026-09-01T00:46:16.528Z\n需处理\nws_full_accept_1787492516891\n最近对账：2026-09-01T00:46:16.529Z\n正常\nws_diag\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_retry_sync\n最近对账：2026-09-01T00:46:16.562Z\n正常\nws_debug_err\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_new_sync\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_debug\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_projection_1787447127307\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787445935097\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787445696304\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787444610285\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_projection_1787444555217\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787444404179\n最近对账：2026-09-01T00:46:16.539Z\n正常\nws_projection_1787442711319\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_projection_1787442135253\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787441419872\n最近对账：2026-09-01T00:46:16.541Z\n正常\nws_projection_1787440316543\n最近对账：2026-09-01T00:46:16.537Z\n正常\nws_projection_1787440117863\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_projection_1787439602044\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787439221644\n最近对账：2026-09-01T00:46:16.535Z\n正常\nws_projection_1787438561005\n最近对账：2026-09-01T00:46:16.538Z\n正常\nws_projection_1787437671582\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787437520553\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_replica_smoke_1787436744293\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_replica_smoke_1787436700961\n最近对账：2026-09-01T00:46:16.551Z\n正常\nws_projection_1787436647875\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787436416080\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_projection_1787435202231\n最近对账：2026-09-01T00:46:16.538Z\n正常\nws_projection_1787430187994\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787425099705\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_projection_1787424938511\n最近对账：2026-09-01T00:46:16.531Z\n正常\nws_redis_recovery\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_replica_smoke_1787420069753\n最近对账：2026-09-01T00:46:16.551Z\n正常\nws_replica_smoke_1787419842141\n最近对账：2026-09-01T00:46:16.550Z\n正常\nws_worker_acceptance\n最近对账：2026-09-01T00:46:16.564Z\n正常\nws_demo\n最近对账：2026-09-01T00:46:16.930Z\n需处理\n列表仅用于定位 workspace 状态，不提供客户对象、素材内容、对象 key 或下载操作。",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n部分运营数据未刷新\n部分数据集刷新失败（ops.audit.platform.list、ops.brand-units.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。\nSTORAGE & RECONCILIATION\n存储与对账\n按 workspace 查看容量、对象引用一致性和对账新鲜度；客户对象内容与下载入口不在运营台展示。\n对象存储容量与对账\n未接入对账\n暂无可验证的对象清单对账结果\n该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。\n已使用\n—\n配额上限\n—\n预留中\n—\n预计占用\n—\n最近对账：暂无 · 新鲜度未知。仅显示 workspace 级汇总和问题数量，不暴露客户对象下载能力。\nworkspace 对账列表（401）\nws_canonical_backfill_owner_1788245453702\n最近对账：2026-09-01T11:04:00.982Z\n正常\nws_canonical_backfill_pause_resume_1788245453647\n最近对账：2026-09-01T11:04:00.993Z\n正常\nws_canonical_backfill_conflict_1788245453579\n最近对账：2026-09-01T11:04:00.973Z\n正常\nws_canonical_backfill_dry_run_1788245453387\n最近对账：2026-09-01T11:04:00.987Z\n正常\nws_canonical_backfill_owner_1788242738742\n最近对账：2026-09-01T11:04:00.979Z\n正常\nws_canonical_backfill_pause_resume_1788242738704\n最近对账：2026-09-01T11:04:00.988Z\n正常\nws_canonical_backfill_conflict_1788242738660\n最近对账：2026-09-01T11:04:00.972Z\n正常\nws_canonical_backfill_dry_run_1788242738558\n最近对账：2026-09-01T11:04:00.987Z\n正常\nws_projection_1788242612858\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_projection_1788242141688\n最近对账：2026-09-01T11:04:01.053Z\n正常\nws_canonical_backfill_owner_1788242078069\n最近对账：2026-09-01T11:04:00.992Z\n正常\nws_canonical_backfill_pause_resume_1788242077996\n最近对账：2026-09-01T11:04:00.989Z\n正常\nws_canonical_backfill_conflict_1788242077941\n最近对账：2026-09-01T11:04:00.969Z\n正常\nws_canonical_backfill_dry_run_1788242077861\n最近对账：2026-09-01T11:04:00.972Z\n正常\nws_canonical_backfill_owner_1788242070131\n最近对账：2026-09-01T11:04:00.979Z\n正常\nws_canonical_backfill_pause_resume_1788242070091\n最近对账：2026-09-01T11:04:00.992Z\n正常\nws_canonical_backfill_conflict_1788242070056\n最近对账：2026-09-01T11:04:00.982Z\n正常\nws_canonical_backfill_dry_run_1788242069962\n最近对账：2026-09-01T11:04:00.974Z\n正常\nws_canonical_backfill_owner_1788242060255\n最近对账：2026-09-01T11:04:00.979Z\n正常\nws_canonical_backfill_pause_resume_1788242060242\n最近对账：2026-09-01T11:04:00.986Z\n正常\nws_canonical_backfill_conflict_1788242060229\n最近对账：2026-09-01T11:04:00.971Z\n正常\nws_canonical_backfill_dry_run_1788242060161\n最近对账：2026-09-01T11:04:00.989Z\n正常\nws_canonical_backfill_owner_1788242049995\n最近对账：2026-09-01T11:04:00.979Z\n正常\nws_canonical_backfill_pause_resume_1788242049932\n最近对账：2026-09-01T11:04:00.986Z\n正常\nws_canonical_backfill_conflict_1788242049896\n最近对账：2026-09-01T11:04:00.971Z\n正常\nws_canonical_backfill_dry_run_1788242049787\n最近对账：2026-09-01T11:04:00.983Z\n正常\nws_canonical_backfill_owner_1788242039019\n最近对账：2026-09-01T11:04:00.979Z\n正常\nws_canonical_backfill_pause_resume_1788242038964\n最近对账：2026-09-01T11:04:00.987Z\n正常\nws_canonical_backfill_conflict_1788242038929\n最近对账：2026-09-01T11:04:00.971Z\n正常\nws_canonical_backfill_dry_run_1788242038797\n最近对账：2026-09-01T11:04:00.986Z\n正常\nws_canonical_backfill_owner_1788242030344\n最近对账：2026-09-01T11:04:00.984Z\n正常\nws_canonical_backfill_pause_resume_1788242030306\n最近对账：2026-09-01T11:04:00.990Z\n正常\nws_canonical_backfill_conflict_1788242030267\n最近对账：2026-09-01T11:04:00.971Z\n正常\nws_canonical_backfill_dry_run_1788242030120\n最近对账：2026-09-01T11:04:00.972Z\n正常\nws_canonical_backfill_owner_1788242023295\n最近对账：2026-09-01T11:04:00.976Z\n正常\nws_canonical_backfill_pause_resume_1788242023279\n最近对账：2026-09-01T11:04:00.985Z\n正常\nws_canonical_backfill_conflict_1788242023270\n最近对账：2026-09-01T11:04:00.972Z\n正常\nws_canonical_backfill_dry_run_1788242023206\n最近对账：2026-09-01T11:04:00.973Z\n正常\nws_be87dca95d714bc1bbdb6c21\n最近对账：2026-09-01T11:04:00.956Z\n正常\nws_canonical_backfill_owner_1788241970119\n最近对账：2026-09-01T11:04:00.980Z\n正常\nws_canonical_backfill_pause_resume_1788241970030\n最近对账：2026-09-01T11:04:00.988Z\n正常\nws_canonical_backfill_conflict_1788241969979\n最近对账：2026-09-01T11:04:00.975Z\n正常\nws_canonical_backfill_dry_run_1788241969716\n最近对账：2026-09-01T11:04:00.975Z\n正常\nws_storage_7047084d-6a41-49f0-9dba-32c1831750ea\n最近对账：2026-09-01T11:04:01.074Z\n正常\nws_atomic_cross_day_pg_1788229973027_552701cdfeba6\n最近对账：2026-09-01T11:04:00.949Z\n正常\nws_atomic_overrun_pg_1788229972742_beb29aea2cd81\n最近对账：2026-09-01T11:04:00.955Z\n正常\nws_atomic_pg_1788229972351_25110f782b0ed\n最近对账：2026-09-01T11:04:00.957Z\n正常\nws_run_budget_pg_1788229972116_0ec978ce54054\n最近对账：2026-09-01T11:04:01.072Z\n正常\nws_budget_pg_1788229971922_4a33e52544881\n最近对账：2026-09-01T11:04:00.972Z\n正常\nws_storage_8aabc950-78ff-4d2a-8a32-6f1146ec0a66\n最近对账：2026-09-01T11:04:01.089Z\n正常\nws_atomic_cross_day_pg_1788229887601_0438374f64e92\n最近对账：2026-09-01T11:04:00.952Z\n正常\nws_atomic_overrun_pg_1788229887150_dc0afb59855bd\n最近对账：2026-09-01T11:04:00.956Z\n正常\nws_atomic_pg_1788229886401_d914134b342cf\n最近对账：2026-09-01T11:04:00.953Z\n正常\nws_run_budget_pg_1788229884420_15b1581a072d5\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_budget_pg_1788229882967_c6f5ee9117075\n最近对账：2026-09-01T11:04:00.971Z\n正常\nws_storage_a92f92da-34e6-41fb-a5ce-8bd5e1c6be87\n最近对账：2026-09-01T11:04:01.072Z\n正常\nws_atomic_cross_day_pg_1788229736000_0b28984121088\n最近对账：2026-09-01T11:04:00.950Z\n正常\nws_atomic_overrun_pg_1788229735796_db5bf2eda4dff\n最近对账：2026-09-01T11:04:00.950Z\n正常\nws_atomic_pg_1788229735611_3f42871cd9a6\n最近对账：2026-09-01T11:04:00.955Z\n正常\nws_run_budget_pg_1788229735466_3cf7b96704349\n最近对账：2026-09-01T11:04:01.065Z\n正常\nws_budget_pg_1788229735308_9814ce9891f\n最近对账：2026-09-01T11:04:00.969Z\n正常\nws_atomic_cross_day_pg_1788191112333_ea6477f158931\n最近对账：2026-09-01T11:04:00.952Z\n正常\nws_atomic_overrun_pg_1788191112170_3f31bd5a0bce2\n最近对账：2026-09-01T11:04:00.949Z\n正常\nws_atomic_pg_1788191111902_e2f13a597560d\n最近对账：2026-09-01T11:04:00.954Z\n正常\nws_run_budget_pg_1788191111795_1b0e4e1de8f38\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_budget_pg_1788191111617_74d5256d42cbe\n最近对账：2026-09-01T11:04:00.962Z\n正常\nws_atomic_cross_day_pg_1788189528041_279b4f557524b\n最近对账：2026-09-01T11:04:00.948Z\n正常\nws_atomic_overrun_pg_1788189527934_f7a122ecdd17f\n最近对账：2026-09-01T11:04:00.953Z\n正常\nws_atomic_pg_1788189527774_2e9c706f280fd\n最近对账：2026-09-01T11:04:00.956Z\n正常\nws_run_budget_pg_1788189527671_9e5efa8de96e5\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_budget_pg_1788189527236_fc2231f252c5c\n最近对账：2026-09-01T11:04:00.962Z\n正常\nws_atomic_cross_day_pg_1788184299639_e90990a90514d\n最近对账：2026-09-01T11:04:00.942Z\n正常\nws_atomic_overrun_pg_1788184299574_d6dcb5aefc0a5\n最近对账：2026-09-01T11:04:00.949Z\n正常\nws_atomic_pg_1788184299502_2ac490df76786\n最近对账：2026-09-01T11:04:00.950Z\n正常\nws_run_budget_pg_1788184299444_fe6d4384239c9\n最近对账：2026-09-01T11:04:01.063Z\n正常\nws_budget_pg_1788184299357_e106330914df5\n最近对账：2026-09-01T11:04:00.960Z\n正常\nws_run_budget_pg_1788182491289_c3e2dfedbcd56\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_budget_pg_1788182491216_f470dbe0d5ffd\n最近对账：2026-09-01T11:04:00.963Z\n正常\nws_run_budget_pg_1788181975803_2d136b1b8d086\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_budget_pg_1788181975717_f5b7c92e68273\n最近对账：2026-09-01T11:04:00.964Z\n正常\nws_runtime_budget_1788181795652\n最近对账：2026-09-01T11:04:01.065Z\n正常\nws_runtime_budget_1788181768492\n最近对账：2026-09-01T11:04:01.062Z\n正常\nws_run_budget_pg_1788181506259_11deb755b3d74\n最近对账：2026-09-01T11:04:01.059Z\n正常\nws_budget_pg_1788181506151_fc57220fe4daa\n最近对账：2026-09-01T11:04:00.959Z\n正常\nws_run_budget_pg_1788181479610_b547cf85d2392\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_storage_f88c7261-c6fe-429d-9bf5-a7d12daae435\n最近对账：2026-09-01T11:04:01.083Z\n正常\nws_storage_46b16760-5d31-422b-aec5-bf350a375d77\n最近对账：2026-09-01T11:04:01.066Z\n正常\nws_storage_00f056d4-f960-49f0-86a0-664a9b9bd903\n最近对账：2026-09-01T11:04:01.082Z\n正常\nws_storage_10bba714-a472-472c-96b7-61de607a3423\n最近对账：2026-09-01T11:04:01.071Z\n正常\nws_storage_678bf7ed-7741-4b29-8ce5-f3c3f843d50a\n最近对账：2026-09-01T11:04:01.064Z\n正常\nws_storage_2bbbe76e-9db8-4902-9c47-a0fee5ace7c8\n最近对账：2026-09-01T11:04:01.072Z\n正常\nws_storage_9bafe9db-c2be-4d01-b84e-13b5f35b505e\n最近对账：2026-09-01T11:04:01.079Z\n正常\nws_cleanup_a_mte196fj\n最近对账：2026-09-01T11:04:00.991Z\n正常\nws_cleanup_b_mte196fj\n最近对账：2026-09-01T11:04:00.990Z\n正常\nws_cleanup_a_mtdnuedh\n最近对账：2026-09-01T11:04:00.997Z\n正常\nws_cleanup_b_mtdnuedh\n最近对账：2026-09-01T11:04:00.992Z\n正常\nws_projection_1787958598213\n最近对账：2026-09-01T11:04:01.055Z\n正常\nws_projection_1787957935470\n最近对账：2026-09-01T11:04:01.049Z\n正常\nws_budget_pg\n最近对账：2026-09-01T11:04:00.961Z\n正常\nws_a\n最近对账：2026-09-01T11:04:00.938Z\n正常\nws_b\n最近对账：2026-09-01T11:04:00.956Z\n正常\nws_cleanup_a_mtdgirxh\n最近对账：2026-09-01T11:04:00.997Z\n正常\nws_cleanup_b_mtdgirxh\n最近对账：2026-09-01T11:04:00.993Z\n正常\ndemo-workspace\n最近对账：2026-09-01T11:04:00.150Z\n正常\nws_ops_browser\n最近对账：2026-09-01T11:04:01.035Z\n正常\nws_65e93b2a884e44e8bcf03d62\n最近对账：2026-09-01T11:04:00.924Z\n正常\nws_02d69d8273504d52b9039820\n最近对账：2026-09-01T11:04:00.897Z\n正常\nws_d18a3d8291114e128c9d2fd6\n最近对账：2026-09-01T11:04:01.012Z\n正常\nws_31d43b64276d408e9d04a1b2\n最近对账：2026-09-01T11:04:00.917Z\n正常\nws_db170122ea1942a382cc879b\n最近对账：2026-09-01T11:04:01.015Z\n正常\nws_092c3a8e83fe41e499a49782\n最近对账：2026-09-01T11:04:00.901Z\n正常\nws_4f2d9330552e4aada048d3df\n最近对账：2026-09-01T11:04:00.919Z\n正常\nws_218040acdffe447f9177fe96\n最近对账：2026-09-01T11:04:00.887Z\n正常\nws_c5936fe67a9e403badeb043d\n最近对账：2026-09-01T11:04:00.965Z\n正常\nws_249a673e1d144e548590c532\n最近对账：2026-09-01T11:04:00.904Z\n正常\nws_77bfd64cfcb343a382a6655b\n最近对账：2026-09-01T11:04:00.930Z\n正常\nws_878c6eaa143446c7adee8f0a\n最近对账：2026-09-01T11:04:00.932Z\n正常\nws_8dcb6f4000024ba8a8438095\n最近对账：2026-09-01T11:04:00.935Z\n正常\nws_e23a084a25374af1807d137e\n最近对账：2026-09-01T11:04:01.037Z\n正常\nws_21aaea1ce44e48cb8ab66374\n最近对账：2026-09-01T11:04:00.900Z\n正常\nws_5206f4b473d34d2db343a60e\n最近对账：2026-09-01T11:04:00.918Z\n正常\nws_ae7d21f677ed46aab40e6af0\n最近对账：2026-09-01T11:04:00.942Z\n正常\nws_c232f12c54b041c3862698d4\n最近对账：2026-09-01T11:04:00.968Z\n正常\nws_2edb96c57f734aba85f083ed\n最近对账：2026-09-01T11:04:00.897Z\n正常\nws_3b5e1de810b149e0b7678ca2\n最近对账：2026-09-01T11:04:00.907Z\n正常\nws_3b98bceb0815471f9ae617eb\n最近对账：2026-09-01T11:04:00.902Z\n正常\nws_ffdeaa539ec3447091566598\n最近对账：2026-09-01T11:04:01.042Z\n正常\nws_1302169179104e15bb21cfc7\n最近对账：2026-09-01T11:04:00.923Z\n正常\nws_9fd25e926f424898b8994411\n最近对账：2026-09-01T11:04:00.942Z\n正常\nws_2ee3993195cd44ddb4fd8dfc\n最近对账：2026-09-01T11:04:00.904Z\n正常\nws_ba2b94519c0a486283b63d4b\n最近对账：2026-09-01T11:04:00.962Z\n正常\nws_c8dbc1a5acb44764a82e1959\n最近对账：2026-09-01T11:04:00.973Z\n正常\nws_5903f4b5dcb543d3bfe98817\n最近对账：2026-09-01T11:04:00.917Z\n正常\nws_eef8acc226f94a138d637445\n最近对账：2026-09-01T11:04:01.024Z\n正常\nws_747d74296b764677b54d8b45\n最近对账：2026-09-01T11:04:00.928Z\n正常\nws_fedcf3108abe418dbcaa1768\n最近对账：2026-09-01T11:04:01.030Z\n正常\nws_5546ce16fdab49e398673cf6\n最近对账：2026-09-01T11:04:00.915Z\n正常\nws_b9c29373658f400f961885c4\n最近对账：2026-09-01T11:04:00.956Z\n正常\nws_5eb74f99213d4846b03a0e12\n最近对账：2026-09-01T11:04:00.921Z\n正常\nws_12ed53c7e7c2490a8893d9bf\n最近对账：2026-09-01T11:04:00.909Z\n正常\nws_b8d8fe2d29804a7599c1b969\n最近对账：2026-09-01T11:04:00.955Z\n正常\nws_88d36c3ac63644fdb045f530\n最近对账：2026-09-01T11:04:00.939Z\n正常\nws_11de659199954bc58a8df2d7\n最近对账：2026-09-01T11:04:00.910Z\n正常\nws_fb25a7966d6a4a629891e582\n最近对账：2026-09-01T11:04:01.041Z\n正常\nws_10534eefd9074226b64168f1\n最近对账：2026-09-01T11:04:00.900Z\n正常\nws_cf7daeae8c5d4dd0a6a2c3fa\n最近对账：2026-09-01T11:04:00.992Z\n正常\nws_2819db0479324be0814eafbb\n最近对账：2026-09-01T11:04:00.906Z\n正常\nws_6086537d0b7c40f3b2e2a358\n最近对账：2026-09-01T11:04:00.921Z\n正常\nws_d53481cad2714c7eadaf2239\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_a5a45a867e15444bb7ed4bd6\n最近对账：2026-09-01T11:04:00.948Z\n正常\nws_26629a85daef43ea86c38039\n最近对账：2026-09-01T11:04:00.887Z\n正常\nws_bc05b3153cd543efbf40695e\n最近对账：2026-09-01T11:04:00.959Z\n正常\nws_1801f6e9176249b08a4006da\n最近对账：2026-09-01T11:04:00.919Z\n正常\nws_f3bc4bf14ccc418e849e83d9\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_d7a5d747156048b782aa7359\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_f8ce67444d044da8abf62301\n最近对账：2026-09-01T11:04:01.027Z\n正常\nws_13673eea41814cbe958dbc43\n最近对账：2026-09-01T11:04:00.919Z\n正常\nws_6c202e47a20d4dfa95cbd7cc\n最近对账：2026-09-01T11:04:00.930Z\n正常\nws_aaea577d667c410cbeeb86f7\n最近对账：2026-09-01T11:04:00.941Z\n正常\nws_0deab54b96c749d6a2a033e7\n最近对账：2026-09-01T11:04:00.887Z\n正常\nws_9003ac86513f4ac09f1d195b\n最近对账：2026-09-01T11:04:00.932Z\n正常\nws_d0efe063316e48e79cce1a55\n最近对账：2026-09-01T11:04:01.013Z\n正常\nws_65c9bd955a4f46678f169310\n最近对账：2026-09-01T11:04:00.923Z\n正常\nws_481b8659f443461fb711895a\n最近对账：2026-09-01T11:04:00.908Z\n正常\nws_dc1a92b0cb484a6b9b3e7834\n最近对账：2026-09-01T11:04:01.022Z\n正常\nws_b012f132ac9844debaa9cc92\n最近对账：2026-09-01T11:04:00.954Z\n正常\nws_dd1c8405d29c40109a764929\n最近对账：2026-09-01T11:04:01.030Z\n正常\nws_6c1f5a3804bf4cbfbaf1064c\n最近对账：2026-09-01T11:04:00.926Z\n正常\nws_108e2109d0f545928fcdfd23\n最近对账：2026-09-01T11:04:00.921Z\n正常\nws_eee430cf1dc142898c6ed7e5\n最近对账：2026-09-01T11:04:01.022Z\n正常\nws_4f1bfb39f51149429fa641c6\n最近对账：2026-09-01T11:04:00.915Z\n正常\nws_68843ad7aac0444284da6047\n最近对账：2026-09-01T11:04:00.925Z\n正常\nws_2d01ccdb276443bfa671fa19\n最近对账：2026-09-01T11:04:00.892Z\n正常\nws_d20bb869efbd495996f0a3f8\n最近对账：2026-09-01T11:04:01.013Z\n正常\nws_096c70d027ab4c58b720b4c3\n最近对账：2026-09-01T11:04:00.923Z\n正常\nws_84a54d1f642b4ce686971d2a\n最近对账：2026-09-01T11:04:00.931Z\n正常\nws_e065e49d75c643e1bd6a11c3\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_6f00813669e14bea8af3feaf\n最近对账：2026-09-01T11:04:00.924Z\n正常\nws_c50067d136544fbe936552e4\n最近对账：2026-09-01T11:04:00.965Z\n正常\nws_552c6333833d4a8e8963ff5a\n最近对账：2026-09-01T11:04:00.917Z\n正常\nws_ea560b70eca340e786b9e23f\n最近对账：2026-09-01T11:04:01.029Z\n正常\nws_a4e58da4a8f1472fa2836800\n最近对账：2026-09-01T11:04:00.947Z\n正常\nws_24ea9ddfadd54032ba7f1432\n最近对账：2026-09-01T11:04:00.904Z\n正常\nws_54ff29925d724987adc2ea95\n最近对账：2026-09-01T11:04:00.920Z\n正常\nws_a6f2ca386eb34054aa080267\n最近对账：2026-09-01T11:04:00.945Z\n正常\nws_4be930bece3b4da2b3f56cd6\n最近对账：2026-09-01T11:04:00.908Z\n正常\nws_9fc11ff2d88c4b85bbb8e0b4\n最近对账：2026-09-01T11:04:00.935Z\n正常\nws_a0c2cdddaff14a0988024e48\n最近对账：2026-09-01T11:04:00.948Z\n正常\nws_0838eca4b3124185b38b1b39\n最近对账：2026-09-01T11:04:00.915Z\n正常\nws_359c30852a59406682483f95\n最近对账：2026-09-01T11:04:00.906Z\n正常\nws_c42f8b6c5152458c93079d9a\n最近对账：2026-09-01T11:04:00.968Z\n正常\nws_842565cfd0d14ebbbe633cf5\n最近对账：2026-09-01T11:04:00.927Z\n正常\nws_fec23d22a0af49a093753187\n最近对账：2026-09-01T11:04:01.031Z\n正常\nws_61d2e0f10dd04bb5b8c6c5d9\n最近对账：2026-09-01T11:04:00.924Z\n正常\nws_250556c1974342e38570c3d4\n最近对账：2026-09-01T11:04:00.900Z\n正常\nws_5acf092b9fd746838e89f8ca\n最近对账：2026-09-01T11:04:00.923Z\n正常\nws_94c00e066f614f3f8bc08bd1\n最近对账：2026-09-01T11:04:00.937Z\n正常\nws_5d0f928711ba4eed810c6b7e\n最近对账：2026-09-01T11:04:00.918Z\n正常\nws_ddf9f4ad48b440f0a196a466\n最近对账：2026-09-01T11:04:01.020Z\n正常\nws_404a0c10f2f24d1cbdca5068\n最近对账：2026-09-01T11:04:00.904Z\n正常\nws_9fb44d67521f4be79220cd95\n最近对账：2026-09-01T11:04:00.935Z\n正常\nws_3e9c65630f414b2abfc4f1a5\n最近对账：2026-09-01T11:04:00.910Z\n正常\nws_01e13ff538044598852f9fd1\n最近对账：2026-09-01T11:04:00.920Z\n正常\nws_0e4fa06d6ce54ef0b85edae3\n最近对账：2026-09-01T11:04:00.903Z\n正常\nws_8ac82bf6654b4da5b5ab18dd\n最近对账：2026-09-01T11:04:00.938Z\n正常\nws_2629d4df763f43fea4fccd09\n最近对账：2026-09-01T11:04:00.900Z\n正常\nws_fcfac3afc5c8438c9e639b06\n最近对账：2026-09-01T11:04:01.030Z\n正常\nws_2436d5ff343a4ea093abc6c7\n最近对账：2026-09-01T11:04:00.900Z\n正常\nws_bf4bc6211b764b408f20a496\n最近对账：2026-09-01T11:04:00.966Z\n正常\nws_91c4de0cbfe74824beb1ff8f\n最近对账：2026-09-01T11:04:00.935Z\n正常\nws_93e594334db94bbfb7722fe7\n最近对账：2026-09-01T11:04:00.940Z\n正常\nws_fab6943fa15a4aefad1fe574\n最近对账：2026-09-01T11:04:01.030Z\n正常\nws_2d7469e1a388423b8990b687\n最近对账：2026-09-01T11:04:00.900Z\n正常\nws_8670bdf2cdd74ce1a9e08358\n最近对账：2026-09-01T11:04:00.934Z\n正常\nws_cb7f08e879534c46bb179ce5\n最近对账：2026-09-01T11:04:00.987Z\n正常\nws_1bd2e4b57a33432db3bbe2b8\n最近对账：2026-09-01T11:04:00.923Z\n正常\nws_c68d744a2b4e43879d6ef671\n最近对账：2026-09-01T11:04:00.971Z\n正常\nws_d3cdb5be891c411bb1da527b\n最近对账：2026-09-01T11:04:01.014Z\n正常\nws_672d19b7ba974e629fbe4305\n最近对账：2026-09-01T11:04:00.926Z\n正常\nws_078760c6aac44da0bdd2a09c\n最近对账：2026-09-01T11:04:00.919Z\n正常\nws_c3b75c92b7ca489a9a29a5d9\n最近对账：2026-09-01T11:04:00.962Z\n正常\nws_dae2595df7594e0e9846cff3\n最近对账：2026-09-01T11:04:01.016Z\n正常\nws_91d022f83f4a4dad991f7719\n最近对账：2026-09-01T11:04:00.933Z\n正常\nws_85aad9fbbea144d08a76dacb\n最近对账：2026-09-01T11:04:00.930Z\n正常\nws_fa80f4e64058469bb79e6176\n最近对账：2026-09-01T11:04:01.025Z\n正常\nws_85f74c126fc84778aa0e7357\n最近对账：2026-09-01T11:04:00.935Z\n正常\nws_6dc543a52d194381ac451ebd\n最近对账：2026-09-01T11:04:00.930Z\n正常\nws_85804287317545399ce28ece\n最近对账：2026-09-01T11:04:00.933Z\n正常\nws_6b3062bf56394f8eb81545ac\n最近对账：2026-09-01T11:04:00.926Z\n正常\nws_20f7f65d70044ee99e5de73b\n最近对账：2026-09-01T11:04:00.886Z\n正常\nws_373d0a78197a4770a8e75fea\n最近对账：2026-09-01T11:04:00.901Z\n正常\nws_bc2ab0f4b5f647009d28bffd\n最近对账：2026-09-01T11:04:00.957Z\n正常\nws_e3cd60878fb44af79109b4a6\n最近对账：2026-09-01T11:04:01.030Z\n正常\nws_bee2a0cbb56c43cebd8d6d30\n最近对账：2026-09-01T11:04:00.968Z\n正常\nws_9235716ce5e1488e93d93b6a\n最近对账：2026-09-01T11:04:00.938Z\n正常\nws_33f33979b70d48bb98a2ebf7\n最近对账：2026-09-01T11:04:00.894Z\n正常\nws_fa10e13b7ed54ffb81d27ab7\n最近对账：2026-09-01T11:04:01.033Z\n正常\nws_489142e021f741db8b7ffac8\n最近对账：2026-09-01T11:04:00.905Z\n正常\nws_c7586a5faf514b2b90b1c345\n最近对账：2026-09-01T11:04:00.972Z\n正常\nws_f5b89a832af84393b82ae9ba\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_cee2c08aefbe46dd8391570e\n最近对账：2026-09-01T11:04:00.995Z\n正常\nws_d329b7a583324fc4bc172327\n最近对账：2026-09-01T11:04:01.022Z\n正常\nws_82c65dd574c44007903ebe1a\n最近对账：2026-09-01T11:04:00.931Z\n正常\nws_7c623f32d6f64fb786aab8fb\n最近对账：2026-09-01T11:04:00.931Z\n正常\nws_fcb12302d7974c1aa94a8274\n最近对账：2026-09-01T11:04:01.029Z\n正常\nws_b13d174bf86e4ea38ce9c918\n最近对账：2026-09-01T11:04:00.964Z\n正常\nws_56a1c0cba26e46a2bf027bcb\n最近对账：2026-09-01T11:04:00.917Z\n正常\nws_4aab4e487cab4f24b4f71842\n最近对账：2026-09-01T11:04:00.915Z\n正常\nws_bc0aac6c966545ad84152401\n最近对账：2026-09-01T11:04:00.958Z\n正常\nws_bbecb27aebbb481fb4fd33be\n最近对账：2026-09-01T11:04:00.959Z\n正常\nws_00a132705d8047d39dcb4b67\n最近对账：2026-09-01T11:04:00.450Z\n正常\nws_a57b82d1b8ed47b0a5189e51\n最近对账：2026-09-01T11:04:00.941Z\n正常\nws_77110e20240b44fc8e70d30b\n最近对账：2026-09-01T11:04:00.935Z\n正常\nws_cb526a241d504e74bd9e1cd3\n最近对账：2026-09-01T11:04:00.988Z\n正常\nws_930e59da4e6940ff808280b4\n最近对账：2026-09-01T11:04:00.949Z\n正常\nws_66ce028a4e2941f78af05a90\n最近对账：2026-09-01T11:04:00.923Z\n正常\nws_fd16faa753034669842f84bd\n最近对账：2026-09-01T11:04:01.042Z\n正常\nws_13b97001232a4901af3a4b66\n最近对账：2026-09-01T11:04:00.889Z\n正常\nws_0eef8c9d71734c818ed5f10b\n最近对账：2026-09-01T11:04:00.924Z\n正常\nws_884ec3ae14934f6798894dc5\n最近对账：2026-09-01T11:04:00.941Z\n正常\nws_compose_debug\n最近对账：2026-09-01T11:04:00.998Z\n正常\nws_compose_smoke_49\n最近对账：2026-09-01T11:04:01.015Z\n正常\nws_compose_smoke_40\n最近对账：2026-09-01T11:04:01.007Z\n正常\nws_compose_smoke_47\n最近对账：2026-09-01T11:04:01.008Z\n正常\nws_compose_smoke_42\n最近对账：2026-09-01T11:04:01.008Z\n正常\nws_compose_smoke_46\n最近对账：2026-09-01T11:04:01.008Z\n正常\nws_compose_smoke_48\n最近对账：2026-09-01T11:04:01.009Z\n正常\nws_compose_smoke_44\n最近对账：2026-09-01T11:04:01.007Z\n正常\nws_compose_smoke_43\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_45\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_36\n最近对账：2026-09-01T11:04:01.011Z\n正常\nws_compose_smoke_30\n最近对账：2026-09-01T11:04:01.008Z\n正常\nws_compose_smoke_39\n最近对账：2026-09-01T11:04:01.011Z\n正常\nws_compose_smoke_37\n最近对账：2026-09-01T11:04:01.015Z\n正常\nws_compose_smoke_29\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_38\n最近对账：2026-09-01T11:04:01.014Z\n正常\nws_compose_smoke_35\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_41\n最近对账：2026-09-01T11:04:01.011Z\n正常\nws_compose_smoke_2\n最近对账：2026-09-01T11:04:01.004Z\n正常\nws_compose_smoke_33\n最近对账：2026-09-01T11:04:01.006Z\n正常\nws_compose_smoke_34\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_31\n最近对账：2026-09-01T11:04:01.007Z\n正常\nws_compose_smoke_28\n最近对账：2026-09-01T11:04:01.004Z\n正常\nws_compose_smoke_25\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_26\n最近对账：2026-09-01T11:04:01.004Z\n正常\nws_compose_smoke_24\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_22\n最近对账：2026-09-01T11:04:01.000Z\n正常\nws_compose_smoke_27\n最近对账：2026-09-01T11:04:01.002Z\n正常\nws_compose_smoke_32\n最近对账：2026-09-01T11:04:01.021Z\n正常\nws_compose_smoke_23\n最近对账：2026-09-01T11:04:01.002Z\n正常\nws_compose_smoke_19\n最近对账：2026-09-01T11:04:01.002Z\n正常\nws_compose_smoke_20\n最近对账：2026-09-01T11:04:01.003Z\n正常\nws_compose_smoke_3\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_18\n最近对账：2026-09-01T11:04:00.998Z\n正常\nws_compose_smoke_17\n最近对账：2026-09-01T11:04:01.000Z\n正常\nws_compose_smoke_16\n最近对账：2026-09-01T11:04:01.002Z\n正常\nws_compose_smoke_4\n最近对账：2026-09-01T11:04:01.005Z\n正常\nws_compose_smoke_15\n最近对账：2026-09-01T11:04:00.999Z\n正常\nws_compose_smoke_14\n最近对账：2026-09-01T11:04:00.997Z\n正常\nws_compose_smoke_1\n最近对账：2026-09-01T11:04:00.992Z\n正常\nws_compose_smoke_13\n最近对账：2026-09-01T11:04:00.994Z\n正常\nws_compose_smoke_10\n最近对账：2026-09-01T11:04:00.992Z\n正常\nws_compose_smoke_12\n最近对账：2026-09-01T11:04:00.996Z\n正常\nws_compose_smoke_9\n最近对账：2026-09-01T11:04:01.026Z\n正常\nws_compose_smoke_11\n最近对账：2026-09-01T11:04:00.992Z\n正常\nws_compose_smoke_8\n最近对账：2026-09-01T11:04:01.015Z\n正常\nws_compose_smoke_5\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_compose_smoke_6\n最近对账：2026-09-01T11:04:01.013Z\n正常\nws_compose_smoke_7\n最近对账：2026-09-01T11:04:01.014Z\n正常\nws_compose_smoke_21\n最近对账：2026-09-01T11:04:01.009Z\n正常\nws_compose_smoke_0\n最近对账：2026-09-01T11:04:01.000Z\n正常\nworkspace_demo\n最近对账：2026-09-01T11:04:00.450Z\n正常\nws_3fd1b414debc42d586493423\n最近对账：2026-09-01T11:04:00.912Z\n正常\nws_projection_1787879959239\n最近对账：2026-09-01T11:04:01.051Z\n正常\nws_projection_1787873448782\n最近对账：2026-09-01T11:04:01.054Z\n正常\nws_projection_1787840790835\n最近对账：2026-09-01T11:04:01.048Z\n正常\nws_projection_1787837876497\n最近对账：2026-09-01T11:04:01.048Z\n正常\nws_projection_1787834346609\n最近对账：2026-09-01T11:04:01.050Z\n正常\nws_projection_1787834316252\n最近对账：2026-09-01T11:04:01.049Z\n正常\nws_projection_1787829313615\n最近对账：2026-09-01T11:04:01.045Z\n正常\nws_projection_1787826214934\n最近对账：2026-09-01T11:04:01.043Z\n正常\nws_projection_1787815190828\n最近对账：2026-09-01T11:04:01.050Z\n正常\nws_projection_1787813795706\n最近对账：2026-09-01T11:04:01.055Z\n正常\nws_projection_1787811811725\n最近对账：2026-09-01T11:04:01.043Z\n正常\nws_visual_runtime_1787623165\n最近对账：2026-09-01T11:04:01.112Z\n正常\nws_runtime_review\n最近对账：2026-09-01T11:04:01.083Z\n正常\nws_manual_reprobe_1787577772903_other\n最近对账：2026-09-01T11:04:01.033Z\n正常\nws_manual_reprobe_1787577772903\n最近对账：2026-09-01T11:04:01.036Z\n需处理\nws_manual_probe_1787577664159_other\n最近对账：2026-09-01T11:04:01.039Z\n正常\nws_manual_probe_1787577664159\n最近对账：2026-09-01T11:04:01.035Z\n需处理\nws_codex_manual_runtime\n最近对账：2026-09-01T11:04:00.992Z\n需处理\nws_runtime_complete_1787576299405\n最近对账：2026-09-01T11:04:01.072Z\n正常\nws_four_platform_mock_20260824_final\n最近对账：2026-09-01T11:04:01.031Z\n正常\nws_four_platform_debug_20260824\n最近对账：2026-09-01T11:04:01.030Z\n正常\nws_four_platform_mock_20260824\n最近对账：2026-09-01T11:04:01.033Z\n正常\nws_projection_1787511137257\n最近对账：2026-09-01T11:04:01.042Z\n正常\nws_prod_check\n最近对账：2026-09-01T11:04:01.045Z\n正常\nws_full_coverage2\n最近对账：2026-09-01T11:04:01.032Z\n需处理\nws_full_coverage\n最近对账：2026-09-01T11:04:01.031Z\n需处理\nws_probe_1787497662275\n最近对账：2026-09-01T11:04:01.038Z\n正常\nws_audit_1787497650458\n最近对账：2026-09-01T11:04:00.958Z\n正常\nws_audit_1787497629520\n最近对账：2026-09-01T11:04:00.957Z\n正常\nws_dbg_1787497538658\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_dbg_1787497511321\n最近对账：2026-09-01T11:04:01.020Z\n正常\nws_audit_1787497461692\n最近对账：2026-09-01T11:04:00.955Z\n正常\nws_catalog_fields_1787497235300\n最近对账：2026-09-01T11:04:00.987Z\n正常\nws_asset_codex_1787496958430\n最近对账：2026-09-01T11:04:00.948Z\n需处理\nws_brand_codex_1787496488201\n最近对账：2026-09-01T11:04:00.965Z\n正常\nws_smoke_final_1787496082\n最近对账：2026-09-01T11:04:01.072Z\n正常\nws_status_semantics_1787495\n最近对账：2026-09-01T11:04:01.065Z\n正常\nws_task_bind_1787495318193\n最近对账：2026-09-01T11:04:01.087Z\n正常\nws_codex_image_1787495193866\n最近对账：2026-09-01T11:04:00.994Z\n正常\nws_codex_image_1787495170707\n最近对账：2026-09-01T11:04:00.997Z\n正常\nws_probe_1787495153225\n最近对账：2026-09-01T11:04:01.036Z\n正常\nws_codex_final_1787495133096\n最近对账：2026-09-01T11:04:00.996Z\n正常\nws_smoke_codex_1787493\n最近对账：2026-09-01T11:04:01.074Z\n正常\nws_replica_final\n最近对账：2026-09-01T11:04:01.053Z\n正常\nws_replica_smoke_1787494383000\n最近对账：2026-09-01T11:04:01.059Z\n正常\nws_projection_1787493934587\n最近对账：2026-09-01T11:04:01.046Z\n正常\nws_revoke_final_1787493809004\n最近对账：2026-09-01T11:04:01.063Z\n正常\nws_revoke_fixed_1787493592466\n最近对账：2026-09-01T11:04:01.053Z\n正常\nws_revoke_probe_1787493513690\n最近对账：2026-09-01T11:04:01.054Z\n正常\nws_four_platform_1787493417744\n最近对账：2026-09-01T11:04:01.030Z\n正常\nws_account_binding_1787493058558\n最近对账：2026-09-01T11:04:00.948Z\n正常\nws_account_binding_1787492988114\n最近对账：2026-09-01T11:04:00.942Z\n正常\nws_matrix_1787492577997\n最近对账：2026-09-01T11:04:01.035Z\n需处理\nws_full_accept_1787492516891\n最近对账：2026-09-01T11:04:01.031Z\n正常\nws_diag\n最近对账：2026-09-01T11:04:01.033Z\n正常\nws_retry_sync\n最近对账：2026-09-01T11:04:01.056Z\n正常\nws_debug_err\n最近对账：2026-09-01T11:04:01.020Z\n正常\nws_new_sync\n最近对账：2026-09-01T11:04:01.042Z\n正常\nws_debug\n最近对账：2026-09-01T11:04:01.023Z\n正常\nws_projection_1787447127307\n最近对账：2026-09-01T11:04:01.046Z\n正常\nws_projection_1787445935097\n最近对账：2026-09-01T11:04:01.041Z\n正常\nws_projection_1787445696304\n最近对账：2026-09-01T11:04:01.048Z\n正常\nws_projection_1787444610285\n最近对账：2026-09-01T11:04:01.041Z\n正常\nws_projection_1787444555217\n最近对账：2026-09-01T11:04:01.047Z\n正常\nws_projection_1787444404179\n最近对账：2026-09-01T11:04:01.047Z\n正常\nws_projection_1787442711319\n最近对账：2026-09-01T11:04:01.053Z\n正常\nws_projection_1787442135253\n最近对账：2026-09-01T11:04:01.051Z\n正常\nws_projection_1787441419872\n最近对账：2026-09-01T11:04:01.041Z\n正常\nws_projection_1787440316543\n最近对账：2026-09-01T11:04:01.039Z\n正常\nws_projection_1787440117863\n最近对账：2026-09-01T11:04:01.040Z\n正常\nws_projection_1787439602044\n最近对账：2026-09-01T11:04:01.052Z\n正常\nws_projection_1787439221644\n最近对账：2026-09-01T11:04:01.041Z\n正常\nws_projection_1787438561005\n最近对账：2026-09-01T11:04:01.038Z\n正常\nws_projection_1787437671582\n最近对账：2026-09-01T11:04:01.038Z\n正常\nws_projection_1787437520553\n最近对账：2026-09-01T11:04:01.037Z\n正常\nws_replica_smoke_1787436744293\n最近对账：2026-09-01T11:04:01.054Z\n正常\nws_replica_smoke_1787436700961\n最近对账：2026-09-01T11:04:01.054Z\n正常\nws_projection_1787436647875\n最近对账：2026-09-01T11:04:01.039Z\n正常\nws_projection_1787436416080\n最近对账：2026-09-01T11:04:01.039Z\n正常\nws_projection_1787435202231\n最近对账：2026-09-01T11:04:01.037Z\n正常\nws_projection_1787430187994\n最近对账：2026-09-01T11:04:01.036Z\n正常\nws_projection_1787425099705\n最近对账：2026-09-01T11:04:01.046Z\n正常\nws_projection_1787424938511\n最近对账：2026-09-01T11:04:01.037Z\n正常\nws_redis_recovery\n最近对账：2026-09-01T11:04:01.053Z\n正常\nws_replica_smoke_1787420069753\n最近对账：2026-09-01T11:04:01.059Z\n正常\nws_replica_smoke_1787419842141\n最近对账：2026-09-01T11:04:01.059Z\n正常\nws_worker_acceptance\n最近对账：2026-09-01T11:04:01.082Z\n正常\nws_demo\n最近对账：2026-09-01T11:04:02.535Z\n需处理\n列表仅用于定位 workspace 状态，不提供客户对象、素材内容、对象 key 或下载操作。",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -1140,7 +817,7 @@
         "商业与平台控制台",
         "账务与商业配置"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nBILLING OPERATIONS\n账务与商业配置\n管理充值、账单、退款、套餐和模型计费策略。\n跨工作区财务检索\n刷新\n导出当前筛选\n关键词\n工作区\n记录类型\n状态\n输入状态后回车，可多选\n检索\n记录数\n105\n充值订单\n¥711.00\n订阅订单\n¥0.00\n钱包净额\n¥159.53\nProvider 成本\n¥15.079981\n客户计费\n¥2.449952\n已加载 50 条财务记录\n类型\t工作区\t记录号\t状态\t业务引用\t金额\tProvider 成本\t客户计费\t发生时间\t操作\n\n类型\n\t\n工作区\n\t\n记录号\n\t\n状态\n\t\n业务引用\n\t\n金额\n\t\nProvider 成本\n\t\n客户计费\n\t\n发生时间\n\t\n操作\n\n模型用量\tws_atomic_overrun_pg_1788191112170_3f31bd5a0bce2\n\t832c84ad-4af1-4747-9629-fee079185bb7\tmanual_attention\t—\t—\t¥0.100000\t—\t8/31/2026, 11:45:12 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788191111795_1b0e4e1de8f38\n\t81442dd8-26a5-4660-ad30-8f0761ffcf70\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 11:45:11 PM\t\n详情\n\n模型用量\tws_atomic_overrun_pg_1788189527934_f7a122ecdd17f\n\t8f7e2837-b5df-4385-9ccc-c88be8fec49f\tmanual_attention\t—\t—\t¥0.100000\t—\t8/31/2026, 11:18:48 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788189527671_9e5efa8de96e5\n\tc3e5da76-cc85-49a7-b03f-56eefe9d7617\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 11:18:47 PM\t\n详情\n\n模型用量\tws_atomic_overrun_pg_1788184299574_d6dcb5aefc0a5\n\t79db0200-400d-4aea-8887-28b6d8d6a3cc\tmanual_attention\t—\t—\t¥0.100000\t—\t8/31/2026, 9:51:39 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788184299444_fe6d4384239c9\n\ta555f8c9-c01b-4a21-ae45-d65ee6854870\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:51:39 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788182491289_c3e2dfedbcd56\n\t20b9125e-3ca0-4be2-8a29-fe3f62fd6618\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:21:31 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788181975803_2d136b1b8d086\n\t404217b7-d168-43fa-a627-e130adddb6c0\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:12:55 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788181506259_11deb755b3d74\n\ta551d1c4-2a58-46f0-a246-eeee1e84f8da\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:05:06 PM\t\n详情\n\n模型用量\tws_runtime_budget_1788181795652\n\t58f938f5-c980-44e4-8295-cc1c3ed18db1\tsettled\t—\t—\t¥1.200000\t—\t8/31/2026, 8:01:00 PM\t\n详情\n\n模型用量\tws_runtime_budget_1788181768492\n\t15813d1f-c363-494a-8601-4623bc2f5a94\tsettled\t—\t—\t¥1.200000\t—\t8/31/2026, 8:01:00 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_d0321cde-c34c-40c5-8af0-e6a116d4dccc\tdebit\tasset-parse:asset_70baab94-9b8d-4b96-85f0-2753abfa2eeb:attempt:1\t¥0.01\t—\t—\t8/31/2026, 5:35:14 PM\t\n详情\n\n模型用量\tws_demo\n\t26e66692-d7a8-4b1f-8ed2-f6276733ab4a\tmanual_attention\timage:runtime-ticket-v15-20260831-1225\t—\t—\t—\t8/31/2026, 12:34:05 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_9b4f66db-9d97-419b-9c45-2bc1ba92052e\tdebit\timage:runtime-ticket-v15-20260831-1225\t¥0.01\t—\t—\t8/31/2026, 12:26:47 PM\t\n详情\n\n模型用量\tws_demo\n\t21c4c17c-a995-4cfc-bfc0-90520150f4bc\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-白底主图，展示 Mac Studio\t—\t—\t—\t8/30/2026, 8:04:47 PM\t\n详情\n\n模型用量\tws_demo\n\t066f8531-fe7f-4b6d-b91a-5ac40bade4db\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t—\t—\t—\t8/30/2026, 8:03:29 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_f6aeca3a-0e90-472a-a476-415eb733ab2a\tdebit\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-白底主图，展示 Mac Studio\t¥0.01\t—\t—\t8/30/2026, 8:03:15 PM\t\n详情\n\n模型用量\tws_demo\n\t1af7e774-8ffd-41ef-bf8c-5f7a10fd24ab\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t—\t—\t—\t8/30/2026, 8:02:38 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_7f029ab5-00d1-4b22-8319-1dff665270c4\tdebit\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t¥0.01\t—\t—\t8/30/2026, 8:01:42 PM\t\n详情\n\n模型用量\tws_demo\n\t13477643-b075-4565-8b49-d62b8f6c9f67\tmanual_attention\timage:live-verified-final-20260830-1927\t—\t—\t—\t8/30/2026, 7:30:10 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_dc3553e1-899d-4236-b3ca-117b15858200\tdebit\timage:live-verified-final-20260830-1927\t¥0.01\t—\t—\t8/30/2026, 7:29:00 PM\t\n详情\n\n模型用量\tws_demo\n\tc0420a92-61f3-4cda-8421-e046d287f3c0\tmanual_attention\timage:live-verified-retry-20260830-1914\t—\t—\t—\t8/30/2026, 7:18:24 PM\t\n详情\n\n模型用量\tws_demo\n\t84515e7d-54f7-4b20-871b-715a306f953c\tmanual_attention\timage:live-verified-retry-20260830-1914\t—\t—\t—\t8/30/2026, 7:13:20 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_289fad33-4eaf-440d-9b5c-8d672c298aea\tdebit\timage:live-verified-retry-20260830-1914\t¥0.01\t—\t—\t8/30/2026, 7:12:19 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_74db3c5d-2bbf-42fe-8c7b-0226fcddc42a\tdebit\timage:live-verified-loop-20260830-1901\t¥0.01\t—\t—\t8/30/2026, 7:04:55 PM\t\n详情\n\n模型用量\tws_demo\n\t5f411fb0-7ca7-48f7-b5ef-be89ead7dccb\tmanual_attention\timage:live-image-generation-v2-202608301739\t—\t—\t—\t8/30/2026, 5:38:37 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_e59a7c9e-6d6a-4e68-a0a9-be10772468ae\tdebit\timage:live-image-generation-v2-202608301739\t¥0.01\t—\t—\t8/30/2026, 5:37:15 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_ddf8f1c4-70e7-472e-8ec0-fc0a78106b86\tdebit\timage:runtime-signed-continuation-1788076394\t¥0.01\t—\t—\t8/30/2026, 3:53:17 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_fb8b2576-a551-4695-970e-1e6751f44ba8\trefund\trefund:asset-parse:asset_8a03d8fb-2db3-40b7-9456-90e90471b70c:attempt:1\t¥0.01\t—\t—\t8/30/2026, 1:34:36 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_49ee63e8-b9aa-4fc8-b82f-334e3bdf7d5b\tdebit\tasset-parse:asset_8a03d8fb-2db3-40b7-9456-90e90471b70c:attempt:1\t¥0.01\t—\t—\t8/30/2026, 1:34:36 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_2a02f835-2a21-46fe-80c1-274debc16f32\tdebit\timage:chatgpt-auto-scan-live-20260830-1319\t¥0.01\t—\t—\t8/30/2026, 1:26:23 PM\t\n详情\n\n模型用量\tws_demo\n\t0a63661d-81d8-469d-80f8-e001fac07eb5\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:38 AM\t\n详情\n\n模型用量\tws_demo\n\t024980f5-3414-4fc4-ad38-a82aeef39458\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:23 AM\t\n详情\n\n模型用量\tws_demo\n\tadd74ee7-9cc4-43bd-949f-c40cdc90a2e3\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:08 AM\t\n详情\n\n任务额度\tws_demo\n\t1e44f568-19f3-414c-a5f1-b36376ed77b9\trefunded\ttask_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:55:23 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788191112333_ea6477f158931\n\tfb7723c9-9ecd-4d35-be21-f3f7f5cf55ca\tmanual_attention\t—\t—\t¥0.500000\t—\t8/30/2026, 8:01:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788189528041_279b4f557524b\n\t89838269-cc04-4270-b05a-3c8909370d7c\tmanual_attention\t—\t—\t¥0.500000\t—\t8/30/2026, 8:01:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788184299639_e90990a90514d\n\t2bc68aec-0f7c-4284-8692-7bb68681aa5b\tmanual_attention\t—\t—\t¥0.500000\t—\t8/30/2026, 8:01:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788191112333_ea6477f158931\n\t1f3f988b-453f-4b5f-855c-5bf82f2ca531\tmanual_attention\t—\t—\t¥0.400000\t—\t8/30/2026, 7:59:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788189528041_279b4f557524b\n\t7541e564-05b7-438e-8dcb-c985110b19a6\tmanual_attention\t—\t—\t¥0.400000\t—\t8/30/2026, 7:59:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788184299639_e90990a90514d\n\tcf8c2605-eec4-4ff0-a69c-193976fdaab1\tmanual_attention\t—\t—\t¥0.400000\t—\t8/30/2026, 7:59:30 AM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_5bf1db67-768c-46cc-8fe9-7577679940bc\tdebit\timage:acc-img-20260829-001-create-commute\t¥0.01\t—\t—\t8/30/2026, 12:07:39 AM\t\n详情\n\n任务额度\tws_demo\n\te8e63750-097c-4eb6-acbb-7987a3cb66c4\tconsumed\ttask_a147a69c-b083-4ddd-bdee-e2f3045245ad\t—\t—\t—\t8/30/2026, 12:07:16 AM\t\n详情\n\n充值订单\tws_demo\n\trecharge_9ac35b464bfe2e9373b1406c50610a0d\tpending\talipay\t¥100.00\t—\t—\t8/29/2026, 9:18:03 PM\t\n详情\n\n模型用量\tws_demo\n\t0be96384-975a-4f41-ae31-164136eb45af\tmanual_attention\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t—\t—\t—\t8/29/2026, 7:43:46 PM\t\n详情\n\n模型用量\tws_demo\n\tc4118bf4-3a01-4fac-aece-aa22db21b997\tmanual_attention\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t—\t—\t—\t8/29/2026, 7:41:41 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_9059d31f-df70-494f-a660-7fc28af34ec4\tdebit\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t¥0.01\t—\t—\t8/29/2026, 7:40:20 PM\t\n详情\n\n模型用量\tws_demo\n\ta29c9f03-303b-4b65-8311-1690e7792ad7\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:46 PM\t\n详情\n\n模型用量\tws_demo\n\tfbdd4f2c-f1ab-4985-b596-90ff4460ec24\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:29 PM\t\n详情\n\n模型用量\tws_demo\n\t8e1455f9-f918-4a27-8278-4fc2366da181\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:14 PM\t\n详情\n加载更多\n充值订单状态中心\n刷新\n订单总数\n0\n待支付\n0\n已支付\n0\n异常\n0\n全部 0\n待支付 0\n已支付 0\n已关闭 0\n异常 0\n状态\t订单号\t工作区\t渠道\t金额\tProvider 交易号\t创建时间\t过期时间\t支付时间\t操作\n\n状态\n\t\n订单号\n\t\n工作区\n\t\n渠道\n\t\n金额\n\t\nProvider 交易号\n\t\n创建时间\n\t\n过期时间\n\t\n支付时间\n\t\n操作\n\n\n当前筛选条件下没有充值订单\n财务流水与对账\n金额：元（两位小数）\n运行支付查单\n支付服务商未就绪，暂不能运行查单。\n重试模型结算\n导出账单\n当前没有可展示的对账数据。请先完成工作区连接配置后重试。\n重新读取对账\n退款操作\n需要 finance 或 merchant_admin 权限\n充值订单 ID\n退款原因\n创建退款\n配置中心\nRevision -\n套餐与额度\n平台与店铺\n订阅订单\n套餐编码\n套餐名称\n店铺额度\n月价（元）\n年价（元）\n月度任务额度\n保存商业配置\n套餐、加购与增长规则\n运营目录\n导出商业配置\n模型计费\n套餐目录\n加购能力\n优惠券\n灰度规则\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。\n商业配置已导出，不包含支付密钥",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n部分运营数据未刷新\n部分数据集刷新失败（ops.audit.platform.list、ops.brand-units.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。\nBILLING OPERATIONS\n账务与商业配置\n管理充值、账单、退款、套餐和模型计费策略。\n无法加载运营数据\n\n部分数据集刷新失败（ops.audit.platform.list、ops.brand-units.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。\n\n重 试\n跨工作区财务检索\n刷新\n导出当前筛选\n关键词\n工作区\n记录类型\n状态\n输入状态后回车，可多选\n检索\n财务检索失败\n运营 API 请求超时\n重 试\n财务数据尚未取得，当前状态不能解释为零记录或零金额。\n充值订单状态中心\n刷新\n订单总数\n0\n待支付\n0\n已支付\n0\n异常\n0\n充值订单加载失败\n身份网关角色与工作区成员角色不一致，访问已拒绝\n重 试\n全部 0\n待支付 0\n已支付 0\n已关闭 0\n异常 0\n状态\t订单号\t工作区\t渠道\t金额\tProvider 交易号\t创建时间\t过期时间\t支付时间\t操作\n\n状态\n\t\n订单号\n\t\n工作区\n\t\n渠道\n\t\n金额\n\t\nProvider 交易号\n\t\n创建时间\n\t\n过期时间\n\t\n支付时间\n\t\n操作\n\n\n当前筛选条件下没有充值订单\n财务流水与对账\n金额：元（两位小数）\n运行支付查单\n支付服务商未就绪，暂不能运行查单。\n重试模型结算\n导出账单\n当前没有可展示的对账数据。请先完成工作区连接配置后重试。\n重新读取对账\n退款操作\n需要 finance 或 merchant_admin 权限\n充值订单 ID\n退款原因\n创建退款\n配置中心\nRevision -\n套餐与额度\n平台与店铺\n订阅订单\n套餐编码\n套餐名称\n店铺额度\n月价（元）\n年价（元）\n月度任务额度\n保存商业配置\n套餐、加购与增长规则\n运营目录\n导出商业配置\n模型计费\n套餐目录\n加购能力\n优惠券\n灰度规则\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。\n商业配置已导出，不包含支付密钥",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -1211,423 +888,31 @@
           "disabled": false
         },
         {
+          "text": "重 试",
+          "disabled": false
+        },
+        {
           "text": "刷新",
           "disabled": false
         },
         {
           "text": "导出当前筛选",
-          "disabled": false
+          "disabled": true
         },
         {
           "text": "检索",
           "disabled": false
         },
         {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "Copy",
-          "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": false
-        },
-        {
-          "text": "加载更多",
+          "text": "重 试",
           "disabled": false
         },
         {
           "text": "刷新",
+          "disabled": false
+        },
+        {
+          "text": "重 试",
           "disabled": false
         },
         {
@@ -1824,7 +1109,7 @@
         "审计中心",
         "不可变审计记录"
       ],
-      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nAUDIT TRAIL\n审计中心\n平台范围检索各授权租户的不可变审计事实；详情采用最小化、脱敏投影，跨租户导出请切换到具体工作区。\n不可变审计记录\n所有详情均为服务端脱敏投影\n刷新\n导出当前筛选\n关键词\n来源\n操作者\n动作\n资源类型\n开始时间\n结束时间\n筛选操作\n清除筛选\n已加载 100 / 259005 条审计记录\n平台聚合结果按服务端上限返回；请缩小时间或租户筛选范围，记录内容为服务端脱敏投影。\n已加载 100 条，共 259005 条，仍有未加载记录\n时间\t来源\t操作者\t动作\t资源\t原因\t操作\n\n时间\n\t\n来源\n\t\n操作者\n\t\n动作\n\t\n资源\n\t\n原因\n\t\n操作\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_visual_runtime_1787623165\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_worker_acceptance\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_9bafe9db-c2be-4d01-b84e-13b5f35b505e\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_task_bind_1787495318193\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_f88c7261-c6fe-429d-9bf5-a7d12daae435\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_678bf7ed-7741-4b29-8ce5-f3c3f843d50a\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_2bbbe76e-9db8-4902-9c47-a0fee5ace7c8\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_10bba714-a472-472c-96b7-61de607a3423\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_00f056d4-f960-49f0-86a0-664a9b9bd903\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_budget_1788181795652\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_46b16760-5d31-422b-aec5-bf350a375d77\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_complete_1787576299405\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_status_semantics_1787495\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788191111795_1b0e4e1de8f38\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_smoke_final_1787496082\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_smoke_codex_1787493\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_budget_1788181768492\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_review\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788189527671_9e5efa8de96e5\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788184299444_fe6d4384239c9\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788182491289_c3e2dfedbcd56\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788181975803_2d136b1b8d086\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788181506259_11deb755b3d74\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787494383000\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_demo\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788181479610_b547cf85d2392\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_revoke_probe_1787493513690\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_revoke_fixed_1787493592466\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_retry_sync\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787436744293\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_revoke_final_1787493809004\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787420069753\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787436700961\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787419842141\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_redis_recovery\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787957935470\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787879959239\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787837876497\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_final\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787958598213\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787873448782\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787834316252\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787829313615\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787840790835\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787834346609\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787826214934\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787813795706\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787511137257\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787811811725\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787815190828\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787444610285\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787493934587\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787445935097\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787445696304\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787447127307\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787444555217\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787444404179\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787442711319\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787438561005\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787437520553\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787436416080\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787440117863\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787439221644\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787436647875\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787435202231\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787442135253\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787439602044\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787441419872\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787437671582\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787440316543\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787430187994\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_prod_check\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_probe_1787495153225\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787425099705\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_new_sync\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787424938511\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_reprobe_1787577772903\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_matrix_1787492577997\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_probe_1787497662275\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_full_coverage\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_probe_1787577664159_other\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_ops_browser\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_reprobe_1787577772903_other\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_probe_1787577664159\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_full_accept_1787492516891\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_mock_20260824\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_full_coverage2\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_ffdeaa539ec3447091566598\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_mock_20260824_final\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_1787493417744\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_debug_20260824\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fec23d22a0af49a093753187\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fb25a7966d6a4a629891e582\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fedcf3108abe418dbcaa1768\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fd16faa753034669842f84bd\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fa80f4e64058469bb79e6176\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fa10e13b7ed54ffb81d27ab7\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fcfac3afc5c8438c9e639b06\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fcb12302d7974c1aa94a8274\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fab6943fa15a4aefad1fe574\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n授权状态：已由服务端验证\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n连接诊断\n部分运营数据未刷新\n部分数据集刷新失败（ops.audit.platform.list、ops.brand-units.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。\nAUDIT TRAIL\n审计中心\n平台范围检索各授权租户的不可变审计事实；详情采用最小化、脱敏投影，跨租户导出请切换到具体工作区。\n不可变审计记录\n所有详情均为服务端脱敏投影\n刷新\n导出当前筛选\n平台聚合视图暂不支持跨租户导出，请切换到具体工作区。\n关键词\n来源\n操作者\n动作\n资源类型\n开始时间\n结束时间\n筛选操作\n清除筛选\n正在加载审计记录\n时间\t来源\t操作者\t动作\t资源\t原因\t操作\n\n时间\n\t\n来源\n\t\n操作者\n\t\n动作\n\t\n资源\n\t\n原因\n\t\n操作\n\n\n正在加载",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -1900,411 +1185,11 @@
         },
         {
           "text": "导出当前筛选",
-          "disabled": true
+          "disabled": false
         },
         {
           "text": "清除筛选",
           "disabled": false
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
-        },
-        {
-          "text": "详情",
-          "disabled": true
         }
       ],
       "inputs": [
@@ -2374,8 +1259,59 @@
       ]
     }
   ],
-  "badResponses": [],
-  "rpcErrors": [],
+  "badResponses": [
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18082/api/mcp",
+      "status": 500,
+      "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"cbdbbc61-bf4f-450a-bdc0-eed00ff87d13\",\"method\":\"ops.audit.platform.list\",\"params\":{\"limit\":\"50\"}}",
+      "body": "{\"request_id\":\"req_1329d269-c7ec-4395-8f81-47496de00d78\",\"trace_id\":\"req_1329d269-c7ec-4395-8f81-47496de00d78\",\"workspace_id\":\"ws_demo\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"内部错误\"}}"
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18082/api/mcp",
+      "status": 500,
+      "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"949cffc9-86e5-4228-b754-f2e2e985f51a\",\"method\":\"ops.brand-units.summary\",\"params\":{\"platform_scope\":\"platform\"}}",
+      "body": "{\"request_id\":\"req_35334604-b6c6-497a-8af9-7da76189db02\",\"trace_id\":\"req_35334604-b6c6-497a-8af9-7da76189db02\",\"workspace_id\":\"ws_demo\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"内部错误\"}}"
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18082/api/mcp",
+      "status": 403,
+      "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"8aa3c618-fcd1-4ade-adbf-1bc666e348b0\",\"method\":\"billing.recharge.list\",\"params\":{\"limit\":\"100\"}}",
+      "body": "{\"request_id\":\"req_38d2f55d-3a0a-4a6b-bc39-c3309f8d5802\",\"trace_id\":\"req_38d2f55d-3a0a-4a6b-bc39-c3309f8d5802\",\"workspace_id\":\"ws_demo\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"MEMBER_ROLE_MISMATCH\",\"message\":\"身份网关角色与工作区成员角色不一致，访问已拒绝\",\"details\":{\"member_role\":\"operator\"}}}"
+    }
+  ],
+  "rpcErrors": [
+    {
+      "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"cbdbbc61-bf4f-450a-bdc0-eed00ff87d13\",\"method\":\"ops.audit.platform.list\",\"params\":{\"limit\":\"50\"}}",
+      "error": {
+        "code": "INTERNAL_ERROR",
+        "message": "内部错误"
+      }
+    },
+    {
+      "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"949cffc9-86e5-4228-b754-f2e2e985f51a\",\"method\":\"ops.brand-units.summary\",\"params\":{\"platform_scope\":\"platform\"}}",
+      "error": {
+        "code": "INTERNAL_ERROR",
+        "message": "内部错误"
+      }
+    },
+    {
+      "requestBody": "{\"jsonrpc\":\"2.0\",\"id\":\"8aa3c618-fcd1-4ade-adbf-1bc666e348b0\",\"method\":\"billing.recharge.list\",\"params\":{\"limit\":\"100\"}}",
+      "error": {
+        "code": "MEMBER_ROLE_MISMATCH",
+        "message": "身份网关角色与工作区成员角色不一致，访问已拒绝",
+        "details": {
+          "member_role": "operator"
+        }
+      }
+    }
+  ],
   "requestFailures": [],
-  "consoleErrors": []
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+  ]
 }
