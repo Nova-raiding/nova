@@ -97,7 +97,13 @@ INSERT INTO creative_point_access_state (
   workspace_id, available_points, reserved_points, settled_points, revision, updated_at
 )
 VALUES ('ws_demo', 10000, 0, 0, 1, '2026-08-29T00:02:00Z')
-ON CONFLICT (workspace_id) DO NOTHING;
+ON CONFLICT (workspace_id) DO UPDATE SET
+  available_points = EXCLUDED.available_points,
+  reserved_points = EXCLUDED.reserved_points,
+  settled_points = EXCLUDED.settled_points,
+  revision = EXCLUDED.revision,
+  updated_at = EXCLUDED.updated_at
+WHERE creative_point_access_state.available_points IS NULL;
 
 INSERT INTO creative_point_operations (
   id, workspace_id, kind, idempotency_key, status, request, result, created_at, completed_at

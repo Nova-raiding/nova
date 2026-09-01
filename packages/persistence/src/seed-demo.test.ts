@@ -31,6 +31,7 @@ describe('local PostgreSQL demo seed contract', () => {
     expect(sql).toContain("'cpo_demo_fixture_grant'")
     expect(sql).toContain("'cpg_demo_fixture_grant'")
     expect(sql).toContain("'cpl_demo_fixture_grant'")
+    expect(sql).toContain('WHERE creative_point_access_state.available_points IS NULL')
     expect((sql.match(/ON CONFLICT/gu) ?? []).length).toBeGreaterThanOrEqual(18)
   })
 })
