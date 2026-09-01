@@ -79,6 +79,24 @@ export function accessDeniedReasonCode(
   return typeof reasonCode === "string" && reasonCode.trim() ? reasonCode.trim() : evidence?.code;
 }
 
+export function accessDeniedEvidence(
+  evidence: { details?: Readonly<Record<string, unknown>> } | undefined,
+): { decisionId?: string; obligationsMissing?: string[] } {
+  const details = evidence?.details;
+  const decisionId = typeof details?.decision_id === "string" && details.decision_id.trim()
+    ? details.decision_id.trim()
+    : undefined;
+  const obligationsMissing = Array.isArray(details?.obligations_missing)
+    ? details.obligations_missing
+      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      .map((value) => value.trim())
+    : undefined;
+  return {
+    ...(decisionId ? { decisionId } : {}),
+    ...(obligationsMissing?.length ? { obligationsMissing } : {}),
+  };
+}
+
 export async function selectStoreScope(
   model: Pick<OpsConsoleModel, "setSelectedStoreScope" | "loadAutomationScope">,
   scope: string,
@@ -108,6 +126,7 @@ function Dashboard({
     ? model.dataSetError("ops.session")
     : undefined;
   const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
+  const sessionAccessDeniedEvidence = accessDeniedEvidence(sessionErrorEvidence);
   const sessionGate = opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError);
   const loadingMessage = opsContentLoadingMessage(sessionGate, switchingWorkbench, model.loading);
   const sessionReady = sessionGate === "ready";
@@ -222,6 +241,8 @@ function Dashboard({
               requestId={sessionErrorEvidence?.requestId}
               traceId={sessionErrorEvidence?.traceId}
               reasonCode={accessDeniedReasonCode(sessionErrorEvidence)}
+              decisionId={sessionAccessDeniedEvidence.decisionId}
+              obligationsMissing={sessionAccessDeniedEvidence.obligationsMissing}
               onBack={() => navigateToDomain("overview")}
               onRefresh={() => void model.load()}
             />

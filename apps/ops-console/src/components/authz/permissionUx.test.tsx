@@ -155,11 +155,14 @@ describe("desktop permission UX", () => {
   });
 
   it("shows denied capability, scope and request evidence", () => {
-    const html = renderToStaticMarkup(<AccessDeniedResult domainLabel="用户与租户" capability="identity.read" scope={{ kind: "workspace", id: "ws_1" }} requestId="req_1" traceId="trace_1" reasonCode="CAPABILITY_DENIED" onBack={() => undefined} onRefresh={() => undefined} />);
+    const html = renderToStaticMarkup(<AccessDeniedResult domainLabel="用户与租户" capability="identity.read" scope={{ kind: "workspace", id: "ws_1" }} requestId="req_1" traceId="trace_1" decisionId="decision_1" obligationsMissing={["mfa", "approval"]} reasonCode="CAPABILITY_DENIED" onBack={() => undefined} onRefresh={() => undefined} />);
     expect(html).toContain("identity.read");
     expect(html).toContain("workspace:ws_1");
     expect(html).toContain("req_1");
     expect(html).toContain("trace_1");
+    expect(html).toContain("decision_1");
+    expect(html).toContain("缺失义务：");
+    expect(html).toContain("mfa, approval");
     expect(html).toContain("CAPABILITY_DENIED");
     expect(html).toContain("当前会话在workspace:ws_1范围内缺少 identity.read 能力");
     expect(html).toContain("请求 ID：req_1");

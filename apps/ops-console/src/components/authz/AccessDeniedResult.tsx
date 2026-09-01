@@ -23,6 +23,8 @@ export function AccessDeniedResult({
   requestId,
   traceId,
   reasonCode,
+  decisionId,
+  obligationsMissing,
   onBack,
   onRefresh,
 }: {
@@ -32,6 +34,8 @@ export function AccessDeniedResult({
   requestId?: string;
   traceId?: string;
   reasonCode?: string;
+  decisionId?: string;
+  obligationsMissing?: readonly string[];
   onBack: () => void;
   onRefresh: () => void;
 }) {
@@ -54,7 +58,9 @@ export function AccessDeniedResult({
         <Typography.Paragraph>当前范围：<Typography.Text code>{scopeText}</Typography.Text></Typography.Paragraph>
         {requestId ? <Typography.Paragraph>请求 ID：<Typography.Text copyable code>{requestId}</Typography.Text></Typography.Paragraph> : null}
         {traceId ? <Typography.Paragraph>追踪 ID：<Typography.Text copyable code>{traceId}</Typography.Text></Typography.Paragraph> : null}
+        {decisionId ? <Typography.Paragraph>决策 ID：<Typography.Text copyable code>{decisionId}</Typography.Text></Typography.Paragraph> : null}
         {reasonCode ? <Typography.Paragraph>决策原因：{explainAccessDeniedReason(reasonCode)} <Typography.Text code>{reasonCode}</Typography.Text></Typography.Paragraph> : null}
+        {obligationsMissing?.length ? <Typography.Paragraph>缺失义务：<Typography.Text code>{obligationsMissing.join(", ")}</Typography.Text></Typography.Paragraph> : null}
       </div>
     </Result>
   );

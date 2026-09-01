@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, accessDeniedReasonCode, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, accessDeniedEvidence, accessDeniedReasonCode, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
 import { openBrandStore } from "./StoresPage.js";
 
 describe("selectStoreScope", () => {
@@ -85,6 +85,14 @@ describe("access denied evidence", () => {
   it("prefers the server decision reason over the transport error code", () => {
     expect(accessDeniedReasonCode({ code: "FORBIDDEN", details: { reason_code: "SCOPE_MISMATCH" } })).toBe("SCOPE_MISMATCH");
     expect(accessDeniedReasonCode({ code: "HTTP_403", details: {} })).toBe("HTTP_403");
+  });
+
+  it("projects server decision and missing obligations without inventing evidence", () => {
+    expect(accessDeniedEvidence({ details: {
+      decision_id: " decision-1 ",
+      obligations_missing: ["mfa", " approval ", "", 4],
+    } })).toEqual({ decisionId: "decision-1", obligationsMissing: ["mfa", "approval"] });
+    expect(accessDeniedEvidence({ details: { decision_id: "", obligations_missing: [] } })).toEqual({});
   });
 });
 
