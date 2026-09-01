@@ -10,149 +10,7 @@
         "商业与平台控制台",
         "运营总览"
       ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_demo\n工作区范围\nws_demo\n数据与操作仅限当前工作区\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+4 个角色\n工作台 \n平台控制台\n商家工作区\n工作区 · ws_demo\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\nPostgres/API · 含演示数据（真实店铺 0，演示店铺 5）\n保存并刷新\nOVERVIEW\n运营总览\n查看套餐、模型、平台告警和上线状态。\n当前套餐\nStarter\n订阅状态\ntrialing\n平台已启用\n6 / 6\n钱包余额\n¥159.54\n工作区与财务总览\n工作区\t状态\t套餐\t订阅\t任务用量\t成员数\n\nNo data\n渠道转化漏斗\n仅统计业务事件\n事件总数\n0\n模型服务\n进入模型服务\n已就绪能力\n0/ 5\n阻断能力\n5\nnot_configuredProvider 配置不代表可用，最终状态同时受成本证据与计费组门禁控制。\n存储与对账\n查看对账\n已使用\n14.6 MB\n预计占用\n14.6 MB\n需要处理\n22 项一致性问题\n最近对账：2026-08-31T07:35:54.826Z；不展示客户对象、key 或下载入口。\n待处理平台告警\n0 条未确认\n导出运营审计\n刷新告警\n级别\t平台\t告警\t对象\t下一步\t通知\t操作\n\nNo data\n平台上线 readiness\n真实 canary 前保持只读\n平台\t店铺授权\t读取\t写入\t能力证据\t生产发布\t主/副图媒体\t阻断原因\nJD\t真实授权\t未开启\t已阻断\t0/9 生产 canary\t生产发布阻断\t媒体阻断\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTAOBAO\t真实授权\t未开启\t已阻断\t0/9 生产 canary\t生产发布阻断\t媒体阻断\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTAOBAO\t真实授权\t未开启\t已阻断\t0/9 生产 canary\t生产发布阻断\t媒体阻断\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nTMALL\t真实授权\t未开启\t已阻断\t0/9 生产 canary\t生产发布阻断\t媒体阻断\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nPINDUODUO\t真实授权\t未开启\t已阻断\t0/9 生产 canary\t生产发布阻断\t媒体阻断\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nXIAOHONGSHU\trefresh_required\t未开启\t已阻断\t0/9 生产 canary\t生产发布阻断\t媒体阻断\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\nDOUYIN\tnot_configured\t未开启\t已阻断\t0/9 生产 canary\t生产发布阻断\t媒体阻断\tCONFIG_MISSING、媒体：主图/副图上传路径或回执映射未配置\n数据生命周期 readiness\n非生产模式\n业务保留\n90天\n隔离区\n7天\nClean\n30天\n删除宽限\n7天\n备份保留\n30天\n对象版本化\n开启\n生命周期数值和策略引用不包含 Secret，仅用于上线门禁和运营核对。\n生产证据 readiness\n未通过门禁\n证据类型\t状态\t环境\tRelease\t版本/Profile\t核验人/时间\t阻断原因\n六平台 capability\tnot_required\t-\t-\t-\t-\tCAPABILITY_EVIDENCE_PATH is not configured\n容量压测\tnot_required\t-\t-\t-\t-\tCAPACITY_REPORT_PATH is not configured\n仅显示脱敏元数据；示例、fixture、test_e2e 或本地容量结果不会被计为生产通过。\n数据删除申请\n双人审批后仍需外部删除证明\n范围\t原因\t申请人\t审批数\t计划执行\t状态\t操作\n\nNo data",
-      "buttons": [
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "总览",
-          "disabled": false
-        },
-        {
-          "text": "用户与租户",
-          "disabled": false
-        },
-        {
-          "text": "成员与权限",
-          "disabled": false
-        },
-        {
-          "text": "客服与 CRM",
-          "disabled": false
-        },
-        {
-          "text": "事故中心",
-          "disabled": false
-        },
-        {
-          "text": "任务与内容",
-          "disabled": false
-        },
-        {
-          "text": "平台连接",
-          "disabled": false
-        },
-        {
-          "text": "平台规则",
-          "disabled": false
-        },
-        {
-          "text": "模型服务",
-          "disabled": false
-        },
-        {
-          "text": "账务与退款",
-          "disabled": false
-        },
-        {
-          "text": "功能开关",
-          "disabled": false
-        },
-        {
-          "text": "存储与对账",
-          "disabled": false
-        },
-        {
-          "text": "审计中心",
-          "disabled": false
-        },
-        {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
-          "disabled": false
-        },
-        {
-          "text": "进入模型服务",
-          "disabled": false
-        },
-        {
-          "text": "查看对账",
-          "disabled": false
-        },
-        {
-          "text": "导出运营审计",
-          "disabled": false
-        },
-        {
-          "text": "刷新告警",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        }
-      ]
-    },
-    {
-      "section": "用户与租户",
-      "headings": [
-        "平台治理",
-        "商家运营",
-        "模型与计费",
-        "风险与系统",
-        "商业与平台控制台",
-        "用户与租户"
-      ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin\n保存并刷新\nPLATFORM GOVERNANCE\n用户与租户\n按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。\n用户目录\n租户治理\n权限与角色\n用户身份\n3\n成员关系\n159\n涉及租户\n157\n用户目录\n关键词\n状态\n全部状态\n租户\n查 询\n清 空\n导出当前筛选\n批量停用（0）\n结果超过 500 条，请增加筛选条件。\n\t身份标识\t\n显示名\n\t租户\t角色\t数据来源\t套餐 / 消耗\t\n成员状态\n\t租户状态\t\n创建时间\n\t操作\n\n\t\n身份标识\n\t\n显示名\n\t\n租户\n\t\n角色\n\t\n数据来源\n\t\n套餐 / 消耗\n\t\n成员状态\n\t\n租户状态\n\t\n创建时间\n\t\n操作\n\n\n\tactor_demo\t本地演示平台运营\tws_demo\t平台运营\t本地种子\t\nTrial · trialing\n任务 1/30 · 余额 ¥159.54\n\t已激活\t正常\t2026/08/28 07:53\t\n详 情\n停 用\n\n\n\tcodex-app-user\tjaap Odin\tws_demo\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 1/30 · 余额 ¥159.54\n\t已激活\t正常\t2026/08/29 16:55\t\n详 情\n停 用\n\n\n\tsupport_demo\t本地演示支持专员\tws_demo\t支持\t本地种子\t\nTrial · trialing\n任务 1/30 · 余额 ¥159.54\n\t已激活\t正常\t2026/08/28 10:14\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 40\tws_65e93b2a884e44e8bcf03d62\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 34\tws_4f2d9330552e4aada048d3df\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 33\tws_218040acdffe447f9177fe96\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 39\tws_02d69d8273504d52b9039820\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 38\tws_d18a3d8291114e128c9d2fd6\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 37\tws_31d43b64276d408e9d04a1b2\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 36\tws_db170122ea1942a382cc879b\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 47\tws_249a673e1d144e548590c532\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 32\tws_878c6eaa143446c7adee8f0a\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 35\tws_092c3a8e83fe41e499a49782\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 48\tws_c5936fe67a9e403badeb043d\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 46\tws_77bfd64cfcb343a382a6655b\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 45\tws_8dcb6f4000024ba8a8438095\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 43\tws_e23a084a25374af1807d137e\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 31\tws_21aaea1ce44e48cb8ab66374\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 42\tws_3b98bceb0815471f9ae617eb\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 11\tws_5903f4b5dcb543d3bfe98817\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n共 159 条成员关系\n1\n2\n3\n4\n5\n8\n20 / page",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nOVERVIEW\n运营总览\n查看套餐、模型、平台告警和上线状态。\n当前套餐\n-\n订阅状态\n-\n平台已启用\n0 / 6\n钱包余额\n-\n工作区与财务总览\n工作区\t状态\t套餐\t订阅\t任务用量\t成员数\nws_atomic_cross_day_pg_1788191112333_ea6477f158931\tactive\tStarter\ttrialing\t0 / 30\t0\nws_atomic_overrun_pg_1788191112170_3f31bd5a0bce2\tactive\tStarter\ttrialing\t0 / 30\t0\nws_atomic_pg_1788191111902_e2f13a597560d\tactive\tStarter\ttrialing\t0 / 30\t0\nws_run_budget_pg_1788191111795_1b0e4e1de8f38\tactive\tStarter\ttrialing\t0 / 30\t0\nws_budget_pg_1788191111617_74d5256d42cbe\tactive\tStarter\ttrialing\t0 / 30\t0\nws_atomic_cross_day_pg_1788189528041_279b4f557524b\tactive\tStarter\ttrialing\t0 / 30\t0\n1\n2\n3\n4\n渠道转化漏斗\n仅统计业务事件\n事件总数\n0\n模型服务\n进入模型服务\n已就绪能力\n0/ 5\n阻断能力\n5\n状态不可用Provider 配置不代表可用，最终状态同时受成本证据与计费组门禁控制。\n存储与对账\n查看对账\n已使用\n—\n预计占用\n—\n尚未接入\n仅展示 workspace 汇总\n暂无最近对账时间；不展示客户对象、key 或下载入口。\n待处理平台告警\n19 条未确认\n导出运营审计\n刷新告警\n级别\t平台\t告警\t对象\t下一步\t通知\t操作\n中\tTAOBAO\t18 条平台告警（AUTOMATION_LOW_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tPINDUODUO\t1 条平台告警（AUTOMATION_LOW_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tJD\t4 条平台告警（AUTOMATION_LOW_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tJD\t1 条平台告警（AUTOMATION_OUT_OF_STOCK）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tTMALL\t1 条平台告警（AUTOMATION_UNCONFIRMED_FACTS）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n\n中\tTAOBAO\t12 条平台告警（AUTOMATION_UNCONFIRMED_FACTS）\tplatform_alert_group / redacted\t切换到明确工作区授权会话后查看客户告警明细。\t待记录\t\n确认\n1\n2\n3\n4\n平台上线 readiness\n真实 canary 前保持只读\n平台\t店铺授权\t读取\t写入\t能力证据\t生产发布\t主/副图媒体\t阻断原因\nJD\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nPINDUODUO\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nTAOBAO\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nTMALL\t真实授权\t未开启\t已开启\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\nXIAOHONGSHU\trefresh_required\t未开启\t已阻断\t0/8 生产 canary\t生产发布阻断\t媒体阻断\t无\n数据生命周期 readiness\n非生产模式\n业务保留\n-天\n隔离区\n-天\nClean\n-天\n删除宽限\n-天\n备份保留\n-天\n对象版本化\n未开启\n生命周期数值和策略引用不包含 Secret，仅用于上线门禁和运营核对。\n生产证据 readiness\n未通过门禁\n证据类型\t状态\t环境\tRelease\t版本/Profile\t核验人/时间\t阻断原因\n六平台 capability\tnot_required\t-\t-\t-\t-\t无\n容量压测\tnot_required\t-\t-\t-\t-\t无\n仅显示脱敏元数据；示例、fixture、test_e2e 或本地容量结果不会被计为生产通过。\n数据删除申请\n双人审批后仍需外部删除证明\n范围\t原因\t申请人\t审批数\t计划执行\t状态\t操作\n\nNo data",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -219,11 +77,145 @@
           "disabled": false
         },
         {
-          "text": "收起连接诊断",
+          "text": "连接诊断",
           "disabled": false
         },
         {
-          "text": "保存并刷新",
+          "text": "进入模型服务",
+          "disabled": false
+        },
+        {
+          "text": "查看对账",
+          "disabled": false
+        },
+        {
+          "text": "导出运营审计",
+          "disabled": false
+        },
+        {
+          "text": "刷新告警",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        },
+        {
+          "text": "确认",
+          "disabled": false
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "placeholder": null,
+          "label": null,
+          "value": "on"
+        },
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "placeholder": null,
+          "label": null,
+          "value": "on"
+        }
+      ]
+    },
+    {
+      "section": "用户与租户",
+      "headings": [
+        "平台治理",
+        "商家运营",
+        "模型与计费",
+        "风险与系统",
+        "商业与平台控制台",
+        "用户与租户"
+      ],
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nPLATFORM GOVERNANCE\n用户与租户\n按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。\n用户目录\n租户治理\n权限与角色\n用户身份\n4\n成员关系\n160\n涉及租户\n157\n用户目录\n关键词\n状态\n全部状态\n租户\n查 询\n清 空\n导出当前筛选\n批量停用（0）\n结果超过 500 条，请增加筛选条件。\n\t身份标识\t\n显示名\n\t租户\t角色\t数据来源\t套餐 / 消耗\t\n成员状态\n\t租户状态\t\n创建时间\n\t操作\n\n\t\n身份标识\n\t\n显示名\n\t\n租户\n\t\n角色\n\t\n数据来源\n\t\n套餐 / 消耗\n\t\n成员状态\n\t\n租户状态\n\t\n创建时间\n\t\n操作\n\n\n\tworkspace_admin_demo\t本地演示工作区所有者\tws_demo\t工作区所有者\t本地种子\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/09/01 08:33\t\n详 情\n停 用\n\n\n\tactor_demo\t本地演示平台运营\tws_demo\t平台运营\t本地种子\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/08/28 07:53\t\n详 情\n停 用\n\n\n\tcodex-app-user\tjaap Odin\tws_demo\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/08/29 16:55\t\n详 情\n停 用\n\n\n\tsupport_demo\t本地演示支持专员\tws_demo\t支持\t本地种子\t\nTrial · trialing\n任务 0/30 · 余额 ¥159.53\n\t已激活\t正常\t2026/08/28 10:14\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 40\tws_65e93b2a884e44e8bcf03d62\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 34\tws_4f2d9330552e4aada048d3df\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 33\tws_218040acdffe447f9177fe96\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 39\tws_02d69d8273504d52b9039820\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 38\tws_d18a3d8291114e128c9d2fd6\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 37\tws_31d43b64276d408e9d04a1b2\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 36\tws_db170122ea1942a382cc879b\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 47\tws_249a673e1d144e548590c532\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 32\tws_878c6eaa143446c7adee8f0a\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 35\tws_092c3a8e83fe41e499a49782\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 48\tws_c5936fe67a9e403badeb043d\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 46\tws_77bfd64cfcb343a382a6655b\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 45\tws_8dcb6f4000024ba8a8438095\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 43\tws_e23a084a25374af1807d137e\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 31\tws_21aaea1ce44e48cb8ab66374\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n\n\n\tactor_demo\tCompose smoke 42\tws_3b98bceb0815471f9ae617eb\t工作区所有者\t业务成员记录\t\nTrial · trialing\n任务 0/30 · 余额 ¥0.00\n\t已激活\t正常\t2026/08/28 23:19\t\n详 情\n停 用\n共 160 条成员关系\n1\n2\n3\n4\n5\n8\n20 / page",
+      "buttons": [
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "用户与租户",
+          "disabled": false
+        },
+        {
+          "text": "成员与权限",
+          "disabled": false
+        },
+        {
+          "text": "客服与 CRM",
+          "disabled": false
+        },
+        {
+          "text": "事故中心",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "平台连接",
+          "disabled": false
+        },
+        {
+          "text": "平台规则",
+          "disabled": false
+        },
+        {
+          "text": "模型服务",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "功能开关",
+          "disabled": false
+        },
+        {
+          "text": "存储与对账",
+          "disabled": false
+        },
+        {
+          "text": "审计中心",
+          "disabled": false
+        },
+        {
+          "text": "受控支持入口",
+          "disabled": false
+        },
+        {
+          "text": "连接诊断",
           "disabled": false
         },
         {
@@ -248,22 +240,6 @@
         },
         {
           "text": "停 用",
-          "disabled": true
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": false
-        },
-        {
-          "text": "详 情",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
           "disabled": false
         },
         {
@@ -273,6 +249,22 @@
         {
           "text": "停 用",
           "disabled": true
+        },
+        {
+          "text": "详 情",
+          "disabled": false
+        },
+        {
+          "text": "停 用",
+          "disabled": false
+        },
+        {
+          "text": "详 情",
+          "disabled": false
+        },
+        {
+          "text": "停 用",
+          "disabled": false
         },
         {
           "text": "详 情",
@@ -417,34 +409,6 @@
           "placeholder": null,
           "label": null,
           "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
         },
         {
           "tag": "INPUT",
@@ -631,791 +595,6 @@
       ]
     },
     {
-      "section": "成员与权限",
-      "headings": [
-        "平台治理",
-        "商家运营",
-        "模型与计费",
-        "风险与系统",
-        "商业与平台控制台",
-        "成员与权限"
-      ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_demo\n工作区范围\nws_demo\n数据与操作仅限当前工作区\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+4 个角色\n工作台 \n平台控制台\n商家工作区\n工作区 · ws_demo\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\nPostgres/API · 含演示数据（真实店铺 0，演示店铺 5）\n保存并刷新\nACCESS GOVERNANCE\n成员与权限\n在当前租户范围内邀请成员、调整角色和停用访问；所有变更均要求原因并进入审计记录。\n当前租户成员\nws_demo\n用户 ID\n显示名\n角色\n请选择角色\n邀请原因\n邀请成员\n身份标识\t显示名\t角色\t状态\t版本\t更新时间\t操作\n\n身份标识\n\t\n显示名\n\t\n角色\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\nactor_demo\t本地演示平台运营\t平台运营\t已激活\t136\t2026/8/29 22:54:53\t只读\nsupport_demo\t本地演示支持专员\t支持\t已激活\t120\t2026/8/29 09:43:43\t\n改角色\n停 用\n\ncodex-app-user\tjaap Odin\t工作区所有者\t已激活\t1\t2026/8/29 16:55:47\t\n改角色\n停 用\n共 3 位成员\n1",
-      "buttons": [
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "总览",
-          "disabled": false
-        },
-        {
-          "text": "用户与租户",
-          "disabled": false
-        },
-        {
-          "text": "成员与权限",
-          "disabled": false
-        },
-        {
-          "text": "客服与 CRM",
-          "disabled": false
-        },
-        {
-          "text": "事故中心",
-          "disabled": false
-        },
-        {
-          "text": "任务与内容",
-          "disabled": false
-        },
-        {
-          "text": "平台连接",
-          "disabled": false
-        },
-        {
-          "text": "平台规则",
-          "disabled": false
-        },
-        {
-          "text": "模型服务",
-          "disabled": false
-        },
-        {
-          "text": "账务与退款",
-          "disabled": false
-        },
-        {
-          "text": "功能开关",
-          "disabled": false
-        },
-        {
-          "text": "存储与对账",
-          "disabled": false
-        },
-        {
-          "text": "审计中心",
-          "disabled": false
-        },
-        {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
-          "disabled": false
-        },
-        {
-          "text": "邀请成员",
-          "disabled": false
-        },
-        {
-          "text": "改角色",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": false
-        },
-        {
-          "text": "改角色",
-          "disabled": false
-        },
-        {
-          "text": "停 用",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "例如 user_123",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "用户姓名或称呼",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "用于权限审计",
-          "label": null,
-          "value": ""
-        }
-      ]
-    },
-    {
-      "section": "客服与 CRM",
-      "headings": [
-        "平台治理",
-        "商家运营",
-        "模型与计费",
-        "风险与系统",
-        "商业与平台控制台",
-        "客服与客户关系"
-      ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_demo\n工作区范围\nws_demo\n数据与操作仅限当前工作区\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+4 个角色\n工作台 \n平台控制台\n商家工作区\n工作区 · ws_demo\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\nPostgres/API · 含演示数据（真实店铺 0，演示店铺 5）\n保存并刷新\nSUPPORT CRM\n客服与客户关系\n处理客户工单、保留不可变事件历史，并按租户受控导出 CRM 客户投影。\n客服工单队列\n刷新\n新建工单\n全部状态\n全部优先级\n工单\t客户\t状态\t优先级\t负责人\t创建时间\n\n工单\n\t\n客户\n\t\n状态\n\t\n优先级\n\t\n负责人\n\t\n创建时间\n\n\nDEMO-0001\n本地 Fixture：任务状态说明\n\t\n演示客户（Fixture）\ndemo_fixture_customer\n\t待处理\t普通\tsupport_demo\t8/29/2026, 8:22:00 AM\n工单详情\n从工单队列中选择一项查看完整事件历史\nCRM 客户投影与导出\n导出 CSV\n导出仅包含客户维度工单统计，不包含内部备注和事件原文；服务端仍会执行平台运营权限和租户范围校验。",
-      "buttons": [
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "总览",
-          "disabled": false
-        },
-        {
-          "text": "用户与租户",
-          "disabled": false
-        },
-        {
-          "text": "成员与权限",
-          "disabled": false
-        },
-        {
-          "text": "客服与 CRM",
-          "disabled": false
-        },
-        {
-          "text": "事故中心",
-          "disabled": false
-        },
-        {
-          "text": "任务与内容",
-          "disabled": false
-        },
-        {
-          "text": "平台连接",
-          "disabled": false
-        },
-        {
-          "text": "平台规则",
-          "disabled": false
-        },
-        {
-          "text": "模型服务",
-          "disabled": false
-        },
-        {
-          "text": "账务与退款",
-          "disabled": false
-        },
-        {
-          "text": "功能开关",
-          "disabled": false
-        },
-        {
-          "text": "存储与对账",
-          "disabled": false
-        },
-        {
-          "text": "审计中心",
-          "disabled": false
-        },
-        {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
-          "disabled": false
-        },
-        {
-          "text": "刷新",
-          "disabled": false
-        },
-        {
-          "text": "新建工单",
-          "disabled": false
-        },
-        {
-          "text": "导出 CSV",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        },
-        {
-          "tag": "INPUT",
-          "type": "search",
-          "placeholder": "工单号、主题或客户",
-          "label": "搜索工单",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按状态筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按优先级筛选",
-          "value": ""
-        }
-      ]
-    },
-    {
-      "section": "事故中心",
-      "headings": [
-        "平台治理",
-        "商家运营",
-        "模型与计费",
-        "风险与系统",
-        "商业与平台控制台",
-        "事故中心"
-      ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_demo\n工作区范围\nws_demo\n数据与操作仅限当前工作区\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+4 个角色\n工作台 \n平台控制台\n商家工作区\n工作区 · ws_demo\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\nPostgres/API · 含演示数据（真实店铺 0，演示店铺 5）\n保存并刷新\nINCIDENT RESPONSE\n事故中心\n统一管理 SEV-1 至 SEV-4 事故、指挥官、影响范围和不可变处置时间线。\n筛选与操作\n创建事故\n状态\n严重度\n应用筛选\n清除筛选\n事故列表\n事故\t严重度\t状态\t指挥官\t更新时间\t操作\n\n事故\n\t\n严重度\n\t\n状态\n\t\n指挥官\n\t\n更新时间\n\t\n操作\n\n\n本地 Fixture 演练事件\n00000000-0000-4000-8000-000000000401\n\tSEV-4 低\t观察中\tactor_demo\t8/29/2026, 8:23:00 AM\t\n查 看",
-      "buttons": [
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "总览",
-          "disabled": false
-        },
-        {
-          "text": "用户与租户",
-          "disabled": false
-        },
-        {
-          "text": "成员与权限",
-          "disabled": false
-        },
-        {
-          "text": "客服与 CRM",
-          "disabled": false
-        },
-        {
-          "text": "事故中心",
-          "disabled": false
-        },
-        {
-          "text": "任务与内容",
-          "disabled": false
-        },
-        {
-          "text": "平台连接",
-          "disabled": false
-        },
-        {
-          "text": "平台规则",
-          "disabled": false
-        },
-        {
-          "text": "模型服务",
-          "disabled": false
-        },
-        {
-          "text": "账务与退款",
-          "disabled": false
-        },
-        {
-          "text": "功能开关",
-          "disabled": false
-        },
-        {
-          "text": "存储与对账",
-          "disabled": false
-        },
-        {
-          "text": "审计中心",
-          "disabled": false
-        },
-        {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
-          "disabled": false
-        },
-        {
-          "text": "创建事故",
-          "disabled": false
-        },
-        {
-          "text": "应用筛选",
-          "disabled": false
-        },
-        {
-          "text": "清除筛选",
-          "disabled": false
-        },
-        {
-          "text": "查 看",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按状态筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按严重度筛选",
-          "value": ""
-        }
-      ]
-    },
-    {
-      "section": "任务与内容",
-      "headings": [
-        "平台治理",
-        "商家运营",
-        "模型与计费",
-        "风险与系统",
-        "商业与平台控制台",
-        "任务与内容"
-      ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_demo\n工作区范围\nws_demo\n数据与操作仅限当前工作区\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+4 个角色\n工作台 \n平台控制台\n商家工作区\n工作区 · ws_demo\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\nPostgres/API · 含演示数据（真实店铺 0，演示店铺 5）\n保存并刷新\nCONTENT OPERATIONS\n任务与内容\n治理知识、素材、生成任务和发布异常；平台规则在独立规则中心维护。\n当前下一步\n先查看需要处理的任务，再进入素材、规则或发布异常的对应处置。\n营销队列筛选\n平台\n店铺\n状态\n应用筛选\n清除筛选\n平台告警筛选\n平台\n店铺\n应用告警筛选\n清除告警筛选\n营销能力运营治理\n0 条待处理建议\n知识规则\n0\n待审核资产\n0\n竞品参考\n0\n生成失败\n5\n知识规则\n资产权益\n学习建议（0）\n竞品参考\n任务队列（55）\n交付证据\n规则名称\n规则内容\n作用域\n全局\n作用域值\n来源\n核验时间\n版本\n状态\n草稿\n录入知识规则\n规则\t版本\t作用域\t来源\t状态\n\n规则\n\t\n版本\n\t\n作用域\n\t\n来源\n\t\n状态\n\n\n尚未录入知识规则；完成上方来源核验后创建第一条规则\n上传素材治理动作\n素材\t安全/解析/权益\t就绪状态\t下一步\t操作\ncandidate-1.png\tclean / pending / pending\tdraft\t解析素材事实\t\n执行治理动作\n\ncodex-final.txt\tblocked / succeeded / approved\tblocked\t联系安全审核并重新上传或解除安全阻断\t\n执行治理动作\n\nprompt-injection-proof-20260825.txt\tblocked / succeeded / pending\tblocked\t联系安全审核并重新上传或解除安全阻断\t\n执行治理动作\n\nMac-Studio-M5-Apple官方参考图.jpg\tblocked / blocked / pending\tblocked\t联系安全审核并重新上传或解除安全阻断\t\n执行治理动作\n\npersist-note.txt\tquarantined / pending / pending\tdraft\t系统正在自动检查，通过后自动继续；无需操作\t\n执行治理动作\n\nreal-clean-acceptance.png\tblocked / blocked / pending\tblocked\t联系安全审核并重新上传或解除安全阻断\t\n执行治理动作\n1\n2\n3\n4\n5\n8\n运营确认学习建议只记录人工判断，不会自动激活全局规则；未确认资产和权利不明竞品不得进入商家正式发布链路。",
-      "buttons": [
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "总览",
-          "disabled": false
-        },
-        {
-          "text": "用户与租户",
-          "disabled": false
-        },
-        {
-          "text": "成员与权限",
-          "disabled": false
-        },
-        {
-          "text": "客服与 CRM",
-          "disabled": false
-        },
-        {
-          "text": "事故中心",
-          "disabled": false
-        },
-        {
-          "text": "任务与内容",
-          "disabled": false
-        },
-        {
-          "text": "平台连接",
-          "disabled": false
-        },
-        {
-          "text": "平台规则",
-          "disabled": false
-        },
-        {
-          "text": "模型服务",
-          "disabled": false
-        },
-        {
-          "text": "账务与退款",
-          "disabled": false
-        },
-        {
-          "text": "功能开关",
-          "disabled": false
-        },
-        {
-          "text": "存储与对账",
-          "disabled": false
-        },
-        {
-          "text": "审计中心",
-          "disabled": false
-        },
-        {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
-          "disabled": false
-        },
-        {
-          "text": "应用筛选",
-          "disabled": false
-        },
-        {
-          "text": "清除筛选",
-          "disabled": false
-        },
-        {
-          "text": "应用告警筛选",
-          "disabled": false
-        },
-        {
-          "text": "清除告警筛选",
-          "disabled": false
-        },
-        {
-          "text": "录入知识规则",
-          "disabled": false
-        },
-        {
-          "text": "执行治理动作",
-          "disabled": false
-        },
-        {
-          "text": "执行治理动作",
-          "disabled": true
-        },
-        {
-          "text": "执行治理动作",
-          "disabled": true
-        },
-        {
-          "text": "执行治理动作",
-          "disabled": true
-        },
-        {
-          "text": "执行治理动作",
-          "disabled": true
-        },
-        {
-          "text": "执行治理动作",
-          "disabled": true
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按营销队列平台筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按营销队列店铺筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "商品 ID",
-          "label": "按营销队列商品 ID 筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "任务 ID",
-          "label": "按营销队列任务 ID 筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按营销队列状态筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按告警平台筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": "按告警店铺筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "告警编码",
-          "label": "按告警编码筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "对象类型",
-          "label": "按告警对象类型筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "对象 ID",
-          "label": "按告警对象 ID 筛选",
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "规则名称",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "规则内容",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "作用域值（可选）",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "来源链接/工单",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "核验时间 ISO",
-          "label": null,
-          "value": "2026-08-31T07:50:11.598Z"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "版本",
-          "label": null,
-          "value": "v1"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": null,
-          "label": null,
-          "value": ""
-        }
-      ]
-    },
-    {
       "section": "平台连接",
       "headings": [
         "平台治理",
@@ -1425,7 +604,7 @@
         "商业与平台控制台",
         "平台连接汇总"
       ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin\n保存并刷新\nSTORE OPERATIONS\n平台连接汇总\n平台运营查看平台级连接健康，并通过受控支持入口处理客户问题。\n平台连接汇总\n受控支持入口\n平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单按授权范围受控处理。\n京东\n登记店铺\n2\n官方 API\n0\n连接正常\n拼多多\n登记店铺\n2\n官方 API\n0\n连接正常\n淘宝\n登记店铺\n3\n官方 API\n0\n1 个需关注\n天猫\n登记店铺\n2\n官方 API\n0\n连接正常\n小红书\n登记店铺\n1\n官方 API\n0\n1 个需关注\n 品牌治理聚合 平台级脱敏\n仅展示数量和链路健康，不返回品牌名称、商品标题、内容或令牌。\n品牌数\n0\n已绑定店铺\n0\n未绑定品牌\n0\n刊登映射\n0\n规范商品一致性\n重新检查\n暂无可验证的一致性报告；当前不能视为已通过\nCanonical 回填人工冲突队列\n扫描并刷新队列\n刷新队列\n仅展示服务端入队的冲突；认领和解决均要求最新 revision，不能绕过商品关系校验。\n暂无待处理冲突；空结果不代表全量回填已完成\n平台连接与授权健康\n10 个已登记店铺\n平台\t店铺\t授权\t数据模式\t同步\t读/写\t操作\nJD\t\n14 个京东店铺\nplatform-aggregate:jd:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / —\t\n改别名\n撤销\n\nPINDUODUO\t\n8 个拼多多店铺\nplatform-aggregate:pinduoduo:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / —\t\n改别名\n撤销\n\nTAOBAO\t\n18 个淘宝店铺\nplatform-aggregate:taobao:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / —\t\n改别名\n撤销\n\nTMALL\t\n8 个天猫店铺\nplatform-aggregate:tmall:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / —\t\n改别名\n撤销\n\nJD\t\n7 个京东店铺\nplatform-aggregate:jd:connected:account_record_only\n\t真实授权\t仅账号记录\t暂无记录\t— / —\t\n改别名\n撤销\n\nPINDUODUO\t\n3 个拼多多店铺\nplatform-aggregate:pinduoduo:connected:account_record_only\n\t真实授权\t仅账号记录\t暂无记录\t— / —\t\n改别名\n撤销\n\nTMALL\t\n3 个天猫店铺\nplatform-aggregate:tmall:connected:account_record_only\n\t真实授权\t仅账号记录\t暂无记录\t— / —\t\n改别名\n撤销\n\nTAOBAO\t\n1 个淘宝店铺\nplatform-aggregate:taobao:revoked:account_record_only\n\trevoked\t仅账号记录\t暂无记录\t— / —\t\n改别名\n撤销\n1\n2\n此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。\n已配置的店铺自动化策略\n0 条\n店铺\t状态\t模式\t频率\t下次执行\t暂停原因\n暂无自动化策略；当前不会执行定时扫描或自动重试。\n店铺优化建议\n状态待确认\n优先级\t建议\t下一步\t入口\t边界\n尚未取得扫描结果；可在策略配置完成后手动扫描。\n店铺自动化运营\n未配置\n立即扫描\n保存策略\n尚未配置自动化策略\n当前不会执行自动扫描、同步或重试；取得真实策略后才会开放操作。\n扫描商品\n-\n发布任务\n-\n风险项\n-\n模式：同步扫描 + 风险告警 + 人工重试\n不会无人值守自动重发\n执行频率（分钟）\n重试上限\n执行窗口\n至\n留空表示全天；窗口外仅延期并记录审计。\n暂无扫描风险。",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nSTORE OPERATIONS\n平台连接汇总\n平台运营查看平台级连接健康，并通过受控支持入口处理客户问题。\n平台连接汇总\n受控支持入口\n平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单按授权范围受控处理。\n京东\n登记店铺\n1\n官方 API\n0\n连接正常\n拼多多\n登记店铺\n1\n官方 API\n0\n连接正常\n淘宝\n登记店铺\n1\n官方 API\n0\n连接正常\n天猫\n登记店铺\n1\n官方 API\n0\n连接正常\n小红书\n登记店铺\n1\n官方 API\n0\n1 个需关注\n 品牌治理聚合 平台级脱敏\n仅展示数量和链路健康，不返回品牌名称、商品标题、内容或令牌。\n品牌数\n2\n已绑定店铺\n2\n未绑定品牌\n1\n刊登映射\n1\n规范商品一致性\n当前会话无权读取一致性证据\n这不是空结果；当前账号缺少 customer.content.read，服务端不会返回商品关系数据，也不能通过本页面发起重新检查。\nCanonical 回填人工冲突队列\n扫描并刷新队列\n刷新队列\n仅展示服务端入队的冲突；认领和解决均要求最新 revision，不能绕过商品关系校验。\n暂无待处理冲突；空结果不代表全量回填已完成\n平台连接与授权健康\n5 个已登记店铺\n平台\t店铺\t授权\t数据模式\t同步\t读/写\t操作\nJD\t\n1 个京东店铺\nplatform-aggregate:jd:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nPINDUODUO\t\n1 个拼多多店铺\nplatform-aggregate:pinduoduo:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nTAOBAO\t\n2 个淘宝店铺\nplatform-aggregate:taobao:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nTMALL\t\n1 个天猫店铺\nplatform-aggregate:tmall:connected:fixture\n\t演示授权\tfixture 演示\t暂无记录\t读 / 写\t\n改别名\n撤销\n\nXIAOHONGSHU\t\n1 个小红书店铺\nplatform-aggregate:xiaohongshu:refresh_required:fixture\n\t演示授权\tfixture 演示\t暂无记录\t— / —\t\n改别名\n撤销\n1\n此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。\n已配置的店铺自动化策略\n0 条\n店铺\t状态\t模式\t频率\t下次执行\t暂停原因\n暂无自动化策略；当前不会执行定时扫描或自动重试。\n店铺优化建议\n状态待确认\n优先级\t建议\t下一步\t入口\t边界\n尚未取得扫描结果；可在策略配置完成后手动扫描。\n店铺自动化运营\n未配置\n立即扫描\n保存策略\n尚未配置自动化策略\n当前不会执行自动扫描、同步或重试；取得真实策略后才会开放操作。\n扫描商品\n-\n发布任务\n-\n风险项\n-\n模式：同步扫描 + 风险告警 + 人工重试\n不会无人值守自动重发\n执行频率（分钟）\n重试上限\n执行窗口\n至\n留空表示全天；窗口外仅延期并记录审计。\n暂无扫描风险。",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -1492,19 +671,11 @@
           "disabled": false
         },
         {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
+          "text": "连接诊断",
           "disabled": false
         },
         {
           "text": "受控支持入口",
-          "disabled": false
-        },
-        {
-          "text": "重新检查",
           "disabled": false
         },
         {
@@ -1514,30 +685,6 @@
         {
           "text": "刷新队列",
           "disabled": false
-        },
-        {
-          "text": "改别名",
-          "disabled": true
-        },
-        {
-          "text": "撤销",
-          "disabled": true
-        },
-        {
-          "text": "改别名",
-          "disabled": true
-        },
-        {
-          "text": "撤销",
-          "disabled": true
-        },
-        {
-          "text": "改别名",
-          "disabled": true
-        },
-        {
-          "text": "撤销",
-          "disabled": true
         },
         {
           "text": "改别名",
@@ -1609,34 +756,6 @@
         },
         {
           "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        },
-        {
-          "tag": "INPUT",
           "type": null,
           "placeholder": null,
           "label": "自动化执行频率",
@@ -1666,226 +785,6 @@
       ]
     },
     {
-      "section": "平台规则",
-      "headings": [
-        "平台治理",
-        "商家运营",
-        "模型与计费",
-        "风险与系统",
-        "商业与平台控制台",
-        "平台规则"
-      ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_demo\n工作区范围\nws_demo\n数据与操作仅限当前工作区\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+4 个角色\n工作台 \n平台控制台\n商家工作区\n工作区 · ws_demo\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin、knowledge_editor、knowledge_reader、competitor_reviewer\nPostgres/API · 含演示数据（真实店铺 0，演示店铺 5）\n保存并刷新\nPLATFORM RULES\n平台规则\n查看六个平台规则同步新鲜度，维护规则生命周期，并保留来源与审批证据。\n六平台规则同步\n刷新状态\n6 个平台未通过规则新鲜度门禁\n生成与发布前会按当前店铺平台调用对应规则；未配置或过期时必须保持阻断或人工复核，不能把旧规则视为有效。\n平台\t同步状态\t版本\t最后核验\t规则年龄\t门禁原因\t官方来源\n\n平台\n\t\n同步状态\n\t\n版本\n\t\n最后核验\n\t\n规则年龄\n\t\n门禁原因\n\t\n官方来源\n\n京东\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n淘宝\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n天猫\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n拼多多\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n小红书\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n抖音\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n规则中心\n5 条生效规则\n规则包 ID\n规则名称\n版本\n来源\n检查规则\n创建原因\n创建规则草稿\n规则包\t名称\t版本\t生命周期\t来源\t有效期\t操作\n\n规则包\n\t\n名称\n\t\n版本\n\t\n生命周期\n\t\n来源\n\t\n有效期\n\t\n操作\n\n\t服装鞋包事实完整性\tapparel-1.0.0\tactive\tinternal / manual://apparel-facts\t- 至 -\t\n标记过期\n停用\n\n\t中国电商广告表达\tcn-commerce-1.0.0\tactive\tofficial / manual://cn-commerce-advertising\t- 至 -\t\n标记过期\n停用\n\n\t京东商品写入策略\tjd-apparel-write-1.0.0\tactive\tofficial / manual://jd-write\t- 至 -\t\n标记过期\n停用\n\n\t本地演示规则（Fixture，不激活）\tdemo-fixture-v1\tdraft\tinternal / fixture://local-demo/rules/demo-fixture-v1\t- 至 -\t\n审批并激活\n标记过期\n停用\n\n\t淘宝/天猫字段映射\ttmall-apparel-1.0.0\tactive\tofficial / manual://tmall-mapping\t- 至 -\t\n标记过期\n停用\n1\n草稿发布不代表已生效；规则激活必须由服务端规则管理员提供审批凭证，所有状态变更写入审计。",
-      "buttons": [
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "关闭运营导航",
-          "disabled": false
-        },
-        {
-          "text": "总览",
-          "disabled": false
-        },
-        {
-          "text": "用户与租户",
-          "disabled": false
-        },
-        {
-          "text": "成员与权限",
-          "disabled": false
-        },
-        {
-          "text": "客服与 CRM",
-          "disabled": false
-        },
-        {
-          "text": "事故中心",
-          "disabled": false
-        },
-        {
-          "text": "任务与内容",
-          "disabled": false
-        },
-        {
-          "text": "平台连接",
-          "disabled": false
-        },
-        {
-          "text": "平台规则",
-          "disabled": false
-        },
-        {
-          "text": "模型服务",
-          "disabled": false
-        },
-        {
-          "text": "账务与退款",
-          "disabled": false
-        },
-        {
-          "text": "功能开关",
-          "disabled": false
-        },
-        {
-          "text": "存储与对账",
-          "disabled": false
-        },
-        {
-          "text": "审计中心",
-          "disabled": false
-        },
-        {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
-          "disabled": false
-        },
-        {
-          "text": "刷新状态",
-          "disabled": false
-        },
-        {
-          "text": "创建规则草稿",
-          "disabled": false
-        },
-        {
-          "text": "标记过期",
-          "disabled": false
-        },
-        {
-          "text": "停用",
-          "disabled": false
-        },
-        {
-          "text": "标记过期",
-          "disabled": false
-        },
-        {
-          "text": "停用",
-          "disabled": false
-        },
-        {
-          "text": "标记过期",
-          "disabled": false
-        },
-        {
-          "text": "停用",
-          "disabled": false
-        },
-        {
-          "text": "审批并激活",
-          "disabled": false
-        },
-        {
-          "text": "标记过期",
-          "disabled": false
-        },
-        {
-          "text": "停用",
-          "disabled": false
-        },
-        {
-          "text": "标记过期",
-          "disabled": false
-        },
-        {
-          "text": "停用",
-          "disabled": false
-        }
-      ],
-      "inputs": [
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "radio",
-          "placeholder": null,
-          "label": null,
-          "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "规则包 ID",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "规则名称",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "版本",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "来源链接/工单",
-          "label": null,
-          "value": ""
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "checks JSON",
-          "label": null,
-          "value": "{\"forbiddenTerms\":[]}"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "发布原因",
-          "label": null,
-          "value": ""
-        }
-      ]
-    },
-    {
       "section": "模型服务",
       "headings": [
         "平台治理",
@@ -1895,7 +794,7 @@
         "商业与平台控制台",
         "模型服务"
       ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin\n正在刷新\nMODEL SERVICES\n模型服务\n集中查看文本、图片、编辑、OCR 与视频能力的最终 readiness、成本证据和上线阻断。\n当前下一步\n先处理阻断项，再核对成本证据与五模态 readiness。\n模型服务诊断\n不可用\n模型归属\n平台统一\n自有中转站\n未配置\n文案模型\n-\n图片模型\n-\nOCR 模型\n-\n视频模型\n-\nRPM\n-\n日成本上限（元）\n-\n用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站 -，TPM -，发布元数据 未就绪。\n能力\tProvider 配置\t最终 readiness\t阻断原因\n\n能力\n\t\nProvider 配置\n\t\n最终 readiness\n\t\n阻断原因\n\n文案\t未配置\t阻断\t尚未通过最终运行与商业门禁\n图片\t未配置\t阻断\t尚未通过最终运行与商业门禁\n局部编辑\t未配置\t阻断\t尚未通过最终运行与商业门禁\nOCR\t未配置\t阻断\t尚未通过最终运行与商业门禁\n视频\t未配置\t阻断\t尚未通过最终运行与商业门禁\n平台模型状态不可用\n请检查页面顶部错误并重试，当前状态不能视为配置完成。\n模型渠道与 SVIP 上线门禁\n部分模态缺少实际计费组成本证据\n控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。\n能力\t模型渠道\tProvider\t实际成本证据\t最终状态\t阻断原因\n\n能力\n\t\n模型渠道\n\t\nProvider\n\t\n实际成本证据\n\t\n最终状态\n\t\n阻断原因\n\n文本\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片编辑\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\nOCR\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n视频\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nMODEL SERVICES\n模型服务\n集中查看文本、图片、编辑、OCR 与视频能力的最终 readiness、成本证据和上线阻断。\n当前下一步\n先处理阻断项，再核对成本证据与五模态 readiness。\n模型服务诊断\n不可用\n模型归属\n平台统一\n自有中转站\n未配置\n文案模型\n-\n图片模型\n-\nOCR 模型\n-\n视频模型\n-\nRPM\n-\n日成本上限（元）\n-\n用户不能填写或绑定模型 Key；平台负责模型费用，商家通过充值和套餐额度使用插件能力。中转站 -，TPM -，发布元数据 未就绪。\n能力\tProvider 配置\t最终 readiness\t阻断原因\n\n能力\n\t\nProvider 配置\n\t\n最终 readiness\n\t\n阻断原因\n\n文案\t未配置\t阻断\t尚未通过最终运行与商业门禁\n图片\t未配置\t阻断\t尚未通过最终运行与商业门禁\n局部编辑\t未配置\t阻断\t尚未通过最终运行与商业门禁\nOCR\t未配置\t阻断\t尚未通过最终运行与商业门禁\n视频\t未配置\t阻断\t尚未通过最终运行与商业门禁\n平台模型状态不可用\n请检查页面顶部错误并重试，当前状态不能视为配置完成。\n模型渠道与 SVIP 上线门禁\n部分模态缺少实际计费组成本证据\n控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。\n能力\t模型渠道\tProvider\t实际成本证据\t最终状态\t阻断原因\n\n能力\n\t\n模型渠道\n\t\nProvider\n\t\n实际成本证据\n\t\n最终状态\n\t\n阻断原因\n\n文本\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n图片编辑\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\nOCR\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n视频\t未配置\t未配置\t缺失\t阻断\t尚未通过模型、计费组或成本门禁\n平台模型用量汇总\n调用记录\n63\n总 Token\n69,827\nProvider 成本\n¥15.079981\n未结算\n36\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -1962,12 +861,8 @@
           "disabled": false
         },
         {
-          "text": "收起连接诊断",
+          "text": "连接诊断",
           "disabled": false
-        },
-        {
-          "text": "正在刷新",
-          "disabled": true
         },
         {
           "text": "保存并生效",
@@ -1988,34 +883,6 @@
           "placeholder": null,
           "label": null,
           "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
         },
         {
           "tag": "INPUT",
@@ -2043,7 +910,7 @@
         "商业与平台控制台",
         "功能开关"
       ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin\n保存并刷新\nFEATURE FLAGS\n功能开关\n按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。\n本地演示（local_demo）\n刷新\n新建开关\n开关\t环境\t状态\t规则\tRevision\t更新时间\t操作\n\n开关\n\t\n环境\n\t\n状态\n\t\n规则\n\t\nRevision\n\t\n更新时间\n\t\n操作\n\n\ndemo.fixture.ops_readiness\n本地 Fixture 展示开关；保持禁用，不是生产 capability evidence。\n\tlocal_demo\t紧急关闭\t1 条\t1\t8/29/2026, 8:24:00 AM\t\n审 计\n编 辑\n恢 复",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nFEATURE FLAGS\n功能开关\n按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。\n本地演示（local_demo）\n刷新\n新建开关\n开关\t环境\t状态\t规则\tRevision\t更新时间\t操作\n\n开关\n\t\n环境\n\t\n状态\n\t\n规则\n\t\nRevision\n\t\n更新时间\n\t\n操作\n\n\ndemo.fixture.ops_readiness\n本地 Fixture 展示开关；保持禁用，不是生产 capability evidence。\n\tlocal_demo\t紧急关闭\t1 条\t1\t8/29/2026, 8:24:00 AM\t\n审 计\n编 辑\n恢 复",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -2110,11 +977,7 @@
           "disabled": false
         },
         {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
+          "text": "连接诊断",
           "disabled": false
         },
         {
@@ -2155,34 +1018,6 @@
         },
         {
           "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
-        },
-        {
-          "tag": "INPUT",
           "type": "search",
           "placeholder": "搜索开关键或说明",
           "label": "搜索开关键或说明",
@@ -2207,7 +1042,7 @@
         "商业与平台控制台",
         "存储与对账"
       ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin\n保存并刷新\nSTORAGE & RECONCILIATION\n存储与对账\n按 workspace 查看容量、对象引用一致性和对账新鲜度；客户对象内容与下载入口不在运营台展示。\n对象存储容量与对账\n未接入对账\n暂无可验证的对象清单对账结果\n该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。\n已使用\n—\n配额上限\n—\n预留中\n—\n预计占用\n—\n最近对账：暂无 · 新鲜度未知。仅显示 workspace 级汇总和问题数量，不暴露客户对象下载能力。\nworkspace 对账列表（315）\nws_storage_46b16760-5d31-422b-aec5-bf350a375d77\n最近对账：2026-08-31T07:35:54.509Z\n正常\nws_storage_00f056d4-f960-49f0-86a0-664a9b9bd903\n最近对账：2026-08-31T07:35:54.513Z\n正常\nws_storage_10bba714-a472-472c-96b7-61de607a3423\n最近对账：2026-08-31T07:35:54.521Z\n正常\nws_storage_678bf7ed-7741-4b29-8ce5-f3c3f843d50a\n最近对账：2026-08-31T07:35:54.506Z\n正常\nws_storage_2bbbe76e-9db8-4902-9c47-a0fee5ace7c8\n最近对账：2026-08-31T07:35:54.518Z\n正常\nws_storage_9bafe9db-c2be-4d01-b84e-13b5f35b505e\n最近对账：2026-08-31T07:35:54.513Z\n正常\nws_cleanup_a_mte196fj\n最近对账：2026-08-31T07:35:54.452Z\n正常\nws_cleanup_b_mte196fj\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_cleanup_a_mtdnuedh\n最近对账：2026-08-31T07:35:54.449Z\n正常\nws_cleanup_b_mtdnuedh\n最近对账：2026-08-31T07:35:54.454Z\n正常\nws_projection_1787958598213\n最近对账：2026-08-31T07:35:54.502Z\n正常\nws_projection_1787957935470\n最近对账：2026-08-31T07:35:54.500Z\n正常\nws_budget_pg\n最近对账：2026-08-31T07:35:54.440Z\n正常\nws_a\n最近对账：2026-08-31T07:35:54.429Z\n正常\nws_b\n最近对账：2026-08-31T07:35:54.426Z\n正常\nws_cleanup_a_mtdgirxh\n最近对账：2026-08-31T07:35:54.451Z\n正常\nws_cleanup_b_mtdgirxh\n最近对账：2026-08-31T07:35:54.447Z\n正常\ndemo-workspace\n最近对账：2026-08-31T07:35:54.374Z\n正常\nws_ops_browser\n最近对账：2026-08-31T07:35:54.488Z\n正常\nws_65e93b2a884e44e8bcf03d62\n最近对账：2026-08-31T07:35:54.400Z\n正常\nws_02d69d8273504d52b9039820\n最近对账：2026-08-31T07:35:54.394Z\n正常\nws_d18a3d8291114e128c9d2fd6\n最近对账：2026-08-31T07:35:54.475Z\n正常\nws_31d43b64276d408e9d04a1b2\n最近对账：2026-08-31T07:35:54.407Z\n正常\nws_db170122ea1942a382cc879b\n最近对账：2026-08-31T07:35:54.479Z\n正常\nws_092c3a8e83fe41e499a49782\n最近对账：2026-08-31T07:35:54.398Z\n正常\nws_4f2d9330552e4aada048d3df\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_218040acdffe447f9177fe96\n最近对账：2026-08-31T07:35:54.387Z\n正常\nws_c5936fe67a9e403badeb043d\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_249a673e1d144e548590c532\n最近对账：2026-08-31T07:35:54.394Z\n正常\nws_77bfd64cfcb343a382a6655b\n最近对账：2026-08-31T07:35:54.416Z\n正常\nws_878c6eaa143446c7adee8f0a\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_8dcb6f4000024ba8a8438095\n最近对账：2026-08-31T07:35:54.418Z\n正常\nws_e23a084a25374af1807d137e\n最近对账：2026-08-31T07:35:54.483Z\n正常\nws_21aaea1ce44e48cb8ab66374\n最近对账：2026-08-31T07:35:54.391Z\n正常\nws_5206f4b473d34d2db343a60e\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_ae7d21f677ed46aab40e6af0\n最近对账：2026-08-31T07:35:54.427Z\n正常\nws_c232f12c54b041c3862698d4\n最近对账：2026-08-31T07:35:54.452Z\n正常\nws_2edb96c57f734aba85f083ed\n最近对账：2026-08-31T07:35:54.391Z\n正常\nws_3b5e1de810b149e0b7678ca2\n最近对账：2026-08-31T07:35:54.412Z\n正常\nws_3b98bceb0815471f9ae617eb\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_ffdeaa539ec3447091566598\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_1302169179104e15bb21cfc7\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_9fd25e926f424898b8994411\n最近对账：2026-08-31T07:35:54.424Z\n正常\nws_2ee3993195cd44ddb4fd8dfc\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_ba2b94519c0a486283b63d4b\n最近对账：2026-08-31T07:35:54.426Z\n正常\nws_c8dbc1a5acb44764a82e1959\n最近对账：2026-08-31T07:35:54.441Z\n正常\nws_5903f4b5dcb543d3bfe98817\n最近对账：2026-08-31T07:35:54.407Z\n正常\nws_eef8acc226f94a138d637445\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_747d74296b764677b54d8b45\n最近对账：2026-08-31T07:35:54.420Z\n正常\nws_fedcf3108abe418dbcaa1768\n最近对账：2026-08-31T07:35:54.485Z\n正常\nws_5546ce16fdab49e398673cf6\n最近对账：2026-08-31T07:35:54.402Z\n正常\nws_b9c29373658f400f961885c4\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_5eb74f99213d4846b03a0e12\n最近对账：2026-08-31T07:35:54.411Z\n正常\nws_12ed53c7e7c2490a8893d9bf\n最近对账：2026-08-31T07:35:54.394Z\n正常\nws_b8d8fe2d29804a7599c1b969\n最近对账：2026-08-31T07:35:54.444Z\n正常\nws_88d36c3ac63644fdb045f530\n最近对账：2026-08-31T07:35:54.421Z\n正常\nws_11de659199954bc58a8df2d7\n最近对账：2026-08-31T07:35:54.399Z\n正常\nws_fb25a7966d6a4a629891e582\n最近对账：2026-08-31T07:35:54.482Z\n正常\nws_10534eefd9074226b64168f1\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_cf7daeae8c5d4dd0a6a2c3fa\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_2819db0479324be0814eafbb\n最近对账：2026-08-31T07:35:54.402Z\n正常\nws_6086537d0b7c40f3b2e2a358\n最近对账：2026-08-31T07:35:54.395Z\n正常\nws_d53481cad2714c7eadaf2239\n最近对账：2026-08-31T07:35:54.470Z\n正常\nws_a5a45a867e15444bb7ed4bd6\n最近对账：2026-08-31T07:35:54.426Z\n正常\nws_26629a85daef43ea86c38039\n最近对账：2026-08-31T07:35:54.395Z\n正常\nws_bc05b3153cd543efbf40695e\n最近对账：2026-08-31T07:35:54.448Z\n正常\nws_1801f6e9176249b08a4006da\n最近对账：2026-08-31T07:35:54.416Z\n正常\nws_f3bc4bf14ccc418e849e83d9\n最近对账：2026-08-31T07:35:54.482Z\n正常\nws_d7a5d747156048b782aa7359\n最近对账：2026-08-31T07:35:54.471Z\n正常\nws_f8ce67444d044da8abf62301\n最近对账：2026-08-31T07:35:54.475Z\n正常\nws_13673eea41814cbe958dbc43\n最近对账：2026-08-31T07:35:54.397Z\n正常\nws_6c202e47a20d4dfa95cbd7cc\n最近对账：2026-08-31T07:35:54.418Z\n正常\nws_aaea577d667c410cbeeb86f7\n最近对账：2026-08-31T07:35:54.424Z\n正常\nws_0deab54b96c749d6a2a033e7\n最近对账：2026-08-31T07:35:54.402Z\n正常\nws_9003ac86513f4ac09f1d195b\n最近对账：2026-08-31T07:35:54.428Z\n正常\nws_d0efe063316e48e79cce1a55\n最近对账：2026-08-31T07:35:54.467Z\n正常\nws_65c9bd955a4f46678f169310\n最近对账：2026-08-31T07:35:54.399Z\n正常\nws_481b8659f443461fb711895a\n最近对账：2026-08-31T07:35:54.401Z\n正常\nws_dc1a92b0cb484a6b9b3e7834\n最近对账：2026-08-31T07:35:54.471Z\n正常\nws_b012f132ac9844debaa9cc92\n最近对账：2026-08-31T07:35:54.426Z\n正常\nws_dd1c8405d29c40109a764929\n最近对账：2026-08-31T07:35:54.471Z\n正常\nws_6c1f5a3804bf4cbfbaf1064c\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_108e2109d0f545928fcdfd23\n最近对账：2026-08-31T07:35:54.401Z\n正常\nws_eee430cf1dc142898c6ed7e5\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_4f1bfb39f51149429fa641c6\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_68843ad7aac0444284da6047\n最近对账：2026-08-31T07:35:54.404Z\n正常\nws_2d01ccdb276443bfa671fa19\n最近对账：2026-08-31T07:35:54.401Z\n正常\nws_d20bb869efbd495996f0a3f8\n最近对账：2026-08-31T07:35:54.467Z\n正常\nws_096c70d027ab4c58b720b4c3\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_84a54d1f642b4ce686971d2a\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_e065e49d75c643e1bd6a11c3\n最近对账：2026-08-31T07:35:54.472Z\n正常\nws_6f00813669e14bea8af3feaf\n最近对账：2026-08-31T07:35:54.428Z\n正常\nws_c50067d136544fbe936552e4\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_552c6333833d4a8e8963ff5a\n最近对账：2026-08-31T07:35:54.407Z\n正常\nws_ea560b70eca340e786b9e23f\n最近对账：2026-08-31T07:35:54.466Z\n正常\nws_a4e58da4a8f1472fa2836800\n最近对账：2026-08-31T07:35:54.426Z\n正常\nws_24ea9ddfadd54032ba7f1432\n最近对账：2026-08-31T07:35:54.394Z\n正常\nws_54ff29925d724987adc2ea95\n最近对账：2026-08-31T07:35:54.403Z\n正常\nws_a6f2ca386eb34054aa080267\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_4be930bece3b4da2b3f56cd6\n最近对账：2026-08-31T07:35:54.398Z\n正常\nws_9fc11ff2d88c4b85bbb8e0b4\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_a0c2cdddaff14a0988024e48\n最近对账：2026-08-31T07:35:54.425Z\n正常\nws_0838eca4b3124185b38b1b39\n最近对账：2026-08-31T07:35:54.397Z\n正常\nws_359c30852a59406682483f95\n最近对账：2026-08-31T07:35:54.398Z\n正常\nws_c42f8b6c5152458c93079d9a\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_842565cfd0d14ebbbe633cf5\n最近对账：2026-08-31T07:35:54.427Z\n正常\nws_fec23d22a0af49a093753187\n最近对账：2026-08-31T07:35:54.506Z\n正常\nws_61d2e0f10dd04bb5b8c6c5d9\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_250556c1974342e38570c3d4\n最近对账：2026-08-31T07:35:54.399Z\n正常\nws_5acf092b9fd746838e89f8ca\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_94c00e066f614f3f8bc08bd1\n最近对账：2026-08-31T07:35:54.421Z\n正常\nws_5d0f928711ba4eed810c6b7e\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_ddf9f4ad48b440f0a196a466\n最近对账：2026-08-31T07:35:54.472Z\n正常\nws_404a0c10f2f24d1cbdca5068\n最近对账：2026-08-31T07:35:54.401Z\n正常\nws_9fb44d67521f4be79220cd95\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_3e9c65630f414b2abfc4f1a5\n最近对账：2026-08-31T07:35:54.402Z\n正常\nws_01e13ff538044598852f9fd1\n最近对账：2026-08-31T07:35:54.395Z\n正常\nws_0e4fa06d6ce54ef0b85edae3\n最近对账：2026-08-31T07:35:54.395Z\n正常\nws_8ac82bf6654b4da5b5ab18dd\n最近对账：2026-08-31T07:35:54.424Z\n正常\nws_2629d4df763f43fea4fccd09\n最近对账：2026-08-31T07:35:54.395Z\n正常\nws_fcfac3afc5c8438c9e639b06\n最近对账：2026-08-31T07:35:54.472Z\n正常\nws_2436d5ff343a4ea093abc6c7\n最近对账：2026-08-31T07:35:54.378Z\n正常\nws_bf4bc6211b764b408f20a496\n最近对账：2026-08-31T07:35:54.440Z\n正常\nws_91c4de0cbfe74824beb1ff8f\n最近对账：2026-08-31T07:35:54.433Z\n正常\nws_93e594334db94bbfb7722fe7\n最近对账：2026-08-31T07:35:54.419Z\n正常\nws_fab6943fa15a4aefad1fe574\n最近对账：2026-08-31T07:35:54.485Z\n正常\nws_2d7469e1a388423b8990b687\n最近对账：2026-08-31T07:35:54.395Z\n正常\nws_8670bdf2cdd74ce1a9e08358\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_cb7f08e879534c46bb179ce5\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_1bd2e4b57a33432db3bbe2b8\n最近对账：2026-08-31T07:35:54.384Z\n正常\nws_c68d744a2b4e43879d6ef671\n最近对账：2026-08-31T07:35:54.444Z\n正常\nws_d3cdb5be891c411bb1da527b\n最近对账：2026-08-31T07:35:54.481Z\n正常\nws_672d19b7ba974e629fbe4305\n最近对账：2026-08-31T07:35:54.418Z\n正常\nws_078760c6aac44da0bdd2a09c\n最近对账：2026-08-31T07:35:54.402Z\n正常\nws_c3b75c92b7ca489a9a29a5d9\n最近对账：2026-08-31T07:35:54.440Z\n正常\nws_dae2595df7594e0e9846cff3\n最近对账：2026-08-31T07:35:54.471Z\n正常\nws_91d022f83f4a4dad991f7719\n最近对账：2026-08-31T07:35:54.420Z\n正常\nws_85aad9fbbea144d08a76dacb\n最近对账：2026-08-31T07:35:54.425Z\n正常\nws_fa80f4e64058469bb79e6176\n最近对账：2026-08-31T07:35:54.488Z\n正常\nws_85f74c126fc84778aa0e7357\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_6dc543a52d194381ac451ebd\n最近对账：2026-08-31T07:35:54.412Z\n正常\nws_85804287317545399ce28ece\n最近对账：2026-08-31T07:35:54.429Z\n正常\nws_6b3062bf56394f8eb81545ac\n最近对账：2026-08-31T07:35:54.412Z\n正常\nws_20f7f65d70044ee99e5de73b\n最近对账：2026-08-31T07:35:54.390Z\n正常\nws_373d0a78197a4770a8e75fea\n最近对账：2026-08-31T07:35:54.411Z\n正常\nws_bc2ab0f4b5f647009d28bffd\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_e3cd60878fb44af79109b4a6\n最近对账：2026-08-31T07:35:54.470Z\n正常\nws_bee2a0cbb56c43cebd8d6d30\n最近对账：2026-08-31T07:35:54.428Z\n正常\nws_9235716ce5e1488e93d93b6a\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_33f33979b70d48bb98a2ebf7\n最近对账：2026-08-31T07:35:54.401Z\n正常\nws_fa10e13b7ed54ffb81d27ab7\n最近对账：2026-08-31T07:35:54.467Z\n正常\nws_489142e021f741db8b7ffac8\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_c7586a5faf514b2b90b1c345\n最近对账：2026-08-31T07:35:54.445Z\n正常\nws_f5b89a832af84393b82ae9ba\n最近对账：2026-08-31T07:35:54.492Z\n正常\nws_cee2c08aefbe46dd8391570e\n最近对账：2026-08-31T07:35:54.449Z\n正常\nws_d329b7a583324fc4bc172327\n最近对账：2026-08-31T07:35:54.471Z\n正常\nws_82c65dd574c44007903ebe1a\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_7c623f32d6f64fb786aab8fb\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_fcb12302d7974c1aa94a8274\n最近对账：2026-08-31T07:35:54.473Z\n正常\nws_b13d174bf86e4ea38ce9c918\n最近对账：2026-08-31T07:35:54.444Z\n正常\nws_56a1c0cba26e46a2bf027bcb\n最近对账：2026-08-31T07:35:54.401Z\n正常\nws_4aab4e487cab4f24b4f71842\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_bc0aac6c966545ad84152401\n最近对账：2026-08-31T07:35:54.427Z\n正常\nws_bbecb27aebbb481fb4fd33be\n最近对账：2026-08-31T07:35:54.429Z\n正常\nws_00a132705d8047d39dcb4b67\n最近对账：2026-08-31T07:35:54.394Z\n正常\nws_a57b82d1b8ed47b0a5189e51\n最近对账：2026-08-31T07:35:54.440Z\n正常\nws_77110e20240b44fc8e70d30b\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_cb526a241d504e74bd9e1cd3\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_930e59da4e6940ff808280b4\n最近对账：2026-08-31T07:35:54.425Z\n正常\nws_66ce028a4e2941f78af05a90\n最近对账：2026-08-31T07:35:54.417Z\n正常\nws_fd16faa753034669842f84bd\n最近对账：2026-08-31T07:35:54.481Z\n正常\nws_13b97001232a4901af3a4b66\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_0eef8c9d71734c818ed5f10b\n最近对账：2026-08-31T07:35:54.412Z\n正常\nws_884ec3ae14934f6798894dc5\n最近对账：2026-08-31T07:35:54.428Z\n正常\nws_compose_debug\n最近对账：2026-08-31T07:35:54.453Z\n正常\nws_compose_smoke_49\n最近对账：2026-08-31T07:35:54.472Z\n正常\nws_compose_smoke_40\n最近对账：2026-08-31T07:35:54.462Z\n正常\nws_compose_smoke_47\n最近对账：2026-08-31T07:35:54.470Z\n正常\nws_compose_smoke_42\n最近对账：2026-08-31T07:35:54.467Z\n正常\nws_compose_smoke_46\n最近对账：2026-08-31T07:35:54.464Z\n正常\nws_compose_smoke_48\n最近对账：2026-08-31T07:35:54.479Z\n正常\nws_compose_smoke_44\n最近对账：2026-08-31T07:35:54.464Z\n正常\nws_compose_smoke_43\n最近对账：2026-08-31T07:35:54.469Z\n正常\nws_compose_smoke_45\n最近对账：2026-08-31T07:35:54.470Z\n正常\nws_compose_smoke_36\n最近对账：2026-08-31T07:35:54.472Z\n正常\nws_compose_smoke_30\n最近对账：2026-08-31T07:35:54.469Z\n正常\nws_compose_smoke_39\n最近对账：2026-08-31T07:35:54.469Z\n正常\nws_compose_smoke_37\n最近对账：2026-08-31T07:35:54.465Z\n正常\nws_compose_smoke_29\n最近对账：2026-08-31T07:35:54.463Z\n正常\nws_compose_smoke_38\n最近对账：2026-08-31T07:35:54.462Z\n正常\nws_compose_smoke_35\n最近对账：2026-08-31T07:35:54.465Z\n正常\nws_compose_smoke_41\n最近对账：2026-08-31T07:35:54.464Z\n正常\nws_compose_smoke_2\n最近对账：2026-08-31T07:35:54.453Z\n正常\nws_compose_smoke_33\n最近对账：2026-08-31T07:35:54.466Z\n正常\nws_compose_smoke_34\n最近对账：2026-08-31T07:35:54.453Z\n正常\nws_compose_smoke_31\n最近对账：2026-08-31T07:35:54.470Z\n正常\nws_compose_smoke_28\n最近对账：2026-08-31T07:35:54.453Z\n正常\nws_compose_smoke_25\n最近对账：2026-08-31T07:35:54.452Z\n正常\nws_compose_smoke_26\n最近对账：2026-08-31T07:35:54.452Z\n正常\nws_compose_smoke_24\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_compose_smoke_22\n最近对账：2026-08-31T07:35:54.454Z\n正常\nws_compose_smoke_27\n最近对账：2026-08-31T07:35:54.454Z\n正常\nws_compose_smoke_32\n最近对账：2026-08-31T07:35:54.454Z\n正常\nws_compose_smoke_23\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_compose_smoke_19\n最近对账：2026-08-31T07:35:54.451Z\n正常\nws_compose_smoke_20\n最近对账：2026-08-31T07:35:54.448Z\n正常\nws_compose_smoke_3\n最近对账：2026-08-31T07:35:54.467Z\n正常\nws_compose_smoke_18\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_compose_smoke_17\n最近对账：2026-08-31T07:35:54.447Z\n正常\nws_compose_smoke_16\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_compose_smoke_4\n最近对账：2026-08-31T07:35:54.463Z\n正常\nws_compose_smoke_15\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_compose_smoke_14\n最近对账：2026-08-31T07:35:54.463Z\n正常\nws_compose_smoke_1\n最近对账：2026-08-31T07:35:54.449Z\n正常\nws_compose_smoke_13\n最近对账：2026-08-31T07:35:54.463Z\n正常\nws_compose_smoke_10\n最近对账：2026-08-31T07:35:54.450Z\n正常\nws_compose_smoke_12\n最近对账：2026-08-31T07:35:54.453Z\n正常\nws_compose_smoke_9\n最近对账：2026-08-31T07:35:54.466Z\n正常\nws_compose_smoke_11\n最近对账：2026-08-31T07:35:54.449Z\n正常\nws_compose_smoke_8\n最近对账：2026-08-31T07:35:54.465Z\n正常\nws_compose_smoke_5\n最近对账：2026-08-31T07:35:54.482Z\n正常\nws_compose_smoke_6\n最近对账：2026-08-31T07:35:54.470Z\n正常\nws_compose_smoke_7\n最近对账：2026-08-31T07:35:54.469Z\n正常\nws_compose_smoke_21\n最近对账：2026-08-31T07:35:54.453Z\n正常\nws_compose_smoke_0\n最近对账：2026-08-31T07:35:54.450Z\n正常\nworkspace_demo\n最近对账：2026-08-31T07:35:54.384Z\n正常\nws_3fd1b414debc42d586493423\n最近对账：2026-08-31T07:35:54.406Z\n正常\nws_projection_1787879959239\n最近对账：2026-08-31T07:35:54.499Z\n正常\nws_projection_1787873448782\n最近对账：2026-08-31T07:35:54.518Z\n正常\nws_projection_1787840790835\n最近对账：2026-08-31T07:35:54.499Z\n正常\nws_projection_1787837876497\n最近对账：2026-08-31T07:35:54.495Z\n正常\nws_projection_1787834346609\n最近对账：2026-08-31T07:35:54.495Z\n正常\nws_projection_1787834316252\n最近对账：2026-08-31T07:35:54.495Z\n正常\nws_projection_1787829313615\n最近对账：2026-08-31T07:35:54.529Z\n正常\nws_projection_1787826214934\n最近对账：2026-08-31T07:35:54.499Z\n正常\nws_projection_1787815190828\n最近对账：2026-08-31T07:35:54.505Z\n正常\nws_projection_1787813795706\n最近对账：2026-08-31T07:35:54.500Z\n正常\nws_projection_1787811811725\n最近对账：2026-08-31T07:35:54.496Z\n正常\nws_visual_runtime_1787623165\n最近对账：2026-08-31T07:35:54.502Z\n正常\nws_runtime_review\n最近对账：2026-08-31T07:35:54.534Z\n正常\nws_manual_reprobe_1787577772903_other\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_manual_reprobe_1787577772903\n最近对账：2026-08-31T07:35:54.490Z\n需处理\nws_manual_probe_1787577664159_other\n最近对账：2026-08-31T07:35:54.487Z\n正常\nws_manual_probe_1787577664159\n最近对账：2026-08-31T07:35:54.487Z\n需处理\nws_codex_manual_runtime\n最近对账：2026-08-31T07:35:54.448Z\n需处理\nws_runtime_complete_1787576299405\n最近对账：2026-08-31T07:35:54.531Z\n正常\nws_four_platform_mock_20260824_final\n最近对账：2026-08-31T07:35:54.485Z\n正常\nws_four_platform_debug_20260824\n最近对账：2026-08-31T07:35:54.498Z\n正常\nws_four_platform_mock_20260824\n最近对账：2026-08-31T07:35:54.485Z\n正常\nws_projection_1787511137257\n最近对账：2026-08-31T07:35:54.496Z\n正常\nws_prod_check\n最近对账：2026-08-31T07:35:54.490Z\n正常\nws_full_coverage2\n最近对账：2026-08-31T07:35:54.493Z\n需处理\nws_full_coverage\n最近对账：2026-08-31T07:35:54.486Z\n需处理\nws_probe_1787497662275\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_audit_1787497650458\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_audit_1787497629520\n最近对账：2026-08-31T07:35:54.434Z\n正常\nws_dbg_1787497538658\n最近对账：2026-08-31T07:35:54.467Z\n正常\nws_dbg_1787497511321\n最近对账：2026-08-31T07:35:54.484Z\n正常\nws_audit_1787497461692\n最近对账：2026-08-31T07:35:54.443Z\n正常\nws_catalog_fields_1787497235300\n最近对账：2026-08-31T07:35:54.446Z\n正常\nws_asset_codex_1787496958430\n最近对账：2026-08-31T07:35:54.429Z\n需处理\nws_brand_codex_1787496488201\n最近对账：2026-08-31T07:35:54.445Z\n正常\nws_smoke_final_1787496082\n最近对账：2026-08-31T07:35:54.505Z\n正常\nws_status_semantics_1787495\n最近对账：2026-08-31T07:35:54.506Z\n正常\nws_task_bind_1787495318193\n最近对账：2026-08-31T07:35:54.531Z\n正常\nws_codex_image_1787495193866\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_codex_image_1787495170707\n最近对账：2026-08-31T07:35:54.450Z\n正常\nws_probe_1787495153225\n最近对账：2026-08-31T07:35:54.489Z\n正常\nws_codex_final_1787495133096\n最近对账：2026-08-31T07:35:54.458Z\n正常\nws_smoke_codex_1787493\n最近对账：2026-08-31T07:35:54.502Z\n正常\nws_replica_final\n最近对账：2026-08-31T07:35:54.513Z\n正常\nws_replica_smoke_1787494383000\n最近对账：2026-08-31T07:35:54.518Z\n正常\nws_projection_1787493934587\n最近对账：2026-08-31T07:35:54.495Z\n正常\nws_revoke_final_1787493809004\n最近对账：2026-08-31T07:35:54.531Z\n正常\nws_revoke_fixed_1787493592466\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_revoke_probe_1787493513690\n最近对账：2026-08-31T07:35:54.531Z\n正常\nws_four_platform_1787493417744\n最近对账：2026-08-31T07:35:54.502Z\n正常\nws_account_binding_1787493058558\n最近对账：2026-08-31T07:35:54.428Z\n正常\nws_account_binding_1787492988114\n最近对账：2026-08-31T07:35:54.427Z\n正常\nws_matrix_1787492577997\n最近对账：2026-08-31T07:35:54.481Z\n需处理\nws_full_accept_1787492516891\n最近对账：2026-08-31T07:35:54.486Z\n正常\nws_diag\n最近对账：2026-08-31T07:35:54.483Z\n正常\nws_retry_sync\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_debug_err\n最近对账：2026-08-31T07:35:54.470Z\n正常\nws_new_sync\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_debug\n最近对账：2026-08-31T07:35:54.480Z\n正常\nws_projection_1787447127307\n最近对账：2026-08-31T07:35:54.499Z\n正常\nws_projection_1787445935097\n最近对账：2026-08-31T07:35:54.497Z\n正常\nws_projection_1787445696304\n最近对账：2026-08-31T07:35:54.499Z\n正常\nws_projection_1787444610285\n最近对账：2026-08-31T07:35:54.499Z\n正常\nws_projection_1787444555217\n最近对账：2026-08-31T07:35:54.500Z\n正常\nws_projection_1787444404179\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_projection_1787442711319\n最近对账：2026-08-31T07:35:54.505Z\n正常\nws_projection_1787442135253\n最近对账：2026-08-31T07:35:54.496Z\n正常\nws_projection_1787441419872\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_projection_1787440316543\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_projection_1787440117863\n最近对账：2026-08-31T07:35:54.488Z\n正常\nws_projection_1787439602044\n最近对账：2026-08-31T07:35:54.491Z\n正常\nws_projection_1787439221644\n最近对账：2026-08-31T07:35:54.506Z\n正常\nws_projection_1787438561005\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_projection_1787437671582\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_projection_1787437520553\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_replica_smoke_1787436744293\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_replica_smoke_1787436700961\n最近对账：2026-08-31T07:35:54.502Z\n正常\nws_projection_1787436647875\n最近对账：2026-08-31T07:35:54.488Z\n正常\nws_projection_1787436416080\n最近对账：2026-08-31T07:35:54.489Z\n正常\nws_projection_1787435202231\n最近对账：2026-08-31T07:35:54.494Z\n正常\nws_projection_1787430187994\n最近对账：2026-08-31T07:35:54.493Z\n正常\nws_projection_1787425099705\n最近对账：2026-08-31T07:35:54.495Z\n正常\nws_projection_1787424938511\n最近对账：2026-08-31T07:35:54.499Z\n正常\nws_redis_recovery\n最近对账：2026-08-31T07:35:54.533Z\n正常\nws_replica_smoke_1787420069753\n最近对账：2026-08-31T07:35:54.501Z\n正常\nws_replica_smoke_1787419842141\n最近对账：2026-08-31T07:35:54.533Z\n正常\nws_worker_acceptance\n最近对账：2026-08-31T07:35:54.505Z\n正常\nws_demo\n最近对账：2026-08-31T07:35:54.826Z\n需处理\n列表仅用于定位 workspace 状态，不提供客户对象、素材内容、对象 key 或下载操作。",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nSTORAGE & RECONCILIATION\n存储与对账\n按 workspace 查看容量、对象引用一致性和对账新鲜度；客户对象内容与下载入口不在运营台展示。\n对象存储容量与对账\n未接入对账\n暂无可验证的对象清单对账结果\n该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。\n已使用\n—\n配额上限\n—\n预留中\n—\n预计占用\n—\n最近对账：暂无 · 新鲜度未知。仅显示 workspace 级汇总和问题数量，不暴露客户对象下载能力。\nworkspace 对账列表（340）\nws_atomic_cross_day_pg_1788191112333_ea6477f158931\n最近对账：2026-09-01T00:46:16.493Z\n正常\nws_atomic_overrun_pg_1788191112170_3f31bd5a0bce2\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_atomic_pg_1788191111902_e2f13a597560d\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_run_budget_pg_1788191111795_1b0e4e1de8f38\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_budget_pg_1788191111617_74d5256d42cbe\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_atomic_cross_day_pg_1788189528041_279b4f557524b\n最近对账：2026-09-01T00:46:16.494Z\n正常\nws_atomic_overrun_pg_1788189527934_f7a122ecdd17f\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_atomic_pg_1788189527774_2e9c706f280fd\n最近对账：2026-09-01T00:46:16.498Z\n正常\nws_run_budget_pg_1788189527671_9e5efa8de96e5\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_budget_pg_1788189527236_fc2231f252c5c\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_atomic_cross_day_pg_1788184299639_e90990a90514d\n最近对账：2026-09-01T00:46:16.494Z\n正常\nws_atomic_overrun_pg_1788184299574_d6dcb5aefc0a5\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_atomic_pg_1788184299502_2ac490df76786\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_run_budget_pg_1788184299444_fe6d4384239c9\n最近对账：2026-09-01T00:46:16.559Z\n正常\nws_budget_pg_1788184299357_e106330914df5\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_run_budget_pg_1788182491289_c3e2dfedbcd56\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_budget_pg_1788182491216_f470dbe0d5ffd\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_run_budget_pg_1788181975803_2d136b1b8d086\n最近对账：2026-09-01T00:46:16.562Z\n正常\nws_budget_pg_1788181975717_f5b7c92e68273\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_runtime_budget_1788181795652\n最近对账：2026-09-01T00:46:16.560Z\n正常\nws_runtime_budget_1788181768492\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_run_budget_pg_1788181506259_11deb755b3d74\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_budget_pg_1788181506151_fc57220fe4daa\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_run_budget_pg_1788181479610_b547cf85d2392\n最近对账：2026-09-01T00:46:16.551Z\n正常\nws_storage_f88c7261-c6fe-429d-9bf5-a7d12daae435\n最近对账：2026-09-01T00:46:16.557Z\n正常\nws_storage_46b16760-5d31-422b-aec5-bf350a375d77\n最近对账：2026-09-01T00:46:16.559Z\n正常\nws_storage_00f056d4-f960-49f0-86a0-664a9b9bd903\n最近对账：2026-09-01T00:46:16.571Z\n正常\nws_storage_10bba714-a472-472c-96b7-61de607a3423\n最近对账：2026-09-01T00:46:16.566Z\n正常\nws_storage_678bf7ed-7741-4b29-8ce5-f3c3f843d50a\n最近对账：2026-09-01T00:46:16.555Z\n正常\nws_storage_2bbbe76e-9db8-4902-9c47-a0fee5ace7c8\n最近对账：2026-09-01T00:46:16.554Z\n正常\nws_storage_9bafe9db-c2be-4d01-b84e-13b5f35b505e\n最近对账：2026-09-01T00:46:16.555Z\n正常\nws_cleanup_a_mte196fj\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_cleanup_b_mte196fj\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_cleanup_a_mtdnuedh\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_cleanup_b_mtdnuedh\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_projection_1787958598213\n最近对账：2026-09-01T00:46:16.544Z\n正常\nws_projection_1787957935470\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_budget_pg\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_a\n最近对账：2026-09-01T00:46:16.490Z\n正常\nws_b\n最近对账：2026-09-01T00:46:16.496Z\n正常\nws_cleanup_a_mtdgirxh\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_cleanup_b_mtdgirxh\n最近对账：2026-09-01T00:46:16.506Z\n正常\ndemo-workspace\n最近对账：2026-09-01T00:46:16.458Z\n正常\nws_ops_browser\n最近对账：2026-09-01T00:46:16.538Z\n正常\nws_65e93b2a884e44e8bcf03d62\n最近对账：2026-09-01T00:46:16.482Z\n正常\nws_02d69d8273504d52b9039820\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_d18a3d8291114e128c9d2fd6\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_31d43b64276d408e9d04a1b2\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_db170122ea1942a382cc879b\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_092c3a8e83fe41e499a49782\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_4f2d9330552e4aada048d3df\n最近对账：2026-09-01T00:46:16.479Z\n正常\nws_218040acdffe447f9177fe96\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_c5936fe67a9e403badeb043d\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_249a673e1d144e548590c532\n最近对账：2026-09-01T00:46:16.470Z\n正常\nws_77bfd64cfcb343a382a6655b\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_878c6eaa143446c7adee8f0a\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_8dcb6f4000024ba8a8438095\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_e23a084a25374af1807d137e\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_21aaea1ce44e48cb8ab66374\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_5206f4b473d34d2db343a60e\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_ae7d21f677ed46aab40e6af0\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_c232f12c54b041c3862698d4\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_2edb96c57f734aba85f083ed\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_3b5e1de810b149e0b7678ca2\n最近对账：2026-09-01T00:46:16.475Z\n正常\nws_3b98bceb0815471f9ae617eb\n最近对账：2026-09-01T00:46:16.480Z\n正常\nws_ffdeaa539ec3447091566598\n最近对账：2026-09-01T00:46:16.526Z\n正常\nws_1302169179104e15bb21cfc7\n最近对账：2026-09-01T00:46:16.466Z\n正常\nws_9fd25e926f424898b8994411\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_2ee3993195cd44ddb4fd8dfc\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_ba2b94519c0a486283b63d4b\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_c8dbc1a5acb44764a82e1959\n最近对账：2026-09-01T00:46:16.505Z\n正常\nws_5903f4b5dcb543d3bfe98817\n最近对账：2026-09-01T00:46:16.479Z\n正常\nws_eef8acc226f94a138d637445\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_747d74296b764677b54d8b45\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_fedcf3108abe418dbcaa1768\n最近对账：2026-09-01T00:46:16.525Z\n正常\nws_5546ce16fdab49e398673cf6\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_b9c29373658f400f961885c4\n最近对账：2026-09-01T00:46:16.497Z\n正常\nws_5eb74f99213d4846b03a0e12\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_12ed53c7e7c2490a8893d9bf\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_b8d8fe2d29804a7599c1b969\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_88d36c3ac63644fdb045f530\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_11de659199954bc58a8df2d7\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_fb25a7966d6a4a629891e582\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_10534eefd9074226b64168f1\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_cf7daeae8c5d4dd0a6a2c3fa\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_2819db0479324be0814eafbb\n最近对账：2026-09-01T00:46:16.474Z\n正常\nws_6086537d0b7c40f3b2e2a358\n最近对账：2026-09-01T00:46:16.482Z\n正常\nws_d53481cad2714c7eadaf2239\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_a5a45a867e15444bb7ed4bd6\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_26629a85daef43ea86c38039\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_bc05b3153cd543efbf40695e\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_1801f6e9176249b08a4006da\n最近对账：2026-09-01T00:46:16.465Z\n正常\nws_f3bc4bf14ccc418e849e83d9\n最近对账：2026-09-01T00:46:16.528Z\n正常\nws_d7a5d747156048b782aa7359\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_f8ce67444d044da8abf62301\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_13673eea41814cbe958dbc43\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_6c202e47a20d4dfa95cbd7cc\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_aaea577d667c410cbeeb86f7\n最近对账：2026-09-01T00:46:16.500Z\n正常\nws_0deab54b96c749d6a2a033e7\n最近对账：2026-09-01T00:46:16.475Z\n正常\nws_9003ac86513f4ac09f1d195b\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_d0efe063316e48e79cce1a55\n最近对账：2026-09-01T00:46:16.520Z\n正常\nws_65c9bd955a4f46678f169310\n最近对账：2026-09-01T00:46:16.484Z\n正常\nws_481b8659f443461fb711895a\n最近对账：2026-09-01T00:46:16.476Z\n正常\nws_dc1a92b0cb484a6b9b3e7834\n最近对账：2026-09-01T00:46:16.525Z\n正常\nws_b012f132ac9844debaa9cc92\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_dd1c8405d29c40109a764929\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_6c1f5a3804bf4cbfbaf1064c\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_108e2109d0f545928fcdfd23\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_eee430cf1dc142898c6ed7e5\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_4f1bfb39f51149429fa641c6\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_68843ad7aac0444284da6047\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_2d01ccdb276443bfa671fa19\n最近对账：2026-09-01T00:46:16.473Z\n正常\nws_d20bb869efbd495996f0a3f8\n最近对账：2026-09-01T00:46:16.520Z\n正常\nws_096c70d027ab4c58b720b4c3\n最近对账：2026-09-01T00:46:16.475Z\n正常\nws_84a54d1f642b4ce686971d2a\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_e065e49d75c643e1bd6a11c3\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_6f00813669e14bea8af3feaf\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_c50067d136544fbe936552e4\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_552c6333833d4a8e8963ff5a\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_ea560b70eca340e786b9e23f\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_a4e58da4a8f1472fa2836800\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_24ea9ddfadd54032ba7f1432\n最近对账：2026-09-01T00:46:16.472Z\n正常\nws_54ff29925d724987adc2ea95\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_a6f2ca386eb34054aa080267\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_4be930bece3b4da2b3f56cd6\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_9fc11ff2d88c4b85bbb8e0b4\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_a0c2cdddaff14a0988024e48\n最近对账：2026-09-01T00:46:16.493Z\n正常\nws_0838eca4b3124185b38b1b39\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_359c30852a59406682483f95\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_c42f8b6c5152458c93079d9a\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_842565cfd0d14ebbbe633cf5\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_fec23d22a0af49a093753187\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_61d2e0f10dd04bb5b8c6c5d9\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_250556c1974342e38570c3d4\n最近对账：2026-09-01T00:46:16.470Z\n正常\nws_5acf092b9fd746838e89f8ca\n最近对账：2026-09-01T00:46:16.479Z\n正常\nws_94c00e066f614f3f8bc08bd1\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_5d0f928711ba4eed810c6b7e\n最近对账：2026-09-01T00:46:16.482Z\n正常\nws_ddf9f4ad48b440f0a196a466\n最近对账：2026-09-01T00:46:16.523Z\n正常\nws_404a0c10f2f24d1cbdca5068\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_9fb44d67521f4be79220cd95\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_3e9c65630f414b2abfc4f1a5\n最近对账：2026-09-01T00:46:16.474Z\n正常\nws_01e13ff538044598852f9fd1\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_0e4fa06d6ce54ef0b85edae3\n最近对账：2026-09-01T00:46:16.468Z\n正常\nws_8ac82bf6654b4da5b5ab18dd\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_2629d4df763f43fea4fccd09\n最近对账：2026-09-01T00:46:16.473Z\n正常\nws_fcfac3afc5c8438c9e639b06\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_2436d5ff343a4ea093abc6c7\n最近对账：2026-09-01T00:46:16.466Z\n正常\nws_bf4bc6211b764b408f20a496\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_91c4de0cbfe74824beb1ff8f\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_93e594334db94bbfb7722fe7\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_fab6943fa15a4aefad1fe574\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_2d7469e1a388423b8990b687\n最近对账：2026-09-01T00:46:16.473Z\n正常\nws_8670bdf2cdd74ce1a9e08358\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_cb7f08e879534c46bb179ce5\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_1bd2e4b57a33432db3bbe2b8\n最近对账：2026-09-01T00:46:16.459Z\n正常\nws_c68d744a2b4e43879d6ef671\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_d3cdb5be891c411bb1da527b\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_672d19b7ba974e629fbe4305\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_078760c6aac44da0bdd2a09c\n最近对账：2026-09-01T00:46:16.470Z\n正常\nws_c3b75c92b7ca489a9a29a5d9\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_dae2595df7594e0e9846cff3\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_91d022f83f4a4dad991f7719\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_85aad9fbbea144d08a76dacb\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_fa80f4e64058469bb79e6176\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_85f74c126fc84778aa0e7357\n最近对账：2026-09-01T00:46:16.490Z\n正常\nws_6dc543a52d194381ac451ebd\n最近对账：2026-09-01T00:46:16.483Z\n正常\nws_85804287317545399ce28ece\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_6b3062bf56394f8eb81545ac\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_20f7f65d70044ee99e5de73b\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_373d0a78197a4770a8e75fea\n最近对账：2026-09-01T00:46:16.477Z\n正常\nws_bc2ab0f4b5f647009d28bffd\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_e3cd60878fb44af79109b4a6\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_bee2a0cbb56c43cebd8d6d30\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_9235716ce5e1488e93d93b6a\n最近对账：2026-09-01T00:46:16.488Z\n正常\nws_33f33979b70d48bb98a2ebf7\n最近对账：2026-09-01T00:46:16.474Z\n正常\nws_fa10e13b7ed54ffb81d27ab7\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_489142e021f741db8b7ffac8\n最近对账：2026-09-01T00:46:16.480Z\n正常\nws_c7586a5faf514b2b90b1c345\n最近对账：2026-09-01T00:46:16.503Z\n正常\nws_f5b89a832af84393b82ae9ba\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_cee2c08aefbe46dd8391570e\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_d329b7a583324fc4bc172327\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_82c65dd574c44007903ebe1a\n最近对账：2026-09-01T00:46:16.489Z\n正常\nws_7c623f32d6f64fb786aab8fb\n最近对账：2026-09-01T00:46:16.486Z\n正常\nws_fcb12302d7974c1aa94a8274\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_b13d174bf86e4ea38ce9c918\n最近对账：2026-09-01T00:46:16.498Z\n正常\nws_56a1c0cba26e46a2bf027bcb\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_4aab4e487cab4f24b4f71842\n最近对账：2026-09-01T00:46:16.484Z\n正常\nws_bc0aac6c966545ad84152401\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_bbecb27aebbb481fb4fd33be\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_00a132705d8047d39dcb4b67\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_a57b82d1b8ed47b0a5189e51\n最近对账：2026-09-01T00:46:16.493Z\n正常\nws_77110e20240b44fc8e70d30b\n最近对账：2026-09-01T00:46:16.485Z\n正常\nws_cb526a241d504e74bd9e1cd3\n最近对账：2026-09-01T00:46:16.504Z\n正常\nws_930e59da4e6940ff808280b4\n最近对账：2026-09-01T00:46:16.490Z\n正常\nws_66ce028a4e2941f78af05a90\n最近对账：2026-09-01T00:46:16.481Z\n正常\nws_fd16faa753034669842f84bd\n最近对账：2026-09-01T00:46:16.526Z\n正常\nws_13b97001232a4901af3a4b66\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_0eef8c9d71734c818ed5f10b\n最近对账：2026-09-01T00:46:16.469Z\n正常\nws_884ec3ae14934f6798894dc5\n最近对账：2026-09-01T00:46:16.487Z\n正常\nws_compose_debug\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_compose_smoke_49\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_40\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_47\n最近对账：2026-09-01T00:46:16.516Z\n正常\nws_compose_smoke_42\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_46\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_48\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_44\n最近对账：2026-09-01T00:46:16.516Z\n正常\nws_compose_smoke_43\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_compose_smoke_45\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_36\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_30\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_39\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_37\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_29\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_38\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_35\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_compose_smoke_41\n最近对账：2026-09-01T00:46:16.515Z\n正常\nws_compose_smoke_2\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_33\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_34\n最近对账：2026-09-01T00:46:16.512Z\n正常\nws_compose_smoke_31\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_28\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_25\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_26\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_24\n最近对账：2026-09-01T00:46:16.512Z\n正常\nws_compose_smoke_22\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_27\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_32\n最近对账：2026-09-01T00:46:16.513Z\n正常\nws_compose_smoke_23\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_19\n最近对账：2026-09-01T00:46:16.512Z\n正常\nws_compose_smoke_20\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_3\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_18\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_17\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_16\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_compose_smoke_4\n最近对账：2026-09-01T00:46:16.514Z\n正常\nws_compose_smoke_15\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_14\n最近对账：2026-09-01T00:46:16.511Z\n正常\nws_compose_smoke_1\n最近对账：2026-09-01T00:46:16.507Z\n正常\nws_compose_smoke_13\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_compose_smoke_10\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_12\n最近对账：2026-09-01T00:46:16.509Z\n正常\nws_compose_smoke_9\n最近对账：2026-09-01T00:46:16.520Z\n正常\nws_compose_smoke_11\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_compose_smoke_8\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_5\n最近对账：2026-09-01T00:46:16.518Z\n正常\nws_compose_smoke_6\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_7\n最近对账：2026-09-01T00:46:16.517Z\n正常\nws_compose_smoke_21\n最近对账：2026-09-01T00:46:16.510Z\n正常\nws_compose_smoke_0\n最近对账：2026-09-01T00:46:16.507Z\n正常\nworkspace_demo\n最近对账：2026-09-01T00:46:16.459Z\n正常\nws_3fd1b414debc42d586493423\n最近对账：2026-09-01T00:46:16.478Z\n正常\nws_projection_1787879959239\n最近对账：2026-09-01T00:46:16.546Z\n正常\nws_projection_1787873448782\n最近对账：2026-09-01T00:46:16.543Z\n正常\nws_projection_1787840790835\n最近对账：2026-09-01T00:46:16.543Z\n正常\nws_projection_1787837876497\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_projection_1787834346609\n最近对账：2026-09-01T00:46:16.537Z\n正常\nws_projection_1787834316252\n最近对账：2026-09-01T00:46:16.545Z\n正常\nws_projection_1787829313615\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787826214934\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_projection_1787815190828\n最近对账：2026-09-01T00:46:16.543Z\n正常\nws_projection_1787813795706\n最近对账：2026-09-01T00:46:16.545Z\n正常\nws_projection_1787811811725\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_visual_runtime_1787623165\n最近对账：2026-09-01T00:46:16.564Z\n正常\nws_runtime_review\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_manual_reprobe_1787577772903_other\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_manual_reprobe_1787577772903\n最近对账：2026-09-01T00:46:16.530Z\n需处理\nws_manual_probe_1787577664159_other\n最近对账：2026-09-01T00:46:16.531Z\n正常\nws_manual_probe_1787577664159\n最近对账：2026-09-01T00:46:16.529Z\n需处理\nws_codex_manual_runtime\n最近对账：2026-09-01T00:46:16.510Z\n需处理\nws_runtime_complete_1787576299405\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_four_platform_mock_20260824_final\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_four_platform_debug_20260824\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_four_platform_mock_20260824\n最近对账：2026-09-01T00:46:16.527Z\n正常\nws_projection_1787511137257\n最近对账：2026-09-01T00:46:16.545Z\n正常\nws_prod_check\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_full_coverage2\n最近对账：2026-09-01T00:46:16.532Z\n需处理\nws_full_coverage\n最近对账：2026-09-01T00:46:16.535Z\n需处理\nws_probe_1787497662275\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_audit_1787497650458\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_audit_1787497629520\n最近对账：2026-09-01T00:46:16.502Z\n正常\nws_dbg_1787497538658\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_dbg_1787497511321\n最近对账：2026-09-01T00:46:16.524Z\n正常\nws_audit_1787497461692\n最近对账：2026-09-01T00:46:16.501Z\n正常\nws_catalog_fields_1787497235300\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_asset_codex_1787496958430\n最近对账：2026-09-01T00:46:16.493Z\n需处理\nws_brand_codex_1787496488201\n最近对账：2026-09-01T00:46:16.499Z\n正常\nws_smoke_final_1787496082\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_status_semantics_1787495\n最近对账：2026-09-01T00:46:16.560Z\n正常\nws_task_bind_1787495318193\n最近对账：2026-09-01T00:46:16.560Z\n正常\nws_codex_image_1787495193866\n最近对账：2026-09-01T00:46:16.508Z\n正常\nws_codex_image_1787495170707\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_probe_1787495153225\n最近对账：2026-09-01T00:46:16.531Z\n正常\nws_codex_final_1787495133096\n最近对账：2026-09-01T00:46:16.506Z\n正常\nws_smoke_codex_1787493\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_replica_final\n最近对账：2026-09-01T00:46:16.544Z\n正常\nws_replica_smoke_1787494383000\n最近对账：2026-09-01T00:46:16.550Z\n正常\nws_projection_1787493934587\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_revoke_final_1787493809004\n最近对账：2026-09-01T00:46:16.546Z\n正常\nws_revoke_fixed_1787493592466\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_revoke_probe_1787493513690\n最近对账：2026-09-01T00:46:16.553Z\n正常\nws_four_platform_1787493417744\n最近对账：2026-09-01T00:46:16.530Z\n正常\nws_account_binding_1787493058558\n最近对账：2026-09-01T00:46:16.492Z\n正常\nws_account_binding_1787492988114\n最近对账：2026-09-01T00:46:16.491Z\n正常\nws_matrix_1787492577997\n最近对账：2026-09-01T00:46:16.528Z\n需处理\nws_full_accept_1787492516891\n最近对账：2026-09-01T00:46:16.529Z\n正常\nws_diag\n最近对账：2026-09-01T00:46:16.522Z\n正常\nws_retry_sync\n最近对账：2026-09-01T00:46:16.562Z\n正常\nws_debug_err\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_new_sync\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_debug\n最近对账：2026-09-01T00:46:16.519Z\n正常\nws_projection_1787447127307\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787445935097\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787445696304\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787444610285\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_projection_1787444555217\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787444404179\n最近对账：2026-09-01T00:46:16.539Z\n正常\nws_projection_1787442711319\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_projection_1787442135253\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787441419872\n最近对账：2026-09-01T00:46:16.541Z\n正常\nws_projection_1787440316543\n最近对账：2026-09-01T00:46:16.537Z\n正常\nws_projection_1787440117863\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_projection_1787439602044\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787439221644\n最近对账：2026-09-01T00:46:16.535Z\n正常\nws_projection_1787438561005\n最近对账：2026-09-01T00:46:16.538Z\n正常\nws_projection_1787437671582\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787437520553\n最近对账：2026-09-01T00:46:16.540Z\n正常\nws_replica_smoke_1787436744293\n最近对账：2026-09-01T00:46:16.547Z\n正常\nws_replica_smoke_1787436700961\n最近对账：2026-09-01T00:46:16.551Z\n正常\nws_projection_1787436647875\n最近对账：2026-09-01T00:46:16.536Z\n正常\nws_projection_1787436416080\n最近对账：2026-09-01T00:46:16.534Z\n正常\nws_projection_1787435202231\n最近对账：2026-09-01T00:46:16.538Z\n正常\nws_projection_1787430187994\n最近对账：2026-09-01T00:46:16.542Z\n正常\nws_projection_1787425099705\n最近对账：2026-09-01T00:46:16.532Z\n正常\nws_projection_1787424938511\n最近对账：2026-09-01T00:46:16.531Z\n正常\nws_redis_recovery\n最近对账：2026-09-01T00:46:16.552Z\n正常\nws_replica_smoke_1787420069753\n最近对账：2026-09-01T00:46:16.551Z\n正常\nws_replica_smoke_1787419842141\n最近对账：2026-09-01T00:46:16.550Z\n正常\nws_worker_acceptance\n最近对账：2026-09-01T00:46:16.564Z\n正常\nws_demo\n最近对账：2026-09-01T00:46:16.930Z\n需处理\n列表仅用于定位 workspace 状态，不提供客户对象、素材内容、对象 key 或下载操作。",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -2274,11 +1109,7 @@
           "disabled": false
         },
         {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
+          "text": "连接诊断",
           "disabled": false
         }
       ],
@@ -2296,34 +1127,6 @@
           "placeholder": null,
           "label": null,
           "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
         }
       ]
     },
@@ -2337,7 +1140,7 @@
         "商业与平台控制台",
         "账务与商业配置"
       ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin\n保存并刷新\nBILLING OPERATIONS\n账务与商业配置\n管理充值、账单、退款、套餐和模型计费策略。\n跨工作区财务检索\n刷新\n导出当前筛选\n关键词\n工作区\n记录类型\n状态\n输入状态后回车，可多选\n检索\n记录数\n78\n充值订单\n¥711.00\n订阅订单\n¥0.00\n钱包净额\n¥159.54\nProvider 成本\n¥0.979981\n客户计费\n¥2.449952\n已加载 50 条财务记录\n类型\t工作区\t记录号\t状态\t业务引用\t金额\tProvider 成本\t客户计费\t发生时间\t操作\n\n类型\n\t\n工作区\n\t\n记录号\n\t\n状态\n\t\n业务引用\n\t\n金额\n\t\nProvider 成本\n\t\n客户计费\n\t\n发生时间\n\t\n操作\n\n模型用量\tws_demo\n\t26e66692-d7a8-4b1f-8ed2-f6276733ab4a\tmanual_attention\timage:runtime-ticket-v15-20260831-1225\t—\t—\t—\t8/31/2026, 12:34:05 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_9b4f66db-9d97-419b-9c45-2bc1ba92052e\tdebit\timage:runtime-ticket-v15-20260831-1225\t¥0.01\t—\t—\t8/31/2026, 12:26:47 PM\t\n详情\n\n模型用量\tws_demo\n\t21c4c17c-a995-4cfc-bfc0-90520150f4bc\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-白底主图，展示 Mac Studio\t—\t—\t—\t8/30/2026, 8:04:47 PM\t\n详情\n\n模型用量\tws_demo\n\t066f8531-fe7f-4b6d-b91a-5ac40bade4db\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t—\t—\t—\t8/30/2026, 8:03:29 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_f6aeca3a-0e90-472a-a476-415eb733ab2a\tdebit\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-白底主图，展示 Mac Studio\t¥0.01\t—\t—\t8/30/2026, 8:03:15 PM\t\n详情\n\n模型用量\tws_demo\n\t1af7e774-8ffd-41ef-bf8c-5f7a10fd24ab\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t—\t—\t—\t8/30/2026, 8:02:38 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_7f029ab5-00d1-4b22-8319-1dff665270c4\tdebit\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t¥0.01\t—\t—\t8/30/2026, 8:01:42 PM\t\n详情\n\n模型用量\tws_demo\n\t13477643-b075-4565-8b49-d62b8f6c9f67\tmanual_attention\timage:live-verified-final-20260830-1927\t—\t—\t—\t8/30/2026, 7:30:10 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_dc3553e1-899d-4236-b3ca-117b15858200\tdebit\timage:live-verified-final-20260830-1927\t¥0.01\t—\t—\t8/30/2026, 7:29:00 PM\t\n详情\n\n模型用量\tws_demo\n\tc0420a92-61f3-4cda-8421-e046d287f3c0\tmanual_attention\timage:live-verified-retry-20260830-1914\t—\t—\t—\t8/30/2026, 7:18:24 PM\t\n详情\n\n模型用量\tws_demo\n\t84515e7d-54f7-4b20-871b-715a306f953c\tmanual_attention\timage:live-verified-retry-20260830-1914\t—\t—\t—\t8/30/2026, 7:13:20 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_289fad33-4eaf-440d-9b5c-8d672c298aea\tdebit\timage:live-verified-retry-20260830-1914\t¥0.01\t—\t—\t8/30/2026, 7:12:19 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_74db3c5d-2bbf-42fe-8c7b-0226fcddc42a\tdebit\timage:live-verified-loop-20260830-1901\t¥0.01\t—\t—\t8/30/2026, 7:04:55 PM\t\n详情\n\n模型用量\tws_demo\n\t5f411fb0-7ca7-48f7-b5ef-be89ead7dccb\tmanual_attention\timage:live-image-generation-v2-202608301739\t—\t—\t—\t8/30/2026, 5:38:37 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_e59a7c9e-6d6a-4e68-a0a9-be10772468ae\tdebit\timage:live-image-generation-v2-202608301739\t¥0.01\t—\t—\t8/30/2026, 5:37:15 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_ddf8f1c4-70e7-472e-8ec0-fc0a78106b86\tdebit\timage:runtime-signed-continuation-1788076394\t¥0.01\t—\t—\t8/30/2026, 3:53:17 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_fb8b2576-a551-4695-970e-1e6751f44ba8\trefund\trefund:asset-parse:asset_8a03d8fb-2db3-40b7-9456-90e90471b70c:attempt:1\t¥0.01\t—\t—\t8/30/2026, 1:34:36 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_49ee63e8-b9aa-4fc8-b82f-334e3bdf7d5b\tdebit\tasset-parse:asset_8a03d8fb-2db3-40b7-9456-90e90471b70c:attempt:1\t¥0.01\t—\t—\t8/30/2026, 1:34:36 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_2a02f835-2a21-46fe-80c1-274debc16f32\tdebit\timage:chatgpt-auto-scan-live-20260830-1319\t¥0.01\t—\t—\t8/30/2026, 1:26:23 PM\t\n详情\n\n模型用量\tws_demo\n\t0a63661d-81d8-469d-80f8-e001fac07eb5\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:38 AM\t\n详情\n\n模型用量\tws_demo\n\t024980f5-3414-4fc4-ad38-a82aeef39458\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:23 AM\t\n详情\n\n模型用量\tws_demo\n\tadd74ee7-9cc4-43bd-949f-c40cdc90a2e3\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:08 AM\t\n详情\n\n任务额度\tws_demo\n\t1e44f568-19f3-414c-a5f1-b36376ed77b9\trefunded\ttask_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:55:23 AM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_5bf1db67-768c-46cc-8fe9-7577679940bc\tdebit\timage:acc-img-20260829-001-create-commute\t¥0.01\t—\t—\t8/30/2026, 12:07:39 AM\t\n详情\n\n任务额度\tws_demo\n\te8e63750-097c-4eb6-acbb-7987a3cb66c4\tconsumed\ttask_a147a69c-b083-4ddd-bdee-e2f3045245ad\t—\t—\t—\t8/30/2026, 12:07:16 AM\t\n详情\n\n充值订单\tws_demo\n\trecharge_9ac35b464bfe2e9373b1406c50610a0d\tpending\talipay\t¥100.00\t—\t—\t8/29/2026, 9:18:03 PM\t\n详情\n\n模型用量\tws_demo\n\t0be96384-975a-4f41-ae31-164136eb45af\tmanual_attention\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t—\t—\t—\t8/29/2026, 7:43:46 PM\t\n详情\n\n模型用量\tws_demo\n\tc4118bf4-3a01-4fac-aece-aa22db21b997\tmanual_attention\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t—\t—\t—\t8/29/2026, 7:41:41 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_9059d31f-df70-494f-a660-7fc28af34ec4\tdebit\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t¥0.01\t—\t—\t8/29/2026, 7:40:20 PM\t\n详情\n\n模型用量\tws_demo\n\ta29c9f03-303b-4b65-8311-1690e7792ad7\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:46 PM\t\n详情\n\n模型用量\tws_demo\n\tfbdd4f2c-f1ab-4985-b596-90ff4460ec24\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:29 PM\t\n详情\n\n模型用量\tws_demo\n\t8e1455f9-f918-4a27-8278-4fc2366da181\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:14 PM\t\n详情\n\n任务额度\tws_demo\n\t2a003dd6-cc6f-44ea-90a7-cf8ed8ec36e5\trefunded\ttask_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:34:27 PM\t\n详情\n\n模型用量\tws_demo\n\tmodel_demo_fixture_pending\tmanual_attention\t—\t—\t—\t—\t8/29/2026, 8:25:00 AM\t\n详情\n\n充值订单\tws_demo\n\tbilling_demo_fixture_pending\tpending\talipay\t¥1.00\t—\t—\t8/29/2026, 8:24:00 AM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_ed5f09dd-fe86-42de-894c-ab7cb2e82913\tdebit\tmodel-usage:f25b30df-a377-94df-a618-827d5f90d781\t¥0.09\t—\t—\t8/29/2026, 1:34:25 AM\t\n详情\n\n模型用量\tws_demo\n\t323f2319-01f5-4ee7-8680-7657dd425986\tsettled\tmodel:ws_demo:gen_dba88ca5-712e-4312-a963-9e8f92dca213:retry:7\t—\t¥0.035393\t¥0.088483\t8/29/2026, 1:34:25 AM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_13edc192-9a73-422e-bc44-6ec718f8bf8b\tdebit\tmodel-usage:ec454ee8-ec36-9f60-a71f-83defa448194\t¥0.11\t—\t—\t8/29/2026, 1:33:56 AM\t\n详情\n\n模型用量\tws_demo\n\ta5715581-2a8a-46f0-89e9-f5f076f3b96b\tsettled\tmodel:ws_demo:gen_dba88ca5-712e-4312-a963-9e8f92dca213:retry:7\t—\t¥0.042455\t¥0.106138\t8/29/2026, 1:33:56 AM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_d548b1fd-52d8-4aa9-a541-d270c460404f\tdebit\tsettlement:model:ws_demo:gen_dba88ca5-712e-4312-a963-9e8f92dca213:retry:7\t¥0.14\t—\t—\t8/29/2026, 1:33:23 AM\t\n详情\n\n模型用量\tws_demo\n\tccb2f13c-ef1a-4cea-84b8-d7c53141f186\tsettled\tmodel:ws_demo:gen_dba88ca5-712e-4312-a963-9e8f92dca213:retry:7\t—\t¥0.056402\t¥0.141005\t8/29/2026, 1:33:23 AM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_2c62df2d-5e2d-4ee8-a0a0-ff4cc02c7832\tdebit\tmodel:ws_demo:gen_dba88ca5-712e-4312-a963-9e8f92dca213:retry:7\t¥0.01\t—\t—\t8/29/2026, 1:32:30 AM\t\n详情\n\n模型用量\tws_demo\n\tfa552a6a-5a64-44ff-8e8a-096f50999ae3\tpending_wallet\tmodel:ws_demo:gen_dba88ca5-712e-4312-a963-9e8f92dca213:retry:4\t—\t¥0.049572\t¥0.123930\t8/29/2026, 1:21:42 AM\t\n详情\n\n充值订单\tws_demo\n\trecharge_db2c2633688671f1312ea319120dffaf\tpending\talipay\t¥100.00\t—\t—\t8/29/2026, 12:20:37 AM\t\n详情\n\n模型用量\tws_demo\n\t734a0fcf-3030-4a03-9bf0-2daaefd2eba0\tsettled\tmodel:generation:real-relay-final-20260829-0005\t—\t¥0.055118\t¥0.137795\t8/29/2026, 12:10:17 AM\t\n详情\n\n模型用量\tws_demo\n\tb7c202d9-29ee-4ae3-bb55-3e6dd9772ce1\tsettled\tmodel:generation:real-relay-final-20260829-0005\t—\t¥0.058929\t¥0.147323\t8/29/2026, 12:09:25 AM\t\n详情\n\n模型用量\tws_demo\n\t9497174a-e87e-4164-9799-53817873a978\tsettled\tmodel:generation:real-relay-final-20260829-0005\t—\t¥0.058383\t¥0.145957\t8/29/2026, 12:08:33 AM\t\n详情\n\n任务额度\tws_demo\n\te9c317f6-711a-4c25-a24a-07dcf77cc5ce\trefunded\ttask_6f8e9a9d-2aae-462b-b347-179b47f22f0b\t—\t—\t—\t8/29/2026, 12:07:40 AM\t\n详情\n\n模型用量\tws_demo\n\t394632d6-eecb-4c27-b49a-2b62ae330e71\tsettled\tmodel:generation:real-relay-final-20260828-2357\t—\t¥0.042701\t¥0.106753\t8/28/2026, 11:58:23 PM\t\n详情\n\n模型用量\tws_demo\n\tdec4b00b-b3a5-4f6a-a44f-e0a9389d110c\tsettled\tmodel:generation:real-relay-final-20260828-2357\t—\t¥0.045734\t¥0.114334\t8/28/2026, 11:57:52 PM\t\n详情\n加载更多\n充值订单状态中心\n刷新\n订单总数\n0\n待支付\n0\n已支付\n0\n异常\n0\n全部 0\n待支付 0\n已支付 0\n已关闭 0\n异常 0\n状态\t订单号\t工作区\t渠道\t金额\tProvider 交易号\t创建时间\t过期时间\t支付时间\t操作\n\n状态\n\t\n订单号\n\t\n工作区\n\t\n渠道\n\t\n金额\n\t\nProvider 交易号\n\t\n创建时间\n\t\n过期时间\n\t\n支付时间\n\t\n操作\n\n\n当前筛选条件下没有充值订单\n财务流水与对账\n金额：元（两位小数）\n运行支付查单\n支付服务商未就绪，暂不能运行查单。\n重试模型结算\n导出账单\n当前没有可展示的对账数据。请先完成工作区连接配置后重试。\n重新读取对账\n退款操作\n需要 finance 或 merchant_admin 权限\n充值订单 ID\n退款原因\n创建退款\n配置中心\nRevision -\n套餐与额度\n平台与店铺\n订阅订单\n套餐编码\n套餐名称\n店铺额度\n月价（元）\n年价（元）\n月度任务额度\n保存商业配置\n套餐、加购与增长规则\n运营目录\n导出商业配置\n模型计费\n套餐目录\n加购能力\n优惠券\n灰度规则\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。\n商业配置已导出，不包含支付密钥",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nBILLING OPERATIONS\n账务与商业配置\n管理充值、账单、退款、套餐和模型计费策略。\n跨工作区财务检索\n刷新\n导出当前筛选\n关键词\n工作区\n记录类型\n状态\n输入状态后回车，可多选\n检索\n记录数\n105\n充值订单\n¥711.00\n订阅订单\n¥0.00\n钱包净额\n¥159.53\nProvider 成本\n¥15.079981\n客户计费\n¥2.449952\n已加载 50 条财务记录\n类型\t工作区\t记录号\t状态\t业务引用\t金额\tProvider 成本\t客户计费\t发生时间\t操作\n\n类型\n\t\n工作区\n\t\n记录号\n\t\n状态\n\t\n业务引用\n\t\n金额\n\t\nProvider 成本\n\t\n客户计费\n\t\n发生时间\n\t\n操作\n\n模型用量\tws_atomic_overrun_pg_1788191112170_3f31bd5a0bce2\n\t832c84ad-4af1-4747-9629-fee079185bb7\tmanual_attention\t—\t—\t¥0.100000\t—\t8/31/2026, 11:45:12 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788191111795_1b0e4e1de8f38\n\t81442dd8-26a5-4660-ad30-8f0761ffcf70\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 11:45:11 PM\t\n详情\n\n模型用量\tws_atomic_overrun_pg_1788189527934_f7a122ecdd17f\n\t8f7e2837-b5df-4385-9ccc-c88be8fec49f\tmanual_attention\t—\t—\t¥0.100000\t—\t8/31/2026, 11:18:48 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788189527671_9e5efa8de96e5\n\tc3e5da76-cc85-49a7-b03f-56eefe9d7617\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 11:18:47 PM\t\n详情\n\n模型用量\tws_atomic_overrun_pg_1788184299574_d6dcb5aefc0a5\n\t79db0200-400d-4aea-8887-28b6d8d6a3cc\tmanual_attention\t—\t—\t¥0.100000\t—\t8/31/2026, 9:51:39 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788184299444_fe6d4384239c9\n\ta555f8c9-c01b-4a21-ae45-d65ee6854870\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:51:39 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788182491289_c3e2dfedbcd56\n\t20b9125e-3ca0-4be2-8a29-fe3f62fd6618\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:21:31 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788181975803_2d136b1b8d086\n\t404217b7-d168-43fa-a627-e130adddb6c0\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:12:55 PM\t\n详情\n\n模型用量\tws_run_budget_pg_1788181506259_11deb755b3d74\n\ta551d1c4-2a58-46f0-a246-eeee1e84f8da\tsettled\t—\t—\t¥0.550000\t—\t8/31/2026, 9:05:06 PM\t\n详情\n\n模型用量\tws_runtime_budget_1788181795652\n\t58f938f5-c980-44e4-8295-cc1c3ed18db1\tsettled\t—\t—\t¥1.200000\t—\t8/31/2026, 8:01:00 PM\t\n详情\n\n模型用量\tws_runtime_budget_1788181768492\n\t15813d1f-c363-494a-8601-4623bc2f5a94\tsettled\t—\t—\t¥1.200000\t—\t8/31/2026, 8:01:00 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_d0321cde-c34c-40c5-8af0-e6a116d4dccc\tdebit\tasset-parse:asset_70baab94-9b8d-4b96-85f0-2753abfa2eeb:attempt:1\t¥0.01\t—\t—\t8/31/2026, 5:35:14 PM\t\n详情\n\n模型用量\tws_demo\n\t26e66692-d7a8-4b1f-8ed2-f6276733ab4a\tmanual_attention\timage:runtime-ticket-v15-20260831-1225\t—\t—\t—\t8/31/2026, 12:34:05 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_9b4f66db-9d97-419b-9c45-2bc1ba92052e\tdebit\timage:runtime-ticket-v15-20260831-1225\t¥0.01\t—\t—\t8/31/2026, 12:26:47 PM\t\n详情\n\n模型用量\tws_demo\n\t21c4c17c-a995-4cfc-bfc0-90520150f4bc\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-白底主图，展示 Mac Studio\t—\t—\t—\t8/30/2026, 8:04:47 PM\t\n详情\n\n模型用量\tws_demo\n\t066f8531-fe7f-4b6d-b91a-5ac40bade4db\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t—\t—\t—\t8/30/2026, 8:03:29 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_f6aeca3a-0e90-472a-a476-415eb733ab2a\tdebit\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-白底主图，展示 Mac Studio\t¥0.01\t—\t—\t8/30/2026, 8:03:15 PM\t\n详情\n\n模型用量\tws_demo\n\t1af7e774-8ffd-41ef-bf8c-5f7a10fd24ab\tmanual_attention\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t—\t—\t—\t8/30/2026, 8:02:38 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_7f029ab5-00d1-4b22-8319-1dff665270c4\tdebit\timage:image-ws_demo-prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001-参考京东白底主图，Mac Studio 的正面主图，白底、居中、展示电脑正面，风格像京东主图\t¥0.01\t—\t—\t8/30/2026, 8:01:42 PM\t\n详情\n\n模型用量\tws_demo\n\t13477643-b075-4565-8b49-d62b8f6c9f67\tmanual_attention\timage:live-verified-final-20260830-1927\t—\t—\t—\t8/30/2026, 7:30:10 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_dc3553e1-899d-4236-b3ca-117b15858200\tdebit\timage:live-verified-final-20260830-1927\t¥0.01\t—\t—\t8/30/2026, 7:29:00 PM\t\n详情\n\n模型用量\tws_demo\n\tc0420a92-61f3-4cda-8421-e046d287f3c0\tmanual_attention\timage:live-verified-retry-20260830-1914\t—\t—\t—\t8/30/2026, 7:18:24 PM\t\n详情\n\n模型用量\tws_demo\n\t84515e7d-54f7-4b20-871b-715a306f953c\tmanual_attention\timage:live-verified-retry-20260830-1914\t—\t—\t—\t8/30/2026, 7:13:20 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_289fad33-4eaf-440d-9b5c-8d672c298aea\tdebit\timage:live-verified-retry-20260830-1914\t¥0.01\t—\t—\t8/30/2026, 7:12:19 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_74db3c5d-2bbf-42fe-8c7b-0226fcddc42a\tdebit\timage:live-verified-loop-20260830-1901\t¥0.01\t—\t—\t8/30/2026, 7:04:55 PM\t\n详情\n\n模型用量\tws_demo\n\t5f411fb0-7ca7-48f7-b5ef-be89ead7dccb\tmanual_attention\timage:live-image-generation-v2-202608301739\t—\t—\t—\t8/30/2026, 5:38:37 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_e59a7c9e-6d6a-4e68-a0a9-be10772468ae\tdebit\timage:live-image-generation-v2-202608301739\t¥0.01\t—\t—\t8/30/2026, 5:37:15 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_ddf8f1c4-70e7-472e-8ec0-fc0a78106b86\tdebit\timage:runtime-signed-continuation-1788076394\t¥0.01\t—\t—\t8/30/2026, 3:53:17 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_fb8b2576-a551-4695-970e-1e6751f44ba8\trefund\trefund:asset-parse:asset_8a03d8fb-2db3-40b7-9456-90e90471b70c:attempt:1\t¥0.01\t—\t—\t8/30/2026, 1:34:36 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_49ee63e8-b9aa-4fc8-b82f-334e3bdf7d5b\tdebit\tasset-parse:asset_8a03d8fb-2db3-40b7-9456-90e90471b70c:attempt:1\t¥0.01\t—\t—\t8/30/2026, 1:34:36 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_2a02f835-2a21-46fe-80c1-274debc16f32\tdebit\timage:chatgpt-auto-scan-live-20260830-1319\t¥0.01\t—\t—\t8/30/2026, 1:26:23 PM\t\n详情\n\n模型用量\tws_demo\n\t0a63661d-81d8-469d-80f8-e001fac07eb5\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:38 AM\t\n详情\n\n模型用量\tws_demo\n\t024980f5-3414-4fc4-ad38-a82aeef39458\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:23 AM\t\n详情\n\n模型用量\tws_demo\n\tadd74ee7-9cc4-43bd-949f-c40cdc90a2e3\tpending_cost\tmodel:content.generate:task_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:56:08 AM\t\n详情\n\n任务额度\tws_demo\n\t1e44f568-19f3-414c-a5f1-b36376ed77b9\trefunded\ttask_4584883f-0216-48c8-89a6-9b61e4da791b\t—\t—\t—\t8/30/2026, 8:55:23 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788191112333_ea6477f158931\n\tfb7723c9-9ecd-4d35-be21-f3f7f5cf55ca\tmanual_attention\t—\t—\t¥0.500000\t—\t8/30/2026, 8:01:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788189528041_279b4f557524b\n\t89838269-cc04-4270-b05a-3c8909370d7c\tmanual_attention\t—\t—\t¥0.500000\t—\t8/30/2026, 8:01:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788184299639_e90990a90514d\n\t2bc68aec-0f7c-4284-8692-7bb68681aa5b\tmanual_attention\t—\t—\t¥0.500000\t—\t8/30/2026, 8:01:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788191112333_ea6477f158931\n\t1f3f988b-453f-4b5f-855c-5bf82f2ca531\tmanual_attention\t—\t—\t¥0.400000\t—\t8/30/2026, 7:59:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788189528041_279b4f557524b\n\t7541e564-05b7-438e-8dcb-c985110b19a6\tmanual_attention\t—\t—\t¥0.400000\t—\t8/30/2026, 7:59:30 AM\t\n详情\n\n模型用量\tws_atomic_cross_day_pg_1788184299639_e90990a90514d\n\tcf8c2605-eec4-4ff0-a69c-193976fdaab1\tmanual_attention\t—\t—\t¥0.400000\t—\t8/30/2026, 7:59:30 AM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_5bf1db67-768c-46cc-8fe9-7577679940bc\tdebit\timage:acc-img-20260829-001-create-commute\t¥0.01\t—\t—\t8/30/2026, 12:07:39 AM\t\n详情\n\n任务额度\tws_demo\n\te8e63750-097c-4eb6-acbb-7987a3cb66c4\tconsumed\ttask_a147a69c-b083-4ddd-bdee-e2f3045245ad\t—\t—\t—\t8/30/2026, 12:07:16 AM\t\n详情\n\n充值订单\tws_demo\n\trecharge_9ac35b464bfe2e9373b1406c50610a0d\tpending\talipay\t¥100.00\t—\t—\t8/29/2026, 9:18:03 PM\t\n详情\n\n模型用量\tws_demo\n\t0be96384-975a-4f41-ae31-164136eb45af\tmanual_attention\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t—\t—\t—\t8/29/2026, 7:43:46 PM\t\n详情\n\n模型用量\tws_demo\n\tc4118bf4-3a01-4fac-aece-aa22db21b997\tmanual_attention\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t—\t—\t—\t8/29/2026, 7:41:41 PM\t\n详情\n\n钱包流水\tws_demo\n\tbilling_tx_9059d31f-df70-494f-a660-7fc28af34ec4\tdebit\timage:image-ws_demo-prod_taobao_484008b7e055_TB-FIXTURE-2001-default\t¥0.01\t—\t—\t8/29/2026, 7:40:20 PM\t\n详情\n\n模型用量\tws_demo\n\ta29c9f03-303b-4b65-8311-1690e7792ad7\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:46 PM\t\n详情\n\n模型用量\tws_demo\n\tfbdd4f2c-f1ab-4985-b596-90ff4460ec24\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:29 PM\t\n详情\n\n模型用量\tws_demo\n\t8e1455f9-f918-4a27-8278-4fc2366da181\tpending_cost\tmodel:content.generate:task_faa8d870-d965-4852-adc6-1fc212146fb4\t—\t—\t—\t8/29/2026, 7:35:14 PM\t\n详情\n加载更多\n充值订单状态中心\n刷新\n订单总数\n0\n待支付\n0\n已支付\n0\n异常\n0\n全部 0\n待支付 0\n已支付 0\n已关闭 0\n异常 0\n状态\t订单号\t工作区\t渠道\t金额\tProvider 交易号\t创建时间\t过期时间\t支付时间\t操作\n\n状态\n\t\n订单号\n\t\n工作区\n\t\n渠道\n\t\n金额\n\t\nProvider 交易号\n\t\n创建时间\n\t\n过期时间\n\t\n支付时间\n\t\n操作\n\n\n当前筛选条件下没有充值订单\n财务流水与对账\n金额：元（两位小数）\n运行支付查单\n支付服务商未就绪，暂不能运行查单。\n重试模型结算\n导出账单\n当前没有可展示的对账数据。请先完成工作区连接配置后重试。\n重新读取对账\n退款操作\n需要 finance 或 merchant_admin 权限\n充值订单 ID\n退款原因\n创建退款\n配置中心\nRevision -\n套餐与额度\n平台与店铺\n订阅订单\n套餐编码\n套餐名称\n店铺额度\n月价（元）\n年价（元）\n月度任务额度\n保存商业配置\n套餐、加购与增长规则\n运营目录\n导出商业配置\n模型计费\n套餐目录\n加购能力\n优惠券\n灰度规则\nToken 成本倍率\nRevision 1\n计费倍率\n\n变更原因\n\n保存并生效\n用户应付 = 中转站返回的实际成本 × 当时倍率。默认 2.5 倍；历史账单保留生成时的倍率和版本，修改后不回溯重算。\n商业配置已导出，不包含支付密钥",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -2404,11 +1207,7 @@
           "disabled": false
         },
         {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
+          "text": "连接诊断",
           "disabled": false
         },
         {
@@ -2849,7 +1648,7 @@
         },
         {
           "text": "创建退款",
-          "disabled": false
+          "disabled": true
         },
         {
           "text": "保存商业配置",
@@ -2878,34 +1677,6 @@
           "placeholder": null,
           "label": null,
           "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
         },
         {
           "tag": "INPUT",
@@ -3053,7 +1824,7 @@
         "审计中心",
         "不可变审计记录"
       ],
-      "text": "大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\nplatform_ops\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v1\n收起连接诊断\n运营 API 地址\n工作区 ID\n操作员 ID\n运营 API Token\n角色：platform_ops、rules_admin\n保存并刷新\nAUDIT TRAIL\n审计中心\n平台范围检索各授权租户的不可变审计事实；详情采用最小化、脱敏投影，跨租户导出请切换到具体工作区。\n不可变审计记录\n所有详情均为服务端脱敏投影\n刷新\n导出当前筛选\n关键词\n来源\n操作者\n动作\n资源类型\n开始时间\n结束时间\n筛选操作\n清除筛选\n已加载 100 / 47235 条审计记录\n平台聚合结果按服务端上限返回；请缩小时间或租户筛选范围，记录内容为服务端脱敏投影。\n已加载 100 条，共 47235 条，仍有未加载记录\n时间\t来源\t操作者\t动作\t资源\t原因\t操作\n\n时间\n\t\n来源\n\t\n操作者\n\t\n动作\n\t\n资源\n\t\n原因\n\t\n操作\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_demo\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_runtime_complete_1787576299405\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_storage_46b16760-5d31-422b-aec5-bf350a375d77\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_storage_678bf7ed-7741-4b29-8ce5-f3c3f843d50a\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_storage_00f056d4-f960-49f0-86a0-664a9b9bd903\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_storage_9bafe9db-c2be-4d01-b84e-13b5f35b505e\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_storage_2bbbe76e-9db8-4902-9c47-a0fee5ace7c8\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_worker_acceptance\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_visual_runtime_1787623165\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_task_bind_1787495318193\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_storage_10bba714-a472-472c-96b7-61de607a3423\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_status_semantics_1787495\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_runtime_review\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_smoke_final_1787496082\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_smoke_codex_1787493\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_revoke_probe_1787493513690\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_revoke_fixed_1787493592466\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_revoke_final_1787493809004\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_redis_recovery\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_retry_sync\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787447127307\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_replica_smoke_1787494383000\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_replica_smoke_1787436700961\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_replica_smoke_1787420069753\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_replica_smoke_1787419842141\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787879959239\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_replica_final\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787957935470\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787840790835\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_replica_smoke_1787436744293\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787958598213\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787837876497\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787826214934\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787873448782\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787834346609\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787834316252\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787829313615\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787813795706\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787511137257\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787493934587\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787815190828\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787811811725\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787444404179\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787442711319\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787444555217\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787445935097\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787445696304\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787444610285\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787442135253\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787440316543\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787441419872\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787440117863\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787439602044\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787438561005\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787437520553\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787439221644\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787437671582\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787435202231\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787436647875\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787430187994\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787425099705\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787436416080\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_prod_check\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_projection_1787424938511\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_probe_1787497662275\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_probe_1787495153225\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_manual_probe_1787577664159_other\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_new_sync\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_manual_reprobe_1787577772903_other\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_ops_browser\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_matrix_1787492577997\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_manual_probe_1787577664159\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_manual_reprobe_1787577772903\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_four_platform_mock_20260824\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_four_platform_debug_20260824\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_full_coverage2\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_full_accept_1787492516891\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_full_coverage\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fd16faa753034669842f84bd\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fb25a7966d6a4a629891e582\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_four_platform_mock_20260824_final\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_four_platform_1787493417744\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fec23d22a0af49a093753187\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fab6943fa15a4aefad1fe574\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fcfac3afc5c8438c9e639b06\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_ffdeaa539ec3447091566598\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fedcf3108abe418dbcaa1768\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fcb12302d7974c1aa94a8274\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_e3cd60878fb44af79109b4a6\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_f5b89a832af84393b82ae9ba\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_f3bc4bf14ccc418e849e83d9\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fa80f4e64058469bb79e6176\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_fa10e13b7ed54ffb81d27ab7\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_f8ce67444d044da8abf62301\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_eef8acc226f94a138d637445\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_eee430cf1dc142898c6ed7e5\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_e23a084a25374af1807d137e\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_debug_err\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_dd1c8405d29c40109a764929\treconcile worker 自动执行模型用量结算重试\t\n详情\n\n8/31/2026, 3:46:15 PM\t运营操作\tworker:model-usage-reconciliation\tbilling.model-usage.reconciliation.worker\tmodel_usage / ws_ea560b70eca340e786b9e23f\treconcile worker 自动执行模型用量结算重试\t\n详情",
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n平台级\n正在查看平台聚合与控制面数据\n平台范围\n全平台\n工作区上下文\n未进入工作区\n客户内容默认不可见；进入工作区需受控授权\n平台治理\n总览\n用户与租户\n成员与权限\n客服与 CRM\n事故中心\n商家运营\n任务与内容\n平台连接\n平台规则\n模型与计费\n模型服务\n账务与退款\n风险与系统\n功能开关\n存储与对账\n审计中心\n受控支持入口\nWORKSPACE OPERATIONS\n商业与平台控制台\n平台运营\n身份 actor_demo\n+1 个角色\n工作台 \n平台控制台\n商家工作区\n平台全局\n策略 2026-08-31.v2\n连接诊断\nAUDIT TRAIL\n审计中心\n平台范围检索各授权租户的不可变审计事实；详情采用最小化、脱敏投影，跨租户导出请切换到具体工作区。\n不可变审计记录\n所有详情均为服务端脱敏投影\n刷新\n导出当前筛选\n关键词\n来源\n操作者\n动作\n资源类型\n开始时间\n结束时间\n筛选操作\n清除筛选\n已加载 100 / 259005 条审计记录\n平台聚合结果按服务端上限返回；请缩小时间或租户筛选范围，记录内容为服务端脱敏投影。\n已加载 100 条，共 259005 条，仍有未加载记录\n时间\t来源\t操作者\t动作\t资源\t原因\t操作\n\n时间\n\t\n来源\n\t\n操作者\n\t\n动作\n\t\n资源\n\t\n原因\n\t\n操作\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_visual_runtime_1787623165\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_worker_acceptance\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_9bafe9db-c2be-4d01-b84e-13b5f35b505e\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_task_bind_1787495318193\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_f88c7261-c6fe-429d-9bf5-a7d12daae435\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_678bf7ed-7741-4b29-8ce5-f3c3f843d50a\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_2bbbe76e-9db8-4902-9c47-a0fee5ace7c8\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_10bba714-a472-472c-96b7-61de607a3423\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_00f056d4-f960-49f0-86a0-664a9b9bd903\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_budget_1788181795652\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_storage_46b16760-5d31-422b-aec5-bf350a375d77\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_complete_1787576299405\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_status_semantics_1787495\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788191111795_1b0e4e1de8f38\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_smoke_final_1787496082\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_smoke_codex_1787493\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_budget_1788181768492\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_runtime_review\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788189527671_9e5efa8de96e5\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788184299444_fe6d4384239c9\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788182491289_c3e2dfedbcd56\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788181975803_2d136b1b8d086\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788181506259_11deb755b3d74\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787494383000\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_demo\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_run_budget_pg_1788181479610_b547cf85d2392\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_revoke_probe_1787493513690\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_revoke_fixed_1787493592466\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_retry_sync\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787436744293\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_revoke_final_1787493809004\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787420069753\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787436700961\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_smoke_1787419842141\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_redis_recovery\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787957935470\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787879959239\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787837876497\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_replica_final\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787958598213\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787873448782\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787834316252\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787829313615\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787840790835\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787834346609\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787826214934\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787813795706\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787511137257\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787811811725\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787815190828\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787444610285\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787493934587\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787445935097\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787445696304\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787447127307\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787444555217\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787444404179\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787442711319\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787438561005\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787437520553\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787436416080\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787440117863\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787439221644\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787436647875\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787435202231\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787442135253\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787439602044\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787441419872\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787437671582\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787440316543\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787430187994\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_prod_check\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_probe_1787495153225\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787425099705\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_new_sync\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_projection_1787424938511\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_reprobe_1787577772903\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_matrix_1787492577997\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_probe_1787497662275\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_full_coverage\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_probe_1787577664159_other\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_ops_browser\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_reprobe_1787577772903_other\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_manual_probe_1787577664159\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_full_accept_1787492516891\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_mock_20260824\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_full_coverage2\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_ffdeaa539ec3447091566598\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_mock_20260824_final\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_1787493417744\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_four_platform_debug_20260824\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fec23d22a0af49a093753187\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fb25a7966d6a4a629891e582\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fedcf3108abe418dbcaa1768\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fd16faa753034669842f84bd\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fa80f4e64058469bb79e6176\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fa10e13b7ed54ffb81d27ab7\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fcfac3afc5c8438c9e639b06\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fcb12302d7974c1aa94a8274\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情\n\n9/1/2026, 8:59:15 AM\t运营操作\tworker:support-sla\tsupport.sla.scan\tsupport_sla / ws_fab6943fa15a4aefad1fe574\treconcile worker 扫描客服 SLA 临期与违约事件\t\n详情",
       "buttons": [
         {
           "text": "关闭运营导航",
@@ -3120,11 +1891,7 @@
           "disabled": false
         },
         {
-          "text": "收起连接诊断",
-          "disabled": false
-        },
-        {
-          "text": "保存并刷新",
+          "text": "连接诊断",
           "disabled": false
         },
         {
@@ -3554,34 +2321,6 @@
           "placeholder": null,
           "label": null,
           "value": "on"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "真实运营 API 地址",
-          "label": null,
-          "value": "/api"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "工作区 ID",
-          "label": null,
-          "value": "ws_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "text",
-          "placeholder": "操作员 ID",
-          "label": null,
-          "value": "actor_demo"
-        },
-        {
-          "tag": "INPUT",
-          "type": "password",
-          "placeholder": "Bearer token（仅存本机）",
-          "label": null,
-          "value": "pilot-local-token"
         },
         {
           "tag": "INPUT",

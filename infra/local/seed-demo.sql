@@ -16,6 +16,27 @@ VALUES (
   '00000000-0000-4000-8000-000000000001',
   'ws_demo',
   'actor_demo',
+  '本地演示平台运营',
+  'platform_ops',
+  'active',
+  'local_compose_seed'
+)
+ON CONFLICT (workspace_id, external_subject) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status,
+  updated_at = now(),
+  revision = workspace_members.revision + 1
+WHERE (workspace_members.display_name, workspace_members.role, workspace_members.status)
+  IS DISTINCT FROM (EXCLUDED.display_name, EXCLUDED.role, EXCLUDED.status);
+
+INSERT INTO workspace_members (
+  id, workspace_id, external_subject, display_name, role, status, invited_by
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000003',
+  'ws_demo',
+  'workspace_admin_demo',
   '本地演示工作区所有者',
   'workspace_owner',
   'active',

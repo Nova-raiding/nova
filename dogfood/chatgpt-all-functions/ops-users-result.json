@@ -1,5 +1,5 @@
 {
   "errors": [],
-  "url": "http://127.0.0.1:18082/ops/users?workbench=platform",
+  "url": "http://127.0.0.1:18082/ops/users",
   "rows": 21
 }
