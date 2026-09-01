@@ -1043,8 +1043,8 @@ describe('security and access-control acceptance gates', () => {
     expect(restPublishDenied.error?.code).toBe('BRAND_ACCESS_REQUIRED')
     expect(service.listPublishJobs(workspaceId)).toHaveLength(0)
     expect((await mcp(editorHeaders, 7.1, 'task.history', {})).data?.result.items).toEqual([expect.objectContaining({ id: protectedTask.id })])
-    expect((await mcp(editorHeaders, 7.11, 'task.resume', { task_id: hiddenTask.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
-    expect((await mcp(editorHeaders, 7.2, 'task.resume', { task_id: protectedTask.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
+    expect((await mcp(editorHeaders, 7.11, 'task.resume', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 7.2, 'task.resume', { task_id: protectedTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
 
     expect((await mcp(ownerHeaders, 8, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'editor' })).error).toBeNull()
     expect((await mcp(editorHeaders, 8.1, 'catalog.image.select', { job_id: generatedJob.id, visual_ref: generatedVisualRef, expected_revision: String(generatedJob.revision), idempotency_key: `brand-select-${workspaceId}`, reason: '品牌候选图选择', confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: selectionIntentHash })).error?.code).toBe('INTERACTIVE_CONFIRMATION_TICKET_INVALID')

@@ -63,7 +63,7 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('task.timeline')).toMatchObject({ capability: 'customer.content.read', scope: 'brand', effect: 'read' })
     expect(getMcpMethodPolicy('ops.alert.ack')).toMatchObject({ capability: 'marketing.alert.update', effect: 'write' })
     expect(getMcpMethodPolicy('rule.status')).toMatchObject({ capability: 'rule.update', effect: 'write' })
-    expect(getMcpMethodPolicy('task.resume')).toMatchObject({ capability: 'customer.content.update', effect: 'write' })
+    expect(getMcpMethodPolicy('task.resume')).toMatchObject({ capability: 'customer.content.update', scope: 'brand', effect: 'write' })
     expect(getMcpMethodPolicy('task.clone')).toMatchObject({ capability: 'customer.content.update', effect: 'write' })
     expect(getMcpMethodPolicy('platform.mapping.preflight')).toMatchObject({ capability: 'platform.media_spec.read', scope: 'workspace', effect: 'read' })
     expect(getMcpMethodPolicy('platform.media.spec.get')).toMatchObject({ capability: 'platform.media_spec.read', scope: 'platform', effect: 'read' })
