@@ -5993,25 +5993,62 @@ function ProductDetailPreview({
 
 function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
   const [jobs, setJobs] = useState<ImageGenerationJobListItem[] | null>(null)
-  const [error, setError] = useState('')
+  const [initialError, setInitialError] = useState('')
+  const [refreshError, setRefreshError] = useState('')
   const [loading, setLoading] = useState(Boolean(baseUrl))
+  const [reload, setReload] = useState(0)
+  const lastSuccessfulJobsRef = useRef<ImageGenerationJobListItem[]>([])
   useEffect(() => {
-    if (!baseUrl) { setLoading(false); return }
+    if (!baseUrl) {
+      lastSuccessfulJobsRef.current = []
+      setLoading(false)
+      setJobs(null)
+      setInitialError('')
+      setRefreshError('')
+      return
+    }
     let active = true
-    setLoading(true)
-    void fetchImageGenerationJobs(baseUrl)
-      .then(value => { if (active) { setJobs(value.items); setError('') } })
-      .catch(cause => { if (active) setError(describeApiError(cause)) })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [baseUrl])
+    let inFlight = false
+    const load = (showLoading: boolean) => {
+      if (inFlight) return
+      inFlight = true
+      if (showLoading && !lastSuccessfulJobsRef.current.length) setLoading(true)
+      void fetchImageGenerationJobs(baseUrl)
+        .then(value => {
+          if (!active) return
+          lastSuccessfulJobsRef.current = value.items
+          setJobs(value.items)
+          setInitialError('')
+          setRefreshError('')
+        })
+        .catch(cause => {
+          if (!active) return
+          const message = describeApiError(cause)
+          if (lastSuccessfulJobsRef.current.length) {
+            setJobs(lastSuccessfulJobsRef.current)
+            setRefreshError(message)
+          } else {
+            setInitialError(message)
+          }
+        })
+        .finally(() => {
+          inFlight = false
+          if (active && showLoading) setLoading(false)
+        })
+    }
+    load(true)
+    const timer = window.setInterval(() => load(false), 5_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [baseUrl, reload])
   const stateLabels: Record<string, string> = { queued: '排队中', running: '处理中', succeeded: '生成完成，等待审查', failed: '生成失败', pending: '归档中，等待安全扫描', partial: '部分归档，等待补偿', external_unarchived: '归档未确认，等待对账', provider_reserved: imageGenerationExecutionLabel('provider_reserved'), provider_dispatching: imageGenerationExecutionLabel('provider_dispatching'), provider_started: imageGenerationExecutionLabel('provider_started'), outcome_unknown: imageGenerationExecutionLabel('outcome_unknown') }
   if (!baseUrl) return <div className="info-notice" role="status">配置 API 后才能发现真实图片任务。</div>
+  const listReady = !loading && jobs !== null
   return <section className="panel image-generation-discovery" aria-labelledby="image-job-discovery-title" aria-busy={loading}>
     <div className="detail-section-head"><div><span className="section-kicker">IMAGE TASKS</span><h3 id="image-job-discovery-title">图片任务</h3></div><StatusChip tone="blue">{loading ? '读取中…' : `${jobs?.length ?? 0} 个任务`}</StatusChip></div>
-    {error && <ErrorNotice message={`图片任务列表读取失败：${error}`} onRetry={() => { setJobs(null); setError(''); setLoading(true); void fetchImageGenerationJobs(baseUrl).then(value => setJobs(value.items)).catch(cause => setError(describeApiError(cause))).finally(() => setLoading(false)) }} />}
-    {!loading && !error && jobs?.length === 0 && <div className="empty-state"><ImageIcon size={22} /><b>暂无图片任务</b><span>从商品任务进入图片生成；系统不会自动创建演示任务。</span></div>}
-    {!error && Boolean(jobs?.length) && <div className="image-generation-job-list">{jobs?.map(job => <div className="image-generation-job-row" key={job.jobId}>
+    {initialError && !loading && <ErrorNotice message={`图片任务列表读取失败：${initialError}`} onRetry={() => setReload(value => value + 1)} />}
+    {refreshError && listReady && <ErrorNotice message={`图片任务自动刷新失败：${refreshError}。已保留上次成功数据。`} onRetry={() => setReload(value => value + 1)} />}
+    {listReady && !initialError && jobs?.length === 0 && <div className="empty-state"><ImageIcon size={22} /><b>暂无图片任务</b><span>从商品任务进入图片生成；系统不会自动创建演示任务。</span></div>}
+    {listReady && !initialError && Boolean(jobs?.length) && <div className="image-generation-job-list">{jobs?.map(job => <div className="image-generation-job-row" key={job.jobId}>
       <div><b>{job.productTitle ?? `商品 ${job.productId}`}</b><span>{job.platform ?? '平台待恢复'} · {job.storeName ?? '店铺身份待恢复'} · {stateLabels[job.executionState ?? (job.archiveState !== 'archived' ? job.archiveState : job.state)] ?? '状态待确认'} · {job.candidateCount} 张候选</span></div>
       <StatusChip tone={job.executionState === 'outcome_unknown' || job.state === 'failed' || job.archiveState === 'external_unarchived' ? 'amber' : job.state === 'succeeded' && job.archiveState === 'archived' ? 'green' : 'blue'}>{stateLabels[job.executionState ?? (job.archiveState !== 'archived' ? job.archiveState : job.state)] ?? '状态待确认'}</StatusChip>
       <button className="text-button" type="button" onClick={() => { window.location.href = `${window.location.pathname}?image_job=${encodeURIComponent(job.jobId)}` }}>查看任务 <ArrowRight size={14} /></button>
