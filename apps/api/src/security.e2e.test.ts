@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
@@ -78,6 +78,15 @@ afterEach(async () => {
 })
 
 describe('security and access-control acceptance gates', () => {
+  it('rejects malformed audit identity context before the sink is called', () => {
+    expect(() => validateOperationAuditContext({
+      workspaceId: 'ws_security_audit',
+      actorId: 'actor\nforged',
+      action: 'authz.decision',
+      resourceType: 'mcp_method',
+      resourceId: 'catalog.search',
+    })).toThrowError(expect.objectContaining({ code: 'AUTHZ_AUDIT_CONTEXT_INVALID' }))
+  })
   it('requires full enforcement and durable role authority in production while retaining staged non-production policy tests', () => {
     expect(productionAuthorizationReadiness({ NODE_ENV: 'production', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' })).toMatchObject({ ready: true, reasons: [], coverage: { mode: 'enforce', enforcement_ratio: 1, shadow_method_count: 0, shadow_domains: [] } })
     expect(productionAuthorizationReadiness({ NODE_ENV: 'production', MCP_AUTHZ_MODE: 'shadow', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' })).toMatchObject({ ready: false, reasons: ['mcp_authz_mode_not_enforce'] })

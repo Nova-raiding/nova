@@ -8527,7 +8527,19 @@ async function refundTaskUsage(workspaceId: string, taskId: string, idempotencyK
   return refunded
 }
 
+const auditIdentityPattern = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/u
+
+/** Security evidence must always have a concrete, unambiguous identity. */
+export function validateOperationAuditContext(input: Pick<import('../../../packages/persistence/src/index.js').OperationAudit, 'workspaceId' | 'actorId' | 'action' | 'resourceType' | 'resourceId'>) {
+  const fields = [input.workspaceId, input.actorId, input.action, input.resourceType, input.resourceId]
+  if (fields.some(value => typeof value !== 'string' || !auditIdentityPattern.test(value))) {
+    throw new DomainError('AUTHZ_AUDIT_CONTEXT_INVALID', '授权审计上下文无效，操作已拒绝', 503)
+  }
+  return true
+}
+
 async function recordOperationAudit(input: Omit<import('../../../packages/persistence/src/index.js').OperationAudit, 'id' | 'createdAt'>) {
+  validateOperationAuditContext(input)
   await (persistence.operations ?? memoryOperations).append({ ...input, reason: redactAuditReason(input.reason) })
 }
 
