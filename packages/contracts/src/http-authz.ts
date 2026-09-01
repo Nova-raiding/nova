@@ -103,7 +103,7 @@ export const HTTP_OPERATION_POLICIES = [
   identity('POST', '/v1/content-versions/{contentVersionId}/restore', 'content.restore'),
   identity('GET', '/v1/content-versions/{contentVersionId}/export', 'content.export'),
   identity('POST', '/v1/tasks/{taskId}/publish-preview', 'publish.prepare'),
-  identity('GET', '/v1/publish-jobs', 'publish.get'),
+  identity('GET', '/v1/publish-jobs', 'publish.batch.get'),
   identity('POST', '/v1/publish-jobs', 'publish.confirm'),
   identity('GET', '/v1/publish-jobs/{jobId}', 'publish.get'),
   machine('GET', '/v1/generation-jobs/{jobId}', 'worker'),
