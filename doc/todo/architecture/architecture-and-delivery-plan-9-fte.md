@@ -390,7 +390,8 @@ Runtime                                         50 家容量 [Load+Fault]
 
 - [x] T1 P1/P5/P9：冻结 domain、Connector、Job、error、state、capacity profile 契约。
   - 本地证据：`cd5b0b6` 的 domain/task/fact/publish、connector/job contract tests 已通过；capacity profile 合同与 `eb815ea` release freshness simulation 已通过，worker migration tail 与 source manifest digest 不一致时会 fail-closed。真实目标部署仍不由此项声明覆盖。
-- [ ] T2 P2/P3/P4：六 profile fixture、contract tests 和 capability evidence。
+- [x] T2 P2/P3/P4：六 profile fixture、contract tests 和 capability evidence。
+  - 本地证据：`f2cef8d` 六平台 raw/canonical golden fixture、`5efe003`/`be29b31` registry/policy parity、`6db5ab5` rendered configuration evidence tests 已通过；真实平台能力授权与目标部署证据仍需外部验证。
 - [x] T3 P1/P5/P7：Workspace scope、Vault、PostgreSQL migration、对象存储与版本。
   - 本地证据：`d936ed6` canonical/listing workspace 与唯一性测试、`0938909` migration chain integrity、`57b7e03` object-storage evidence gate 已通过；真实 Vault、目标对象存储和部署环境证据仍需外部签署。
 - [ ] T4 P6/P8：Task snapshot、Prompt schema、黄金集、deterministic/model review。
