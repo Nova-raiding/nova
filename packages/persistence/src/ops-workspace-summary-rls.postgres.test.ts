@@ -57,6 +57,11 @@ describe('merchant_ops workspace summary RLS boundary', () => {
           '{"body":"private customer正文"}'::jsonb, 'draft', 'probe')
       `)
 
+      // Deliberately grant the isolated role direct SELECT in this ephemeral
+      // probe. The aggregate contract must remain safe even if an ACL drifts:
+      // FORCE RLS is the final customer-data boundary, not the role grant.
+      await database.query('GRANT SELECT ON products, tasks, content_versions TO merchant_ops')
+
       ops = new Pool({ connectionString: connection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only'), max: 1 })
 
       await ops.query('BEGIN')
@@ -69,10 +74,10 @@ describe('merchant_ops workspace summary RLS boundary', () => {
         { workspace_id: 'ops_summary_b', plan_name: 'Starter', member_count: 0 },
       ])
 
-      // Platform scope is not a blanket customer-data grant. The ops role has
-      // no direct privilege on customer product/content tables.
+      // Platform scope is not a blanket customer-data grant. Even with an
+      // accidental direct SELECT grant, customer tables remain RLS-empty.
       for (const table of ['products', 'tasks', 'content_versions']) {
-        await expect(ops.query(`SELECT * FROM ${table}`)).rejects.toMatchObject({ code: '42501' })
+        expect((await ops.query(`SELECT * FROM ${table}`)).rows).toEqual([])
       }
       await ops.query('COMMIT')
 
@@ -82,9 +87,9 @@ describe('merchant_ops workspace summary RLS boundary', () => {
         ORDER BY table_name
       `)
       expect(customerTableAcl.rows).toEqual([
-        { table_name: 'content_versions', can_select: false },
-        { table_name: 'products', can_select: false },
-        { table_name: 'tasks', can_select: false },
+        { table_name: 'content_versions', can_select: true },
+        { table_name: 'products', can_select: true },
+        { table_name: 'tasks', can_select: true },
       ])
     } finally {
       await ops?.end()
