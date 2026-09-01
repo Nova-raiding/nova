@@ -35,6 +35,17 @@ describe("authorization projection", () => {
     expect(authorization.can("marketing.queue.update")).toBe(false);
   });
 
+  it("fails closed for an effective permission with an unknown effect", () => {
+    const authorization = createAuthorizationProjection(session(["workspace_owner"], {
+      effective_permissions: [
+        { capability: "marketing.queue.read", effect: "future_effect" as never, scope: { type: "workspace", ids: ["ws_1"] } },
+      ],
+    }), false);
+    expect(authorization.can("marketing.queue.read")).toBe(false);
+    expect(authorization.scopeFor("marketing.queue.read")).toBeUndefined();
+    expect(authorization.capabilities).not.toContain("marketing.queue.read");
+  });
+
   it("preserves server-projected capability scope for desktop explanations", () => {
     const authorization = createAuthorizationProjection(session(["workspace_owner"], {
       effective_permissions: [

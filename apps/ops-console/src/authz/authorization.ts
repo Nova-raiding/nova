@@ -56,7 +56,7 @@ function serverPermissions(session: OpsSession) {
     const id = (typeof permission === "string" ? permission : permission.capability ?? permission.id ?? "").trim();
     if (!id) continue;
     if (typeof permission !== "string" && permission.effect === "deny") deny.add(id);
-    else {
+    else if (typeof permission === "string" || permission.effect === "allow") {
       allow.add(id);
       if (typeof permission !== "string" && permission.scope) {
         scopes.set(id, { kind: permission.scope.type, id: permission.scope.id ?? permission.scope.ids?.[0], ids: permission.scope.ids });
