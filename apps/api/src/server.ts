@@ -389,7 +389,7 @@ function paymentChannel(params: Record<string, unknown>): PaymentChannel {
 
 async function createSubscriptionCheckout(input: { channel: PaymentChannel; orderId: string; idempotencyKey: string; workspaceId: string; amountFen: number; kind: 'subscriptions' }) {
   const providerMode = process.env.PAYMENT_MODE === 'provider'
-  if (!providerMode) return fixturePaymentProvider.createCheckout(input)
+  if (!providerMode) return fixturePaymentProvider.createCheckout({ ...input, callbackUrl: `fixture://${input.workspaceId}/callback`, description: `merchant-marketing 订阅订单 ${input.orderId}` })
   if (!paymentProvider) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付 provider adapter 未装配', 503)
   const callbackBase = process.env.PAYMENT_CALLBACK_BASE_URL?.trim().replace(/\/$/u, '')
   if (!callbackBase) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付回调地址未配置', 503)
