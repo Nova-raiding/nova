@@ -405,6 +405,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const authorizationEventsAppendOnly = await readFile(new URL('./migrations/125_authorization_events_append_only.sql', import.meta.url), 'utf8')
   const contextSnapshotCanonicalScopeIntegrity = await readFile(new URL('./migrations/126_context_snapshot_canonical_scope_integrity.sql', import.meta.url), 'utf8')
   const validatePlatformRoleBoundary = await readFile(new URL('./migrations/127_validate_platform_role_boundary.sql', import.meta.url), 'utf8')
+  const productListingIdentityUniqueness = await readFile(new URL('./migrations/128_product_listing_identity_uniqueness.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -533,6 +534,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 125, name: 'authorization_events_append_only', sql: authorizationEventsAppendOnly },
     { version: 126, name: 'context_snapshot_canonical_scope_integrity', sql: contextSnapshotCanonicalScopeIntegrity },
     { version: 127, name: 'validate_platform_role_boundary', sql: validatePlatformRoleBoundary },
+    { version: 128, name: 'product_listing_identity_uniqueness', sql: productListingIdentityUniqueness },
   ]
 }
 

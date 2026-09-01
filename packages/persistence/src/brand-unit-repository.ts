@@ -454,10 +454,16 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
   async createListing(input: { workspaceId: string; id: string; brandId: string; canonicalProductId: string; platform: BrandUnitPlatform; accountId: string; remoteProductId?: string }) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
-      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${input.workspaceId}\u0000${input.brandId}\u0000${input.canonicalProductId}\u0000${input.platform}\u0000${input.accountId}`])
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${input.workspaceId}\u001f${input.brandId}\u001f${input.canonicalProductId}\u001f${input.platform}\u001f${input.accountId}`])
       const duplicate = await client.query<{ id: string }>(`SELECT id FROM product_listings WHERE workspace_id=$1 AND brand_id=$2 AND canonical_product_id=$3 AND platform=$4 AND platform_account_id=$5 LIMIT 1`, [input.workspaceId, input.brandId, input.canonicalProductId, input.platform, input.accountId])
       if (duplicate.rows[0]) throw new Error('PRODUCT_LISTING_IDENTITY_CONFLICT')
-      const result = await client.query<ProductListingRow>(`INSERT INTO product_listings (id, workspace_id, brand_id, canonical_product_id, platform, platform_account_id, remote_product_id) SELECT $1,$2,$3,$4,$5,$6,$7 FROM canonical_products canonical WHERE canonical.workspace_id=$2 AND canonical.brand_id=$3 AND canonical.id=$4 RETURNING id, workspace_id AS "workspaceId", brand_id AS "brandId", canonical_product_id AS "canonicalProductId", platform, platform_account_id AS "accountId", remote_product_id AS "remoteProductId", state, created_at AS "createdAt", updated_at AS "updatedAt"`, [input.id, input.workspaceId, input.brandId, input.canonicalProductId, input.platform, input.accountId, input.remoteProductId ?? null])
+      let result: { rows: ProductListingRow[] }
+      try {
+        result = await client.query<ProductListingRow>(`INSERT INTO product_listings (id, workspace_id, brand_id, canonical_product_id, platform, platform_account_id, remote_product_id) SELECT $1,$2,$3,$4,$5,$6,$7 FROM canonical_products canonical WHERE canonical.workspace_id=$2 AND canonical.brand_id=$3 AND canonical.id=$4 RETURNING id, workspace_id AS "workspaceId", brand_id AS "brandId", canonical_product_id AS "canonicalProductId", platform, platform_account_id AS "accountId", remote_product_id AS "remoteProductId", state, created_at AS "createdAt", updated_at AS "updatedAt"`, [input.id, input.workspaceId, input.brandId, input.canonicalProductId, input.platform, input.accountId, input.remoteProductId ?? null])
+      } catch (error) {
+        if ((error as { code?: string; constraint?: string }).code === '23505' && (error as { constraint?: string }).constraint === 'product_listings_canonical_identity_key') throw new Error('PRODUCT_LISTING_IDENTITY_CONFLICT')
+        throw error
+      }
       const row = result.rows[0]
       if (!row) throw new Error('PRODUCT_LISTING_CANONICAL_NOT_FOUND')
       return row
