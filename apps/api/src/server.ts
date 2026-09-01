@@ -4589,6 +4589,19 @@ async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: st
   })
 }
 
+export function authorizationDenialDetails(decision: AuthorizationDecision) {
+  return {
+    decision_id: decision.decision_id,
+    capability: decision.capability,
+    reason_code: decision.reason_code,
+    required_scope: decision.scope.required,
+    workbench: decision.workbench,
+    explicit_deny: decision.explicit_deny,
+    obligations_missing: [...decision.obligations.missing],
+    policy_version: decision.policy_version,
+  }
+}
+
 async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId: string, method: string, params: Record<string, unknown>) {
   const policy = getMcpMethodPolicy(method)
   if (!policy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前方法缺少服务端授权策略，已拒绝执行', 503)
@@ -4618,7 +4631,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   }
   await recordAuthorizationDecision(req, workspaceId, decision)
   requestAuthorizationDecisions.set(req, decision)
-  if (!decision.allowed) throw new DomainError(ERROR_CODES.FORBIDDEN, `当前身份授权决策拒绝 ${policy.capability}`, 403, { decision_id: decision.decision_id, capability: policy.capability, reason_code: decision.reason_code, obligations_missing: decision.obligations.missing, policy_version: AUTHZ_POLICY_VERSION })
+  if (!decision.allowed) throw new DomainError(ERROR_CODES.FORBIDDEN, `当前身份授权决策拒绝 ${policy.capability}`, 403, authorizationDenialDetails(decision))
   if (decision.authorized && principal?.identityId) {
     const matches = (atom: PermissionAtom) => atom.capability === policy.capability
       && atom.effect === 'allow'

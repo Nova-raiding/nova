@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
@@ -51,6 +51,33 @@ describe('worker authorization snapshot eligibility', () => {
     expect(workerAuthorizationDecisionMatches(decision({ workbench: 'platform' }), 'ws_a', 'customer.content.update')).toBe(false)
   })
 
+})
+
+describe('authorization denial error details', () => {
+  const base: AuthorizationDecision = {
+    decision_id: 'authz_denied', policy_version: '2026-08-31.v2', method: 'content.generate', capability: 'customer.content.update', workbench: 'workspace',
+    scope: { required: 'workspace', resource_id: 'secret-resource-id', resolved: [{ type: 'workspace', ids: ['secret-workspace-id'] }] }, mode: 'enforce', enforced: true,
+    authorized: false, allowed: false, result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING', explicit_deny: false,
+    obligations: { required: ['reason'], satisfied: [], missing: ['reason'] },
+  }
+
+  it.each([
+    'AUTHZ_CAPABILITY_MISSING',
+    'AUTHZ_SCOPE_MISMATCH',
+    'AUTHZ_WORKBENCH_MISMATCH',
+    'AUTHZ_EXPLICIT_DENY',
+    'AUTHZ_OBLIGATION_REQUIRED',
+  ] as const)('maps %s to stable minimal details without resource identifiers', (reasonCode) => {
+    const details = authorizationDenialDetails({ ...base, reason_code: reasonCode, explicit_deny: reasonCode === 'AUTHZ_EXPLICIT_DENY' })
+
+    expect(details).toEqual({
+      decision_id: 'authz_denied', capability: 'customer.content.update', reason_code: reasonCode,
+      required_scope: 'workspace', workbench: 'workspace', explicit_deny: reasonCode === 'AUTHZ_EXPLICIT_DENY',
+      obligations_missing: ['reason'], policy_version: '2026-08-31.v2',
+    })
+    expect(JSON.stringify(details)).not.toContain('secret-resource-id')
+    expect(JSON.stringify(details)).not.toContain('secret-workspace-id')
+  })
 })
 
 describe('CSV export safety', () => {
