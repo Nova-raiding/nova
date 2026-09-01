@@ -58,6 +58,38 @@ export interface ContentModule {
   /** SKU IDs explicitly used by this module; used for deterministic mapping checks. */
   referencedSkuIds?: string[]
   imageGuidance?: string
+  /** Buyer-decision and proof contract for newly generated detail-page modules. */
+  decisionContract?: DetailPageDecisionContract
+}
+
+export type DetailPageEvidenceType = 'real_image' | 'parameter' | 'test_report' | 'comparison' | 'usage_result' | 'manual_review'
+export type DetailPageEvidenceStatus = 'verified' | 'missing' | 'expired' | 'conflict'
+
+export interface DetailPageDecisionContract {
+  buyerQuestion: string
+  pageTask: string
+  claim: {
+    text: string
+    factSourceIds: string[]
+    skuIds?: string[]
+    platforms: string[]
+    regions?: string[]
+    validUntil?: string
+    limitations: string[]
+  }
+  evidence: {
+    type: DetailPageEvidenceType
+    sourceIds: string[]
+    status: DetailPageEvidenceStatus
+  }
+  visualContract: {
+    requiredElements: string[]
+    protectedElements: string[]
+    prohibitedImplications: string[]
+    accessibilityText: string
+  }
+  priority: number
+  optional: boolean
 }
 
 export interface StaticBrief {
@@ -125,7 +157,7 @@ function normalizeProviderStructure(value: unknown, input: ContentGenerationInpu
 }
 
 /** Validate without repairing or silently dropping fields. This is the trust boundary for model/Codex output. */
-export function validateContentSchema(value: unknown, source = 'content'): GeneratedContent {
+export function validateContentSchema(value: unknown, source = 'content', options: { requireDecisionContracts?: boolean } = {}): GeneratedContent {
   const errors: string[] = []
   const requiredText = (record: Record<string, unknown>, key: string, errorPath = key) => {
     if (typeof record[key] !== 'string' || !(record[key] as string).trim()) errors.push(`${errorPath} 必须是非空字符串`)
@@ -157,7 +189,12 @@ export function validateContentSchema(value: unknown, source = 'content'): Gener
         const referenced = raw.referencedSkuIds
         if (referenced !== undefined && (!Array.isArray(referenced) || referenced.some(item => typeof item !== 'string' || !item.trim()))) errors.push(`modules[${index}].referencedSkuIds 必须是字符串数组`)
         if (raw.imageGuidance !== undefined && (typeof raw.imageGuidance !== 'string' || !raw.imageGuidance.trim())) errors.push(`modules[${index}].imageGuidance 必须是非空字符串`)
-        return normalizedContentKind ? { key, title: moduleTitle, purpose, body, factSourceIds, contentKind: normalizedContentKind, ...(typeof raw.pendingReason === 'string' && raw.pendingReason.trim() ? { pendingReason: raw.pendingReason.trim() } : {}), ...(Array.isArray(referenced) && referenced.length ? { referencedSkuIds: referenced.filter((item): item is string => typeof item === 'string').map(item => item.trim()) } : {}), ...(typeof raw.imageGuidance === 'string' && raw.imageGuidance.trim() ? { imageGuidance: raw.imageGuidance.trim() } : {}) } : undefined
+        const decisionContract = validateDecisionContract(raw.decisionContract, index, errors, options.requireDecisionContracts === true)
+        if (decisionContract && decisionContract.claim.factSourceIds.some(sourceId => !factSourceIds.includes(sourceId))) errors.push(`modules[${index}].decisionContract.claim.factSourceIds 必须属于模块 factSourceIds`)
+        if (decisionContract?.claim.skuIds?.length && !Array.isArray(referenced)) errors.push(`modules[${index}].referencedSkuIds 在 claim.skuIds 存在时不能为空`)
+        else if (decisionContract?.claim.skuIds && Array.isArray(referenced) && decisionContract.claim.skuIds.some(skuId => !referenced.includes(skuId))) errors.push(`modules[${index}].decisionContract.claim.skuIds 必须属于 referencedSkuIds`)
+        if (decisionContract?.evidence.status === 'verified' && decisionContract.evidence.sourceIds.some(sourceId => !decisionContract.claim.factSourceIds.includes(sourceId))) errors.push(`modules[${index}].decisionContract.evidence.sourceIds 必须属于 claim.factSourceIds`)
+        return normalizedContentKind ? { key, title: moduleTitle, purpose, body, factSourceIds, contentKind: normalizedContentKind, ...(typeof raw.pendingReason === 'string' && raw.pendingReason.trim() ? { pendingReason: raw.pendingReason.trim() } : {}), ...(Array.isArray(referenced) && referenced.length ? { referencedSkuIds: referenced.filter((item): item is string => typeof item === 'string').map(item => item.trim()) } : {}), ...(typeof raw.imageGuidance === 'string' && raw.imageGuidance.trim() ? { imageGuidance: raw.imageGuidance.trim() } : {}), ...(decisionContract ? { decisionContract } : {}) } : undefined
       }).filter((item): item is ContentModule => Boolean(item))
     }
   }
@@ -184,14 +221,71 @@ export function validateContentSchema(value: unknown, source = 'content'): Gener
   return { title, detail, sellingPoints: (value.sellingPoints as string[]).map(item => item.trim()), ...(modules ? { modules } : {}), ...(brief ? { brief } : {}) }
 }
 
-function validate(value: unknown): GeneratedContent { return validateContentSchema(value, '模型响应') }
+function stringList(record: Record<string, unknown>, key: string, path: string, errors: string[], options: { allowEmpty?: boolean } = {}) {
+  const value = record[key]
+  if (!Array.isArray(value) || (!options.allowEmpty && value.length === 0) || value.some(item => typeof item !== 'string' || !item.trim())) errors.push(`${path} 必须是${options.allowEmpty ? '' : '非空'}字符串数组`)
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map(item => item.trim()) : []
+}
+
+function validateDecisionContract(value: unknown, index: number, errors: string[], required: boolean): DetailPageDecisionContract | undefined {
+  const base = `modules[${index}].decisionContract`
+  if (value === undefined) {
+    if (required) errors.push(`${base} 必须是对象`)
+    return undefined
+  }
+  if (!isRecord(value)) { errors.push(`${base} 必须是对象`); return undefined }
+  const text = (record: Record<string, unknown>, key: string, path: string) => {
+    if (typeof record[key] !== 'string' || !record[key].trim()) errors.push(`${path} 必须是非空字符串`)
+    return typeof record[key] === 'string' ? record[key].trim() : ''
+  }
+  const buyerQuestion = text(value, 'buyerQuestion', `${base}.buyerQuestion`)
+  const pageTask = text(value, 'pageTask', `${base}.pageTask`)
+  const rawClaim = value.claim
+  const rawEvidence = value.evidence
+  const rawVisual = value.visualContract
+  if (!isRecord(rawClaim)) errors.push(`${base}.claim 必须是对象`)
+  if (!isRecord(rawEvidence)) errors.push(`${base}.evidence 必须是对象`)
+  if (!isRecord(rawVisual)) errors.push(`${base}.visualContract 必须是对象`)
+  if (!isRecord(rawClaim) || !isRecord(rawEvidence) || !isRecord(rawVisual)) return undefined
+  const claimText = text(rawClaim, 'text', `${base}.claim.text`)
+  const factSourceIds = stringList(rawClaim, 'factSourceIds', `${base}.claim.factSourceIds`, errors)
+  const skuIds = rawClaim.skuIds === undefined ? undefined : stringList(rawClaim, 'skuIds', `${base}.claim.skuIds`, errors, { allowEmpty: true })
+  const platforms = stringList(rawClaim, 'platforms', `${base}.claim.platforms`, errors)
+  const regions = rawClaim.regions === undefined ? undefined : stringList(rawClaim, 'regions', `${base}.claim.regions`, errors, { allowEmpty: true })
+  const limitations = stringList(rawClaim, 'limitations', `${base}.claim.limitations`, errors, { allowEmpty: true })
+  const validUntil = rawClaim.validUntil === undefined ? undefined : text(rawClaim, 'validUntil', `${base}.claim.validUntil`)
+  if (validUntil && Number.isNaN(Date.parse(validUntil))) errors.push(`${base}.claim.validUntil 必须是有效时间`)
+  const evidenceType = rawEvidence.type
+  const evidenceStatus = rawEvidence.status
+  const evidenceTypes: DetailPageEvidenceType[] = ['real_image', 'parameter', 'test_report', 'comparison', 'usage_result', 'manual_review']
+  const evidenceStatuses: DetailPageEvidenceStatus[] = ['verified', 'missing', 'expired', 'conflict']
+  if (!evidenceTypes.includes(evidenceType as DetailPageEvidenceType)) errors.push(`${base}.evidence.type 不受支持`)
+  if (!evidenceStatuses.includes(evidenceStatus as DetailPageEvidenceStatus)) errors.push(`${base}.evidence.status 不受支持`)
+  const evidenceSourceIds = stringList(rawEvidence, 'sourceIds', `${base}.evidence.sourceIds`, errors, { allowEmpty: evidenceStatus !== 'verified' })
+  if (evidenceStatus === 'verified' && evidenceSourceIds.length === 0) errors.push(`${base}.evidence.sourceIds 在 verified 时不能为空`)
+  const requiredElements = stringList(rawVisual, 'requiredElements', `${base}.visualContract.requiredElements`, errors)
+  const protectedElements = stringList(rawVisual, 'protectedElements', `${base}.visualContract.protectedElements`, errors, { allowEmpty: true })
+  const prohibitedImplications = stringList(rawVisual, 'prohibitedImplications', `${base}.visualContract.prohibitedImplications`, errors, { allowEmpty: true })
+  const accessibilityText = text(rawVisual, 'accessibilityText', `${base}.visualContract.accessibilityText`)
+  if (!Number.isInteger(value.priority) || Number(value.priority) < 1 || Number(value.priority) > 100) errors.push(`${base}.priority 必须是 1 至 100 的整数`)
+  if (typeof value.optional !== 'boolean') errors.push(`${base}.optional 必须是布尔值`)
+  return {
+    buyerQuestion, pageTask,
+    claim: { text: claimText, factSourceIds, ...(skuIds ? { skuIds } : {}), platforms, ...(regions ? { regions } : {}), ...(validUntil ? { validUntil } : {}), limitations },
+    evidence: { type: evidenceType as DetailPageEvidenceType, sourceIds: evidenceSourceIds, status: evidenceStatus as DetailPageEvidenceStatus },
+    visualContract: { requiredElements, protectedElements, prohibitedImplications, accessibilityText },
+    priority: Number(value.priority), optional: value.optional as boolean,
+  }
+}
+
+function validate(value: unknown): GeneratedContent { return validateContentSchema(value, '模型响应', { requireDecisionContracts: true }) }
 
 function prompt(input: ContentGenerationInput) {
   const { usageContext: _usageContext, ...providerInput } = input
   return JSON.stringify({
     role: 'commerce-content-generation',
     knowledgePolicy: 'knowledgeContext.rules are frozen task rules; knowledgeContext.assets have confirmed=false and are reference-only, never product facts; confirmedLearningSuggestions are suggestions and never bypass rule approval; competitorReferences are structured observations only and must not be copied into product claims or verbatim expression.',
-    instruction: '根据商品事实生成合规电商营销内容。不得编造事实，不得使用绝对化或最高级宣传；promotion 只能使用输入中已确认且仍在 validFrom/validTo 内的价格/优惠，必须按 skuIds 限定，不得自行合并不同 SKU 价格。brandVisualRules 是商家已确认的强约束，必须原样遵守，不得改色、变形、重绘 Logo，不得使用禁用色或未批准字体，也不得出现 restrictedSubjects 中列明的禁用内容、人物、代言人或 IP。referenceAssets 中 excellent 素材及原因只用于风格参考，不得把参考素材内容当作当前商品事实；disliked 素材不得进入参考集合。competitorReferences 只用于差异化结构和表达方向，禁止复制竞品原文、品牌或未经确认的卖点。只返回 JSON：title、detail、sellingPoints、modules、brief。modules 中每项必须包含 key、title、purpose、body、factSourceIds 和 contentKind（fact=已确认事实，creative=创意表达，pending=资料缺失）；contentKind=pending 时必须填写 pendingReason；可选 referencedSkuIds 和 imageGuidance；引用 SKU 时必须逐个填入 referencedSkuIds，不能用一个值代表多个 SKU；没有事实的模块省略。brief 必须包含 platform、placement、targetDimensions、visualHierarchy、productImageGuidance、logoSafety、headline、subheadline、coreSellingPoint、cta、textDensity、safeArea、protectedAreas，所有必填字符串都不得为空；输入未提供精确尺寸时 targetDimensions 必须填写“按目标平台版位规范配置，未配置时由设计确认”；价格没有输入时不要输出 priceExpression。',
+    instruction: '根据商品事实生成合规电商营销内容。不得编造事实，不得使用绝对化或最高级宣传；promotion 只能使用输入中已确认且仍在 validFrom/validTo 内的价格/优惠，必须按 skuIds 限定，不得自行合并不同 SKU 价格。brandVisualRules 是商家已确认的强约束，必须原样遵守，不得改色、变形、重绘 Logo，不得使用禁用色或未批准字体，也不得出现 restrictedSubjects 中列明的禁用内容、人物、代言人或 IP。referenceAssets 中 excellent 素材及原因只用于风格参考，不得把参考素材内容当作当前商品事实；disliked 素材不得进入参考集合。competitorReferences 只用于差异化结构和表达方向，禁止复制竞品原文、品牌或未经确认的卖点。只返回 JSON：title、detail、sellingPoints、modules、brief。modules 中每项必须包含 key、title、purpose、body、factSourceIds、contentKind 和 decisionContract。decisionContract 必须明确 buyerQuestion、pageTask、claim（text、factSourceIds、skuIds、platforms、regions、validUntil、limitations）、evidence（type、sourceIds、status）、visualContract（requiredElements、protectedElements、prohibitedImplications、accessibilityText）、priority、optional；verified 证据必须有 sourceIds，缺失、过期或冲突证据不得标记 verified。contentKind=pending 时必须填写 pendingReason；可选 referencedSkuIds 和 imageGuidance；引用 SKU 时必须逐个填入 referencedSkuIds，不能用一个值代表多个 SKU；没有事实的模块省略。brief 必须包含 platform、placement、targetDimensions、visualHierarchy、productImageGuidance、logoSafety、headline、subheadline、coreSellingPoint、cta、textDensity、safeArea、protectedAreas，所有必填字符串都不得为空；输入未提供精确尺寸时 targetDimensions 必须填写“按目标平台版位规范配置，未配置时由设计确认”；价格没有输入时不要输出 priceExpression。',
     input: providerInput,
   })
 }

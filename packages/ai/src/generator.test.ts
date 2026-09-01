@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { budgetContentGenerationInput, MAX_CONTENT_INPUT_TOKENS, OpenAICompatibleContentGenerator, createContentGeneratorFromEnv, resolveTokenBudget } from './generator.js'
+import { budgetContentGenerationInput, MAX_CONTENT_INPUT_TOKENS, OpenAICompatibleContentGenerator, createContentGeneratorFromEnv, resolveTokenBudget, validateContentSchema } from './generator.js'
 import { relayUsageReceiptKey, type RelayUsageRecord } from './relay-usage.js'
+
+const decisionContract = {
+  buyerQuestion: '我应该选择哪个规格？', pageTask: '帮助买家选择规格',
+  claim: { text: '蓝色/M', factSourceIds: ['product:p:v1'], skuIds: ['sku-m'], platforms: ['taobao'], limitations: ['仅适用于当前 SKU'] },
+  evidence: { type: 'parameter', sourceIds: ['product:p:v1'], status: 'verified' },
+  visualContract: { requiredElements: ['规格名称'], protectedElements: ['商品颜色'], prohibitedImplications: ['不得暗示其他 SKU 同样适用'], accessibilityText: '蓝色 M 规格' },
+  priority: 6, optional: false,
+} as const
 
 describe('content generator', () => {
   it('calls an OpenAI-compatible provider and validates structured output', async () => {
@@ -113,9 +121,17 @@ describe('content generator', () => {
   it('accepts a structured static brief without exposing provider secrets', async () => {
     const generator = new OpenAICompatibleContentGenerator({
       baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
-      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'sku', title: 'SKU', purpose: '区分规格', body: '蓝色/M', factSourceIds: ['product:p:v1'], contentKind: 'fact' }], brief: { platform: 'taobao', placement: '首图', targetDimensions: '800x800', visualHierarchy: ['商品图', '标题'], productImageGuidance: '使用真实图', logoSafety: '保留安全区', headline: '标题', subheadline: '副标题', coreSellingPoint: '卖点', cta: '立即查看', textDensity: '低', safeArea: '5%', protectedAreas: ['Logo'] } }) } }] }), { status: 200 }),
+      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'sku', title: 'SKU', purpose: '区分规格', body: '蓝色/M', factSourceIds: ['product:p:v1'], contentKind: 'fact', referencedSkuIds: ['sku-m'], decisionContract }], brief: { platform: 'taobao', placement: '首图', targetDimensions: '800x800', visualHierarchy: ['商品图', '标题'], productImageGuidance: '使用真实图', logoSafety: '保留安全区', headline: '标题', subheadline: '副标题', coreSellingPoint: '卖点', cta: '立即查看', textDensity: '低', safeArea: '5%', protectedAreas: ['Logo'] } }) } }] }), { status: 200 }),
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).resolves.toMatchObject({ modules: [{ key: 'sku' }], brief: { placement: '首图', targetDimensions: '800x800' } })
+  })
+
+  it('fails closed on missing or unsupported detail-page evidence contracts', () => {
+    const base = { title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'sku', title: 'SKU', purpose: '区分规格', body: '蓝色/M', factSourceIds: ['product:p:v1'], contentKind: 'fact' }] }
+    expect(() => validateContentSchema(base, 'test', { requireDecisionContracts: true })).toThrow('decisionContract')
+    expect(() => validateContentSchema({ ...base, modules: [{ ...base.modules[0], decisionContract: { ...decisionContract, evidence: { type: 'parameter', sourceIds: [], status: 'verified' } } }] }, 'test', { requireDecisionContracts: true })).toThrow('verified 时不能为空')
+    expect(() => validateContentSchema({ ...base, modules: [{ ...base.modules[0], decisionContract: { ...decisionContract, evidence: { type: 'invented', sourceIds: ['x'], status: 'verified' } } }] }, 'test', { requireDecisionContracts: true })).toThrow('evidence.type 不受支持')
+    expect(() => validateContentSchema({ ...base, modules: [{ ...base.modules[0], decisionContract: { ...decisionContract, claim: { ...decisionContract.claim, factSourceIds: ['other:source'] } } }] }, 'test', { requireDecisionContracts: true })).toThrow('必须属于模块 factSourceIds')
   })
 
   it('uses an explicit pending dimension instruction when the provider leaves only that creative field empty', async () => {

@@ -18,6 +18,15 @@ export interface ContentModule {
   readonly contentKind?: 'fact' | 'creative' | 'pending'
   readonly pendingReason?: string
   readonly imageGuidance?: string
+  readonly decisionContract?: {
+    readonly buyerQuestion: string
+    readonly pageTask: string
+    readonly claim: { readonly text: string; readonly factSourceIds: readonly string[]; readonly skuIds?: readonly string[]; readonly platforms: readonly string[]; readonly regions?: readonly string[]; readonly validUntil?: string; readonly limitations: readonly string[] }
+    readonly evidence: { readonly type: 'real_image' | 'parameter' | 'test_report' | 'comparison' | 'usage_result' | 'manual_review'; readonly sourceIds: readonly string[]; readonly status: 'verified' | 'missing' | 'expired' | 'conflict' }
+    readonly visualContract: { readonly requiredElements: readonly string[]; readonly protectedElements: readonly string[]; readonly prohibitedImplications: readonly string[]; readonly accessibilityText: string }
+    readonly priority: number
+    readonly optional: boolean
+  }
 }
 
 export interface StaticBrief {
@@ -49,7 +58,14 @@ export interface ContentVersion {
   readonly reason: string
 }
 
-const freezeBody = (body: ContentBody): ContentBody => Object.freeze({ ...body, sellingPoints: Object.freeze([...body.sellingPoints]), ...(body.modules ? { modules: Object.freeze(body.modules.map(module => Object.freeze({ ...module, factSourceIds: Object.freeze([...module.factSourceIds]) }))) } : {}), ...(body.brief ? { brief: Object.freeze({ ...body.brief, visualHierarchy: Object.freeze([...body.brief.visualHierarchy]), protectedAreas: Object.freeze([...body.brief.protectedAreas]) }) } : {}) })
+const freezeDecisionContract = (contract: NonNullable<ContentModule['decisionContract']>): NonNullable<ContentModule['decisionContract']> => Object.freeze({
+  ...contract,
+  claim: Object.freeze({ ...contract.claim, factSourceIds: Object.freeze([...contract.claim.factSourceIds]), ...(contract.claim.skuIds ? { skuIds: Object.freeze([...contract.claim.skuIds]) } : {}), platforms: Object.freeze([...contract.claim.platforms]), ...(contract.claim.regions ? { regions: Object.freeze([...contract.claim.regions]) } : {}), limitations: Object.freeze([...contract.claim.limitations]) }),
+  evidence: Object.freeze({ ...contract.evidence, sourceIds: Object.freeze([...contract.evidence.sourceIds]) }),
+  visualContract: Object.freeze({ ...contract.visualContract, requiredElements: Object.freeze([...contract.visualContract.requiredElements]), protectedElements: Object.freeze([...contract.visualContract.protectedElements]), prohibitedImplications: Object.freeze([...contract.visualContract.prohibitedImplications]) }),
+})
+
+const freezeBody = (body: ContentBody): ContentBody => Object.freeze({ ...body, sellingPoints: Object.freeze([...body.sellingPoints]), ...(body.modules ? { modules: Object.freeze(body.modules.map(module => Object.freeze({ ...module, factSourceIds: Object.freeze([...module.factSourceIds]), ...(module.decisionContract ? { decisionContract: freezeDecisionContract(module.decisionContract) } : {}) }))) } : {}), ...(body.brief ? { brief: Object.freeze({ ...body.brief, visualHierarchy: Object.freeze([...body.brief.visualHierarchy]), protectedAreas: Object.freeze([...body.brief.protectedAreas]) }) } : {}) })
 
 const create = (input: Omit<ContentVersion, 'body'> & { body: ContentBody }): ContentVersion =>
   Object.freeze({ ...input, body: freezeBody(input.body) })

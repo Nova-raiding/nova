@@ -5160,7 +5160,10 @@ function campaignDeliveryInput(campaign: CampaignBatchRow): CampaignDeliveryMani
   const manifestHash = campaign.manifestHash ?? createHash('sha256').update(JSON.stringify({ workspaceId: campaign.workspaceId, campaignId: campaign.id, brandId: campaign.brandId, productIds: campaign.productIds })).digest('hex')
   const items = (campaign.items ?? []).map(item => {
     const task = item.taskId ? service.tasks.get(item.taskId) : undefined
-    const listingId = item.listingId ?? `planned-listing:${item.id}`
+    // A campaign intent is not proof of a canonical listing. Never invent a
+    // production identity for an unbound item; validation below must surface
+    // the missing scope as an actionable blocked manifest.
+    const listingId = item.listingId ?? ''
     const contentVersionId = task?.contentVersionId ?? `planned-content:${item.id}`
     const contentHash = createHash('sha256').update(JSON.stringify({ campaignId: campaign.id, itemId: item.id, taskId: task?.id ?? null, taskVersion: task?.version ?? 0, contentVersionId })).digest('hex')
     const visualVersion = { id: `planned-visual:${item.id}`, hash: createHash('sha256').update(`${manifestHash}:${item.id}:visual`).digest('hex') }
@@ -5206,8 +5209,9 @@ async function validateCampaignDelivery(operation: CampaignDeliveryLifecycleOper
     if (operation === 'retry_failed') return (await adapter.retryFailed(request)).manifest
     return (await adapter.get(request)).manifest
   } catch (error) {
-    if (error instanceof CampaignManifestError && error.code === 'CAMPAIGN_ITEM_EVIDENCE_REQUIRED') {
-      const items = (campaign.items ?? []).map(item => ({ id: item.id, productId: item.productId, platform: item.platform, accountId: item.accountId, state: 'blocked' as const, nextAction: 'resolve_review' as const, blockers: [{ code: error.code, message: '缺少与当前平台、店铺和商品范围绑定的真实规格或规则证据', path: error.path ?? null }] }))
+    if (error instanceof CampaignManifestError && ['CAMPAIGN_ITEM_EVIDENCE_REQUIRED', 'CAMPAIGN_MANIFEST_INVALID'].includes(error.code)) {
+      const missingListing = error.code === 'CAMPAIGN_MANIFEST_INVALID'
+      const items = (campaign.items ?? []).map(item => ({ id: item.id, productId: item.productId, platform: item.platform, accountId: item.accountId, state: 'blocked' as const, nextAction: 'resolve_review' as const, blockers: [{ code: error.code, message: missingListing ? '缺少唯一规范 listing，不能伪造 planned-listing 身份' : '缺少与当前平台、店铺和商品范围绑定的真实规格或规则证据', path: error.path ?? null }] }))
       return { id: `delivery-manifest:${campaign.id}`, workspaceId, campaignId: campaign.id, brandId: campaign.brandId, state: campaign.state === 'paused' ? 'paused' as const : 'blocked' as const, paused: campaign.state === 'paused', revision: campaign.revision ?? 1, externallyUnverified: true, validation: { valid: false, code: error.code, path: error.path ?? null }, progress: { total: items.length, reviewed: 0, confirmed: 0, publishing: 0, published: 0, failed: 0, blocked: items.length, percent: 0 }, items }
     }
     if (error instanceof CampaignManifestError) throw new DomainError(error.code, error.message, 409, { path: error.path ?? null })
@@ -6404,7 +6408,7 @@ function readContentModules(value: unknown): ContentModule[] | undefined {
     const referencedSkuIds = Array.isArray(item.referencedSkuIds) ? item.referencedSkuIds.filter((sku): sku is string => typeof sku === 'string' && sku.trim().length > 0).slice(0, 100) : undefined
     const contentKind: import('../../../packages/ai/src/generator.js').ContentModule['contentKind'] = item.contentKind === 'fact' || item.contentKind === 'creative' || item.contentKind === 'pending' ? item.contentKind as import('../../../packages/ai/src/generator.js').ContentModule['contentKind'] : undefined
     const pendingReason = typeof item.pendingReason === 'string' && item.pendingReason.trim() ? item.pendingReason.trim() : undefined
-    return { key: (item.key as string).trim(), title: (item.title as string).trim(), purpose: (item.purpose as string).trim(), body: (item.body as string).trim(), factSourceIds: (item.factSourceIds as unknown[]).filter((source): source is string => typeof source === 'string' && source.trim().length > 0), ...(contentKind ? { contentKind } : {}), ...(pendingReason ? { pendingReason } : {}), ...(referencedSkuIds?.length ? { referencedSkuIds } : {}), ...(typeof item.imageGuidance === 'string' && item.imageGuidance.trim() ? { imageGuidance: item.imageGuidance.trim() } : {}) }
+    return { key: (item.key as string).trim(), title: (item.title as string).trim(), purpose: (item.purpose as string).trim(), body: (item.body as string).trim(), factSourceIds: (item.factSourceIds as unknown[]).filter((source): source is string => typeof source === 'string' && source.trim().length > 0), ...(contentKind ? { contentKind } : {}), ...(pendingReason ? { pendingReason } : {}), ...(referencedSkuIds?.length ? { referencedSkuIds } : {}), ...(typeof item.imageGuidance === 'string' && item.imageGuidance.trim() ? { imageGuidance: item.imageGuidance.trim() } : {}), ...(isObject(item.decisionContract) ? { decisionContract: structuredClone(item.decisionContract) as unknown as import('../../../packages/ai/src/generator.js').DetailPageDecisionContract } : {}) }
   }).filter(item => item.key && item.title && item.body).slice(0, 16)
   return modules.length ? modules : undefined
 }
@@ -15911,7 +15915,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       execution_state: execution?.state ?? null,
       provider_request_id: execution?.providerRequestId ?? null,
       execution_attempt: execution?.attempt ?? null,
-      reconciliation_required: execution?.state === 'provider_started' || execution?.state === 'outcome_unknown' || job.archiveState !== 'archived',
+      reconciliation_required: execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown' || job.archiveState !== 'archived',
       error_code: job.errorCode ?? null,
       error_message: job.errorMessage ?? null,
       updated_at: job.updatedAt,

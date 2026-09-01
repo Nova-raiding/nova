@@ -91,6 +91,9 @@ function approvedDetail(input: {
   expect(findings.filter(item => item.priority === 'P0'), `${input.title} 不应产生 P0`).toEqual([])
   expect(version.factVersionIds.length).toBeGreaterThan(0)
   expect(version.body.modules?.every(module => module.factSourceIds.length > 0)).toBe(true)
+  expect(version.body.modules?.every(module => Boolean(module.decisionContract?.buyerQuestion && module.decisionContract.pageTask))).toBe(true)
+  expect(version.body.modules?.filter(module => module.contentKind === 'pending').every(module => module.decisionContract?.evidence.status === 'missing')).toBe(true)
+  expect(version.body.modules?.filter(module => module.contentKind === 'fact').every(module => module.decisionContract?.evidence.status === 'verified')).toBe(true)
   expect(service.approveContent(task.id, version.id).version.state).toBe('approved')
   return { service, product, task, version }
 }
