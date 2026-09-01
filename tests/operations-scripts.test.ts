@@ -300,6 +300,19 @@ describe('deployment operation scripts', () => {
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { VITEST: 'true', NODE_ENV: 'production' })).toThrow(/VITEST.*NODE_ENV=test/)
   })
 
+  it('rejects unsafe release identities before evaluating deployment inputs', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'merchant-release-id-gate-'))
+    const config = join(directory, 'rendered.yaml')
+    writeFileSync(config, 'plugin_enabled: true\n')
+    expect(() => run('infra/scripts/deploy-preflight.sh', [], {
+      PRODUCTION_CONFIG_PATH: config,
+      RELEASE_ID: 'release-1;touch /tmp/unsafe',
+    })).toThrow(/unsafe characters/)
+    const source = readFileSync('infra/scripts/deploy-preflight.sh', 'utf8')
+    expect(source).toContain("RELEASE_ID contains unsafe characters")
+    expect(source).toContain("grep -Eq '^[A-Za-z0-9._-]+$'")
+  })
+
   it('deploys the exact verified manifest bytes instead of re-rendering kustomize', () => {
     const script = readFileSync('infra/scripts/deploy-verified-manifest.sh', 'utf8')
     expect(script).toContain('kubectl apply -f "$RENDERED_MANIFEST_PATH"')

@@ -19,6 +19,7 @@ filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-deploy-config.XXXXXX")
 trap 'rm -f -- "$filtered_config_path"' EXIT
 sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//' "$config_path" > "$filtered_config_path"
 : "${RELEASE_ID:?RELEASE_ID is required}"
+printf '%s\n' "$RELEASE_ID" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo "RELEASE_ID contains unsafe characters" >&2; exit 1; }
 : "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required with merchant-api, merchant-worker, merchant-ui, merchant-ops-ui and clamav digests}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
 : "${OPS_DATABASE_URL:?OPS_DATABASE_URL is required}"
