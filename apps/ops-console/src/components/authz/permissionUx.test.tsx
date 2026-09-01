@@ -5,6 +5,7 @@ import { AuthorizationProvider } from "../../authz/AuthorizationProvider.js";
 import type { OpsSession } from "../../types/ops.js";
 import { AccessDeniedResult } from "./AccessDeniedResult.js";
 import { PermissionGate } from "./PermissionGate.js";
+import { OpsWorkbenchSwitcher } from "./OpsWorkbenchSwitcher.js";
 import { activeJitGrantForNow, formatJitRemaining, RoleScopeBar } from "./RoleScopeBar.js";
 
 const session: OpsSession = {
@@ -76,6 +77,19 @@ describe("desktop permission UX", () => {
     expect(html).toContain("平台控制台");
     expect(html).toContain("商家工作区");
     expect(html).toContain("当前运营工作台");
+  });
+
+  it("announces workbench switching while controls are disabled", () => {
+    const html = renderToStaticMarkup(<OpsWorkbenchSwitcher
+      value="platform"
+      available={["platform", "workspace"]}
+      switching
+      onChange={() => undefined}
+    />);
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("正在切换运营工作台，请稍候");
   });
 
   it("hides denied content and explains read-only state", () => {

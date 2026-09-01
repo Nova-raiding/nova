@@ -26,6 +26,7 @@ export function OpsWorkbenchSwitcher({
   return (
     <span aria-label="切换运营工作台" aria-busy={switching}>
       <Typography.Text type="secondary">工作台 </Typography.Text>
+      {switching ? <span role="status" aria-live="polite" className="sr-only">正在切换运营工作台，请稍候</span> : null}
       <Segmented<OpsWorkbench>
         aria-label="当前运营工作台"
         value={value}
