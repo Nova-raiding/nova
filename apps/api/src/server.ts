@@ -16834,6 +16834,11 @@ function requestFailureMetadata(error: unknown) {
   return { status: 500, code: ERROR_CODES.INTERNAL_ERROR }
 }
 
+function publishCommitDomainError(error: unknown) {
+  if (!(error instanceof PublishCommitStatusUnknownError)) return undefined
+  return new DomainError(error.code, error.message, 503, { retryable: false, reconciliation_required: true, next_action: 'query_publish_job' })
+}
+
 function modelSettlementDomainError(error: unknown) {
   const code = (error as { code?: unknown })?.code
   if (code === 'MODEL_TASK_COST_ACTUAL_EXCEEDED' || code === 'MODEL_DAILY_COST_ACTUAL_EXCEEDED') return new DomainError(String(code), '模型供应商已完成调用，但实际成本超过安全上限；结果已进入费用核对，不会自动退款或重试', 409, { provider_succeeded: true, reconciliation_required: true })
@@ -16866,8 +16871,10 @@ const server = createServer((req, res) => {
   res.once('finish', () => { observeHttpMetric(req, res, startedAt); completeRequestObservation(req, res) })
   route(req, res).catch(error => {
     const settlementError = modelSettlementDomainError(error)
-    const observedFailure = requestFailureMetadata(settlementError ?? error)
-    if (!settlementError && !isClientDisconnect(error) && !(error instanceof DomainError) && !(error instanceof OAuthStateError) && !(error instanceof ConnectorFailure) && !(error instanceof ObjectStorageError) && !(error instanceof ConnectorMappingPreflightError) && !(error instanceof SyncPaginationError)) {
+    const publishError = publishCommitDomainError(error)
+    const mappedError = settlementError ?? publishError
+    const observedFailure = requestFailureMetadata(mappedError ?? error)
+    if (!mappedError && !isClientDisconnect(error) && !(error instanceof DomainError) && !(error instanceof OAuthStateError) && !(error instanceof ConnectorFailure) && !(error instanceof ObjectStorageError) && !(error instanceof ConnectorMappingPreflightError) && !(error instanceof SyncPaginationError)) {
       const correlation = getRequestCorrelation(req)
       console.error(JSON.stringify({
         event: 'request.unhandled_error',
@@ -16904,7 +16911,7 @@ const server = createServer((req, res) => {
     if (error instanceof ObjectStorageError) return fail(res, error.status, workspaceId, error.code, error.message, req)
     if (error instanceof ConnectorMappingPreflightError) return fail(res, 409, workspaceId, 'PLATFORM_MAPPING_PREFLIGHT_REQUIRED', '平台字段映射批准缺失、失效或与当前商品载荷不一致', req, { stage: error.stage, next_actions: ['platform.mapping.preflight'] })
     if (error instanceof SyncPaginationError && /mapping preflight/iu.test(error.message)) return fail(res, 409, workspaceId, 'PLATFORM_MAPPING_PREFLIGHT_REQUIRED', '平台字段映射批准缺失、失效或与当前商品载荷不一致', req, { stage: 'sync', next_actions: ['platform.mapping.preflight'] })
-    const typed = error instanceof DomainError ? error : settlementError ?? new DomainError(ERROR_CODES.INTERNAL_ERROR, '内部错误', 500)
+    const typed = error instanceof DomainError ? error : mappedError ?? new DomainError(ERROR_CODES.INTERNAL_ERROR, '内部错误', 500)
     const retryAfter = typeof typed.details?.retry_after_seconds === 'number' ? typed.details.retry_after_seconds : undefined
     if (retryAfter !== undefined) res.setHeader('retry-after', String(Math.max(1, Math.ceil(retryAfter))))
     return fail(res, typed.status, workspaceId, typed.code, typed.message, req, typed.details)
