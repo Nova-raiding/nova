@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { evaluatePlatformFieldMapping } from '../../../packages/application/src/platform-field-mapping-gate.js'
+import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput } from '../../../packages/application/src/platform-field-mapping-gate.js'
 
 type ApiModule = typeof import('./server.js')
 type Envelope<T = unknown> = {
@@ -54,7 +54,7 @@ function mappingInput(productId: string, overrides: { platform?: string; remoteS
   const schemaHash = sha('mapping-contract-schema')
   const mappingHash = sha('mapping-contract-rules')
   const remoteSnapshotHash = overrides.remoteSnapshotHash ?? sha('mapping-contract-remote-v1')
-  const input = {
+  const input: PlatformFieldMappingGateInput = {
     platform: overrides.platform ?? 'taobao',
     category: 'apparel',
     schema: {
