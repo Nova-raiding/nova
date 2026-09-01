@@ -579,7 +579,7 @@ rg -n --glob '!**/*.test.*' "(sessionRoles|opsSession\\?\\.roles|model\\.session
 ### 19.4 后端授权、scope、审计 P1 completion checklist
 
 - [x] **P1-BE-001：每个方法都生成 decision。** strict auth 下遍历实时 `MCP_METHODS`，逐方法断言调用统一 evaluator 并产生唯一 `decision_id/policy_version/mode/result/reason_code`；绕过仅允许有明确契约和测试的 bootstrap，不能在 handler 内另读 header 扩权。
-- [ ] **P1-BE-002：shadow 不冒充完成。** shadow 只用于差异观测；发布配置必须显式列出 enforce 域并有覆盖率报表。最终全量强制时，动态计算 capability domain 集合并断言全部进入 enforce，不能以当前 15 个高风险方法或手写历史总数替代。
+- [x] **P1-BE-002：shadow 不冒充完成。** shadow 只用于差异观测；发布配置必须显式列出 enforce 域并有覆盖率报表。最终全量强制时，动态计算 capability domain 集合并断言全部进入 enforce，不能以当前 15 个高风险方法或手写历史总数替代。
 - [ ] **P1-BE-003：资源 ID 精确 scope。** evaluator 输入必须来自逐方法 scope resolver，比较请求/加载后资源的 workspace、brand、account、self ID 与 grant IDs；测试至少覆盖同类型但不同 ID 的 cross-workspace、cross-brand、cross-account 拒绝，以及 platform aggregate 不读取 customer detail。
 - [ ] **P1-BE-004：显式 deny 有真实来源。** principal 的 deny 来自持久 assignment/deny 数据或可信 session projection，并在 capability allow、角色并集、JIT grant 之前生效。运行测试必须证明源码存在赋值路径以及 allow + deny 同时出现时 deny。
 - [ ] **P1-BE-005：obligation 与 policy 同真源。** reason、revision、idempotency、confirmation、MFA、approval/two-person、JIT grant 由 policy/obligation registry 声明并由通用 resolver 校验；CI 检查所有 write/allow_and_deny 方法的 obligation 分类，不允许 API 中另维护容易漂移的方法名数组。
@@ -785,6 +785,7 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **MCP/HTTP parity 本地契约。** `be29b31`；`mcp-http-parity-contract.test.ts` 27/27 通过，验证 registry/contract/policy/OpenAPI 方法集合精确一致、每个 MCP 方法具备完整 contract/policy、HTTP identity 操作引用已注册 MCP policy。该证据不等于全量生产逐路由 allow/deny、OIDC、RLS、审计或真实运行矩阵。
 - [x] **Worker execution-check 本地契约。** `59c0df1`；Worker 定向测试 13/13、workers build 通过，验证 queued 后 grant revoke、scope mismatch、revision mismatch 均拒绝执行且 provider 外呼为 0。该证据不等于全部 critical worker 的生产授权快照、跨副本竞态或完整运行矩阵。
 - [x] **逐方法 authorization decision 契约。** `c1460f5`；生产执行路径与测试共用 `registeredMcpAuthorizationDecision()`，测试从实时 `MCP_METHODS` 遍历全部方法，逐项验证唯一 decision ID、当前 policy version、enforce mode、deny result 与稳定 reason code。`workspace.bootstrap` 也先经过同一 evaluator，首次成员例外仍只保留在授权函数内的显式契约层。API 定向测试 5/5、全项目 TypeScript 通过。
+- [x] **动态 enforce 覆盖率报告。** `1c63946`；`mcpAuthorizationCoverageReport()` 从实时 `MCP_METHODS`、policy capability domain 和运行模式计算方法总数、enforce/shadow 数量、比例及 enforce/shadow 域。生产 readiness 直接携带该无密钥报告，并要求 `mode=enforce`、无 staged domain 覆盖；测试移除历史 `17` 方法断言，动态证明生产方法和 capability domain 均 100% enforce。非法配置在 readiness 中稳定报告 unavailable/not-ready，运行时仍 fail-closed 拒绝启动。定向测试 81/81、全项目 TypeScript 通过。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
