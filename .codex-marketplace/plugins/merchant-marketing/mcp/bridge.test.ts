@@ -673,7 +673,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260831225927' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260901185628' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -2025,6 +2025,24 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content[0].text).toBe('内容被品牌规则拦截（1 项）。请先修正标记的问题，再重试。')
       expect(response.result.content[0].text).not.toContain('FONT_LICENSE_NOT_APPROVED')
       expect(response.result.content[0].text).not.toContain('visualRules.fonts[0]')
+    } finally {
+      child.kill(); await close(server)
+    }
+  })
+
+  it('preserves redacted authorization decision evidence for ChatGPT', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(403, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'FORBIDDEN', message: 'denied', details: { decision_id: 'authz_decision_1', capability: 'customer.content.read', reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', workbench: 'workspace', explicit_deny: false, obligations_missing: ['confirmation'], policy_version: '2026-08-31.v2', authorization: 'Bearer should-not-cross', internal_path: '/Users/private/secret' } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative.brief', arguments: { product_id: 'product_1', asset_type: 'banner' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'FORBIDDEN', details: { decision_id: 'authz_decision_1', capability: 'customer.content.read', reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', workbench: 'workspace', explicit_deny: false, obligations_missing: ['confirmation'], policy_version: '2026-08-31.v2' } } })
+      expect(response.result.structuredContent.details).not.toHaveProperty('authorization')
+      expect(response.result.structuredContent.details).not.toHaveProperty('internal_path')
     } finally {
       child.kill(); await close(server)
     }

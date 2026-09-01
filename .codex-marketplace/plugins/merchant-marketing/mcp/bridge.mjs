@@ -1157,6 +1157,7 @@ function toolErrorPresentation(method, args, code, details) {
 function safeErrorDetails(details) {
   if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
   const safe = {}
+  const authorizationEvidenceKeys = ['decision_id', 'capability', 'reason_code', 'required_scope', 'workbench', 'explicit_deny', 'obligations_missing', 'policy_version']
   const sanitize = (value, depth = 0) => {
     if (depth > 2) return undefined
     if (typeof value === 'string') {
@@ -1176,7 +1177,7 @@ function safeErrorDetails(details) {
     }
     return undefined
   }
-  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'operation_status', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted']) {
+  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'operation_status', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', ...authorizationEvidenceKeys]) {
     const value = sanitize(details[key])
     if (value !== undefined) safe[key] = value
   }
