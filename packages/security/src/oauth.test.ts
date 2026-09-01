@@ -60,5 +60,9 @@ describe('OAuth security', () => {
     const state = await redisStore.issue({ workspaceId: 'ws_1', actorId: 'actor', platform: 'jd' })
     data.set(`test:oauth:${state}`, '{malformed')
     await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
+
+    const validRecord = JSON.stringify({ state, workspaceId: 'ws_1', actorId: 'actor', platform: 'jd', expiresAt: Number.NaN, consumed: false })
+    data.set(`test:oauth:${state}`, validRecord)
+    await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
   })
 })

@@ -41,7 +41,7 @@ export class RedisOAuthStateStore {
     if (status !== 'ok' || typeof payload !== 'string' || !payload) throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid')
     let record: OAuthState
     try { record = JSON.parse(payload) as OAuthState } catch { throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid') }
-    if (!record || record.state !== state || typeof record.workspaceId !== 'string' || typeof record.platform !== 'string' || typeof record.expiresAt !== 'number') {
+    if (!record || record.state !== state || typeof record.workspaceId !== 'string' || typeof record.platform !== 'string' || !Number.isSafeInteger(record.expiresAt)) {
       throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid')
     }
     if (Date.now() >= record.expiresAt) throw new OAuthStateError('STATE_EXPIRED', 'OAuth state has expired')
