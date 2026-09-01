@@ -31,6 +31,8 @@ describe('content generator', () => {
     expect(String(calls[0]?.body)).toContain('pinned-model')
     expect(String(calls[0]?.body)).toContain('未授权动漫角色')
     expect(String(calls[0]?.body)).toContain('不得出现 restrictedSubjects')
+    expect(String(calls[0]?.body)).toContain('real_image、parameter、test_report、comparison、usage_result、manual_review')
+    expect(String(calls[0]?.body)).toContain('referencedSkuIds 必须存在并逐个包含相同的 SKU ID')
   })
 
   it('accepts a single full-response JSON fence but does not extract JSON from prose', async () => {
