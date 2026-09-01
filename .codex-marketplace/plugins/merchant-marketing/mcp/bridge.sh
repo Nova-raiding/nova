@@ -35,7 +35,8 @@ if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v launchctl >/de
     MERCHANT_ARTIFACT_DIR \
     MERCHANT_MCP_TIMEOUT_MS \
     MERCHANT_MCP_RETRY_ATTEMPTS \
-    MERCHANT_MCP_RETRY_DELAY_MS
+    MERCHANT_MCP_RETRY_DELAY_MS \
+    MERCHANT_ASSET_RESOURCE_DOMAINS
   do
     load_launchctl_env "$name"
   done
