@@ -1354,7 +1354,7 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: 'model provider outcome check' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
       expect(requests).toEqual([])
@@ -2034,6 +2034,32 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'API_UNAVAILABLE' } })
       expect(response.result.content[0].text).toContain('请稍后重试')
       expect(response.result.content[0].text).not.toContain('write outcome is unknown')
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not retry an idempotent write when the model provider outcome is unknown', async () => {
+    let attempts = 0
+    const server = createServer(async (_req, res) => {
+      attempts += 1
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', message: 'provider result not confirmed', details: { retryable: false, reconciliation_required: true } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.confirm', arguments: { task_id: 'task_1', confirmation_token: 'confirm_1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' } })
+      expect(response.result.content[0].text).toContain('查询 Provider 状态或提交人工对账')
+      expect(response.result.content[0].text).not.toContain('请稍后重试')
       expect(attempts).toBe(1)
     } finally {
       child.kill()

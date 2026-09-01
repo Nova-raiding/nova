@@ -1183,6 +1183,7 @@ function userFacingErrorText(code, details) {
     if (missing.includes('cost_cny') || missing.includes('settlement')) return '平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。'
     return '平台暂时无法确认本次生成结果，已安全停止。当前任务和已有产物已保留，没有重复调用、扣费或发布；平台恢复后可继续。'
   }
+  if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次模型请求结果尚未确认，已安全停止。请先查询 Provider 状态或提交人工对账；在确认前不会重试、扣费或发布。'
   if (code === 'MCP_HTTPS_REQUIRED') return '当前服务的安全连接尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_STRICT_AUTH_REQUIRED') return '当前服务的安全鉴权尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_GATEWAY_ERROR' && typeof details?.safe_message === 'string') return details.safe_message
@@ -2061,7 +2062,8 @@ async function callRemote(method, params) {
         // the same protocol boundary so authz/evidence details are not
         // downgraded to a generic missing-result error.
         const remoteError = payload?.error ?? payload?.data?.error
-        const transient = retrySafe && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
+        const providerOutcomeUnknown = remoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+        const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
           const error = remoteError ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
