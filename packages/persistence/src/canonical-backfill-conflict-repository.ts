@@ -17,7 +17,7 @@ export class CanonicalBackfillConflictRevisionConflictError extends Error { cons
 export class CanonicalBackfillConflictIdempotencyConflictError extends Error { constructor() { super('CANONICAL_BACKFILL_CONFLICT_IDEMPOTENCY_CONFLICT'); this.name = 'CanonicalBackfillConflictIdempotencyConflictError' } }
 export class CanonicalBackfillConflictRecheckMismatchError extends Error { constructor() { super('CANONICAL_BACKFILL_CONFLICT_RECHECK_MISMATCH'); this.name = 'CanonicalBackfillConflictRecheckMismatchError' } }
 
-const conflictCodes: readonly CanonicalBackfillConflict['code'][] = ['MISSING_BRAND', 'CANONICAL_MAPPING_AMBIGUOUS', 'CANONICAL_BRAND_MISMATCH', 'CANONICAL_ID_COLLISION']
+const conflictCodes: readonly CanonicalBackfillConflict['code'][] = ['MISSING_BRAND', 'CANONICAL_MAPPING_AMBIGUOUS', 'CANONICAL_BRAND_MISMATCH', 'CANONICAL_ID_COLLISION', 'TASK_ACCOUNT_MISMATCH']
 const validateConflict = (conflict: CanonicalBackfillConflict) => {
   required(conflict.legacyProductId, 'CANONICAL_BACKFILL_CONFLICT_LEGACY_PRODUCT_ID_REQUIRED')
   if (!conflictCodes.includes(conflict.code)) throw new Error('CANONICAL_BACKFILL_CONFLICT_CODE_INVALID')

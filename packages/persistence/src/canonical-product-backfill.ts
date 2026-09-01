@@ -21,6 +21,7 @@ export type CanonicalBackfillConflictCode =
   | 'CANONICAL_MAPPING_AMBIGUOUS'
   | 'CANONICAL_BRAND_MISMATCH'
   | 'CANONICAL_ID_COLLISION'
+  | 'TASK_ACCOUNT_MISMATCH'
 
 export interface CanonicalBackfillConflict {
   legacyProductId: string

@@ -169,6 +169,19 @@ describe('API application wiring', () => {
     ])
   })
 
+  it('keeps task account mismatches in the human-review backfill queue', () => {
+    const report = canonicalConsistencyApiReport({
+      workspaceId: 'ws_task_conflict',
+      legacyProducts: [{ id: 'product_1', workspaceId: 'ws_task_conflict', platform: 'jd', accountId: 'account_old' }],
+      canonicalProducts: [{ id: 'canonical_1', workspaceId: 'ws_task_conflict', brandId: 'brand_1', legacyProductId: 'product_1' }],
+      listings: [{ id: 'listing_1', workspaceId: 'ws_task_conflict', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'jd', accountId: 'account_old' }],
+      campaignItems: [],
+      tasks: [{ id: 'task_1', workspaceId: 'ws_task_conflict', productId: 'product_1', platform: 'jd', accountId: 'account_new' }],
+      publishJobs: [],
+    }, 'memory', '2026-08-31T00:00:00.000Z')
+    expect(canonicalConflictScanItems(report)).toContainEqual({ legacyProductId: 'product_1', code: 'TASK_ACCOUNT_MISMATCH', canonicalIds: ['canonical_1'] })
+  })
+
   it('keeps canonical read rollout fail-closed and routed through the feature-flag control plane', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain('CANONICAL_PRODUCT_READ_MODE_FLAG')
