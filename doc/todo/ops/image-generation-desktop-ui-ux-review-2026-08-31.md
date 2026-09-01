@@ -115,7 +115,7 @@
 - [x] 画廊图片有 `aspect-ratio`/尺寸占位，并处理单图加载失败。（桌面布局与失败恢复：`819f705`、`182d7cf`、`980f985`。）
 - [x] 画廊非首屏候选的懒加载在完整桌面矩阵中验证。（本地测试 `image-generation-desktop-responsive.spec.js` 已覆盖 1280、1440、1920 宽度：首张候选为 `loading=eager/fetchpriority=high`，其余候选为 `loading=lazy/fetchpriority=low`；仅代表测试环境浏览器证据，不代表真实 CDN 网络性能或生产验收。）
 - [x] 画廊超过 50 个候选时分页或虚拟化；状态刷新不重排整个页面。（`fe3f192` 已完成候选分页；本次 `image-job-list` 合并器保留已存在任务行顺序，仅追加新任务；桌面刷新回归测试 2/2。）
-- [ ] 动画只表达状态变化，使用统一时长，且可中断。
+- [x] 动画只表达状态变化，使用统一时长，且可中断。（图片任务面板仅对候选卡片的边框、阴影和背景状态做 `180ms ease-out` 过渡；不使用 `transition: all`，快速切换由 React 状态直接收口；`image-generation-styles.test.ts` 已覆盖，reduced-motion 另有桌面 Playwright 证据。）
 
 ## 当前验收结果
 
