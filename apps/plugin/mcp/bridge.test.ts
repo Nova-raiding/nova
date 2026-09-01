@@ -6,10 +6,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
 
 const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
+const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
+process.env.MERCHANT_ARTIFACT_DIR = TEST_ARTIFACT_DIR
+afterAll(async () => { await rm(TEST_ARTIFACT_DIR, { recursive: true, force: true }) })
 
 const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.model-usage.reconciliation.run',
