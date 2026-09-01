@@ -425,6 +425,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const hardenOpsWorkspaceSummarySecurity = await readFile(new URL('./migrations/145_harden_ops_workspace_summary_security.sql', import.meta.url), 'utf8')
   const commercialCatalogV2 = await readFile(new URL('./migrations/146_commercial_catalog_v2.sql', import.meta.url), 'utf8')
   const platformAuthorizationAudit = await readFile(new URL('./migrations/147_platform_authorization_audit.sql', import.meta.url), 'utf8')
+  const hardenCreativePointReservations = await readFile(new URL('./migrations/148_harden_creative_point_reservations.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -573,6 +574,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 145, name: 'harden_ops_workspace_summary_security', sql: hardenOpsWorkspaceSummarySecurity },
     { version: 146, name: 'commercial_catalog_v2', sql: commercialCatalogV2 },
     { version: 147, name: 'platform_authorization_audit', sql: platformAuthorizationAudit },
+    { version: 148, name: 'harden_creative_point_reservations', sql: hardenCreativePointReservations },
   ]
 }
 
