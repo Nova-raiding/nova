@@ -15105,6 +15105,27 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     if (requiresFreshAssetRead && persistence.business) await hydrateWorkspaceFromPersistence(hydrateRequestWorkspace)
     else await hydrateWorkspace(hydrateRequestWorkspace, normalizedPagedCollection || normalizedPagedMcpCollection ? { excludeEntityTypes: ['product', 'task'] } : {})
   }
+  if (req.method === 'GET' && path === '/v1/commercial/access') {
+    const workspaceId = resolveWorkspace(req)
+    const access = await commercialAccessService.decide({ surface: 'MCP', operation: 'merchant.start', workspace_id: workspaceId })
+    if (access.outcome !== 'DECISION') throw new DomainError('COMMERCIAL_ACCESS_STATE_UNAVAILABLE', '商业访问状态未完成精确分类', 503, { outcome: access.outcome })
+    return send(res, 200, workspaceId, { decision: access.decision }, null, req)
+  }
+  if (req.method === 'GET' && path === '/v1/creative-points/balance') {
+    const workspaceId = resolveWorkspace(req)
+    const balance = await persistence.creativePoints?.getBalance(workspaceId)
+    return send(res, 200, workspaceId, { schema_version: 'creative-points.balance.v1', workspace_id: workspaceId, balance_state: balance?.availablePoints === null || !balance ? 'unknown' : 'known', available_points: balance?.availablePoints ?? null, reserved_points: balance?.reservedPoints ?? null, settled_points: balance?.settledPoints ?? null, access_revision: balance?.availablePoints === null || !balance ? null : String(balance.revision), updated_at: balance?.updatedAt ?? null }, null, req)
+  }
+  if (req.method === 'GET' && path === '/v1/creative-points/statement') {
+    throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未实现，不能返回伪造的空流水', 503, { entries: null })
+  }
+  if (req.method === 'GET' && path === '/v1/commercial/catalog') {
+    const workspaceId = resolveWorkspace(req)
+    if (!persistence.commercialCatalog) throw new DomainError('COMMERCIAL_CATALOG_REPOSITORY_UNAVAILABLE', 'V2 商业目录仓储未配置', 503, { catalog: null })
+    const catalog = await persistence.commercialCatalog.list({ includePrivate: false, capabilities: [] })
+    if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可展示的 V2 商业目录版本，不能回退到旧套餐数据', 503, { catalog: null })
+    return send(res, 200, workspaceId, { schema_version: 'commercial.catalog.v2', status: 'available', catalog }, null, req)
+  }
   if (req.method === 'POST' && path === '/v1/canonical-backfill/conflicts/scan') {
     const input = await body(req)
     const workspaceId = resolveWorkspace(req, input.workspace_id)
