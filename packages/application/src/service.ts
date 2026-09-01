@@ -2845,6 +2845,18 @@ export class MerchantService {
     job.state = 'running'; job.attempt += 1; job.revision += 1; job.updatedAt = now()
     return job
   }
+  private validateGeneratedBody(body: ContentVersion['body'], source: string, platform: Platform, product: Product): ContentVersion['body'] {
+    const fixtureModuleFallback = this.options.fixtureMode === true && body.modules === undefined
+    let validated: ContentVersion['body']
+    try {
+      validated = validateContentSchema(body, source, { requireDecisionContracts: !fixtureModuleFallback })
+    } catch (error) {
+      throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '生成内容结构不合法', 400)
+    }
+    const explicitModules = validated.modules ?? (fixtureModuleFallback ? contentModules(product, platform) : undefined)
+    if (!explicitModules?.length) throw new DomainError('CONTENT_SCHEMA_INVALID', `${source} 缺少详情页 modules，真实生成路径禁止使用 fixture 默认模块`, 400)
+    return normalizeCodexBody({ ...validated, modules: explicitModules }, platform, product)
+  }
   completeGeneration(input: { workspaceId: string; jobId: string; body: ContentVersion['body'] }) {
     const job = this.getGenerationJob(input.workspaceId, input.jobId)
     if (job.state === 'succeeded' && job.contentVersionId) return { job, version: this.mustContentVersion(job.contentVersionId) }
@@ -2853,11 +2865,10 @@ export class MerchantService {
     this.assertTaskState(task, ['plan_confirmed'])
     const snapshot = this.taskSnapshot(task)
     const product = snapshot.product
-    let validatedBody: ContentVersion['body']
-    try { validatedBody = validateContentSchema(input.body, 'content.generate', { requireDecisionContracts: true }) } catch (error) { throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '生成内容结构不合法', 400) }
+    const validatedBody = this.validateGeneratedBody(input.body, 'content.generate', task.platform, product)
     const factVersionIds = [`product:${product.id}:v${product.version ?? 1}`]
     const ruleVersionIds = [...snapshot.ruleVersionIds]
-    const version: ContentVersion = { id: id('cv'), taskId: task.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body: withContentModules(withStaticBrief(validatedBody, task.platform, product), task.platform, product), factVersionIds, ruleVersionIds, ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, taskInputSnapshotId: snapshot.id, createdBy: 'model', reason: 'async_generation', modelId: process.env.AI_MODEL?.trim() || 'configured-model' }), state: 'review_required', revision: 1 }
+    const version: ContentVersion = { id: id('cv'), taskId: task.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body: withStaticBrief(validatedBody, task.platform, product), factVersionIds, ruleVersionIds, ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, taskInputSnapshotId: snapshot.id, createdBy: 'model', reason: 'async_generation', modelId: process.env.AI_MODEL?.trim() || 'configured-model' }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id; task.state = 'review_required'; task.version += 1
     job.state = 'succeeded'; job.contentVersionId = version.id; job.revision += 1; job.updatedAt = now(); job.errorCode = undefined; job.errorMessage = undefined; job.nextAttemptAt = undefined; job.waitingReason = undefined
@@ -4157,7 +4168,7 @@ export class MerchantService {
     const task = this.mustTask(taskId)
     const prepared = await this.prepareGenerationContext(taskId, usageActionId)
     if (!this.options.contentGenerator) {
-      if (process.env.NODE_ENV === 'production') throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '生产环境未配置内容生成模型', 503)
+      if (!this.options.fixtureMode) throw new DomainError('AI_GENERATION_NOT_CONFIGURED', '真实生成路径未配置内容生成模型；只有显式 fixtureMode 可使用本地模板', 503)
       return this.createDraft(taskId)
     }
     const { snapshot, product, input: boundedInput } = prepared
@@ -4174,9 +4185,10 @@ export class MerchantService {
       }
       throw new DomainError('AI_GENERATION_FAILED', '内容生成服务暂时不可用，请稍后重试', 503)
     }
+    const validatedGenerated = this.validateGeneratedBody(generated, 'content.generate', task.platform, product)
     const version: ContentVersion = {
       id: id('cv'), taskId, version: this.nextContentVersionNumber(task.workspaceId, taskId),
-      body: normalizeCodexBody(generated, task.platform, product),
+      body: validatedGenerated,
       factVersionIds: [`product:${product.id}:v${product.version ?? 1}`],
       ruleVersionIds: [...snapshot.ruleVersionIds],
       ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}),
@@ -4648,13 +4660,6 @@ function defaultStaticBrief(platform: Platform, productTitle: string, sellingPoi
   }
 }
 
-function withContentModules(body: ContentVersion['body'], platform: Platform, product: Product): ContentVersion['body'] {
-  const modules = body.modules === undefined
-    ? contentModules(product, platform)
-    : orchestrateContentModules(body.modules, product)
-  return { ...body, modules }
-}
-
 function withStaticBrief(body: ContentVersion['body'], platform: Platform, product: Product): ContentVersion['body'] {
   return body.brief ? body : { ...body, brief: defaultStaticBrief(platform, product.title, body.sellingPoints, product.price) }
 }
@@ -4694,12 +4699,7 @@ function normalizeCodexBody(body: ContentVersion['body'], platform: Platform, pr
       ...(candidate.decisionContract && typeof candidate.decisionContract === 'object' && !Array.isArray(candidate.decisionContract) ? { decisionContract: clone(candidate.decisionContract) as NonNullable<ContentModule['decisionContract']> } : {}),
     }
   })
-  // An absent modules field means the producer delegated to the deterministic
-  // fixture template. A present field is the producer's explicit page plan:
-  // preserve its omissions and only apply evidence-aware ordering/filtering.
-  const normalizedModules = body.modules === undefined
-    ? contentModules(product, platform)
-    : orchestrateContentModules(modules, product)
+  const normalizedModules = orchestrateContentModules(modules, product)
   const candidateBrief = body.brief as unknown
   const fallbackBrief = defaultStaticBrief(platform, product.title, body.sellingPoints, product.price)
   const brief = candidateBrief && typeof candidateBrief === 'object' && !Array.isArray(candidateBrief)

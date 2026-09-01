@@ -265,7 +265,7 @@ describe('MerchantService', () => {
   })
 
   it('blocks unproven competitor facts and referenced competitor assets after generation', async () => {
-    const generated = { title: '本地商品方案', detail: '经实验室测试可连续防水48小时。', sellingPoints: ['经实验室测试可连续防水48小时'], modules: [{ key: 'hero', title: '主视觉', purpose: '展示商品', body: '使用本地商品信息', factSourceIds: [], contentKind: 'creative' as const, imageGuidance: '直接使用 competitor-logo 制作主图' }] }
+    const generated = { title: '本地商品方案', detail: '经实验室测试可连续防水48小时。', sellingPoints: ['经实验室测试可连续防水48小时'], modules: [{ ...decisionModule('hero', 1), body: '使用本地商品信息', imageGuidance: '直接使用 competitor-logo 制作主图' }] }
     const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => generated } })
     const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
     const reference = { competitorAnalysisId: 'competitor_policy_fact_asset', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/fact-source', platform: 'tmall', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [{ text: '经实验室测试可连续防水48小时' }], originalSpans: [], assets: [{ id: 'competitor-logo', kind: 'logo', description: '竞品 Logo' }] } }
@@ -1317,6 +1317,32 @@ describe('MerchantService', () => {
     const job = asyncService.enqueueGeneration({ workspaceId: 'ws_demo', taskId: asyncTask.id, idempotencyKey: 'dynamic-modules' })
     const asyncVersion = asyncService.completeGeneration({ workspaceId: 'ws_demo', jobId: job.id, body: generatedBody }).version
     expect(asyncVersion.body.modules?.map(module => module.key)).toEqual(expectedKeys)
+  })
+
+  it('allows missing modules only for an explicit fixture generation path', async () => {
+    const missingModulesBody = { title: '生成标题', detail: '生成详情', sellingPoints: ['生成卖点'] }
+    const realService = new MerchantService({ contentGenerator: { generate: async () => missingModulesBody } })
+    const realTask = realService.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    realService.selectDirection(realTask.id, 'A')
+    realService.confirmProductionPlan('ws_demo', realTask.id, 'merchant')
+
+    await expect(realService.generateDraft(realTask.id)).rejects.toThrowError(expect.objectContaining({ code: 'CONTENT_SCHEMA_INVALID', message: expect.stringContaining('modules') }))
+    expect(realService.listContentVersions('ws_demo', realTask.id)).toEqual([])
+    expect(realService.getTask(realTask.id).state).toBe('plan_confirmed')
+
+    const realQueued = realService.enqueueGeneration({ workspaceId: 'ws_demo', taskId: realTask.id, idempotencyKey: 'real-missing-modules' })
+    expect(() => realService.completeGeneration({ workspaceId: 'ws_demo', jobId: realQueued.id, body: missingModulesBody }))
+      .toThrowError(expect.objectContaining({ code: 'CONTENT_SCHEMA_INVALID', message: expect.stringContaining('modules') }))
+    expect(realService.listContentVersions('ws_demo', realTask.id)).toEqual([])
+
+    const fixtureService = new MerchantService({ fixtureMode: true })
+    const fixtureTask = fixtureService.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    fixtureService.selectDirection(fixtureTask.id, 'A')
+    fixtureService.confirmProductionPlan('ws_demo', fixtureTask.id, 'merchant')
+    const fixtureJob = fixtureService.enqueueGeneration({ workspaceId: 'ws_demo', taskId: fixtureTask.id, idempotencyKey: 'fixture-missing-modules' })
+    const fixtureVersion = fixtureService.completeGeneration({ workspaceId: 'ws_demo', jobId: fixtureJob.id, body: missingModulesBody }).version
+    expect(fixtureVersion.body.modules).not.toHaveLength(0)
+    expect(fixtureVersion.body.modules?.every(module => module.decisionContract)).toBe(true)
   })
 
   it('validates and orchestrates the merged content before modify persistence', () => {
