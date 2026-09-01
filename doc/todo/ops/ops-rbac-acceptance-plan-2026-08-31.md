@@ -592,6 +592,7 @@ rg -n --glob '!**/*.test.*' "(sessionRoles|opsSession\\?\\.roles|model\\.session
 - [ ] **P1-BE-012：错误契约稳定。** capability/scope/explicit deny/obligation/catalog/JIT 拒绝分别返回稳定 code、decision/request ID 和最小化 details；403、503、真实 empty 三者不可互换，错误体不得暴露目标对象内容或存在性。
 - [x] **P1-BE-012：统一 evaluator 拒绝详情（本地切片完成）。** capability、scope、workbench、explicit deny、obligation 五类拒绝统一由 `authorizationDenialDetails()` 生成稳定的 decision/capability/reason/required scope/workbench/explicit-deny/obligation/policy 字段；request/trace ID 继续由 API envelope 提供。定向测试遍历五类 reason，并证明 details 不含 resource ID、解析 scope IDs 或目标对象内容。catalog/JIT 专用错误、503/empty 与真实 OIDC 运行矩阵仍为主项门禁。
 - [x] **P1-BE-012：JIT 执行前复核错误关联（本地切片完成）。** evaluator allow 后的临时授权复核保持 `AUTHORIZATION_GRANT_RECHECK_UNAVAILABLE` 为 503、撤销/过期/耗尽/版本变化保持 `AUTHORIZATION_GRANT_REVOKED` 为 403，并统一携带 decision/capability/required scope/workbench/policy/grant ID；details 不含 grant scope、resource ID 或解析 scope IDs。catalog 专用错误、完整 503/empty 与真实 OIDC 运行矩阵仍为主项门禁。
+- [x] **P1-BE-012：policy catalog 与 403/503/empty 三态（本地切片完成）。** MCP/HTTP policy 缺失统一返回 `AUTHZ_POLICY_UNAVAILABLE` 503，并携带 policy version、transport、method/operation，不包含请求参数或目标对象。真实 HTTP 测试证明 403、503 均为 `data:null + error` 且保留 request/trace ID；新工作区商品分页空态为 200、`error:null`、`items:[]/total:0`。真实 OIDC 运行矩阵仍为主项门禁。
 
 ### 19.5 最终回归与发布判定
 
