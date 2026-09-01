@@ -16,6 +16,11 @@ export function parseGrantCapabilities(value: unknown): string[] {
   return String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+export function describeGrantScope(workspaceId: string): string {
+  const normalized = workspaceId.trim();
+  return normalized ? `此 JIT 仅覆盖工作区 ${normalized}，不会自动扩展到其他工作区。` : "填写目标工作区 ID 后，这里会显示精确授权范围。";
+}
+
 export function validateJitExpiry(value: unknown, accessMode: "read" | "write", now = Date.now()): string | undefined {
   const parsed = Date.parse(String(value ?? "").trim());
   if (!Number.isFinite(parsed)) return "请输入有效的 ISO 到期时间";
@@ -107,8 +112,8 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles} onClick={() => requestRevocationReason(`撤销 ${row.role}`, async (reason) => { await rpc("ops.authorization.role.revoke", { assignment_id: row.id, subject_identity_id: row.subjectIdentityId, expected_revision: String(row.revision), expected_authorization_revision: String(roles?.authorization_revision ?? row.authorizationRevision), reason }); await loadRoles(); })}>撤销</Button> },
         ]} />
         {canManageRoles && <>
-          <OpsPageError error={roleSubmitError} />
-          <Form form={roleForm} layout="inline" onFinish={async (values) => {
+          <OpsPageError error={roleSubmitError} onRetry={() => roleForm.submit()} />
+          <Form form={roleForm} layout="inline" aria-label="分配平台角色" onFinish={async (values) => {
             if (roleSubmitting) return;
             setRoleSubmitting(true);
             setRoleSubmitError(undefined);
@@ -123,9 +128,9 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
               setRoleSubmitting(false);
             }
           }}>
-          <Form.Item name="role" rules={[{ required: true }]}><Select placeholder="选择平台角色" style={{ width: 190 }} options={platformRoles.map(value => ({ value, label: value }))} /></Form.Item>
-          <Form.Item name="expires_at"><Input placeholder="可选：ISO 到期时间" style={{ width: 220 }} /></Form.Item>
-          <Form.Item name="reason" rules={[{ required: true, min: 3 }]}><Input placeholder="分配原因" style={{ width: 220 }} /></Form.Item>
+          <Form.Item name="role" label="平台角色" rules={[{ required: true }]}><Select placeholder="选择平台角色" style={{ width: 190 }} options={platformRoles.map(value => ({ value, label: value }))} /></Form.Item>
+          <Form.Item name="expires_at" label="到期时间"><Input placeholder="可选：ISO 到期时间" style={{ width: 220 }} /></Form.Item>
+          <Form.Item name="reason" label="分配原因" rules={[{ required: true, min: 3 }]}><Input placeholder="说明工单或业务原因" style={{ width: 220 }} /></Form.Item>
           <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || !subjectIdentityId.trim()}>分配角色</Button>
         </Form></>}
       </Space> }] : []),
@@ -145,8 +150,9 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants} onClick={() => requestRevocationReason(`立即撤销 ${row.id}`, async (reason) => { await rpc("ops.authorization.grant.revoke", { grant_id: row.id, subject_identity_id: subjectIdentityId.trim(), expected_revision: String(row.revision), expected_authorization_revision: String(grants?.authorization_revision ?? row.authorizationRevision), reason }); await loadGrants(); model.clearAuthorizationScopedData(); await model.load(); })}>立即撤销</Button> },
         ]} />
         {canManageGrants && <>
-          <OpsPageError error={grantSubmitError} />
-          <Form form={grantForm} layout="vertical" onFinish={async (values) => {
+        <OpsPageError error={grantSubmitError} onRetry={() => grantForm.submit()} />
+        <Alert showIcon type="info" role="status" title="精确授权范围" description={describeGrantScope(targetWorkspaceId)} />
+        <Form form={grantForm} layout="vertical" aria-label="签发 JIT 授权" onFinish={async (values) => {
             if (grantSubmitting) return;
             setGrantSubmitting(true);
             setGrantSubmitError(undefined);
