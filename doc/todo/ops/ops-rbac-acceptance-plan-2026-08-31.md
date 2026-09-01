@@ -590,6 +590,7 @@ rg -n --glob '!**/*.test.*' "(sessionRoles|opsSession\\?\\.roles|model\\.session
 - [ ] **P1-BE-010：RLS 最终防线。** 使用真实 production-like app/ops DB roles 执行正负 SQL probe；应用 allow + RLS scope mismatch 仍拒绝，`merchant_ops + platform_scope` 只能读批准的聚合/脱敏视图，不能读取客户正文表。
 - [ ] **P1-BE-011：Worker 快照与执行时复核。** 所有外部副作用 envelope 持久包含 `requested_by/authorization_decision_id/capability/scope_hash/policy_version/grant_ids/resource_revision`；Worker 在 connector 写前复核撤销、TTL、scope 和 revision。测试覆盖“排队后撤销再执行”必须拒绝且不调用 provider。
 - [ ] **P1-BE-012：错误契约稳定。** capability/scope/explicit deny/obligation/catalog/JIT 拒绝分别返回稳定 code、decision/request ID 和最小化 details；403、503、真实 empty 三者不可互换，错误体不得暴露目标对象内容或存在性。
+- [x] **P1-BE-012：统一 evaluator 拒绝详情（本地切片完成）。** capability、scope、workbench、explicit deny、obligation 五类拒绝统一由 `authorizationDenialDetails()` 生成稳定的 decision/capability/reason/required scope/workbench/explicit-deny/obligation/policy 字段；request/trace ID 继续由 API envelope 提供。定向测试遍历五类 reason，并证明 details 不含 resource ID、解析 scope IDs 或目标对象内容。catalog/JIT 专用错误、503/empty 与真实 OIDC 运行矩阵仍为主项门禁。
 
 ### 19.5 最终回归与发布判定
 
