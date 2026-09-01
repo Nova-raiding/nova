@@ -73,6 +73,36 @@ const orphanEntityMeta = {
   publish_job: "发布任务",
 } as const;
 
+type ConsistencyFinding = CanonicalProductConsistencyReport["findings"][number];
+
+/** Read-only relationship evidence; missing IDs remain visible as gaps. */
+export function CanonicalRelationChain({ finding }: { finding: ConsistencyFinding }) {
+  const relation = finding.relation;
+  const segments = [
+    { label: "旧商品", ids: [finding.legacyProductId] },
+    { label: "规范商品", ids: finding.canonicalProductId ? [finding.canonicalProductId] : [] },
+    { label: "Listing", ids: relation?.listingIds ?? finding.listingIds },
+    { label: "批次商品", ids: relation?.campaignItemIds ?? finding.campaignItemIds },
+    { label: "任务", ids: relation?.taskIds ?? finding.taskIds },
+    { label: "发布任务", ids: relation?.publishJobIds ?? finding.publishJobIds },
+  ];
+
+  return <div className="canonical-relation-chain" aria-label="商品关系链">
+    <Typography.Text strong>关系链证据</Typography.Text>
+    <ol>
+      {segments.map((segment) => <li key={segment.label}>
+        <Typography.Text strong>{segment.label}</Typography.Text>
+        <div>{segment.ids.length > 0
+          ? segment.ids.map((id) => <Typography.Text code key={id}>{id}</Typography.Text>)
+          : <Typography.Text type="secondary">未返回关系</Typography.Text>}</div>
+      </li>)}
+    </ol>
+    <Typography.Text type="secondary">
+      范围：{finding.scope ? `${finding.scope.brandId ?? "未绑定品牌"} / ${finding.scope.platform ?? "未绑定平台"} / ${finding.scope.accountId ?? "未绑定店铺"}` : "服务端未返回"}
+    </Typography.Text>
+  </div>;
+}
+
 export function CanonicalProductConsistencySection({ report, onRefresh, onNextAction, loading = false, canRead = true }: { report?: PresentationReport; onRefresh?: () => void; onNextAction?: (finding: CanonicalProductConsistencyReport["findings"][number]) => void; loading?: boolean; canRead?: boolean }) {
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [selected, setSelected] = useState<CanonicalProductConsistencyReport["findings"][number]>();
@@ -171,6 +201,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
           <Descriptions.Item label="批次 / 任务 / 发布">{selected.relation ? `${selected.relation.campaignItemIds.length} / ${selected.relation.taskIds.length} / ${selected.relation.publishJobIds.length}` : `${selected.campaignItemIds.length} / ${selected.taskIds.length} / ${selected.publishJobIds.length}`}</Descriptions.Item>
           <Descriptions.Item label="检查证据">{selected.evidence ? `${selected.evidence.generatedAt} · revision ${selected.evidence.revision ?? "—"}` : "服务端未返回证据摘要"}</Descriptions.Item>
         </Descriptions>
+        <CanonicalRelationChain finding={selected} />
         <Alert type={selected.status === "verified" ? "info" : "warning"} showIcon title="下一步" description={<NextActionEvidence finding={selected} onExecute={onNextAction} />} />
         {selected.blocking && <Alert type="error" showIcon title={`阻断：${selected.blocking.code}`} description={`${selected.blocking.message} ${selected.blocking.impact}`} />}
         {selected.codes.length ? <Alert type="error" showIcon title="阻断原因" description={<ul>{selected.codes.map(code => <li key={code}><Typography.Text code>{code}</Typography.Text>：{codeMessage(code)}</li>)}</ul>} /> : selected.evidence ? <Alert type="success" showIcon title="关系链已验证" /> : <Alert type="warning" showIcon title="验证证据不完整" description="服务端未返回该商品的证据摘要，当前不能作为发布依据。" />}

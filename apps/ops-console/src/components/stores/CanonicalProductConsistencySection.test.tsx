@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { CanonicalProductConsistencySection } from "./CanonicalProductConsistencySection.js";
+import { CanonicalProductConsistencySection, CanonicalRelationChain } from "./CanonicalProductConsistencySection.js";
 import type { CanonicalProductConsistencyReport } from "../../types/ops.js";
 
 const report: CanonicalProductConsistencyReport = {
@@ -63,6 +63,16 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain('canonical-consistency-card');
     expect(markup).toContain('canonical-consistency-filter');
     expect(markup).toContain('canonical-consistency-action');
+  });
+
+  it("renders every relationship segment and makes missing links explicit", () => {
+    const markup = renderToStaticMarkup(<CanonicalRelationChain finding={report.findings[0]!} />);
+    expect(markup).toContain('aria-label="商品关系链"');
+    expect(markup).toContain("旧商品");
+    expect(markup).toContain("规范商品");
+    expect(markup).toContain("Listing");
+    expect(markup).toContain("未返回关系");
+    expect(markup).toContain("brand-1 / taobao / store-1");
   });
 
   it("exposes a keyboard focus target and recovery guidance for report errors", () => {
