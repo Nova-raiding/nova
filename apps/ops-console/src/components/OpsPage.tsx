@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Space, Typography } from "antd";
+import { Space } from "antd";
+import { PageHeader } from "./PageHeader.js";
 
 interface OpsPageProps {
   eyebrow: string;
@@ -19,23 +20,18 @@ export function OpsPage({
   children,
 }: OpsPageProps) {
   const pageId = `ops-page-${eyebrow.toLowerCase().replaceAll(" ", "-")}`;
+  const descriptionId = `${pageId}-description`;
   return (
-    <section className="ops-page" aria-labelledby={pageId} tabIndex={-1}>
-      <header className="ops-page-heading">
-        <Typography.Text className="eyebrow">{eyebrow}</Typography.Text>
-        <Typography.Title id={pageId} level={headingLevel}>
-          {title}
-        </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        {description}
-      </Typography.Paragraph>
-      {nextStep ? (
-        <div className="ops-conversation-step" role="status" aria-live="polite">
-          <Typography.Text strong>当前下一步</Typography.Text>
-          <Typography.Text type="secondary">{nextStep}</Typography.Text>
-        </div>
-      ) : null}
-      </header>
+    <section className="ops-page" aria-labelledby={pageId} aria-describedby={descriptionId} tabIndex={-1}>
+      <PageHeader
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+        nextStep={nextStep}
+        headingLevel={headingLevel}
+        headingId={pageId}
+        descriptionId={descriptionId}
+      />
       <Space orientation="vertical" size={20} className="content-stack">
         {children}
       </Space>

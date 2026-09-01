@@ -129,7 +129,10 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .ops-page { width: 100%; }
 .ops-page:focus { outline: none; }
 .ops-page:focus-visible { outline: var(--ops-focus-width) solid var(--ops-focus-color); outline-offset: 4px; }
-.ops-page-heading { margin-bottom: 20px; }
+.ops-page-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 24px; margin-bottom: 20px; }
+.ops-page-heading-main { min-width: 0; }
+.ops-page-heading-actions { display: flex; align-items: flex-start; gap: 8px; }
+.ops-page-heading .ops-conversation-step { grid-column: 1 / -1; }
 .ops-page-heading :is(h1, h2, h3, h4, h5) { margin: 4px 0 !important; color: #172554 !important; }
 .ops-page-heading .ant-typography { margin-bottom: 0; }
 .ops-conversation-step { display: flex; gap: 10px; align-items: baseline; padding: 10px 14px; margin-top: 12px; border-left: 3px solid #2563eb; background: #eff6ff; border-radius: 0 8px 8px 0; }
