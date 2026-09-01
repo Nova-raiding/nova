@@ -94,6 +94,20 @@ function normalizeWriteStatus(value: WriteStatus, request: WriteIdentity): Write
   const remoteId = readString(value.remoteId)
   const requestId = readString(value.requestId)
   const found = value.found === true
+  // A status response is only attributable to the write we asked about when
+  // its remote identity agrees with the identity captured by the write
+  // receipt.  A provider can return a valid-looking status for another
+  // product (or another account) and must not be allowed to turn that into
+  // publish evidence.
+  const remoteIdentityMatches = !request.remoteId || !remoteId || remoteId === request.remoteId
+  if (!remoteIdentityMatches) {
+    return {
+      found: false,
+      state: 'unknown',
+      ...(requestId ? { requestId } : {}),
+      simulated: false,
+    }
+  }
   // A platform adapter may only promote a write to published when the remote
   // query found the write and returned an attributable remote identifier. An
   // HTTP response or an unqualified mapper result is not publish evidence.

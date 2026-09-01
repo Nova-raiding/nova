@@ -103,6 +103,27 @@ describe.each(platforms)('%s HTTP connector FR-15 contract', (platform) => {
     expect(statusRequests.every(request => request.method === 'POST')).toBe(true)
   })
 
+  it('fails closed when a status response names a different remote identity', async () => {
+    const store = makeStore()
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const target = String(url)
+      if (target.endsWith('/oauth/token')) return json({ access_token: 'fixture-access-token', account_id: `${platform}-shop-1` })
+      if (target.endsWith('/products/create')) return json({ remoteId: `${platform}-created-1`, requestId: `${platform}-create-request` })
+      if (target.endsWith('/publish/status')) return json({ found: true, state: 'published', remoteId: `${platform}-different-1`, requestId: `${platform}-status-request` })
+      return json({ ok: true })
+    })
+    const connector = createConfiguredConnector(platform, { config: { ...makeConfig(platform), mapWriteReceipt: undefined, mapWriteStatus: undefined }, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
+    const ref = await connector.exchangeCode({ code: `${platform}-code`, state: `${platform}-state` })
+    const context = { workspaceId: 'ws', accountId: ref.accountId, credentialRef: ref.credentialRef }
+    const input = { fields: { title: 'created', category: 'cat', price: 1, stock: 1 }, idempotencyKey: `${platform}-identity-mismatch` }
+    const receipt = await connector.createProduct(context, input)
+
+    await expect(connector.queryWrite(context, { idempotencyKey: input.idempotencyKey, remoteId: receipt.remoteId }))
+      .resolves.toMatchObject({ found: false, state: 'unknown', requestId: `${platform}-status-request`, simulated: false })
+    const result = await connector.queryWrite(context, { idempotencyKey: input.idempotencyKey, remoteId: receipt.remoteId })
+    expect(result.remoteId).toBeUndefined()
+  })
+
   it('normalizes OAuth authorization failure without leaking platform credentials', async () => {
     const store = makeStore()
     const fetchMock = vi.fn(async () => json({ error: 'invalid_grant', access_token: 'must-not-leak' }, 401))
