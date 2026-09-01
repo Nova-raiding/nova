@@ -26,12 +26,13 @@ export function AccessDeniedResult({
     headingRef.current?.focus({ preventScroll: true });
   }, []);
   const scopeText = scope.kind === "platform" ? "平台全局" : `${scope.kind}:${scope.id ?? "未识别"}`;
+  const accessContext = `当前会话在${scopeText}范围内缺少 ${capability} 能力；服务端仍会独立校验每个请求。`;
   return (
     <Result
       status="403"
       title={<span ref={headingRef} tabIndex={-1} role="heading" aria-level={1}>无权访问“{domainLabel}”</span>}
-      subTitle="当前会话不具备此运营域的读取能力；服务端仍会独立校验每个请求。"
-      extra={<Space><Button type="primary" onClick={onBack}>返回运营总览</Button><Button onClick={onRefresh}>刷新权限</Button></Space>}
+      subTitle={<span id="access-denied-context">{accessContext}{requestId ? ` 请求 ID：${requestId}。` : ""}</span>}
+      extra={<Space className="access-denied-actions"><Button type="primary" onClick={onBack}>返回运营总览</Button><Button onClick={onRefresh}>刷新权限</Button></Space>}
     >
       <div className="access-denied-evidence" role="alert" aria-live="assertive" aria-labelledby="access-denied-evidence-title">
         <Typography.Title level={5} id="access-denied-evidence-title" className="sr-only">权限拒绝详情</Typography.Title>

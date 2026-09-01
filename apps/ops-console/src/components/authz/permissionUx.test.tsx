@@ -131,6 +131,9 @@ describe("desktop permission UX", () => {
     expect(html).toContain("req_1");
     expect(html).toContain("trace_1");
     expect(html).toContain("CAPABILITY_DENIED");
+    expect(html).toContain("当前会话在workspace:ws_1范围内缺少 identity.read 能力");
+    expect(html).toContain("请求 ID：req_1");
+    expect(html).toContain("access-denied-actions");
     expect(html).toContain("刷新权限");
     expect(html).toContain('role="alert"');
     expect(html).toContain('tabindex="-1"');
