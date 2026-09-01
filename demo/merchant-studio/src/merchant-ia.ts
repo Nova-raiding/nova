@@ -7,8 +7,17 @@ import type { Product, Task } from './api.js'
  * embedded in App.tsx, so the owner can wire this contract without moving
  * state or changing navigation in a concurrent edit.
  */
-export function productIdentityKey(product: Pick<Product, 'id' | 'platform' | 'accountId' | 'remoteId'>): string {
-  return [product.platform, product.accountId?.trim() ?? '', product.remoteId?.trim() || product.id].join(':')
+export function productIdentityKey(product: Pick<Product, 'id' | 'workspaceId' | 'brandId' | 'platform' | 'accountId' | 'remoteId' | 'canonical_scope'>): string {
+  const scope = product.canonical_scope
+  return JSON.stringify([
+    product.workspaceId.trim(),
+    product.brandId?.trim() ?? '',
+    scope?.canonical_product_id?.trim() ?? '',
+    scope?.listing_id?.trim() ?? '',
+    product.platform,
+    product.accountId?.trim() ?? '',
+    product.remoteId?.trim() || product.id,
+  ])
 }
 
 function isFixtureProduct(product: Pick<Product, 'source' | 'storeName' | 'id'>): boolean {
@@ -44,6 +53,9 @@ function productScore(product: Product): number {
   let score = 0
   if (hasUsableStoreIdentity(product)) score += 100
   if (!isFixtureProduct(product)) score += 50
+  // A verified canonical scope is the safest product identity for action
+  // ordering. Legacy rows remain visible, but can never outrank it.
+  if (product.canonical_scope?.verification_status === 'verified' && product.canonical_scope.canonical_product_id?.trim() && product.canonical_scope.listing_id?.trim()) score += 40
   if (product.factsConfirmed) score += 10
   if (product.sourceAssetIds?.length) score += 5
   return score
