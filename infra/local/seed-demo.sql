@@ -16,8 +16,8 @@ VALUES (
   '00000000-0000-4000-8000-000000000001',
   'ws_demo',
   'actor_demo',
-  '本地演示平台运营',
-  'platform_ops',
+  '本地演示商家运营',
+  'operator',
   'active',
   'local_compose_seed'
 )

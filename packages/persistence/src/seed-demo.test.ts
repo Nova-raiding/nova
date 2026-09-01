@@ -13,6 +13,9 @@ describe('local PostgreSQL demo seed contract', () => {
     expect(sql).toContain("'demo.fixture.ops_readiness','local_demo'")
     expect(sql).toContain("'false',false,true")
     expect(sql).not.toMatch(/production_canary|official_api|provider_trade_id|access[_-]?token|refresh[_-]?token/iu)
+    const membershipInserts = sql.match(/INSERT INTO workspace_members[\s\S]*?;/gu) ?? []
+    expect(membershipInserts.length).toBeGreaterThan(0)
+    for (const statement of membershipInserts) expect(statement).not.toContain("'platform_ops'")
 
     for (const relation of [
       'workspace_commercial_settings', 'workspace_subscriptions', 'workspace_platform_settings',
