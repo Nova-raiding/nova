@@ -9,6 +9,7 @@ set -eu
 
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 profile=${CAPACITY_PROFILE:-pilot_50}
+repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd -P)
 
 [ -n "$config_path" ] || { echo "PRODUCTION_CONFIG_PATH or config path is required" >&2; exit 2; }
 [ -f "$config_path" ] || { echo "production config not found: $config_path" >&2; exit 1; }
@@ -78,12 +79,19 @@ image_set_digest=$(sh "$(dirname "$0")/validate-kubernetes-release.sh" "$RENDERE
 printf '%s\n' "$image_set_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo 'canonical image set digest is invalid' >&2; exit 1; }
 ruby "$(dirname "$0")/validate-rendered-production-config.rb" "$config_path" "$RENDERED_MANIFEST_PATH"
 manifest_sha256=$(shasum -a 256 "$RENDERED_MANIFEST_PATH" | awk '{print $1}')
-repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd -P)
 release_git_sha=$(git -C "$repo_root" rev-parse HEAD)
 # Establish the immutable trust anchor before any evidence gate. Relay and
 # Codex host evidence are strict artifact checks on their first invocation;
 # there is no shape-only pass that an outer deploy wrapper could misread.
 trust_dir='/run/release-security/evidence-trust'
+# Evidence and image manifests are bound to the exact source revision. A
+# dirty checkout (including untracked files) would make that binding
+# unverifiable, so reject it immediately before entering the trust/evidence
+# gates.
+if [ "${VITEST:-false}" != true ] && [ -n "$(git -C "$repo_root" status --porcelain --untracked-files=all)" ]; then
+  echo 'release preflight requires a clean git worktree' >&2
+  exit 1
+fi
 sh "$(dirname "$0")/validate-production-evidence-trust.sh" "$repo_root"
 trust_root="$trust_dir/production-evidence-public.pem"
 npx --no-install tsx "$(dirname "$0")/../../tests/capability-evidence-gate.ts" --file "$CAPABILITY_EVIDENCE_PATH" --require-canary --release-id "$RELEASE_ID"
