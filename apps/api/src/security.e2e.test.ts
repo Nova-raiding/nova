@@ -988,6 +988,7 @@ describe('security and access-control acceptance gates', () => {
   it('filters brands by grant and enforces minimum brand roles for writes in staging', async () => {
     const workspaceId = `ws_brand_access_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
     await configureBearerMembers([
       { token: 'brand-owner-token', workspaceId, actorId: 'brand-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
       { token: 'brand-editor-token', workspaceId, actorId: 'brand-editor', role: 'operator', gatewayRoles: ['operator'] },
@@ -1028,7 +1029,7 @@ describe('security and access-control acceptance gates', () => {
     const selectionIntentHash = createHash('sha256').update(JSON.stringify({ method: 'catalog.image.select', jobId: generatedJob.id, visualRef: generatedVisualRef, expectedRevision: generatedJob.revision })).digest('hex')
     const viewerSelection = await mcp(editorHeaders, 6.6, 'catalog.image.select', { job_id: generatedJob.id, visual_ref: generatedVisualRef, expected_revision: String(generatedJob.revision), idempotency_key: `brand-select-${workspaceId}`, reason: '品牌候选图选择', confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: selectionIntentHash })
     expect(viewerSelection.error).toMatchObject({ code: 'BRAND_ACCESS_REQUIRED', details: { required_role: 'editor' } })
-    expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
+    expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const protectedTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
     const hiddenTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
     const restPublishDenied = await fetch(`${base}/v1/publish-jobs`, {

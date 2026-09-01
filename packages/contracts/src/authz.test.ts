@@ -58,6 +58,7 @@ describe('authorization policy registry', () => {
     expect(getMcpMethodPolicy('platform.store.alias.set')).toMatchObject({ capability: 'store.connection.update', scope: 'account', effect: 'write' })
     expect(getMcpMethodPolicy('brand-unit.bind-store')).toMatchObject({ capability: 'customer.content.update', scope: 'account', effect: 'write' })
     expect(getMcpMethodPolicy('brand-unit.listing.create')).toMatchObject({ capability: 'customer.content.update', scope: 'account', effect: 'write' })
+    expect(getMcpMethodPolicy('brand-unit.product.create')).toMatchObject({ capability: 'customer.content.update', scope: 'brand', effect: 'write' })
     expect(getMcpMethodPolicy('ops.alert.ack')).toMatchObject({ capability: 'marketing.alert.update', effect: 'write' })
     expect(getMcpMethodPolicy('rule.status')).toMatchObject({ capability: 'rule.update', effect: 'write' })
     expect(getMcpMethodPolicy('task.resume')).toMatchObject({ capability: 'customer.content.update', effect: 'write' })

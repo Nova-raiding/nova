@@ -4600,6 +4600,17 @@ export function resolveAuthorizationResourceScope(policy: ReturnType<typeof getM
   return { type: 'account' as const, id: exactId(params.account_id) }
 }
 
+async function permissionAtomsForResolvedResource(req: IncomingMessage, workspaceId: string, policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, resourceScope: ReturnType<typeof resolveAuthorizationResourceScope>, atoms: readonly PermissionAtom[]) {
+  if (resourceScope?.type !== 'brand' || !resourceScope.id) return atoms
+  const principal = requestPrincipals.get(req)
+  const capabilitySource = atoms.find(atom => atom.capability === policy.capability && atom.effect === 'allow' && atom.scope.type === 'workspace' && atom.scope.ids.includes(workspaceId))
+  if (!principal?.actorId || !capabilitySource) return atoms
+  const minimumRole: BrandAccessRole = policy.effect === 'write' ? 'editor' : 'viewer'
+  const granted = hasWorkspaceWideBrandAccess(req) || await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: resourceScope.id, externalSubject: principal.actorId, minimumRole })
+  if (!granted) return atoms
+  return [...atoms, { capability: policy.capability, effect: 'allow' as const, scope: { type: 'brand' as const, ids: [resourceScope.id] }, source: 'resource_grant' as const, sourceId: `brand-access:${principal.actorId}:${resourceScope.id}`, obligations: capabilitySource.obligations, ...(capabilitySource.effectLimit ? { effectLimit: capabilitySource.effectLimit } : {}), ...(capabilitySource.expiresAt ? { expiresAt: capabilitySource.expiresAt } : {}), ...(capabilitySource.revision ? { revision: capabilitySource.revision } : {}) }]
+}
+
 async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: string, decision: AuthorizationDecision) {
   const correlation = getRequestCorrelation(req)
   enrichRequestObservation(req, {
@@ -4673,10 +4684,11 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const enforce = runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(capabilityDomain)
   const principal = requestPrincipals.get(req)
   const resourceScope = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
+  const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projection.atoms)
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,
     method,
-    atoms: projection.atoms,
+    atoms: decisionAtoms,
     satisfiedObligations: satisfiedAuthorizationObligations(params, req),
     resourceScope,
     workbench: principal?.workbench ?? 'workspace',
