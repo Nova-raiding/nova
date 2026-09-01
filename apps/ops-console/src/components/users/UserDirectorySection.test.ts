@@ -68,4 +68,15 @@ describe("UserDirectorySection sorting", () => {
     const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
     expect(source).toContain('scroll={{ x: "max-content" }}');
   });
+
+  it("makes table, drawer, and failed action forms recoverable for keyboard users", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('aria-label="用户目录数据表"');
+    expect(source).toContain('aria-label="用户目录详情抽屉"');
+    expect(source).toContain("restoreUserDetailFocus");
+    expect(source).toContain('role="alert" tabIndex={-1}');
+    expect(source).toContain("已保留操作原因");
+    expect(source).toContain('aria-describedby={actionError ? "user-access-error-title" : undefined}');
+    expect(source).toContain('aria-describedby={actionError ? "bulk-suspend-error-title" : undefined}');
+  });
 });

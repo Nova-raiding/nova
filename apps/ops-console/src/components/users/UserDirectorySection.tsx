@@ -62,6 +62,8 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [bulkSuspendOpen, setBulkSuspendOpen] = useState(false);
   const [bulkSuspendReason, setBulkSuspendReason] = useState("");
   const [bulkSuspending, setBulkSuspending] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const actionErrorRef = useRef<HTMLDivElement>(null);
   const [userSort, setUserSort] = useState<UserDirectorySort>();
   const detailTriggerSubjectRef = useRef<string | undefined>(undefined);
   const detailButtonRefs = useRef(new Map<string, HTMLElement>());
@@ -69,18 +71,27 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const identityWritesDisabled = !canWriteLoadedIdentity(model);
 
   useEffect(() => {
+    if (actionError) actionErrorRef.current?.focus({ preventScroll: true });
+  }, [actionError]);
+
+  useEffect(() => {
     if (canReadUserDirectory) void model.loadUsers();
     return () => model.cancelUserRequests();
   }, [canReadUserDirectory]);
 
   const submitAccessChange = async () => {
-    if (!accessTarget || suspendReason.trim().length < 4) return;
+    if (!accessTarget || suspendReason.trim().length < 4) {
+      setActionError("请填写至少 4 个字符的操作原因。");
+      return;
+    }
+    setActionError("");
     setSuspending(true);
     const saved = accessTarget.status === "suspended"
       ? await model.activateUser(accessTarget.workspaceId, accessTarget.externalSubject, suspendReason.trim())
       : await model.suspendUser(accessTarget.workspaceId, accessTarget.externalSubject, suspendReason.trim());
     setSuspending(false);
     if (saved) { setAccessTarget(undefined); setSuspendReason(""); }
+    else setActionError("用户访问状态未更新。请检查权限、版本冲突或连接状态后重试；已保留操作原因。");
   };
   const closeUserDetail = () => {
     setDetailSubject(undefined);
@@ -110,7 +121,11 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     .filter((row) => selectedUserKeys.includes(`${row.workspaceId}:${row.externalSubject}`))
     .map((row) => ({ workspaceId: row.workspaceId, externalSubject: row.externalSubject, revision: row.revision }));
   const submitBulkSuspend = async () => {
-    if (bulkSuspendReason.trim().length < 4 || !selectedUsers.length) return;
+    if (bulkSuspendReason.trim().length < 4 || !selectedUsers.length) {
+      setActionError(!selectedUsers.length ? "请至少选择一个可操作成员。" : "请填写至少 4 个字符的操作原因。");
+      return;
+    }
+    setActionError("");
     setBulkSuspending(true);
     const result = await model.suspendUsers(selectedUsers, bulkSuspendReason.trim());
     setBulkSuspending(false);
@@ -118,7 +133,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       setSelectedUserKeys([]);
       setBulkSuspendOpen(false);
       setBulkSuspendReason("");
-    }
+    } else setActionError(`已完成 ${selectedUsers.length - result.failed} 个，${result.failed} 个未完成。请保留当前选择并逐条重试失败项。`);
   };
   const handleDirectoryChange: TableProps<PlatformUser>["onChange"] = (pagination, _filters, sorter, extra) => {
     if (extra.action === "sort") {
@@ -161,13 +176,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             loading={model.userExporting}
             aria-busy={model.userExporting}
           >{model.userExporting ? "正在导出" : "导出当前筛选"}</Button>
-          <Button danger onClick={() => setBulkSuspendOpen(true)} disabled={!model.canUserGovernance || !selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
+          <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!model.canUserGovernance || !selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
       <div aria-live="polite" className="ops-visually-hidden">{model.userExporting ? "正在生成用户目录导出文件，请稍候" : ""}</div>
       {model.userDirectoryError && <Alert className="ops-inline-alert" showIcon type="error" title="用户目录加载失败" description={model.userDirectoryError} action={<Button size="small" onClick={() => void model.loadUsers(form.getFieldsValue())}>重试</Button>} />}
       {model.userDirectory.truncated && <Alert className="ops-inline-alert" showIcon type="info" title="结果超过 500 条，请增加筛选条件。" />}
       <Table<PlatformUser>
+        aria-label="用户目录数据表"
         rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`}
         loading={model.userDirectoryLoading}
         dataSource={sortedUsers}
@@ -186,11 +202,11 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           { title: "成员状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
           { title: "租户状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{workspaceStatusLabels[value] ?? value}</Tag> },
           { title: "创建时间", dataIndex: "createdAt", width: 180, sorter: true, sortOrder: userSort?.field === "createdAt" ? userSort.order : null, render: (value?: string) => value ? dateTimeFormatter.format(new Date(value)) : "—" },
-          { title: "操作", key: "actions", width: 170, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button><Button danger={row.status !== "suspended"} size="small" title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => setAccessTarget(row)}>{row.status === "suspended" ? "恢复" : "停用"}</Button></Space> },
+          { title: "操作", key: "actions", width: 170, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button><Button danger={row.status !== "suspended"} size="small" title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button></Space> },
         ]}
       />
     </Card>
-    <Drawer title={`用户详情 · ${detailSubject ?? ""}`} size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden>
+    <Drawer title={`用户详情 · ${detailSubject ?? ""}`} aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden>
       <Spin spinning={model.userDetailLoading}>
         {model.userDetail && <Space orientation="vertical" size="large" className="full-width">
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} items={[
@@ -239,9 +255,10 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       confirmLoading={suspending} onOk={() => void submitAccessChange()}
       onCancel={() => { if (!suspending) { setAccessTarget(undefined); setSuspendReason(""); } }}
     >
+      {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="user-access-error-title"><Typography.Text strong id="user-access-error-title">操作未完成</Typography.Text><Typography.Paragraph>{actionError}</Typography.Paragraph></div>}
       <Typography.Paragraph>{accessTarget?.status === "suspended" ? "恢复" : "仅停用"} <Typography.Text code>{accessTarget?.externalSubject}</Typography.Text> 在工作区 <Typography.Text code>{accessTarget?.workspaceId}</Typography.Text> 的访问，不会删除业务数据。</Typography.Paragraph>
       <label htmlFor="suspend-reason">操作原因（至少 4 个字符）</label>
-      <Input.TextArea id="suspend-reason" autoFocus rows={4} maxLength={500} showCount value={suspendReason} onChange={(event) => setSuspendReason(event.target.value)} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
+      <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={4} maxLength={500} showCount value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
     </Modal>
     <Modal title={identityAction === "suspended" ? "全局停用平台身份" : "恢复平台身份"} open={Boolean(identityAction)} okText="确认执行" okButtonProps={{ danger: identityAction === "suspended", disabled: identityWritesDisabled || identityReason.trim().length < 4 }} onCancel={() => { setIdentityAction(undefined); setIdentityReason(""); }} onOk={async () => { if (identityAction && await model.changeIdentityAccess(identityAction, identityReason.trim())) { setIdentityAction(undefined); setIdentityReason(""); } }}>
       <Alert showIcon type={identityAction === "suspended" ? "error" : "warning"} title={identityAction === "suspended" ? "该用户在所有租户的访问将立即失效，活动会话会被撤销。" : "只恢复身份状态；旧会话不会复活，用户必须重新登录。"} />
@@ -251,11 +268,12 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       <Space orientation="vertical" className="full-width"><Select value={riskLevel} onChange={setRiskLevel} options={[{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "critical" }]} /><Select value={riskDecision} onChange={setRiskDecision} options={[{ value: "allow", label: "允许" }, { value: "step_up", label: "要求 MFA" }, { value: "block", label: "阻断并撤销会话" }]} /><Input.TextArea aria-label="风险策略原因" rows={4} value={identityReason} onChange={(event) => setIdentityReason(event.target.value)} placeholder="填写风险证据或工单原因" /></Space>
     </Modal>
     <Modal title="撤销认证会话" open={Boolean(sessionTarget)} okText="确认撤销" okButtonProps={{ danger: true, disabled: identityWritesDisabled || sessionReason.trim().length < 4 }} onCancel={() => { setSessionTarget(undefined); setSessionReason(""); }} onOk={async () => { if (sessionTarget && await model.revokeIdentitySession(sessionTarget.id, sessionTarget.revision, sessionReason.trim())) { setSessionTarget(undefined); setSessionReason(""); } }}><Input.TextArea aria-label="会话撤销原因" rows={4} value={sessionReason} onChange={(event) => setSessionReason(event.target.value)} placeholder="填写会话撤销原因或工单号" /></Modal>
-    <Modal title={`批量停用用户（${selectedUsers.length}）`} open={bulkSuspendOpen} okText="逐条执行停用" cancelText="取消" confirmLoading={bulkSuspending} okButtonProps={{ danger: true, disabled: bulkSuspendReason.trim().length < 4 || !selectedUsers.length }} onCancel={() => { if (!bulkSuspending) { setBulkSuspendOpen(false); setBulkSuspendReason(""); } }} onOk={() => void submitBulkSuspend()}>
+    <Modal title={`批量停用用户（${selectedUsers.length}）`} open={bulkSuspendOpen} okText="逐条执行停用" cancelText="取消" confirmLoading={bulkSuspending} okButtonProps={{ danger: true, disabled: bulkSuspendReason.trim().length < 4 || !selectedUsers.length }} onCancel={() => { if (!bulkSuspending) { setBulkSuspendOpen(false); setBulkSuspendReason(""); setActionError(""); } }} onOk={() => void submitBulkSuspend()}>
       <Alert showIcon type="warning" title="操作会逐条写入真实成员状态和审计记录" description="系统不会把部分成功伪装成全部成功；失败成员会保留在刷新后的目录中，需要单独处理。当前登录账号和已停用成员不可勾选。" />
+      {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="bulk-suspend-error-title"><Typography.Text strong id="bulk-suspend-error-title">批量操作结果</Typography.Text><Typography.Paragraph>{actionError}</Typography.Paragraph></div>}
       <Typography.Paragraph>将停用当前筛选结果中已勾选的 {selectedUsers.length} 个成员关系。</Typography.Paragraph>
       <label htmlFor="bulk-suspend-reason">操作原因（至少 4 个字符）</label>
-      <Input.TextArea id="bulk-suspend-reason" autoFocus rows={4} maxLength={500} showCount value={bulkSuspendReason} onChange={(event) => setBulkSuspendReason(event.target.value)} placeholder="填写工单号、风险证据或客户请求" />
+      <Input.TextArea id="bulk-suspend-reason" aria-describedby={actionError ? "bulk-suspend-error-title" : undefined} autoFocus rows={4} maxLength={500} showCount value={bulkSuspendReason} onChange={(event) => { setBulkSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="填写工单号、风险证据或客户请求" />
     </Modal>
   </>;
 }
