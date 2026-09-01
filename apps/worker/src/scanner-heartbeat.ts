@@ -55,7 +55,7 @@ export class ScannerHeartbeatController {
    */
   canProcessScans(): boolean {
     const heartbeat = this.latestHeartbeat
-    if (!heartbeat || !Object.values(heartbeat.checks).every(Boolean) || !heartbeat.clamav.reachable || !heartbeat.clamav.engineVersion || !heartbeat.clamav.definitionsVersion || !heartbeat.clamav.definitionsPublishedAt || !heartbeat.eicar.passed || !heartbeat.callback.configured || heartbeat.failure) return false
+    if (!heartbeat || !Object.values(heartbeat.checks).every(Boolean) || !heartbeat.clamav.reachable || !heartbeat.clamav.engineVersion || !heartbeat.clamav.definitionsVersion || !heartbeat.clamav.definitionsPublishedAt || !heartbeat.eicar.passed || !heartbeat.callback.configured || !heartbeat.callback.capable || heartbeat.failure) return false
     const now = this.options.now?.() ?? new Date()
     const eicarAt = heartbeat.eicar.checkedAt ? Date.parse(heartbeat.eicar.checkedAt) : Number.NaN
     if (!Number.isFinite(eicarAt) || now.getTime() - eicarAt > this.options.thresholds.eicarMaxAgeSeconds * 1000) return false
