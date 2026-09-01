@@ -18,6 +18,26 @@ async function start() {
 
 async function json(response: Response) { return await response.json() as Envelope<any> }
 
+function generatedDecisionBody(title: string, detail: string, sellingPoints: string[]) {
+  const factSourceId = 'product:prod_fixture_1:v1'
+  return {
+    title,
+    detail,
+    sellingPoints,
+    modules: [{
+      key: 'selling_points', title: '核心卖点', purpose: '回答购买理由', body: sellingPoints.join('；'),
+      factSourceIds: [factSourceId], contentKind: 'fact',
+      decisionContract: {
+        buyerQuestion: '为什么值得购买？', pageTask: '说明已确认卖点',
+        claim: { text: sellingPoints.join('；'), factSourceIds: [factSourceId], platforms: ['taobao'], limitations: ['仅适用于当前商品快照'] },
+        evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
+        visualContract: { requiredElements: ['商品与卖点'], protectedElements: ['商品外观'], prohibitedImplications: ['不得扩大未确认效果'], accessibilityText: sellingPoints.join('；') },
+        priority: 1, optional: false,
+      },
+    }],
+  }
+}
+
 describe('API HTTP vertical slice', () => {
   it('exposes a read-only workspace-scoped canonical consistency dry-run without cutover', async () => {
     const base = await start()
@@ -498,7 +518,7 @@ describe('API HTTP vertical slice', () => {
     expect(confirmedPlan.error).toBeNull()
     const readyToGenerate = await call(4.75, 'campaign.batch.get', { campaign_id: campaignResult.id })
     expect(readyToGenerate.data).toMatchObject({ result: { state: 'generating', items: [expect.objectContaining({ state: 'generating', next_action: 'content.generate' })] } })
-    const generatedContent = await call(4.8, 'content.generate', { task_id: generatedTaskId })
+    const generatedContent = await call(4.8, 'content.codex.commit', { task_id: generatedTaskId, body_json: JSON.stringify(generatedDecisionBody('批量生成标题', '批量生成详情', ['已确认卖点'])) })
     expect(generatedContent.error).toBeNull()
     const awaitingReview = await call(4.85, 'campaign.batch.get', { campaign_id: campaignResult.id })
     expect(awaitingReview.data).toMatchObject({ result: { state: 'review_required', items: [expect.objectContaining({ state: 'review_required', next_action: 'content.review' })] } })
@@ -516,7 +536,7 @@ describe('API HTTP vertical slice', () => {
       const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `preflight-${workspaceId}`, credentialRef: `fixture://${workspaceId}` })
       const canonicalSource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: `已绑定商品 ${readMode}` })
       const unmapped = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: `未绑定商品 ${readMode}` })
-      const call = (id: number, method: string, params: Record<string, unknown>, role?: string) => fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, ...(role ? { 'x-role': role } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
+      const call = (id: number, method: string, params: Record<string, unknown>, role?: string) => fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, ...(role ? { 'x-role': role } : {}), ...(role === 'platform_ops' ? { 'x-ops-workbench': 'platform' } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
       const brandId = `brand_${workspaceId}`
       expect((await call(1, 'catalog.facts.confirm', { product_id: canonicalSource.id })).error).toBeNull()
       expect((await call(1.1, 'catalog.facts.confirm', { product_id: unmapped.id })).error).toBeNull()
@@ -1019,7 +1039,7 @@ describe('API HTTP vertical slice', () => {
     await fetch(`${base}/v1/tasks/${taskId}/plan/confirm`, { method: 'POST', headers, body: JSON.stringify({ expected_version: 2 }) })
     const prepare = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'content.codex.prepare', params: { workspace_id: workspaceId, task_id: taskId } }) }).then(json)
     expect((prepare.data as { result: { confirmedFactVersionId: string; output: { required: string[] } } }).result.output.required).toEqual(['title', 'detail', 'sellingPoints'])
-    const commit = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'content.codex.commit', params: { workspace_id: workspaceId, task_id: taskId, body_json: JSON.stringify({ title: '轻云防晒外套', detail: '根据已确认事实生成的详情说明。', sellingPoints: ['轻便', '防晒'] }) } }) }).then(json)
+    const commit = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'content.codex.commit', params: { workspace_id: workspaceId, task_id: taskId, body_json: JSON.stringify(generatedDecisionBody('轻云防晒外套', '根据已确认事实生成的详情说明。', ['轻便', '防晒'])) } }) }).then(json)
     expect((commit.data as { result: { state: string; versionVector: { modelId: string } } }).result).toMatchObject({ state: 'review_required', versionVector: { modelId: 'codex-host-session' } })
   })
 
@@ -1326,8 +1346,7 @@ describe('API HTTP vertical slice', () => {
     const taskId = (task.data as { id: string }).id
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ direction_id: 'A' }) })
     await fetch(`${base}/v1/tasks/${taskId}/plan/confirm`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-actor-id': 'test-merchant' }, body: JSON.stringify({ expected_version: 2 }) })
-    const draft = await fetch(`${base}/v1/tasks/${taskId}/content`, { method: 'POST' }).then(json)
-    const contentVersionId = (draft.data as { id: string }).id
+    const contentVersionId = service.createDraft(taskId).id
     const usageAudit = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo', 'x-role': 'support' }, body: JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'ops.audit.list', params: { workspace_id: 'ws_demo', limit: '100' } }) }).then(json)
     expect((usageAudit.data as { result: { records: Array<{ action: string }> } }).result.records.map(item => item.action)).toContain('usage.consume')
     await fetch(`${base}/v1/tasks/${taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content_version_id: contentVersionId }) })
@@ -1345,7 +1364,7 @@ describe('API HTTP vertical slice', () => {
     const timeline = await fetch(`${base}/v1/tasks/${taskId}/timeline?limit=200`, { headers: { 'x-workspace-id': 'ws_demo' } }).then(json)
     expect(timeline.error).toBeNull()
     expect((timeline.data as Array<{ event_type: string }>).map(item => item.event_type)).toEqual(expect.arrayContaining([
-      'task.created', 'task.direction_selected', 'content.generated', 'content.approved', 'publish.prepared',
+      'task.created', 'task.direction_selected', 'task.plan_confirmed', 'content.approved', 'publish.prepared',
       'publish.requested', 'publish.observation',
     ]))
     const timelineDenied = await fetch(`${base}/v1/tasks/${taskId}/timeline`, { headers: { 'x-workspace-id': 'ws_other' } }).then(json)
@@ -1362,8 +1381,7 @@ describe('API HTTP vertical slice', () => {
     expect((directions.data as Array<{ id: string }>).map(item => item.id)).toEqual(['A', 'B', 'C'])
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers, body: JSON.stringify({ direction_id: 'A' }) })
     await fetch(`${base}/v1/tasks/${taskId}/plan/confirm`, { method: 'POST', headers, body: JSON.stringify({ expected_version: 2 }) })
-    const draftResponse = await fetch(`${base}/v1/tasks/${taskId}/content`, { method: 'POST', headers }).then(json)
-    const firstId = (draftResponse.data as { id: string }).id
+    const firstId = service.createDraft(taskId).id
     const review = await fetch(`${base}/v1/content-versions/${firstId}/review`, { headers }).then(json)
     expect(review.error).toBeNull()
     expect((review.data as { blocking: boolean }).blocking).toBe(false)
@@ -1408,7 +1426,7 @@ describe('API HTTP vertical slice', () => {
     const jobId = (queued.data as { id: string }).id
     const duplicate = await fetch(`${base}/v1/tasks/${taskId}/content-jobs`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'async-generation-1' } }).then(json)
     expect((duplicate.data as { id: string }).id).toBe(jobId)
-    const completed = await fetch(`${base}/v1/generation-jobs/${jobId}/result`, { method: 'POST', headers, body: JSON.stringify({ content: { title: '异步标题', detail: '异步详情', sellingPoints: ['异步事实卖点'] } }) }).then(json)
+    const completed = await fetch(`${base}/v1/generation-jobs/${jobId}/result`, { method: 'POST', headers, body: JSON.stringify({ content: generatedDecisionBody('异步标题', '异步详情', ['异步事实卖点']) }) }).then(json)
     expect((completed.data as { state: string }).state).toBe('succeeded')
     expect((completed.data as { contentVersionId: string }).contentVersionId).toMatch(/^cv_/)
     const versions = await fetch(`${base}/v1/tasks/${taskId}/content-versions`, { headers }).then(json)
@@ -1417,8 +1435,7 @@ describe('API HTTP vertical slice', () => {
     expect(denied.error?.code).toBe('GENERATION_JOB_NOT_FOUND')
   })
 
-  it('consumes asynchronous content jobs in explicit fixture mode', async () => {
-    vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
+  it('keeps asynchronous jobs queued until a trusted result arrives', async () => {
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }
     const taskResponse = await fetch(`${base}/v1/tasks`, { method: 'POST', headers, body: JSON.stringify({ product_id: 'prod_fixture_1', platform: 'taobao' }) }).then(json)
@@ -1428,15 +1445,13 @@ describe('API HTTP vertical slice', () => {
     const queued = await fetch(`${base}/v1/tasks/${taskId}/content-jobs`, { method: 'POST', headers: { ...headers, 'idempotency-key': `fixture-async-${Date.now()}` }, body: '{}' }).then(json)
     const jobId = (queued.data as { id: string; state: string }).id
     expect((queued.data as { state: string }).state).toBe('queued')
-    let completed: any
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      completed = await fetch(`${base}/v1/generation-jobs/${jobId}`, { headers }).then(json)
-      if ((completed.data as { state: string }).state === 'succeeded') break
-      await new Promise(resolve => setTimeout(resolve, 10))
-    }
+    const pending = await fetch(`${base}/v1/generation-jobs/${jobId}`, { headers }).then(json)
+    expect(pending.data).toMatchObject({ state: 'queued' })
+    expect(pending.data).not.toHaveProperty('contentVersionId')
+    const completed = await fetch(`${base}/v1/generation-jobs/${jobId}/result`, { method: 'POST', headers, body: JSON.stringify({ content: generatedDecisionBody('可信异步标题', '可信异步详情', ['可信异步卖点']) }) }).then(json)
     expect(completed.data).toMatchObject({ state: 'succeeded', contentVersionId: expect.stringMatching(/^cv_/) })
     const versions = await fetch(`${base}/v1/tasks/${taskId}/content-versions`, { headers }).then(json)
-    expect((versions.data as Array<{ body: { title: string } }>)[0]?.body.title).toContain('taobao营销稿')
+    expect((versions.data as Array<{ body: { title: string } }>)[0]?.body.title).toBe('可信异步标题')
   })
 
   it('exposes workspace job quota backpressure with retry guidance', async () => {
@@ -1623,6 +1638,7 @@ describe('API HTTP vertical slice', () => {
   })
 
   it('runs the complete MCP catalog-to-version workflow with tenant scope', async () => {
+    vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
     const base = await start()
     const account = service.registerPlatformAccount({ workspaceId: 'ws_demo', platform: 'taobao', remoteAccountId: `e2e-mcp-${Date.now()}`, credentialRef: 'fixture://e2e-mcp' })
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }
@@ -1636,9 +1652,9 @@ describe('API HTTP vertical slice', () => {
     expect((selected.data as { result: { state: string } }).result.state).toBe('direction_selected')
     const plan = await call(3, 'task.plan.confirm', { task_id: taskId, actor_id: 'test-merchant', expected_version: '2' })
     expect((plan.data as { result: { state: string; productionPlan: { confirmedBy: string } } }).result).toMatchObject({ state: 'plan_confirmed', productionPlan: { confirmedBy: 'test-merchant' } })
-    const generated = await call(4, 'content.generate', { task_id: taskId })
-    const generatedResult = (generated.data as { result: { id: string; execution: { mode: string; simulated: boolean; providerExecuted: boolean; label: string } } }).result
-    expect(generatedResult.execution).toMatchObject({ mode: 'simulated', simulated: true, providerExecuted: false, label: '本地演示文案，未调用内容模型' })
+    const generated = await call(4, 'content.codex.commit', { task_id: taskId, body_json: JSON.stringify(generatedDecisionBody('MCP 标题', 'MCP 详情', ['已确认卖点'])) })
+    const generatedResult = (generated.data as { result: { id: string; state: string; versionVector: { modelId: string } } }).result
+    expect(generatedResult).toMatchObject({ state: 'review_required', versionVector: { modelId: 'codex-host-session' } })
     const versionId = generatedResult.id
     const review = await call(4, 'content.review', { content_version_id: versionId })
     expect((review.data as { result: { blocking: boolean } }).result.blocking).toBe(false)
@@ -1666,10 +1682,10 @@ describe('API HTTP vertical slice', () => {
     const settled = await call(12.1, 'publish.get', { publish_job_id: publishId })
     const settledResult = (settled.data as { result: { state: string; remoteState?: string; remoteSimulated?: boolean } }).result
     expect((settled.data as { result: { workflow: { kind: string; status: { user_state: string; terminal: boolean }; recovery: { retryable: boolean; reconciliation_required: boolean }; next_action: { label: string } } } }).result.workflow).toMatchObject({ kind: 'publish', status: { user_state: expect.any(String), terminal: false }, recovery: { retryable: false, reconciliation_required: false }, next_action: { label: expect.any(String) } })
-    if (process.env.CONNECTOR_FIXTURE_MODE === 'true') expect(settledResult).toMatchObject({ state: 'submitted', remoteState: 'submitted', remoteSimulated: true })
-    else expect(settledResult.state).toBe('queued')
+    expect(settledResult.state).toBe('queued')
     const crossTenant = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'x-workspace-id': 'ws_other' }, body: JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'content.review', params: { content_version_id: versionId } }) }).then(json)
     expect(crossTenant.error?.code).toBe('WORKSPACE_SCOPE_MISMATCH')
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: publishId, status: { found: true, state: 'rejected', requestId: `cleanup-${publishId}`, simulated: false, rejection: { code: 'TEST_CLEANUP', message: '测试完成后释放活动任务配额' } } })
   })
 
   it('rechecks approved content against the latest platform rules before publish preparation', async () => {
