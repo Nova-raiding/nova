@@ -23,6 +23,7 @@ export type TaskState = string
 export type PublishState = string
 
 const runtimeEnv = (import.meta as ImportMeta & { readonly env?: Record<string, string | undefined> }).env ?? {}
+const runtimeConfig = (key: string) => runtimeEnv[key] ?? ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key])
 
 export interface ApiEnvelope<T> {
   request_id: string
@@ -524,7 +525,7 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
 }
 
 export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo'): Promise<T> {
-  const token = runtimeEnv.VITE_API_TOKEN?.trim()
+  const token = runtimeConfig('VITE_API_TOKEN')?.trim()
   if (!token) {
     const error = new Error('商家工作区鉴权未配置，已阻止请求') as ApiError
     error.code = 'API_AUTH_TOKEN_MISSING'
@@ -668,7 +669,7 @@ export const parseAsset = (baseUrl: string, assetId: string) => requestApi<Asset
 export async function fetchAssetBlob(baseUrl: string, assetId: string, signal?: AbortSignal): Promise<Blob> {
   const headers = new Headers({ accept: 'application/octet-stream' })
   headers.set('x-workspace-id', runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo')
-  const token = runtimeEnv.VITE_API_TOKEN
+  const token = runtimeConfig('VITE_API_TOKEN')
   if (token) headers.set('authorization', `Bearer ${token}`)
   const response = await fetch(apiUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { headers, signal })
   if (!response.ok) {

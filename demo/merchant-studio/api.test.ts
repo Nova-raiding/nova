@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, importProduct, type Product } from './src/api.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
@@ -14,6 +14,7 @@ const envelope = (data: unknown, status = 200) => new Response(JSON.stringify({
 }), { status, headers: { 'content-type': 'application/json' } })
 
 describe('merchant product response normalization', () => {
+  beforeEach(() => vi.stubEnv('VITE_API_TOKEN', 'merchant-api-test-token'))
   afterEach(() => vi.unstubAllGlobals())
 
   it('recovers the exact product identity from a paginated list fallback', async () => {
