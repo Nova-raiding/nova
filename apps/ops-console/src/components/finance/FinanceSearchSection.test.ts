@@ -28,6 +28,8 @@ describe("FinanceSearchSection", () => {
     expect(html).toContain("财务检索失败");
     expect(html).toContain("财务导出失败");
     expect(html).toContain('aria-label="重试财务检索"');
+    expect(html).toContain('aria-live="assertive"');
+    expect(html).toContain('aria-label="财务检索错误摘要"');
     expect(html).toContain("当前状态不能解释为零记录或零金额");
     expect(html).not.toContain("已加载 0 条财务记录");
     expect(html).not.toContain("当前筛选条件下没有财务记录");

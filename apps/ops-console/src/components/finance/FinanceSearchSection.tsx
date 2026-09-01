@@ -1,6 +1,7 @@
 import { DownloadOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Statistic, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { useEffect, useRef } from "react";
 import { financeRecordKinds, type FinanceRecordKind, type FinanceSearchRecord } from "../../../../../packages/contracts/src/ops/finance-search.js";
 import type { FinanceSearchController } from "../../hooks/useFinanceSearch.js";
 import { FinanceDetailDrawer } from "./FinanceDetailDrawer.js";
@@ -15,8 +16,12 @@ const money = (value: number | undefined, precision = 2) => value === undefined 
 
 export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) {
   const [form] = Form.useForm<Filters>();
+  const initialErrorRef = useRef<HTMLDivElement>(null);
   const summary = controller.page?.summary;
   const initialLoadFailed = Boolean(controller.error && !controller.page && controller.records.length === 0);
+  useEffect(() => {
+    if (initialLoadFailed) initialErrorRef.current?.focus({ preventScroll: true });
+  }, [initialLoadFailed]);
   const columns: ColumnsType<FinanceSearchRecord> = [
     { title: "类型", dataIndex: "kind", width: 120, fixed: "left", render: (kind: FinanceRecordKind) => <Tag>{kindLabel[kind]}</Tag> },
     { title: "工作区", dataIndex: "workspaceId", width: 170, render: value => <Typography.Text copyable>{value}</Typography.Text> },
@@ -57,7 +62,9 @@ export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) 
         </Row>
       </Form>
 
-      {controller.error && <Alert type="error" showIcon title="财务检索失败" description={controller.error} action={<Button size="small" aria-label="重试财务检索" onClick={() => void controller.search()}>重试</Button>} role="alert" />}
+      {controller.error && <div ref={initialErrorRef} tabIndex={initialLoadFailed ? -1 : undefined} aria-label={initialLoadFailed ? "财务检索错误摘要" : undefined}>
+        <Alert type="error" showIcon title="财务检索失败" description={controller.error} action={<Button size="small" aria-label="重试财务检索" onClick={() => void controller.search()}>重试</Button>} role="alert" aria-live="assertive" aria-atomic="true" />
+      </div>}
       {controller.exportError && <Alert type="error" showIcon title="财务导出失败" description={controller.exportError} role="alert" />}
 
       {!initialLoadFailed ? <><Row gutter={[12, 12]} aria-label="财务检索汇总">
