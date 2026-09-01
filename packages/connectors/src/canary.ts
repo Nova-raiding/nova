@@ -13,6 +13,8 @@ export interface PlatformCanaryInput {
   allowWrite: boolean
   /** Revoke is separately opt-in because it invalidates the test account. */
   allowRevoke: boolean
+  /** Production promotion is an explicit, separately reviewed release action. */
+  promoteToProductionCanary?: boolean
   writeFields?: Record<string, unknown>
   /** A controlled test image used to prove the platform media-upload mapping. */
   mediaFile?: { bytes: Uint8Array; mimeType: string; sha256: string }
@@ -55,7 +57,10 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
   const evidenceItems: CapabilityEvidence[] = []
   const add = (capability: CapabilityName, passed: boolean, simulated: boolean, detail?: string) => {
     checks.push(check(capability, passed, simulated, detail))
-    evidenceItems.push(evidence(input, capability, passed && !simulated ? 'production_canary' : passed ? 'test_e2e' : 'unverified', simulated))
+    const state = passed && !simulated
+      ? input.promoteToProductionCanary === true ? 'production_canary' : 'test_e2e'
+      : passed ? 'test_e2e' : 'unverified'
+    evidenceItems.push(evidence(input, capability, state, simulated))
   }
 
   try {

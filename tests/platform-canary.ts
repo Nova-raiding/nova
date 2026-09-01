@@ -38,6 +38,7 @@ const result = await runPlatformCanary({
   context: { workspaceId: requireValue(workspaceId, 'PLATFORM_CANARY_WORKSPACE_ID'), accountId: requireValue(accountId, 'PLATFORM_CANARY_ACCOUNT_ID'), traceId: `platform-canary-${Date.now()}` },
   evidenceRef: requireValue(evidenceRef, 'PLATFORM_CANARY_EVIDENCE_REF'), verifiedBy: requireValue(verifiedBy, 'PLATFORM_CANARY_VERIFIED_BY'), apiVersion: requireValue(apiVersion, 'PLATFORM_CANARY_API_VERSION'), scope: requireValue(scope, 'PLATFORM_CANARY_SCOPE'),
   allowWrite, allowRevoke, ...(writeFields ? { writeFields } : {}),
+  promoteToProductionCanary: true,
   mediaFile: { bytes: mediaBytes, mimeType: process.env.PLATFORM_CANARY_MEDIA_MIME_TYPE?.trim() || 'image/png', sha256: createHash('sha256').update(mediaBytes).digest('hex') },
 })
 const output = process.env.PLATFORM_CANARY_OUTPUT?.trim()
