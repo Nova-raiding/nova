@@ -21,7 +21,8 @@ cleanup() { rm -f -- "$temporary" "$temporary_checksum"; rmdir -- "$reservation"
 trap cleanup EXIT HUP INT TERM
 pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL" > "$temporary"
 test -s "$temporary"
-sha256sum "$temporary" > "$temporary_checksum"
+checksum=$(sha256sum "$temporary" | awk '{print $1}')
+printf '%s  %s\n' "$checksum" "$output" > "$temporary_checksum"
 mv -- "$temporary" "$output"
 mv -- "$temporary_checksum" "$output.sha256"
 trap - EXIT HUP INT TERM
