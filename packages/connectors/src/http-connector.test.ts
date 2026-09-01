@@ -39,6 +39,18 @@ describe('HttpPlatformConnector', () => {
     await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
   })
 
+  it('rejects unsafe OAuth callback URLs before building the authorization request', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    try {
+      const fetchMock = vi.fn()
+      const connector = createConfiguredConnector('jd', { config: { ...readyConfig, allowedHosts: ['platform.test'], capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) }, fetch: fetchMock, allowTestAdapters: true })
+      await expect(connector.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'http://localhost:8787/oauth/callback', state: 'state-unsafe' })).resolves.toMatchObject({ ok: false, code: 'VALIDATION_FAILED', mode: 'not_configured' })
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('builds OAuth authorize URL with S256 PKCE challenge', async () => {
     const connector = createConfiguredConnector('jd', { config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) }, credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true })
     const result = await connector.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'https://app.test/callback', state: 'state-1', codeVerifier: 'verifier-123' })

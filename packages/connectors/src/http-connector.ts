@@ -7,7 +7,7 @@ import { pinduoduoProfile } from './profiles/pinduoduo.js'
 import { xiaohongshuProfile } from './profiles/xiaohongshu.js'
 import { douyinProfile } from './profiles/douyin.js'
 import { validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConnectorReadiness } from './readiness.js'
-import { assertOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
+import { assertOutboundUrl, inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
 import type {
   AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, CredentialProvider, CredentialRef, Cursor,
   HttpConnectorConfig, HttpRequestBodyEncoding, HttpRequestDescriptor, MappingVersion, NormalizedPlatformError, Platform, PlatformConnector,
@@ -162,6 +162,12 @@ export class HttpPlatformConnector implements PlatformConnector {
   async authorize(input: AuthorizeInput): Promise<AuthorizeResult> {
     const config = this.config
     if (!config || !this.authorizationReadiness.ready) return { ok: false, platform: this.platform, mode: 'not_configured', code: 'NOT_CONFIGURED', message: `${this.platform} OAuth connector is not ready` }
+    // The redirect URI is caller-controlled input. Validate it before it is
+    // copied into an OAuth URL; in secure environments this also requires
+    // HTTPS. Never let an unsafe callback turn a local/mock flow into a
+    // production authorization redirect.
+    const redirectReason = inspectOutboundUrl(input.redirectUri, { environment: process.env.NODE_ENV, resolveDns: false })
+    if (redirectReason) return { ok: false, platform: this.platform, mode: 'not_configured', code: 'VALIDATION_FAILED', message: `OAuth redirect URI rejected: ${redirectReason}` }
     const params = new URLSearchParams({ response_type: 'code', client_id: config.clientId, redirect_uri: input.redirectUri, state: input.state })
     if (input.codeVerifier) {
       params.set('code_challenge', pkceChallenge(input.codeVerifier))
