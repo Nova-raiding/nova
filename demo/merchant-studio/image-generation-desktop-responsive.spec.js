@@ -114,7 +114,7 @@ async function openResponsivePage(viewport, reducedMotion = false) {
   return { browser, context, page }
 }
 
-for (const width of [1280, 1920]) {
+for (const width of [1280, 1440, 1920]) {
   test(`desktop ${width}px has no horizontal overflow and wraps opaque IDs`, async () => {
     const { browser, context, page } = await openResponsivePage({ width, height: 1000 })
     try {
@@ -166,19 +166,21 @@ test('reduced motion disables image panel transitions and animations', async () 
   }
 })
 
-test('prioritizes the first candidate and defers the rest of the desktop gallery', async () => {
-  const { browser, context, page } = await openResponsivePage({ width: 1440, height: 1000 })
-  try {
-    const candidates = page.locator('.image-candidate-grid img')
-    await expect(candidates).toHaveCount(4)
-    await expect(candidates.nth(0)).toHaveAttribute('loading', 'eager')
-    await expect(candidates.nth(0)).toHaveAttribute('fetchpriority', 'high')
-    for (const index of [1, 2, 3]) {
-      await expect(candidates.nth(index)).toHaveAttribute('loading', 'lazy')
-      await expect(candidates.nth(index)).toHaveAttribute('fetchpriority', 'low')
+for (const width of [1280, 1440, 1920]) {
+  test(`prioritizes the first candidate and defers the rest at ${width}px`, async () => {
+    const { browser, context, page } = await openResponsivePage({ width, height: 1000 })
+    try {
+      const candidates = page.locator('.image-candidate-grid img')
+      await expect(candidates).toHaveCount(4)
+      await expect(candidates.nth(0)).toHaveAttribute('loading', 'eager')
+      await expect(candidates.nth(0)).toHaveAttribute('fetchpriority', 'high')
+      for (const index of [1, 2, 3]) {
+        await expect(candidates.nth(index)).toHaveAttribute('loading', 'lazy')
+        await expect(candidates.nth(index)).toHaveAttribute('fetchpriority', 'low')
+      }
+    } finally {
+      await context.close()
+      await browser.close()
     }
-  } finally {
-    await context.close()
-    await browser.close()
-  }
-})
+  })
+}
