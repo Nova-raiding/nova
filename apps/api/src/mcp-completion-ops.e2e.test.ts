@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { server, service, workspaceMembers } from './server.js'
+import { creativePointsForTests, server, service, workspaceMembers } from './server.js'
 
 type WorkspaceRole = 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'
 type Envelope<T = unknown> = {
@@ -93,7 +93,7 @@ afterEach(async () => {
 })
 
 describe('MCP completion operations per-method HTTP evidence', () => {
-  it('executes all completion methods and proves contracts, authorization, tenant isolation, and idempotency', async () => {
+  it('executes enabled completion methods and proves disabled commercial methods, contracts, authorization, tenant isolation, and idempotency', async () => {
     const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const workspaceA = `ws_mcp_completion_a_${suffix}`
     const workspaceB = `ws_mcp_completion_b_${suffix}`
@@ -146,37 +146,34 @@ describe('MCP completion operations per-method HTTP evidence', () => {
 
     const base = await start()
 
-    const initialCommercial = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.commercial.get'))
-    expect(initialCommercial).toMatchObject({
-      settings: { workspaceId: workspaceA, revision: expect.any(Number) },
-      usage: { workspaceId: workspaceA, usedTasks: 0 },
-      orders: expect.any(Array),
-      entitlements: expect.any(Array),
-    })
-    expect(initialCommercial.platforms).toHaveLength(6)
+    for (const [method, params, token] of [
+      ['workspace.commercial.get', {}, tokens.ownerA],
+      ['workspace.commercial.update', { plan_code: 'legacy-plan', plan_name: 'Legacy Plan' }, tokens.ownerA],
+      ['workspace.usage.get', {}, tokens.ownerA],
+      ['billing.usage.consume', { task_id: 'legacy-task', idempotency_key: 'legacy-consume' }, tokens.ownerA],
+      ['billing.usage.refund', { task_id: 'legacy-task', idempotency_key: 'legacy-consume', reason: 'legacy refund' }, tokens.financeA],
+      ['billing.refund', { order_id: 'legacy-order', reason: 'legacy refund' }, tokens.financeA],
+      ['ops.commercial.offers.list', {}, tokens.commercialFinance],
+      ['ops.commercial.addons.list', {}, tokens.commercialFinance],
+      ['ops.commercial.coupons.list', {}, tokens.commercialFinance],
+      ['ops.commercial.rollouts.list', {}, tokens.commercialOps],
+    ] as const) {
+      const disabled = await callMcp(base, token, workspaceA, method, params)
+      expect(disabled.status, method).toBe(503)
+      expect(disabled.body.error, method).toMatchObject({
+        code: 'COMMERCIAL_OPERATION_DISABLED',
+        details: { next_actions: ['commercial.access.get', 'creative-points.balance.get'] },
+      })
+    }
 
-    const updatedCommercial = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.commercial.update', {
-      plan_code: 'completion-pro',
-      plan_name: 'Completion Pro',
-      monthly_price_cny: '299.90',
-      annual_price_cny: '2999.00',
-      included_stores: '6',
-      included_tasks: '80',
-      expected_revision: String(initialCommercial.settings.revision),
-    }))
-    expect(updatedCommercial).toMatchObject({
-      workspaceId: workspaceA,
-      planCode: 'completion-pro',
-      planName: 'Completion Pro',
-      monthlyPriceCny: 299.9,
-      includedTasks: 80,
-      revision: initialCommercial.settings.revision + 1,
-    })
-    const commercialAfter = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.commercial.get'))
-    expect(commercialAfter.settings).toMatchObject({ planCode: 'completion-pro', revision: updatedCommercial.revision })
+    await Promise.all([workspaceA, workspaceB].map(workspaceId => creativePointsForTests.grant({
+      workspaceId,
+      idempotencyKey: `mcp-completion-grant-${workspaceId}`,
+      sourceType: 'paid_order',
+      sourceId: `mcp-completion-order-${workspaceId}`,
+      points: 10_000,
+    })))
 
-    const usageBefore = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.usage.get'))
-    expect(usageBefore).toMatchObject({ workspaceId: workspaceA, includedTasks: 80, usedTasks: 0, remainingTasks: 80 })
     const orders = resultOf<any[]>(await callMcp(base, tokens.ownerA, workspaceA, 'subscription.orders.list', { limit: '10' }))
     expect(orders).toEqual([])
     const members = resultOf<any[]>(await callMcp(base, tokens.operatorA, workspaceA, 'ops.members.list'))
@@ -185,14 +182,6 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       expect.objectContaining({ externalSubject: `finance-a-${suffix}`, role: 'finance', status: 'active' }),
     ]))
 
-    for (const [method, token] of [
-      ['ops.commercial.offers.list', tokens.commercialFinance],
-      ['ops.commercial.addons.list', tokens.commercialFinance],
-      ['ops.commercial.coupons.list', tokens.commercialFinance],
-      ['ops.commercial.rollouts.list', tokens.commercialOps],
-    ] as const) {
-      expect(resultOf<any[]>(await callMcp(base, token, workspaceA, method))).toEqual(expect.any(Array))
-    }
     expect(resultOf<any>(await callMcp(base, tokens.financeA, workspaceA, 'billing.export', { format: 'json', limit: '20' }))).toMatchObject({
       filename: `billing-${workspaceA}.json`,
       contentType: 'application/json',
@@ -222,32 +211,6 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       status: 'acknowledged', entity_id: revokedAccount.id,
     }))
     expect(acknowledgedList).toEqual([expect.objectContaining({ id: alerts[0].id, acknowledgementReason: '已联系商家重新授权' })])
-
-    const taskId = `usage-task-${suffix}`
-    const usageKey = `usage-key-${suffix}`
-    const usageProduct = service.importProduct({ workspaceId: workspaceA, platform: 'taobao', title: `用量测试商品 ${suffix}` })
-    service.createTask({ workspaceId: workspaceA, productId: usageProduct.id, platform: 'taobao', taskId })
-    const conflictingTaskId = `${taskId}-different`
-    service.createTask({ workspaceId: workspaceA, productId: usageProduct.id, platform: 'taobao', taskId: conflictingTaskId })
-    const foreignTaskId = `usage-b-${suffix}`
-    const foreignProduct = service.importProduct({ workspaceId: workspaceB, platform: 'taobao', title: `跨租户用量测试商品 ${suffix}` })
-    service.createTask({ workspaceId: workspaceB, productId: foreignProduct.id, platform: 'taobao', taskId: foreignTaskId })
-    const firstConsumeResponse = await callMcp(base, tokens.ownerA, workspaceA, 'billing.usage.consume', { task_id: taskId, idempotency_key: usageKey })
-    const firstConsume = resultOf<any>(firstConsumeResponse)
-    const replayedConsume = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'billing.usage.consume', { task_id: taskId, idempotency_key: usageKey }))
-    expect(firstConsume).toMatchObject({ charged: true, snapshot: { workspaceId: workspaceA, usedTasks: 1 } })
-    expect(replayedConsume).toMatchObject({ charged: true, snapshot: { workspaceId: workspaceA, usedTasks: 1 } })
-    const usageConflict = await callMcp(base, tokens.ownerA, workspaceA, 'billing.usage.consume', { task_id: conflictingTaskId, idempotency_key: usageKey })
-    expect(usageConflict.body.error?.code).toBe('USAGE_IDEMPOTENCY_CONFLICT')
-    const firstRefundResponse = await callMcp(base, tokens.financeA, workspaceA, 'billing.usage.refund', { task_id: taskId, idempotency_key: usageKey, reason: '测试额度退回' })
-    expect(firstRefundResponse.status, JSON.stringify(firstRefundResponse.body)).toBe(200)
-    const firstRefund = resultOf<any>(firstRefundResponse)
-    const replayedRefund = resultOf<any>(await callMcp(base, tokens.financeA, workspaceA, 'billing.usage.refund', { task_id: taskId, idempotency_key: usageKey, reason: '测试额度退回重放' }))
-    expect(firstRefund).toMatchObject({ refunded: true, snapshot: { workspaceId: workspaceA, usedTasks: 0 } })
-    expect(replayedRefund).toMatchObject({ refunded: false, snapshot: { workspaceId: workspaceA, usedTasks: 0 } })
-    const crossTenantConsume = resultOf<any>(await callMcp(base, tokens.ownerB, workspaceB, 'billing.usage.consume', { task_id: foreignTaskId, idempotency_key: usageKey }))
-    expect(crossTenantConsume).toMatchObject({ charged: true, snapshot: { workspaceId: workspaceB, usedTasks: 1 } })
-    expect(resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.usage.get'))).toMatchObject({ workspaceId: workspaceA, usedTasks: 0 })
 
     const cancelKey = `delete-cancel-${suffix}`
     const vagueDeletionReason = await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.delete.request', {
@@ -300,26 +263,18 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     ]))
     expect(listedB).toEqual([expect.objectContaining({ id: foreignRequest.id, workspaceId: workspaceB, status: 'pending' })])
 
-    const missingRequired = await callMcp(base, tokens.ownerA, workspaceA, 'billing.usage.consume', { task_id: 'missing-key' })
-    const extraParameter = await callMcp(base, tokens.commercialFinance, workspaceA, 'ops.commercial.offers.list', { unexpected: 'rejected' })
+    const extraParameter = await callMcp(base, tokens.ownerA, workspaceA, 'subscription.orders.list', { unexpected: 'rejected' })
     const invalidEnum = await callMcp(base, tokens.financeA, workspaceA, 'billing.export', { format: 'xml' })
     const invalidAlertStatus = await callMcp(base, tokens.operatorA, workspaceA, 'ops.alerts.list', { status: 'closed' })
-    expect(missingRequired.body.error?.code).toBe('INVALID_REQUEST')
     expect(extraParameter.body.error?.code).toBe('INVALID_REQUEST')
     expect(invalidEnum.body.error?.code).toBe('INVALID_REQUEST')
     expect(invalidAlertStatus.body.error?.code).toBe('INVALID_REQUEST')
 
     const lowPrivilegeCases: Array<{ token: string; method: string; params?: Record<string, unknown> }> = [
-      { token: tokens.operatorA, method: 'workspace.commercial.update', params: { plan_code: 'denied', plan_name: 'Denied' } },
       { token: tokens.supportA, method: 'ops.data.delete.cancel', params: { request_id: foreignRequest.id, reason: '低权限撤销' } },
       { token: tokens.supportA, method: 'ops.data.delete.approve', params: { request_id: foreignRequest.id, reason: '低权限审批' } },
       { token: tokens.financeA, method: 'ops.members.list' },
-      { token: tokens.operatorA, method: 'ops.commercial.offers.list' },
-      { token: tokens.operatorA, method: 'ops.commercial.addons.list' },
-      { token: tokens.operatorA, method: 'ops.commercial.coupons.list' },
-      { token: tokens.financeA, method: 'ops.commercial.rollouts.list' },
       { token: tokens.financeA, method: 'ops.alert.ack', params: { alert_id: alerts[0].id, reason: '低权限确认' } },
-      { token: tokens.operatorA, method: 'billing.usage.refund', params: { task_id: taskId, idempotency_key: usageKey, reason: '低权限退款' } },
       { token: tokens.operatorA, method: 'billing.model-usage.reconciliation.run', params: { limit: '1' } },
       { token: tokens.operatorA, method: 'workspace.data.delete.request', params: { scope: 'assets', reason: '低权限删除', idempotency_key: `denied-${suffix}` } },
     ]
@@ -328,10 +283,10 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       expect(denied.body.error?.code, testCase.method).toBe('FORBIDDEN')
     }
 
-    const bodyWorkspaceMismatch = await callMcp(base, tokens.ownerA, workspaceA, 'workspace.commercial.get', {}, workspaceB)
+    const bodyWorkspaceMismatch = await callMcp(base, tokens.ownerA, workspaceA, 'subscription.orders.list', {}, workspaceB)
     expect(bodyWorkspaceMismatch.status).toBe(403)
     expect(bodyWorkspaceMismatch.body.error?.code).toBe('WORKSPACE_SCOPE_MISMATCH')
-    const identityWorkspaceMismatch = await callMcp(base, tokens.ownerA, workspaceB, 'workspace.commercial.get')
+    const identityWorkspaceMismatch = await callMcp(base, tokens.ownerA, workspaceB, 'subscription.orders.list')
     expect(identityWorkspaceMismatch.status).toBe(403)
     expect(identityWorkspaceMismatch.body.error?.code).toBe('FORBIDDEN')
   }, 30_000)
