@@ -69,7 +69,6 @@ import {
   fetchCatalogCategories,
   fetchContentVersions,
   fetchPlatformAccounts,
-  fetchPlatformCapabilities,
   fetchPlatformModelStatus,
   fetchProduct,
   fetchProductAssetBindings,
@@ -1416,15 +1415,8 @@ function Overview({
 }) {
   const accountsRequestId = useRef(0)
   const [accounts, setAccounts] = useState<PlatformAccount[] | null>(null)
-  const [capabilities, setCapabilities] = useState<PlatformCapability[] | null>(
-    null,
-  )
   const [accountsLoading, setAccountsLoading] = useState(Boolean(baseUrl))
-  const [capabilitiesLoading, setCapabilitiesLoading] = useState(
-    Boolean(baseUrl),
-  )
   const [accountsError, setAccountsError] = useState('')
-  const [capabilitiesError, setCapabilitiesError] = useState('')
   const [action, setAction] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
@@ -1469,18 +1461,6 @@ function Overview({
   }
   useEffect(() => {
     loadAccounts()
-  }, [baseUrl])
-  const loadCapabilities = () => {
-    if (!baseUrl) return
-    setCapabilitiesLoading(true)
-    setCapabilitiesError('')
-    fetchPlatformCapabilities(baseUrl)
-      .then((result) => setCapabilities(result.items))
-      .catch((error) => setCapabilitiesError(describeApiError(error)))
-      .finally(() => setCapabilitiesLoading(false))
-  }
-  useEffect(() => {
-    loadCapabilities()
   }, [baseUrl])
   const loadSyncJobs = () => {
     if (!baseUrl) return
@@ -2313,97 +2293,17 @@ function Overview({
             )}
         </section>
       )}
-      <section
-        className="panel capability-panel"
-        aria-busy={capabilitiesLoading}
-      >
+      <section className="panel capability-panel">
         <div className="panel-heading">
           <div>
             <span className="section-kicker">CAPABILITY EVIDENCE</span>
             <h3>平台能力证据</h3>
           </div>
-          <button
-            className="text-button"
-            onClick={loadCapabilities}
-            disabled={capabilitiesLoading}
-          >
-            <RefreshCw
-              size={14}
-              className={capabilitiesLoading ? 'spin' : undefined}
-            />
-            刷新证据
-          </button>
         </div>
-        {capabilitiesLoading && <LoadingState label="正在读取平台能力证据…" />}
-        {capabilitiesError && (
-          <ErrorNotice
-            message={capabilitiesError}
-            onRetry={loadCapabilities}
-            compact
-          />
-        )}
-        {!capabilitiesLoading && !capabilitiesError && capabilities && (
-          <div className="capability-grid">
-            {capabilities.map((item) => {
-              const canaryCount = item.capabilities.filter(
-                (capability) => capability.state === 'production_canary',
-              ).length
-              return (
-                <article className="capability-card" key={item.platform}>
-                  <div className="capability-card-head">
-                    <div
-                      className={`platform-logo ${platformTone[item.platform] ?? 'blue'}`}
-                    >
-                      {(platformNames[item.platform] ?? item.platform).slice(
-                        0,
-                        1,
-                      )}
-                    </div>
-                    <div>
-                      <b>{platformNames[item.platform] ?? item.platform}</b>
-                      <span>
-                        {item.readiness.ready
-                          ? '连接器已就绪'
-                          : (item.readiness.reasons[0] ?? '等待证据')}
-                      </span>
-                    </div>
-                    <StatusChip
-                      tone={
-                        canaryCount === item.capabilities.length
-                          ? 'green'
-                          : 'amber'
-                      }
-                    >
-                      {canaryCount}/{item.capabilities.length} canary
-                    </StatusChip>
-                  </div>
-                  <div className="capability-list">
-                    {item.capabilities.map((capability, capabilityIndex) => (
-                      <span
-                        className={`capability-pill ${capabilityTone(capability.state)}`}
-                        key={`${item.platform}-${capability.capability}-${capabilityIndex}`}
-                        title={
-                          capability.evidenceRef
-                            ? `证据：${capability.evidenceRef}`
-                            : '尚无证据引用'
-                        }
-                      >
-                        {capability.capability}
-                        <small>{capabilityStateLabel(capability.state)}</small>
-                      </span>
-                    ))}
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        )}
-        {!baseUrl && (
-          <div className="info-notice capability-note">
-            <CircleHelp size={15} />
-            离线演示不读取真实能力证据；正式上线必须由 API 返回并绑定证据引用。
-          </div>
-        )}
+        <div className="info-notice capability-note">
+          <CircleHelp size={15} />
+          平台能力证据属于平台运营工作台；商家工作台仅展示店铺授权和交付就绪状态。
+        </div>
       </section>
       {rechargeOpen && (
         <DialogFrame

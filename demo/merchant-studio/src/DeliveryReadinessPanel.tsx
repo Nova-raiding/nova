@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, FileWarning, RefreshCw, ShieldAlert } from 'lucide-react'
-import { describeApiError, fetchDeliveryReadiness, fetchPlatformCapabilities, type DeliveryReadinessSnapshot, type PlatformCapability } from './api.js'
+import { describeApiError, fetchDeliveryReadiness, type DeliveryReadinessSnapshot, type PlatformCapability } from './api.js'
 import { deliveryFindingReadiness, mediaSpecReadiness } from './delivery-readiness.js'
 
 const platformLabel: Record<string, string> = { jd: '京东', taobao: '淘宝', tmall: '天猫', pinduoduo: '拼多多', xiaohongshu: '小红书', douyin: '抖音' }
@@ -18,14 +18,13 @@ export function DeliveryReadinessPanel({ baseUrl }: { baseUrl?: string }) {
     if (!baseUrl) { setCapabilities(null); setSnapshot(null); setLoading(false); setError(''); return }
     let cancelled = false
     setLoading(true); setError('')
-    Promise.allSettled([fetchPlatformCapabilities(baseUrl), fetchDeliveryReadiness(baseUrl)])
-      .then(([capabilityResult, readinessResult]) => {
+    fetchDeliveryReadiness(baseUrl)
+      .then((readinessResult) => {
         if (cancelled) return
-        setCapabilities(capabilityResult.status === 'fulfilled' ? (capabilityResult.value.items ?? []) : null)
-        setSnapshot(readinessResult.status === 'fulfilled' ? readinessResult.value : null)
-        const failures = [capabilityResult, readinessResult].filter(result => result.status === 'rejected') as PromiseRejectedResult[]
-        if (failures.length) setError(failures.map(result => describeApiError(result.reason)).join('；'))
+        setCapabilities(null)
+        setSnapshot(readinessResult)
       })
+      .catch((reason) => { if (!cancelled) setError(describeApiError(reason)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [baseUrl, reloadKey])
