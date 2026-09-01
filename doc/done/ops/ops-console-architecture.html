@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Merchant Ops Console Architecture</title>
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#020617;color:#e2e8f0;font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:1500px;margin:0 auto;padding:36px 28px 56px}header{display:flex;align-items:center;gap:14px;margin-bottom:22px}.pulse{width:11px;height:11px;border-radius:50%;background:#22d3ee;box-shadow:0 0 0 6px #164e6355,0 0 22px #22d3ee}.eyebrow{font-size:11px;letter-spacing:.18em;color:#67e8f9;text-transform:uppercase}.title{font-size:24px;margin:6px 0 0}.sub{color:#94a3b8;font-size:12px;margin:7px 0 0}.frame{border:1px solid #334155;border-radius:14px;background:#0f172a;box-shadow:0 18px 50px #0008;padding:10px;overflow:auto}svg{display:block;width:100%;min-width:1100px;height:auto}.card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}.card{border:1px solid #334155;border-radius:10px;background:#0f172a;padding:16px}.card h3{font-size:13px;margin:0 0 10px}.card ul{padding-left:18px;margin:0;color:#cbd5e1;font-size:11px;line-height:1.8}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px}.cyan{background:#22d3ee}.green{background:#34d399}.violet{background:#a78bfa}.rose{background:#fb7185}.orange{background:#fb923c}.amber{background:#fbbf24}.slate{background:#94a3b8}.legend{display:flex;flex-wrap:wrap;gap:15px;margin-top:14px;color:#94a3b8;font-size:10px}.legend span{white-space:nowrap}footer{margin-top:22px;color:#64748b;font-size:10px}@media(max-width:800px){main{padding:24px 14px}.card-grid{grid-template-columns:1fr}.title{font-size:19px}}
+  </style>
+</head>
+<body>
+<main>
+  <header><span class="pulse"></span><div><div class="eyebrow">Merchant Marketing Codex · Control Plane</div><div class="title">运营后台目标架构</div><div class="sub">独立运营控制台 · 工作区授权 · MCP/API 控制面 · 知识治理与生成任务运营</div></div></header>
+  <div class="frame">
+    <svg viewBox="0 0 1440 860" role="img" aria-label="运营后台目标架构图">
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width=".6"/></pattern>
+        <marker id="arrow-cyan" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#22d3ee"/></marker>
+        <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#34d399"/></marker>
+        <marker id="arrow-orange" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#fb923c"/></marker>
+        <style>
+          .box{stroke-width:1.5}.label{fill:#e2e8f0;font-size:14px;font-weight:700}.small{fill:#94a3b8;font-size:10px}.tiny{fill:#cbd5e1;font-size:9px}.edge{fill:none;stroke-width:2;marker-end:url(#arrow-cyan)}.backend-edge{fill:none;stroke:#34d399;stroke-width:2;marker-end:url(#arrow-green)}.bus-edge{fill:none;stroke:#fb923c;stroke-width:2;stroke-dasharray:6 5;marker-end:url(#arrow-orange)}.secure{fill:none;stroke:#fb7185;stroke-width:1.5;stroke-dasharray:5 5}
+        </style>
+      </defs>
+      <rect width="1440" height="860" fill="#020617"/><rect width="1440" height="860" fill="url(#grid)"/>
+      <!-- edges behind components -->
+      <path class="edge" d="M220 175H390"/><path class="edge" d="M220 245H390"/><path class="edge" d="M220 315H390"/>
+      <path class="edge" d="M600 235H750"/><path class="edge" d="M600 370H750"/><path class="edge" d="M600 505H750"/>
+      <path class="backend-edge" d="M950 235H1090"/><path class="backend-edge" d="M950 370H1090"/><path class="backend-edge" d="M950 505H1090"/>
+      <path class="bus-edge" d="M1200 335V400"/><path class="bus-edge" d="M1200 470V535"/><path class="bus-edge" d="M1200 605V670"/>
+      <path class="secure" d="M260 90H1290V760H260Z"/>
+      <!-- security boundary --> <text x="278" y="112" class="small" fill="#fb7185">WORKSPACE GRANT + RBAC + AUDIT BOUNDARY</text>
+      <!-- frontend -->
+      <rect x="48" y="130" width="172" height="245" rx="8" fill="#0f172a"/><rect x="48" y="130" width="172" height="245" rx="8" fill="rgba(8,51,68,.55)" stroke="#22d3ee" class="box"/>
+      <text x="70" y="164" class="label">运营人员浏览器</text><text x="70" y="187" class="small">apps/ops-console</text>
+      <text x="70" y="223" class="tiny">总览 / 工作区</text><text x="70" y="244" class="tiny">知识治理 / 学习建议</text><text x="70" y="265" class="tiny">竞品 / 生成任务</text><text x="70" y="286" class="tiny">平台 / 账务 / 审计</text><text x="70" y="320" class="tiny" fill="#22d3ee">HTTPS + Bearer</text><text x="70" y="338" class="tiny" fill="#22d3ee">workspace grant</text>
+      <!-- control plane -->
+      <rect x="390" y="130" width="210" height="480" rx="8" fill="#0f172a"/><rect x="390" y="130" width="210" height="480" rx="8" fill="rgba(6,78,59,.5)" stroke="#34d399" class="box"/>
+      <text x="415" y="164" class="label">API / MCP 控制面</text><text x="415" y="187" class="small">apps/api · routeMcp</text>
+      <text x="415" y="226" class="tiny">1. 身份 / workspace grant</text><text x="415" y="248" class="tiny">2. 参数契约 / RBAC</text><text x="415" y="270" class="tiny">3. 订阅 / 能力门禁</text><text x="415" y="292" class="tiny">4. 安全投影 / 命令</text><text x="415" y="314" class="tiny">5. revision / 幂等</text><text x="415" y="336" class="tiny">6. 审计 / outbox</text>
+      <rect x="415" y="380" width="160" height="42" rx="5" fill="#064e3b" stroke="#34d399"/><text x="433" y="406" class="tiny">Knowledge + Review</text>
+      <rect x="415" y="438" width="160" height="42" rx="5" fill="#064e3b" stroke="#34d399"/><text x="433" y="464" class="tiny">Generation + Tasks</text>
+      <rect x="415" y="496" width="160" height="42" rx="5" fill="#064e3b" stroke="#34d399"/><text x="433" y="522" class="tiny">Ops commands + Audit</text>
+      <!-- services -->
+      <rect x="750" y="130" width="200" height="480" rx="8" fill="#0f172a"/><rect x="750" y="130" width="200" height="480" rx="8" fill="rgba(6,78,59,.35)" stroke="#34d399" class="box"/>
+      <text x="775" y="164" class="label">领域服务</text><text x="775" y="187" class="small">packages/*</text>
+      <text x="775" y="226" class="tiny">MerchantService</text><text x="775" y="248" class="tiny">KnowledgeModule</text><text x="775" y="270" class="tiny">Review / Rule Center</text><text x="775" y="292" class="tiny">Multimodal contracts</text><text x="775" y="314" class="tiny">Operations / Billing</text><text x="775" y="336" class="tiny">ConnectorRuntime</text>
+      <rect x="775" y="380" width="150" height="42" rx="5" fill="#064e3b" stroke="#34d399"/><text x="793" y="406" class="tiny">安全投影 / Query</text>
+      <rect x="775" y="438" width="150" height="42" rx="5" fill="#064e3b" stroke="#34d399"/><text x="793" y="464" class="tiny">受控 Command</text>
+      <rect x="775" y="496" width="150" height="42" rx="5" fill="#064e3b" stroke="#34d399"/><text x="793" y="522" class="tiny">版本 / 快照</text>
+      <!-- persistence -->
+      <rect x="1090" y="130" width="220" height="480" rx="8" fill="#0f172a"/><rect x="1090" y="130" width="220" height="480" rx="8" fill="rgba(76,29,149,.45)" stroke="#a78bfa" class="box"/>
+      <text x="1115" y="164" class="label">数据与异步层</text><text x="1115" y="187" class="small">PostgreSQL / Redis / Storage</text>
+      <rect x="1115" y="215" width="170" height="52" rx="5" fill="#4c1d95" stroke="#a78bfa"/><text x="1134" y="239" class="tiny">业务快照 / 查询投影</text><text x="1134" y="254" class="tiny">知识 / 任务 / 账务</text>
+      <rect x="1115" y="285" width="170" height="52" rx="5" fill="#4c1d95" stroke="#a78bfa"/><text x="1134" y="309" class="tiny">Outbox / Audit Events</text><text x="1134" y="324" class="tiny">重启恢复 / 可追溯</text>
+      <rect x="1115" y="355" width="170" height="52" rx="5" fill="#4c1d95" stroke="#a78bfa"/><text x="1134" y="379" class="tiny">Object Storage</text><text x="1134" y="394" class="tiny">素材 / 候选 / 导出</text>
+      <rect x="1115" y="425" width="170" height="52" rx="5" fill="#4c1d95" stroke="#a78bfa"/><text x="1134" y="449" class="tiny">Redis / Queue</text><text x="1134" y="464" class="tiny">限流 / Worker admission</text>
+      <!-- bus -->
+      <rect x="1070" y="630" width="260" height="70" rx="8" fill="#0f172a"/><rect x="1070" y="630" width="260" height="70" rx="8" fill="rgba(251,146,60,.25)" stroke="#fb923c" class="box"/><text x="1120" y="660" class="label">Outbox / Worker Bus</text><text x="1125" y="681" class="small">sync · generation · publish · reconcile</text>
+      <!-- external -->
+      <rect x="300" y="690" width="180" height="75" rx="8" fill="#0f172a"/><rect x="300" y="690" width="180" height="75" rx="8" fill="rgba(30,41,59,.6)" stroke="#94a3b8" class="box"/><text x="328" y="720" class="label">平台连接器</text><text x="328" y="742" class="small">JD · 淘宝/天猫 · PDD</text>
+      <rect x="540" y="690" width="180" height="75" rx="8" fill="#0f172a"/><rect x="540" y="690" width="180" height="75" rx="8" fill="rgba(120,53,15,.3)" stroke="#fbbf24" class="box"/><text x="570" y="720" class="label">模型供应商</text><text x="570" y="742" class="small">平台托管 · 脱敏 readiness</text>
+      <rect x="780" y="690" width="180" height="75" rx="8" fill="#0f172a"/><rect x="780" y="690" width="180" height="75" rx="8" fill="rgba(136,19,55,.35)" stroke="#fb7185" class="box"/><text x="810" y="720" class="label">安全门禁</text><text x="810" y="742" class="small">RBAC · RLS · Secret Store</text>
+      <path class="bus-edge" d="M1200 700V730H480"/><path class="bus-edge" d="M1200 700V730H720"/><path class="bus-edge" d="M1200 700V730H960"/>
+      <text x="48" y="820" class="small">原则：运营后台可观察、可审核、可审计；不直连数据库，不持有平台凭证，不替商家完成最终确认和发布。</text>
+    </svg>
+  </div>
+  <div class="legend"><span><i class="dot cyan"></i>Frontend</span><span><i class="dot green"></i>Backend</span><span><i class="dot violet"></i>Database / Storage</span><span><i class="dot orange"></i>Message Bus</span><span><i class="dot amber"></i>External Model</span><span><i class="dot rose"></i>Security</span><span><i class="dot slate"></i>Platform External</span></div>
+  <div class="card-grid"><section class="card"><h3><i class="dot cyan"></i>已有后台</h3><ul><li>商业化、账务、平台、成员</li><li>告警、审计、删除审批</li><li>生产 readiness</li></ul></section><section class="card"><h3><i class="dot green"></i>新增运营闭环</h3><ul><li>知识规则与资产审核</li><li>学习建议与竞品权利治理</li><li>生成候选与驳回修正版</li></ul></section><section class="card"><h3><i class="dot rose"></i>不可绕过的边界</h3><ul><li>workspace grant + RBAC</li><li>候选必须审核</li><li>商家最终确认发布</li></ul></section></div>
+  <footer>Merchant Marketing Codex · Ops Console Architecture · 2026-08-25</footer>
+</main>
+</body>
+</html>

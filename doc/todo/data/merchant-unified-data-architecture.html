@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大麦统一数据架构</title>
+<style>
+body{margin:0;background:#090d14;color:#e5edf7;font-family:Inter,"PingFang SC",sans-serif}.wrap{max-width:1440px;margin:auto;padding:32px}h1{font-size:28px;margin:0 0 8px}.sub{color:#8fa2b8;margin-bottom:22px}.card{background:#0f1622;border:1px solid #243247;border-radius:18px;padding:18px;box-shadow:0 18px 60px #0007}svg{width:100%;height:auto}.box{fill:#121d2b;stroke:#33465f;stroke-width:2}.front{stroke:#22d3ee}.back{stroke:#34d399}.data{stroke:#a78bfa}.ext{stroke:#f59e0b}.legacy{stroke:#fb7185;stroke-dasharray:8 7}.t{fill:#eaf2fb;font-size:15px;font-weight:700}.s{fill:#9fb0c3;font-size:12px}.arrow{stroke:#7186a0;stroke-width:2;fill:none;marker-end:url(#a)}.warn{fill:#fb7185;font-size:12px}.legend{display:flex;gap:18px;flex-wrap:wrap;color:#9fb0c3;font-size:13px;margin-top:14px}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+</style></head>
+<body><div class="wrap"><h1>大麦：一品多平台多店的统一数据链</h1><div class="sub">生产真相在云端；Codex 插件是操作入口，中转站是唯一业务模型调用出口。</div><div class="card">
+<svg viewBox="0 0 1400 700" role="img" aria-label="大麦统一数据架构图">
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#7186a0"/></marker></defs>
+<rect class="box front" x="30" y="65" width="190" height="120" rx="14"/><text class="t" x="55" y="105">Codex / ChatGPT 插件</text><text class="s" x="55" y="135">能力卡片 · 会话入口</text><text class="s" x="55" y="157">不保存生产业务真相</text>
+<rect class="box back" x="285" y="45" width="225" height="160" rx="14"/><text class="t" x="315" y="82">API Scope Gate</text><text class="s" x="315" y="112">Workspace / Member</text><text class="s" x="315" y="134">Brand / Platform / Store</text><text class="s" x="315" y="156">Role: viewer/editor/publisher</text><text class="s" x="315" y="178">idempotency + audit</text>
+<rect class="box data" x="575" y="25" width="355" height="235" rx="14"/><text class="t" x="605" y="62">PostgreSQL：统一业务真相</text><text class="s" x="605" y="94">Workspace → BrandUnit → CanonicalProduct</text><text class="s" x="605" y="119">→ Listing(platform + store + remote product)</text><text class="s" x="605" y="144">→ CampaignItem → Task → ContentVersion</text><text class="s" x="605" y="169">→ ContextSnapshot → ModelUsage / ActionLedger</text><text class="s" x="605" y="194">→ PublishJob / rule version / audit</text><text class="s" x="605" y="225">规范化关系 + JSON 快照，支持回填与切读</text>
+<rect class="box back" x="995" y="45" width="210" height="160" rx="14"/><text class="t" x="1025" y="82">Async Worker</text><text class="s" x="1025" y="112">校验 context hash</text><text class="s" x="1025" y="134">有界输入与重试</text><text class="s" x="1025" y="156">用量签名回传</text><text class="s" x="1025" y="178">发布与对账</text>
+<rect class="box ext" x="1240" y="45" width="130" height="160" rx="14"/><text class="t" x="1265" y="82">外部服务</text><text class="s" x="1265" y="112">模型中转站</text><text class="s" x="1265" y="134">支付渠道</text><text class="s" x="1265" y="156">六个平台</text><text class="s" x="1265" y="178">规则来源</text>
+<path class="arrow" d="M220 125H285"/><path class="arrow" d="M510 125H575"/><path class="arrow" d="M930 125H995"/><path class="arrow" d="M1205 125H1240"/>
+<rect class="box data" x="575" y="325" width="355" height="125" rx="14"/><text class="t" x="605" y="362">对象存储（S3 兼容）</text><text class="s" x="605" y="392">商品图 · 素材 · 生成图 · 视频</text><text class="s" x="605" y="416">DB 保存 key/digest/owner/lifecycle；失败进入 orphan queue</text>
+<path class="arrow" d="M752 260V325"/><path class="arrow" d="M1100 205C1100 300 1000 388 930 388"/>
+<rect class="box legacy" x="285" y="520" width="645" height="115" rx="14"/><text class="t" x="315" y="558">迁移中的兼容层：legacy Product</text><text class="s" x="315" y="586">expand → backfill → shadow-read → consistency gate → cutover → retire</text><text class="warn" x="315" y="612">禁止跨平台回退：Listing 找不到本店商品事实时必须阻断，不可拿来源平台商品替代。</text>
+<path class="arrow" d="M575 577H510C470 577 445 535 445 485V205"/>
+<rect class="box front" x="995" y="325" width="375" height="125" rx="14"/><text class="t" x="1025" y="362">本地仅用于开发</text><text class="s" x="1025" y="392">fixture · 临时缓存 · 测试内存仓储</text><text class="s" x="1025" y="416">Codex 历史/记忆不是商品、账单或发布状态的真相源</text>
+</svg>
+<div class="legend"><span><i class="dot" style="background:#22d3ee"></i>用户入口</span><span><i class="dot" style="background:#34d399"></i>服务与执行</span><span><i class="dot" style="background:#a78bfa"></i>云端数据</span><span><i class="dot" style="background:#f59e0b"></i>第三方</span><span><i class="dot" style="background:#fb7185"></i>待退役兼容层</span></div>
+</div></div></body></html>
