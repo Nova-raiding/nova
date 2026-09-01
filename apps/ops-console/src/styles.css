@@ -62,6 +62,9 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .ops-refresh-button { min-width: 96px; }
 .ops-page-error:focus { outline: none; }
 .ops-page-error:focus-visible { outline: 3px solid #b91c1c; outline-offset: 3px; border-radius: 8px; }
+.ops-page-boundary-error { width: 100%; padding: 2px; border-radius: 8px; }
+.ops-page-boundary-error:focus { outline: none; }
+.ops-page-boundary-error:focus-visible { outline: 3px solid #b91c1c; outline-offset: 3px; }
 .ops-data-state { width: 100%; min-width: 0; padding: 16px; border: 1px solid #dbe3ef; border-radius: 10px; background: #fff; }
 .ops-data-state[data-state="loading"] { min-height: 180px; }
 .ops-data-state[data-state="empty"] { color: #475569; }
