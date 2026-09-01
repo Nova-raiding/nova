@@ -3277,15 +3277,13 @@ export class MerchantService {
   private detailDecisionDeliveryBlockers(version: ContentVersion) {
     const modules = version.body.modules as unknown as ReadonlyArray<Record<string, unknown>> | undefined
     if (!modules?.length) return [{ code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', field: 'modules', message: '历史内容缺少详情页模块决策契约，必须创建完整新版本后才能批准、导出或发布。' }]
-    const versionReason = version.versionVector?.reason
-    const enforceOptionalMissing = !versionReason || versionReason.startsWith('restore:') || versionReason.startsWith('content_modify:')
     return modules.flatMap((module, index) => {
       const key = typeof module.key === 'string' && module.key.trim() ? module.key.trim() : `legacy_${index + 1}`
       const contract = module.decisionContract
       if (!contract || typeof contract !== 'object' || Array.isArray(contract)) return [{ code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', field: `modules.${key}.decisionContract`, message: `详情页模块 “${key}” 缺少完整决策契约。` }]
       const decision = contract as Record<string, unknown>
       const evidence = decision.evidence && typeof decision.evidence === 'object' && !Array.isArray(decision.evidence) ? decision.evidence as Record<string, unknown> : undefined
-      if (enforceOptionalMissing && decision.optional === true && evidence?.status === 'missing') return [{ code: 'DETAIL_MODULE_OPTIONAL_EVIDENCE_MISSING', field: `modules.${key}.decisionContract.evidence`, message: `详情页模块 “${key}” 仍缺少可选证据，必须省略或补证后创建新版本。` }]
+      if (decision.optional === true && evidence?.status === 'missing') return [{ code: 'DETAIL_MODULE_OPTIONAL_EVIDENCE_MISSING', field: `modules.${key}.decisionContract.evidence`, message: `详情页模块 “${key}” 仍缺少可选证据，必须省略或补证后创建新版本。` }]
       return []
     })
   }
@@ -3422,7 +3420,9 @@ export class MerchantService {
       taskId: task.id,
       parentId: source.id,
       version: Math.max(...versions.map(item => item.version), 0) + 1,
-      body: clone(source.body),
+      body: source.body.modules?.length
+        ? { ...clone(source.body), modules: orchestrateContentModules(source.body.modules, this.products.get(task.productId)!) }
+        : clone(source.body),
       factVersionIds: [...source.factVersionIds],
       ruleVersionIds: [...source.ruleVersionIds],
       ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}),
@@ -4082,7 +4082,7 @@ export class MerchantService {
       title: `${product.title}｜${task.platform}营销稿`,
       detail: `基于已确认商品事实生成：${product.title}，当前库存 ${product.stock}，SKU ${product.skuCount} 个。`,
       sellingPoints,
-      modules: contentModules(product, task.platform),
+      modules: orchestrateContentModules(contentModules(product, task.platform), product),
       brief: defaultStaticBrief(task.platform, product.title, sellingPoints, product.price, snapshot.promotions.map(promotion => `${promotion.label}${promotion.priceCny !== undefined ? ` ¥${promotion.priceCny.toFixed(2)}` : promotion.couponPriceCny !== undefined ? ` 券后 ¥${promotion.couponPriceCny.toFixed(2)}` : ''}`).join('；') || undefined),
     }
   }

@@ -1880,18 +1880,10 @@ describe('MerchantService', () => {
     expect(version.body.modules).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: 'hero', factSourceIds: expect.arrayContaining([expect.stringContaining('product:')]) }),
       expect.objectContaining({ key: 'sku', referencedSkuIds: expect.arrayContaining(['TB-SKU-WHITE-S']) }),
-      expect.objectContaining({ key: 'solution' }),
-      expect.objectContaining({ key: 'details_craft' }),
-      expect.objectContaining({ key: 'usage_scenarios' }),
-      expect.objectContaining({ key: 'size_guide' }),
-      expect.objectContaining({ key: 'evidence' }),
-      expect.objectContaining({ key: 'package' }),
-      expect.objectContaining({ key: 'after_sales' }),
-      expect.objectContaining({ key: 'brand' }),
       expect.objectContaining({ key: 'cta' }),
       expect.objectContaining({ key: 'platform' }),
     ]))
-    expect(version.body.modules?.find(module => module.key === 'evidence')?.body).toContain('[待确认]')
+    expect(version.body.modules?.some(module => module.decisionContract?.optional && module.decisionContract.evidence.status === 'missing')).toBe(false)
     const json = service.exportContent('ws_demo', version.id, 'json')
     expect(JSON.parse(json.body).brief).toMatchObject({ placement: expect.any(String) })
     const markdown = service.exportContent('ws_demo', version.id, 'markdown')
@@ -1907,7 +1899,7 @@ describe('MerchantService', () => {
     service.selectDirection(task.id, 'A')
     const draft = service.createDraft(task.id)
 
-    expect(draft.body.modules?.slice(0, 5).map(module => module.key)).toEqual(['hero', 'selling_points', 'specifications', 'size_guide', 'sku'])
+    expect(draft.body.modules?.slice(0, 5).map(module => module.key)).toEqual(['hero', 'selling_points', 'specifications', 'size_guide', 'cta'])
     expect(draft.body.modules?.map(module => module.key)).not.toContain('details_craft')
     expect(draft.body.modules?.map(module => module.key)).not.toContain('solution')
     const sourceModules = draft.body.modules!
@@ -1980,9 +1972,8 @@ describe('MerchantService', () => {
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
     const draft = service.createDraft(task.id)
-    expect(service.reviewContent('ws_demo', draft.id)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'DETAIL_MODULE_OPTIONAL_OMITTED', severity: 'warning', priority: 'P1' }),
-    ]))
+    expect(draft.body.modules?.some(module => module.decisionContract?.optional && module.decisionContract.evidence.status === 'missing')).toBe(false)
+    expect(service.reviewContent('ws_demo', draft.id)).not.toContainEqual(expect.objectContaining({ code: 'DETAIL_MODULE_OPTIONAL_OMITTED' }))
     expect(service.approveContent(task.id, draft.id).version.state).toBe('approved')
   })
 
@@ -2036,14 +2027,14 @@ describe('MerchantService', () => {
 
     expect(draft.body.modules?.find(module => module.key === 'hero')?.decisionContract?.evidence).toMatchObject({ type: 'parameter', status: 'verified' })
     expect(draft.body.modules?.find(module => module.key === 'selling_points')?.decisionContract?.evidence).toEqual({ type: 'usage_result', sourceIds: [], status: 'missing' })
-    expect(draft.body.modules?.find(module => module.key === 'evidence')?.decisionContract?.evidence).toEqual({ type: 'test_report', sourceIds: [], status: 'missing' })
+    expect(draft.body.modules?.find(module => module.key === 'evidence')).toBeUndefined()
     expect(draft.body.modules?.map(module => module.key)).not.toContain('details_craft')
     expect(draft.body.modules?.map(module => module.key)).not.toContain('usage_scenarios')
     expect(draft.body.modules?.map(module => module.key)).not.toContain('real_images')
     expect(service.reviewContent('ws_demo', draft.id)).toContainEqual(expect.objectContaining({ code: 'DETAIL_MODULE_REQUIRED_EVIDENCE_MISSING', field: 'modules.selling_points.decisionContract.evidence' }))
   })
 
-  it('diagnoses optional missing detail evidence without blocking approval', () => {
+  it('diagnoses and blocks optional missing evidence that was not actually omitted', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
@@ -2060,7 +2051,8 @@ describe('MerchantService', () => {
     expect(findings).toContainEqual(expect.objectContaining({ code: 'DETAIL_MODULE_OPTIONAL_OMITTED', severity: 'warning', priority: 'P1' }))
     expect(findings).not.toContainEqual(expect.objectContaining({ code: 'MISSING_SOURCE', field: 'modules.optional_missing' }))
     expect(findings.some(finding => finding.severity === 'error')).toBe(false)
-    expect(service.approveContent(task.id, draft.id).version.state).toBe('approved')
+    expect(() => service.approveContent(task.id, draft.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+    expect(() => service.exportContent('ws_demo', draft.id, 'json')).toThrowError(expect.objectContaining({ code: 'CONTENT_EXPORT_BLOCKED' }))
   })
 
   it('keeps historical modules readable and warns before re-approval when decision contracts are absent', () => {
@@ -2086,7 +2078,7 @@ describe('MerchantService', () => {
     expect(() => service.preparePublish(task.id)).toThrowError(expect.objectContaining({ code: 'DETAIL_DECISION_CONTRACT_BLOCKED' }))
   })
 
-  it('fails closed when optional missing evidence survives restore or modify', () => {
+  it('removes optional missing evidence during restore and modify normalization', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
@@ -2094,13 +2086,12 @@ describe('MerchantService', () => {
     service.approveContent(task.id, source.id)
     const restored = service.restoreContentVersion('ws_demo', source.id).version
 
-    expect(restored.body.modules).toContainEqual(expect.objectContaining({ decisionContract: expect.objectContaining({ optional: true, evidence: expect.objectContaining({ status: 'missing' }) }) }))
-    expect(() => service.approveContent(task.id, restored.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
-    expect(() => service.exportContent('ws_demo', restored.id, 'json')).toThrowError(expect.objectContaining({ code: 'CONTENT_EXPORT_BLOCKED' }))
+    expect(restored.body.modules).not.toContainEqual(expect.objectContaining({ decisionContract: expect.objectContaining({ optional: true, evidence: expect.objectContaining({ status: 'missing' }) }) }))
+    expect(service.approveContent(task.id, restored.id).version.state).toBe('approved')
+    expect(service.exportContent('ws_demo', restored.id, 'json').body).toContain('decisionContract')
 
     const modified = service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: restored.id, changes: { title: '历史修正版标题' }, reason: '历史内容修订' }).version
-    expect(() => service.approveContent(task.id, modified.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
-    expect(() => service.exportContent('ws_demo', modified.id, 'json')).toThrowError(expect.objectContaining({ code: 'CONTENT_EXPORT_BLOCKED' }))
+    expect(modified.body.modules).not.toContainEqual(expect.objectContaining({ decisionContract: expect.objectContaining({ optional: true, evidence: expect.objectContaining({ status: 'missing' }) }) }))
   })
 
   it('persists P1/P2 review decisions but never allows a P0 blocker to be bypassed', () => {

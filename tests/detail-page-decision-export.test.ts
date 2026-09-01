@@ -50,10 +50,8 @@ describe('详情页决策证据导出契约', () => {
     const bundledContracts = verifiedContentJson.body.modules.flatMap(module => module.decisionContract ? [module.decisionContract] : [])
     expect(exportedContracts.length).toBeGreaterThan(0)
     expect(bundledContracts.length).toBe(exportedContracts.length)
-    expect(exportedContracts.every(contract => contract.evidence.status === 'verified'
-      || (contract.optional && contract.evidence.status === 'missing'))).toBe(true)
-    expect(bundledContracts.every(contract => contract.evidence.status === 'verified'
-      || (contract.optional && contract.evidence.status === 'missing'))).toBe(true)
+    expect(exportedContracts.every(contract => contract.evidence.status === 'verified')).toBe(true)
+    expect(bundledContracts.every(contract => contract.evidence.status === 'verified')).toBe(true)
     expect(verifiedMarkdownExport).toContain('证据状态：verified')
     expect(verifiedMarkdownExport).toContain('不代表平台已发布')
     expect(verifiedBundle.deliveryManifest?.publishReceipt).toBeUndefined()

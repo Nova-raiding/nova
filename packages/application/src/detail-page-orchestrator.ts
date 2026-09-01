@@ -97,7 +97,7 @@ function decisionFor(
 ): DetailPageModuleDecision {
   const status = effectiveStatus(module, evidenceStatus)
   const optional = module.decisionContract?.optional ?? false
-  const omitMissingOptional = status === 'missing' && optional && missingEvidencePolicy === 'omit_optional'
+  const omitMissingOptional = (status === 'missing' || status === 'pending') && optional && missingEvidencePolicy === 'omit_optional'
   if (omitMissingOptional) {
     return {
       key: module.key,
@@ -105,7 +105,7 @@ function decisionFor(
       evidenceStatus: status,
       action: 'omit',
       readiness: 'blocked',
-      reason: `模块 ${module.key} 缺少证据且为可选模块，按策略省略；省略不代表证据已验证。`,
+      reason: `模块 ${module.key} 的证据${status === 'pending' ? '仍待确认' : '缺失'}且为可选模块，按策略省略；省略不代表证据已验证。`,
       originalIndex,
     }
   }

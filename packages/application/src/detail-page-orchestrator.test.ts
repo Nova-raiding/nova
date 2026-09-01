@@ -105,14 +105,16 @@ describe('orchestrateDetailPageModules', () => {
     expect(result.decisions[0]).toMatchObject({ action: 'retain', readiness: 'blocked', evidenceStatus: status })
   })
 
-  it('does not let an external verified status bypass pending module evidence', () => {
+  it('does not let an external verified status bypass pending optional evidence', () => {
     const result = orchestrateDetailPageModules(
       [module('materials', { optional: true, contentKind: 'pending', status: 'missing' })],
       'cookware',
       { materials: 'verified' },
     )
-    expect(result.modules.map(item => item.key)).toEqual(['materials'])
-    expect(result.decisions[0]).toMatchObject({ action: 'retain', readiness: 'blocked', evidenceStatus: 'pending' })
+    expect(result.modules.map(item => item.key)).toEqual([])
+    expect(result.omittedModules.map(item => item.key)).toEqual(['materials'])
+    expect(result.decisions[0]).toMatchObject({ action: 'omit', readiness: 'blocked', evidenceStatus: 'pending' })
+    expect(result.hasBlockingEvidence).toBe(false)
   })
 
   it('allows external evidence to strengthen missing evidence but never weaken a conflict', () => {
