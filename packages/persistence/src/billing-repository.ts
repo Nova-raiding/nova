@@ -225,6 +225,7 @@ export class PostgresBillingRepository {
   }
 
   async completeRechargeRefund(input: { workspaceId: string; orderId: string; reservationKey: string; actorId: string; reason: string; providerRefundId: string }) {
+    if (!input.providerRefundId.trim()) throw new Error('billing refund provider id required')
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(input.workspaceId), async client => {
       const orderResult = await client.query<OrderRow>('SELECT id,workspace_id,channel,amount_fen,state,payment_mode,payment_url,provider_trade_id,created_by_actor_id,created_at,updated_at FROM billing_orders WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [input.workspaceId, input.orderId])
       const current = orderResult.rows[0]

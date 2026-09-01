@@ -227,4 +227,15 @@ describe('PostgresBillingRepository external recharge refund', () => {
     expect(appendEvent).toHaveBeenCalledWith(client, expect.objectContaining({ eventType: 'billing.recharge.refunded', payload: expect.objectContaining({ provider_refund_id: 'provider_refund_100', amount_fen: 10_000 }) }))
     expect(client.calls.at(-1)?.text).toBe('COMMIT')
   })
+
+  it('rejects completion without a provider refund id before changing the ledger', async () => {
+    const client = new RecordingClient()
+    const repository = new PostgresBillingRepository(new RecordingPool(client))
+
+    await expect(repository.completeRechargeRefund({
+      workspaceId: 'ws_wallet', orderId: 'recharge_100', reservationKey: 'recharge-refund:recharge_100:1',
+      actorId: 'finance', reason: '客户申请', providerRefundId: '  ',
+    })).rejects.toThrow('billing refund provider id required')
+    expect(client.calls).toHaveLength(0)
+  })
 })
