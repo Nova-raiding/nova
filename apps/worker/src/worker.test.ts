@@ -197,12 +197,27 @@ describe('worker production entry', () => {
   it('restores snapshots and task.created, then safely acknowledges them', async () => {
     const projection = createWorkerProjection()
     const handler = createOutboxHandler({ projection })
-    const snapshot = { id: 'evt_s', workspaceId: 'ws_a', aggregateId: 'task_1', eventType: 'state.snapshot', sequence: 1, payload: { entityType: 'task', entity: { id: 'task_1' } }, createdAt: new Date().toISOString() }
+    const snapshot = { id: 'evt_s', workspaceId: 'ws_a', aggregateId: 'task_1', eventType: 'state.snapshot', sequence: 1, payload: { entityType: 'task', entity: { id: 'task_1', workspaceId: 'ws_a' } }, createdAt: new Date().toISOString() }
     const task = { ...snapshot, id: 'evt_t', eventType: 'task.created', payload: { id: 'task_1', workspaceId: 'ws_a' } }
     await handler({ event: snapshot, attempt: 1, now: Date.now() })
     await handler({ event: task, attempt: 1, now: Date.now() })
     expect(projection.snapshots.get('task_1')?.sequence).toBe(1)
     expect(projection.tasks.get('task_1')).toEqual(task.payload)
+  })
+
+  it('fails closed when a durable state snapshot crosses aggregate or workspace scope', async () => {
+    const projection = createWorkerProjection()
+    const onStateSnapshot = vi.fn()
+    const handler = createOutboxHandler({ projection, onStateSnapshot })
+    const base = { id: 'evt_invalid_snapshot', workspaceId: 'ws_a', aggregateId: 'task_1', eventType: 'state.snapshot', sequence: 1, createdAt: new Date().toISOString() }
+
+    await expect(handler({ event: { ...base, payload: { entityType: 'task', entity: { id: 'task_2', workspaceId: 'ws_a' } } }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'MALFORMED_STATE_SNAPSHOT', unknown: true } })
+    await expect(handler({ event: { ...base, payload: { entityType: 'task', entity: { id: 'task_1', workspaceId: 'ws_other' } } }, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code: 'MALFORMED_STATE_SNAPSHOT', unknown: true } })
+
+    expect(projection.snapshots.size).toBe(0)
+    expect(onStateSnapshot).not.toHaveBeenCalled()
   })
 
   it('executes each ready image continuation once through the signed worker boundary', async () => {

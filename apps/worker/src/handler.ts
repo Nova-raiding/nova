@@ -75,7 +75,12 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
     if (event.eventType === 'state.snapshot') {
       const entity = event.payload.entity
       const entityType = event.payload.entityType
-      if (!isObject(entity) || typeof entityType !== 'string') {
+      const entityId = isObject(entity) ? entity.id : undefined
+      const entityWorkspaceId = isObject(entity) ? entity.workspaceId : undefined
+      if (!isObject(entity)
+        || typeof entityType !== 'string' || !entityType.trim()
+        || typeof entityId !== 'string' || !entityId.trim() || entityId !== event.aggregateId
+        || typeof entityWorkspaceId !== 'string' || !entityWorkspaceId.trim() || entityWorkspaceId !== event.workspaceId) {
         throw unknownFailure('MALFORMED_STATE_SNAPSHOT', `Event ${event.id} is not a valid state snapshot`)
       }
       const previous = projection.snapshots.get(event.aggregateId)
