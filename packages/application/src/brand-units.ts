@@ -250,8 +250,6 @@ export class BrandUnitService {
     const workspaceId = text(input.workspaceId, 'workspaceId')
     const taskId = text(input.taskId, 'taskId')
     const blockers = this.checkTarget(workspaceId, input)
-    const listing = this.listings.get(input.listingId)
-    if (listing?.workspaceId === workspaceId && listing.state !== 'active') blockers.push('LISTING_NOT_ACTIVE')
     return {
       taskId,
       workspaceId,
@@ -282,6 +280,7 @@ export class BrandUnitService {
       else {
         if (listing.brandId !== brand.id || listing.canonicalProductId !== product.id) blockers.push('LISTING_SCOPE_MISMATCH')
         if (listing.platform !== input.platform || listing.accountId !== input.accountId) blockers.push('LISTING_TARGET_MISMATCH')
+        if (listing.state !== 'active') blockers.push('LISTING_NOT_ACTIVE')
       }
       const account = this.requireAccount(workspaceId, input.accountId)
       if (account.platform !== input.platform) blockers.push('PLATFORM_MISMATCH')

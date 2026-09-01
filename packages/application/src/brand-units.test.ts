@@ -71,7 +71,8 @@ describe('BrandUnitService', () => {
     const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id })
     const input = { workspaceId: 'ws_1', idempotencyKey: 'campaign-1', items: [{ brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }, { brandId: b.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }] }
     const first = service.preflightCampaign(input)
-    expect(first.aggregate).toEqual({ total: 2, ready: 1, blocked: 1, state: 'blocked' })
+    expect(first.aggregate).toEqual({ total: 2, ready: 0, blocked: 2, state: 'blocked' })
+    expect(first.items[0]?.blockers).toEqual(['LISTING_NOT_ACTIVE'])
     expect(first.items[1]?.blockers).toContain('BRAND_ID_MISMATCH')
     expect(service.preflightCampaign(input)).toEqual(first)
     expect(() => service.preflightCampaign({ ...input, idempotencyKey: 'campaign-1', items: [input.items[0]!] })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
@@ -111,6 +112,21 @@ describe('BrandUnitService', () => {
 
     service.listings.set(listing.id, { ...listing, state: 'active' })
     expect(service.preflightTaskTarget(target)).toMatchObject({ state: 'ready', blockers: [] })
+  })
+
+  it('blocks draft listings at the campaign preflight boundary', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, title: '待激活外套' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, state: 'draft' })
+
+    const result = service.preflightCampaign({
+      workspaceId: 'ws_1',
+      idempotencyKey: 'draft-listing-campaign',
+      items: [{ brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao', accountId: store.id }],
+    })
+
+    expect(result).toMatchObject({ aggregate: { total: 1, ready: 0, blocked: 1, state: 'blocked' }, items: [{ state: 'blocked', blockers: ['LISTING_NOT_ACTIVE'] }] })
   })
 
   it('blocks archived canonical products at both campaign and task preflight boundaries', () => {
