@@ -1,7 +1,7 @@
 <!-- /autoplan restore point: /Users/lixiaomei/.gstack/projects/codexSkills/main-autoplan-restore-20260901-210919.md -->
 # 商家营销插件商业化与 AI 创意点 PRD
 
-状态：CEO 前提已批准（2026-09-01）；设计、工程与 DX 评审中；实现、销售、生产均为 NO-GO
+状态：gstack CEO、设计、工程、DX 四阶段双评审完成（2026-09-01）；等待最终实施批准；实现、销售、生产均为 NO-GO
 版本：2.0-draft
 日期：2026-09-01
 唯一业务来源：/Users/lixiaomei/Downloads/商业化方案.md
@@ -299,9 +299,163 @@ Claude subagent 与 Codex 均识别 12 项主要问题，对六个维度形成 6
 
 决策审计：恢复 5000/12500、6×500、1999 测试包并删除钱包兜底属于原文纠错；中央默认拒绝与精确白名单属于必要工程约束；增值服务/复杂政策不做属于范围控制；GB/GiB、赠点日期、费率变量保留人工决策。
 
-## 15. 当前结论
+## 15. gstack 设计评审记录
 
-CEO 阶段完成，恢复点已保存。用户于 2026-09-01 选择 A，确认唯一需求源、零点全局阻断、精确恢复白名单、钱包不得绕过及待讨论条款不得进入生产。现进入设计、工程与 DX 评审。
+### 15.1 双重设计声音结论
 
-PRD VERDICT：PREMISES APPROVED；REVIEW IN PROGRESS。
+Claude subagent 与 Codex 均判定当前商业 UI 为 NO-GO：RBAC、范围条、错误边界、Ant Design token 和 Drawer 焦点底座可复用，但页面仍传播“任务额度 + 人民币钱包 + 简化 Offer”的旧事实。两路均要求在现有“账务与商业配置”域内重建任务型信息架构，不新增顶级业务域。
+
+| 维度 | 当前 | 目标 | 结论 |
+|---|---:|---:|---|
+| 信息架构 | 2/10 | 9/10 | Card 长页改为可深链的任务 Tabs |
+| 核心旅程 | 2/10 | 9/10 | 默认进入阻断与恢复 |
+| 状态/错误 | 3/10 | 9/10 | exhausted/insufficient/unavailable/stale 分离 |
+| 权限/信任 | 4/10 | 10/10 | 拆分目录、费率、点数、private SKU、恢复能力 |
+| 视觉层级/密度 | 4/10 | 9/10 | 1440px 平面筛选 + sticky Table + Drawer |
+| 设计系统 | 5/10 | 9/10 | 延续现有 token，移除局部硬编码与卡片嵌套 |
+| 无障碍/键盘 | 5/10 | 9/10 | H1、错误摘要、aria-sort、焦点恢复、live region |
+
+### 15.2 权威信息架构
+
+```text
+账务与商业配置
+├─ 阻断与恢复（默认）
+├─ Workspace 权益
+├─ 创意点账本
+├─ 商业目录
+│  ├─ 接入服务与月套餐
+│  ├─ 点数充值包
+│  └─ 非公开测试 SKU（能力驱动隐藏）
+├─ 订单与支付
+├─ 创意点费率
+└─ 服务履约
+```
+
+URL 保存 view、workspace、筛选、排序和目标记录。首屏只保留阻断、unknown、paid-but-ungranted 和待履约四个可行动汇总；禁止营销式 KPI、Card 套 Tabs 套 Table。
+
+核心恢复旅程：
+
+`阻断队列 → Workspace decision → 点数来源/到期 → 支付/grant/对账 → 新 access revision → 已恢复`
+
+支付成功不等于恢复；只有 grant 到账且新 CommercialAccessDecision 通过才显示 RECOVERED。
+
+### 15.3 页面与组件
+
+- CommercialAccessStatusBar：状态、available/reserved、最早到期、decision revision、最后核验。
+- AccessBlockQueueTable + AccessRecoveryDrawer：EXHAUSTED/INSUFFICIENT/UNAVAILABLE/STALE 与 next action。
+- WorkspaceEntitlementTable、EntitlementSnapshotDrawer。
+- CreativePointsLedgerTable、LedgerEntryDrawer。
+- CommercialCatalogTable、OfferVersionDrawer、PrivateTrialSkuPanel。
+- CreativePointRateTable、RateApprovalModal。
+- RechargeOrderTable：SKU、点数、payment state、grant state、access revision。
+- ServiceFulfillmentTable：培训、1V1、复盘、工时和证据。
+- CommercialErrorSummary、RevisionConflictAlert、AuditEvidenceNotice。
+
+旧 ConfigurationCenter 的套餐字段改为只读快照；includedTasks、钱包解锁、通用 add-on、优惠券、灰度和模型倍率不得替代本 PRD 的目录/点数/费率。
+
+### 15.4 状态、权限与可访问性
+
+| 状态 | 呈现 | 恢复 |
+|---|---|---|
+| EXHAUSTED | available 明确为 0 | 充值、升级、查单、授权 Ops 修复 |
+| INSUFFICIENT | available 与 quoted 差额 | 充值、升级 |
+| UNAVAILABLE | 不显示 0；账本/投影未知 | 重试、对账、客服、诊断 |
+| STALE | old/new revision | 重取 decision |
+| RATE_CARD_UNAVAILABLE | 费率未批准 | 查看草稿、授权审批 |
+| RECOVERED | 新 revision + audit/request ID | 返回业务流 |
+
+private SKU 无 read capability 时整块、数量、筛选项和搜索提示全部隐藏。有读无写时使用 Descriptions/Table，不渲染 disabled 表单。目录草稿/发布、费率草稿/批准、点数读取/调账、private SKU、支付对账、服务履约和门禁恢复必须分别消费服务端 capability。
+
+页面切换聚焦唯一 H1；表格 Input/Switch 使用含 SKU/action 的可访问名称；排序提供 aria-sort；unknown/error 使用 alert，余额与恢复更新使用 polite live region；多错误聚焦摘要并链接字段；Drawer 关闭回触发行；状态使用图标+文字+code。只验收 1440px 桌面。
+
+### 15.5 设计实现与测试任务
+
+1. 替换前端旧商业类型和展示语言。
+2. 建立可深链 Tabs 及各自独立 loading/empty/error/permission。
+3. 实现阻断队列、恢复 Drawer、权益快照和点数账本。
+4. 重做完整目录、private SKU、充值包和草稿费率。
+5. 扩展订单为 SKU → payment → grant → access revision。
+6. 拆分粗粒度 canGlobalCommercial/canPlatformOps。
+7. 增加 0/不足/unknown/stale、private 隐藏、paid-but-ungranted、409 保留输入、独立权限、键盘/焦点测试。
+8. 用 1440×900 真实桌面浏览器验证 finance/support/platform Ops；fixture 截图不算完成。
+
+PHASE 2 VERDICT：设计规格通过，可进入工程评审；当前 UI 实现仍为 NO-GO。
+
+## 16. gstack 工程评审记录
+
+### 16.1 双重工程声音结论
+
+工程 subagent 与 Codex 均判定当前架构和代码为 NO-GO。现有鉴权注册表、HTTP 路由清单、RLS/outbox 和订单快照可作为底座，但运行时仍由任务次数、图片 entitlement、人民币钱包和可变 offer 共同决定能力；没有创意点事实账本、费率域、private SKU、服务履约域或跨 HTTP/MCP/Bridge/Worker 的 CommercialAccessDecision。
+
+两路评审同时否决旧架构文档的“ENG CLEARED”：其中的钱包联合预占、365 天赠点、60 天导入、15 分钟取整、取消/爽约、30 天质保、完整 SLA 算法、legacy task/add-on 转点、80% 销售容量线等均无需求依据，必须删除而非实现。最新迁移编号当前为 143，新 expand migration 必须在合并时重新取下一可用编号，当前候选从 144 开始。
+
+### 16.2 必须建立的工程事实源
+
+- 全局不可变目录：commercial_skus/versions、benefit_definitions、sku_version_benefits、creative_rate_card_versions/rules、private_sku_eligibility、configuration approval/events。
+- Workspace 合同事实：orders/snapshots、subscription periods、entitlement snapshots、六次独立赠点 schedule、private redemption、implementation fee credit、service allocations/events。
+- 创意点事实：grants、operations、reservations、allocations、append-only ledger、provider receipts、rebuildable balance projection、access revisions、audit/outbox。
+- 每张租户表均含 workspace_id、租户 FK、ENABLE/FORCE RLS、USING + WITH CHECK；账本/事件表禁止应用角色 UPDATE/DELETE/TRUNCATE。
+- 人民币支付/退款账本和 provider usage/cost 只以 operation_id 关联证据，永远不能解除商业门禁。
+
+### 16.3 统一准入与事务边界
+
+生成一份所有入口共用的 exact operation registry，分类仅为 RECOVERY_CONTROL、POINT_REQUIRED_NO_CHARGE、POINT_CHARGED；未知入口默认拒绝并使契约测试失败。Bridge 不得以 READ_ONLY_METHODS、SAFE_WITHOUT_INTERACTIVE_WRITE 或前缀规则扩大 API 白名单。即使不扣点，商家业务操作在 available_points=0 时也必须拒绝。
+
+固定顺序为：schema → identity/session → tenant/RBAC/object scope → exact commercial classification → CommercialAccessDecision/quote/reservation → onboarding/readiness → business mutation/outbox/provider。任何知识 hydration、写库、排队、存储预留或外部调用均不得早于商业判定。
+
+支付回调的 provider event/nonce、order paid、subscription/period/snapshot、当前到期 grant、balance projection、access revision、private credit、audit 与 outbox 必须同事务提交；不能出现 paid 已提交而 grant 未提交。收费动作先按 earliest-expiry 锁定 grant 并原子预占，Worker 在外部调用前复核 access revision、snapshot、rate、reservation 和 readiness；远端结果不明时保持 reserved/unknown，禁止交付或盲重试。
+
+### 16.4 迁移与验证边界
+
+includedTasks、monthly_tasks_used、旧 usage、人民币 wallet、通用 addon 不转换为创意点，只作为 legacy 只读对账历史；任何 legacy 来源不得贡献 available_points。新旧路径可 shadow，但 ChatGPT 插件、HTTP、MCP、Bridge 和 Worker 必须作为一个切面同步启用，不能逐入口留下绕过窗口。
+
+E1 覆盖完整目录数值、状态/属性、入口穷举、精确白名单、错误包、private 隐藏和幂等；E2 使用真 PostgreSQL 覆盖 FORCE RLS、append-only、支付/grant/revision 原子性、200 并发预占、到期顺序、outbox 回滚、迁移重跑和 Worker revision drift；E3 使用正式安装插件与 1440px Ops 验证阻断—充值—到账—新 revision 恢复闭环；E4 使用真实支付回执、中转鉴权/用量/成本、对象存储/scanner 和平台 canary。静态代码、fixture 或已有通用 readiness 均不能证明本需求完成。
+
+PHASE 3 VERDICT：目标工程方案可形成；当前架构文档与实现仍为 NO-GO，必须先按本 PRD 重写架构并从统一契约/注册表开始。
+
+## 17. gstack DX 评审记录
+
+### 17.1 双重 DX 声音结论
+
+DX subagent 与 Codex 均判定当前开发体验为 NO-GO。MCP schema/RBAC 清单、统一 envelope、request/trace、Ops transport、Bridge 生产 fail-closed、Worker 授权复核、migration checksum/连续性和通用 doctor 可复用；但四类开发者都无法跑通“零点阻断 → 购买点包 → 支付到账 → grant → 新 access revision → 恢复业务”的 first working flow。
+
+| 角色 | 当前阻断 |
+|---|---|
+| 插件开发者 | merchant.start 仍可能写 intent；Bridge bootstrap 后进入业务；README 明示 platform.connect/catalog.sync 零余额可用 |
+| API/MCP 集成者 | 没有机器可读商业分类、稳定 decision/quote/reservation/error wire schema；OpenAPI 没有五类商业错误 |
+| Ops 前端开发者 | transport 可诊断，但 DTO/页面仍是 offer/addon/coupon/rollout/wallet/includedTasks |
+| 值班/迁移工程师 | README 迁移尾与仓库不一致；没有 commercial doctor、shadow diff、legacy 非贡献断言、cutover/forward-fix runbook |
+
+当前无法测量商业链路 TTHW。fixture 只能新增 positive/zero/insufficient/unknown/paid-but-ungranted/stale 的 E1/E2 确定性场景，必须显著标记 simulated，不能成为 E3/E4 证据。
+
+### 17.2 冻结 wire contract 与诊断要求
+
+- 在共享契约中冻结 CommercialAccessDecision、quote、reservation、ledger entry、payment/grant/recovery result 及错误 details JSON Schema。
+- 明确 HTTP status、MCP isError、retryable、request_id、trace_id、balance_state、available_points、quoted_points、access_revision、rate_card_version 与 next_actions 的逐错误映射；敏感字段继续脱敏。
+- OpenAPI 必须由同一方法契约生成或做严格 parity；不能以 additionalProperties 掩盖商业方法参数/结果。
+- Bridge 保真传递上述字段，只渲染服务端许可的恢复 action；不得生成 50/100/300 元等未授权推荐金额。
+- dev:doctor 必须逐项报告目录版本、费率批准、点数投影、支付→grant、Worker 商业复核和全入口注册表 readiness；缺失在对应环境明确 BLOCKED。
+
+### 17.3 DX 验收与工作包
+
+1. 从 HTTP router、MCP registry、Bridge tools、Worker event/action 生成全量 manifest；每项恰有一个分类，新增未分类入口使 CI 失败。
+2. 建立跨 HTTP/MCP/Bridge/Ops 的错误 golden matrix，并证明 0/unknown/不足/stale/无费率时 DB、outbox、queue、storage、relay、scanner、connector 副作用均为 0。
+3. 从全新 checkout 计时启动真 PostgreSQL/Redis/API/Worker/Ops、安装源码插件、复现 fixture 阻断与 grant 恢复；runbook 记录命令、预期输出、清理和失败诊断。
+4. 演练 fresh install、当前 migration tail 升级、重复执行、中断恢复、shadow diff、legacy 永不贡献点数、V2 切换、旧二进制 fencing 和 forward-fix；禁止删数据通过测试。
+5. Worker 日志用 request/trace/operation/provider id 串联 decision/snapshot/rate/reservation；stale/unknown 禁止盲重试。
+6. 正式安装 ChatGPT 插件和 1440×900 Ops 完成 E3；E4 artifact 绑定 release、bridge/OpenAPI hash、migration tail、真实 workspace、支付/中转/Worker request IDs，并明确 simulated=false。
+
+DX 工作并入工程 WP：DX-0 契约注册表 → DX-1 Bridge 恢复体验、DX-2 集成场景、DX-3 Ops client、DX-4 Worker/值班 → DX-5 迁移切换 → DX-6 文档/证据。DX 不另造账本或商业规则。
+
+PHASE 4 VERDICT：目标 DX 规格可形成；当前代码、文档、fixture、迁移和联调仍为 NO-GO。
+
+## 18. autoplan 最终结论与批准门
+
+四阶段双评审对目标无分歧：采用唯一不可变商业目录、append-only 创意点账本、中央默认拒绝 CommercialAccessDecision、精确恢复白名单、原子 payment→grant→access revision、全入口同步切换，以及 1440px 桌面 Ops。旧钱包/任务/add-on 只保留历史账务证据，不能解锁或换算点数。
+
+仍待业务/财务/法务批准的内容保持阻断，不允许工程猜测：6×500 的起算/每笔到期日；50g 的 GB/GiB；文本费率；视频 90+ 的变量公式；充值点有效期；private SKU 资格/重复购买/5000 元抵扣会计；退款、宽限、数据保留。相关配置可建模为 unresolved，但不得生产激活。
+
+批准后的实施顺序固定为：重写架构与页面级 UI 规格 → 共享契约/精确注册表 → 数据/RLS/账本 → 目录/private SKU/支付原子事务 → API/MCP/Bridge/Worker → 桌面 Ops → legacy shadow/cutover → E1/E2 → 正式插件与桌面 E3 → 真实外部 E4。每阶段失败继续 fail-closed，不以代码存在宣称完成。
+
+PRD VERDICT：AUTOPLAN COMPLETE；AWAITING FINAL IMPLEMENTATION APPROVAL。
 IMPLEMENTATION / SALES / PRODUCTION VERDICT：NO-GO。

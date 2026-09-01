@@ -1,46 +1,60 @@
-# 工作包 02：模型/平台运行时、MCP Bridge 与发布安全
+# 工作包 02：全链商业门禁、MCP Bridge、Worker 与真实执行证据
 
-主责：开发者 2（后端/集成）
-依据：[PRD](../product/package-entitlements-and-services-prd-2026-08-31.md)、[架构](../architecture/package-entitlements-and-services-architecture-2026-08-31.md)
+主责：后端/集成 owner
 
-## 目标
+唯一需求依据：[商家营销插件商业化与 AI 创意点 PRD](../product/package-entitlements-and-services-prd-2026-08-31.md)
 
-将文本、图片、图片编辑、OCR、视频、批量素材和六个平台能力接入统一 readiness、真实中转成本和人工确认发布链；保持无人值守发布为零。
+实现约束依据：[商业化架构](../architecture/package-entitlements-and-services-architecture-2026-08-31.md)
 
-## 范围
+## 目标与冻结顺序
 
-- Relay 五模态鉴权、provider request/usage/cost/error receipt、`operation_execution_attempts` 和 unknown/reconcile。
-- 平台 capability：授权、商品读、内容写、媒体上传、状态回读；京东/淘宝/天猫/拼多多/小红书/抖音逐格 readiness。
-- `workspace.health`、readiness evidence registry、release/digest/签名/过期/nonce 校验。
-- `publish.prepare/confirm/get`：snapshot/restriction/auth/content/object/remote revision、intent hash、nonce、expires_at。
-- Bridge/MCP merchant allowlist、商家六类卡片所需 DTO、批量最多 50 项、逐项 receipt。
+在工作包 01 的共享契约冻结后，将同一 `CommercialAccessDecision` 接入插件入口、MCP、全部商家 HTTP、入队点、Worker 执行前复核、重试/补偿和内部 action。固定执行顺序为：
 
-## CodeGraph 复用证据
+`schema → identity/session → tenant/RBAC/object scope → exact commercial classification → access decision/quote/reservation → onboarding/readiness → business mutation/outbox/provider`
 
-- `apps/plugin/mcp/bridge.mjs`、`apps/plugin/mcp/bridge.test.ts`、`packages/ai/src/provider-request.ts`。
-- `packages/connectors/src/readiness.ts`、`capability-evidence.ts`、`platform-preflight.ts`、`http-connector.ts`、connector runtime。
-- 现有 publish prepare/confirm、一次性 nonce、Worker auth recheck、unknown→reconcile/manual_attention、模型 usage/cost settlement。
+任何 knowledge hydration、业务写库、入队、对象存储预留或外部调用不得早于商业判定。
 
-## 关键实现与验收
+## API/MCP 与恢复白名单
 
-1. Relay 缺 key、cost 或模型证据时 fail-closed；不得直连 provider，不交付伪结果。
-2. provider timeout、连接断开、请求后 Worker 崩溃或不支持幂等均为 unknown；保持点数/钱包 reserved，不重复调用。
-3. readiness 服务端确定映射：blocked > error > unknown > degraded > ready/read_only；证据绑定 release、commit、digest、workspace、capability、hash、签名、过期时间。
-4. 无有效 confirmation ticket 的 Worker 平台写入数为 0；ticket consume 与 publish outbox 同事务；漂移即 invalidated/reprepare。
-5. 六平台逐 capability E4 canary/readback；一个平台不得代表全部平台。视频未通过成本/渲染门禁只能销售脚本/分镜。
-6. MCP/API DTO 返回 envelope、operationId/taskId/statusHref、server label/unit/limit；客户端不得推导状态或额度。
+- 从共享 registry 生成并校验 HTTP/MCP/Worker 全入口清单；不使用路径前缀、HTTP method、`READ_ONLY_METHODS` 或 `SAFE_WITHOUT_INTERACTIVE_WRITE` 推导商业豁免。
+- 零点仅开放 PRD 精确恢复/控制白名单：身份/会话/bootstrap，商业与点数读取，购买/升级/充值/支付状态，验签支付回调与对账，自有导出/删除申请，必要客服恢复，以及具独立 capability 的 Ops 修复/审计。
+- 平台连接/授权/同步、扫描、在线商品/知识库/历史读取、创建/上传/规则/生成/编辑/审核/批量/发布和服务预约均不得因“只读”或 onboarding 被零点放行。
+- `merchant.start` 在零点、unknown 或 insufficient 时不得写 intent、触发扫描或返回业务 action，只返回 access decision 与允许的恢复动作。
+- HTTP/MCP 错误稳定保留 code、requestId、traceId、balance state、available/quoted points、access revision、rate version 和 nextAction；unknown 不得渲染为 0。
 
-## 估算与依赖
+## Bridge 与 ChatGPT 插件
 
-- 估算：45–65 人日；外部平台开户、供应商审批和真实密钥等待不计入。
-- 依赖工作包 01 的 snapshot/rate/operation 契约；工作包 05 可并行提供 E4 环境与门禁，02 的实现和 E1/E2/E3 不等待最终 E4，最终 E4 验收再由 05 统筹。
-- 工作包 04 可先用契约 fixture 开发，但 E3/E4 必须接真实 API/MCP/沙箱。
+- Bridge 直接消费共享 method manifest、schema 与商业分类；删除宽泛本地白名单和旧钱包错误到任意金额充值的映射。
+- `CREATIVE_POINTS_EXHAUSTED`、`CREATIVE_POINTS_INSUFFICIENT`、`CREATIVE_POINTS_UNAVAILABLE`、`COMMERCIAL_ACCESS_STALE`、`RATE_CARD_UNAVAILABLE` 在 API → Bridge → ChatGPT structured content 中无损传递且安全脱敏。
+- 零点恢复 UI 只展示冻结点包 SKU、升级、支付状态、余额/到期、导出和客服；不得展示 50/100 元等未授权金额或业务工具。
+- 收费动作确认显示服务端费率版本、预计点数和执行后余额；无批准费率不提供确认动作。
+- 保留现有生产 HTTPS、真实 token、strict auth、fixture 禁用、交互确认和发布确认门禁；创意点门禁不能替代这些门禁。
 
-## 风险与不包含
+## Worker 与外部执行
 
-风险：provider 不幂等、外部写 unknown、CSP/structured content 限制、平台 capability 混淆、旧 readiness 计数 fallback。
-不包含：供应商商业开户、平台应用审批、任意 ERP、无人值守发布、手机/平板。
+- Outbox event 固化 decision id/revision、entitlement snapshot/version、rate-card version、quote、reservation/allocation 和 operation id。
+- Worker 在每次 provider/scanner/platform 调用前重读并校验 access revision、权益快照、费率、reservation、租户/对象权限和 readiness；漂移返回 `COMMERCIAL_ACCESS_STALE`，不外调。
+- 文本、图片、图片编辑、OCR、视频五模态必须走已配置中转；保留真实 provider request、usage、cost、error 和 settlement 证据，缺配置或证据 fail-closed。
+- 六平台逐 capability 验证真实鉴权、读写、媒体上传和状态回读；一个平台或一个 capability 的证据不得代表其他项。
+- provider timeout、连接断开、Worker 崩溃或回调结果不明保持 unknown/reserved，禁止盲重试和结果交付，进入幂等对账。
+- 发布继续要求人工确认票据、内容/对象/remote revision、nonce、hash 和真实回执；不增加无人值守发布。
 
-## 完成定义
+## DX、可观测与验收
 
-E2 真库/Worker/回执测试和 E3 ChatGPT+桌面端到端通过；E4 才能将对应模态或平台标记 production_sellable。
+1. 生成全入口 parity 报告；新增未分类 route/method/action 时构建失败。
+2. 提供插件开发者与 API 集成者的请求/响应示例、错误矩阵、幂等规则、轮询终止条件和 request/trace/operation/provider id 关联方法。
+3. 结构化日志和告警能区分 exhausted、insufficient、unavailable、stale、rate unavailable、provider unknown 和 readiness blocked，且不输出凭据。
+4. E1 验证全入口零点一致拒绝及无 DB/outbox/queue/storage/relay/scanner/platform 副作用；验证 Bridge 错误保真和恢复动作精确性。
+5. E2 使用真 PostgreSQL/Worker 验证执行前 revision drift、并发耗尽、reservation 生命周期、崩溃恢复、outbox 重放和 unknown 对账。
+6. E3 使用正式安装的 ChatGPT 插件连接真实沙箱，完成阻断 → 购买点包 → 支付到账 → 新 revision → 恢复业务闭环。
+7. E4 保存真实支付、五模态中转、对象存储/scanner 和六平台逐能力 canary/回读证据；缺任一证据则对应能力保持 blocked。
+
+## 依赖、风险与完成定义
+
+- 依赖工作包 01 的 registry、目录、账本、decision、reservation 和错误契约；工作包 05 从第一天提供迁移与证据门禁。
+- 工作包 04 可基于 E1 contract fixture 并行，但 E3/E4 必须连接真实 API/MCP/沙箱。
+- 完成条件：API/MCP/Bridge/Worker 同切面启用且无绕过路径，E1/E2/E3 通过；只有取得对应 E4 证据的外部能力才可进入生产放行判断。
+
+## 不包含
+
+新商业 SKU、未批准费率、供应商开户、平台审批等待、ERP/PIM、专项增值服务、无人值守发布，以及手机或平板适配。

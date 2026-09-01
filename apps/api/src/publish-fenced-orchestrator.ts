@@ -30,7 +30,8 @@ export interface PublishFencedOrchestratorInput<T> {
   ticketRepository: PublishTicketRepository
   ticket: ReserveInteractiveConfirmationTicketInput
   consumedOperationId: string
-  wallet: PublishWalletCompensation
+  /** Optional legacy compensation port. Point-required/no-charge publish omits it. */
+  wallet?: PublishWalletCompensation
   slot: PublishSlotCompensation
   persist: (input: {
     reservation: InteractiveConfirmationTicketReservation
@@ -88,7 +89,7 @@ export async function runFencedSinglePublish<T>(input: PublishFencedOrchestrator
     if (slotReserved) {
       try { await input.slot.release() } catch (error) { compensationErrors.push(error) }
     }
-    if (walletDebited) {
+    if (walletDebited && input.wallet) {
       try { await input.wallet.refund() } catch (error) { compensationErrors.push(error) }
     }
     try {
@@ -106,8 +107,10 @@ export async function runFencedSinglePublish<T>(input: PublishFencedOrchestrator
   }
 
   try {
-    await input.wallet.debit()
-    walletDebited = true
+    if (input.wallet) {
+      await input.wallet.debit()
+      walletDebited = true
+    }
     await input.slot.reserve()
     slotReserved = true
 

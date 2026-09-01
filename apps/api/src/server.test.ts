@@ -1,13 +1,39 @@
 import { createHmac } from 'node:crypto'
+import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requirePublishAuthorizationSnapshot } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
+
+describe('central commercial access gate', () => {
+  const request = { headers: { 'x-request-id': 'req_commercial_test', 'x-trace-id': 'trace_commercial_test' } } as unknown as IncomingMessage
+
+  it('keeps exact recovery controls available when creative-point facts are unknown', async () => {
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'subscription.get')).resolves.toMatchObject({
+      classification: 'RECOVERY_CONTROL',
+      allowed: true,
+      available_points: null,
+    })
+  })
+
+  it('fails unknown point-required access closed without projecting null as zero', async () => {
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'merchant.start')).rejects.toMatchObject({
+      code: 'CREATIVE_POINTS_UNAVAILABLE',
+      status: 503,
+      details: { balance_state: 'unknown', available_points: null, request_id: 'req_commercial_test', trace_id: 'trace_commercial_test' },
+    })
+  })
+
+  it('fails disabled and unclassified operations before business dispatch', async () => {
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'content.generate')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED', status: 503 })
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'unregistered.business.action')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_UNCLASSIFIED', status: 503 })
+  })
+})
 
 describe('canonical read rollout safety', () => {
   it('isolates malformed legacy outbox snapshots from unrelated hydration', () => {

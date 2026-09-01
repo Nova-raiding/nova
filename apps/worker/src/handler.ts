@@ -5,6 +5,7 @@ import { buildPublishObservationRequest, PublishObservationReportError } from '.
 import type { GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import { createUnavailableExecutionAuthorizationGuard, parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
+import { createUnavailableCommercialAccessGuard, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
 
 export interface WorkerProjection {
   snapshots: Map<string, { sequence: number; payload: Record<string, unknown> }>
@@ -32,6 +33,9 @@ export interface WorkerHandlerOptions {
   /** Required at the production side-effect boundary. The default denies all
    * critical execution until an authoritative live recheck port is wired. */
   executionAuthorization?: WorkerExecutionAuthorizationGuard
+  /** Required for every merchant business side effect. Pure system
+   * projections intentionally bypass this gate. */
+  commercialAccess?: WorkerCommercialAccessGuard
 }
 
 export function createWorkerProjection(): WorkerProjection {
@@ -46,9 +50,37 @@ export function createWorkerProjection(): WorkerProjection {
 export function createOutboxHandler(options: WorkerHandlerOptions = {}): DurableOutboxHandler<DurableOutboxEvent, unknown> {
   const projection = options.projection ?? createWorkerProjection()
   const executionAuthorization = options.executionAuthorization ?? createUnavailableExecutionAuthorizationGuard()
-  const authorize = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
+  const commercialAccess = options.commercialAccess ?? createUnavailableCommercialAccessGuard()
+  const commercialize = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
     try {
-      return await executionAuthorization.assertAuthorized(event, operation, signal)
+      return await commercialAccess.assertCommercialAccess(event, operation, signal)
+    } catch (error) {
+      const snapshot = (() => {
+        try { return parseWorkerCommercialAccessSnapshot(event, operation) } catch { return undefined }
+      })()
+      const candidate = error as { code?: unknown; retryable?: unknown; unknown?: unknown }
+      throw new WorkerFailure({
+        code: typeof candidate.code === 'string' ? candidate.code : 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE',
+        message: error instanceof Error ? error.message : 'worker commercial access recheck failed',
+        retryable: candidate.retryable === true,
+        unknown: candidate.unknown === true,
+        ...(snapshot ? {
+          decisionId: snapshot.decisionId,
+          accessRevision: snapshot.accessRevision,
+          ...(snapshot.reservationId ? { reservationId: snapshot.reservationId } : {}),
+          entitlementSnapshotId: snapshot.entitlementSnapshotId,
+          entitlementSnapshotChecksum: snapshot.entitlementSnapshotChecksum,
+          rateVersion: snapshot.rateVersion,
+          eventId: event.id,
+          workspaceId: event.workspaceId,
+        } : { eventId: event.id, workspaceId: event.workspaceId }),
+      })
+    }
+  }
+  const authorize = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
+    let authorization
+    try {
+      authorization = await executionAuthorization.assertAuthorized(event, operation, signal)
     } catch (error) {
       // Preserve the enqueue decision even when the live recheck is denied or
       // unavailable. The durable runner stores WorkerFailure.error verbatim,
@@ -65,6 +97,8 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         ...(snapshot ? { decisionId: snapshot.decisionId, eventId: event.id, workspaceId: event.workspaceId, ...(snapshot.traceId ? { traceId: snapshot.traceId } : {}) } : { eventId: event.id, workspaceId: event.workspaceId }),
       })
     }
+    await commercialize(event, operation, signal)
+    return authorization
   }
   return async ({ event, signal }) => {
     throwIfLeaseLost(signal)
@@ -174,6 +208,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
     if (['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'].includes(event.eventType) && options.scanRequested) {
       try {
         if (event.eventType === 'asset.scan_redrive_requested') await authorize(event, 'asset.scan.execute', signal)
+        else await commercialize(event, 'asset.scan.execute', signal)
         const result = await options.scanRequested(event, projection, signal)
         throwIfLeaseLost(signal)
         return { value: result }

@@ -962,12 +962,34 @@ paths:
     get:
       tags: [Tasks]
       operationId: checkPublishExecution
-      description: Worker-token protected authorization gate immediately before connector execution; returns the opaque credential locator only to the worker and never through MCP or outbox.
+      description: Worker-token protected authorization and commercial-access gate immediately before connector execution. Both decisions are re-read from current server-side facts; queued snapshots never self-authorize. Returns the opaque credential locator only to the worker and never through MCP or outbox.
       parameters: [{ $ref: '#/components/parameters/WorkspaceId' }, { name: jobId, in: path, required: true, schema: { type: string } }]
       responses:
-        '200': { $ref: '#/components/responses/Envelope' }
+        '200':
+          description: Current authorization and commercial rechecks passed.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkerExecutionCheckEnvelope' } } }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
         '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/worker-events/{eventId}/execution-check:
+    get:
+      tags: [Tasks]
+      operationId: checkWorkerEventExecution
+      description: Worker-token protected pre-provider gate. Validates the durable authorization and commercial snapshots, then independently re-reads current tenant-scoped authorization, subscription and creative-point facts. Missing commercial snapshots or unavailable reservation facts fail closed.
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { name: eventId, in: path, required: true, schema: { type: string } }
+        - { name: aggregate_id, in: query, required: true, schema: { type: string } }
+        - { name: operation, in: query, required: true, schema: { type: string, enum: [publish.execute, publish.reconcile, generation.execute, image_generation.execute, catalog.sync.execute, asset.scan.execute, asset.continuation.execute] } }
+      responses:
+        '200':
+          description: Current authorization and commercial rechecks passed.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkerExecutionCheckEnvelope' } } }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+        '404': { $ref: '#/components/responses/ErrorEnvelope' }
+        '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/publish-jobs/{jobId}/observation:
     post:
       tags: [Tasks]
@@ -995,19 +1017,18 @@ paths:
       description: |
         rule.sync.status is included in the MCP allowlist and exposes read-only rule freshness.
         This endpoint also accepts native MCP JSON-RPC methods initialize, tools/list, and tools/call. Native tools/list is merchant-scoped and never advertises ops.* methods; native tools/call reuses the same authorization and business handler as the legacy method envelope.
-        Allowlist: workspace.bootstrap, workspace.health, workspace.interactive.confirm, workspace.metrics, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, canonical.product.consistency, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review,
-        sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, platform.revoke, task.create, task.answer,
-        task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, generation.get, content.review, content.review.decide, content.versions, content.diff, content.export, content.approve,
-        content.modify, content.restore, publish.prepare, publish.confirm and publish.get. The last method requires Idempotency-Key and fresh
-        confirmation hashes. No raw platform write method is exposed.
+        Exact recovery tools include commercial.access.get, commercial.catalog.get, creative-points.balance.get, and creative-points.statement.list. Unavailable catalog or statement repositories are reported as blocked and never projected as empty legacy data.
+        Every business method is classified by the shared registry after schema, identity, tenant and RBAC checks and before hydration or side effects. Unknown creative-point values remain null; zero, insufficient, disabled and unclassified states fail closed.
       x-method-result-schema:
         canonical.product.consistency: '#/components/schemas/McpCanonicalProductConsistencyResult'
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
+        '402': { $ref: '#/components/responses/CommercialAccessErrorEnvelope' }
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
         '403': { $ref: '#/components/responses/ErrorEnvelope' }
         '404': { $ref: '#/components/responses/ErrorEnvelope' }
         '409': { $ref: '#/components/responses/ErrorEnvelope' }
+        '503': { $ref: '#/components/responses/CommercialAccessErrorEnvelope' }
 components:
   securitySchemes:
     bearerAuth:
@@ -1015,7 +1036,7 @@ components:
       scheme: bearer
       bearerFormat: opaque
       description: Production gateway/API token. The token grant, not X-Workspace-Id, is the identity source.
-  x-error-codes: [UNAUTHENTICATED, FORBIDDEN, REQUEST_BODY_TOO_LARGE, RATE_LIMITED, WORKSPACE_JOB_QUOTA_EXCEEDED, WORKSPACE_SCOPE_REQUIRED, WORKSPACE_SCOPE_MISMATCH, TENANT_SCOPE_DENIED, CONTENT_VERSION_SCOPE_MISMATCH, IDEMPOTENCY_CONFLICT]
+  x-error-codes: [UNAUTHENTICATED, FORBIDDEN, REQUEST_BODY_TOO_LARGE, RATE_LIMITED, WORKSPACE_JOB_QUOTA_EXCEEDED, WORKSPACE_SCOPE_REQUIRED, WORKSPACE_SCOPE_MISMATCH, TENANT_SCOPE_DENIED, CONTENT_VERSION_SCOPE_MISMATCH, IDEMPOTENCY_CONFLICT, CREATIVE_POINTS_EXHAUSTED, CREATIVE_POINTS_INSUFFICIENT, CREATIVE_POINTS_UNAVAILABLE, RATE_CARD_UNAVAILABLE, COMMERCIAL_ACCESS_STALE, COMMERCIAL_OPERATION_DISABLED, COMMERCIAL_OPERATION_UNCLASSIFIED, COMMERCIAL_EXECUTION_SNAPSHOT_INVALID, COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE, COMMERCIAL_EXECUTION_RESERVATION_RECHECK_UNAVAILABLE]
   parameters:
     WorkspaceId:
       name: X-Workspace-Id
@@ -1647,6 +1668,53 @@ components:
           additionalProperties: true
           description: initialize capabilities, optional tools/list cursor, or tools/call name and arguments.
       additionalProperties: false
+    CommercialAccessErrorDetails:
+      type: object
+      required: [request_id, trace_id, balance_state, available_points, quoted_points, access_revision, rate_card_version, next_actions]
+      properties:
+        request_id: { type: string }
+        trace_id: { type: string }
+        balance_state: { type: string, enum: [known, unknown] }
+        available_points: { oneOf: [{ type: integer, minimum: 0 }, { type: 'null' }], description: Unknown is null and is never projected as zero. }
+        quoted_points: { oneOf: [{ type: integer, minimum: 1 }, { type: 'null' }] }
+        access_revision: { oneOf: [{ type: string }, { type: 'null' }] }
+        rate_card_version: { oneOf: [{ type: string }, { type: 'null' }] }
+        next_actions: { type: array, items: { type: string } }
+        classification: { type: string, enum: [RECOVERY_CONTROL, POINT_REQUIRED_NO_CHARGE, POINT_CHARGED] }
+        registry_version: { type: string }
+        retryable: { type: boolean }
+      additionalProperties: true
+    WorkerCommercialRecheck:
+      type: object
+      required: [recheck_id, workspace_id, operation, access_mode, access_revision, balance_state, subscription_snapshot_id, subscription_snapshot_checksum, rate_version, quoted_points, reservation_state, allowed, ready, checked_at]
+      properties:
+        recheck_id: { type: string }
+        workspace_id: { type: string }
+        operation: { type: string, enum: [publish.execute, publish.reconcile, generation.execute, image_generation.execute, catalog.sync.execute, asset.scan.execute, asset.continuation.execute] }
+        access_mode: { type: string, enum: [POINT_CHARGED, POINT_REQUIRED_NO_CHARGE] }
+        access_revision: { type: string }
+        balance_state: { type: string, enum: [known] }
+        subscription_snapshot_id: { type: string }
+        subscription_snapshot_checksum: { type: string, pattern: '^[a-f0-9]{64}$' }
+        rate_version: { oneOf: [{ type: string }, { type: 'null' }] }
+        quoted_points: { type: integer, minimum: 0 }
+        reservation_id: { type: string }
+        reservation_state: { type: string, enum: [active, not_required, consumed, released, expired] }
+        allowed: { type: boolean }
+        ready: { type: boolean }
+        checked_at: { type: string, format: date-time }
+      additionalProperties: false
+    WorkerExecutionCheckEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/ApiEnvelope' }
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [authorization_recheck, commercial_recheck]
+              properties:
+                authorization_recheck: { type: object, additionalProperties: true }
+                commercial_recheck: { $ref: '#/components/schemas/WorkerCommercialRecheck' }
     ApiWarning:
       type: object
       required: [code, message]
@@ -1692,3 +1760,20 @@ components:
           description: Optional delay in seconds (or HTTP date) before a retry. The same value may be present as error.details.retry_after_seconds.
           schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string }] }
       content: { application/json: { schema: { $ref: '#/components/schemas/ApiEnvelope' } } }
+    CommercialAccessErrorEnvelope:
+      description: Fail-closed commercial access response. Unknown balances remain null; clients may only offer server-authorized recovery actions.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/ApiEnvelope' }
+              - type: object
+                properties:
+                  error:
+                    type: object
+                    required: [code, message, details]
+                    properties:
+                      code: { type: string, enum: [CREATIVE_POINTS_EXHAUSTED, CREATIVE_POINTS_INSUFFICIENT, CREATIVE_POINTS_UNAVAILABLE, RATE_CARD_UNAVAILABLE, COMMERCIAL_ACCESS_STALE, COMMERCIAL_OPERATION_DISABLED, COMMERCIAL_OPERATION_UNCLASSIFIED] }
+                      message: { type: string }
+                      retryable: { type: boolean }
+                      details: { $ref: '#/components/schemas/CommercialAccessErrorDetails' }

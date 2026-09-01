@@ -54,6 +54,7 @@ CREATE TABLE creative_point_reservations (
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   operation_id TEXT NOT NULL,
   action_key TEXT NOT NULL,
+  rate_card_version TEXT NOT NULL CHECK (btrim(rate_card_version) <> ''),
   points BIGINT NOT NULL CHECK (points > 0),
   status TEXT NOT NULL CHECK (status IN ('active', 'released', 'settled')),
   settled_points BIGINT CHECK (settled_points IS NULL OR settled_points >= 0),
@@ -118,6 +119,54 @@ CREATE INDEX creative_point_allocations_reservation_idx
   ON creative_point_allocations(workspace_id, reservation_id, created_at, id);
 CREATE INDEX creative_point_ledger_workspace_created_idx
   ON creative_point_ledger_events(workspace_id, created_at, id);
+
+CREATE OR REPLACE FUNCTION validate_creative_point_allocation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  grant_capacity BIGINT;
+  grant_allocated BIGINT;
+  reservation_capacity BIGINT;
+  reservation_allocated BIGINT;
+BEGIN
+  -- The same workspace fence used by the repository also protects callers
+  -- that insert allocation facts directly through an approved transaction.
+  PERFORM 1 FROM creative_point_access_state
+   WHERE workspace_id=NEW.workspace_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'creative point access state is missing' USING ERRCODE = '23514';
+  END IF;
+  SELECT points INTO grant_capacity FROM creative_point_grants
+   WHERE workspace_id=NEW.workspace_id AND id=NEW.grant_id;
+  SELECT points INTO reservation_capacity FROM creative_point_reservations
+   WHERE workspace_id=NEW.workspace_id AND id=NEW.reservation_id AND status='active';
+  IF grant_capacity IS NULL OR reservation_capacity IS NULL THEN
+    RAISE EXCEPTION 'creative point allocation target is not active' USING ERRCODE = '23514';
+  END IF;
+  SELECT COALESCE(sum(points_delta),0) INTO grant_allocated
+    FROM creative_point_allocations
+   WHERE workspace_id=NEW.workspace_id AND grant_id=NEW.grant_id;
+  SELECT COALESCE(sum(points_delta),0) INTO reservation_allocated
+    FROM creative_point_allocations
+   WHERE workspace_id=NEW.workspace_id AND reservation_id=NEW.reservation_id;
+  IF grant_allocated+NEW.points_delta < 0 OR grant_allocated+NEW.points_delta > grant_capacity THEN
+    RAISE EXCEPTION 'creative point grant allocation is out of bounds' USING ERRCODE = '23514';
+  END IF;
+  IF reservation_allocated+NEW.points_delta < 0 THEN
+    RAISE EXCEPTION 'creative point reservation allocation is out of bounds' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.allocation_type='reserve' AND (NEW.points_delta < 1 OR reservation_allocated+NEW.points_delta > reservation_capacity) THEN
+    RAISE EXCEPTION 'creative point reserve allocation is out of bounds' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.allocation_type='release' AND NEW.points_delta > -1 THEN
+    RAISE EXCEPTION 'creative point release allocation must reverse points' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER creative_point_allocations_validate
+BEFORE INSERT ON creative_point_allocations
+FOR EACH ROW EXECUTE FUNCTION validate_creative_point_allocation();
 
 DO $creative_point_rls$
 DECLARE

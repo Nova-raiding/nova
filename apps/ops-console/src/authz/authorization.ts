@@ -1,4 +1,3 @@
-import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
 import type { OpsDomain } from "../navigation/opsNavigation.js";
 import type { OpsSession } from "../types/ops.js";
 
@@ -31,8 +30,10 @@ const platformRoles = new Set([
   "finance_ops", "security_admin", "auditor", "rules_admin", "model_admin", "release_admin",
 ]);
 
-/** Canonical CapabilityId values shared with the server contracts. */
-export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly CapabilityId[]>> = {
+/** Server-projected capability values. Keeping this forward-compatible lets
+ * the UI remain deny-all while a new capability lands before an older client
+ * is rebuilt; capabilities are never inferred from roles. */
+export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapability[]>> = {
   overview: ["platform.summary.read", "workspace.summary.read"],
   users: ["identity.read"],
   members: ["workspace.member.read", "workspace.member.manage"],
@@ -44,7 +45,11 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly Capabil
   models: ["model.status.read", "model.cost.read", "model.policy.update"],
   "feature-flags": ["feature_flag.read", "feature_flag.update", "feature_flag.administer"],
   storage: ["storage.reconciliation.read", "workspace.summary.read"],
-  finance: ["billing.self.read", "billing.workspace.read", "billing.platform.read", "commercial.read", "model.cost.read"],
+  finance: [
+    "billing.self.read", "billing.workspace.read", "billing.platform.read", "commercial.read", "model.cost.read",
+    "commercial.access.read", "commercial.entitlement.read", "commercial.point.read", "commercial.catalog.read",
+    "commercial.order.read", "commercial.rate.read", "commercial.service_fulfillment.read",
+  ],
   audit: ["audit.read", "audit.export"],
 };
 

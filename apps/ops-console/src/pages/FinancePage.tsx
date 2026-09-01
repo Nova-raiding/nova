@@ -1,35 +1,24 @@
-import { ConfigurationCenterSection } from "../components/finance/ConfigurationCenterSection";
-import { PlanBillingSection } from "../components/finance/PlanBillingSection";
-import { RechargeOrdersSection } from "../components/finance/RechargeOrdersSection";
-import { ReconciliationSection } from "../components/finance/ReconciliationSection";
-import { RefundSection } from "../components/finance/RefundSection";
-import { FinanceSearchSection } from "../components/finance/FinanceSearchSection.js";
+import { CommercialOperationsWorkspace } from "../components/commercial/CommercialOperationsWorkspace.js";
 import { OpsPage } from "../components/OpsPage";
-import { OpsPageError } from "../components/OpsPageError";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { useFinanceSearch } from "../hooks/useFinanceSearch.js";
+import { useCommercialOperations } from "../hooks/useCommercialOperations.js";
 
 interface FinancePageProps {
   model: OpsConsoleModel;
 }
 
 export function FinancePage({ model }: FinancePageProps) {
-  const { error, load } = model;
-  const financeSearch = useFinanceSearch(model.financeSearchClient, { limit: 50 }, true);
+  const commercial = useCommercialOperations(model.authorization);
 
   return (
     <OpsPage
-      eyebrow="BILLING OPERATIONS"
+      eyebrow="COMMERCIAL OPERATIONS"
       title="账务与商业配置"
-      description="管理充值、账单、退款、套餐和模型计费策略。"
+      headingLevel={1}
+      description="处理商业准入阻断、Workspace 权益、创意点账本、版本化目录、支付、费率与服务履约。"
+      nextStep="先处理阻断与 unknown；支付成功后仍需核验 grant 与新的 access revision。"
     >
-      <OpsPageError error={error} onRetry={() => void load()} />
-      <FinanceSearchSection controller={financeSearch} />
-      <RechargeOrdersSection model={model} />
-      <ReconciliationSection model={model} />
-      <RefundSection model={model} />
-      <ConfigurationCenterSection model={model} />
-      <PlanBillingSection model={model} />
+      <CommercialOperationsWorkspace controller={commercial} />
     </OpsPage>
   );
 }

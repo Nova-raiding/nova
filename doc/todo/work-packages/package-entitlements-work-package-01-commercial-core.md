@@ -1,47 +1,61 @@
-# 工作包 01：商业目录、订阅快照与权益账本核心
+# 工作包 01：共享商业契约、目录、订单快照与创意点账本
 
-主责：开发者 1（后端/数据库）
-依据：[PRD](../product/package-entitlements-and-services-prd-2026-08-31.md)、[架构](../architecture/package-entitlements-and-services-architecture-2026-08-31.md)
+主责：后端/数据库 owner
 
-## 目标
+唯一需求依据：[商家营销插件商业化与 AI 创意点 PRD](../product/package-entitlements-and-services-prd-2026-08-31.md)
 
-把价格、套餐额度、创作点、动作费率、钱包价格、服务/SLA policy 变成平台运营后台可配置且不可变的商业事实，并在订单创建时冻结完整快照，在运行时提供可审计权益准入。
+实现约束依据：[商业化架构](../architecture/package-entitlements-and-services-architecture-2026-08-31.md)
+
+## 目标与冻结顺序
+
+先建立全链唯一的商业事实和共享契约，再允许工作包 02–05 接入。冻结顺序为：
+
+1. 精确 operation registry 与错误 envelope。
+2. 不可变商业目录、版本和批准状态。
+3. 订单/支付快照、订阅账期与权益快照。
+4. append-only 创意点账本、余额投影和 access revision。
+5. `CommercialAccessDecision`、quote/reservation 与事务 outbox。
+
+任何后续实现不得以人民币钱包、任务次数、图片 entitlement、通用 add-on 或前端常量替代创意点准入。
 
 ## 范围
 
-- `commercial_plan_catalog/versions`、benefit schema、policy/rate card、workspace override、审批、影响预览、定时生效/停用。
-- `commercial_order_snapshots`、subscription periods/status/restrictions、active_restricted 分项解限。
-- 创作额度 grant/reserve/settle/release/refund/expire/adjust，最早到期扣减。
-- `commercial_operations`、multi-grant allocation、capped `wallet_holds`、消费工作包 02 提供的真实 model usage/cost receipt 并完成客户账本绑定。
-- 品牌/店铺/主体/首次导入 occupation 与 30 天降级门禁；套餐驱动 storage limit CAS。
-- MCP/REST application service、RLS/FORCE、audit、tenant/control-plane outbox。
+- 共享 operation registry：每个 HTTP route、MCP method 和 Worker action 必须精确归类为 `RECOVERY_CONTROL`、`POINT_REQUIRED_NO_CHARGE` 或 `POINT_CHARGED`；未知入口默认拒绝并使契约测试失败。
+- 共享 DTO：access decision、balance state、quote、reservation、ledger entry、catalog/SKU/version、order/snapshot、subscription period、grant schedule、service commitment、error/next action。
+- 全局商业目录：5000 元一次性接入、1999 元/7 天 private test、2000/5000/10000 元起月套餐、500 点/300 元和 2000 点/1000 元充值包，以及 PRD 中保持待批准的动作费率。
+- Workspace 合同事实：订单不可变快照、订阅账期、品牌/店铺/存储/服务权益快照、6 笔每月 500 点赠点计划、private SKU 资格与抵扣事实。
+- 创意点事实：grant、reserve、settle、release、refund/reverse、expire、adjust、multi-grant allocation、provider receipt、可重建 balance projection 和 access revision。
+- `CommercialAccessDecision`：明确区分 `EXHAUSTED`、`INSUFFICIENT`、`UNAVAILABLE`、`STALE`、`RATE_CARD_UNAVAILABLE` 与允许状态；人民币收款/退款和 provider usage/cost 只以 operation id 关联证据，永不解除门禁。
+- 租户表的 `workspace_id`、复合租户外键、`ENABLE/FORCE RLS`、`USING/WITH CHECK`、索引、幂等键、审计与 outbox；账本/事件表禁止应用角色 UPDATE/DELETE/TRUNCATE。
 
-## CodeGraph 复用证据
+## 明确不迁移的旧语义
 
-- `packages/persistence/src/commercial-extensions-repository.ts`、`subscription-repository.ts`、`entitlement-repository.ts`、`usage-repository.ts`、`billing-repository.ts`、`storage-quota-repository.ts`。
-- 现有 `CommercialOffer`、支付回调幂等、ModelUsage/action ledger、StorageQuota reserve/settle/physical deletion、RLS transaction、Outbox/Worker。
-- 现有 Offer 只有价格/店铺/任务；旧 task 不得换算为创作额度；现有 debit 必须迁入 hold-aware adapter。
+- `includedTasks`、`monthly_tasks_used`、旧 usage、人民币 wallet、图片 entitlement 和通用 addon 只保留为 legacy 只读对账历史。
+- 任何 legacy 数值都不得生成、赠送或导入创意点；legacy 来源不得贡献 `available_points`。
+- 不实现人民币与创意点联合预占、人民币余额兜底或 PRD 未批准的套餐周期、期限、费率与服务政策。
 
-## 交付物与验收
+## 事务与并发验收
 
-1. 109+ migrations、schema、约束、RLS/FORCE、权限、索引和 rollback/restore 脚本。
-2. plan/rate/policy 版本 API：active/history 不可改；同 scope/action/time 0 或多条 fail-closed；提交人与批准人分离。
-3. 下单快照不可变；支付只引用快照；激活、首期 grant、audit/outbox 同事务。
-4. credit+wallet 原子预占与 capped hold；`available = ledger - active_holds`；provider unknown 保持 reserved、禁止重试/交付。
-5. 并发 200 请求下品牌/店铺/额度不超卖；存储 limit 与 snapshot 同事务切换；删除无 receipt 不释放。
-6. 每笔账本含 plan/snapshot/rate/rule/checksum，可从 append-only ledger 重建。
+1. 支付回调的 provider event/nonce、order paid、订阅/账期/权益快照、应到账 grant、balance projection、access revision、private credit、audit 和 outbox 在同一数据库事务提交；禁止出现 paid 已提交但 grant 未提交。
+2. 收费动作按最早到期顺序锁定 grant 并原子预占；不足不拆单，且在任何业务写、入队、存储预留或 provider 调用前拒绝。
+3. provider 已执行而结算未知时 reservation 保持 `reserved/unknown`，不得交付、释放或重复调用；由对账明确 settle/release。
+4. 余额投影可由 append-only ledger 完整重建；重建值、在线投影和 allocations 必须完全一致。
+5. private SKU 无资格时隐藏存在；有资格时 7 天周期、500 点和抵扣事实幂等、可审计。
+6. “50g”、6×500 日期、“90 点起”变量和文本费率未获业务确认时保持未批准/阻断，不在代码或 seed 中猜测。
 
-## 估算与依赖
+## DX 与测试交付
 
-- 估算：56–82 人日（含 A1–A5、集成测试；主责人日约 30–45，协同人日另计）。
-- 先决：共享 DTO/action catalog、真实 PostgreSQL/RLS 角色、支付契约和工作包 02 的 relay receipt schema（可先用契约测试，不等待 E4）。
-- 被依赖：工作包 02、03、04、05 均依赖 plan/snapshot/ledger 契约。
+- 提供共享 schema、示例 envelope、错误 golden matrix 和可生成的全入口分类清单；OpenAPI、MCP contracts、Bridge manifest 与 Worker action manifest 必须 parity。
+- 提供仅用于 E1/E2 的确定性场景：positive、zero、insufficient、unknown、paid-but-ungranted、stale；fixture 必须显著标识且不能形成 E3/E4 成功证据。
+- E1：逐字段目录、状态机、幂等、精确白名单、private 隐藏、错误 envelope 和 registry 穷举测试。
+- E2：真 PostgreSQL 验证 FORCE RLS、append-only、跨租户、支付/grant/revision 原子性、200 并发预占、到期顺序、outbox 回滚和投影重建。
 
-## 风险与不包含
+## 依赖、风险与完成定义
 
-风险：旧 Offer 可变语义、跨 grant/wallet 锁顺序、月中升级、legacy opening、storage limit 调用方旁路。
-不包含：Ops UI、平台连接器、支付/模型供应商接入、人工服务履约、任意 ERP/DAG、手机/平板。
+- 本包是 02–05 的契约前置；支付 provider、Relay、平台和 UI 实现不在本包。
+- 风险集中在旧多账本语义、支付/grant 原子边界、并发超卖、到期顺序和未知结算；不得以删业务数据或回退内存仓储掩盖差异。
+- 完成条件：E1/E2 全部通过，registry 无未分类入口，真实 PostgreSQL/RLS 证据可复核；静态代码、内存服务和 fixture 不算功能完成或可销售。
 
-## 完成定义
+## 不包含
 
-E1 状态/契约测试、E2 真库/RLS/并发/迁移测试通过；CodeGraph 重新 sync 且 affected tests 清零；无 fixture 或内存仓储作为生产证据。
+专项增值服务产品化、ERP/PIM、私有化、任意 DAG、人工代做、未批准的退款/宽限/保留政策，以及手机或平板适配。

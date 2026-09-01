@@ -4,7 +4,7 @@ import type { CriticalWorkerOperation } from './execution-authorization.js'
 export const WORKER_COMMERCIAL_ACCESS_SNAPSHOT_SCHEMA = 1 as const
 
 export type WorkerCommercialAccessMode = 'POINT_CHARGED' | 'POINT_REQUIRED_NO_CHARGE'
-export type WorkerCommercialBalanceState = 'positive'
+export type WorkerCommercialBalanceState = 'known'
 
 export interface WorkerCommercialAccessSnapshot {
   schemaVersion: typeof WORKER_COMMERCIAL_ACCESS_SNAPSHOT_SCHEMA
@@ -14,9 +14,9 @@ export interface WorkerCommercialAccessSnapshot {
   accessMode: WorkerCommercialAccessMode
   accessRevision: string
   balanceState: WorkerCommercialBalanceState
-  subscriptionSnapshotId: string
-  subscriptionSnapshotChecksum: string
-  rateVersion: string
+  entitlementSnapshotId: string
+  entitlementSnapshotChecksum: string
+  rateVersion: string | null
   quotedPoints: number
   reservationId?: string
   decidedAt: string
@@ -87,6 +87,7 @@ export function createUnavailableCommercialAccessGuard(reason = 'authoritative c
 export function parseWorkerCommercialAccessSnapshot(event: DurableOutboxEvent, operation: CriticalWorkerOperation): WorkerCommercialAccessSnapshot {
   const raw = event.payload.commercial_access_snapshot
   if (!isRecord(raw)) throw snapshotError('commercial_access_snapshot is missing from the durable event envelope')
+  if ('subscription_snapshot_id' in raw || 'subscription_snapshot_checksum' in raw) throw snapshotError('legacy subscription snapshot fields are unsupported; V2 entitlement snapshot evidence is required')
   const accessMode = requireAccessMode(raw.access_mode)
   const quotedPoints = requirePoints(raw.quoted_points, 'quoted_points')
   const reservationId = optionalString(raw.reservation_id, 'reservation_id')
@@ -98,17 +99,17 @@ export function parseWorkerCommercialAccessSnapshot(event: DurableOutboxEvent, o
     accessMode,
     accessRevision: requireString(raw.access_revision, 'access_revision'),
     balanceState: requireBalanceState(raw.balance_state),
-    subscriptionSnapshotId: requireString(raw.subscription_snapshot_id, 'subscription_snapshot_id'),
-    subscriptionSnapshotChecksum: requireSha256(raw.subscription_snapshot_checksum, 'subscription_snapshot_checksum'),
-    rateVersion: requireString(raw.rate_version, 'rate_version'),
+    entitlementSnapshotId: requireString(raw.entitlement_snapshot_id, 'entitlement_snapshot_id'),
+    entitlementSnapshotChecksum: requireSha256(raw.entitlement_snapshot_checksum, 'entitlement_snapshot_checksum'),
+    rateVersion: requireNullableString(raw.rate_version, 'rate_version'),
     quotedPoints,
     ...(reservationId ? { reservationId } : {}),
     decidedAt: requireTimestamp(raw.decided_at, 'decided_at'),
   }
   if (snapshot.workspaceId !== event.workspaceId) throw snapshotError('commercial access snapshot workspace binding mismatch')
   if (snapshot.operation !== operation) throw snapshotError('commercial access snapshot operation binding mismatch')
-  if (accessMode === 'POINT_CHARGED' && (quotedPoints < 1 || !reservationId)) throw snapshotError('charged commercial access requires positive quoted_points and reservation_id')
-  if (accessMode === 'POINT_REQUIRED_NO_CHARGE' && (quotedPoints !== 0 || reservationId)) throw snapshotError('no-charge commercial access requires zero quoted_points and no reservation_id')
+  if (accessMode === 'POINT_CHARGED' && (quotedPoints < 1 || !reservationId || !snapshot.rateVersion)) throw snapshotError('charged commercial access requires positive quoted_points, approved rate_version, and reservation_id')
+  if (accessMode === 'POINT_REQUIRED_NO_CHARGE' && (quotedPoints !== 0 || reservationId || snapshot.rateVersion !== null)) throw snapshotError('no-charge commercial access requires zero quoted_points, null rate_version, and no reservation_id')
   return snapshot
 }
 
@@ -121,8 +122,8 @@ function validateCommercialRecheck(current: WorkerCommercialAccessRecheck, snaps
   if (!nonEmpty(current.recheckId) || current.recheckId === snapshot.decisionId) throw recheckInvalid('commercial access recheck id is invalid')
   if (current.workspaceId !== snapshot.workspaceId || current.operation !== snapshot.operation || current.accessMode !== snapshot.accessMode) throw recheckInvalid('commercial access scope binding mismatch')
   if (current.accessRevision !== snapshot.accessRevision) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_REVISION_STALE', 'commercial access revision changed after enqueue', false)
-  if (current.balanceState !== snapshot.balanceState || current.balanceState !== 'positive') throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_BALANCE_BLOCKED', 'creative point balance is not positive', false)
-  if (current.subscriptionSnapshotId !== snapshot.subscriptionSnapshotId || current.subscriptionSnapshotChecksum !== snapshot.subscriptionSnapshotChecksum) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_SUBSCRIPTION_STALE', 'subscription snapshot changed after enqueue', false)
+  if (current.balanceState !== snapshot.balanceState || current.balanceState !== 'known') throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_BALANCE_BLOCKED', 'creative point balance is not known', false)
+  if (current.entitlementSnapshotId !== snapshot.entitlementSnapshotId || current.entitlementSnapshotChecksum !== snapshot.entitlementSnapshotChecksum) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_ENTITLEMENT_STALE', 'V2 entitlement snapshot changed after enqueue', false)
   if (current.rateVersion !== snapshot.rateVersion || current.quotedPoints !== snapshot.quotedPoints) throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_RATE_STALE', 'commercial rate or point quote changed after enqueue', false)
   if (snapshot.accessMode === 'POINT_CHARGED') {
     if (current.reservationId !== snapshot.reservationId || current.reservationState !== 'active') throw new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_RESERVATION_INVALID', 'creative point reservation is not active or does not match', false)
@@ -135,13 +136,14 @@ function snapshotError(message: string): WorkerCommercialAccessError { return ne
 function recheckInvalid(message: string): WorkerCommercialAccessError { return new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_RECHECK_INVALID', message, true) }
 function requireSchema(value: unknown): 1 { if (value !== 1) throw snapshotError('commercial access snapshot schema_version is unsupported'); return 1 }
 function requireString(value: unknown, field: string): string { if (!nonEmpty(value)) throw snapshotError(`commercial access snapshot ${field} is missing`); return value }
+function requireNullableString(value: unknown, field: string): string | null { if (value === null) return null; return requireString(value, field) }
 function optionalString(value: unknown, field: string): string | undefined { if (value === undefined || value === null) return undefined; return requireString(value, field) }
-function requireTimestamp(value: unknown, field: string): string { const result = requireString(value, field); parseTimestamp(result, `commercial access snapshot ${field}`); return result }
+function requireTimestamp(value: unknown, field: string): string { const result = requireString(value, field); if (!Number.isFinite(Date.parse(result))) throw snapshotError(`commercial access snapshot ${field} is invalid`); return result }
 function parseTimestamp(value: unknown, field: string): number { if (!nonEmpty(value) || !Number.isFinite(Date.parse(value))) throw recheckInvalid(`${field} is invalid`); return Date.parse(value) }
 function requireSha256(value: unknown, field: string): string { const result = requireString(value, field); if (!/^[a-f0-9]{64}$/u.test(result)) throw snapshotError(`commercial access snapshot ${field} is invalid`); return result }
 function requirePoints(value: unknown, field: string): number { if (!Number.isSafeInteger(value) || (value as number) < 0) throw snapshotError(`commercial access snapshot ${field} must be a non-negative safe integer`); return value as number }
 function requireAccessMode(value: unknown): WorkerCommercialAccessMode { if (value !== 'POINT_CHARGED' && value !== 'POINT_REQUIRED_NO_CHARGE') throw snapshotError('commercial access snapshot access_mode is unsupported'); return value }
-function requireBalanceState(value: unknown): WorkerCommercialBalanceState { if (value !== 'positive') throw snapshotError('commercial access snapshot balance_state must be positive'); return value }
+function requireBalanceState(value: unknown): WorkerCommercialBalanceState { if (value !== 'known') throw snapshotError('commercial access snapshot balance_state must be known'); return value }
 function requireOperation(value: unknown): CriticalWorkerOperation {
   if (!['publish.execute', 'publish.reconcile', 'generation.execute', 'image_generation.execute', 'catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute'].includes(String(value))) throw snapshotError('commercial access snapshot operation is unsupported')
   return value as CriticalWorkerOperation

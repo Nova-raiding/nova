@@ -1,18 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import type { WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
+import type { WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
 
 const baseEnv = { DATABASE_URL: 'postgres://worker', WORKER_WORKSPACES: 'ws_a, ws_b,ws_a' }
 const testExecutionAuthorization = {
   assertAuthorized: async (event, operation) => ({ recheckId: `recheck_${event.id}`, actorId: 'test_actor', identityId: 'test_identity', workspaceId: event.workspaceId, workbench: 'workspace' as const, contextId: `workspace:${event.workspaceId}`, contextVersion: 'test_context', policyVersion: 'test_policy', grantRevision: 'test_grant', grantIds: [], scopeHash: 'a'.repeat(64), capability: operation, resourceId: event.aggregateId, resourceRevision: 'test_resource_revision', requestId: `request_${event.id}`, traceId: `trace_${event.id}`, authorized: true, checkedAt: new Date().toISOString() }),
 } satisfies WorkerExecutionAuthorizationGuard
+const testCommercialAccess = {
+  assertCommercialAccess: async (event, operation) => ({ recheckId: `commercial_recheck_${event.id}`, workspaceId: event.workspaceId, operation, accessMode: 'POINT_CHARGED' as const, accessRevision: 'test_access', balanceState: 'known' as const, entitlementSnapshotId: 'test_entitlement', entitlementSnapshotChecksum: 'b'.repeat(64), rateVersion: 'test_rate', quotedPoints: 1, reservationId: `reservation_${event.id}`, reservationState: 'active' as const, allowed: true, ready: true, checkedAt: new Date().toISOString() }),
+} satisfies WorkerCommercialAccessGuard
 const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
-  const handler = createOutboxHandler({ ...options, executionAuthorization: testExecutionAuthorization })
+  const handler = createOutboxHandler({ ...options, executionAuthorization: testExecutionAuthorization, commercialAccess: testCommercialAccess })
   return async (input: Parameters<typeof handler>[0]) => {
     const operation = input.event.eventType === 'publish.requested' ? 'publish.execute'
       : input.event.eventType === 'publish.reconcile_requested' ? 'publish.reconcile'
@@ -21,7 +25,7 @@ const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
             : input.event.eventType === 'sync.requested' ? 'catalog.sync.execute'
               : input.event.eventType === 'asset.scan_redrive_requested' ? 'asset.scan.execute'
                 : 'asset.continuation.execute'
-    const payload = input.event.payload.authorization_snapshot ? input.event.payload : {
+    const authorizedPayload = input.event.payload.authorization_snapshot ? input.event.payload : {
       ...input.event.payload,
       authorization_snapshot: {
         schema_version: 1,
@@ -42,6 +46,24 @@ const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
         request_id: `request_${input.event.id}`,
         trace_id: `trace_${input.event.id}`,
         authorized: true,
+        decided_at: new Date().toISOString(),
+      },
+    }
+    const payload = authorizedPayload.commercial_access_snapshot ? authorizedPayload : {
+      ...authorizedPayload,
+      commercial_access_snapshot: {
+        schema_version: 1,
+        decision_id: `test_commercial_decision_${input.event.id}`,
+        workspace_id: input.event.workspaceId,
+        operation,
+        access_mode: 'POINT_CHARGED',
+        access_revision: 'test_access',
+        balance_state: 'known',
+        entitlement_snapshot_id: 'test_entitlement',
+        entitlement_snapshot_checksum: 'b'.repeat(64),
+        rate_version: 'test_rate',
+        quoted_points: 1,
+        reservation_id: `reservation_${input.event.id}`,
         decided_at: new Date().toISOString(),
       },
     }
@@ -81,6 +103,25 @@ describe('worker production entry', () => {
     }) as unknown as typeof fetch
     const event = { id: 'evt_generation_auth', workspaceId: 'ws_a', aggregateId: 'gen_auth', eventType: 'generation.requested', sequence: 1, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_generation_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
     await expect(createApiExecutionAuthorizationGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token' }, fetcher).assertAuthorized(event, 'generation.execute')).resolves.toMatchObject({ recheckId: 'recheck_generation_auth', scopeHash: 'a'.repeat(64) })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  it('consumes current commercial revision, subscription, rate and reservation evidence from the execution endpoint', async () => {
+    const checkedAt = new Date().toISOString()
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      expect(String(input)).toContain('/v1/worker-events/evt_generation_commercial/execution-check?aggregate_id=gen_commercial&operation=generation.execute')
+      return new Response(JSON.stringify({ data: { commercial_access_recheck: {
+        recheck_id: 'commercial_recheck_1', workspace_id: 'ws_a', operation: 'generation.execute', access_mode: 'POINT_CHARGED', access_revision: 'access_7', balance_state: 'known',
+        entitlement_snapshot_id: 'entitlement_3', entitlement_snapshot_checksum: 'b'.repeat(64), rate_version: 'rate_2', quoted_points: 2,
+        reservation_id: 'reservation_1', reservation_state: 'active', allowed: true, ready: true, checked_at: checkedAt,
+      } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch
+    const event: DurableOutboxEvent = { id: 'evt_generation_commercial', workspaceId: 'ws_a', aggregateId: 'gen_commercial', eventType: 'generation.requested', sequence: 1, createdAt: checkedAt, payload: { commercial_access_snapshot: {
+      schema_version: 1, decision_id: 'commercial_enqueue_1', workspace_id: 'ws_a', operation: 'generation.execute', access_mode: 'POINT_CHARGED', access_revision: 'access_7', balance_state: 'known',
+      entitlement_snapshot_id: 'entitlement_3', entitlement_snapshot_checksum: 'b'.repeat(64), rate_version: 'rate_2', quoted_points: 2, reservation_id: 'reservation_1', decided_at: checkedAt,
+    } } }
+    await expect(createApiCommercialAccessGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token' }, fetcher).assertCommercialAccess(event, 'generation.execute'))
+      .resolves.toMatchObject({ accessRevision: 'access_7', reservationState: 'active', ready: true })
     expect(fetcher).toHaveBeenCalledOnce()
   })
 
@@ -343,14 +384,20 @@ describe('worker production entry', () => {
         return { recheckId: 'recheck_scan', actorId: 'operator_1', workspaceId: event.workspaceId, contextId: `workspace:${event.workspaceId}`, contextVersion: 'ctx_2', policyVersion: 'policy_2', grantRevision: 'grant_2', scopeHash: 'a'.repeat(64), capability: operation, resourceId: event.aggregateId, authorized: true as const, checkedAt: new Date().toISOString() }
       }),
     } as unknown as WorkerExecutionAuthorizationGuard
+    const commercialAccess = {
+      assertCommercialAccess: vi.fn(async (event: DurableOutboxEvent, operation: 'asset.scan.execute') => {
+        order.push(`commercial:${event.id}:${operation}`)
+        return {} as never
+      }),
+    } as unknown as WorkerCommercialAccessGuard
     const scanRequested = vi.fn(async (event: DurableOutboxEvent) => { order.push(`scan:${event.id}`); return { verdict: 'clean' } })
-    const handler = createOutboxHandler({ executionAuthorization, scanRequested })
-    const base = { workspaceId: 'ws_a', aggregateId: 'asset_1', sequence: 2, createdAt: new Date().toISOString(), payload: { asset_id: 'asset_1', storage_key: 'quarantine/ws_a/asset_1/source.png', sha256: 'a'.repeat(64), size_bytes: 1, source_revision: 2 } }
+    const handler = createOutboxHandler({ executionAuthorization, commercialAccess, scanRequested })
+    const base = { workspaceId: 'ws_a', aggregateId: 'asset_1', sequence: 2, createdAt: new Date().toISOString(), payload: { asset_id: 'asset_1', storage_key: 'quarantine/ws_a/asset_1/source.png', sha256: 'a'.repeat(64), size_bytes: 1, source_revision: 2, commercial_access_snapshot: { schema_version: 1, decision_id: 'commercial_scan', workspace_id: 'ws_a', operation: 'asset.scan.execute', access_mode: 'POINT_REQUIRED_NO_CHARGE', access_revision: 'access_1', balance_state: 'known', entitlement_snapshot_id: 'entitlement_1', entitlement_snapshot_checksum: 'b'.repeat(64), rate_version: null, quoted_points: 0, decided_at: new Date().toISOString() } } }
 
     await handler({ event: { ...base, id: 'evt_scan_initial', eventType: 'asset.uploaded' }, attempt: 1, now: Date.now() })
     expect(executionAuthorization.assertAuthorized).not.toHaveBeenCalled()
     await handler({ event: { ...base, id: 'evt_scan_redrive', eventType: 'asset.scan_redrive_requested' }, attempt: 1, now: Date.now() })
-    expect(order).toEqual(['scan:evt_scan_initial', 'authorize:evt_scan_redrive:asset.scan.execute', 'scan:evt_scan_redrive'])
+    expect(order).toEqual(['commercial:evt_scan_initial:asset.scan.execute', 'scan:evt_scan_initial', 'authorize:evt_scan_redrive:asset.scan.execute', 'commercial:evt_scan_redrive:asset.scan.execute', 'scan:evt_scan_redrive'])
   })
 
   it('rejects a redriven scan without a durable authorization snapshot before scanning', async () => {

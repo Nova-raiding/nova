@@ -25,6 +25,7 @@ import { createWorkerRequestProof, type WorkerRequestRole } from '../../../packa
 import { createClamAvScanner, type ClamAvScanner } from './clamav-scanner.js'
 import { ScannerHeartbeatController } from './scanner-heartbeat.js'
 import { createExecutionAuthorizationGuard, WorkerExecutionAuthorizationError, type WorkerAuthorizationRecheck } from '../../../packages/workers/src/execution-authorization.js'
+import { createCommercialAccessGuard, WorkerCommercialAccessError, type WorkerCommercialAccessRecheck } from '../../../packages/workers/src/commercial-access.js'
 import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/scanner-heartbeat.js'
 import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
 import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
@@ -497,6 +498,45 @@ export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 
     if (!raw) throw new Error('execution authorization recheck evidence is missing')
     return {
       recheckId: String(raw.recheck_id ?? ''), actorId: String(raw.actor_id ?? ''), identityId: String(raw.identity_id ?? ''), workspaceId: String(raw.workspace_id ?? ''), workbench: raw.workbench === 'workspace' ? 'workspace' : '' as 'workspace', contextId: String(raw.context_id ?? ''), contextVersion: String(raw.context_version ?? ''), policyVersion: String(raw.policy_version ?? ''), grantRevision: String(raw.grant_revision ?? ''), grantIds: Array.isArray(raw.grant_ids) ? raw.grant_ids.filter((value): value is string => typeof value === 'string') : [], scopeHash: String(raw.scope_hash ?? ''), capability: String(raw.capability ?? '') as WorkerAuthorizationRecheck['capability'], resourceId: String(raw.resource_id ?? ''), resourceRevision: String(raw.resource_revision ?? ''), requestId: String(raw.request_id ?? ''), traceId: String(raw.trace_id ?? ''), authorized: raw.authorized === true, checkedAt: String(raw.checked_at ?? ''),
+    }
+  })
+}
+
+/** Re-check the immutable commercial quote and reservation after identity /
+ * RBAC authorization and immediately before provider I/O. The API owns the
+ * ledger transaction; this adapter only consumes signed, current evidence. */
+export function createApiCommercialAccessGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'>, fetcher: typeof fetch = fetch) {
+  return createCommercialAccessGuard(async ({ event, operation, signal }) => {
+    if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for commercial access recheck')
+    const path = operation === 'publish.execute'
+      ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check`
+      : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}`
+    const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
+      headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret) : {}) },
+      redirect: 'error', signal,
+    })
+    if (!response.ok) {
+      let apiError: { code?: unknown; message?: unknown } | undefined
+      try { apiError = (await parseWorkerApiJson(response) as { error?: typeof apiError }).error } catch { /* preserve bounded HTTP fallback */ }
+      const denied = response.status === 401 || response.status === 403 || response.status === 409 || response.status === 422
+      const code = typeof apiError?.code === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(apiError.code)
+        ? apiError.code
+        : denied ? 'COMMERCIAL_EXECUTION_DENIED' : 'COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE'
+      const message = typeof apiError?.message === 'string' && apiError.message.trim()
+        ? apiError.message
+        : `commercial access recheck returned ${response.status}`
+      throw new WorkerCommercialAccessError(code, message, !denied && (response.status === 429 || response.status >= 500))
+    }
+    const envelope = await parseWorkerApiJson(response) as { data?: { commercial_access_recheck?: Record<string, unknown> } }
+    const raw = envelope.data?.commercial_access_recheck
+    if (!raw) throw new Error('commercial access recheck evidence is missing')
+    return {
+      recheckId: String(raw.recheck_id ?? ''), workspaceId: String(raw.workspace_id ?? ''), operation: String(raw.operation ?? '') as WorkerCommercialAccessRecheck['operation'],
+      accessMode: String(raw.access_mode ?? '') as WorkerCommercialAccessRecheck['accessMode'], accessRevision: String(raw.access_revision ?? ''),
+      balanceState: String(raw.balance_state ?? '') as WorkerCommercialAccessRecheck['balanceState'], entitlementSnapshotId: String(raw.entitlement_snapshot_id ?? ''),
+      entitlementSnapshotChecksum: String(raw.entitlement_snapshot_checksum ?? ''), rateVersion: raw.rate_version === null ? null : String(raw.rate_version ?? ''), quotedPoints: Number(raw.quoted_points),
+      ...(typeof raw.reservation_id === 'string' ? { reservationId: raw.reservation_id } : {}), reservationState: String(raw.reservation_state ?? '') as WorkerCommercialAccessRecheck['reservationState'],
+      allowed: raw.allowed === true, ready: raw.ready === true, checkedAt: String(raw.checked_at ?? ''),
     }
   })
 }
@@ -1184,6 +1224,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const quotaConnection = await createQuotaCounterStore(process.env.REDIS_URL)
   const quotaAdmission = new FixedWindowQuotaAdmission(quotaConnection.store)
   const executionAuthorization = createApiExecutionAuthorizationGuard(config)
+  const commercialAccess = createApiCommercialAccessGuard(config)
   const queueFactory = redisConnection
     ? (workspaceId: string) => new RedisQueueAdapter<DurableOutboxEvent>(redisConnection.transport, workerQueueKey(config.role, workspaceId))
     : undefined
@@ -1513,7 +1554,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
               onError: (workspaceId, operation, error) => log({ level: 'error', message: 'automation workspace maintenance failed; continuing', workspaceId, operation, error: serializeError(error) }),
             })
           })()
-          : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
+          : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, commercialAccess, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
         if (config.role === 'reconcile' && startedAt >= nextStorageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for storage reconciliation')
           const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postStorageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))

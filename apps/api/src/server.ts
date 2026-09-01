@@ -6,11 +6,12 @@ import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
+import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } from '../../../packages/application/src/canonical-backfill-queue.js'
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
-import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
+import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
@@ -49,9 +50,10 @@ import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOper
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
-import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
+import { parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessRecheck, type WorkerCommercialAccessSnapshot } from '../../../packages/workers/src/commercial-access.js'
 import { planSupportSlaScan } from '../../../packages/workers/src/support-sla-scan.js'
 import { aggregateScannerHeartbeats, SCANNER_HEARTBEAT_INDEX_KEY, SCANNER_HEARTBEAT_SCHEMA, type ScannerHeartbeat } from '../../../packages/workers/src/scanner-heartbeat.js'
 import { parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
@@ -191,8 +193,11 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
     void persistOperationalAlertNotification(alert)
     throw Object.assign(new Error('model relay usage is missing actual cost'), { code: 'MODEL_USAGE_COST_MISSING' })
   }
-  const zeroCustomerChargeAuthorization = durableAuthorization?.settlement === 'entitlement' || durableAuthorization?.settlement === 'included_quota'
-  const customerChargeCny = usage.costCny === undefined ? undefined : zeroCustomerChargeAuthorization ? 0 : Number((usage.costCny * effectiveMultiplier).toFixed(6))
+  // Provider cost remains durable evidence, but the retired RMB wallet is no
+  // longer a customer settlement authority. Creative-point reservation is a
+  // separate admission fact and must never be inferred from this cost row.
+  const zeroCustomerChargeAuthorization = true
+  const customerChargeCny = usage.costCny === undefined ? undefined : 0
   const usageInput = { receiptKey, workspaceId, ...(usage.actionId ? { actionId: usage.actionId } : {}), ...(usage.contextLinkId && usage.contextHash ? { contextLinkId: usage.contextLinkId, contextHash: usage.contextHash } : {}), modality: usage.modality, model: usage.model, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}), ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {}), ...(usage.metadata || usage.runKey ? { metadata: { ...(usage.metadata ?? {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {}) }
   let recordedUsage
   if (isProduction() && usage.actionId && usage.costCny !== undefined) {
@@ -239,7 +244,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
         throw Object.assign(new Error(`model action settlement is ${durableZeroChargeAuthorization.settlementStatus}`), { code: 'MODEL_USAGE_ZERO_CHARGE_SETTLEMENT_BLOCKED' })
       }
       await persistence.actionLedger?.settleProviderUsage({ workspaceId, actionKey: settlementActionKey, actualAmountFen: 0, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
-    } else if ((durableWalletAuthorization || reservation) && recordedUsage.customerChargeCny !== undefined) {
+    } else if ((durableWalletAuthorization || reservation) && recordedUsage.customerChargeCny !== undefined && recordedUsage.customerChargeCny > 0) {
       const actualAmountFen = Math.max(1, Math.ceil(recordedUsage.customerChargeCny * 100))
       if (durableWalletAuthorization && usage.actionId) {
         const actionKey = durableAuthorizationActionKey ?? usage.actionId
@@ -924,6 +929,9 @@ function createRedisJobAdmission(url: string | undefined): RedisJobAdmissionPort
 
 export interface ApiPersistence {
   mode: 'memory' | 'postgres'
+  /** Authoritative creative-point facts. Legacy RMB wallets and task quotas are never access inputs. */
+  creativePoints?: CreativePointRepository
+  commercialCatalog?: CommercialCatalogRepository
   outbox?: OutboxRepository
   business?: PostgresBusinessRepository
   billing?: PostgresBillingRepository
@@ -1013,6 +1021,8 @@ export interface RuleRepositoryPort {
 const memoryWorkspaceStatuses = new Map<string, 'active' | 'disabled'>()
 const knownWorkspaces = new Set<string>()
 const memoryCommercial = new MemoryCommercialRepository()
+const memoryCreativePoints = new MemoryCreativePointRepository()
+const memoryCommercialCatalog = new MemoryCommercialCatalogRepository([])
 const memoryUsage = new MemoryUsageRepository(workspaceId => memoryCommercial.getSettings(workspaceId))
 const memoryModelUsage = new MemoryModelUsageRepository()
 const memoryActionLedger = new MemoryActionLedgerRepository()
@@ -1214,7 +1224,7 @@ export function setImageSelectionTicketRepositoryForTests(repository?: Interacti
   imageSelectionTicketRepositoryOverride = repository
 }
 
-const memoryPersistence: ApiPersistence = { mode: 'memory', commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
+const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
 let persistence: ApiPersistence = memoryPersistence
 let persistenceError: unknown
 const workspaceEventSequences = new Map<string, number>()
@@ -2365,7 +2375,6 @@ function durableParseErrorContext(error: unknown): ParseErrorContext {
 }
 
 async function executeDurableAssetParse(workspaceId: string, assetId: string, req: IncomingMessage) {
-  await requirePluginWalletAccess(workspaceId)
   const asset = assetForWorkspace(workspaceId, assetId)
   if (asset.scanStatus !== 'clean') throw new DomainError('ASSET_PARSE_SCAN_REQUIRED', '素材必须完成安全扫描后才能解析', 409)
   if (asset.parseStatus === 'succeeded' && asset.extractedFactsSource === 'manual') throw new DomainError('ASSET_FACTS_MANUAL_LOCKED', '素材事实已由商家人工确认；自动解析不能覆盖或降级人工确认结果', 409)
@@ -2373,12 +2382,10 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
   const { timeoutMs, maxAttempts } = assetParseRuntimeConfig()
   const ocrCandidate = asset.mimeType.toLowerCase().startsWith('image/')
   const ocrDebitKeyPrefix = `asset-parse:${asset.id}:attempt:`
-  const actorId = requestActor(req)
   if (ocrCandidate && imageFactsExtractor) requirePlatformModelCostGate('ocr')
   let extraction: AssetFactExtraction | undefined
   let parserFailure: unknown
   let parseAttempt = 0
-  let activeDebitKey: string | undefined
 
   try {
     const executed = await executeAssetParse({
@@ -2394,28 +2401,13 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
         await persistEvent(workspaceId, asset.id, 'asset.parse_processing', processing.revision, { asset_id: asset.id, parse_status: 'processing', attempt: lease.attempts, lease_until: lease.leaseUntil })
       },
       parse: async signal => {
-        let debited = false
         const ocrDebitKey = `${ocrDebitKeyPrefix}${parseAttempt}`
         try {
-          if (ocrCandidate) {
-            await debitPluginWallet({ workspaceId, idempotencyKey: ocrDebitKey, modelRunKey: `asset-parse:${asset.id}`, actorId, description: '图片 OCR/素材解析调用' })
-            debited = true
-            activeDebitKey = ocrDebitKey
-          }
           const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey)
           extraction = await parseAssetFacts({ name: asset.name, mimeType: asset.mimeType, body: stored.body, usageContext: { workspaceId, actionId: ocrDebitKey, runKey: `asset-parse:${asset.id}` }, signal })
-          if (ocrCandidate && extraction.source !== 'model_ocr') {
-            await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: ocrDebitKey, actorId, reason: '本次图片由本地解析器完成，未产生 OCR 中转调用' })
-            debited = false
-            activeDebitKey = undefined
-          }
           return extraction.facts
         } catch (error) {
           parserFailure = error
-          if (debited && !providerSucceededButSettlementPending(error)) {
-            await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: ocrDebitKey, actorId, reason: '素材解析失败' })
-            activeDebitKey = undefined
-          }
           throw error
         }
       },
@@ -2439,17 +2431,12 @@ async function executeDurableAssetParse(workspaceId: string, assetId: string, re
         throw new DomainError(error.code, '素材正在由另一个请求解析，请稍后重试', 409, { retry_after_seconds: retryAfterSeconds })
       }
       if (error.code === 'ASSET_PARSE_LEASE_LOST') {
-        if (activeDebitKey && !extraction && !providerSucceededButSettlementPending(parserFailure)) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: activeDebitKey, actorId, reason: '素材解析租约已由人工确认或更新请求取代' })
         throw new DomainError('ASSET_PARSE_STALE_RESULT', '素材解析租约已失效，旧结果未写入业务状态', 409)
       }
       if (error.code === 'ASSET_PARSE_ATTEMPTS_EXHAUSTED') throw new DomainError(error.code, '素材自动解析重试次数已用尽，请人工补录事实', 409, { asset_id: asset.id, asset_persisted: true, next_actions: ['asset.facts.confirm'] })
     }
     if (error instanceof DomainError && error.code === 'ASSET_PARSE_STALE_RESULT') throw error
     if (error instanceof AssetParseExecutionError && error.record) {
-      if (activeDebitKey && !providerSucceededButSettlementPending(error.cause)) {
-        await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: activeDebitKey, actorId, reason: error.code === 'ASSET_PARSE_TIMEOUT' ? '素材解析超时' : '素材解析失败' })
-        activeDebitKey = undefined
-      }
       await assertDurableParseRecordCurrent(repository, error.record)
       if (!(asset.parseStatus === 'succeeded' && asset.extractedFactsSource === 'manual')) {
         const context = durableParseErrorContext(parserFailure ?? error)
@@ -2499,6 +2486,8 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const business = new PostgresBusinessRepository(sqlPool, { normalizedProjection: true })
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
     const commercial = new PostgresCommercialRepository(sqlPool)
+    const creativePoints = new PostgresCreativePointRepository(sqlPool)
+    const commercialCatalog = opsPool ? new PostgresCommercialCatalogRepository(opsSqlPool) : undefined
     const usage = new PostgresUsageRepository(sqlPool)
     const modelUsage = new PostgresModelUsageRepository(sqlPool)
     const actionLedger = new PostgresActionLedgerRepository(sqlPool)
@@ -2676,7 +2665,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, ...(commercialCatalog ? { commercialCatalog } : {}), outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -2685,6 +2674,171 @@ async function initializePersistence(): Promise<ApiPersistence> {
 }
 
 const persistenceReady = initializePersistence().then(value => { persistence = value; return value }).catch(error => { persistenceError = error; throw error })
+
+const commercialAccessService = new CommercialAccessService({
+  registry: COMMERCIAL_OPERATION_REGISTRY,
+  registry_version: COMMERCIAL_OPERATION_REGISTRY_VERSION,
+  balance_projection: {
+    async projectCreativePointBalance({ workspace_id }) {
+      await persistenceReady
+      if (!persistence.creativePoints) return { state: 'unknown' as const }
+      const balance = await persistence.creativePoints.getBalance(workspace_id)
+      if (balance.availablePoints === null) return { state: 'unknown' as const }
+      return {
+        state: 'known' as const,
+        available_points: balance.availablePoints,
+        access_revision: String(balance.revision),
+        freshness: 'fresh' as const,
+      }
+    },
+  },
+  rate_resolver: {
+    async resolveApprovedRate({ rate_action }) {
+      await persistenceReady
+      if (!persistence.commercialCatalog) return { state: 'unavailable' as const }
+      try {
+        const rate = await persistence.commercialCatalog.resolveApprovedRate(rate_action)
+        return { state: 'approved' as const, quoted_points: rate.integerPoints, rate_card_version: `${rate.rateCardId}:v${rate.version}:${rate.checksum}` }
+      } catch {
+        return { state: 'unavailable' as const }
+      }
+    },
+  },
+  next_actions: () => ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
+})
+
+function commercialDecisionDetails(req: IncomingMessage, decision: CommercialAccessDecision) {
+  const id = requestId(req)
+  return {
+    request_id: id,
+    trace_id: getRequestCorrelation(req).traceId,
+    balance_state: decision.balance_state,
+    available_points: decision.available_points,
+    quoted_points: decision.quoted_points,
+    access_revision: decision.access_revision,
+    rate_card_version: decision.rate_card_version,
+    next_actions: decision.next_actions,
+    classification: decision.classification,
+    registry_version: decision.registry_version,
+  }
+}
+
+function assertCommercialDecisionAllowed(req: IncomingMessage, result: CommercialAccessServiceResult): CommercialAccessDecision | undefined {
+  if (result.outcome === 'DENY_NON_COMMERCIAL') return undefined
+  if (result.outcome === 'DENY_UNCLASSIFIED') {
+    throw new DomainError('COMMERCIAL_OPERATION_UNCLASSIFIED', '商业操作未在精确注册表中分类，已拒绝执行', 503, {
+      request_id: requestId(req), trace_id: getRequestCorrelation(req).traceId, next_actions: ['commercial.access.get', 'creative-points.balance.get'],
+    })
+  }
+  if (result.outcome === 'DENY_DISABLED') {
+    throw new DomainError('COMMERCIAL_OPERATION_DISABLED', '商业操作尚未满足上线门禁，已拒绝执行', 503, {
+      request_id: requestId(req), trace_id: getRequestCorrelation(req).traceId, next_actions: ['commercial.access.get', 'creative-points.balance.get'],
+    })
+  }
+  if (!result.decision.allowed) {
+    const retryable = result.decision.error_code === ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE
+      || result.decision.error_code === ERROR_CODES.RATE_CARD_UNAVAILABLE
+      || result.decision.error_code === ERROR_CODES.COMMERCIAL_ACCESS_STALE
+    const status = result.decision.error_code === ERROR_CODES.CREATIVE_POINTS_EXHAUSTED
+      || result.decision.error_code === ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT ? 402 : retryable ? 503 : 409
+    throw new DomainError(result.decision.error_code!, '当前创意点状态不允许执行该操作', status, {
+      ...commercialDecisionDetails(req, result.decision), retryable,
+    })
+  }
+  return result.decision
+}
+
+export async function enforceMcpCommercialAccess(req: IncomingMessage, workspaceId: string, operation: string, requiredAccessRevision?: string) {
+  const result = await commercialAccessService.decide({
+    surface: 'MCP', operation, workspace_id: workspaceId,
+    ...(requiredAccessRevision ? { required_access_revision: requiredAccessRevision } : {}),
+  })
+  return assertCommercialDecisionAllowed(req, result)
+}
+
+export async function enforceHttpCommercialAccess(req: IncomingMessage, workspaceId: string, operation: string) {
+  const result = await commercialAccessService.decide({ surface: 'HTTP', operation, workspace_id: workspaceId })
+  return assertCommercialDecisionAllowed(req, result)
+}
+
+function currentPointAccessExecutionFact(workspaceId: string, balance: Awaited<ReturnType<CreativePointRepository['getBalance']>>) {
+  const snapshot = {
+    schema_version: 1,
+    workspace_id: workspaceId,
+    balance_state: balance.availablePoints === null ? 'unknown' : 'known',
+    available_points: balance.availablePoints,
+    reserved_points: balance.reservedPoints,
+    settled_points: balance.settledPoints,
+    access_revision: balance.availablePoints === null ? null : String(balance.revision),
+  }
+  return {
+    id: `creative-point-access:${workspaceId}:${balance.revision}`,
+    checksum: createHash('sha256').update(JSON.stringify(snapshot)).digest('hex'),
+  }
+}
+
+async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: WorkerCommercialAccessSnapshot): Promise<WorkerCommercialAccessRecheck> {
+  await persistenceReady
+  if (!persistence.creativePoints) {
+    throw new DomainError('COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', '创意点事实仓储未配置，已拒绝 worker 执行', 503, { retryable: true })
+  }
+  const balance = await persistence.creativePoints.getBalance(event.workspaceId)
+  if (balance.availablePoints === null) {
+    throw new DomainError(ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE, '创意点余额未知，已拒绝 worker 执行', 503, { retryable: true, balance_state: 'unknown', available_points: null })
+  }
+  const subscriptionFact = currentPointAccessExecutionFact(event.workspaceId, balance)
+  const accessRevision = String(balance.revision)
+  const subscriptionMatches = snapshot.subscriptionSnapshotId === subscriptionFact.id
+    && snapshot.subscriptionSnapshotChecksum === subscriptionFact.checksum
+  const accessMatches = snapshot.accessRevision === accessRevision
+  if (snapshot.accessMode === 'POINT_CHARGED') {
+    // The repository currently exposes no authoritative reservation read. Do
+    // not turn the queued snapshot into self-authenticating payment evidence.
+    throw new DomainError('COMMERCIAL_EXECUTION_RESERVATION_RECHECK_UNAVAILABLE', '当前仓储不能复核创意点预留事实，已拒绝收费 worker 执行', 503, {
+      retryable: true,
+      balance_state: 'known',
+      available_points: balance.availablePoints,
+      access_revision: accessRevision,
+    })
+  }
+  const allowed = balance.availablePoints > 0 && accessMatches && subscriptionMatches
+  return {
+    recheckId: `commercial_recheck_${randomUUID()}`,
+    workspaceId: event.workspaceId,
+    operation: snapshot.operation,
+    accessMode: snapshot.accessMode,
+    accessRevision,
+    balanceState: 'known',
+    subscriptionSnapshotId: subscriptionFact.id,
+    subscriptionSnapshotChecksum: subscriptionFact.checksum,
+    rateVersion: null,
+    quotedPoints: 0,
+    reservationState: 'not_required',
+    allowed,
+    ready: allowed,
+    checkedAt: new Date().toISOString(),
+  }
+}
+
+function serializedWorkerCommercialRecheck(recheck: WorkerCommercialAccessRecheck) {
+  return {
+    recheck_id: recheck.recheckId,
+    workspace_id: recheck.workspaceId,
+    operation: recheck.operation,
+    access_mode: recheck.accessMode,
+    access_revision: recheck.accessRevision,
+    balance_state: recheck.balanceState,
+    subscription_snapshot_id: recheck.subscriptionSnapshotId,
+    subscription_snapshot_checksum: recheck.subscriptionSnapshotChecksum,
+    rate_version: recheck.rateVersion,
+    quoted_points: recheck.quotedPoints,
+    ...(recheck.reservationId ? { reservation_id: recheck.reservationId } : {}),
+    reservation_state: recheck.reservationState,
+    allowed: recheck.allowed,
+    ready: recheck.ready,
+    checked_at: recheck.checkedAt,
+  }
+}
 
 /** Keep notification delivery evidence durable without coupling alert creation
  * to a remote receiver's latency or availability. */
@@ -2699,11 +2853,50 @@ async function persistOperationalAlertNotification(alert: OperationalAlert): Pro
   }
 }
 
+const noChargeWorkerEventOperations: Readonly<Record<string, CriticalWorkerOperation>> = {
+  'publish.requested': 'publish.execute',
+  'publish.reconcile_requested': 'publish.reconcile',
+  'sync.requested': 'catalog.sync.execute',
+  'asset.uploaded': 'asset.scan.execute',
+  'asset.generated_quarantined': 'asset.scan.execute',
+  'asset.video_quarantined': 'asset.scan.execute',
+  'asset.scan_redrive_requested': 'asset.scan.execute',
+}
+
+async function withCommercialWorkerSnapshot(workspaceId: string, eventType: string, payload: Record<string, unknown>) {
+  if (payload.commercial_access_snapshot) return payload
+  const operation = noChargeWorkerEventOperations[eventType]
+  if (!operation) return payload
+  if (!persistence.creativePoints) throw new DomainError('COMMERCIAL_EXECUTION_RECHECK_UNAVAILABLE', '创意点事实仓储未配置，已拒绝入队', 503)
+  const balance = await persistence.creativePoints.getBalance(workspaceId)
+  if (balance.availablePoints === null) throw new DomainError(ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE, '创意点余额未知，已拒绝入队', 503, { balance_state: 'unknown', available_points: null })
+  if (balance.availablePoints === 0) throw new DomainError(ERROR_CODES.CREATIVE_POINTS_EXHAUSTED, '创意点已用尽，已拒绝入队', 402, { balance_state: 'known', available_points: 0, access_revision: String(balance.revision) })
+  const subscriptionFact = currentPointAccessExecutionFact(workspaceId, balance)
+  return {
+    ...payload,
+    commercial_access_snapshot: {
+      schema_version: 1,
+      decision_id: `commercial_decision_${randomUUID()}`,
+      workspace_id: workspaceId,
+      operation,
+      access_mode: 'POINT_REQUIRED_NO_CHARGE',
+      access_revision: String(balance.revision),
+      balance_state: 'known',
+      subscription_snapshot_id: subscriptionFact.id,
+      subscription_snapshot_checksum: subscriptionFact.checksum,
+      rate_version: null,
+      quoted_points: 0,
+      decided_at: new Date().toISOString(),
+    },
+  }
+}
+
 async function persistEvent(workspaceId: string, aggregateId: string, eventType: string, sequence: number, payload: Record<string, unknown>) {
   await persistenceReady
+  const guardedPayload = await withCommercialWorkerSnapshot(workspaceId, eventType, payload)
   const event = persistence.outbox
-    ? (await persistence.ensureWorkspace?.(workspaceId), await persistence.outbox.append({ workspaceId, aggregateId, eventType, sequence, payload }))
-    : { id: `evt_${randomUUID()}`, workspaceId, aggregateId, eventType, sequence, payload, createdAt: new Date().toISOString() }
+    ? (await persistence.ensureWorkspace?.(workspaceId), await persistence.outbox.append({ workspaceId, aggregateId, eventType, sequence, payload: guardedPayload }))
+    : { id: `evt_${randomUUID()}`, workspaceId, aggregateId, eventType, sequence, payload: guardedPayload, createdAt: new Date().toISOString() }
   const local = inMemoryTimelineEvents.get(workspaceId) ?? []
   if (!local.some(item => item.id === event.id)) local.push(event)
   inMemoryTimelineEvents.set(workspaceId, local)
@@ -2998,8 +3191,9 @@ export async function persistAssetSnapshotAndEvent(workspaceId: string, asset: {
   await persistenceReady
   const target = persistenceOverride ?? persistence
   const entityVersion = asset.revision ?? 1
+  const guardedEventPayload = persistenceOverride ? eventPayload : await withCommercialWorkerSnapshot(workspaceId, eventType, eventPayload)
   if (target.persistSnapshotAndEvent) {
-    await target.persistSnapshotAndEvent({ workspaceId, entityType: 'asset', entityId: asset.id, entityVersion, payload: value, eventType, eventPayload })
+    await target.persistSnapshotAndEvent({ workspaceId, entityType: 'asset', entityId: asset.id, entityVersion, payload: value, eventType, eventPayload: guardedEventPayload })
     invalidateWorkspaceHydration(workspaceId)
     return
   }
@@ -3008,7 +3202,7 @@ export async function persistAssetSnapshotAndEvent(workspaceId: string, asset: {
   // silently reintroducing the split-commit path.
   if (target.mode === 'postgres') throw new DomainError('ASSET_PERSISTENCE_ATOMIC_REQUIRED', '素材归档必须使用原子 snapshot/event 持久化能力', 503)
   await persistSnapshot(workspaceId, 'asset', { id: asset.id, revision: entityVersion }, value)
-  await persistEvent(workspaceId, asset.id, eventType, entityVersion, eventPayload)
+  await persistEvent(workspaceId, asset.id, eventType, entityVersion, guardedEventPayload)
 }
 
 async function persistExpiredDeliveryIfNeeded(workspaceId: string, contentVersionId: string) {
@@ -3077,8 +3271,9 @@ function mcpPagination(params: JsonObject): { limit: number; offset: number } {
 
 async function persistSnapshotsAndEvent(input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown> }) {
   await persistenceReady
+  const guardedInput = { ...input, eventPayload: await withCommercialWorkerSnapshot(input.workspaceId, input.eventType, input.eventPayload) }
   if (persistence.persistSnapshotsAndEvent) {
-    await persistence.persistSnapshotsAndEvent(input)
+    await persistence.persistSnapshotsAndEvent(guardedInput)
     invalidateWorkspaceHydration(input.workspaceId)
     return
   }
@@ -3086,7 +3281,7 @@ async function persistSnapshotsAndEvent(input: { workspaceId: string; snapshots:
     if (snapshot.entityType === 'merchant_intent') merchantIntents.set(`${input.workspaceId}:${snapshot.entityId}`, snapshot.payload)
     else await persistSnapshot(input.workspaceId, snapshot.entityType, { id: snapshot.entityId, revision: snapshot.entityVersion }, snapshot.payload)
   }
-  await persistEvent(input.workspaceId, input.aggregateId, input.eventType, input.sequence, input.eventPayload)
+  await persistEvent(input.workspaceId, input.aggregateId, input.eventType, input.sequence, guardedInput.eventPayload)
   invalidateWorkspaceHydration(input.workspaceId)
 }
 
@@ -3817,6 +4012,9 @@ const workerEventOperations: Record<string, CriticalWorkerOperation> = {
   'generation.requested': 'generation.execute',
   'image.generation.requested': 'image_generation.execute',
   'sync.requested': 'catalog.sync.execute',
+  'asset.uploaded': 'asset.scan.execute',
+  'asset.generated_quarantined': 'asset.scan.execute',
+  'asset.video_quarantined': 'asset.scan.execute',
   'asset.scan_redrive_requested': 'asset.scan.execute',
   'asset.generation_continuations.ready': 'asset.continuation.execute',
 }
@@ -4222,6 +4420,16 @@ function send<T>(res: ServerResponse, status: number, workspaceId: string, data:
   res.setHeader('x-request-id', id)
   res.setHeader('x-trace-id', traceId)
   res.end(JSON.stringify(envelope))
+}
+
+function sendNativeMcp(res: ServerResponse, status: number, payload: unknown, req?: IncomingMessage) {
+  const id = requestId(req)
+  const traceId = req ? getRequestCorrelation(req).traceId : id
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json; charset=utf-8')
+  res.setHeader('x-request-id', id)
+  res.setHeader('x-trace-id', traceId)
+  res.end(JSON.stringify(payload))
 }
 
 function wantsOAuthHtml(req: IncomingMessage) {
@@ -4676,7 +4884,7 @@ export function resolveAuthorizationResourceScope(policy: ReturnType<typeof getM
   return { type: 'account' as const, id: exactId(params.account_id) }
 }
 
-async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, params: Record<string, unknown>, principal?: Pick<RequestPrincipal, 'actorId'>) {
+export async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, params: Record<string, unknown>, principal?: Pick<RequestPrincipal, 'actorId'>) {
   const direct = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
   const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
   const contentVersionId = typeof params.content_version_id === 'string' && params.content_version_id.trim() ? params.content_version_id.trim() : undefined
@@ -4751,19 +4959,9 @@ export function workspaceCapabilitySourceForBrandScope(policy: NonNullable<Retur
     && atom.source !== 'temporary_grant')
 }
 
-export function workspaceAccountPermissionAtoms(
-  policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>,
-  workspaceId: string,
-  accountId: string,
-  workspaceAccountIds: readonly string[],
-  atoms: readonly PermissionAtom[],
-) {
+export function workspaceAccountPermissionAtoms(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, accountId: string, workspaceAccountIds: readonly string[], atoms: readonly PermissionAtom[]) {
   if (!workspaceAccountIds.includes(accountId)) return atoms
-  const workspaceSource = atoms.find(atom => atom.capability === policy.capability
-    && atom.effect === 'allow'
-    && atom.scope.type === 'workspace'
-    && atom.scope.ids.includes(workspaceId)
-    && atom.source !== 'temporary_grant')
+  const workspaceSource = atoms.find(atom => atom.capability === policy.capability && atom.effect === 'allow' && atom.scope.type === 'workspace' && atom.scope.ids.includes(workspaceId) && atom.source !== 'temporary_grant')
   if (!workspaceSource) return atoms
   return [...atoms, { ...workspaceSource, scope: { type: 'account' as const, ids: [accountId] }, source: 'resource_grant' as const, sourceId: `workspace-account:${workspaceId}:${accountId}` }]
 }
@@ -4778,8 +4976,7 @@ async function permissionAtomsForResolvedResource(req: IncomingMessage, workspac
     const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
     const task = taskId ? service.tasks.get(taskId) : undefined
     if (taskId && (!task || task.workspaceId !== workspaceId || task.accountId !== resourceScope.id)) return atoms
-    const accountIds = workspaceStoreDirectory(workspaceId).map(store => store.accountId)
-    const scoped = workspaceAccountPermissionAtoms(policy, workspaceId, resourceScope.id, accountIds, atoms)
+    const scoped = workspaceAccountPermissionAtoms(policy, workspaceId, resourceScope.id, workspaceStoreDirectory(workspaceId).map(store => store.accountId), atoms)
     if (scoped.length !== atoms.length) return scoped.map(atom => atom.sourceId === `workspace-account:${workspaceId}:${resourceScope.id}` ? { ...atom, sourceId: task ? `task-account:${task.id}` : atom.sourceId } : atom)
   }
   if (resourceScope?.type !== 'brand' || !resourceScope.id) return atoms
@@ -8623,7 +8820,6 @@ async function consumeTaskUsage(workspaceId: string, taskId: string, idempotency
     return { ...charged, settlement: 'included_quota' as const, walletDebited: false }
   } catch (error) {
     if (!(error instanceof Error) || error.message !== 'QUOTA_EXCEEDED') throw error
-    await requirePluginWalletAccess(workspaceId)
     await debitPluginWallet({ workspaceId, idempotencyKey: `model:${idempotencyKey}`, actorId, description: '模型生成调用（套餐额度外）', ...taskScope })
     modelBillingReservations.set(`${workspaceId}:model:${idempotencyKey}`, { debitIdempotencyKey: `model:${idempotencyKey}`, actorId, providerRequests: new Set() })
     await recordOperationAudit({ workspaceId, actorId, action: 'usage.overage.consume', resourceType: 'task', resourceId: taskId, before: {}, after: { idempotency_key: idempotencyKey, settlement: 'wallet_overage' }, reason: '套餐额度用尽后使用钱包余额' })
@@ -9367,6 +9563,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     await enforceActiveWorkspaceMember(req, workspaceId)
   }
   await enforceCustomerDataAccess(req, workspaceId, method)
+  // Commercial access is evaluated only after schema, identity, tenant and
+  // RBAC checks, but before onboarding, hydration or any business side effect.
+  if (method !== 'workspace.bootstrap' && workspaceId) {
+    await enforceMcpCommercialAccess(req, workspaceId, method)
+  }
   if (method !== 'workspace.bootstrap' && !bypassWorkspaceLifecycleGate) requireStoreOnboarding(workspaceId, method)
   if (shouldHydrateKnowledgeForMethod(method, bypassWorkspaceLifecycleGate, isOpsDomainMethod)) await hydrateKnowledge(workspaceId)
   const workspaceBillingMethod = method === 'billing.usage.consume' || method === 'billing.usage.refund'
@@ -9385,6 +9586,34 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     if (scopedProduct?.workspaceId === workspaceId) enrichRequestObservation(req, { platform: scopedProduct.platform, accountId: scopedProduct.accountId })
   }
   switch (method) {
+    case 'commercial.access.get': {
+      const access = await commercialAccessService.decide({ surface: 'MCP', operation: 'merchant.start', workspace_id: workspaceId })
+      if (access.outcome !== 'DECISION') throw new DomainError('COMMERCIAL_ACCESS_STATE_UNAVAILABLE', '商业访问状态未完成精确分类', 503, { outcome: access.outcome })
+      return result({ decision: access.decision })
+    }
+    case 'creative-points.balance.get': {
+      await persistenceReady
+      const balance = await persistence.creativePoints?.getBalance(workspaceId)
+      return result({
+        schema_version: 'creative-points.balance.v1',
+        workspace_id: workspaceId,
+        balance_state: balance?.availablePoints === null || !balance ? 'unknown' : 'known',
+        available_points: balance?.availablePoints ?? null,
+        reserved_points: balance?.reservedPoints ?? null,
+        settled_points: balance?.settledPoints ?? null,
+        access_revision: balance?.availablePoints === null || !balance ? null : String(balance.revision),
+        updated_at: balance?.updatedAt ?? null,
+      })
+    }
+    case 'creative-points.statement.list':
+      throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未实现，不能返回伪造的空流水', 503, { entries: null })
+    case 'commercial.catalog.get': {
+      await persistenceReady
+      if (!persistence.commercialCatalog) throw new DomainError('COMMERCIAL_CATALOG_REPOSITORY_UNAVAILABLE', 'V2 商业目录仓储未配置', 503, { catalog: null })
+      const catalog = await persistence.commercialCatalog.list({ includePrivate: false, capabilities: [] })
+      if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可展示的 V2 商业目录版本，不能回退到旧套餐数据', 503, { catalog: null })
+      return result({ schema_version: 'commercial.catalog.v2', status: 'available', catalog })
+    }
     case 'merchant.first_value':
       return result(merchantFirstValuePreview(workspaceId, params))
     case 'brand-unit.list': {
@@ -10780,6 +11009,47 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         })) ?? [],
       })
     }
+    case 'ops.commercial.access.summary': {
+      const targetWorkspaceId = required(params, 'target_workspace_id')
+      const access = await commercialAccessService.decide({ surface: 'MCP', operation: 'merchant.start', workspace_id: targetWorkspaceId })
+      const balance = await persistence.creativePoints?.getBalance(targetWorkspaceId)
+      return result({
+        schema_version: 'commercial.access-summary.v1',
+        workspace_id: targetWorkspaceId,
+        balance_state: balance?.availablePoints === null || !balance ? 'unknown' : 'known',
+        available_points: balance?.availablePoints ?? null,
+        reserved_points: balance?.reservedPoints ?? null,
+        settled_points: balance?.settledPoints ?? null,
+        access_revision: balance?.availablePoints === null || !balance ? null : String(balance.revision),
+        decision: access.outcome === 'DECISION' ? access.decision : null,
+        decision_outcome: access.outcome,
+      })
+    }
+    case 'ops.commercial.catalog-v2.list': {
+      if (!persistence.commercialCatalog) throw new DomainError('COMMERCIAL_CATALOG_REPOSITORY_UNAVAILABLE', 'V2 商业目录仓储未配置', 503)
+      const principal = requestPrincipals.get(req)
+      const capabilities = new Set<CapabilityId>([
+        ...capabilitiesForRoles(resolveCanonicalRoles({ gatewayRoles: principal?.roles ?? [], memberRole: principal?.memberRole })),
+        ...(principal?.activeAuthorizationGrants?.flatMap(grant => grant.capabilities).filter((capability): capability is CapabilityId => (CAPABILITIES as readonly string[]).includes(capability)) ?? []),
+      ])
+      const mayReadPrivate = capabilities.has('commercial.private_sku.read')
+      const requestedPrivate = params.include_private === 'true'
+      const catalog = await persistence.commercialCatalog.list({ includePrivate: requestedPrivate && mayReadPrivate, capabilities: [...capabilities] })
+      if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可读取的 V2 商业目录版本', 503, { catalog: null })
+      return result({ schema_version: 'commercial.catalog.v2', items: catalog, private_entries_included: requestedPrivate && mayReadPrivate })
+    }
+    case 'ops.commercial.access-blocks.list':
+      throw new DomainError('COMMERCIAL_ACCESS_BLOCK_REPOSITORY_UNAVAILABLE', '商业阻断事实仓储尚未实现，不能返回伪造的空列表', 503)
+    case 'ops.commercial.entitlements.list':
+      throw new DomainError('COMMERCIAL_ENTITLEMENT_V2_REPOSITORY_UNAVAILABLE', 'V2 权益快照仓储尚未实现，不能回退到旧任务额度', 503)
+    case 'ops.commercial.points-ledger.list':
+      throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未实现，不能返回伪造的空列表', 503)
+    case 'ops.commercial.orders-v2.list':
+      throw new DomainError('COMMERCIAL_ORDER_V2_REPOSITORY_UNAVAILABLE', 'V2 订单与支付快照仓储尚未实现，不能回退到钱包订单', 503)
+    case 'ops.commercial.rate-cards.list':
+      throw new DomainError('COMMERCIAL_RATE_CARD_LIST_REPOSITORY_UNAVAILABLE', '费率卡列表仓储尚未实现；单动作执行仍只读取批准且可执行的不可变费率', 503)
+    case 'ops.commercial.service-fulfillment.list':
+      throw new DomainError('COMMERCIAL_SERVICE_FULFILLMENT_REPOSITORY_UNAVAILABLE', '服务履约事实仓储尚未实现，不能虚构服务进度', 503)
     case 'ops.commercial.offers.list':
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'])
       return result(await (persistence.commercialExtensions ?? memoryCommercialExtensions).listOffers())
@@ -14071,7 +14341,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ isBatch: true, batchId, batch, count: previews.length, items: previews, confirmationRequiredPerItem: true, executionMode: 'confirm_each_item' })
     }
     case 'publish.batch.confirm': {
-      await requirePluginWalletAccess(workspaceId)
       const requestedBatchId = required(params, 'batch_id')
       let batch = publishBatches.get(requestedBatchId)
       if (!batch || batch.workspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '无权访问该批量发布批次', 403)
@@ -14113,12 +14382,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: confirmation })
           const reservationId = `publish:${itemKey}`
           let reserved = false
-          let walletDebited = false
           try {
-            if (!existing) {
-              await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '批量商品发布调用' })
-              walletDebited = true
-            }
             reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
             const job = service.confirmPublish({ workspaceId, taskId, batchId: batch.id, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey, ...(accountId ? { accountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), ...(authorizationSnapshot ? { authorizationSnapshot } : {}), deferCommit: true })
             await persistPublishJobWithBatch({ batch, task, job, itemState: 'queued' })
@@ -14126,7 +14390,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
             items.push({ task_id: taskId, state: 'queued', job: jobWithQueueMetadata(job, workspaceId, 'publish') })
           } catch (error) {
             if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
-            if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '批量商品发布任务创建失败' })
             throw error
           }
         } catch (error) {
@@ -14177,7 +14440,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'publish.batch.retry_failed': {
       const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'platform_ops'])
-      await requirePluginWalletAccess(workspaceId)
       const batch = publishBatches.get(required(params, 'batch_id'))
       if (!batch || batch.workspaceId !== workspaceId) throw new DomainError(ERROR_CODES.TENANT_SCOPE_DENIED, '无权访问该批量发布批次', 403)
       if (batch.state === 'paused') throw new DomainError('PUBLISH_BATCH_PAUSED', '该批次已暂停，请先恢复后再重试', 409)
@@ -14219,12 +14481,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: confirmation })
           const reservationId = `publish:${itemKey}`
           let reserved = false
-          let walletDebited = false
           try {
-            if (!existing) {
-              await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '批量失败项重试发布调用' })
-              walletDebited = true
-            }
             reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
             const job = service.confirmPublish({ workspaceId, taskId, batchId: batch.id, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey, ...(accountId ? { accountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), ...(authorizationSnapshot ? { authorizationSnapshot } : {}), deferCommit: true })
             await persistPublishJobWithBatch({ batch, task, job, itemState: 'queued' })
@@ -14232,7 +14489,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
             items.push({ task_id: taskId, state: 'queued', job: jobWithQueueMetadata(job, workspaceId, 'publish') })
           } catch (error) {
             if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
-            if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '批量失败项重试任务创建失败' })
             throw error
           }
         } catch (error) {
@@ -14262,7 +14518,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const publishAccountId = resolveTaskPublishAccount(task, typeof params.account_id === 'string' ? params.account_id : undefined)
       if (isProduction() || fixtureMode) service.getActivePlatformAccount(workspaceId, publishAccountId!, task.platform)
       if (isProduction() && !platformWriteReady(task.platform)) throw new DomainError('PLATFORM_WRITE_NOT_READY', '平台尚未完成生产写入能力验证，当前不会创建发布任务', 503)
-      await requirePluginWalletAccess(workspaceId)
       assertPublishIdempotency(workspaceId, { taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key })
       let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
       if (!existing) {
@@ -14275,7 +14530,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!existing && !fencedTicket) await consumePublishConfirmationTicket(req, workspaceId, publishInput)
       const reservationId = `publish:${key}`
       let reserved = false
-      let walletDebited = false
       try {
         const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot, deferCommit: true })
         const currentTask = existing ? service.getTask(taskId) : { ...task, state: 'publishing' as const, version: task.version + 1 }
@@ -14288,24 +14542,16 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
             ticketRepository: persistence.interactiveConfirmationTickets as TransactionalInteractiveConfirmationTicketRepository,
             ticket: fencedTicket.ticket,
             consumedOperationId: job.id,
-            wallet: {
-              debit: async () => { await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' }); walletDebited = true },
-              refund: async () => { await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '商品发布任务创建失败' }); walletDebited = false },
-            },
             slot: {
               reserve: async () => { reserved = await reserveDistributedJobSlot(workspaceId, reservationId) },
               release: async () => { if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId); reserved = false },
             },
             persist: async ({ finalizeInTransaction }) => {
-              await persistence.persistPublishTransaction!({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job), finalizeTicketInTransaction: finalizeInTransaction })
+              await persistence.persistPublishTransaction!({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: await withCommercialWorkerSnapshot(workspaceId, 'publish.requested', publishEventPayload(job)), finalizeTicketInTransaction: finalizeInTransaction })
               return { status: 'committed' as const, value: job }
             },
           })
         } else {
-          if (!existing) {
-            await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' })
-            walletDebited = true
-          }
           reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
           await persistSnapshotsAndEvent({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job) })
         }
@@ -14315,7 +14561,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       } catch (error) {
         if (!(error instanceof PublishCommitStatusUnknownError)) {
           if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
-          if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '商品发布任务创建失败' })
         }
         throw error
       }
@@ -14832,6 +15077,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (httpOperationPolicy?.authentication === 'identity' && requestWorkspace !== 'unknown' && requestPrincipals.get(req)?.workbench === 'workspace'
     && !requestMemberChecks.has(req) && !exactConsumedGrantForRequest(req, requestWorkspace)) {
     await enforceActiveWorkspaceMember(req, requestWorkspace)
+  }
+  if (httpOperationPolicy && requestWorkspace !== 'unknown' && !workerRoute && !assetScannerRoute && !infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch) {
+    await enforceHttpCommercialAccess(req, requestWorkspace, httpOperationPolicy.operation)
   }
   const normalizedPagedCollection = req.method === 'GET'
     && (path === '/v1/products' || path === '/v1/tasks')
@@ -16812,7 +17060,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       service.getActivePlatformAccount(workspaceId, publishAccountId!, task.platform)
       if (!platformWriteReady(task.platform)) throw new DomainError('PLATFORM_WRITE_NOT_READY', '平台尚未完成生产写入能力验证，当前不会创建发布任务', 503)
     }
-    await requirePluginWalletAccess(workspaceId)
     assertPublishIdempotency(workspaceId, { taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key })
     let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
     if (!existing) {
@@ -16825,7 +17072,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     if (!existing && !fencedTicket) await consumePublishConfirmationTicket(req, workspaceId, publishInput)
     const reservationId = `publish:${key}`
     let reserved = false
-    let walletDebited = false
     try {
       if (existing) {
         const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot: publishAuthorizationSnapshot(req, workspaceId, task) })
@@ -16842,24 +17088,16 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
           ticketRepository: persistence.interactiveConfirmationTickets as TransactionalInteractiveConfirmationTicketRepository,
           ticket: fencedTicket.ticket,
           consumedOperationId: job.id,
-          wallet: {
-            debit: async () => { await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' }); walletDebited = true },
-            refund: async () => { await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '发布任务创建失败' }); walletDebited = false },
-          },
           slot: {
             reserve: async () => { reserved = await reserveDistributedJobSlot(workspaceId, reservationId) },
             release: async () => { if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId); reserved = false },
           },
           persist: async ({ reservation, finalizeInTransaction }) => {
-            await persistence.persistPublishTransaction!({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job), finalizeTicketInTransaction: finalizeInTransaction })
+            await persistence.persistPublishTransaction!({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: await withCommercialWorkerSnapshot(workspaceId, 'publish.requested', publishEventPayload(job)), finalizeTicketInTransaction: finalizeInTransaction })
             return { status: 'committed' as const, value: job }
           },
         })
       } else {
-        if (!existing) {
-          await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' })
-          walletDebited = true
-        }
         reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
         await persistSnapshotsAndEvent({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job) })
       }
@@ -16869,7 +17107,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     } catch (error) {
       if (!(error instanceof PublishCommitStatusUnknownError)) {
         if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
-        if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '发布任务创建失败' })
       }
       throw error
     }
@@ -16895,7 +17132,17 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     } catch {
       throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '持久事件缺少有效且精确绑定的授权快照', 403)
     }
-    return send(res, 200, workspaceId, { authorization_recheck: await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId, { eventId: event.id }) }, null, req)
+    let commercialSnapshot: WorkerCommercialAccessSnapshot
+    try {
+      commercialSnapshot = parseWorkerCommercialAccessSnapshot(event, requestedOperation)
+    } catch {
+      throw new DomainError('COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', '持久事件缺少有效且精确绑定的商业访问快照', 403)
+    }
+    const [authorizationRecheck, commercialRecheck] = await Promise.all([
+      recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId, { eventId: event.id }),
+      recheckWorkerCommercialAccess(event, commercialSnapshot),
+    ])
+    return send(res, 200, workspaceId, { authorization_recheck: authorizationRecheck, commercial_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
   }
   if (req.method === 'GET' && publishExecutionCheckMatch) {
     await requireWorkerCredentialAuthorization(req)
@@ -16925,7 +17172,10 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     try { eventSnapshot = parseWorkerAuthorizationSnapshot(publishEvent, 'publish.execute') } catch { throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '发布事件缺少有效且精确绑定的授权快照', 403) }
     if (JSON.stringify(serializedWorkerAuthorizationSnapshot(eventSnapshot)) !== JSON.stringify(serializedWorkerAuthorizationSnapshot(snapshot))) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '发布任务与持久事件的授权快照不一致', 403)
     const authorizationRecheck = await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, job.id, { eventId: publishEvent.id })
-    return send(res, 200, workspaceId, { allowed: true, job_id: job.id, account_id: job.accountId, account_revision: job.accountRevision, credential_ref: account.credentialRef, payload_hash: job.payloadHash, media_required: job.selectedVisuals.length > 0, authorization_snapshot: { ...serializedWorkerAuthorizationSnapshot(snapshot), resource_id: job.id }, authorization_recheck: authorizationRecheck }, null, req)
+    let commercialSnapshot: WorkerCommercialAccessSnapshot
+    try { commercialSnapshot = parseWorkerCommercialAccessSnapshot(publishEvent, 'publish.execute') } catch { throw new DomainError('COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', '发布事件缺少有效且精确绑定的商业访问快照', 403) }
+    const commercialRecheck = await recheckWorkerCommercialAccess(publishEvent, commercialSnapshot)
+    return send(res, 200, workspaceId, { allowed: true, job_id: job.id, account_id: job.accountId, account_revision: job.accountRevision, credential_ref: account.credentialRef, payload_hash: job.payloadHash, media_required: job.selectedVisuals.length > 0, authorization_snapshot: { ...serializedWorkerAuthorizationSnapshot(snapshot), resource_id: job.id }, authorization_recheck: authorizationRecheck, commercial_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
   }
   const publishMediaMatch = path.match(/^\/v1\/publish-jobs\/([^/]+)\/media$/)
   if (req.method === 'GET' && publishMediaMatch) {

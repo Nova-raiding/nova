@@ -130,7 +130,7 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .ops-page:focus { outline: none; }
 .ops-page:focus-visible { outline: var(--ops-focus-width) solid var(--ops-focus-color); outline-offset: 4px; }
 .ops-page-heading { margin-bottom: 20px; }
-.ops-page-heading h3 { margin: 4px 0 !important; color: #172554 !important; }
+.ops-page-heading :is(h1, h2, h3, h4, h5) { margin: 4px 0 !important; color: #172554 !important; }
 .ops-page-heading .ant-typography { margin-bottom: 0; }
 .ops-conversation-step { display: flex; gap: 10px; align-items: baseline; padding: 10px 14px; margin-top: 12px; border-left: 3px solid #2563eb; background: #eff6ff; border-radius: 0 8px 8px 0; }
 .ops-conversation-step .ant-typography + .ant-typography { margin-left: 4px; }
@@ -142,6 +142,17 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .config-form { max-width: 980px; }
 .full-width { width: 100%; }
 .ops-token { min-width: 0; overflow-wrap: anywhere; }
+.commercial-operations-workspace > .ant-tabs > .ant-tabs-nav { margin-bottom: 8px; }
+.commercial-operations-workspace > .ant-tabs > .ant-tabs-nav .ant-tabs-tab { min-height: 44px; padding-inline: 4px; font-weight: 600; }
+.commercial-access-status { width: 100%; min-height: 52px; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; }
+.commercial-access-status .ops-token { font-variant-numeric: tabular-nums; }
+.commercial-view { min-width: 0; scroll-margin-top: 24px; }
+.commercial-view > h4 { margin: 0 0 12px !important; }
+.commercial-view > h4:focus { outline: none; }
+.commercial-view > h4:focus-visible { outline: var(--ops-focus-width) solid var(--ops-focus-color); outline-offset: var(--ops-focus-offset); border-radius: 4px; }
+.commercial-filter-bar { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 12px; border: 1px solid #e2e8f0; border-bottom: 0; background: #fff; }
+.commercial-view .ant-table-wrapper { border: 1px solid #e2e8f0; }
+.commercial-view .ant-table-cell { font-variant-numeric: tabular-nums; }
 .ops-readiness-empty-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .ops-batch-detail-region { margin-top: 16px; border-radius: 8px; }
 .ops-batch-detail-region:focus { outline: none; }

@@ -421,6 +421,9 @@ export async function loadMigrations(): Promise<Migration[]> {
   const interactiveConfirmationTicketAclGuard = await readFile(new URL('./migrations/141_interactive_confirmation_ticket_acl_guard.sql', import.meta.url), 'utf8')
   const interactiveConfirmationTicketFencing = await readFile(new URL('./migrations/140_interactive_confirmation_ticket_fencing.sql', import.meta.url), 'utf8')
   const requireOpsPlatformScopeForSummary = await readFile(new URL('./migrations/143_require_ops_platform_scope_for_summary.sql', import.meta.url), 'utf8')
+  const creativePointLedger = await readFile(new URL('./migrations/144_creative_point_ledger.sql', import.meta.url), 'utf8')
+  const hardenOpsWorkspaceSummarySecurity = await readFile(new URL('./migrations/145_harden_ops_workspace_summary_security.sql', import.meta.url), 'utf8')
+  const commercialCatalogV2 = await readFile(new URL('./migrations/146_commercial_catalog_v2.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -565,6 +568,9 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 141, name: 'interactive_confirmation_ticket_acl_guard', sql: interactiveConfirmationTicketAclGuard },
     { version: 142, name: 'authorization_execution_decision_correlation', sql: authorizationExecutionDecisionCorrelation },
     { version: 143, name: 'require_ops_platform_scope_for_summary', sql: requireOpsPlatformScopeForSummary },
+    { version: 144, name: 'creative_point_ledger', sql: creativePointLedger },
+    { version: 145, name: 'harden_ops_workspace_summary_security', sql: hardenOpsWorkspaceSummarySecurity },
+    { version: 146, name: 'commercial_catalog_v2', sql: commercialCatalogV2 },
   ]
 }
 

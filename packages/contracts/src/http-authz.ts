@@ -36,6 +36,10 @@ export const HTTP_OPERATION_POLICIES = [
   // settings and credential mutation remain governed by platform scope.
   identity('GET', '/v1/platform-capabilities', 'workspace.health'),
   identity('GET', '/v1/delivery-readiness', 'workspace.health'),
+  identity('GET', '/v1/commercial/access', 'commercial.access.get'),
+  identity('GET', '/v1/commercial/catalog', 'commercial.catalog.get'),
+  identity('GET', '/v1/creative-points/balance', 'creative-points.balance.get'),
+  identity('GET', '/v1/creative-points/statement', 'creative-points.statement.list'),
   identity('GET', '/v1/catalog/categories', 'catalog.categories'),
   identity('GET', '/v1/rules', 'rule.list'),
   identity('GET', '/v1/rules/audit', 'ops.rules.workspace.audit'),

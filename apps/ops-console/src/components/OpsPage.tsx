@@ -6,6 +6,7 @@ interface OpsPageProps {
   title: string;
   description: string;
   nextStep?: string;
+  headingLevel?: 1 | 2 | 3 | 4 | 5;
   children: ReactNode;
 }
 
@@ -14,6 +15,7 @@ export function OpsPage({
   title,
   description,
   nextStep,
+  headingLevel = 3,
   children,
 }: OpsPageProps) {
   const pageId = `ops-page-${eyebrow.toLowerCase().replaceAll(" ", "-")}`;
@@ -21,7 +23,7 @@ export function OpsPage({
     <section className="ops-page" aria-labelledby={pageId} tabIndex={-1}>
       <header className="ops-page-heading">
         <Typography.Text className="eyebrow">{eyebrow}</Typography.Text>
-        <Typography.Title id={pageId} level={3}>
+        <Typography.Title id={pageId} level={headingLevel}>
           {title}
         </Typography.Title>
       <Typography.Paragraph type="secondary">
