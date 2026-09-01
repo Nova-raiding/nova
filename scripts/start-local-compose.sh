@@ -2,7 +2,7 @@
 set -eu
 
 if [ -f .env ]; then
-  exec docker compose --env-file .env -f infra/local/docker-compose.yml up -d "$@"
+  exec docker compose --env-file .env -f infra/local/docker-compose.yml up -d --build "$@"
 fi
 
-exec docker compose -f infra/local/docker-compose.yml up -d "$@"
+exec docker compose -f infra/local/docker-compose.yml up -d --build "$@"
