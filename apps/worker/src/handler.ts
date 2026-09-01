@@ -167,6 +167,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         return { value: result }
       } catch (error) {
         throwIfLeaseLost(signal)
+        if (error instanceof WorkerFailure) throw error
         const candidate = error as { code?: unknown; retryable?: unknown }
         throw new WorkerFailure({ code: typeof candidate.code === 'string' ? candidate.code : 'ASSET_SCAN_EXECUTION_FAILED', message: error instanceof Error ? error.message : 'asset scan failed', retryable: candidate.retryable !== false, unknown: false })
       }

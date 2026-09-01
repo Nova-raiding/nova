@@ -271,7 +271,7 @@ describe('worker production entry', () => {
     const connector = vi.fn()
     const handler = createOutboxHandler({ publishRequested: connector })
     await expect(handler({ event: { id: 'evt_authz_blocked', workspaceId: 'ws_a', aggregateId: 'job_authz_blocked', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
-      .rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', retryable: false, unknown: false })
+      .rejects.toMatchObject({ error: { code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', retryable: false, unknown: false, eventId: 'evt_authz_blocked', workspaceId: 'ws_a' } })
     expect(connector).not.toHaveBeenCalled()
   })
 
