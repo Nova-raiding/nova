@@ -21,6 +21,8 @@ export const opsTheme: ThemeConfig = {
   },
   components: {
     Layout: { siderBg: "#10234F", headerBg: "#FFFFFF" },
+    Button: { controlHeight: 44, controlHeightSM: 36, borderRadius: 6 },
+    Input: { controlHeight: 44, activeBorderColor: "#1D4ED8", hoverBorderColor: "#2563EB" },
     Menu: { itemHeight: 40, itemBorderRadius: 6, itemMarginInline: 8 },
     Table: { headerBg: "#F8FAFC", headerColor: "#334155", rowHoverBg: "#EFF6FF", cellPaddingBlockSM: 10 },
     Card: { borderRadiusLG: 8 },

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import { opsTheme } from "./theme/opsTheme.js"
 
 describe("Ops Console root providers", () => {
   it("keeps the Ant Design app context inside the configured theme", () => {
@@ -10,5 +11,10 @@ describe("Ops Console root providers", () => {
     expect(source).toContain("purgeLocalOpsCredentialsForManagedSession(localStorage)")
     expect(source).toContain("purgeLocalOpsCredentialsForManagedSession(sessionStorage)")
     expect(source).toContain("</AntdApp>")
+  })
+
+  it("keeps desktop form controls at the accessible interaction size", () => {
+    expect(opsTheme.components?.Button).toMatchObject({ controlHeight: 44, controlHeightSM: 36 })
+    expect(opsTheme.components?.Input).toMatchObject({ controlHeight: 44 })
   })
 })
