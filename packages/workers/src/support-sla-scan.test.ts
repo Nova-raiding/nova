@@ -62,6 +62,13 @@ describe('support SLA scan planner', () => {
     expect(planSupportSlaScan([ticket, conflicting], new Date('2026-08-31T12:00:00.000Z'))).toEqual([])
   })
 
+  it('fails closed when the selected SLA deadline is invalid', () => {
+    const sla = createSupportSlaProjection('urgent', new Date('2026-08-31T09:00:00.000Z'))
+    const invalidResolution = { workspaceId: 'ws-a', ticketId: 'ticket-invalid-resolution', status: 'in_progress' as const, sla: { ...sla, firstResponseAt: '2026-08-31T10:00:00.000Z', resolutionDueAt: 'not-a-date' } }
+    const invalidFirstResponse = { workspaceId: 'ws-a', ticketId: 'ticket-invalid-response', status: 'open' as const, sla: { ...sla, firstResponseDueAt: 'not-a-date' } }
+    expect(planSupportSlaScan([invalidResolution, invalidFirstResponse], new Date('2026-08-31T12:00:00.000Z'))).toEqual([])
+  })
+
   it('schedules the previous month only after its third business-day cutoff', () => {
     expect(planSupportSlaReportSchedule(new Date('2026-09-02T23:59:59.000Z'))).toBeUndefined()
     expect(planSupportSlaReportSchedule(new Date('2026-09-03T00:00:00.000Z'))).toEqual({

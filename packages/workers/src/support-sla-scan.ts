@@ -70,7 +70,11 @@ export function planSupportSlaScan(
     const state = deriveSupportSlaState(ticket.sla, now)
     if (state !== 'at_risk' && state !== 'breached') continue
     const dueAt = state === 'breached' ? ticket.sla.resolutionDueAt : ticket.sla.firstResponseDueAt
-    if (Date.parse(dueAt) > now.getTime()) continue
+    // A malformed deadline is not evidence of an SLA violation. Treat it as
+    // an invalid projection and stop at the worker boundary instead of
+    // emitting an action with a non-deterministic/uncountable due time.
+    const dueAtMs = Date.parse(dueAt)
+    if (!Number.isFinite(dueAtMs) || dueAtMs > now.getTime()) continue
     actions.push({
       workspaceId: ticket.workspaceId,
       ticketId: ticket.ticketId,
