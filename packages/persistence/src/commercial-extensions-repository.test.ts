@@ -45,6 +45,14 @@ describe('model markup policy', () => {
   })
 })
 
+describe('commercial catalog invariants', () => {
+  it('rejects invalid offer windows and coupon percentages before persistence', async () => {
+    const repository = new MemoryCommercialExtensionsRepository()
+    await expect(repository.upsertOffer({ code: 'bad-window', name: '套餐', billingCycle: 'monthly', priceCny: 1, includedStores: 1, includedTasks: 1, active: true, validFrom: '2026-09-02T00:00:00.000Z', validTo: '2026-09-01T00:00:00.000Z', updatedBy: 'ops' })).rejects.toThrow('COMMERCIAL_OFFER_WINDOW_INVALID')
+    await expect(repository.upsertCoupon({ code: 'bad-percent', discountType: 'percent', discountValue: 101, maxRedemptions: 1, active: true, validFrom: '2026-09-01T00:00:00.000Z', updatedBy: 'ops' })).rejects.toThrow('COMMERCIAL_COUPON_VALUES_INVALID')
+  })
+})
+
 describe('scheduled subscription downgrade', () => {
   it('applies a due memory change once and updates plan entitlements together', async () => {
     const repository = new MemoryCommercialExtensionsRepository()
