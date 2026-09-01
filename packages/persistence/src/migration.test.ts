@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(140)
+    expect(latestVersion).toBe(141)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -40,6 +40,7 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(138)?.sql).toContain('nonce_digest_version SMALLINT NOT NULL DEFAULT 1')
     expect(byVersion.get(138)?.sql).toContain('ALTER COLUMN nonce_digest_version SET DEFAULT 2')
     expect(byVersion.get(139)).toMatchObject({ name: 'interactive_confirmation_ticket_reservations' })
+    expect(byVersion.get(141)).toMatchObject({ name: 'interactive_confirmation_ticket_acl_guard' })
     expect(byVersion.get(45)).toMatchObject({ name: 'platform_identity_lifecycle' })
     expect(byVersion.get(45)?.sql).toContain("current_setting('app.platform_scope', true) = 'platform_ops'")
     expect(byVersion.get(46)).toMatchObject({ name: 'model_usage_settlement' })

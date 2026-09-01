@@ -16,6 +16,6 @@ describe('migration 140 interactive confirmation ticket fencing', () => {
     expect(sql).toContain('BEFORE UPDATE OF consumed_at, consumed_operation_id, reservation_id, reservation_token')
     expect(sql).toContain('GRANT UPDATE (consumed_at, consumed_operation_id, reservation_id, reservation_token')
     expect(sql).toContain('REVOKE UPDATE (workspace_id, actor_id, session_id, intent_hash, nonce_hash')
-    expect((await loadMigrations()).at(-1)).toMatchObject({ version: 140, name: 'interactive_confirmation_ticket_fencing' })
+    expect((await loadMigrations()).find(item => item.version === 140)).toMatchObject({ version: 140, name: 'interactive_confirmation_ticket_fencing' })
   })
 })
