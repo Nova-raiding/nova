@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
+import { mergeImageGenerationJobs } from './image-job-list'
 import { merchantConnectionPresentation } from './platform-connection-status'
 import { DetailDecisionContract } from './DetailDecisionContract'
 import {
@@ -5917,8 +5918,9 @@ function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
       void fetchImageGenerationJobs(baseUrl)
         .then(value => {
           if (!active) return
-          lastSuccessfulJobsRef.current = value.items
-          setJobs(value.items)
+          const mergedJobs = mergeImageGenerationJobs(lastSuccessfulJobsRef.current, value.items)
+          lastSuccessfulJobsRef.current = mergedJobs
+          setJobs(mergedJobs)
           setInitialError('')
           setRefreshError('')
         })
