@@ -115,6 +115,24 @@ describe("desktop permission UX", () => {
     expect(readOnly).toContain("identity.update");
   });
 
+  it("keeps a denied action keyboard-focusable with an explicit disabled reason", () => {
+    const authorization = createAuthorizationProjection(session, true);
+    const html = renderToStaticMarkup(
+      <AuthorizationProvider authorization={authorization}>
+        <PermissionGate capability="identity.update" behavior="disabled" disabledReason="请先切换到具备身份治理能力的工作区">
+          <button onClick={() => undefined}>停用身份</button>
+        </PermissionGate>
+      </AuthorizationProvider>,
+    );
+    expect(html).toContain('class="permission-disabled"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('aria-label="操作暂不可用"');
+    expect(html).toContain('aria-describedby=');
+    expect(html).toContain('disabled=""');
+    expect(html).toContain("请先切换到具备身份治理能力的工作区");
+    expect(html).not.toContain('停用身份</button></span>');
+  });
+
   it("explains the server-projected scope in read-only UX", () => {
     const scoped = createAuthorizationProjection({ ...session, effective_permissions: [
       { capability: "identity.update", effect: "deny", scope: { type: "workspace", ids: ["ws_1"] } },
