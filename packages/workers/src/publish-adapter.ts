@@ -32,11 +32,22 @@ export function createPublishHandler(connector: PlatformConnector, inputFor: (pa
         : await connector.createProduct(connectorContext, draft)
       // A 2xx/write receipt is not publication proof. Always query the remote
       // status before exposing a successful publish outcome to the application.
-      const remoteStatus = await connector.queryWrite(connectorContext, { idempotencyKey: input.idempotencyKey, remoteId: receipt.remoteId })
+      let remoteStatus: Awaited<ReturnType<PlatformConnector['queryWrite']>>
+      try {
+        remoteStatus = await connector.queryWrite(connectorContext, { idempotencyKey: input.idempotencyKey, remoteId: receipt.remoteId })
+      } catch (error) {
+        // The write may already have reached the platform. An unstructured
+        // query failure therefore cannot be retried as a fresh write: retain
+        // the idempotency key and require reconciliation to prove absence or
+        // completion before another attempt.
+        const normalized = 'normalized' in Object(error) ? (error as { normalized: ReturnType<PlatformConnector['normalizeError']> }).normalized : connector.normalizeError(error)
+        throw new WorkerFailure({ code: 'PUBLISH_STATUS_UNKNOWN', message: `发布写入已受理，但远端状态查询失败：${normalized.message}`, retryable: false, unknown: true })
+      }
       const result: PublishHandlerResult = { receipt, remoteStatus }
       if (!remoteStatus.found || remoteStatus.state === 'unknown') return { state: 'unknown' as const, value: result }
       return { value: result }
     } catch (error) {
+      if (error instanceof WorkerFailure) throw error
       const normalized = 'normalized' in Object(error) ? (error as { normalized: ReturnType<PlatformConnector['normalizeError']> }).normalized : connector.normalizeError(error)
       throw new WorkerFailure({ code: normalized.code, message: normalized.message, retryable: normalized.retryable, unknown: normalized.unknown })
     }

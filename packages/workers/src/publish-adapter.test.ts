@@ -29,4 +29,27 @@ describe('publish adapter post-write verification', () => {
     expect(job.state).toBe('succeeded')
     expect((job.result as { remoteStatus: { state: string; requestId?: string } }).remoteStatus).toMatchObject({ state: 'published', requestId: 'remote-status-1' })
   })
+
+  it('marks an unstructured post-write query failure unknown without repeating the write', async () => {
+    const base = new FakePlatformConnector(jdProfile, { configured: true, allowFakeWrites: true })
+    const connector = Object.create(base) as typeof base
+    let writes = 0
+    connector.createProduct = async (...args: Parameters<typeof base.createProduct>) => {
+      writes += 1
+      return base.createProduct(...args)
+    }
+    connector.queryWrite = async () => { throw new Error('connection reset by peer') }
+    const worker = createPublishWorker(createPublishHandler(connector, async payload => ({
+      ...payload,
+      accountId: 'acct_1',
+      fields: { title: '京选外套', category: '服饰 > 外套', price: 199, stock: 10 },
+    })))
+    const job = worker.enqueue({ workspaceId: 'ws_1', idempotencyKey: 'publish-query-reset', payload: { taskId: 'task_1', contentVersionId: 'cv_1', platform: 'jd', idempotencyKey: 'publish-query-reset' } })
+
+    await worker.runNext()
+
+    expect(writes).toBe(1)
+    expect(job.state).toBe('unknown')
+    expect(job.lastError).toMatchObject({ code: 'PUBLISH_STATUS_UNKNOWN', unknown: true, retryable: false })
+  })
 })
