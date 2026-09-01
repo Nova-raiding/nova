@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requirePublishAuthorizationSnapshot } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
@@ -56,6 +56,13 @@ describe('central commercial access gate', () => {
     const rates = source.slice(source.indexOf("case 'ops.commercial.rate-cards.list':"), source.indexOf("case 'ops.commercial.service-fulfillment.list':"))
     expect(rates).toContain('persistence.commercialCatalog.listRates()')
     for (const field of ['action_code', 'action_label', 'unit_label', 'points_rule', 'approval_state', 'blocking_reason']) expect(rates).toContain(field)
+  })
+})
+
+describe('model provider outcome mapping', () => {
+  it('keeps relay 503 as an explicit reconciliation blocker with safe evidence', () => {
+    const mapped = modelSettlementDomainError({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', status: 503, providerRequestId: 'relay-503', providerIdempotencyKey: 'model-key', details: { provider_status: 503 } })
+    expect(mapped).toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', status: 503, details: { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, retryable: false, next_action: 'reconcile_model_request', provider_status: 503, provider_request_id: 'relay-503', provider_idempotency_key: 'model-key' } })
   })
 })
 
