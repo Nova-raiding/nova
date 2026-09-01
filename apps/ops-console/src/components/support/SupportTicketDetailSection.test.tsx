@@ -13,6 +13,13 @@ function model(overrides: Partial<SupportDomainModel> = {}): SupportDomainModel 
 }
 
 describe("SupportTicketDetailSection", () => {
+  it("announces detail loading instead of presenting an empty panel", () => {
+    const html = renderToStaticMarkup(<SupportTicketDetailSection model={model({ detailLoading: true })} />);
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain("正在加载工单详情");
+  });
+
   it("renders an accessible empty state before a ticket is selected", () => {
     const html = renderToStaticMarkup(<SupportTicketDetailSection model={model()} />);
     expect(html).toContain("从工单队列中选择一项");
@@ -36,5 +43,24 @@ describe("SupportTicketDetailSection", () => {
     expect(html).toContain("不可变事件历史");
     expect(html).toContain("版本 2");
     expect(html).toContain("创建工单 · #1");
+  });
+
+  it("renders a focusable, actionable error without losing the selected ticket", () => {
+    const html = renderToStaticMarkup(<SupportTicketDetailSection model={model({
+      error: "权限已失效，请刷新权限后重试。",
+      selected: {
+        ticket: {
+          id: "ticket_1", workspaceId: "ws_1", ticketNumber: "SUP-001", subject: "支付异常", description: "客户付款未到账",
+          status: "in_progress", priority: "urgent", customerId: "customer_1", customerName: "云朵商家", tags: [], revision: 2,
+          assignedTo: undefined, createdBy: "support_1", createdAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:01:00.000Z",
+          sla: { policy: { version: 1, calendar: "business_weekday_utc", firstResponseMinutes: 120, resolutionMinutes: 480 }, firstResponseDueAt: "2026-08-31T11:00:00.000Z", resolutionDueAt: "2026-09-01T17:00:00.000Z", pausedMinutes: 0, state: "on_track" },
+        }, events: [],
+      },
+    })} />);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain("权限已失效");
+    expect(html).toContain("关闭提示");
+    expect(html).toContain("SUP-001");
   });
 });

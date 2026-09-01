@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Empty, Form, Input, Modal, Select, Space, Spin, Tag, Timeline, Typography } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SupportTicketEventContract, SupportTicketStatus } from "../../../../../packages/contracts/src/ops/support.js";
 import type { SupportDomainModel } from "../../hooks/useSupportDomain.js";
 
@@ -22,8 +22,14 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [visibility, setVisibility] = useState<"internal" | "customer">("internal");
+  const [actionError, setActionError] = useState("");
+  const actionErrorRef = useRef<HTMLDivElement>(null);
 
-  if (model.detailLoading) return <Card title="工单详情"><Spin description="正在加载工单详情"><div style={{ minHeight: 160 }} /></Spin></Card>;
+  useEffect(() => {
+    if (actionError || model.error) actionErrorRef.current?.focus();
+  }, [actionError, model.error]);
+
+  if (model.detailLoading) return <Card title="工单详情" aria-busy="true"><Spin description="正在加载工单详情"><div role="status" aria-live="polite" style={{ minHeight: 160 }}>正在加载工单详情</div></Spin></Card>;
   if (!model.selected) return <Card title="工单详情"><Empty description="从工单队列中选择一项查看完整事件历史" /></Card>;
   const { ticket, events } = model.selected;
   const sla = ticket.sla;
@@ -32,7 +38,13 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
     <Card
       title={`${ticket.ticketNumber} · ${ticket.subject}`}
       extra={<Button onClick={model.clearSelection}>关闭详情</Button>}
+      aria-busy={model.mutating || undefined}
     >
+      {model.error || actionError ? <div ref={actionErrorRef} tabIndex={-1} role="alert" aria-labelledby="support-detail-error-title">
+        <Alert type="error" showIcon message={<span id="support-detail-error-title">工单操作失败</span>}
+          description={actionError || model.error}
+          action={<Button style={{ minHeight: 44 }} onClick={() => setActionError("")}>关闭提示</Button>} />
+      </div> : null}
       <Space wrap style={{ marginBottom: 16 }}>
         <Tag>{ticket.status}</Tag><Tag color={ticket.priority === "urgent" ? "red" : "blue"}>{ticket.priority}</Tag>
         {sla ? <Tag color={slaStateColors[sla.state]}>{slaStateLabels[sla.state]}</Tag> : <Tag>旧工单待回填 SLA</Tag>}
@@ -64,17 +76,17 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
         }))} />
       )}
 
-      <Modal title="分配工单" open={assignOpen} confirmLoading={model.mutating} okButtonProps={{ disabled: !assignee.trim() }} onCancel={() => setAssignOpen(false)} onOk={() => void model.assign(assignee).then(() => { setAssignee(""); setAssignOpen(false); }).catch(() => undefined)}>
+      <Modal title="分配工单" open={assignOpen} confirmLoading={model.mutating} okButtonProps={{ disabled: !assignee.trim() }} onCancel={() => setAssignOpen(false)} onOk={() => { setActionError(""); void model.assign(assignee).then(() => { setAssignee(""); setAssignOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "分配工单失败，请重试。")); }}>
         <label htmlFor="support-assignee">负责人 ID</label>
         <Input id="support-assignee" value={assignee} maxLength={256} onChange={event => setAssignee(event.target.value)} autoFocus />
       </Modal>
-      <Modal title="变更工单状态" open={transitionOpen} confirmLoading={model.mutating} okButtonProps={{ disabled: reason.trim().length < 3 }} onCancel={() => setTransitionOpen(false)} onOk={() => void model.transition(status, reason).then(() => { setReason(""); setTransitionOpen(false); }).catch(() => undefined)}>
+      <Modal title="变更工单状态" open={transitionOpen} confirmLoading={model.mutating} okButtonProps={{ disabled: reason.trim().length < 3 }} onCancel={() => setTransitionOpen(false)} onOk={() => { setActionError(""); void model.transition(status, reason).then(() => { setReason(""); setTransitionOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "变更工单状态失败，请重试。")); }}>
         <Form layout="vertical">
           <Form.Item label="目标状态" required><Select value={status} options={transitionOptions} onChange={setStatus} /></Form.Item>
           <Form.Item label="变更原因" required><Input.TextArea value={reason} rows={3} maxLength={1000} showCount onChange={event => setReason(event.target.value)} /></Form.Item>
         </Form>
       </Modal>
-      <Modal title="添加工单备注" open={commentOpen} confirmLoading={model.mutating} okButtonProps={{ disabled: !comment.trim() }} onCancel={() => setCommentOpen(false)} onOk={() => void model.comment(comment, visibility).then(() => { setComment(""); setCommentOpen(false); }).catch(() => undefined)}>
+      <Modal title="添加工单备注" open={commentOpen} confirmLoading={model.mutating} okButtonProps={{ disabled: !comment.trim() }} onCancel={() => setCommentOpen(false)} onOk={() => { setActionError(""); void model.comment(comment, visibility).then(() => { setComment(""); setCommentOpen(false); }).catch(error => setActionError(error instanceof Error ? error.message : "添加备注失败，请重试。")); }}>
         <Form layout="vertical">
           <Form.Item label="可见范围" required><Select value={visibility} onChange={setVisibility} options={[{ value: "internal", label: "仅内部" }, { value: "customer", label: "客户可见" }]} /></Form.Item>
           <Form.Item label="备注内容" required><Input.TextArea value={comment} rows={5} maxLength={10000} showCount onChange={event => setComment(event.target.value)} /></Form.Item>
