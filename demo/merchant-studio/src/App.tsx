@@ -5976,6 +5976,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const selectionErrorRef = useRef<HTMLDivElement>(null)
   const imageJobReadErrorRef = useRef<HTMLDivElement>(null)
   const imageJobConfigurationErrorRef = useRef<HTMLDivElement>(null)
+  const retryErrorFocusRequestedRef = useRef(false)
   const [retrying, setRetrying] = useState(false)
   const pollDelayRef = useRef(IMAGE_JOB_INITIAL_POLL_DELAY_MS)
   // A safe retry creates a new durable job. Keep polling that returned job
@@ -5991,7 +5992,12 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
         setLoading(true)
         const next = await fetchImageGenerationJob(baseUrl, currentJobId)
         shouldPoll = shouldPollImageJob(next)
-        if (active) { setJob(next); setError(''); pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'success') }
+        if (active) {
+          retryErrorFocusRequestedRef.current = false
+          setJob(next)
+          setError('')
+          pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'success')
+        }
       } catch (cause) {
         shouldPoll = true
         pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'error')
@@ -6016,7 +6022,8 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   }, [baseUrl, currentJobId, reload, job?.state])
   useEffect(() => { setCandidatePage(1) }, [currentJobId])
   useEffect(() => {
-    if (error && !job && !loading) {
+    if (error && !loading && (!job || retryErrorFocusRequestedRef.current)) {
+      retryErrorFocusRequestedRef.current = false
       window.requestAnimationFrame(() => imageJobReadErrorRef.current?.focus())
     }
   }, [error, job, loading])
@@ -6064,7 +6071,10 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     if (!baseUrl || !job || !imageGenerationRetryAllowed({ state: job.state, executionState: job.executionState, nextActionAllowed: job.nextAction?.allowed })) return
     setRetrying(true)
     try { const next = await retryImageGeneration(baseUrl, job.jobId, job.revision); setJob(current => current ? { ...current, jobId: next.job_id, state: next.state, archiveState: 'pending', errorCode: null, errorMessage: null } : current); setReload(value => value + 1) }
-    catch (cause) { setError(describeApiError(cause)) }
+    catch (cause) {
+      retryErrorFocusRequestedRef.current = true
+      setError(describeApiError(cause))
+    }
     finally { setRetrying(false) }
   }
   if (!baseUrl) return <div ref={imageJobConfigurationErrorRef} className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-title" aria-describedby="image-job-config-description">

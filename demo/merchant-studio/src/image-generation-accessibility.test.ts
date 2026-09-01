@@ -25,6 +25,13 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('ref={selectionErrorRef} tabIndex={selectionState === \'failed\' ? -1 : undefined}')
   })
 
+  it('moves focus to a user-triggered safe-retry error while retaining the trusted job', () => {
+    expect(app).toContain('const retryErrorFocusRequestedRef = useRef(false)')
+    expect(app).toContain('retryErrorFocusRequestedRef.current = true')
+    expect(app).toContain('(!job || retryErrorFocusRequestedRef.current)')
+    expect(app).toContain('retryErrorFocusRequestedRef.current = false')
+  })
+
   it('keeps the initial async wait visibly occupied without adding duplicate announcements', () => {
     expect(app).toContain('{!job && loading && <div className="image-candidate-loading" aria-hidden="true">')
     expect(app).toContain('image-candidate-skeleton-${slot}')
