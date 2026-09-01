@@ -1047,6 +1047,8 @@ describe('security and access-control acceptance gates', () => {
     expect(service.imageGenerationJobs.get(generatedJob.id)).toEqual(generatedJobBeforeDeniedSelection)
     const hiddenGeneratedJob = service.enqueueImageGeneration({ workspaceId, productId: hiddenSource.id, idempotencyKey: `hidden-brand-image-${workspaceId}`, count: 1 })
     const hiddenGeneratedJobBeforeDeniedSelection = structuredClone(hiddenGeneratedJob)
+    expect((await mcp(editorHeaders, 6.605, 'catalog.image.get', { job_id: generatedJob.id })).error).toBeNull()
+    expect((await mcp(editorHeaders, 6.606, 'catalog.image.get', { job_id: hiddenGeneratedJob.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 6.61, 'catalog.image.select', { job_id: hiddenGeneratedJob.id, visual_ref: `dvis_${'C'.repeat(24)}`, expected_revision: String(hiddenGeneratedJob.revision), idempotency_key: `hidden-brand-select-${workspaceId}`, reason: '不应选择隐藏品牌候选图', confirmation_ticket_nonce_hash: 'b'.repeat(64), confirmation_ticket_intent_hash: 'c'.repeat(64) })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect(service.imageGenerationJobs.get(hiddenGeneratedJob.id)).toEqual(hiddenGeneratedJobBeforeDeniedSelection)
     const imageJobsBeforeDeniedRetries = structuredClone([...service.imageGenerationJobs.entries()])

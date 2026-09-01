@@ -4643,7 +4643,12 @@ async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<Retur
   }
   const productId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : undefined
   const imageJobId = typeof params.job_id === 'string' && params.job_id.trim() ? params.job_id.trim() : undefined
-  const imageJob = imageJobId ? service.imageGenerationJobs.get(imageJobId) : undefined
+  const visualRef = typeof params.visual_ref === 'string' && params.visual_ref.trim() ? params.visual_ref.trim() : undefined
+  const imageJob = imageJobId
+    ? service.imageGenerationJobs.get(imageJobId)
+    : visualRef
+      ? [...service.imageGenerationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.outputs?.some(output => output.visualRef === visualRef))
+      : undefined
   const product = productId
     ? service.products.get(productId)
     : imageJob?.workspaceId === workspaceId
