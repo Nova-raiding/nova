@@ -95,6 +95,21 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_1')?.publishedAt).toBeTruthy()
   })
 
+  it('does not re-run a duplicate transport delivery after the durable outcome is acknowledged', async () => {
+    const store = new Store(event({ id: 'evt_duplicate' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const handler = vi.fn(async () => ({ value: 'ok' }))
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler)
+    await dispatcher.restore('ws_1')
+    const first = await dispatcher.dispatchOnce()
+    expect(first.state).toBe('succeeded')
+
+    // Simulate a duplicate transport delivery carrying the pre-ack claim.
+    await queue.enqueue({ id: 'evt_duplicate', value: { ...event({ id: 'evt_duplicate' }), leaseToken: store.events.get('evt_duplicate')?.leaseToken, leaseUntil: store.events.get('evt_duplicate')?.leaseUntil } })
+    const duplicate = await dispatcher.dispatchOnce()
+    expect(duplicate.state).toBe('dead_letter')
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
   it('fails closed when persistence returns an event outside the requested RLS workspace', async () => {
     const store = new Store(event({ workspaceId: 'ws_other' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const dispatcher = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }))

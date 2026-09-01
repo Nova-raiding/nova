@@ -202,7 +202,15 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     }
 
     try {
-      await this.store.validateLease(event.workspaceId, event.id, leaseToken, new Date(this.now()).toISOString())
+      const leasedEvent = await this.store.validateLease(event.workspaceId, event.id, leaseToken, new Date(this.now()).toISOString())
+      // A transport can deliver a duplicate after the first delivery was
+      // acknowledged (for example, when a Redis claim was copied before the
+      // processing entry was removed). The database is authoritative: do not
+      // invoke the handler again once the durable outcome is already recorded.
+      if (leasedEvent.publishedAt || leasedEvent.unknownAt) {
+        await this.queue.ack(message)
+        return { state: 'dead_letter', event: leasedEvent }
+      }
     } catch (leaseError) {
       return this.handleLeaseError(event, message, leaseError)
     }
