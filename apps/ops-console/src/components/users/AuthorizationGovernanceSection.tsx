@@ -26,6 +26,8 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
   const [targetWorkspaceId, setTargetWorkspaceId] = useState("");
   const [roles, setRoles] = useState<RoleList>();
   const [grants, setGrants] = useState<GrantList>();
+  const [roleLoadError, setRoleLoadError] = useState<unknown>();
+  const [grantLoadError, setGrantLoadError] = useState<unknown>();
   const [loading, setLoading] = useState(false);
   const [roleSubmitting, setRoleSubmitting] = useState(false);
   const [roleSubmitError, setRoleSubmitError] = useState<unknown>();
@@ -38,7 +40,10 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     let reason = "";
     Modal.confirm({
       title,
-      content: <Input.TextArea autoFocus rows={3} placeholder="必填：说明撤销原因（至少 3 个字符）" onChange={(event) => { reason = event.target.value; }} />,
+      content: <label style={{ display: "block" }}>
+        <span>撤销原因（至少 3 个字符）</span>
+        <Input.TextArea autoFocus rows={3} aria-label="撤销原因" placeholder="说明撤销原因，包含工单或证据编号" onChange={(event) => { reason = event.target.value; }} />
+      </label>,
       okText: "确认撤销",
       okButtonProps: { danger: true },
       cancelText: "取消",
@@ -62,15 +67,17 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
   const loadRoles = async () => {
     if (!subjectIdentityId.trim()) return;
     setLoading(true);
+    setRoleLoadError(undefined);
     try { setRoles(await rpc<RoleList>("ops.authorization.roles.list", { subject_identity_id: subjectIdentityId.trim() }) ?? undefined); }
-    catch (error) { message.error(error instanceof Error ? error.message : "平台角色读取失败"); }
+    catch (error) { setRoleLoadError(error); }
     finally { setLoading(false); }
   };
   const loadGrants = async () => {
     if (!subjectIdentityId.trim() || !targetWorkspaceId.trim()) return;
     setLoading(true);
+    setGrantLoadError(undefined);
     try { setGrants(await rpc<GrantList>("ops.authorization.grants.list", { subject_identity_id: subjectIdentityId.trim(), target_workspace_id: targetWorkspaceId.trim() }) ?? undefined); }
-    catch (error) { message.error(error instanceof Error ? error.message : "JIT 授权读取失败"); }
+    catch (error) { setGrantLoadError(error); }
     finally { setLoading(false); }
   };
 
@@ -81,13 +88,14 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
       ...(canReadRoles ? [{ key: "roles", label: "平台角色", children: <Space orientation="vertical" size="middle" className="full-width">
         <Space wrap>
           <Input value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="目标持久身份 ID" aria-label="平台角色目标身份 ID" style={{ width: 320 }} />
-          <Button onClick={() => void loadRoles()} loading={loading} disabled={!subjectIdentityId.trim()}>读取当前分配</Button>
+          <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={loading} disabled={!subjectIdentityId.trim()}>读取当前分配</Button>
         </Space>
+        <OpsPageError error={roleLoadError} onRetry={() => void loadRoles()} />
         <Table<RoleAssignment> size="small" rowKey="id" loading={loading} dataSource={roles?.assignments ?? []} pagination={false} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[
           { title: "角色", dataIndex: "role", render: (value: string) => <Tag color="blue">{value}</Tag> },
           { title: "到期", dataIndex: "expiresAt", render: (value?: string) => value ?? "长期" },
           { title: "修订", dataIndex: "revision" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" disabled={!canManageRoles} onClick={() => requestRevocationReason(`撤销 ${row.role}`, async (reason) => { await rpc("ops.authorization.role.revoke", { assignment_id: row.id, subject_identity_id: row.subjectIdentityId, expected_revision: String(row.revision), expected_authorization_revision: String(roles?.authorization_revision ?? row.authorizationRevision), reason }); await loadRoles(); })}>撤销</Button> },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles} onClick={() => requestRevocationReason(`撤销 ${row.role}`, async (reason) => { await rpc("ops.authorization.role.revoke", { assignment_id: row.id, subject_identity_id: row.subjectIdentityId, expected_revision: String(row.revision), expected_authorization_revision: String(roles?.authorization_revision ?? row.authorizationRevision), reason }); await loadRoles(); })}>撤销</Button> },
         ]} />
         {canManageRoles && <>
           <OpsPageError error={roleSubmitError} />
@@ -109,22 +117,23 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           <Form.Item name="role" rules={[{ required: true }]}><Select placeholder="选择平台角色" style={{ width: 190 }} options={platformRoles.map(value => ({ value, label: value }))} /></Form.Item>
           <Form.Item name="expires_at"><Input placeholder="可选：ISO 到期时间" style={{ width: 220 }} /></Form.Item>
           <Form.Item name="reason" rules={[{ required: true, min: 3 }]}><Input placeholder="分配原因" style={{ width: 220 }} /></Form.Item>
-          <Button type="primary" htmlType="submit" loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || !subjectIdentityId.trim()}>分配角色</Button>
+          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={roleSubmitting} aria-busy={roleSubmitting} disabled={roleSubmitting || !subjectIdentityId.trim()}>分配角色</Button>
         </Form></>}
       </Space> }] : []),
       ...(canReadGrants ? [{ key: "grants", label: "JIT 授权", children: <Space orientation="vertical" size="middle" className="full-width">
         <Space wrap>
           <Input value={subjectIdentityId} onChange={(event) => setSubjectIdentityId(event.target.value)} placeholder="目标持久身份 ID" aria-label="JIT 目标身份 ID" style={{ width: 300 }} />
           <Input value={targetWorkspaceId} onChange={(event) => setTargetWorkspaceId(event.target.value)} placeholder="JIT 目标工作区 ID" aria-label="JIT 目标工作区 ID" style={{ width: 260 }} />
-          <Button onClick={() => void loadGrants()} loading={loading} disabled={!subjectIdentityId.trim() || !targetWorkspaceId.trim()}>读取有效 JIT</Button>
+          <Button style={{ minHeight: 44 }} onClick={() => void loadGrants()} loading={loading} disabled={!subjectIdentityId.trim() || !targetWorkspaceId.trim()}>读取有效 JIT</Button>
         </Space>
+        <OpsPageError error={grantLoadError} onRetry={() => void loadGrants()} />
         <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={false} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
           { title: "模式", dataIndex: "accessMode", render: (value: string) => <Tag color={value === "write" ? "volcano" : "gold"}>{value}</Tag> },
           { title: "能力", dataIndex: "capabilities", render: (value: string[]) => <Typography.Text>{value.join(", ")}</Typography.Text> },
           { title: "工单", dataIndex: "ticketRef" },
           { title: "使用", render: (_value, row) => `${row.useCount}/${row.maxUses}` },
           { title: "到期", dataIndex: "expiresAt" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" disabled={!canManageGrants} onClick={() => requestRevocationReason(`立即撤销 ${row.id}`, async (reason) => { await rpc("ops.authorization.grant.revoke", { grant_id: row.id, subject_identity_id: subjectIdentityId.trim(), expected_revision: String(row.revision), expected_authorization_revision: String(grants?.authorization_revision ?? row.authorizationRevision), reason }); await loadGrants(); model.clearAuthorizationScopedData(); await model.load(); })}>立即撤销</Button> },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants} onClick={() => requestRevocationReason(`立即撤销 ${row.id}`, async (reason) => { await rpc("ops.authorization.grant.revoke", { grant_id: row.id, subject_identity_id: subjectIdentityId.trim(), expected_revision: String(row.revision), expected_authorization_revision: String(grants?.authorization_revision ?? row.authorizationRevision), reason }); await loadGrants(); model.clearAuthorizationScopedData(); await model.load(); })}>立即撤销</Button> },
         ]} />
         {canManageGrants && <>
           <OpsPageError error={grantSubmitError} />
@@ -154,7 +163,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             <Col span={8}><Form.Item name="expires_at" label="到期时间（读≤15m / 写≤5m）" rules={[{ required: true }]}><Input /></Form.Item></Col>
             <Col span={8}><Form.Item name="reason" label="授权原因" rules={[{ required: true, min: 3 }]}><Input /></Form.Item></Col>
           </Row>
-          <Button type="primary" htmlType="submit" loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
+          <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
         </Form></>}
       </Space> }] : []),
     ]} />
