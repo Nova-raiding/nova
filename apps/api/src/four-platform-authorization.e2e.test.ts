@@ -27,21 +27,8 @@ async function call(base: string, workspace: string, method: string, params: Rec
   return response.json() as Promise<JsonRpcResponse>
 }
 
-function reviewedFixtureBody(product: { id: string; version?: number }, platform: string) {
-  const factSourceId = `product:${product.id}:v${product.version ?? 1}`
-  return {
-    title: `${platform} 已确认商品`, detail: '根据已确认商品参数生成。', sellingPoints: ['商品参数已确认'],
-    modules: [{
-      key: 'product_facts', title: '商品事实', purpose: '回答商品参数问题', body: '商品参数已确认。', factSourceIds: [factSourceId], contentKind: 'fact',
-      decisionContract: {
-        buyerQuestion: '商品有哪些已确认参数？', pageTask: '展示已确认商品参数',
-        claim: { text: '商品参数已确认。', factSourceIds: [factSourceId], platforms: [platform], limitations: ['仅适用于当前商品快照'] },
-        evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
-        visualContract: { requiredElements: ['商品'], protectedElements: ['商品外观'], prohibitedImplications: ['不得虚构效果'], accessibilityText: '商品图' },
-        priority: 1, optional: false,
-      },
-    }],
-  }
+async function grantCommercialAccess(workspace: string) {
+  await (await import('./server.js')).grantCreativePointsForTests(workspace)
 }
 
 describe('four-platform fixture authorization lifecycle', () => {
@@ -66,6 +53,7 @@ describe('four-platform fixture authorization lifecycle', () => {
   it('authorizes, syncs, blocks after revoke, and recovers after reauthorization for every profile', async () => {
     const base = await start()
     const workspace = 'ws_four_platform_authorization_e2e'
+    await grantCommercialAccess(workspace)
     const platforms = ['jd', 'taobao', 'tmall', 'pinduoduo'] as const
 
     for (const platform of platforms) {
@@ -97,6 +85,7 @@ describe('four-platform fixture authorization lifecycle', () => {
   it('keeps two fixture stores on the same platform isolated', async () => {
     const base = await start()
     const workspace = 'ws_same_platform_multiple_stores_e2e'
+    await grantCommercialAccess(workspace)
     const north = await call(base, workspace, 'platform.connect', { platform: 'taobao', store_key: 'north' })
     const south = await call(base, workspace, 'platform.connect', { platform: 'taobao', store_key: 'south' })
     const northAccount = north.data?.result?.account
@@ -121,7 +110,7 @@ describe('four-platform fixture authorization lifecycle', () => {
     expect(aggregate.data?.result?.products).toHaveLength(2)
   })
 
-  it('keeps first-run read-only sync available before wallet recharge', async () => {
+  it('blocks first-run reads and sync when creative points are unavailable', async () => {
     const base = await start()
     const workspace = `ws_zero_balance_sync_${Date.now()}`
     const account = (await import('./server.js')).service.registerPlatformAccount({
@@ -137,13 +126,13 @@ describe('four-platform fixture authorization lifecycle', () => {
       await (await import('./server.js')).workspaceMembers.upsert({ workspaceId: workspace, externalSubject: 'zero-balance-user', displayName: '零余额测试', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
       const auth = { authorization: 'Bearer zero-balance-token' }
       const statusBefore = await call(base, workspace, 'billing.status', {}, auth)
-      expect(statusBefore.data?.result).toMatchObject({ balance_cny: '0.00' })
+      expect(statusBefore.data?.result).toMatchObject({ schema_version: 'commercial.billing-status.v2', balance_state: 'unknown', available_points: null, allowed: false })
 
       const synced = await call(base, workspace, 'catalog.sync.start', { platform: 'taobao', account_id: account.id, mode: 'full' }, auth)
-      expect(synced.error).toBeNull()
-      expect(synced.data?.result).toMatchObject({ state: 'succeeded', simulated: true })
+      expect(synced.error).toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE', details: expect.objectContaining({ balance_state: 'unknown', available_points: null }) })
 
       const transactions = await call(base, workspace, 'billing.transactions', {}, auth)
+      expect(transactions.error).toBeNull()
       expect(transactions.data?.result?.transactions ?? []).toEqual([])
     } finally {
       vi.unstubAllEnvs()
@@ -153,6 +142,7 @@ describe('four-platform fixture authorization lifecycle', () => {
   it('covers the XHS and Douyin fixture authorization and sync lifecycle', async () => {
     const base = await start()
     const workspace = `ws_social_authorization_${Date.now()}`
+    await grantCommercialAccess(workspace)
     for (const platform of ['xiaohongshu', 'douyin'] as const) {
       const connected = await call(base, workspace, 'platform.connect', { platform })
       expect(connected.error).toBeNull()
@@ -169,38 +159,20 @@ describe('four-platform fixture authorization lifecycle', () => {
     }
   })
 
-  it('settles platform and bulk-sync addon units on their real API actions', async () => {
+  it('does not let legacy subscription and addon flows unlock business access', async () => {
     const base = await start()
     const workspace = 'ws_entitlement_action_e2e'
     const opsHeaders = { 'x-actor-id': 'operator_1' }
-    const platformAddon = await call(base, workspace, 'ops.commercial.addon.upsert', { code: 'taobao_platform_pack', name: '平台连接包', kind: 'platform', price_cny: '19.00', units: '1', reason: '权益消费回归' }, opsHeaders)
-    expect(platformAddon.error == null).toBe(true)
-    const syncAddon = await call(base, workspace, 'ops.commercial.addon.upsert', { code: 'bulk_sync_pack', name: '同步包', kind: 'bulk_sync', price_cny: '29.00', units: '1', reason: '权益消费回归' }, opsHeaders)
-    expect(syncAddon.error == null).toBe(true)
-    const offer = await call(base, workspace, 'ops.commercial.offer.upsert', { code: 'entitlement_test', name: '权益测试套餐', billing_cycle: 'monthly', price_cny: '99.00', included_stores: '1', included_tasks: '10', reason: '权益消费回归' }, opsHeaders)
-    expect(offer.error == null).toBe(true)
     const orderResponse = await call(base, workspace, 'subscription.order.create', { plan_code: 'entitlement_test', billing_cycle: 'monthly', channel: 'alipay', addon_codes_json: '["taobao_platform_pack","bulk_sync_pack"]', idempotency_key: 'entitlement-order-1' }, opsHeaders)
-    expect(orderResponse.error == null).toBe(true)
-    const order = orderResponse.data?.result
-    const paid = await fetch(`${base}/v1/subscriptions/callback/alipay`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: workspace, order_id: order?.orderNo, provider_trade_id: 'entitlement-trade-1', amount_fen: 14700, state: 'SUCCESS' }) })
-    expect((await paid.json()).error == null).toBe(true)
+    expect(orderResponse.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
     const connected = await call(base, workspace, 'platform.connect', { platform: 'taobao' })
-    expect(connected.error == null).toBe(true)
-    const accountId = connected.data?.result?.account?.id
-    const synced = await call(base, workspace, 'catalog.sync.start', { platform: 'taobao', account_id: accountId, mode: 'full' })
-    expect(synced.error == null).toBe(true)
-    const reconciliation = await call(base, workspace, 'billing.reconciliation')
-    expect(reconciliation.data?.result?.action_ledger?.by_kind_settlement_state).toEqual(expect.objectContaining({ 'platform_connect:entitlement:settled': 1, 'catalog_sync:entitlement:settled': 1 }))
-    const subscription = await call(base, workspace, 'subscription.get')
-    expect(subscription.data?.result?.entitlements).toEqual(expect.arrayContaining([
-      expect.objectContaining({ addonCode: 'taobao_platform_pack', usedUnits: 1, remainingUnits: 0 }),
-      expect.objectContaining({ addonCode: 'bulk_sync_pack', usedUnits: 1, remainingUnits: 0 }),
-    ]))
+    expect(connected.error).toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE' })
   })
 
   it('returns a selectable store context after a browser OAuth callback', async () => {
     const base = await start()
     const workspace = 'ws_browser_callback_store_context_e2e'
+    await grantCommercialAccess(workspace)
     const state = (await import('./server.js')).oauthStates.issue({ workspaceId: workspace, actorId: 'actor_demo', platform: 'taobao' })
     const response = await fetch(`${base}/v1/oauth/callback/taobao?state=${encodeURIComponent(state)}&code=fixture`)
     const body = await response.json() as { data?: { accountId?: string; store?: { platform: string; accountId: string }; nextActions?: string[] }; error?: unknown }
@@ -219,6 +191,7 @@ describe('four-platform fixture authorization lifecycle', () => {
   it('returns a safe browser continuation page when OAuth requests HTML', async () => {
     const base = await start()
     const workspace = 'ws_browser_callback_html_e2e'
+    await grantCommercialAccess(workspace)
     const state = (await import('./server.js')).oauthStates.issue({ workspaceId: workspace, actorId: 'actor_demo', platform: 'taobao' })
     const success = await fetch(`${base}/v1/oauth/callback/taobao?state=${encodeURIComponent(state)}&code=fixture`, { headers: { accept: 'text/html' } })
     const successHtml = await success.text()
@@ -238,9 +211,10 @@ describe('four-platform fixture authorization lifecycle', () => {
     expect(failureHtml).not.toContain('unused')
   })
 
-  it('runs all six platforms from mock authorization through reviewed content and simulated publish receipt', async () => {
+  it('keeps charged generation disabled across all six platforms even after access is granted', async () => {
     const base = await start()
     const workspace = 'ws_six_platform_complete_flow_e2e'
+    await grantCommercialAccess(workspace)
     const platforms = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] as const
     const accountIds = new Map<(typeof platforms)[number], string>()
 
@@ -258,50 +232,7 @@ describe('four-platform fixture authorization lifecycle', () => {
       expect(confirmedFacts.data?.result).toMatchObject({ factsConfirmed: true })
 
       const image = await call(base, workspace, 'catalog.image.generate', { product_id: product.id, count: '1', direction: '平台主图' })
-      expect(image.data?.result).toMatchObject({ images: [expect.stringMatching(/^data:image\/webp;base64,/u)] })
-      const imageReview = await call(base, workspace, 'catalog.image.review', { product_id: product.id, images: JSON.stringify(image.data?.result?.images) })
-      expect(imageReview.data?.result).toMatchObject({ findings: [] })
-
-      const created = await call(base, workspace, 'task.create', { product_id: product.id, platform, account_id: account.id })
-      const task = created.data?.result
-      if (!task) throw new Error(`${platform} fixture task was not created`)
-      expect(task).toMatchObject({ productId: product.id, platform, accountId: account.id })
-      if (product.skus?.length > 1) {
-        const answered = await call(base, workspace, 'task.answer', { task_id: task.id, answers_json: JSON.stringify({ sku_id: product.skus[0].id }), expected_version: String(task.version) })
-        expect(answered.data?.result).toMatchObject({ answers: { sku_id: product.skus[0].id } })
-      }
-      const selected = await call(base, workspace, 'task.select_direction', { task_id: task.id, direction_id: 'A' })
-      expect(selected.data?.result).toMatchObject({ state: 'direction_selected' })
-      const plan = await call(base, workspace, 'task.plan.confirm', { task_id: task.id, actor_id: 'fixture-merchant', expected_version: String(selected.data?.result?.version ?? 2) })
-      expect(plan.data?.result).toMatchObject({ state: 'plan_confirmed' })
-
-      const generated = await call(base, workspace, 'content.codex.commit', { task_id: task.id, body_json: JSON.stringify(reviewedFixtureBody(product, platform)) })
-      const content = generated.data?.result
-      if (!content) throw new Error(`${platform} fixture content was not generated`)
-      expect(content).toMatchObject({ taskId: task.id })
-      const reviewed = await call(base, workspace, 'content.review', { content_version_id: content.id })
-      expect(reviewed.data?.result).toMatchObject({ blocking: false })
-      const versions = await call(base, workspace, 'content.versions', { task_id: task.id })
-      expect(versions.data?.result).toHaveLength(1)
-      const diff = await call(base, workspace, 'content.diff', { content_version_id: content.id })
-      expect(diff.data?.result).toMatchObject({ toVersionId: content.id })
-      const exported = await call(base, workspace, 'content.export', { content_version_id: content.id, format: 'manifest' })
-      expect(exported.data?.result).toMatchObject({ fileName: 'manifest-v1.json' })
-      const approved = await call(base, workspace, 'content.approve', { task_id: task.id, content_version_id: content.id })
-      expect(approved.data?.result?.task).toMatchObject({ state: 'approved' })
-
-      const preview = await call(base, workspace, 'publish.prepare', { task_id: task.id })
-      expect(preview.data?.result).toMatchObject({ task: { id: task.id, platform }, operation: 'update' })
-      const publish = await call(base, workspace, 'publish.confirm', {
-        task_id: task.id,
-        content_version_id: content.id,
-        confirmation_hash: preview.data?.result?.confirmationHash,
-        remote_snapshot_hash: preview.data?.result?.remoteSnapshotHash,
-      }, { 'idempotency-key': `six-platform-${platform}-publish` })
-      expect(publish.data?.result).toMatchObject({ state: 'queued', platform })
-      await new Promise(resolve => setTimeout(resolve, 100))
-      const receipt = await call(base, workspace, 'publish.get', { publish_job_id: publish.data?.result?.id })
-      expect(receipt.data?.result).toMatchObject({ state: 'submitted', remoteState: 'submitted', remoteSimulated: true })
+      expect(image.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
     }
 
     const revoked = await call(base, workspace, 'platform.revoke', { platform: 'jd', account_id: accountIds.get('jd') })
@@ -332,9 +263,9 @@ describe('four-platform fixture authorization lifecycle', () => {
       comparisonAvailable: false,
       period: { activityFiltered: true, productRisksAreCurrentSnapshot: true },
       productSummary: { total: 7 },
-      taskFunnel: { publishing: 6 },
-      jobs: { sync: 6, publish: 6 },
-      dataCoverage: { products: 7, tasks: 6, syncJobs: 6, publishJobs: 6, fixtureDataPresent: true },
+      taskFunnel: {},
+      jobs: { sync: 6, publish: 0 },
+      dataCoverage: { products: 7, tasks: 0, syncJobs: 6, publishJobs: 0, fixtureDataPresent: true },
       unboundLocalData: { products: 1, tasks: 0, publishJobs: 0 },
       riskSummary: { returned: 1, truncated: true, limit: 1 },
     })

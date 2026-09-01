@@ -50,7 +50,7 @@ const limitValue = (value?: number) => {
   return limit
 }
 const validate = (input: PlatformAuthorizationAuditInput): PlatformAuthorizationAudit => ({
-  id: input.id ? text(input.id, 'PLATFORM_AUTHZ_AUDIT_ID_INVALID') : `platform_authz_audit_${randomUUID()}`,
+  id: input.id ? text(input.id, 'PLATFORM_AUTHZ_AUDIT_ID_INVALID') : randomUUID(),
   decisionId: text(input.decisionId, 'PLATFORM_AUTHZ_AUDIT_DECISION_ID_REQUIRED'),
   policyVersion: text(input.policyVersion, 'PLATFORM_AUTHZ_AUDIT_POLICY_VERSION_REQUIRED', 128),
   actorId: text(input.actorId, 'PLATFORM_AUTHZ_AUDIT_ACTOR_ID_REQUIRED'),

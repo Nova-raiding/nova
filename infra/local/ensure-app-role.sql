@@ -28,6 +28,9 @@ BEGIN
   IF to_regclass('public.authorization_revisions') IS NOT NULL THEN
     EXECUTE 'REVOKE ALL ON authorization_revisions, authorization_execution_reservations, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app';
   END IF;
+  IF to_regclass('public.platform_authorization_audit') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE platform_authorization_audit FROM merchant_app';
+  END IF;
 END
 $$;
 -- The broad compatibility grant above is deliberately followed by the
@@ -159,6 +162,11 @@ DO $$
 BEGIN
   IF to_regclass('public.authorization_revisions') IS NOT NULL THEN
     EXECUTE 'REVOKE ALL ON authorization_revisions, authorization_execution_reservations, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app';
+  END IF;
+  IF to_regclass('public.platform_authorization_audit') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE platform_authorization_audit FROM merchant_app';
+    EXECUTE 'GRANT SELECT, INSERT ON TABLE platform_authorization_audit TO merchant_ops';
+    EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE platform_authorization_audit FROM merchant_ops';
   END IF;
 END
 $$;

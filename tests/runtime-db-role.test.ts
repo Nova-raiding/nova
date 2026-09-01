@@ -43,7 +43,7 @@ describe('runtime database role verification', () => {
     expect(source).toContain('Ops database role must not own public application tables')
     expect(source).toContain('Ops database role lacks platform control-plane access')
     expect(source).toContain('Ops database role has unexpected tenant write access')
-    expect(source).toContain("'authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events'")
+    expect(source).toContain("'platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events'")
     expect(source).toContain("'authorization_execution_reservations'")
     expect(source).toContain("'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events'")
   })
@@ -55,6 +55,9 @@ describe('runtime database role verification', () => {
     expect(bootstrap).toContain(
       'REVOKE ALL ON authorization_revisions, authorization_execution_reservations, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app',
     )
+    expect(bootstrap).toContain("to_regclass('public.platform_authorization_audit')")
+    expect(bootstrap).toContain('REVOKE ALL ON TABLE platform_authorization_audit FROM merchant_app')
+    expect(bootstrap).toContain('GRANT SELECT, INSERT ON TABLE platform_authorization_audit TO merchant_ops')
   })
 
   it('keeps model cost budget reservations non-destructive after local compatibility grants', () => {
@@ -74,10 +77,14 @@ describe('runtime database role verification', () => {
 
   it('bounds authorization execution reservation privileges for both database roles', () => {
     const source = readFileSync(scriptPath, 'utf8')
-    expect(source).toContain("FROM unnest(ARRAY['platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','authorization_revisions','authorization_execution_reservations'")
+    expect(source).toContain("FROM unnest(ARRAY['platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_authorization_audit','authorization_revisions','authorization_execution_reservations'")
     expect(source).toContain("'public.authorization_execution_reservations', 'SELECT,INSERT'")
     expect(source).toContain('Ops database role has destructive authorization reservation access')
     expect(source).toContain('authorization_execution_reservations')
+    expect(source).toContain("'public.platform_authorization_audit', 'SELECT,INSERT'")
+    expect(source).toContain('Ops database role lacks append-only platform authorization audit access')
+    expect(source).toContain("'public.platform_authorization_audit', 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'")
+    expect(source).toContain('Ops database role has destructive platform authorization audit access')
   })
 
   it('re-applies the interactive confirmation ticket ACL guard after local compatibility grants', () => {

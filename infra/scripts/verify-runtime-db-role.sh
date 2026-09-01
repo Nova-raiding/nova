@@ -26,7 +26,7 @@ owned_tables=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
 
 platform_acl_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
   "SELECT coalesce(string_agg(name, ',' ORDER BY name), '')
-     FROM unnest(ARRAY['platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events']) AS name
+     FROM unnest(ARRAY['platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events']) AS name
     WHERE has_table_privilege(current_user, 'public.' || name, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')")
 [ -z "$platform_acl_exposure" ] || { echo "tenant runtime role can access platform control-plane tables: $platform_acl_exposure" >&2; exit 1; }
 
@@ -279,13 +279,21 @@ EOF
     "SELECT CASE WHEN has_table_privilege(current_user, 'public.authorization_execution_reservations', 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') THEN 'authorization_execution_reservations' ELSE '' END")
   [ -z "$ops_reservation_write_exposure" ] || { echo "Ops database role has destructive authorization reservation access: $ops_reservation_write_exposure" >&2; exit 1; }
 
+  ops_missing_platform_audit_access=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+    "SELECT CASE WHEN has_table_privilege(current_user, 'public.platform_authorization_audit', 'SELECT,INSERT') THEN '' ELSE 'platform_authorization_audit' END")
+  [ -z "$ops_missing_platform_audit_access" ] || { echo "Ops database role lacks append-only platform authorization audit access: $ops_missing_platform_audit_access" >&2; exit 1; }
+
+  ops_platform_audit_write_exposure=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+    "SELECT CASE WHEN has_table_privilege(current_user, 'public.platform_authorization_audit', 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') THEN 'platform_authorization_audit' ELSE '' END")
+  [ -z "$ops_platform_audit_write_exposure" ] || { echo "Ops database role has destructive platform authorization audit access: $ops_platform_audit_write_exposure" >&2; exit 1; }
+
   ops_tenant_access=$(psql "$OPS_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
     "SELECT coalesce(string_agg(c.relname, ',' ORDER BY c.relname), '')
        FROM pg_class c
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
         AND has_table_privilege(current_user, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_media_specs','platform_media_spec_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events')")
+        AND c.relname NOT IN ('platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','platform_identities','platform_auth_sessions','platform_identity_events','platform_media_specs','platform_media_spec_audit','platform_authorization_audit','authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events')")
   [ -z "$ops_tenant_access" ] || { echo "Ops database role has unexpected tenant write access: $ops_tenant_access" >&2; exit 1; }
   echo "Ops database role verified: role=$ops_role control_plane=allowed tenant_reads=bounded tenant_writes=denied"
 fi

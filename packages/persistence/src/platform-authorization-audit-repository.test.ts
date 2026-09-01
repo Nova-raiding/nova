@@ -12,6 +12,7 @@ describe('platform authorization audit repository', () => {
   it('is idempotent by decision and returns cloned evidence', async () => {
     const repo = new MemoryPlatformAuthorizationAuditRepository()
     const first = await repo.append(input())
+    expect(first.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
     const second = await repo.append(input({ evidence: { safe: false } }))
     expect(second).toEqual(first)
     second.evidence.safe = false
