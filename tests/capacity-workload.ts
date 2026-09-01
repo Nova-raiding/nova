@@ -231,6 +231,9 @@ export function buildCapacityEvidenceDocument(
 ) {
   const timings = [...input.timings]
   const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length
+  // A run with no observations is incomplete in every mode. In particular,
+  // real_cloud must not serialize an unexecuted run as a passing report.
+  const incomplete = timings.length === 0
   const rateLimited = timings.filter(item => isExpectedCapacityStatus(item.status)).length
   const p95Ms = percentile(timings.map(item => item.elapsedMs), 0.95)
   const p99Ms = percentile(timings.map(item => item.elapsedMs), 0.99)
@@ -244,7 +247,7 @@ export function buildCapacityEvidenceDocument(
     // Otherwise an empty or unhealthy Compose run can be serialized as a
     // passing report and only rejected if a later consumer happens to run
     // validateLocalCapacityEvidence.
-    status: errors === 0 ? 'pass' : 'fail' as 'pass' | 'fail',
+    status: errors === 0 && !incomplete ? 'pass' : 'fail' as 'pass' | 'fail',
     release_id: process.env.CAPACITY_WORKLOAD_RELEASE_ID?.trim() || `local-${config.profile}`,
     software_version: process.env.CAPACITY_WORKLOAD_SOFTWARE_VERSION?.trim() || process.env.npm_package_version || 'local-working-tree',
     config_version: process.env.CAPACITY_WORKLOAD_CONFIG_VERSION?.trim() || 'local-capacity-config',

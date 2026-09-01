@@ -96,4 +96,18 @@ describe('capacity workload contract', () => {
     expect(report.status).toBe('fail')
     expect(validateLocalCapacityEvidence(report)).toContain('metrics.observed_request_count must be a positive integer for local capacity evidence')
   })
+
+  it('does not serialize an unexecuted real-cloud run as passing', () => {
+    const config = readCapacityWorkloadConfig({
+      CAPACITY_WORKLOAD_URL: 'https://capacity.example.com',
+      CAPACITY_WORKLOAD_MODE: 'real_cloud',
+      CAPACITY_WORKLOAD_CONFIRM_REAL_CLOUD: 'true',
+    })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0, timings: [],
+    })
+
+    expect(report.status).toBe('fail')
+    expect(report.metrics.observed_request_count).toBe(0)
+  })
 })
