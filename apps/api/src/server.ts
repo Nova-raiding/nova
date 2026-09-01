@@ -4678,9 +4678,14 @@ export function resolveAuthorizationResourceScope(policy: ReturnType<typeof getM
 
 async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, params: Record<string, unknown>, principal?: Pick<RequestPrincipal, 'actorId'>) {
   const direct = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
-  if (direct?.id || (direct?.type !== 'brand' && direct?.type !== 'account')) return direct
   const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
   const contentVersionId = typeof params.content_version_id === 'string' && params.content_version_id.trim() ? params.content_version_id.trim() : undefined
+  // For task-bound account/brand operations, resolve the authoritative task
+  // scope before accepting caller-supplied account_id or brand_id.  The input
+  // remains available for the handler's explicit conflict check; it must not
+  // be able to make the authorization decision target a different store.
+  const taskBound = Boolean(taskId || contentVersionId)
+  if ((direct?.id && !taskBound) || (direct?.type !== 'brand' && direct?.type !== 'account')) return direct
   const contentVersion = contentVersionId ? service.contentVersions.get(contentVersionId) : undefined
   const requestedTask = taskId ? service.tasks.get(taskId) : undefined
   const contentTask = contentVersion ? service.tasks.get(contentVersion.taskId) : undefined
@@ -14723,10 +14728,16 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     && path === '/mcp'
     && (mcpMethodForHydration === 'catalog.search' || mcpMethodForHydration === 'task.history')
     && Boolean(persistence.business)
-  if (hydrateRequestWorkspace && !infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch && !isWorkerAutomationTick && !assetScannerRoute && (!workerRoute || workerNeedsWorkspaceHydration)) {
+  // Scanner callbacks resolve assets through the process-local service map, so
+  // a cold API replica must read the durable workspace projection first. The
+  // scanner identity is already authenticated above; excluding this route
+  // from hydration turns a legitimate quarantined asset into ASSET_NOT_FOUND
+  // after an API restart or replica switch.
+  if (hydrateRequestWorkspace && !infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch && !isWorkerAutomationTick && (!workerRoute || workerNeedsWorkspaceHydration || assetScannerRoute)) {
     const requiresFreshAssetRead = Boolean(
       (mcpMethodForHydration?.startsWith('asset.') && mcpMethodForHydration !== 'asset.upload')
-      || /^\/v1\/assets\/[^/]+\/(?:download|parse|rights|facts|preference)$/u.test(path),
+      || /^\/v1\/assets\/[^/]+\/(?:download|parse|rights|facts|preference)$/u.test(path)
+      || assetScannerRoute,
     )
     // Asset mutations commonly follow upload immediately. A different API
     // replica may still have a warm one-second workspace cache from before the

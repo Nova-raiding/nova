@@ -570,7 +570,7 @@ describe('API application wiring', () => {
     expect(customerDataMethodForHttp('POST', '/v1/publish-jobs')).toBe('catalog.product.update')
     expect(customerDataMethodForHttp('GET', '/v1/platform-accounts')).toBe('platform.store.list')
     expect(customerDataMethodForHttp('POST', '/v1/platform-accounts/taobao/authorize')).toBe('platform.connect')
-    expect(customerDataMethodForHttp('POST', '/v1/platform-accounts/taobao/sync')).toBe('platform.sync')
+    expect(customerDataMethodForHttp('POST', '/v1/platform-accounts/taobao/sync')).toBe('catalog.sync')
     expect(customerDataMethodForHttp('DELETE', '/v1/platform-accounts/taobao')).toBe('platform.revoke')
     expect(customerDataMethodForHttp('GET', '/v1/platform-capabilities')).toBeUndefined()
     expect(customerDataMethodForHttp('GET', '/healthz')).toBeUndefined()
