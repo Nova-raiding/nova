@@ -54,4 +54,21 @@ describe('object orphan cleaner', () => {
     expect(onDeleted).toHaveBeenCalledOnce()
     expect(await repository.listPending('ws_1')).toEqual([])
   })
+
+  it('rejects unsafe scheduling inputs before reading the workspace queue', async () => {
+    const repository = new MemoryObjectOrphanRepository()
+    const listPending = vi.spyOn(repository, 'listPending')
+    await expect(cleanObjectStorageOrphans({ workspaceId: ' ', repository, deleteObject: async () => undefined })).rejects.toThrow('OBJECT_ORPHAN_WORKSPACE_REQUIRED')
+    await expect(cleanObjectStorageOrphans({ workspaceId: 'ws_1', repository, limit: 1.5, deleteObject: async () => undefined })).rejects.toThrow('OBJECT_ORPHAN_LIMIT_INVALID')
+    await expect(cleanObjectStorageOrphans({ workspaceId: 'ws_1', repository, maxAttempts: Number.NaN, deleteObject: async () => undefined })).rejects.toThrow('OBJECT_ORPHAN_MAX_ATTEMPTS_INVALID')
+    expect(listPending).not.toHaveBeenCalled()
+  })
+
+  it('sanitizes retry error evidence before persistence', async () => {
+    const repository = new MemoryObjectOrphanRepository()
+    await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'fail', reason: 'rollback' })
+    const markRetry = vi.spyOn(repository, 'markRetry')
+    await cleanObjectStorageOrphans({ workspaceId: 'ws_1', repository, deleteObject: async () => { throw new Error('line\nitem\u0000') } })
+    expect(markRetry).toHaveBeenCalledWith(expect.objectContaining({ error: 'line item ' }))
+  })
 })

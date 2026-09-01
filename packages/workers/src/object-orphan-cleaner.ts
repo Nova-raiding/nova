@@ -17,9 +17,12 @@ function repositoryId(repository: ObjectOrphanRepository): number {
 }
 
 export async function cleanObjectStorageOrphans(input: { workspaceId: string; repository: ObjectOrphanRepository; deleteObject: (objectKey: string) => Promise<void>; onDeleted?: (row: ObjectStorageOrphan) => Promise<void>; limit?: number; maxAttempts?: number; now?: Date }): Promise<ObjectOrphanCleanupResult> {
+  if (typeof input.workspaceId !== 'string' || !input.workspaceId.trim()) throw new Error('OBJECT_ORPHAN_WORKSPACE_REQUIRED')
+  if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500)) throw new Error('OBJECT_ORPHAN_LIMIT_INVALID')
+  if (input.maxAttempts !== undefined && (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 100)) throw new Error('OBJECT_ORPHAN_MAX_ATTEMPTS_INVALID')
   const now = input.now ?? new Date()
-  const maxAttempts = Math.max(1, input.maxAttempts ?? 5)
-  const rows = await input.repository.listPending(input.workspaceId, Math.min(500, Math.max(1, input.limit ?? 100)))
+  const maxAttempts = input.maxAttempts ?? 5
+  const rows = await input.repository.listPending(input.workspaceId, input.limit ?? 100)
   const result: ObjectOrphanCleanupResult = { scanned: rows.length, cleaned: 0, retrying: 0, manualAttention: 0 }
   for (const row of rows) {
     const key = `${repositoryId(input.repository)}:${input.workspaceId}:${row.id}`
@@ -50,7 +53,8 @@ async function cleanOneOrphan(input: { workspaceId: string; repository: ObjectOr
     const nextAttempts = row.attempts + 1
     const manualAttention = nextAttempts >= maxAttempts
     const delayMs = Math.min(24 * 60 * 60 * 1_000, 30_000 * 2 ** Math.max(0, nextAttempts - 2))
-    await input.repository.markRetry({ workspaceId: input.workspaceId, id: row.id, error: error instanceof Error ? error.message.slice(0, 2_000) : 'object delete failed', nextAttemptAt: new Date(now.getTime() + delayMs).toISOString(), manualAttention })
+    const message = error instanceof Error ? error.message.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 2_000) : 'object delete failed'
+    await input.repository.markRetry({ workspaceId: input.workspaceId, id: row.id, error: message, nextAttemptAt: new Date(now.getTime() + delayMs).toISOString(), manualAttention })
     return manualAttention ? 'manual_attention' : 'retrying'
   }
 }
