@@ -21,6 +21,7 @@ describe('OAuth security', () => {
 
   it('redacts secret-shaped keys recursively', () => {
     expect(redactSecrets({ access_token: 'a', nested: { client_secret: 'b', ok: 'c' } })).toEqual({ access_token: '[REDACTED]', nested: { client_secret: '[REDACTED]', ok: 'c' } })
+    expect(redactSecrets({ accessToken: 'a', refreshToken: 'b', apiKey: 'c', privateKey: 'd', authorizationCode: 'e', codeVerifier: 'f', visible: 'ok' })).toEqual({ accessToken: '[REDACTED]', refreshToken: '[REDACTED]', apiKey: '[REDACTED]', privateKey: '[REDACTED]', authorizationCode: '[REDACTED]', codeVerifier: '[REDACTED]', visible: 'ok' })
     expect(hashPkceVerifier('verifier')).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 

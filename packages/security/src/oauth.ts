@@ -51,7 +51,11 @@ export class OAuthStateStore {
   }
 }
 
-const SECRET_KEYS = /access_token|refresh_token|client_secret|app_secret|authorization|credential|password/i
+// Match the common snake_case, kebab-case and camelCase spellings emitted by
+// OAuth clients and provider SDKs. Redaction is deliberately key-based: the
+// value is never inspected or partially retained once a secret-shaped field
+// is encountered.
+const SECRET_KEYS = /(?:access[\s_-]?token|refresh[\s_-]?token|client[\s_-]?secret|app[\s_-]?secret|(?:authorization|auth)[\s_-]?(?:code|token)|api[\s_-]?key|private[\s_-]?key|code[\s_-]?(?:verifier|challenge)|credential|password|passphrase)/iu
 export function redactSecrets(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactSecrets)
   if (!value || typeof value !== 'object') return value
