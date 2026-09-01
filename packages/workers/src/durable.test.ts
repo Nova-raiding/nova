@@ -196,6 +196,22 @@ describe('durable outbox dispatcher', () => {
     expect(acknowledgeSuccess).not.toHaveBeenCalled()
   })
 
+  it('bounds a handler that ignores abort and fails closed as unknown', async () => {
+    vi.useFakeTimers()
+    const store = new Store(event({ id: 'evt_timeout' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const handler = vi.fn(async () => await new Promise<boolean>(() => undefined))
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler, { leaseMs: 300, handlerTimeoutMs: 50, now: () => 1_000 })
+    await dispatcher.restore('ws_1')
+
+    const dispatched = dispatcher.dispatchOnce()
+    await vi.advanceTimersByTimeAsync(50)
+
+    await expect(dispatched).resolves.toMatchObject({ state: 'unknown' })
+    expect(handler).toHaveBeenCalledOnce()
+    expect(store.events.get('evt_timeout')?.unknownAt).toBeTruthy()
+    expect(store.events.get('evt_timeout')?.publishedAt).toBeUndefined()
+  })
+
   it('preserves WorkerFailure unknown semantics for manual reconciliation', async () => {
     const store = new Store(event({ id: 'evt_connector_unknown' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const dispatcher = new DurableOutboxDispatcher(store, queue, async () => {

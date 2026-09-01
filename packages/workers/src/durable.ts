@@ -1,6 +1,13 @@
 import type { HandlerResult, WorkerError } from './types.js'
 import type { OutboxClaimOptions } from '../../persistence/src/repository.js'
 
+class WorkerTimeoutError extends Error {
+  constructor() {
+    super('worker handler timed out; outcome requires reconciliation')
+    this.name = 'WorkerTimeoutError'
+  }
+}
+
 export interface DurableOutboxEvent {
   id: string
   workspaceId: string
@@ -120,6 +127,9 @@ export class InMemoryQueue<T> implements QueuePort<T> {
 
 export interface DurableDispatcherOptions {
   leaseMs?: number
+  /** Hard upper bound for one handler invocation. A timeout is unknown because
+   * an external side effect may have started before the handler stopped. */
+  handlerTimeoutMs?: number
   baseDelayMs?: number
   maxDelayMs?: number
   maxAttempts?: number
@@ -133,6 +143,7 @@ export type DurableOutboxHandler<E, R> = (context: { event: E; attempt: number; 
 export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutboxEvent, R = unknown> {
   private readonly now: () => number
   private readonly leaseMs: number
+  private readonly handlerTimeoutMs: number
   private readonly baseDelayMs: number
   private readonly maxDelayMs: number
   private readonly maxAttempts: number
@@ -146,6 +157,10 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   ) {
     this.now = options.now ?? (() => Date.now())
     this.leaseMs = options.leaseMs ?? 30_000
+    this.handlerTimeoutMs = options.handlerTimeoutMs ?? this.leaseMs
+    if (!Number.isSafeInteger(this.handlerTimeoutMs) || this.handlerTimeoutMs <= 0) {
+      throw new RangeError('handlerTimeoutMs must be a positive integer')
+    }
     this.baseDelayMs = options.baseDelayMs ?? 100
     this.maxDelayMs = options.maxDelayMs ?? 30_000
     this.maxAttempts = options.maxAttempts ?? 5
@@ -187,6 +202,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     let heartbeatInFlight: Promise<void> | undefined
     let stopped = false
     let leaseError: unknown
+    let handlerTimedOut = false
 
     const heartbeat = async (): Promise<void> => {
       if (stopped) return
@@ -209,15 +225,31 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     }
 
     let normalized: HandlerResult<R>
+    let timeoutRejectTimer: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutRejectTimer = setTimeout(() => {
+        handlerTimedOut = true
+        abortController.abort(new DOMException('worker handler timed out', 'TimeoutError'))
+        reject(new WorkerTimeoutError())
+      }, this.handlerTimeoutMs)
+    })
     try {
-      const result = await this.handler({ event, attempt, now: this.now(), signal: abortController.signal })
+      const result = await Promise.race([
+        this.handler({ event, attempt, now: this.now(), signal: abortController.signal }),
+        timeoutPromise,
+      ])
       normalized = result && typeof result === 'object' && ('state' in result || 'value' in result) ? result as HandlerResult<R> : { value: result as R }
     } catch (cause) {
+      if (timeoutRejectTimer !== undefined) clearTimeout(timeoutRejectTimer)
       await stopHeartbeat()
       if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError)
+      if (handlerTimedOut || cause instanceof WorkerTimeoutError) {
+        return this.recordHandlerFailure(event, message, { code: 'WORKER_HANDLER_TIMEOUT', message: 'worker handler timed out; outcome requires reconciliation', retryable: false, unknown: true })
+      }
       const failure = normalizeDurableError(cause)
       return this.recordHandlerFailure(event, message, failure)
     }
+    if (timeoutRejectTimer !== undefined) clearTimeout(timeoutRejectTimer)
     await stopHeartbeat()
     if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError)
 
