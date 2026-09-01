@@ -1070,6 +1070,9 @@ describe('security and access-control acceptance gates', () => {
     hiddenGenerationJob.state = 'failed'
     service.contentVersions.set('content_protected_brand', { id: 'content_protected_brand', taskId: protectedTask.id, version: 1, body: { title: '授权品牌内容', detail: '授权品牌详情', sellingPoints: [] }, factVersionIds: [], ruleVersionIds: [], state: 'draft', revision: 1 })
     service.contentVersions.set('content_hidden_brand', { id: 'content_hidden_brand', taskId: hiddenTask.id, version: 1, body: { title: '隐藏品牌内容', detail: '隐藏品牌详情', sellingPoints: [] }, factVersionIds: [], ruleVersionIds: [], state: 'draft', revision: 1 })
+    const imageJobsBeforeMismatchedResources = structuredClone([...service.imageGenerationJobs.entries()])
+    expect((await mcp(ownerHeaders, 7.005, 'catalog.image.generate', { product_id: source.id, task_id: protectedTask.id, content_version_id: 'content_hidden_brand', direction: '不得跨任务生成', mode: 'create', count: '1', idempotency_key: `mismatched-resource-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect([...service.imageGenerationJobs.entries()]).toEqual(imageJobsBeforeMismatchedResources)
     expect((await mcp(editorHeaders, 7.01, 'task.timeline', { task_id: protectedTask.id })).error).toBeNull()
     expect((await mcp(editorHeaders, 7.02, 'task.timeline', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.021, 'content.versions', { task_id: protectedTask.id })).error).toBeNull()
