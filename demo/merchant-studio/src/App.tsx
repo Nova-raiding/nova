@@ -1336,8 +1336,8 @@ function UtilityPanel({
         <div className="modal-body">
           <p className="utility-body">{content.body}</p>
           <div className="utility-list">
-            {content.items.map((item) => (
-              <div key={item}>
+            {content.items.map((item, index) => (
+              <div key={`${index}-${item}`}>
                 <CheckCircle2 size={15} />
                 <span>{item}</span>
               </div>
@@ -2369,10 +2369,10 @@ function Overview({
                     </StatusChip>
                   </div>
                   <div className="capability-list">
-                    {item.capabilities.map((capability) => (
+                    {item.capabilities.map((capability, capabilityIndex) => (
                       <span
                         className={`capability-pill ${capabilityTone(capability.state)}`}
-                        key={capability.capability}
+                        key={`${item.platform}-${capability.capability}-${capabilityIndex}`}
                         title={
                           capability.evidenceRef
                             ? `证据：${capability.evidenceRef}`
