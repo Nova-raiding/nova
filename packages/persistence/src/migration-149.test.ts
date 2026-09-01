@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
+import { loadMigrations } from './migration.js'
 
 describe('migration 149 object-storage orphan leases', () => {
   it('adds nullable lease columns for forward-compatible claims', async () => {
@@ -16,5 +17,9 @@ describe('migration 149 object-storage orphan leases', () => {
 
     expect(sql).toContain('CREATE INDEX IF NOT EXISTS object_storage_orphans_claim_idx')
     expect(sql).toContain('(workspace_id, state, next_attempt_at, lease_until, created_at)')
+  })
+
+  it('is registered in the executable migration chain', async () => {
+    expect((await loadMigrations()).find(item => item.version === 149)).toMatchObject({ version: 149, name: 'object_storage_orphan_leases' })
   })
 })
