@@ -298,6 +298,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const commercialPriceCny = await readFile(new URL('./migrations/018_commercial_price_cny.sql', import.meta.url), 'utf8')
   const usageLedger = await readFile(new URL('./migrations/019_usage_ledger.sql', import.meta.url), 'utf8')
   const operationAudit = await readFile(new URL('./migrations/020_operation_audit.sql', import.meta.url), 'utf8')
+  const workspaceOperationAuditTruncateGuard = await readFile(new URL('./migrations/136_workspace_operation_audit_truncate_guard.sql', import.meta.url), 'utf8')
   const subscriptions = await readFile(new URL('./migrations/021_subscriptions.sql', import.meta.url), 'utf8')
   const workspaceMembers = await readFile(new URL('./migrations/022_workspace_members.sql', import.meta.url), 'utf8')
   const commercialExtensions = await readFile(new URL('./migrations/023_commercial_extensions.sql', import.meta.url), 'utf8')
@@ -410,6 +411,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const canonicalLegacyIdentityUniqueness = await readFile(new URL('./migrations/130_canonical_legacy_identity_uniqueness.sql', import.meta.url), 'utf8')
   const taskCampaignItemScopeIntegrity = await readFile(new URL('./migrations/131_task_campaign_item_scope_integrity.sql', import.meta.url), 'utf8')
   const ruleAuditAppendOnlyAcl = await readFile(new URL('./migrations/132_rule_audit_append_only_acl.sql', import.meta.url), 'utf8')
+  const parallelMigrationMergeBarrier = await readFile(new URL('./migrations/133_parallel_migration_merge_barrier.sql', import.meta.url), 'utf8')
   const authorizationEventsTruncateGuard = await readFile(new URL('./migrations/134_authorization_events_truncate_guard.sql', import.meta.url), 'utf8')
   const authorizationEventScopeIntegrity = await readFile(new URL('./migrations/135_authorization_event_scope_integrity.sql', import.meta.url), 'utf8')
   return [
@@ -545,8 +547,10 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 130, name: 'canonical_legacy_identity_uniqueness', sql: canonicalLegacyIdentityUniqueness },
     { version: 131, name: 'task_campaign_item_scope_integrity', sql: taskCampaignItemScopeIntegrity },
     { version: 132, name: 'rule_audit_append_only_acl', sql: ruleAuditAppendOnlyAcl },
+    { version: 133, name: 'parallel_migration_merge_barrier', sql: parallelMigrationMergeBarrier },
     { version: 134, name: 'authorization_events_truncate_guard', sql: authorizationEventsTruncateGuard },
     { version: 135, name: 'authorization_event_scope_integrity', sql: authorizationEventScopeIntegrity },
+    { version: 136, name: 'workspace_operation_audit_truncate_guard', sql: workspaceOperationAuditTruncateGuard },
   ]
 }
 
