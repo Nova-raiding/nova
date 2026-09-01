@@ -6030,6 +6030,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const [loading, setLoading] = useState(Boolean(baseUrl))
   const [reload, setReload] = useState(0)
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set())
+  const [imageReloads, setImageReloads] = useState<Record<string, number>>({})
   const [selectedVisualRefs, setSelectedVisualRefs] = useState<string[]>([])
   const [selectionReason, setSelectionReason] = useState('人工确认候选图并进入内容版本审阅')
   const [selectionState, setSelectionState] = useState<'idle' | 'submitting' | 'succeeded' | 'failed'>('idle')
@@ -6118,7 +6119,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
       const gate = output?.gate
       const failed = failedImages.has(visualRef)
       return <figure key={visualRef} className={gate?.selectable ? 'candidate-ready' : 'candidate-blocked'}>
-        {failed ? <div className="image-candidate-fallback" role="alert">候选图片读取失败，请刷新任务状态重试。</div> : <img src={src} alt={`图片候选 ${index + 1}，${gate?.selectable ? '可进入后续选择' : '尚不可选择'}`} loading={index > 0 ? 'lazy' : 'eager'} onError={() => setFailedImages(current => new Set(current).add(visualRef))} />}
+        {failed ? <div className="image-candidate-fallback" role="alert"><span>候选图片读取失败，当前任务状态和候选门禁仍保留。</span><button className="text-button" type="button" onClick={() => { setFailedImages(current => { const next = new Set(current); next.delete(visualRef); return next }); setImageReloads(current => ({ ...current, [visualRef]: (current[visualRef] ?? 0) + 1 })) }} aria-label={`重新读取图片候选 ${index + 1}`}>重新读取</button></div> : <img key={`${visualRef}-${imageReloads[visualRef] ?? 0}`} src={src} alt={`图片候选 ${index + 1}，${gate?.selectable ? '可进入后续选择' : '尚不可选择'}`} loading={index > 0 ? 'lazy' : 'eager'} onError={() => setFailedImages(current => new Set(current).add(visualRef))} />}
         <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting'} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '未知'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{gate?.blockers.length ? <small>阻断：{gate.blockers.join('；')}</small> : null}</figcaption>
       </figure>
     })}</div> : null}
@@ -9822,7 +9823,10 @@ export default function App() {
       .then(() => setApiOnline(true))
       .catch(() => setApiOnline(false))
     fetchPlatformModelStatus(baseUrl)
-      .then(setModelStatus)
+      .then(status => {
+        setModelStatus(status)
+        setApiOnline(true)
+      })
       .catch(() => setModelStatus(null))
       .finally(() => setModelStatusRead(true))
   }, [])
