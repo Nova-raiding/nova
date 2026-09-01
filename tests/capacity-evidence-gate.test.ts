@@ -20,6 +20,11 @@ describe('capacity evidence gate', () => {
     expect(validateCapacityEvidence({ ...base, profile: 'wave_250', tenant: { ...base.tenant, workspace_count: 250 }, metrics: { ...base.metrics, workspaces: 250, client_connections: 375, sustained_rps: 75, burst_rps: 150, async_jobs_per_minute: 250 } }, { requireCloudGate: true })).toEqual([])
   })
   it('rejects mock-only evidence as a real-cloud report', () => expect(validateCapacityEvidence({ ...base, platform_mock_ratio: 1 }, { requireCloudGate: true })).toContain('cloud gate requires zero platform/model mock ratio'))
+  it('rejects non-finite mock ratios instead of allowing malformed evidence', () => {
+    for (const field of ['platform_mock_ratio', 'model_mock_ratio'] as const) {
+      expect(validateCapacityEvidence({ ...base, [field]: Number.NaN }, { requireCloudGate: true })).toContain(`${field} must be between 0 and 1`)
+    }
+  })
   it('binds a report to both the release and requested capacity wave', () => {
     expect(validateCapacityEvidence(base, { expectedReleaseId: 'release-2', expectedProfile: 'target_500' })).toEqual(expect.arrayContaining(['release_id must match release-2', 'profile must match target_500']))
   })

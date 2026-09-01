@@ -54,7 +54,7 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
   if (metrics.lost_jobs !== 0) errors.push('metrics.lost_jobs must be 0')
   if (typeof metrics.fairness_p95_degradation_percent === 'number' && metrics.fairness_p95_degradation_percent > 20) errors.push('metrics.fairness_p95_degradation_percent must be <= 20')
   if (typeof metrics.stability_hours === 'number' && metrics.stability_hours < 6) errors.push('metrics.stability_hours must be >= 6')
-  for (const field of ['platform_mock_ratio', 'model_mock_ratio'] as const) if (typeof value[field] !== 'number' || value[field] < 0 || value[field] > 1) errors.push(`${field} must be between 0 and 1`)
+  for (const field of ['platform_mock_ratio', 'model_mock_ratio'] as const) if (typeof value[field] !== 'number' || !Number.isFinite(value[field]) || value[field] < 0 || value[field] > 1) errors.push(`${field} must be between 0 and 1`)
   try {
     const target = new URL(value.target_url!)
     if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password || target.hash) errors.push('target_url must be a plain HTTP(S) URL')
