@@ -958,6 +958,9 @@ describe('security and access-control acceptance gates', () => {
     }
 
     expect((await call('sensitive-owner-token', 'platform.store.alias.set', { platform: 'taobao', account_id: foreignAccount.id, alias: '跨租户修改', expected_revision: String(foreignAccount.revision) })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'account' } })
+    expect((await call('sensitive-owner-token', 'brand-unit.create', { brand_id: 'sensitive_store_brand', name: '店铺范围品牌' })).error).toBeNull()
+    expect((await call('sensitive-owner-token', 'brand-unit.bind-store', { brand_id: 'sensitive_store_brand', platform: 'taobao', account_id: aliasAccount.id })).error).toBeNull()
+    expect((await call('sensitive-owner-token', 'brand-unit.bind-store', { brand_id: 'sensitive_store_brand', platform: 'taobao', account_id: foreignAccount.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'account' } })
     expect((await call('sensitive-owner-token', 'platform.revoke', { platform: 'taobao', account_id: foreignAccount.id })).error?.code).toBe('PLATFORM_ACCOUNT_NOT_FOUND')
     const unchangedForeignAccount = service.getPlatformAccount(otherWorkspaceId, foreignAccount.id, 'taobao')
     expect(unchangedForeignAccount.tokenState).toBe('connected')
