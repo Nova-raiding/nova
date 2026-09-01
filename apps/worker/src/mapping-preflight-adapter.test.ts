@@ -82,7 +82,7 @@ const runWrite = (h: ReturnType<typeof harness>, durableEvent: DurableOutboxEven
 describe('persistent worker mapping preflight adapter', () => {
   it('injects durable approval into the real ConnectorRuntime and rereads the tenant-scoped repository', async () => {
     const { adapter, execution, get, resolveActive } = harness()
-    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true, environment: 'production', mappingPreflight: adapter })
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true, environment: 'test', mappingPreflight: adapter })
 
     const result = await execution.run(event(), () => runtime.executePublish({
       platform: scope.platform,
