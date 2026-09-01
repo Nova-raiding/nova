@@ -408,6 +408,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const productListingIdentityUniqueness = await readFile(new URL('./migrations/128_product_listing_identity_uniqueness.sql', import.meta.url), 'utf8')
   const campaignItemListingScopeIntegrity = await readFile(new URL('./migrations/129_campaign_item_listing_scope_integrity.sql', import.meta.url), 'utf8')
   const canonicalLegacyIdentityUniqueness = await readFile(new URL('./migrations/130_canonical_legacy_identity_uniqueness.sql', import.meta.url), 'utf8')
+  const taskCampaignItemScopeIntegrity = await readFile(new URL('./migrations/131_task_campaign_item_scope_integrity.sql', import.meta.url), 'utf8')
+  const ruleAuditAppendOnlyAcl = await readFile(new URL('./migrations/132_rule_audit_append_only_acl.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -539,6 +541,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 128, name: 'product_listing_identity_uniqueness', sql: productListingIdentityUniqueness },
     { version: 129, name: 'campaign_item_listing_scope_integrity', sql: campaignItemListingScopeIntegrity },
     { version: 130, name: 'canonical_legacy_identity_uniqueness', sql: canonicalLegacyIdentityUniqueness },
+    { version: 131, name: 'task_campaign_item_scope_integrity', sql: taskCampaignItemScopeIntegrity },
+    { version: 132, name: 'rule_audit_append_only_acl', sql: ruleAuditAppendOnlyAcl },
   ]
 }
 
