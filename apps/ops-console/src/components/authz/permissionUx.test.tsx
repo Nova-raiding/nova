@@ -105,5 +105,8 @@ describe("desktop permission UX", () => {
     expect(html).toContain("CAPABILITY_DENIED");
     expect(html).toContain("刷新权限");
     expect(html).toContain('role="alert"');
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain('aria-labelledby="access-denied-evidence-title"');
+    expect(html).toContain("权限拒绝详情");
   });
 });
