@@ -3,10 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import {
   DetailDecisionContract,
+} from './DetailDecisionContract'
+import {
   moduleDecisionContract,
   type DecisionEvidenceStatus,
   type DetailPageDecisionContract,
-} from './DetailDecisionContract'
+} from './detail-decision-contract'
 
 const contract = (
   status: DecisionEvidenceStatus,

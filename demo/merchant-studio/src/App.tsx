@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { merchantConnectionPresentation } from './platform-connection-status'
-import {
-  DetailDecisionContract,
-  moduleDecisionContract,
-} from './DetailDecisionContract'
+import { DetailDecisionContract } from './DetailDecisionContract'
+import { moduleDecisionContract } from './detail-decision-contract'
 import {
   AlertCircle,
   ArrowLeftRight,
