@@ -57,7 +57,7 @@ export function UsersPage({ model }: UsersPageProps) {
           ? "页面分区、只读状态和写入入口均依据 ops.session 返回的 capability projection；页面不会从角色名称推断权限。"
           : "服务端未授予 identity、租户目录或授权中心读取能力，因此不加载用户治理数据，也不把空结果解释为无数据。"}
       />
-      <UsersGovernanceWorkspace model={model} />
+      <UsersGovernanceWorkspace model={model} onRefresh={() => void model.load()} />
     </OpsPage>
   );
 }

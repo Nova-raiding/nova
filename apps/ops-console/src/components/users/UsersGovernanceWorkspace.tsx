@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Tabs, type TabsProps } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Tabs, type TabsProps } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { OpsPageError } from "../OpsPageError";
 import { AuthorizationGovernanceSection } from "./AuthorizationGovernanceSection";
@@ -18,16 +18,36 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader):
   return sections;
 }
 
-export function UsersGovernanceWorkspace({ model }: { model: OpsConsoleModel }) {
+export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConsoleModel; onRefresh?: () => void }) {
   const sectionKeys = useMemo(() => visibleUsersGovernanceSections(model.authorization), [model.authorization]);
   const [activeSection, setActiveSection] = useState<UsersGovernanceSectionKey>(sectionKeys[0] ?? "directory");
+  const unavailableRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!sectionKeys.includes(activeSection) && sectionKeys[0]) setActiveSection(sectionKeys[0]);
   }, [activeSection, sectionKeys]);
 
+  useEffect(() => {
+    if (!sectionKeys.length) unavailableRef.current?.focus({ preventScroll: true });
+  }, [sectionKeys.length]);
+
   if (!sectionKeys.length) {
-    return <Alert showIcon type="warning" title="当前角色没有用户治理视图" description="需要身份目录、租户目录或平台授权中心的读取能力。权限由服务端策略决定。" />;
+    return <div
+      ref={unavailableRef}
+      className="ops-users-governance-unavailable"
+      tabIndex={-1}
+      role="alert"
+      aria-live="assertive"
+      aria-labelledby="users-governance-unavailable-title"
+    >
+      <Alert
+        showIcon
+        type="warning"
+        title={<span id="users-governance-unavailable-title">当前角色没有用户治理视图</span>}
+        description="需要身份目录、租户目录或平台授权中心的读取能力。权限由服务端策略决定，不会把未授权结果显示为空数据。"
+        action={onRefresh ? <Button size="small" style={{ minHeight: 44 }} aria-label="刷新用户治理权限" onClick={onRefresh}>刷新权限</Button> : undefined}
+      />
+    </div>;
   }
 
   const items: TabsProps["items"] = sectionKeys.map((key) => {
