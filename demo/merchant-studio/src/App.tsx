@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
@@ -387,6 +387,7 @@ function ErrorNotice({
   focusOnMount?: boolean
 }) {
   const noticeRef = useRef<HTMLDivElement>(null)
+  const messageId = `merchant-error-${useId().replace(/:/g, '')}`
   useEffect(() => {
     if (focusOnMount) noticeRef.current?.focus()
   }, [focusOnMount])
@@ -401,14 +402,16 @@ function ErrorNotice({
       className={`inline-error ${compact ? 'compact' : ''}`}
       role="alert"
       tabIndex={focusOnMount ? -1 : undefined}
-      aria-labelledby={focusOnMount ? 'route-error-title' : undefined}
+      aria-labelledby={focusOnMount ? messageId : undefined}
     >
-      <AlertCircle size={16} />
-      <span id={focusOnMount ? 'route-error-title' : undefined}>{message}</span>
+      <AlertCircle size={16} aria-hidden="true" />
+      <span id={messageId}>{message}</span>
       {onRetry && (
         <button
           className="text-button"
+          type="button"
           aria-label={accessibleRetryLabel}
+          aria-describedby={messageId}
           onClick={onRetry}
         >
           {retryLabel}
