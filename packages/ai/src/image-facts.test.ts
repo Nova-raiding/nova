@@ -6,7 +6,8 @@ describe('platform-relay image facts extraction', () => {
     let requestedUrl = ''
     const extractor = new OpenAICompatibleImageFactsExtractor({
       baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'vision-v1',
-      fetch: async (url, init) => { requestedUrl = String(url); expect(init?.body).toContain('data:image/png;base64'); return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ facts: { product_name: '春季外套', stock: 8 }, ocr_text: '春季外套' }) } }] }), { status: 200 }) },
+      usageSink: () => undefined,
+      fetch: async (url, init) => { requestedUrl = String(url); expect(init?.body).toContain('data:image/png;base64'); return new Response(JSON.stringify({ id: 'ocr-request-1', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost_cny: 0.01 }, choices: [{ message: { content: JSON.stringify({ facts: { product_name: '春季外套', stock: 8 }, ocr_text: '春季外套' }) } }] }), { status: 200 }) },
     })
     await expect(extractor.extract({ name: 'label.png', mimeType: 'image/png', body: Buffer.from('png') })).resolves.toMatchObject({ format: 'image_ocr', product_name: '春季外套', stock: 8, ocr_text: '春季外套' })
     expect(requestedUrl).toBe('https://relay.example/chat/completions')
