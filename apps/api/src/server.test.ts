@@ -44,9 +44,14 @@ describe('brand scope capability derivation', () => {
 
 describe('worker publish authorization scope', () => {
   it('accepts exact brand publish decisions without widening other worker capabilities', () => {
-    const brandDecision = { authorized: true, capability: 'customer.publish.execute', workbench: 'workspace', scope: { required: 'brand', resource_id: 'brand-1' } } as Parameters<typeof workerAuthorizationDecisionMatches>[0]
+    const brandDecision = { authorized: true, capability: 'customer.publish.execute', workbench: 'workspace', scope: { required: 'brand', resource_id: 'brand-1', resolved: [{ type: 'workspace', ids: ['ws-1'] }, { type: 'brand', ids: ['brand-1'] }] } } as unknown as Parameters<typeof workerAuthorizationDecisionMatches>[0]
     expect(workerAuthorizationDecisionMatches(brandDecision, 'ws-1', 'customer.publish.execute')).toBe(true)
     expect(workerAuthorizationDecisionMatches(brandDecision, 'ws-1', 'customer.content.update')).toBe(false)
+  })
+
+  it('rejects a brand decision whose resolved scope does not prove workspace ownership', () => {
+    const incomplete = { authorized: true, capability: 'customer.publish.execute', workbench: 'workspace', scope: { required: 'brand', resource_id: 'brand-1', resolved: [{ type: 'brand', ids: ['brand-1'] }] } } as unknown as Parameters<typeof workerAuthorizationDecisionMatches>[0]
+    expect(workerAuthorizationDecisionMatches(incomplete, 'ws-1', 'customer.publish.execute')).toBe(false)
   })
 })
 

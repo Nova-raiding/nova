@@ -3735,12 +3735,15 @@ const workerOperationCapabilities: Record<CriticalWorkerOperation, CapabilityId>
 }
 
 export function workerAuthorizationDecisionMatches(decision: AuthorizationDecision | undefined, workspaceId: string, requiredCapability: CapabilityId) {
+  const resolvedScopes = decision?.scope.resolved ?? []
+  const workspaceResolutionMatches = resolvedScopes.some(scope => scope.type === 'workspace' && scope.ids.includes(workspaceId))
   const scopeMatches = decision?.scope.required === 'workspace'
-    ? decision.scope.resource_id === workspaceId
+    ? decision.scope.resource_id === workspaceId && workspaceResolutionMatches
     : requiredCapability === 'customer.publish.execute'
       && decision?.scope.required === 'brand'
       && typeof decision.scope.resource_id === 'string'
       && decision.scope.resource_id.trim().length > 0
+      && workspaceResolutionMatches
   return Boolean(decision
     && decision.authorized
     && decision.capability === requiredCapability
