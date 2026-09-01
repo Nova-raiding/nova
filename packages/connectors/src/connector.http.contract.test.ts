@@ -124,6 +124,25 @@ describe.each(platforms)('%s HTTP connector FR-15 contract', (platform) => {
     expect(result.remoteId).toBeUndefined()
   })
 
+  it('fails closed when a requested remote identity is omitted from status', async () => {
+    const store = makeStore()
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const target = String(url)
+      if (target.endsWith('/oauth/token')) return json({ access_token: 'fixture-access-token', account_id: `${platform}-shop-1` })
+      if (target.endsWith('/products/create')) return json({ remoteId: `${platform}-created-2`, requestId: `${platform}-create-request-2` })
+      if (target.endsWith('/publish/status')) return json({ found: true, state: 'published', requestId: `${platform}-status-request-2` })
+      return json({ ok: true })
+    })
+    const connector = createConfiguredConnector(platform, { config: { ...makeConfig(platform), mapWriteReceipt: undefined, mapWriteStatus: undefined }, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
+    const ref = await connector.exchangeCode({ code: `${platform}-code`, state: `${platform}-state` })
+    const context = { workspaceId: 'ws', accountId: ref.accountId, credentialRef: ref.credentialRef }
+    const input = { fields: { title: 'created', category: 'cat', price: 1, stock: 1 }, idempotencyKey: `${platform}-identity-missing` }
+    const receipt = await connector.createProduct(context, input)
+
+    await expect(connector.queryWrite(context, { idempotencyKey: input.idempotencyKey, remoteId: receipt.remoteId }))
+      .resolves.toMatchObject({ found: false, state: 'unknown', requestId: `${platform}-status-request-2`, simulated: false })
+  })
+
   it('normalizes OAuth authorization failure without leaking platform credentials', async () => {
     const store = makeStore()
     const fetchMock = vi.fn(async () => json({ error: 'invalid_grant', access_token: 'must-not-leak' }, 401))

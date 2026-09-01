@@ -203,6 +203,32 @@ describe('HttpPlatformConnector', () => {
     expect(connector.normalizeError({ name: 'AbortError', message: 'aborted access-token' }).message).not.toContain('access-token')
   })
 
+  it('classifies the connector-owned TimeoutError as unknown and retryable', async () => {
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, timeoutMs: 5, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async (_url, init) => await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      }),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+    await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' }))
+      .rejects.toMatchObject({ normalized: { code: 'TIMEOUT', unknown: true, retryable: true } })
+  })
+
+  it('classifies structured platform validation errors and retains safe rejection evidence', async () => {
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async () => response({ error: { code: 'SKU_INVALID', message: '商品字段不合法', requestId: 'req-safe', fields: [{ path: 'sku[0].price', code: 'PRICE_INVALID', message: 'must be positive' }] } }, 422),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+    await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' }))
+      .rejects.toMatchObject({ normalized: { code: 'VALIDATION_FAILED', status: 422, retryable: false, details: { platformCode: 'SKU_INVALID', requestId: 'req-safe', rejection: { rawCode: 'SKU_INVALID', fields: [{ path: 'sku[0].price', rawCode: 'PRICE_INVALID', message: 'must be positive' }] } } } })
+  })
+
   it('rejects oversized platform responses before parsing them', async () => {
     const connector = createConfiguredConnector('jd', {
       config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },

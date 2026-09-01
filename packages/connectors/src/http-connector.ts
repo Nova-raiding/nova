@@ -99,7 +99,11 @@ function normalizeWriteStatus(value: WriteStatus, request: WriteIdentity): Write
   // receipt.  A provider can return a valid-looking status for another
   // product (or another account) and must not be allowed to turn that into
   // publish evidence.
-  const remoteIdentityMatches = !request.remoteId || !remoteId || remoteId === request.remoteId
+  // When the caller supplied a remote identity, an omitted identity is not a
+  // match.  A provider response without the requested ID is not evidence for
+  // that write: accepting it would let an unrelated status turn into a
+  // published result.
+  const remoteIdentityMatches = !request.remoteId || remoteId === request.remoteId
   if (!remoteIdentityMatches) {
     return {
       found: false,
@@ -126,7 +130,10 @@ function redact(value: unknown, depth = 0): unknown {
   if (depth > 4) return '[REDACTED]'
   if (Array.isArray(value)) return value.map(item => redact(item, depth + 1))
   if (!isRecord(value)) return typeof value === 'string' && value.length > 20 ? '[REDACTED]' : value
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? '[REDACTED]' : redact(item, depth + 1)]))
+  // Provider error codes are non-secret correlation evidence.  Do not redact
+  // them merely because the word "code" appears in the field name; token,
+  // authorization and credential-shaped fields remain redacted.
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) && !['code', 'platformCode', 'rawCode'].includes(key) ? '[REDACTED]' : redact(item, depth + 1)]))
 }
 
 function defaultProducts(payload: unknown, platform: Platform): RawProduct[] {
@@ -275,7 +282,7 @@ export class HttpPlatformConnector implements PlatformConnector {
   async queryWrite(ctx: ConnectorContext, request: WriteIdentity): Promise<WriteStatus> {
     const config = this.requireConfig()
     const payload = await this.request('POST', joinUrl(config.api.baseUrl, config.api.queryPath), await this.resolveCredential(ctx), request, 'json', false, ctx.signal)
-    const mapped = config.mapWriteStatus?.(payload, request, this.platform) ?? { found: isRecord(payload) && payload.found === true, state: isRecord(payload) && ['submitted', 'published', 'rejected', 'unknown'].includes(String(payload.state)) ? payload.state as WriteStatus['state'] : 'unknown', remoteId: isRecord(payload) ? readString(payload.remoteId) : undefined, requestId: isRecord(payload) ? readString(payload.requestId) : undefined, simulated: false }
+    const mapped = config.mapWriteStatus?.(payload, request, this.platform) ?? { found: isRecord(payload) && payload.found === true, state: isRecord(payload) && ['submitted', 'published', 'rejected', 'unknown'].includes(String(payload.state)) ? payload.state as WriteStatus['state'] : 'unknown', remoteId: isRecord(payload) ? readString(payload.remoteId) : undefined, requestId: isRecord(payload) ? readString(payload.requestId) : undefined, ...(this.parseRejection(payload) ? { rejection: this.parseRejection(payload) } : {}), simulated: false }
     const result = normalizeWriteStatus(mapped, request)
     this.writes.set(request.idempotencyKey, result)
     return result
@@ -302,10 +309,11 @@ export class HttpPlatformConnector implements PlatformConnector {
     const codeValue = readString(candidate.code)
     let code: NormalizedPlatformError['code'] = ERROR_CODES.has(codeValue ?? '') ? codeValue as NormalizedPlatformError['code'] : 'REMOTE_ERROR'
     if (status === 401 || status === 403) code = 'UNAUTHORIZED'
+    else if (status === 400 || status === 422) code = 'VALIDATION_FAILED'
     else if (status === 404) code = 'NOT_FOUND'
     else if (status === 409) code = 'CONFLICT'
     else if (status === 429) code = 'RATE_LIMITED'
-    else if (candidate.name === 'AbortError' || codeValue === 'TIMEOUT') code = 'TIMEOUT'
+    else if (candidate.name === 'AbortError' || candidate.name === 'TimeoutError' || codeValue === 'TIMEOUT') code = 'TIMEOUT'
     const unknown = code === 'TIMEOUT' || candidate.unknown === true
     const retryable = typeof candidate.retryable === 'boolean' ? candidate.retryable : ['RATE_LIMITED', 'TIMEOUT', 'REMOTE_ERROR'].includes(code)
     const safeMessage = readString(candidate.message)
@@ -313,7 +321,7 @@ export class HttpPlatformConnector implements PlatformConnector {
       ? `HTTP connector ${this.platform} request timed out`
       : code === 'VALIDATION_FAILED'
         ? safeMessage ?? 'Connector validation failed'
-        : (code === 'UNAUTHORIZED' && safeMessage === 'access credential is unavailable')
+      : (code === 'UNAUTHORIZED' && safeMessage === 'access credential is unavailable')
           || (code === 'NOT_CONFIGURED' && safeMessage === 'credential vault is unavailable')
           ? safeMessage
           : `HTTP connector ${this.platform} request failed`
@@ -410,7 +418,21 @@ export class HttpPlatformConnector implements PlatformConnector {
       const text = await readBoundedResponseText(response, MAX_PLATFORM_RESPONSE_BYTES)
       let payload: unknown = undefined
       try { payload = text ? JSON.parse(text) : undefined } catch { payload = text }
-      if (!response.ok) throw { status: response.status, message: `platform HTTP ${response.status}`, details: isRecord(payload) ? { platformCode: payload.code, requestId: payload.requestId } : undefined }
+      if (!response.ok) {
+        const errorPayload = isRecord(payload) && isRecord(payload.error) ? payload.error : payload
+        const rejection = this.parseRejection(errorPayload)
+        throw {
+          status: response.status,
+          message: `platform HTTP ${response.status}`,
+          details: isRecord(errorPayload)
+            ? {
+                ...(readString(errorPayload.code) ? { platformCode: readString(errorPayload.code) } : {}),
+                ...(readString(errorPayload.requestId) ? { requestId: readString(errorPayload.requestId) } : {}),
+                ...(rejection ? { rejection } : {}),
+              }
+            : undefined,
+        }
+      }
       return payload
     } catch (error) {
       const normalized = this.normalizeError(error)
@@ -419,6 +441,23 @@ export class HttpPlatformConnector implements PlatformConnector {
       clearTimeout(timeout)
       signal?.removeEventListener('abort', abortFromCaller)
     }
+  }
+
+  private parseRejection(value: unknown): WriteStatus['rejection'] | undefined {
+    if (!isRecord(value)) return undefined
+    const rawCode = readString(value.code) ?? readString(value.error_code)
+    const fields = Array.isArray(value.fields)
+      ? value.fields.flatMap(item => {
+          if (!isRecord(item)) return []
+          const path = readString(item.path) ?? readString(item.field) ?? readString(item.name)
+          const message = readString(item.message) ?? readString(item.error)
+          if (!path || !message) return []
+          const rawFieldCode = readString(item.code) ?? readString(item.error_code)
+          return [{ path, message, ...(rawFieldCode ? { rawCode: rawFieldCode } : {}) }]
+        })
+      : []
+    if (!rawCode && fields.length === 0) return undefined
+    return { rawCode: rawCode ?? 'PLATFORM_VALIDATION_FAILED', ...(readString(value.message) ? { message: readString(value.message) } : {}), fields }
   }
 }
 
