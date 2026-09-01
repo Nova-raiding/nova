@@ -12,6 +12,6 @@ describe('migration 139 interactive confirmation ticket reservations', () => {
     expect(sql).toContain('BEFORE UPDATE OF consumed_at, reservation_id, reserved_at, reservation_expires_at')
     expect(sql).toContain('GRANT UPDATE (consumed_at, reservation_id, reserved_at, reservation_expires_at)')
     expect(sql).toContain('REVOKE UPDATE (workspace_id, actor_id, session_id, intent_hash, nonce_hash, expires_at)')
-    expect((await loadMigrations()).at(-1)).toMatchObject({ version: 139, name: 'interactive_confirmation_ticket_reservations' })
+    expect((await loadMigrations()).find(migration => migration.version === 139)).toMatchObject({ version: 139, name: 'interactive_confirmation_ticket_reservations' })
   })
 })

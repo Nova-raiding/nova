@@ -10,7 +10,8 @@ class RecordingClient implements SqlClient {
     const rowCount = text.startsWith('INSERT INTO interactive_confirmation_tickets') || text.startsWith('UPDATE interactive_confirmation_tickets') || text.startsWith('SELECT 1')
       ? this.affectedRows.shift() ?? 0
       : 0
-    return { rows: [] as Row[], rowCount }
+    const rows = text.includes('RETURNING reservation_revision') && rowCount === 1 ? [{ reservation_revision: 1 }] as Row[] : [] as Row[]
+    return { rows, rowCount }
   }
   release() {}
 }
@@ -29,6 +30,10 @@ const ticket: InteractiveConfirmationTicket = {
   nonceHash: 'b'.repeat(64),
   expiresAt: '2026-08-31T03:10:00.000Z',
 }
+const reservationToken = 'c'.repeat(64)
+const lease = { ...ticket, reservationId: 'publish:job-1', reservationToken, reservationExpiresAt: '2026-08-31T03:05:00.000Z' }
+const fencedLease = { ...ticket, reservationId: 'publish:job-1', reservationToken, reservationRevision: 1 }
+const finalizeLease = { ...fencedLease, consumedOperationId: 'publish-job:job-1' }
 
 describe('PostgresInteractiveConfirmationTicketRepository', () => {
   it('issues a bounded ticket inside the workspace transaction', async () => {
@@ -80,31 +85,47 @@ describe('PostgresInteractiveConfirmationTicketRepository', () => {
   it('reserves only an available matching ticket with a bounded lease', async () => {
     const client = new RecordingClient([1])
     const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
-    await expect(repository.reserve({ ...ticket, reservationId: 'publish:job-1', reservationExpiresAt: '2026-08-31T03:05:00.000Z' })).resolves.toBe(true)
+    await expect(repository.reserve(lease)).resolves.toEqual({ reservationId: 'publish:job-1', reservationToken, reservationRevision: 1 })
     const update = client.calls.find(call => call.text.startsWith('UPDATE interactive_confirmation_tickets'))!
-    expect(update.text).toContain('reservation_id IS NULL OR reservation_expires_at<=now() OR reservation_id=$6')
-    expect(update.text).toContain('$7::timestamptz<=expires_at')
-    expect(update.values).toEqual([ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, 'publish:job-1', '2026-08-31T03:05:00.000Z'])
+    expect(update.text).toContain('reservation_revision=reservation_revision+1')
+    expect(update.text).toContain('reservation_id IS NULL OR reservation_expires_at<=now()')
+    expect(update.text).not.toContain('OR reservation_id=$6')
+    expect(update.text).toContain('(nonce_digest_version=1 AND nonce_hash IN ($5,$9))')
+    expect(update.text).toContain('$8::timestamptz<=expires_at')
+    expect(update.values).toEqual([ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, 'publish:job-1', reservationToken, '2026-08-31T03:05:00.000Z', ticket.nonceHash])
+  })
+
+  it('uses the raw bearer only for legacy rows while reserving new rows by digest', async () => {
+    const client = new RecordingClient([1])
+    const rawBearer = 'd'.repeat(64)
+    const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
+    await expect(repository.reserve({ ...lease, legacyNonceHash: rawBearer })).resolves.toBeDefined()
+    expect(client.calls.find(call => call.text.startsWith('UPDATE interactive_confirmation_tickets'))?.values?.at(-1)).toBe(rawBearer)
   })
 
   it('finalizes a live owned reservation and recognizes an idempotent replay', async () => {
     const first = new RecordingClient([1])
-    const input = { ...ticket, reservationId: 'publish:job-1' }
-    await expect(new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(first), () => now).finalize(input)).resolves.toBe(true)
-    expect(first.calls.find(call => call.text.startsWith('UPDATE interactive_confirmation_tickets'))?.text).toContain('reservation_expires_at>now()')
+    await expect(new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(first), () => now).finalize(finalizeLease)).resolves.toBe(true)
+    const update = first.calls.find(call => call.text.startsWith('UPDATE interactive_confirmation_tickets'))!
+    expect(update.text).toContain('reservation_expires_at>now()')
+    expect(update.text).toContain('reservation_token=$7')
+    expect(update.text).toContain('reservation_revision=$8')
+    expect(update.text).toContain('consumed_operation_id=$9')
 
     const replay = new RecordingClient([0, 1])
-    await expect(new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(replay), () => now).finalize(input)).resolves.toBe(true)
+    await expect(new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(replay), () => now).finalize(finalizeLease)).resolves.toBe(true)
     expect(replay.calls.some(call => call.text.startsWith('SELECT 1'))).toBe(true)
   })
 
   it('releases only the matching unconsumed reservation', async () => {
     const client = new RecordingClient([1])
     const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
-    await expect(repository.release({ ...ticket, reservationId: 'publish:job-1' })).resolves.toBe(true)
+    await expect(repository.release(fencedLease)).resolves.toBe(true)
     const update = client.calls.find(call => call.text.startsWith('UPDATE interactive_confirmation_tickets'))!
     expect(update.text).toContain('SET reservation_id=NULL')
     expect(update.text).toContain('reservation_id=$6')
+    expect(update.text).toContain('reservation_token=$7')
+    expect(update.text).toContain('reservation_revision=$8')
     expect(update.text).toContain('consumed_at IS NULL')
   })
 
@@ -121,33 +142,38 @@ describe('MemoryInteractiveConfirmationTicketRepository reservations', () => {
     let clock = now
     const repository = new MemoryInteractiveConfirmationTicketRepository(() => clock)
     await repository.issue(ticket)
-    const lease = { ...ticket, reservationId: 'publish:job-1', reservationExpiresAt: '2026-08-31T03:05:00.000Z' }
-    await expect(repository.reserve(lease)).resolves.toBe(true)
+    const reserved = await repository.reserve(lease)
+    expect(reserved).toEqual({ reservationId: 'publish:job-1', reservationToken, reservationRevision: 1 })
     await expect(repository.consume(ticket)).resolves.toBe(false)
-    await expect(repository.finalize(lease)).resolves.toBe(true)
-    await expect(repository.finalize(lease)).resolves.toBe(true)
-    await expect(repository.release(lease)).resolves.toBe(false)
+    await expect(repository.finalize({ ...fencedLease, consumedOperationId: 'publish-job:job-1' })).resolves.toBe(true)
+    await expect(repository.finalize({ ...fencedLease, consumedOperationId: 'publish-job:job-1' })).resolves.toBe(true)
+    await expect(repository.finalize({ ...fencedLease, consumedOperationId: 'publish-job:other' })).resolves.toBe(false)
+    await expect(repository.release(fencedLease)).resolves.toBe(false)
   })
 
   it('allows only the reservation owner to release and recovers an expired lease', async () => {
     let clock = now
     const repository = new MemoryInteractiveConfirmationTicketRepository(() => clock)
     await repository.issue(ticket)
-    const first = { ...ticket, reservationId: 'publish:job-1', reservationExpiresAt: '2026-08-31T03:02:00.000Z' }
-    const second = { ...ticket, reservationId: 'publish:job-2', reservationExpiresAt: '2026-08-31T03:06:00.000Z' }
-    await expect(repository.reserve(first)).resolves.toBe(true)
-    await expect(repository.release({ ...first, reservationId: 'other' })).resolves.toBe(false)
-    await expect(repository.reserve(second)).resolves.toBe(false)
+    const first = { ...ticket, reservationId: 'publish:job-1', reservationToken: 'd'.repeat(64), reservationExpiresAt: '2026-08-31T03:02:00.000Z' }
+    const second = { ...ticket, reservationId: 'publish:job-2', reservationToken: 'e'.repeat(64), reservationExpiresAt: '2026-08-31T03:06:00.000Z' }
+    const firstFence = await repository.reserve(first)
+    expect(firstFence).toBeDefined()
+    await expect(repository.release({ ...fencedLease, reservationId: 'other' })).resolves.toBe(false)
+    await expect(repository.reserve(second)).resolves.toBeUndefined()
     clock = new Date('2026-08-31T03:03:00.000Z')
-    await expect(repository.reserve(second)).resolves.toBe(true)
-    await expect(repository.release(second)).resolves.toBe(true)
+    const secondFence = await repository.reserve(second)
+    expect(secondFence).toMatchObject({ reservationRevision: 2 })
+    await expect(repository.release({ ...ticket, ...firstFence! })).resolves.toBe(false)
+    await expect(repository.finalize({ ...ticket, ...firstFence!, consumedOperationId: 'publish-job:stale' })).resolves.toBe(false)
+    await expect(repository.release({ ...ticket, ...secondFence! })).resolves.toBe(true)
     await expect(repository.consume(ticket)).resolves.toBe(true)
   })
 
   it('rejects leases beyond the ticket expiry', async () => {
     const repository = new MemoryInteractiveConfirmationTicketRepository(() => now)
     await repository.issue(ticket)
-    await expect(repository.reserve({ ...ticket, reservationId: 'publish:job-1', reservationExpiresAt: '2026-08-31T03:11:00.000Z' })).resolves.toBe(false)
+    await expect(repository.reserve({ ...lease, reservationExpiresAt: '2026-08-31T03:11:00.000Z' })).resolves.toBeUndefined()
   })
 })
 
