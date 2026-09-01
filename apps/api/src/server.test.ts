@@ -414,7 +414,7 @@ describe('API application wiring', () => {
     expect(archiveCall).toBeGreaterThan(eventBinding)
     expect(source).toContain('const workerNeedsWorkspaceHydration = workerRoute')
     expect(source).toContain("path === '/v1/internal/image-generation-jobs/reconciliation'")
-    expect(source).toContain('(!workerRoute || workerNeedsWorkspaceHydration)')
+    expect(source).toContain('(!workerRoute || workerNeedsWorkspaceHydration || assetScannerRoute)')
   })
 
   it('replays an archived callback to close a matching provider lease without retrying the Provider', () => {
