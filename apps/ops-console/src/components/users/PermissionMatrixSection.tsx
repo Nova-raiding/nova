@@ -82,7 +82,7 @@ export function PermissionMatrixSection() {
   const columns = useMemo<TableColumnsType<PermissionMatrixItem>>(() => [
     { title: "插件方法", dataIndex: "method", key: "method", fixed: "left", width: 240, render: (value: string) => <Typography.Text code copyable>{value}</Typography.Text> },
     { title: "能力", dataIndex: "capability", key: "capability", fixed: "left", width: 220, render: (value: string) => <Typography.Text>{value}</Typography.Text> },
-    { title: "边界", key: "boundary", width: 170, render: (_value, row) => <Space size={4} wrap><Tag>{row.workbench === "platform" ? "平台台" : "工作区台"}</Tag><Tag>{row.scope}</Tag></Space> },
+    { title: "边界", key: "boundary", width: 170, render: (_value, row) => <Space size={4} wrap><Tag>{row.workbench === "platform" ? "平台工作台" : "商家工作台"}</Tag><Tag>{row.scope}</Tag></Space> },
     { title: "动作与审计", key: "effect", width: 190, render: (_value, row) => <Space size={4} wrap><Tag color={row.effect === "write" ? "volcano" : "blue"}>{row.effect === "write" ? "写入" : "读取"}</Tag><Tag>{row.audit}</Tag>{row.obligations.map((item) => <Tag key={item} color="gold">{item}</Tag>)}</Space> },
     ...visibleRoles.map((role) => ({ title: roleLabels[role] ?? role, key: role, width: 116, align: "center" as const, render: (_value: unknown, row: PermissionMatrixItem) => <AccessTag access={row.role_access[role] ?? "hidden"} /> })),
   ], [visibleRoles]);

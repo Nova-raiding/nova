@@ -28,4 +28,10 @@ describe("permission matrix filtering", () => {
     expect(source).toContain("当前筛选和已读取的矩阵仍保留");
     expect(source).toContain('className="ops-error-retry"');
   });
+
+  it("labels platform and merchant workbench boundaries distinctly", () => {
+    expect(source).toContain('row.workbench === "platform" ? "平台工作台" : "商家工作台"');
+    expect(source).not.toContain("平台台");
+    expect(source).not.toContain("工作区台");
+  });
 });
