@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -509,13 +509,37 @@ describe('deployment operation scripts', () => {
   it('writes database backups through a verified temporary file and atomic rename', () => {
     const script = readFileSync('infra/scripts/backup-postgres.sh', 'utf8')
     expect(script).toContain('temporary=$(mktemp "$BACKUP_DIR/.merchant-${timestamp}.XXXXXX.dump")')
+    expect(script).toContain('reservation="$output.lock"')
+    expect(script).toContain('backup output already exists: $output')
+    expect(script).toContain('backup output is already being created: $output')
     expect(script).toContain('trap cleanup EXIT HUP INT TERM')
     expect(script).toContain('test -s "$temporary"')
     expect(script).toContain('sha256sum "$temporary" > "$temporary_checksum"')
-    expect(script).toContain('mv -f -- "$temporary" "$output"')
-    expect(script).toContain('mv -f -- "$temporary_checksum" "$output.sha256"')
-    expect(script).toContain('rm -f -- "$temporary" "$temporary_checksum"')
+    expect(script).toContain('mv -- "$temporary" "$output"')
+    expect(script).toContain('mv -- "$temporary_checksum" "$output.sha256"')
+    expect(script).toContain('rmdir -- "$reservation"')
+    expect(script).toContain('rm -f -- "$temporary" "$temporary_checksum"; rmdir -- "$reservation"')
     expect(execFileSync('sh', ['-n', 'infra/scripts/backup-postgres.sh'], { encoding: 'utf8' })).toBe('')
+  })
+
+  it('refuses same-second backup collisions instead of overwriting a verified artifact', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'merchant-backup-collision-'))
+    const bin = join(directory, 'bin')
+    const backups = join(directory, 'backups')
+    const database = 'postgresql://merchant@localhost:5432/merchant'
+    execFileSync('mkdir', ['-p', bin, backups])
+    writeFileSync(join(bin, 'date'), '#!/bin/sh\nprintf \'20260901T000000Z\\n\'')
+    writeFileSync(join(bin, 'pg_dump'), '#!/bin/sh\nprintf \'verified backup bytes\\n\'')
+    chmodSync(join(bin, 'date'), 0o755)
+    chmodSync(join(bin, 'pg_dump'), 0o755)
+    const env = { DATABASE_URL: database, BACKUP_DIR: backups, PATH: `${bin}:${process.env.PATH ?? ''}` }
+
+    expect(run('infra/scripts/backup-postgres.sh', [], env)).toContain('backup written:')
+    const backup = join(backups, 'merchant-20260901T000000Z.dump')
+    expect(readFileSync(backup, 'utf8')).toBe('verified backup bytes\n')
+    expect(() => run('infra/scripts/backup-postgres.sh', [], env)).toThrow(/already exists/)
+    expect(readFileSync(backup, 'utf8')).toBe('verified backup bytes\n')
+    expect(readdirSync(backups).sort()).toEqual([backup.split('/').pop(), `${backup.split('/').pop()}.sha256`])
   })
 
   it('derives Compose acceptance migration expectations from the migration loader', () => {
