@@ -8,7 +8,7 @@ describe('object orphan cleaner', () => {
     await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'ok', reason: 'rollback' })
     await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'fail', reason: 'rollback' })
     const result = await cleanObjectStorageOrphans({ workspaceId: 'ws_1', repository, now: new Date(), deleteObject: vi.fn(async key => { if (key === 'fail') throw new Error('timeout') }) })
-    expect(result).toEqual({ scanned: 2, cleaned: 1, retrying: 1, manualAttention: 0 })
+    expect(result).toEqual({ scanned: 2, claimed: 2, skipped: 0, cleaned: 1, retrying: 1, manualAttention: 0 })
     expect(await repository.listPending('ws_1')).toEqual([])
   })
 

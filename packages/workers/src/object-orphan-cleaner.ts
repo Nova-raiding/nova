@@ -1,6 +1,6 @@
 import type { ObjectOrphanRepository, ObjectStorageOrphan } from '../../persistence/src/object-orphan-repository.js'
 
-export interface ObjectOrphanCleanupResult { scanned: number; cleaned: number; retrying: number; manualAttention: number }
+export interface ObjectOrphanCleanupResult { scanned: number; claimed: number; skipped: number; cleaned: number; retrying: number; manualAttention: number }
 
 type OrphanOutcome = 'cleaned' | 'retrying' | 'manual_attention'
 
@@ -22,8 +22,9 @@ export async function cleanObjectStorageOrphans(input: { workspaceId: string; re
   if (input.maxAttempts !== undefined && (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 100)) throw new Error('OBJECT_ORPHAN_MAX_ATTEMPTS_INVALID')
   const now = input.now ?? new Date()
   const maxAttempts = input.maxAttempts ?? 5
+  const candidates = await input.repository.listPending(input.workspaceId, input.limit ?? 100)
   const rows = await input.repository.claimPending(input.workspaceId, { limit: input.limit ?? 100, now: now.toISOString() })
-  const result: ObjectOrphanCleanupResult = { scanned: rows.length, cleaned: 0, retrying: 0, manualAttention: 0 }
+  const result: ObjectOrphanCleanupResult = { scanned: candidates.length, claimed: rows.length, skipped: Math.max(0, candidates.length - rows.length), cleaned: 0, retrying: 0, manualAttention: 0 }
   for (const row of rows) {
     const key = `${repositoryId(input.repository)}:${input.workspaceId}:${row.id}`
     let cleanup = activeCleanups.get(key)
