@@ -5,6 +5,15 @@ export class WorkerFailure extends Error {
   constructor(readonly error: WorkerError) { super(error.message) }
 }
 
+const MAX_WORKER_IDENTITY_LENGTH = 256
+
+function isSafeWorkerIdentity(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.trim().length > 0
+    && value.length <= MAX_WORKER_IDENTITY_LENGTH
+    && !/[\u0000-\u001f\u007f]/u.test(value)
+}
+
 export class InMemoryJobRunner<T, R> {
   readonly jobs = new Map<string, WorkerJob<T>>()
   private readonly idempotency = new Map<string, string>()
@@ -25,7 +34,9 @@ export class InMemoryJobRunner<T, R> {
 
   enqueue(input: { workspaceId: string; idempotencyKey: string; payload: T; maxAttempts?: number }): WorkerJob<T> {
     if (typeof input.workspaceId !== 'string' || !input.workspaceId.trim()) throw new Error('WORKER_WORKSPACE_REQUIRED')
+    if (!isSafeWorkerIdentity(input.workspaceId)) throw new Error('WORKER_WORKSPACE_INVALID')
     if (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey.trim()) throw new Error('WORKER_IDEMPOTENCY_KEY_REQUIRED')
+    if (!isSafeWorkerIdentity(input.idempotencyKey)) throw new Error('WORKER_IDEMPOTENCY_KEY_INVALID')
     if (input.maxAttempts !== undefined && (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 100)) throw new Error('WORKER_MAX_ATTEMPTS_INVALID')
     // Idempotency is tenant-scoped. A merchant-supplied key may legitimately
     // be reused in another workspace and must never return that workspace's job.
