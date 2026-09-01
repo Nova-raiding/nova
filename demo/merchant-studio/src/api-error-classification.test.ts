@@ -22,4 +22,10 @@ describe('merchant API error classification', () => {
     expect(describeApiError(apiError('Transport closed', undefined, 503))).toContain('大麦连接已中断')
     expect(describeApiError(apiError('upstream unavailable', undefined, 503))).toContain('服务暂不可用')
   })
+
+  it('explains that an unknown provider outcome must be reconciled before retrying', () => {
+    const message = describeApiError(apiError('provider result not confirmed', 'MODEL_PROVIDER_OUTCOME_UNKNOWN', 503))
+    expect(message).toContain('先查询模型状态或提交人工对账')
+    expect(message).toContain('不会重复生成、扣费或发布')
+  })
 })
