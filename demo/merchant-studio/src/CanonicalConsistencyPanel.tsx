@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import type { ConsistencyItem } from './data-consistency.js'
 
 type Freshness = 'fresh' | 'stale' | 'expired' | 'unknown'
@@ -20,20 +21,27 @@ const freshnessCopy: Record<Freshness, { label: string; detail: string; tone: 'g
 }
 
 export function CanonicalConsistencyPanel({ items, freshness = 'unknown', generatedAt, errorMessage, onRefresh, refreshing = false }: CanonicalConsistencyPanelProps) {
+  const errorRef = useRef<HTMLDivElement>(null)
   const canonical = items.find((item) => item.id === 'products')
   const pendingCount = items.filter((item) => item.status !== 'green').length
   const freshnessState = freshnessCopy[freshness]
+
+  useEffect(() => {
+    if (!errorMessage) return
+    window.requestAnimationFrame(() => errorRef.current?.focus({ preventScroll: true }))
+  }, [errorMessage])
+
   return (
-    <section className="data-consistency-card canonical-consistency-panel" data-testid="canonical-consistency-panel" aria-labelledby="canonical-consistency-title">
+    <section className="data-consistency-card canonical-consistency-panel" data-testid="canonical-consistency-panel" aria-labelledby="canonical-consistency-title" aria-busy={refreshing}>
       <div className="data-consistency-head">
         <div>
           <span className="section-kicker">CANONICAL STATUS</span>
           <h3 id="canonical-consistency-title">规范商品状态</h3>
           <p>只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。</p>
         </div>
-        {onRefresh && <button className="secondary canonical-refresh" onClick={onRefresh} disabled={refreshing} aria-label="重新检查规范商品状态"><RefreshCw size={14} aria-hidden="true" />{refreshing ? '检查中…' : '重新检查'}</button>}
+        {onRefresh && <button type="button" className="secondary canonical-refresh" onClick={onRefresh} disabled={refreshing} aria-label="重新检查规范商品状态" aria-describedby={errorMessage ? 'canonical-error-description' : undefined}><RefreshCw size={14} aria-hidden="true" />{refreshing ? '检查中…' : '重新检查'}</button>}
       </div>
-      {errorMessage && <div className="canonical-error-summary" role="alert"><AlertTriangle size={16} aria-hidden="true" /><div><b>一致性报告读取失败</b><span>{errorMessage}</span><small>下一步：重试；如果仍失败，请转交运营查看服务端诊断。</small></div></div>}
+      {errorMessage && <div ref={errorRef} id="canonical-error-summary" className="canonical-error-summary" role="alert" tabIndex={-1} aria-labelledby="canonical-error-title" aria-describedby="canonical-error-description"><AlertTriangle size={16} aria-hidden="true" /><div><b id="canonical-error-title">一致性报告读取失败</b><span id="canonical-error-description">{errorMessage}。已保留上次可信状态；请重新检查后继续。</span><small>下一步：重试；如果仍失败，请转交运营查看服务端诊断。</small></div></div>}
       <div className={`canonical-freshness ${freshnessState.tone}`} role="status" aria-live="polite">
         {freshness === 'fresh' ? <CheckCircle2 size={16} aria-hidden="true" /> : <Clock3 size={16} aria-hidden="true" />}
         <div><b>{freshnessState.label}</b><span>{freshnessState.detail}{generatedAt ? ` 生成于 ${generatedAt}。` : ''}</span></div>

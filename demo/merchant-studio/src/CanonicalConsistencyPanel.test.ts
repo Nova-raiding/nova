@@ -23,6 +23,16 @@ describe('CanonicalConsistencyPanel', () => {
     expect(markup).toContain('一致性报告读取失败')
     expect(markup).toContain('workspace snapshot unavailable')
     expect(markup).toContain('重新检查')
-    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('role="alert" tabindex="-1"')
+    expect(markup).toContain('aria-labelledby="canonical-error-title"')
+    expect(markup).toContain('aria-describedby="canonical-error-description"')
+    expect(markup).toContain('type="button"')
+  })
+
+  it('keeps the panel busy while refreshing and preserves trusted content', () => {
+    const markup = renderToStaticMarkup(createElement(CanonicalConsistencyPanel, { items, refreshing: true, onRefresh: vi.fn() }))
+    expect(markup).toContain('aria-busy="true"')
+    expect(markup).toContain('当前工作区待处理：1 项')
+    expect(markup).toContain('检查中…')
   })
 })
