@@ -29,7 +29,7 @@ import { verifyScannerRequestProof } from '../../../packages/security/src/scanne
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { ConnectorFailure, createVaultCredentialProviderFromEnv, isProductionCanaryReady, validatePlatformCapabilityEvidence } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
-import { createContentGeneratorFromEnv, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
+import { createContentGeneratorFromEnv, validateContentSchema, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
 import { createImageGeneratorFromEnv } from '../../../packages/ai/src/image-generator.js'
 import { createImageEditGeneratorFromEnv } from '../../../packages/ai/src/image-editor.js'
 import { createImageFactsExtractorFromEnv } from '../../../packages/ai/src/image-facts.js'
@@ -6402,15 +6402,14 @@ function readStaticBrief(value: unknown): StaticBrief | undefined {
   }
 }
 
-function readContentModules(value: unknown): ContentModule[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  const modules = value.filter(isObject).filter(item => typeof item.key === 'string' && typeof item.title === 'string' && typeof item.purpose === 'string' && typeof item.body === 'string' && Array.isArray(item.factSourceIds)).map(item => {
-    const referencedSkuIds = Array.isArray(item.referencedSkuIds) ? item.referencedSkuIds.filter((sku): sku is string => typeof sku === 'string' && sku.trim().length > 0).slice(0, 100) : undefined
-    const contentKind: import('../../../packages/ai/src/generator.js').ContentModule['contentKind'] = item.contentKind === 'fact' || item.contentKind === 'creative' || item.contentKind === 'pending' ? item.contentKind as import('../../../packages/ai/src/generator.js').ContentModule['contentKind'] : undefined
-    const pendingReason = typeof item.pendingReason === 'string' && item.pendingReason.trim() ? item.pendingReason.trim() : undefined
-    return { key: (item.key as string).trim(), title: (item.title as string).trim(), purpose: (item.purpose as string).trim(), body: (item.body as string).trim(), factSourceIds: (item.factSourceIds as unknown[]).filter((source): source is string => typeof source === 'string' && source.trim().length > 0), ...(contentKind ? { contentKind } : {}), ...(pendingReason ? { pendingReason } : {}), ...(referencedSkuIds?.length ? { referencedSkuIds } : {}), ...(typeof item.imageGuidance === 'string' && item.imageGuidance.trim() ? { imageGuidance: item.imageGuidance.trim() } : {}), ...(isObject(item.decisionContract) ? { decisionContract: structuredClone(item.decisionContract) as unknown as import('../../../packages/ai/src/generator.js').DetailPageDecisionContract } : {}) }
-  }).filter(item => item.key && item.title && item.body).slice(0, 16)
-  return modules.length ? modules : undefined
+export function readContentModules(value: unknown): ContentModule[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) throw new DomainError('CONTENT_SCHEMA_INVALID', '异步 worker 的 modules 必须包含 1 至 16 个合法模块', 400)
+  try {
+    return validateContentSchema({ title: 'worker-result', detail: 'worker-result', sellingPoints: ['worker-result'], modules: value }, '异步 worker', { requireDecisionContracts: true }).modules
+  } catch (error) {
+    throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '异步 worker 的 modules 结构无效', 400)
+  }
 }
 
 function reviewProductImagesForMcp(images: readonly string[] | undefined) {
