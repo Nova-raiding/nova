@@ -18,6 +18,15 @@ describe("shared operations data states", () => {
     expect(error).toContain('data-state="error"');
     expect(error).toContain('role="alert"');
     expect(error).toContain('aria-label="重试审计记录"');
+    expect(error).toContain('tabindex="-1"');
+    expect(error).toContain("aria-labelledby=");
+    expect(error).toContain("aria-describedby=");
+  });
+
+  it("keeps an error recoverable when no page-specific retry callback exists", () => {
+    const markup = renderToStaticMarkup(<OpsErrorState description="运营 API 暂时不可用" />);
+    expect(markup).toContain('aria-label="重试"');
+    expect(markup).toContain("重试");
   });
 
   it("preserves real children only in the ready state", () => {
