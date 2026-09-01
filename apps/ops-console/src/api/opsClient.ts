@@ -78,13 +78,12 @@ type OpsAuthEnvironment = Readonly<Record<string, string | boolean | undefined>>
 const viteEnv = (import.meta as ImportMeta & { env: OpsAuthEnvironment }).env;
 
 export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boolean {
-  // Vite's PROD flag describes how the assets were bundled, not which trust
-  // boundary serves them. The Dockerfile enforces OIDC for production images;
-  // an explicitly local image is allowed to use the local Bearer gateway.
-  // When no mode is supplied, keep the secure managed default.
-  if (environment.VITE_OPS_AUTH_MODE === "local") return false;
+  // Production assets must never expose the local Bearer/operator adapter,
+  // even when a deployment accidentally injects a local-mode override.
+  if (environment.PROD === true) return true;
   if (environment.VITE_OPS_AUTH_MODE === "oidc") return true;
-  return environment.PROD === true;
+  if (environment.VITE_OPS_AUTH_MODE === "local") return false;
+  return false;
 }
 
 export const managedOpsSession = resolveManagedOpsSession(viteEnv);

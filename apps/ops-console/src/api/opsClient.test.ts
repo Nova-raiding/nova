@@ -19,7 +19,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("workspace RPC boundary", () => {
   it("forces OIDC for every production bundle while allowing explicit local mode only outside production", () => {
-    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "local" })).toBe(false);
+    expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "local" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "local" })).toBe(false);
