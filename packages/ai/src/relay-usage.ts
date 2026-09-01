@@ -192,7 +192,11 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   // Some relays return tokens but omit currency. Only a trusted settlement
   // sink may fill that gap from a versioned pricing snapshot; a plain sink
   // success is not sufficient cost evidence.
-  if (usage.costCny === undefined && settlementReceipt?.costEvidence !== true) throw new ModelUsageEvidenceMissingError('cost')
+  // A cost attestation is only meaningful when the sink also confirms that
+  // the usage record was durably recorded. Do not let a malformed or stale
+  // adapter response turn derived pricing into a successful settlement.
+  const settlementRecorded = settlementReceipt?.recorded === true
+  if (usage.costCny === undefined && (!settlementRecorded || settlementReceipt?.costEvidence !== true)) throw new ModelUsageEvidenceMissingError('cost')
   usage.metadata = { ...(usage.metadata ?? {}), ...(usage.costCny === undefined ? { cost_evidence: 'settlement_sink' } : {}), settlement: 'recorded' satisfies RelayUsageSettlement }
   return usage
 }

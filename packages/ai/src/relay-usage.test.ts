@@ -72,6 +72,15 @@ describe('relay usage normalization', () => {
     expect(usage.metadata).toMatchObject({ usage_observed: true, cost_evidence: 'settlement_sink', settlement: 'recorded' })
   })
 
+  it('fails closed when a settlement sink attests cost without recording the usage', async () => {
+    await expect(emitRelayUsage(
+      async () => ({ recorded: false, costEvidence: true } as never),
+      { id: 'req_unrecorded_cost', usage: { total_tokens: 3 } },
+      new Headers({ 'x-request-id': 'request_unrecorded_cost' }),
+      { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_unrecorded_cost' } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
+  })
+
   it('wraps settlement failure without exposing provider or sink details', async () => {
     const providerSecret = 'provider-response-secret'
     let caught: unknown
