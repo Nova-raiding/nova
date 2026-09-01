@@ -165,3 +165,20 @@ test('reduced motion disables image panel transitions and animations', async () 
     await browser.close()
   }
 })
+
+test('prioritizes the first candidate and defers the rest of the desktop gallery', async () => {
+  const { browser, context, page } = await openResponsivePage({ width: 1440, height: 1000 })
+  try {
+    const candidates = page.locator('.image-candidate-grid img')
+    await expect(candidates).toHaveCount(4)
+    await expect(candidates.nth(0)).toHaveAttribute('loading', 'eager')
+    await expect(candidates.nth(0)).toHaveAttribute('fetchpriority', 'high')
+    for (const index of [1, 2, 3]) {
+      await expect(candidates.nth(index)).toHaveAttribute('loading', 'lazy')
+      await expect(candidates.nth(index)).toHaveAttribute('fetchpriority', 'low')
+    }
+  } finally {
+    await context.close()
+    await browser.close()
+  }
+})
