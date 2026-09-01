@@ -52,10 +52,19 @@ describe('Codex relay configuration renderer', () => {
     }).errors).toEqual([])
   })
 
+  it('accepts ChatGPT subscription authentication when no host override is configured', () => {
+    const result = validateCodexRelay('approval_policy = "never"\n', {
+      MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
+      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
+    })
+    expect(result.errors).toEqual([])
+    expect(result.subscriptionAuth).toBe(true)
+  })
+
   it('fails closed when host wire_api and env_key are absent', () => {
-    const result = validateCodexRelay('[model_provider = "bad"]', {})
+    const result = validateCodexRelay('model_provider = "bad"', {})
     expect(result.errors).toEqual(expect.arrayContaining([
-      'Codex 配置缺少有效的 model_provider', 'Codex 配置缺少有效的 host model',
+      'Codex 配置缺少有效的 host model', 'Codex 配置缺少 model_providers.bad section',
       'Codex host relay 缺少有效的 base_url', 'Codex host relay 必须配置 wire_api = "responses"',
       'Codex host relay 缺少有效的 env_key（必须是环境变量名）', '业务模型 relay 缺少有效的 MODEL_RELAY_BASE_URL',
     ]))

@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
 export type RelayEnvironment = Record<string, string | undefined>
-export interface CodexRelayValidationResult { errors: string[]; provider?: string; model?: string; envKey?: string; hostBaseUrl?: string; businessBaseUrl?: string }
+export interface CodexRelayValidationResult { errors: string[]; provider?: string; model?: string; envKey?: string; hostBaseUrl?: string; businessBaseUrl?: string; subscriptionAuth?: boolean }
 
 const LEGACY = ['AI_BASE_URL', 'IMAGE_BASE_URL', 'VIDEO_BASE_URL', 'AI_API_KEY', 'IMAGE_API_KEY', 'VIDEO_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY'] as const
 const BUSINESS_MODELS = ['AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL'] as const
@@ -25,19 +25,22 @@ function https(input: string, label: string, errors: string[]) {
 export function validateCodexRelay(config: string, env: RelayEnvironment = process.env): CodexRelayValidationResult {
   const errors: string[] = []
   if (!config.trim()) errors.push('Codex 用户配置不存在或为空')
+  const hasHostOverride = /^\s*(?:model_provider|model)\s*=/mu.test(config)
   const provider = field(config, 'model_provider')
-  if (placeholder(provider)) errors.push('Codex 配置缺少有效的 model_provider')
   const model = field(config, 'model')
-  if (placeholder(model)) errors.push('Codex 配置缺少有效的 host model')
   const section = provider ? config.match(new RegExp(`\\[model_providers\\.${regexLiteral(provider)}\\]([\\s\\S]*?)(?=\\n\\[|$)`, 'u'))?.[1] ?? '' : ''
-  if (provider && !section) errors.push(`Codex 配置缺少 model_providers.${provider} section`)
   const baseUrl = field(section, 'base_url')
-  if (placeholder(baseUrl)) errors.push('Codex host relay 缺少有效的 base_url')
-  else https(baseUrl!, 'Codex host relay base_url', errors)
-  if (field(section, 'wire_api') !== 'responses') errors.push('Codex host relay 必须配置 wire_api = "responses"')
   const envKey = field(section, 'env_key')
-  if (placeholder(envKey) || !/^[A-Z][A-Z0-9_]*$/u.test(envKey ?? '')) errors.push('Codex host relay 缺少有效的 env_key（必须是环境变量名）')
-  else if (placeholder(env[envKey!])) errors.push(`Codex host relay 环境变量未注入：${envKey}`)
+  if (hasHostOverride) {
+    if (placeholder(provider)) errors.push('Codex 配置缺少有效的 model_provider')
+    if (placeholder(model)) errors.push('Codex 配置缺少有效的 host model')
+    if (provider && !section) errors.push(`Codex 配置缺少 model_providers.${provider} section`)
+    if (placeholder(baseUrl)) errors.push('Codex host relay 缺少有效的 base_url')
+    else https(baseUrl!, 'Codex host relay base_url', errors)
+    if (field(section, 'wire_api') !== 'responses') errors.push('Codex host relay 必须配置 wire_api = "responses"')
+    if (placeholder(envKey) || !/^[A-Z][A-Z0-9_]*$/u.test(envKey ?? '')) errors.push('Codex host relay 缺少有效的 env_key（必须是环境变量名）')
+    else if (placeholder(env[envKey!])) errors.push(`Codex host relay 环境变量未注入：${envKey}`)
+  }
 
   const businessBaseUrl = env.MODEL_RELAY_BASE_URL?.trim()
   if (placeholder(businessBaseUrl)) errors.push('业务模型 relay 缺少有效的 MODEL_RELAY_BASE_URL')
@@ -45,7 +48,7 @@ export function validateCodexRelay(config: string, env: RelayEnvironment = proce
   if (placeholder(env.MODEL_RELAY_API_KEY)) errors.push('业务模型 relay 缺少 MODEL_RELAY_API_KEY')
   for (const variable of BUSINESS_MODELS) if (placeholder(env[variable]?.trim())) errors.push(`业务模型 relay 缺少有效的 ${variable}`)
   for (const variable of LEGACY) if (env[variable]?.trim()) errors.push(`检测到不允许的直连模型配置：${variable}；请移除并仅使用 MODEL_RELAY_*`)
-  return { errors, provider, model, envKey, hostBaseUrl: baseUrl, businessBaseUrl }
+  return { errors, ...(provider ? { provider } : {}), ...(model ? { model } : {}), ...(envKey ? { envKey } : {}), ...(baseUrl ? { hostBaseUrl: baseUrl } : {}), businessBaseUrl, subscriptionAuth: !hasHostOverride }
 }
 
 export function runCodexRelayValidation(configPath: string, env: RelayEnvironment = process.env) {
@@ -156,5 +159,6 @@ if (resolve(process.argv[1] ?? '') === resolve(fileURLToPath(import.meta.url))) 
     console.error('codex relay validation failed')
     for (const error of result.errors) console.error(`- ${error}`)
     process.exitCode = 1
-  } else console.log(`codex relay ready: host_provider=${result.provider} host_endpoint=${new URL(result.hostBaseUrl!).host} business_relay=${new URL(result.businessBaseUrl!).host}`)
+  } else if (result.subscriptionAuth) console.log(`codex relay ready: host_auth=chatgpt_subscription business_relay=${new URL(result.businessBaseUrl!).host}`)
+  else console.log(`codex relay ready: host_provider=${result.provider} host_endpoint=${new URL(result.hostBaseUrl!).host} business_relay=${new URL(result.businessBaseUrl!).host}`)
 }
