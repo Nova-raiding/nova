@@ -2409,6 +2409,60 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('preserves nested API MCP auth evidence instead of downgrading it to a gateway error', async () => {
+    let requests = 0
+    const server = createServer((_req, res) => {
+      requests += 1
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({
+        data: {
+          jsonrpc: '2.0',
+          id: 1,
+          error: {
+            code: 'PERMISSION_DENIED',
+            message: 'workspace access denied',
+            details: {
+              decision_id: 'decision_nested_1',
+              policy_version: 'policy_7',
+              request_id: 'req_nested_1',
+              trace_id: 'trace_nested_1',
+              explicit_deny: true,
+            },
+          },
+        },
+        error: null,
+      }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'PERMISSION_DENIED',
+          details: {
+            decision_id: 'decision_nested_1',
+            policy_version: 'policy_7',
+            request_id: 'req_nested_1',
+            trace_id: 'trace_nested_1',
+            explicit_deny: true,
+          },
+        },
+      })
+      expect(response.result.content).toEqual([{ type: 'text', text: '当前账号没有执行这一步的权限。任务和已有内容已保留。' }])
+      expect(requests).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('blocks registry-disabled production generation before relay evidence can be accepted', async () => {
     let requests = 0
     const server = createServer(async (_req, res) => {

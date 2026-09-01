@@ -2056,9 +2056,14 @@ async function callRemote(method, params) {
           signal: controller.signal,
         })
         const payload = await responseJsonWithLimit(response)
+        // The API currently wraps the JSON-RPC envelope in `data`, while
+        // gateways may also return a top-level error. Treat both locations as
+        // the same protocol boundary so authz/evidence details are not
+        // downgraded to a generic missing-result error.
+        const remoteError = payload?.error ?? payload?.data?.error
         const transient = retrySafe && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
-        if ((!response.ok || !payload || payload.error) && (!transient || attempt === maxAttempts)) {
-          const error = payload?.error ?? {
+        if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
+          const error = remoteError ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
             message: response.status === 401
               ? 'MCP gateway authentication failed'
@@ -2068,7 +2073,7 @@ async function callRemote(method, params) {
           }
           throw Object.assign(new Error(error.message ?? 'MCP gateway error'), { code: error.code, details: error.details })
         }
-        if (!response.ok || !payload || payload.error) {
+        if (!response.ok || !payload || remoteError) {
           const retryAfter = response.status === 429 ? Number(response.headers.get('retry-after') ?? '') : Number.NaN
           const retryAfterMs = Number.isFinite(retryAfter) ? Math.max(50, Math.ceil(retryAfter * 1_000)) : 0
           const backoffMs = retryAfterMs > 0 ? retryAfterMs : retryDelayMs * (2 ** (attempt - 1))
