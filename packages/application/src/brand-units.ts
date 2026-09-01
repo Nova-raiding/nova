@@ -40,6 +40,7 @@ export interface CanonicalProduct {
   brandId: string
   title: string
   factsVersion: number
+  state: 'active' | 'archived'
 }
 
 export interface ProductListing {
@@ -158,12 +159,12 @@ export class BrandUnitService {
     return [...this.storeBindings.values()].filter(item => item.workspaceId === scope && (!brandId || item.brandId === brandId)).map(item => ({ ...item }))
   }
 
-  createCanonicalProduct(input: Omit<CanonicalProduct, 'id' | 'factsVersion'> & { id?: string; factsVersion?: number }): CanonicalProduct {
+  createCanonicalProduct(input: Omit<CanonicalProduct, 'id' | 'factsVersion' | 'state'> & { id?: string; factsVersion?: number; state?: CanonicalProduct['state'] }): CanonicalProduct {
     const brand = this.requireBrand(input.workspaceId, input.brandId)
     const id = input.id?.trim() || `product_${randomUUID()}`
     const existing = this.canonicalProducts.get(id)
     if (existing) throw new BrandUnitError('CANONICAL_PRODUCT_CONFLICT', 'canonical product id already exists')
-    const product: CanonicalProduct = { id, workspaceId: brand.workspaceId, brandId: brand.id, title: text(input.title, 'title'), factsVersion: input.factsVersion ?? 1 }
+    const product: CanonicalProduct = { id, workspaceId: brand.workspaceId, brandId: brand.id, title: text(input.title, 'title'), factsVersion: input.factsVersion ?? 1, state: input.state ?? 'active' }
     this.canonicalProducts.set(product.id, product)
     return { ...product }
   }
@@ -238,6 +239,7 @@ export class BrandUnitService {
     try {
       const brand = this.requireBrand(workspaceId, input.brandId)
       const product = this.requireProduct(workspaceId, input.canonicalProductId)
+      if (product.state !== 'active') blockers.push('CANONICAL_PRODUCT_NOT_ACTIVE')
       if (product.brandId !== brand.id) blockers.push('BRAND_ID_MISMATCH')
       const listing = this.listings.get(input.listingId)
       if (!listing || listing.workspaceId !== workspaceId) blockers.push('LISTING_NOT_FOUND')

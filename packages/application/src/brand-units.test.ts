@@ -95,6 +95,17 @@ describe('BrandUnitService', () => {
     expect(service.preflightTaskTarget(target)).toMatchObject({ state: 'ready', blockers: [] })
   })
 
+  it('blocks archived canonical products at both campaign and task preflight boundaries', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, title: '归档商品', state: 'archived' })
+    const listing = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, state: 'active' })
+    const item = { brandId: a.id, canonicalProductId: product.id, listingId: listing.id, platform: 'taobao' as const, accountId: store.id }
+
+    expect(service.preflightCampaign({ workspaceId: 'ws_1', idempotencyKey: 'archived-product', items: [item] }).items[0]).toMatchObject({ state: 'blocked', blockers: ['CANONICAL_PRODUCT_NOT_ACTIVE'] })
+    expect(service.preflightTaskTarget({ ...item, taskId: 'task-archived-product', workspaceId: 'ws_1' })).toMatchObject({ state: 'blocked', blockers: ['CANONICAL_PRODUCT_NOT_ACTIVE'] })
+  })
+
   it('rejects invalid input with a stable domain error', () => {
     expect(() => new BrandUnitService().createBrandUnit({ workspaceId: 'ws_1', name: ' ' })).toThrowError(new BrandUnitError('INVALID_INPUT', 'name is required'))
   })
