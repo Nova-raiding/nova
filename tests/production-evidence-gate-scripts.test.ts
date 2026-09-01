@@ -48,6 +48,9 @@ describe('production evidence trust and replay scripts', () => {
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { PRODUCTION_EVIDENCE_TRUST_DIR: '/tmp/anchor' })).toThrow(/forbidden.*fixed/)
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { PRODUCTION_EVIDENCE_NONCE_CONSUMER: '/tmp/consumer' })).toThrow(/forbidden.*fixed/)
     expect(() => run('infra/scripts/deploy-preflight.sh', [], { NODE_ENV: 'test', PRODUCTION_EVIDENCE_TEST_HOOK: 'enabled-for-local-tests-only' })).toThrow(/test hooks are forbidden/)
+    expect(() => run('infra/scripts/deploy-preflight.sh', [], { NODE_ENV: 'test', PRODUCTION_EVIDENCE_TEST_TRUST_DIR: '/tmp/anchor' })).toThrow(/test paths are forbidden/)
+    expect(() => run('infra/scripts/deploy-preflight.sh', [], { NODE_ENV: 'test', PRODUCTION_EVIDENCE_TEST_NONCE_CONSUMER: '/tmp/consumer' })).toThrow(/test paths are forbidden/)
+    expect(() => run('infra/scripts/deploy-preflight.sh', [], { NODE_ENV: 'production', VITEST: 'true' })).toThrow(/VITEST.*NODE_ENV=test/)
   })
 
   it('rejects writable trust directories, symlinked files, and public-key fingerprint mismatch', () => {

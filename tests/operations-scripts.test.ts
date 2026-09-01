@@ -294,6 +294,8 @@ describe('deployment operation scripts', () => {
     for (const binding of ['--artifact-root', '--public-key', '--key-id', '--capability-evidence', '--capacity-evidence', '--model-relay-evidence', '--payment-evidence', '--restore-evidence', '--object-storage-evidence', '--codex-app-host-evidence', '--canonical-cutover-evidence']) expect(deployPreflight).toContain(binding)
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found' })).toThrow()
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found', SKIP_LOCAL_OPS_GATE: 'true', NODE_ENV: 'production' })).toThrow(/SKIP_LOCAL_OPS_GATE/)
+    expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found', SKIP_LOCAL_OPS_GATE: 'true', NODE_ENV: 'test' })).toThrow(/SKIP_LOCAL_OPS_GATE.*forbidden/)
+    expect(() => run('infra/scripts/deploy-preflight.sh', [], { VITEST: 'true', NODE_ENV: 'production' })).toThrow(/VITEST.*NODE_ENV=test/)
   })
 
   it('deploys the exact verified manifest bytes instead of re-rendering kustomize', () => {

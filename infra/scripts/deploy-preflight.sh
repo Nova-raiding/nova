@@ -6,6 +6,7 @@ set -eu
 [ "${PRODUCTION_EVIDENCE_TEST_HOOK+x}" != x ] || { echo "production evidence test hooks are forbidden during deploy preflight" >&2; exit 1; }
 [ "${PRODUCTION_EVIDENCE_TEST_TRUST_DIR+x}" != x ] || { echo "production evidence test paths are forbidden during deploy preflight" >&2; exit 1; }
 [ "${PRODUCTION_EVIDENCE_TEST_NONCE_CONSUMER+x}" != x ] || { echo "production evidence test paths are forbidden during deploy preflight" >&2; exit 1; }
+[ "${VITEST:-false}" != true ] || [ "${NODE_ENV:-}" = test ] || { echo "VITEST may only bypass the clean-worktree assertion under NODE_ENV=test" >&2; exit 1; }
 
 config_path=${1:-${PRODUCTION_CONFIG_PATH:-}}
 profile=${CAPACITY_PROFILE:-pilot_50}
