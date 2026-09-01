@@ -193,4 +193,25 @@ describe('canonical product consistency report', () => {
       codes: ['ASSET_BRAND_SCOPE_MISMATCH', 'ASSET_NOT_FOUND', 'ASSET_RIGHTS_NOT_APPROVED', 'ASSET_SCAN_NOT_CLEAN'],
     })
   })
+
+  it('projects a safe fresh-task remediation for account drift', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      workspaceId: 'ws_account_drift',
+      legacyProducts: [{ id: 'product-1', workspaceId: 'ws_account_drift', brandId: 'brand-1', platform: 'taobao', accountId: 'store-current' }],
+      canonicalProducts: [{ id: 'canonical-1', workspaceId: 'ws_account_drift', brandId: 'brand-1', legacyProductId: 'product-1' }],
+      listings: [{ id: 'listing-1', workspaceId: 'ws_account_drift', brandId: 'brand-1', canonicalProductId: 'canonical-1', platform: 'taobao', accountId: 'store-current' }],
+      campaignItems: [],
+      tasks: [{ id: 'task-1', workspaceId: 'ws_account_drift', productId: 'product-1', canonicalProductId: 'canonical-1', listingId: 'listing-1', platform: 'taobao', accountId: 'store-old' }],
+    })
+
+    expect(report.findings.find(item => item.legacyProductId === 'product-1')).toMatchObject({
+      status: 'conflict',
+      codes: ['TASK_ACCOUNT_MISMATCH'],
+      nextAction: {
+        method: 'task.clone',
+        confirmation: 'interactive_confirmation',
+        requiredInputs: ['workspace_id', 'task_id', 'target_account_id', 'reason'],
+      },
+    })
+  })
 })

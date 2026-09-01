@@ -359,6 +359,17 @@ function nextActionFor(code: string, objectId: string): CanonicalNextAction {
       confirmation: 'interactive_confirmation',
     }
   }
+  if (code === 'TASK_ACCOUNT_MISMATCH') {
+    return {
+      id: `repair:task-account:${objectId}`,
+      method: 'task.clone',
+      label: '按当前店铺重新承接任务',
+      reason: `任务 ${objectId} 的店铺账号与商品关系链不一致；原任务保持不变，必须显式选择目标账号创建新任务。`,
+      permission: { allowed: false, requiredRole: 'platform_ops' },
+      requiredInputs: ['workspace_id', 'task_id', 'target_account_id', 'reason'],
+      confirmation: 'interactive_confirmation',
+    }
+  }
   return {
     id: `inspect:${code}`,
     method: 'canonical.product.consistency',
