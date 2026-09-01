@@ -407,6 +407,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const validatePlatformRoleBoundary = await readFile(new URL('./migrations/127_validate_platform_role_boundary.sql', import.meta.url), 'utf8')
   const productListingIdentityUniqueness = await readFile(new URL('./migrations/128_product_listing_identity_uniqueness.sql', import.meta.url), 'utf8')
   const campaignItemListingScopeIntegrity = await readFile(new URL('./migrations/129_campaign_item_listing_scope_integrity.sql', import.meta.url), 'utf8')
+  const canonicalLegacyIdentityUniqueness = await readFile(new URL('./migrations/130_canonical_legacy_identity_uniqueness.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -537,6 +538,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 127, name: 'validate_platform_role_boundary', sql: validatePlatformRoleBoundary },
     { version: 128, name: 'product_listing_identity_uniqueness', sql: productListingIdentityUniqueness },
     { version: 129, name: 'campaign_item_listing_scope_integrity', sql: campaignItemListingScopeIntegrity },
+    { version: 130, name: 'canonical_legacy_identity_uniqueness', sql: canonicalLegacyIdentityUniqueness },
   ]
 }
 
