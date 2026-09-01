@@ -70,13 +70,17 @@ export function resolveCanonicalProductReadScope(input: {
   }
   const canonical = input.candidates[0]!
   const listing = input.listings[0]!
+  // A scoped read must not treat an incomplete persistence projection as an
+  // identity match.  Missing values are only compatible with the unscoped
+  // pure helper form; once a caller supplies a scope, every corresponding
+  // identity field is required before the candidate can become verified.
   const identityMatches = [
-    input.workspaceId === undefined || canonical.workspaceId === undefined || canonical.workspaceId === input.workspaceId,
-    input.workspaceId === undefined || listing.workspaceId === undefined || listing.workspaceId === input.workspaceId,
-    listing.brandId === undefined || listing.brandId === canonical.brandId,
-    listing.canonicalProductId === undefined || listing.canonicalProductId === canonical.id,
-    input.platform === undefined || listing.platform === undefined || listing.platform === input.platform,
-    input.accountId === undefined || listing.accountId === undefined || listing.accountId === input.accountId,
+    input.workspaceId === undefined ? true : canonical.workspaceId === input.workspaceId,
+    input.workspaceId === undefined ? true : listing.workspaceId === input.workspaceId,
+    listing.brandId !== undefined && listing.brandId === canonical.brandId,
+    listing.canonicalProductId !== undefined && listing.canonicalProductId === canonical.id,
+    input.platform === undefined ? true : listing.platform === input.platform,
+    input.accountId === undefined ? true : listing.accountId === input.accountId,
   ].every(Boolean)
   if (!identityMatches) {
     return { status: 'blocked', code: 'CANONICAL_PRODUCT_LISTING_SCOPE_INVALID', reason: 'CANONICAL_LISTING_SCOPE_MISMATCH' }

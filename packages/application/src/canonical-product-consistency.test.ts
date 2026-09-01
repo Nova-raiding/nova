@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag } from './canonical-product-consistency.js'
+import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag, resolveCanonicalProductReadScope } from './canonical-product-consistency.js'
 
 const base = {
   workspaceId: 'ws_1',
@@ -14,6 +14,14 @@ const base = {
 } as const
 
 describe('canonical product consistency report', () => {
+  it('fails closed when a scoped canonical read has incomplete identity projection', () => {
+    expect(resolveCanonicalProductReadScope({
+      mode: 'canonical_read', workspaceId: 'ws_1', platform: 'taobao', accountId: 'store_1',
+      candidates: [{ id: 'canonical_1', workspaceId: 'ws_1', brandId: 'brand_1', title: '标准标题', facts: { category: '女装' } }],
+      listings: [{ id: 'listing_incomplete', workspaceId: 'ws_1', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao' }],
+    })).toEqual({ status: 'blocked', code: 'CANONICAL_PRODUCT_LISTING_SCOPE_INVALID', reason: 'CANONICAL_LISTING_SCOPE_MISMATCH' })
+  })
+
   it('fails closed when the workspace read-mode flag is missing, disabled, or invalid', () => {
     expect(canonicalProductReadModeFromFlag({ enabled: false, value: 'canonical_read' })).toBe('legacy_shadow')
     expect(canonicalProductReadModeFromFlag({ enabled: true, value: 'unexpected' })).toBe('legacy_shadow')
