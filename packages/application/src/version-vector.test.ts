@@ -41,6 +41,43 @@ describe('content version provenance vector', () => {
       .toThrowError(expect.objectContaining({ code: 'TASK_SNAPSHOT_INVALID', status: 409 }))
   })
 
+  it('fails closed when a standard task snapshot is missing or crosses canonical scope', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', canonicalProductId: 'canonical_1', listingId: 'listing_1' })
+    const snapshot = service.getTask(task.id)
+    const frozen = {
+      id: snapshot.inputSnapshotId,
+      taskId: snapshot.id,
+      capturedAt: snapshot.createdAt,
+      rulesCheckedAt: snapshot.createdAt,
+      product: service.products.get(task.productId),
+      skuIds: [],
+      ruleVersionIds: [],
+      assets: [],
+      promotions: [],
+      stock: 1,
+    }
+    expect(() => service.hydrateSnapshot({
+      entityType: 'task',
+      entity: {
+        ...snapshot,
+        inputSnapshot: frozen,
+      },
+    })).toThrowError(expect.objectContaining({ code: 'TASK_SNAPSHOT_SCOPE_INVALID', status: 409 }))
+
+    expect(() => service.hydrateSnapshot({
+      entityType: 'task',
+      entity: {
+        ...snapshot,
+        inputSnapshot: {
+          ...frozen,
+          canonicalProductId: 'canonical_other',
+          listingId: 'listing_other',
+        },
+      },
+    })).toThrowError(expect.objectContaining({ code: 'TASK_SNAPSHOT_SCOPE_INVALID', status: 409 }))
+  })
+
   it('accepts reordered and newer task snapshots while rejecting stale or same-version conflicts', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })

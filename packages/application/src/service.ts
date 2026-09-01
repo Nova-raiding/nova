@@ -402,6 +402,9 @@ export interface TaskInputSnapshot {
   taskId: string
   capturedAt: string
   product: Product
+  /** Canonical scope frozen with the task; standard tasks must carry both IDs. */
+  canonicalProductId?: string
+  listingId?: string
   skuIds: string[]
   price?: number
   stock: number
@@ -1317,6 +1320,14 @@ export class MerchantService {
     const snapshot = task.inputSnapshot
     if (!snapshot) return
     if (snapshot.id !== task.inputSnapshotId || snapshot.taskId !== task.id || snapshot.product?.workspaceId !== task.workspaceId || snapshot.product.id !== task.productId) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文与任务作用域不一致，已拒绝恢复', 409, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
+    const taskCanonicalProductId = task.canonicalProductId?.trim() || undefined
+    const taskListingId = task.listingId?.trim() || undefined
+    const snapshotCanonicalProductId = snapshot.canonicalProductId?.trim() || undefined
+    const snapshotListingId = snapshot.listingId?.trim() || undefined
+    const snapshotScopeMatchesTask = taskCanonicalProductId === snapshotCanonicalProductId && taskListingId === snapshotListingId
+    const productScopeMatchesTask = snapshot.product?.platform === task.platform
+      && snapshot.product?.accountId === task.accountId
+    if (!productScopeMatchesTask || !snapshotScopeMatchesTask) throw new DomainError('TASK_SNAPSHOT_SCOPE_INVALID', '任务冻结上下文与任务 canonical/platform/account 作用域不一致，已拒绝恢复', 409, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
     if (!Number.isFinite(Date.parse(snapshot.capturedAt)) || !Number.isFinite(Date.parse(snapshot.rulesCheckedAt))) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文时间戳无效', 400, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
     if (!Array.isArray(snapshot.skuIds) || !Array.isArray(snapshot.ruleVersionIds) || !Array.isArray(snapshot.assets) || !Array.isArray(snapshot.promotions)) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文缺少必要版本集合', 400, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
     if (snapshot.skuIds.some(id => typeof id !== 'string') || snapshot.ruleVersionIds.some(id => typeof id !== 'string')) throw new DomainError('TASK_SNAPSHOT_INVALID', '任务冻结上下文包含非法版本引用', 400, { task_id: task.id, input_snapshot_id: task.inputSnapshotId })
@@ -1478,6 +1489,8 @@ export class MerchantService {
       taskId: task.id,
       capturedAt: now(),
       product: scopedProduct,
+      ...(task.canonicalProductId ? { canonicalProductId: task.canonicalProductId } : {}),
+      ...(task.listingId ? { listingId: task.listingId } : {}),
       skuIds: (scopedProduct.skus ?? []).map(sku => sku.id),
       ...(typeof scopedProduct.price === 'number' ? { price: scopedProduct.price } : {}),
       stock: scopedProduct.stock,
