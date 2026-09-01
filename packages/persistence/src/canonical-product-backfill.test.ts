@@ -51,6 +51,21 @@ describe('canonical product backfill memory contract', () => {
     expect(report.conflicts).toEqual([{ legacyProductId: 'p_ambiguous', code: 'CANONICAL_MAPPING_AMBIGUOUS', canonicalIds: [] }])
   })
 
+  it('blocks duplicate identity observations with conflicting titles', () => {
+    const report = planCanonicalProductBackfill({
+      workspaceId: 'ws_a',
+      products: [
+        { id: 'p_same_brand', workspaceId: 'ws_a', brandId: 'brand_a', title: '标准标题' },
+        { id: 'p_same_brand', workspaceId: 'ws_a', brandId: 'brand_a', title: '另一个标题' },
+        // A different workspace must not make an otherwise safe mapping ambiguous.
+        { id: 'p_other_workspace', workspaceId: 'ws_b', brandId: 'brand_b', title: '不应读取' },
+      ],
+      canonicalProducts: [],
+    })
+    expect(report.creates).toEqual([])
+    expect(report.conflicts).toEqual([{ legacyProductId: 'p_same_brand', code: 'CANONICAL_MAPPING_AMBIGUOUS', canonicalIds: [] }])
+  })
+
   it('inventories a dangling canonical legacy reference before constraint validation', () => {
     const report = planCanonicalProductBackfill({
       workspaceId: 'ws_a',

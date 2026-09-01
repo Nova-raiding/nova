@@ -60,13 +60,22 @@ export function planCanonicalProductBackfill(input: {
   // resolve by ordering. Treat it as an ambiguity; otherwise one retry could
   // create a canonical row for the wrong brand. Exact duplicate observations
   // are harmless and are collapsed deterministically.
-  const productClaims = new Map<string, Set<string>>()
+  const productClaims = new Map<string, Map<string, Set<string>>>()
   for (const product of scopedProducts) {
-    const claims = productClaims.get(product.id) ?? new Set<string>()
-    claims.add(product.brandId?.trim() ?? '')
+    const brandId = product.brandId?.trim() ?? ''
+    const claims = productClaims.get(product.id) ?? new Map<string, Set<string>>()
+    const titles = claims.get(brandId) ?? new Set<string>()
+    // Duplicate observations are only harmless when their identity-bearing
+    // facts agree. A source changing the title under the same legacy id and
+    // brand is ambiguous: choosing the first row would make retries depend on
+    // source ordering and could persist the wrong canonical fact.
+    titles.add(product.title.trim())
+    claims.set(brandId, titles)
     productClaims.set(product.id, claims)
   }
-  const ambiguousProductIds = new Set([...productClaims].filter(([, claims]) => claims.size > 1).map(([id]) => id))
+  const ambiguousProductIds = new Set([...productClaims]
+    .filter(([, claims]) => claims.size > 1 || [...claims.values()].some(titles => titles.size > 1))
+    .map(([id]) => id))
   const products = [...new Map(scopedProducts.filter(product => !ambiguousProductIds.has(product.id)).map(product => [product.id, product])).values()]
   const canonical = input.canonicalProducts.filter(row => row.workspaceId === workspaceId)
   const byLegacy = new Map<string, CanonicalBackfillRow[]>()
