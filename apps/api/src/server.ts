@@ -16278,6 +16278,12 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     // a post-prepare mapping, facts, listing, or read-mode change fails closed.
     const canonicalProof = await assertCanonicalTaskScopeForAction(service.getTask(job.taskId))
     if (canonicalProof?.readMode === 'canonical_read' && (!job.canonicalReadRevision || job.canonicalReadRevision !== canonicalProof.canonicalReadRevision)) throw new DomainError('CANONICAL_EXECUTION_REVISION_STALE', '发布任务引用的标准商品一致性证据已过期，禁止释放发布凭证', 409, { expected_revision: canonicalProof.canonicalReadRevision ?? null, provided_revision: job.canonicalReadRevision ?? null })
+    if (isProduction()) {
+      const currentTask = service.getTask(job.taskId)
+      const preparedTaskRevision: number | null = typeof job.preparedTaskRevision === 'number' ? job.preparedTaskRevision : null
+      const expectedTaskRevision = preparedTaskRevision === null ? null : preparedTaskRevision + 1
+      if (preparedTaskRevision === null || !Number.isSafeInteger(preparedTaskRevision) || currentTask.state !== 'publishing' || currentTask.version !== expectedTaskRevision) throw new DomainError('AUTHZ_EXECUTION_RESOURCE_STALE', '发布任务引用的任务版本已变化，禁止释放发布凭证', 409, { expected_revision: Number.isSafeInteger(expectedTaskRevision) ? expectedTaskRevision : null, current_revision: currentTask.version })
+    }
     const account = service.getActivePlatformAccount(workspaceId, job.accountId!, job.platform)
     const snapshot = job.authorizationSnapshot
     if (!snapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '发布执行缺少入队授权快照，已拒绝释放凭据', 403)

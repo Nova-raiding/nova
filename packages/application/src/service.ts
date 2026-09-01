@@ -964,6 +964,8 @@ export interface PublishJob {
   /** Immutable authorization context captured before the publish job entered
    * the durable outbox. Worker execution must re-validate this snapshot. */
   authorizationSnapshot?: PublishAuthorizationSnapshot
+  /** Task version at publish confirmation, before the publishing transition. */
+  preparedTaskRevision?: number
   idempotencyKey: string
   state: PublishState
   confirmationHash: string
@@ -4374,7 +4376,7 @@ export class MerchantService {
       ? this.getActivePlatformAccount(input.workspaceId, accountId, task.platform)
       : undefined
     this.assertActiveJobCapacity(input.workspaceId)
-    const job: PublishJob = { id: id('pub'), workspaceId: input.workspaceId, ...(input.batchId ? { batchId: input.batchId } : {}), taskId: task.id, contentVersionId: input.contentVersionId, platform: task.platform, ...(accountId ? { accountId } : {}), ...(account ? { accountRevision: account.authRevision ?? account.revision } : {}), ...(input.authorizationSnapshot ? { authorizationSnapshot: { ...input.authorizationSnapshot } } : {}), idempotencyKey: input.idempotencyKey, state: 'queued', confirmationHash: input.confirmationHash, remoteSnapshotHash: input.remoteSnapshotHash, payloadSnapshot: clone(pending.payloadSnapshot), payloadHash: pending.payloadHash, ...(pending.selectionHash ? { selectionHash: pending.selectionHash } : {}), selectedVisuals: clone(pending.selectedVisuals), canonicalBinding, ...(pending.canonicalReadRevision ? { canonicalReadRevision: pending.canonicalReadRevision } : {}), createdAt: now(), revision: 1 }
+    const job: PublishJob = { id: id('pub'), workspaceId: input.workspaceId, ...(input.batchId ? { batchId: input.batchId } : {}), taskId: task.id, contentVersionId: input.contentVersionId, platform: task.platform, ...(accountId ? { accountId } : {}), ...(account ? { accountRevision: account.authRevision ?? account.revision } : {}), ...(input.authorizationSnapshot ? { authorizationSnapshot: { ...input.authorizationSnapshot } } : {}), preparedTaskRevision: task.version, idempotencyKey: input.idempotencyKey, state: 'queued', confirmationHash: input.confirmationHash, remoteSnapshotHash: input.remoteSnapshotHash, payloadSnapshot: clone(pending.payloadSnapshot), payloadHash: pending.payloadHash, ...(pending.selectionHash ? { selectionHash: pending.selectionHash } : {}), selectedVisuals: clone(pending.selectedVisuals), canonicalBinding, ...(pending.canonicalReadRevision ? { canonicalReadRevision: pending.canonicalReadRevision } : {}), createdAt: now(), revision: 1 }
     if (!input.deferCommit) this.commitPublishConfirmation(job)
     return job
   }
