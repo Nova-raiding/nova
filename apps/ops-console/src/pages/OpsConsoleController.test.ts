@@ -55,6 +55,14 @@ describe("managed session gate", () => {
     expect(opsSessionGateState(true, true, "stale error")).toBe("ready");
     expect(opsSessionGateState(false, false, "local connection error")).toBe("blocked");
   });
+
+  it("keeps the permission recovery action keyboard reachable", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('aria-label="重试运营权限验证"');
+    expect(source).toContain("style={{ minHeight: 44 }}");
+  });
 });
 
 describe("desktop loading feedback", () => {
