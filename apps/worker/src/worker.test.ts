@@ -496,6 +496,55 @@ describe('worker production entry', () => {
     expect(seen).toEqual([controller.signal, controller.signal, controller.signal, controller.signal])
   })
 
+  it('preserves sync terminal error evidence instead of retrying every failure', async () => {
+    const handler = createAuthorizedOutboxHandler({
+      syncRequested: async () => {
+        throw Object.assign(new Error('catalog revision conflict'), {
+          code: 'CATALOG_REVISION_CONFLICT',
+          retryable: false,
+          unknown: false,
+        })
+      },
+    })
+
+    await expect(handler({
+      event: { id: 'evt_sync_terminal', workspaceId: 'ws_a', aggregateId: 'sync_1', eventType: 'sync.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() },
+      attempt: 1,
+      now: Date.now(),
+    })).rejects.toMatchObject({
+      error: {
+        code: 'CATALOG_REVISION_CONFLICT',
+        message: 'catalog revision conflict',
+        retryable: false,
+        unknown: false,
+      },
+    })
+  })
+
+  it('preserves sync unknown evidence without converting it into a retry', async () => {
+    const handler = createAuthorizedOutboxHandler({
+      syncRequested: async () => {
+        throw Object.assign(new Error('remote outcome unavailable'), {
+          code: 'CATALOG_SYNC_OUTCOME_UNKNOWN',
+          retryable: false,
+          unknown: true,
+        })
+      },
+    })
+
+    await expect(handler({
+      event: { id: 'evt_sync_unknown', workspaceId: 'ws_a', aggregateId: 'sync_2', eventType: 'sync.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() },
+      attempt: 1,
+      now: Date.now(),
+    })).rejects.toMatchObject({
+      error: {
+        code: 'CATALOG_SYNC_OUTCOME_UNKNOWN',
+        retryable: false,
+        unknown: true,
+      },
+    })
+  })
+
   it('fails closed without reporting generation success when the lease signal aborts', async () => {
     const controller = new AbortController()
     let started!: () => void

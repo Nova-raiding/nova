@@ -201,7 +201,13 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         return { value: result }
       } catch (error) {
         throwIfLeaseLost(signal)
-        throw new WorkerFailure({ code: 'SYNC_EXECUTION_FAILED', message: error instanceof Error ? error.message : 'catalog sync failed', retryable: true, unknown: false })
+        const candidate = error as { code?: unknown; message?: unknown; retryable?: unknown; unknown?: unknown }
+        throw new WorkerFailure({
+          code: typeof candidate.code === 'string' ? candidate.code : 'SYNC_EXECUTION_FAILED',
+          message: error instanceof Error ? error.message : 'catalog sync failed',
+          retryable: candidate.retryable === true,
+          unknown: candidate.unknown === true,
+        })
       }
     }
 
