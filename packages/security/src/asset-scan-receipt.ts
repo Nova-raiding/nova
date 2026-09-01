@@ -43,7 +43,7 @@ export interface SignedAssetScanReceipt {
 }
 
 function text(value: unknown, field: string, max = 512): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000\r\n]/u.test(value)) throw new Error(`invalid ${field}`)
+  if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u001f\u007f]/u.test(value)) throw new Error(`invalid ${field}`)
   return value
 }
 
@@ -69,9 +69,9 @@ export function parseAssetScanReceipt(value: unknown, options: { now?: Date; max
   const sourceRevision = Number(subject.asset_source_revision)
   const sizeBytes = Number(subject.size_bytes)
   const findings = scan.findings
-  if (!Number.isSafeInteger(sourceRevision) || sourceRevision < 1) throw new Error('invalid asset_source_revision')
-  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > 50 * 1024 * 1024) throw new Error('invalid size_bytes')
-  if (!Array.isArray(findings) || findings.length > 32 || findings.some(item => typeof item !== 'string' || !item.trim() || item.length > 256)) throw new Error('invalid findings')
+  if (typeof subject.asset_source_revision !== 'number' || !Number.isSafeInteger(sourceRevision) || sourceRevision < 1) throw new Error('invalid asset_source_revision')
+  if (typeof subject.size_bytes !== 'number' || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > 50 * 1024 * 1024) throw new Error('invalid size_bytes')
+  if (!Array.isArray(findings) || findings.length > 32 || findings.some(item => typeof item !== 'string' || !item.trim() || item.length > 256 || /[\u0000-\u001f\u007f]/u.test(item))) throw new Error('invalid findings')
   const verdict = scan.verdict
   if (!['clean', 'malicious', 'suspicious', 'unsupported'].includes(String(verdict))) throw new Error('invalid verdict')
   const receipt: AssetScanReceipt = {
@@ -107,16 +107,18 @@ export function parseAssetScanReceipt(value: unknown, options: { now?: Date; max
     expires_at: iso(root.expires_at, 'expires_at'),
   }
   if (!/^[a-f0-9]{64}$/u.test(receipt.subject.sha256)) throw new Error('invalid sha256')
-  if (!receipt.subject.object_key.startsWith(`quarantine/${receipt.subject.workspace_id}/`) || receipt.subject.object_key.includes('..')) throw new Error('invalid object_key')
+  if (!receipt.subject.object_key.startsWith(`quarantine/${receipt.subject.workspace_id}/`) || receipt.subject.object_key.includes('\\') || receipt.subject.object_key.split('/').some(segment => segment === '.' || segment === '..')) throw new Error('invalid object_key')
   const started = Date.parse(receipt.scan.started_at)
   const completed = Date.parse(receipt.scan.completed_at)
   const issued = Date.parse(receipt.issued_at)
   const expires = Date.parse(receipt.expires_at)
   if (started > completed || completed > issued || issued >= expires) throw new Error('invalid receipt chronology')
   const maxLifetimeMs = options.maxLifetimeMs ?? 5 * 60_000
+  if (!Number.isSafeInteger(maxLifetimeMs) || maxLifetimeMs <= 0 || maxLifetimeMs > 15 * 60_000) throw new Error('receipt lifetime policy is invalid')
   if (expires - issued > maxLifetimeMs) throw new Error('receipt lifetime exceeds policy')
   const now = (options.now ?? new Date()).getTime()
   const clockSkewMs = options.clockSkewMs ?? 60_000
+  if (!Number.isSafeInteger(clockSkewMs) || clockSkewMs < 0 || clockSkewMs > 15 * 60_000) throw new Error('receipt clock skew policy is invalid')
   if (issued > now + clockSkewMs) throw new Error('receipt issued in the future')
   if (expires < now - clockSkewMs) throw new Error('receipt expired')
   if (receipt.scan.verdict === 'clean' && receipt.scan.findings.length) throw new Error('clean receipt cannot contain findings')
@@ -141,7 +143,7 @@ export function verifyAssetScanReceiptSignature(receipt: AssetScanReceipt, signa
   // signature is 342. Keep a strict alphabet and an explicit upper bound,
   // but do not reject a valid production key solely because its algorithm
   // produces a larger signature.
-  if (!/^[A-Za-z0-9_-]{40,2048}$/u.test(signature)) return false
+  if (typeof signature !== 'string' || typeof publicKeyPem !== 'string' || !/^[A-Za-z0-9_-]{40,2048}$/u.test(signature)) return false
   try { return verify(null, Buffer.from(canonicalAssetScanReceipt(receipt)), publicKeyPem, Buffer.from(signature, 'base64url')) }
   catch { return false }
 }

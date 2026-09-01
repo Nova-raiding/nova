@@ -37,4 +37,19 @@ describe('asset scan receipt', () => {
     expect(() => parseAssetScanReceipt({ ...fixture(), subject: { ...fixture().subject, object_key: 'clean/ws_1/asset_1/file.png' } }, { now: new Date('2026-08-30T05:00:30.000Z') })).toThrow('object_key')
     expect(() => parseAssetScanReceipt({ ...fixture(), scan: { ...fixture().scan, findings: ['Eicar-Test-Signature'] } }, { now: new Date('2026-08-30T05:00:30.000Z') })).toThrow('clean receipt')
   })
+
+  it('rejects coerced numeric evidence and unsafe parser policies', () => {
+    const receipt = fixture()
+    expect(() => parseAssetScanReceipt({ ...receipt, subject: { ...receipt.subject, size_bytes: '42' } })).toThrow('size_bytes')
+    expect(() => parseAssetScanReceipt({ ...receipt, subject: { ...receipt.subject, asset_source_revision: '1' } })).toThrow('asset_source_revision')
+    expect(() => parseAssetScanReceipt(receipt, { maxLifetimeMs: Number.NaN })).toThrow('lifetime policy')
+    expect(() => parseAssetScanReceipt(receipt, { clockSkewMs: Number.POSITIVE_INFINITY })).toThrow('clock skew policy')
+  })
+
+  it('fails closed for unsafe receipt evidence and runtime signature types', () => {
+    const receipt = fixture()
+    expect(() => parseAssetScanReceipt({ ...receipt, subject: { ...receipt.subject, object_key: 'quarantine/ws_1/asset_1/../file.png' } })).toThrow('object_key')
+    expect(() => parseAssetScanReceipt({ ...receipt, scan: { ...receipt.scan, findings: ['bad\t finding'] } })).toThrow('findings')
+    expect(verifyAssetScanReceiptSignature(receipt, null as unknown as string, 'not-a-key')).toBe(false)
+  })
 })
