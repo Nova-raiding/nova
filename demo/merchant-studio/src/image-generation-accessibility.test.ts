@@ -49,6 +49,16 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('className="secondary-button" type="button" onClick={() => window.location.reload()}>刷新页面</button>')
   })
 
+  it('blocks image generation in the form until the tested relay is ready', () => {
+    expect(app).toContain('const imageModelReady = modelStatusRead && modelStatus?.state === \'ready\'')
+    expect(app).toContain('className="error-notice image-generation-config-blocker"')
+    expect(app).toContain('role="alert"')
+    expect(app).toContain('不会生成或扣费')
+    expect(app).toContain('onClick={onRefreshModelStatus}')
+    expect(app).toContain('disabled={imageGenerationBusy || !imageModelReady}')
+    expect(app).toContain('imageGenerationConfigRef.current?.focus({ preventScroll: true })')
+  })
+
   it('focuses the task discovery configuration blocker and prevents fake tasks', () => {
     expect(app).toContain('const configurationBlockerRef = useRef<HTMLDivElement>(null)')
     expect(app).toContain('configurationBlockerRef.current?.focus()')
