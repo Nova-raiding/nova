@@ -62,6 +62,12 @@ describe("OpsPageError", () => {
     expect(markup).toContain("MCP_METHOD_NOT_FOUND");
   });
 
+  it("keeps retryable errors recoverable when a page does not provide a loader callback", () => {
+    const markup = renderToStaticMarkup(<OpsPageError error={Object.assign(new Error("upstream unavailable"), { code: "HTTP_503", retryable: true })} />);
+    expect(markup).toContain('aria-label="刷新运营后台页面"');
+    expect(markup).toContain("刷新页面");
+  });
+
   it("maps environment failures to support instead of leaking environment variables", () => {
     const error = Object.assign(new Error("VITE_API_BASE points to the frontend"), { code: "API_NOT_CONFIGURED" });
     const markup = renderToStaticMarkup(<OpsPageError error={error} onContactSupport={() => undefined} />);

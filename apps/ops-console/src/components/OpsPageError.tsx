@@ -25,7 +25,7 @@ export function OpsPageError({ error, onRetry, onReauthenticate, onContactSuppor
         : undefined
       : onRetry
         ? <Button size="small" aria-label="重试加载运营数据" onClick={onRetry}>重试</Button>
-        : undefined;
+        : <Button size="small" aria-label="刷新运营后台页面" onClick={() => window.location.reload()}>刷新页面</Button>;
 
   const hasDiagnostics = Boolean(presentation.code || presentation.requestId || presentation.traceId || presentation.decisionId || presentation.reasonCode || presentation.obligationsMissing?.length);
   return (
