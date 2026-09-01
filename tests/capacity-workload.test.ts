@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { CAPACITY_WORKLOAD_READ_PATH, isExpectedCapacityStatus, readCapacityWorkloadConfig, selectCapacityAccount } from './capacity-workload.js'
+import { CAPACITY_WORKLOAD_READ_PATH, buildCapacityEvidenceDocument, isExpectedCapacityStatus, readCapacityWorkloadConfig, selectCapacityAccount } from './capacity-workload.js'
+import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 describe('capacity workload contract', () => {
   it('uses an onboarding-exempt workspace-scoped read path for baseline traffic', () => {
@@ -28,5 +29,31 @@ describe('capacity workload contract', () => {
   it('supports intermediate rollout workload profiles', () => {
     expect(readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_PROFILE: 'wave_100' })).toMatchObject({ workspaces: 100, clientConnections: 300, sustainedRps: 60, burstRps: 120, asyncJobsPerMinute: 100 })
     expect(readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_PROFILE: 'wave_250' })).toMatchObject({ workspaces: 250, clientConnections: 375, sustainedRps: 75, burstRps: 150, asyncJobsPerMinute: 250 })
+  })
+
+  it('emits schema-valid local evidence without promoting it to a cloud gate', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_PROFILE: 'pilot_50', CAPACITY_WORKLOAD_MODE: 'compose' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0,
+      timings: [
+        { workspace: 'ws_capacity_0', phase: 'sustained', elapsedMs: 12, ok: true, status: 200 },
+        { workspace: 'ws_capacity_1', phase: 'sustained', elapsedMs: 20, ok: true, status: 200 },
+      ],
+    })
+
+    expect(validateCapacityEvidence(report)).toEqual([])
+    expect(report).toMatchObject({ environment: 'test', cloud_gate: false, platform_mock_ratio: 1, model_mock_ratio: 1, status: 'pass' })
+  })
+
+  it('keeps an HTTP failure visible in local evidence instead of claiming pass', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_MODE: 'compose' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0,
+      timings: [{ workspace: 'ws_capacity_0', phase: 'burst', elapsedMs: 20, ok: false, status: 503 }],
+    })
+
+    expect(report.status).toBe('fail')
+    expect(report.metrics.error_count).toBe(1)
+    expect(validateCapacityEvidence(report)).toContain('metrics.error_count must be 0')
   })
 })

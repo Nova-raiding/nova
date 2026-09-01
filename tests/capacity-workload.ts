@@ -79,7 +79,7 @@ export function readCapacityWorkloadConfig(env: Record<string, string | undefine
   }
 }
 
-interface Timing { workspace: string; phase: string; elapsedMs: number; ok: boolean; status: number }
+export interface CapacityWorkloadTiming { workspace: string; phase: string; elapsedMs: number; ok: boolean; status: number }
 interface AcceptedJob { workspace: string; taskId: string; jobId: string; idempotencyKey: string }
 
 function workspaceId(index: number) { return `ws_capacity_${index}` }
@@ -87,7 +87,7 @@ function headers(config: CapacityWorkloadConfig, workspace: string, extra: Recor
   return { authorization: `Bearer ${config.token || 'pilot-local-token'}`, 'x-workspace-id': workspace, ...extra }
 }
 
-async function request(config: CapacityWorkloadConfig, workspace: string, path: string, init: RequestInit, phase: string, timings: Timing[]) {
+async function request(config: CapacityWorkloadConfig, workspace: string, path: string, init: RequestInit, phase: string, timings: CapacityWorkloadTiming[]) {
   const started = performance.now()
   try {
     const response = await fetch(`${config.baseUrl}${path}`, { ...init, headers: headers(config, workspace, Object.fromEntries(new Headers(init.headers).entries())) })
@@ -99,7 +99,7 @@ async function request(config: CapacityWorkloadConfig, workspace: string, path: 
   }
 }
 
-async function runRate(config: CapacityWorkloadConfig, rps: number, durationSeconds: number, phase: string, timings: Timing[]) {
+async function runRate(config: CapacityWorkloadConfig, rps: number, durationSeconds: number, phase: string, timings: CapacityWorkloadTiming[]) {
   const end = Date.now() + durationSeconds * 1_000
   let cursor = 0
   const intervalMs = 100
@@ -138,7 +138,7 @@ async function setupJob(config: CapacityWorkloadConfig, index: number): Promise<
   return { taskId: task.data.id }
 }
 
-async function submitJobs(config: CapacityWorkloadConfig, tasks: Array<{ taskId: string } | undefined>, timings: Timing[]): Promise<AcceptedJob[]> {
+async function submitJobs(config: CapacityWorkloadConfig, tasks: Array<{ taskId: string } | undefined>, timings: CapacityWorkloadTiming[]): Promise<AcceptedJob[]> {
   const accepted: AcceptedJob[] = []
   const total = Math.max(1, Math.round(config.asyncJobsPerMinute))
   for (let index = 0; index < total; index += 1) {
@@ -160,8 +160,61 @@ function percentile(values: number[], fraction: number) {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))] ?? 0
 }
 
+export function buildCapacityEvidenceDocument(
+  config: CapacityWorkloadConfig,
+  input: { timings: readonly CapacityWorkloadTiming[]; acceptedJobs: number; startedAt: string; endedAt: string },
+) {
+  const timings = [...input.timings]
+  const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length
+  const rateLimited = timings.filter(item => isExpectedCapacityStatus(item.status)).length
+  const p95Ms = percentile(timings.map(item => item.elapsedMs), 0.95)
+  const p99Ms = percentile(timings.map(item => item.elapsedMs), 0.99)
+  const nonNoise = timings.filter(item => item.workspace !== workspaceId(config.noiseWorkspaceIndex)).map(item => item.elapsedMs)
+  const baselineP95 = Number(process.env.CAPACITY_WORKLOAD_BASELINE_P95_MS ?? p95Ms)
+  const fairness = baselineP95 > 0 ? Math.max(0, ((percentile(nonNoise, 0.95) - baselineP95) / baselineP95) * 100) : 0
+  const stabilityHours = process.env.CAPACITY_WORKLOAD_SKIP_STABILITY === 'true' ? 0 : config.stabilityHours
+  return {
+    schema_version: '1',
+    status: errors === 0 ? 'pass' : 'fail',
+    release_id: process.env.CAPACITY_WORKLOAD_RELEASE_ID?.trim() || `local-${config.profile}`,
+    config_version: process.env.CAPACITY_WORKLOAD_CONFIG_VERSION?.trim() || 'local-capacity-config',
+    environment: config.mode === 'real_cloud' ? (process.env.CAPACITY_WORKLOAD_ENVIRONMENT?.trim() || 'preproduction') : 'test',
+    target_url: config.baseUrl,
+    mode: config.mode,
+    workspaces: config.workspaces,
+    client_connections: config.clientConnections,
+    sustained_rps: config.sustainedRps,
+    sustained_duration_minutes: config.sustainedMinutes,
+    started_at: input.startedAt,
+    ended_at: input.endedAt,
+    raw_metrics_ref: `local://capacity/${config.profile}/${encodeURIComponent(input.startedAt)}`,
+    profile: config.profile,
+    // This runner exercises API/job admission only. Even when pointed at a
+    // real URL it must not promote itself to a cloud gate without platform,
+    // fault, noise-tenant, and steady-state evidence from the full harness.
+    cloud_gate: false,
+    platform_mock_ratio: 1,
+    model_mock_ratio: 1,
+    duration: { sustained_minutes: config.sustainedMinutes, burst_seconds: config.burstSeconds, stability_hours: stabilityHours },
+    tenant: { workspace_count: config.workspaces, noise_multiplier: config.noiseMultiplier, isolation_verified: false, max_p95_degradation_percent: 20 },
+    fault: { injected: false, scenarios: [], passed: false },
+    steady_state: { verified: false, queue_converged: false, stability_hours: stabilityHours },
+    sign_off: { verified_by: 'local-capacity-harness', verified_at: input.endedAt },
+    metrics: {
+      workspaces: config.workspaces, client_connections: config.clientConnections, sustained_rps: config.sustainedRps,
+      sustained_duration_minutes: config.sustainedMinutes, burst_rps: config.burstRps, burst_duration_seconds: config.burstSeconds,
+      async_jobs_per_minute: config.asyncJobsPerMinute, p95_ms: Math.round(p95Ms * 100) / 100, p99_ms: Math.round(p99Ms * 100) / 100,
+      error_count: errors, rate_limited_count: rateLimited, lost_jobs: 0, duplicate_writes: 0,
+      fairness_p95_degradation_percent: Math.round(fairness * 100) / 100, stability_hours: stabilityHours,
+    },
+    accepted_jobs: input.acceptedJobs,
+    coverage: 'api_http_and_job_admission',
+    platform_traffic_exercised: false,
+  }
+}
+
 export async function runCapacityWorkload(config = readCapacityWorkloadConfig()) {
-  const timings: Timing[] = []
+  const timings: CapacityWorkloadTiming[] = []
   const startedAt = new Date().toISOString()
   const tasks = config.setupJobs ? await Promise.all(Array.from({ length: config.workspaces }, (_, index) => setupJob(config, index))) : []
   const stabilitySeconds = config.stabilityHours * 60 * 60
@@ -169,28 +222,9 @@ export async function runCapacityWorkload(config = readCapacityWorkloadConfig())
   await runRate(config, config.burstRps, config.burstSeconds, 'burst', timings)
   const accepted = config.setupJobs ? await submitJobs(config, tasks, timings) : []
   if (stabilitySeconds > 0 && process.env.CAPACITY_WORKLOAD_SKIP_STABILITY !== 'true') await runRate(config, config.sustainedRps, stabilitySeconds, 'stability', timings)
-  const successful = timings.filter(item => item.ok)
-  const rateLimited = timings.filter(item => isExpectedCapacityStatus(item.status)).length
-  const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length
-  const p95Ms = percentile(timings.map(item => item.elapsedMs), 0.95)
-  const p99Ms = percentile(timings.map(item => item.elapsedMs), 0.99)
-  const nonNoise = timings.filter(item => item.workspace !== workspaceId(config.noiseWorkspaceIndex)).map(item => item.elapsedMs)
-  const baselineP95 = Number(process.env.CAPACITY_WORKLOAD_BASELINE_P95_MS ?? p95Ms)
-  const fairness = baselineP95 > 0 ? Math.max(0, ((percentile(nonNoise, 0.95) - baselineP95) / baselineP95) * 100) : 0
-  const report = {
-    schema_version: '1', status: errors === 0 ? 'pass' : 'fail', profile: config.profile, mode: config.mode, cloud_gate: config.mode === 'real_cloud',
-    started_at: startedAt, ended_at: new Date().toISOString(), target_url: config.baseUrl, workspaces: config.workspaces,
-    client_connections: config.clientConnections, sustained_rps: config.sustainedRps, sustained_duration_minutes: config.sustainedMinutes,
-    metrics: {
-      workspaces: config.workspaces, client_connections: config.clientConnections, sustained_rps: config.sustainedRps,
-      sustained_duration_minutes: config.sustainedMinutes, burst_rps: config.burstRps, burst_duration_seconds: config.burstSeconds,
-      async_jobs_per_minute: config.asyncJobsPerMinute, p95_ms: Math.round(p95Ms * 100) / 100, p99_ms: Math.round(p99Ms * 100) / 100,
-      error_count: errors, rate_limited_count: rateLimited, lost_jobs: 0, duplicate_writes: 0, fairness_p95_degradation_percent: Math.round(fairness * 100) / 100,
-      stability_hours: process.env.CAPACITY_WORKLOAD_SKIP_STABILITY === 'true' ? 0 : config.stabilityHours,
-    },
-    accepted_jobs: accepted.length,
-    coverage: 'api_http_and_job_admission', platform_traffic_exercised: false, platform_mock_ratio: 1, model_mock_ratio: 1,
-  }
+  const endedAt = new Date().toISOString()
+  const report = buildCapacityEvidenceDocument(config, { timings, acceptedJobs: accepted.length, startedAt, endedAt })
+  const errors = report.metrics.error_count
   if (config.output) writeFileSync(config.output, `${JSON.stringify(report, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
   assert.equal(errors, 0, `capacity workload had ${errors} failed requests`)
   return report
