@@ -127,9 +127,31 @@ function relayResponse() {
   harness.modelCalls += 1
   const usage: Record<string, number> = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
   if (harness.costCny !== undefined) usage.cost_cny = harness.costCny
+  const factSourceId = 'product:usage-settlement:v1'
   return new Response(JSON.stringify({
     id: harness.providerRequestId,
-    choices: [{ message: { content: JSON.stringify({ title: '结算测试标题', detail: '只使用已确认商品事实的测试文案。', sellingPoints: ['事实可追溯'] }) } }],
+    choices: [{ message: { content: JSON.stringify({
+      title: '结算测试标题',
+      detail: '只使用已确认商品事实的测试文案。',
+      sellingPoints: ['事实可追溯'],
+      modules: [{
+        key: 'facts',
+        title: '商品事实',
+        purpose: '展示已确认商品事实',
+        body: '只使用已确认商品事实的测试文案。',
+        factSourceIds: [factSourceId],
+        contentKind: 'fact',
+        decisionContract: {
+          buyerQuestion: '商品信息是否有事实依据？',
+          pageTask: '展示可追溯的商品事实',
+          claim: { text: '商品信息来自已确认事实', factSourceIds: [factSourceId], platforms: ['taobao'], limitations: ['仅用于模型用量结算回归'] },
+          evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
+          visualContract: { requiredElements: ['商品事实'], protectedElements: [], prohibitedImplications: ['不得编造未确认事实'], accessibilityText: '已确认商品事实' },
+          priority: 1,
+          optional: false,
+        },
+      }],
+    }) } }],
     usage,
   }), { status: 200, headers: { 'content-type': 'application/json', 'x-request-id': harness.providerRequestId } })
 }
