@@ -327,7 +327,7 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 .image-generation-job-panel button,.image-generation-job-panel input{min-height:44px}
 .image-generation-job-panel .primary-button,.image-generation-job-panel .secondary-button{min-height:44px}
 .image-generation-job-panel .image-selection-panel input{min-height:44px}
-.image-generation-job-panel .candidate-select-control{min-height:44px;display:flex;align-items:center;gap:8px}
+.image-generation-job-panel .candidate-select-control{min-height:44px;block-size:44px;box-sizing:border-box;display:flex;align-items:center;gap:8px}
 .image-generation-job-panel .candidate-select-control input[type="checkbox"]{inline-size:44px;block-size:44px;margin:0}
 .image-candidate-grid figure{transition:border-color var(--image-state-transition),box-shadow var(--image-state-transition),background-color var(--image-state-transition)}
 .image-candidate-grid figure.candidate-selected{border-color:#176b4d;background:#f5fbf7;box-shadow:0 0 0 2px rgba(23,107,77,.2)}
