@@ -9258,6 +9258,11 @@ function isNativeMcpMethod(method: unknown): method is 'initialize' | 'tools/lis
   return method === 'initialize' || method === 'tools/list' || method === 'tools/call'
 }
 
+function isNativeMcpTransport(req: IncomingMessage, method: unknown) {
+  if (isNativeMcpMethod(method)) return true
+  return (header(req, 'accept') ?? '').split(',').some(value => value.trim().toLowerCase() === 'text/event-stream')
+}
+
 function nativeMcpTools() {
   return MCP_METHOD_CONTRACTS
     .filter(contract => !contract.method.startsWith('ops.') && !(MCP_NON_PRODUCTION_METHODS as readonly string[]).includes(contract.method))
@@ -9284,9 +9289,10 @@ async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, input: 
     : null
   nativeMcpRequests.add(req)
   nativeMcpRequestIds.set(req, id)
-  if (input.jsonrpc !== '2.0' || !Object.prototype.hasOwnProperty.call(input, 'id') || !isNativeMcpMethod(input.method)) {
+  if (input.jsonrpc !== '2.0' || !Object.prototype.hasOwnProperty.call(input, 'id') || typeof input.method !== 'string' || !input.method.trim()) {
     throw new DomainError('MCP_NATIVE_INVALID_REQUEST', '原生 MCP JSON-RPC 请求无效', 400)
   }
+  if (!isNativeMcpMethod(input.method)) throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, `不支持的原生 MCP 方法: ${input.method}`, 404)
   if (input.method === 'initialize') {
     return sendNativeMcp(res, 200, { jsonrpc: '2.0', id, result: {
       protocolVersion: MCP_PROTOCOL_VERSION,
@@ -16995,7 +17001,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   }
   if (req.method === 'POST' && path === '/mcp') {
     const input = mcpInputForHydration ?? await body(req, MCP_BODY_LIMIT)
-    return isNativeMcpMethod(input.method) ? routeNativeMcp(req, res, input) : routeMcp(req, res, input)
+    return isNativeMcpTransport(req, input.method) ? routeNativeMcp(req, res, input) : routeMcp(req, res, input)
   }
   throw new DomainError(ERROR_CODES.NOT_FOUND, '路由不存在', 404)
 }

@@ -55,6 +55,21 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(await compatibilityTool.json()).toMatchObject({ jsonrpc: '2.0', id: 7, error: { code: -32601 } })
   })
 
+  it('returns JSON-RPC method-not-found for unknown native methods instead of legacy envelopes', async () => {
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...headers, accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'ping-1', method: 'ping', params: {} }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 'ping-1',
+      error: { code: -32601, message: '不支持的原生 MCP 方法: ping' },
+    })
+  })
+
   it('returns standard JSON-RPC invalid-request and invalid-params errors', async () => {
     const base = await start()
     const invalidRequest = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '1.0', id: 5, method: 'initialize' }) })
