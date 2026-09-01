@@ -38,6 +38,10 @@ describe('image candidate selection accessibility styles', () => {
   it('keeps the gallery usable across desktop widths', () => {
     expect(styles).toContain('.image-generation-job-panel{width:100%;min-width:0}')
     expect(styles).toContain('@media (min-width:1200px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}')
+    expect(styles).toContain('.image-generation-job-panel{inline-size:100%;max-inline-size:100%;min-inline-size:0;overflow-x:clip}')
+    expect(styles).toContain('@media (min-width:1280px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}')
+    expect(styles).toContain('@media (min-width:1440px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}')
+    expect(styles).toContain('@media (min-width:1920px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}')
   })
 
   it('reserves a stable 4:3 image surface', () => {
@@ -47,6 +51,8 @@ describe('image candidate selection accessibility styles', () => {
   it('wraps long identifiers without horizontal overflow', () => {
     expect(styles).toContain('overflow-wrap:anywhere;word-break:break-word;white-space:normal')
     expect(styles).toContain('.image-candidate-metadata span')
+    expect(styles).toContain('.image-generation-job-row,.image-generation-job-row>div{min-inline-size:0}')
+    expect(styles).toContain('.image-candidate-grid figure,.image-candidate-grid figcaption{min-inline-size:0}')
   })
 
   it('honors reduced motion within the image-generation panel', () => {

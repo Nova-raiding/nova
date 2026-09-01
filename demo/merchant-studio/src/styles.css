@@ -285,3 +285,15 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
   color: #7a2424;
 }
 .image-candidate-pagination{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:14px;color:#43534a;font-size:12px;line-height:1.45;text-align:center}.image-candidate-pagination .secondary-button{min-width:88px}
+
+/* Desktop image-generation layout contract: the panel must shrink inside its
+   parent at every supported desktop width, while opaque user content remains
+   readable instead of widening the grid or being clipped. */
+.image-generation-job-panel{inline-size:100%;max-inline-size:100%;min-inline-size:0;overflow-x:clip}
+.image-candidate-grid{inline-size:100%;min-inline-size:0;grid-template-columns:repeat(3,minmax(0,1fr))}
+.image-candidate-grid figure,.image-candidate-grid figcaption{min-inline-size:0}
+.image-generation-job-row,.image-generation-job-row>div{min-inline-size:0}
+.image-generation-job-row b,.image-generation-job-row span,.image-candidate-metadata span,.image-job-evidence dd{overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+@media (min-width:1280px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (min-width:1440px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (min-width:1920px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
