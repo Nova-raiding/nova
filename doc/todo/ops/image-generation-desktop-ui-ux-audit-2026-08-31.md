@@ -247,3 +247,9 @@
 - 尚未闭合的不是前端字典，而是数据投影：REST 图片任务列表的 `publicImageJob` 没有从 execution repository 读取 `execution_state`；`ops.marketing.queue` 的 `imageExecutions` 仍只查询 `provider_started`、`outcome_unknown`。因此两个中间态在真实列表/运营队列中仍不可观察。
 - Merchant 的 `outcome_unknown` 仍为只读、刷新/对账语义，禁止重复生成；Ops 也不提供未知结果的重试动作。该结论由源码和定向测试支持，但未由真实 Provider 或正式 ChatGPT Host 支持。
 - 当前事实矩阵：前端映射 **已落地（本地证据）**；REST 列表和 Ops 队列投影 **未完成**；真实 Provider、PostgreSQL/RLS、多副本恢复、正式桌面宿主证据仍缺。本文继续 **TODO / UI NO-GO**，不迁移到 `doc/done`。
+
+### 2026-09-01 本地队列投影修复
+
+- 复核发现上述“Ops 队列投影未完成”结论已过时：队列查询已覆盖 `provider_reserved`、`provider_dispatching`、`provider_started`、`outcome_unknown`，本轮补齐了前两个中间态的 `lastAction` 真实文案，避免误报为“Provider 已启动”。
+- `apps/api/src/server.test.ts` 增加源码契约回归，API 定向测试 55/55 通过；全局 TypeScript 检查和 `git diff --check` 通过。提交：`e935c51`。
+- 当前仍未闭合的是真实 Provider、对象存储、OIDC/RLS、多副本恢复、网络故障注入、正式 ChatGPT Host 和生产 canary 证据；本地可验证的状态投影子项已完成，文档继续保留在 `doc/todo`，不迁移到 `doc/done`。
