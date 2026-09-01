@@ -19,6 +19,7 @@ export class ProviderOutcomeUnknownError extends Error {
     readonly providerIdempotencyKey: string,
     message: string,
     readonly cause?: unknown,
+    readonly status?: number,
   ) {
     super(message)
     this.name = 'ProviderOutcomeUnknownError'
@@ -27,6 +28,7 @@ export class ProviderOutcomeUnknownError extends Error {
       provider_outcome: 'unknown',
       reconciliation_required: true,
       provider_idempotency_key: providerIdempotencyKey,
+      ...(status !== undefined ? { provider_status: status } : {}),
     })
   }
 }
@@ -108,7 +110,7 @@ export function throwProviderOutcomeUnknown(providerKey: string, label: string, 
 export function assertProviderResponseAccepted(response: Response, providerKey: string, label: string): void {
   if (response.ok) return
   if (response.status === 408 || response.status >= 500) {
-    throw new ProviderOutcomeUnknownError(providerKey, `${label} returned ambiguous HTTP ${response.status}; outcome requires reconciliation`)
+    throw new ProviderOutcomeUnknownError(providerKey, `${label} returned ambiguous HTTP ${response.status}; outcome requires reconciliation`, undefined, response.status)
   }
   throw new ProviderRequestFailedError(providerKey, response.status, `${label} returned HTTP ${response.status}`)
 }
