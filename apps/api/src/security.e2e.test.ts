@@ -342,7 +342,7 @@ describe('security and access-control acceptance gates', () => {
     }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
     const platformSession = (await call('platform', 'ops.session')).data?.result
-    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: platformSession.identity_id, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'investigate merchant support case', ticketRef: `SUP-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: platformSession.identity_id, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'investigate merchant support case', ticketRef: `SUP-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2027-08-31T04:15:00.000Z', maxUses: 1 })
     const workspaceSession = (await call('workspace', 'ops.session')).data?.result
     expect(workspaceSession).toMatchObject({ canonical_roles: [], authorization_revision: 1, context: { access_mode: 'temporary_support', workspace_id: workspaceId } })
     expect(workspaceSession.effective_permissions).toEqual(expect.arrayContaining([expect.objectContaining({ capability: 'support.ticket.read', source: 'temporary_grant', source_id: grant.id, effect_limit: 'read' })]))
@@ -417,7 +417,7 @@ describe('security and access-control acceptance gates', () => {
     }).then(async response => ({ status: response.status, body: await response.json() as Envelope<{ result: any }> }))
 
     const identityId = (await call('platform', 'ops.session')).body.data?.result.identity_id
-    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'one queue inspection', ticketRef: `QUEUE-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'one queue inspection', ticketRef: `QUEUE-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2027-08-31T04:15:00.000Z', maxUses: 1 })
 
     const admitted = await call('workspace', 'ops.marketing.queue')
     expect(admitted.status).toBe(200)
