@@ -81,7 +81,7 @@ describe('registered MCP authorization coverage', () => {
     const task = service.createTask({ workspaceId: foreignWorkspaceId, productId, platform: 'taobao', accountId: foreignAccountId })
     const policy = getMcpMethodPolicy('platform.store.alias.set')!
 
-    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'local_account' })).resolves.toEqual({ type: 'account', id: 'local_account' })
+    await expect(resolveLoadedAuthorizationResourceScope(policy, workspaceId, { task_id: task.id, account_id: 'local_account' })).resolves.toEqual({ type: 'account', id: undefined })
   })
 
   it('produces one unique strict authorization decision for every live MCP method', () => {

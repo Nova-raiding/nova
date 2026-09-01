@@ -4905,12 +4905,12 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
   const contentTask = contentVersion ? service.tasks.get(contentVersion.taskId) : undefined
   const requestedProductId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : undefined
   const requestedProduct = requestedProductId ? service.products.get(requestedProductId) : undefined
-  if (taskId && (!requestedTask || requestedTask.workspaceId !== workspaceId)) return direct
-  if (contentVersionId && (!contentVersion || !contentTask || contentTask.workspaceId !== workspaceId)) return direct
-  if (requestedProductId && (!requestedProduct || requestedProduct.workspaceId !== workspaceId)) return direct
-  if (requestedTask && contentTask && requestedTask.id !== contentTask.id) return direct
+  if (taskId && (!requestedTask || requestedTask.workspaceId !== workspaceId)) return unresolvedLoadedResourceScope(direct)
+  if (contentVersionId && (!contentVersion || !contentTask || contentTask.workspaceId !== workspaceId)) return unresolvedLoadedResourceScope(direct)
+  if (requestedProductId && (!requestedProduct || requestedProduct.workspaceId !== workspaceId)) return unresolvedLoadedResourceScope(direct)
+  if (requestedTask && contentTask && requestedTask.id !== contentTask.id) return unresolvedLoadedResourceScope(direct)
   const resourceTask = requestedTask ?? contentTask
-  if (resourceTask && requestedProduct && resourceTask.productId !== requestedProduct.id) return direct
+  if (resourceTask && requestedProduct && resourceTask.productId !== requestedProduct.id) return unresolvedLoadedResourceScope(direct)
   const generationJobId = policy.method === 'generation.get' && typeof params.job_id === 'string' && params.job_id.trim() ? params.job_id.trim() : undefined
   const generationJob = generationJobId ? service.generationJobs.get(generationJobId) : undefined
   const publishJobId = policy.method === 'publish.get' && typeof params.publish_job_id === 'string' && params.publish_job_id.trim() ? params.publish_job_id.trim() : undefined
@@ -4955,6 +4955,10 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
   const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
   const brandIds = [...new Set(canonical.filter(item => item.sourceProductId === product.id).map(item => item.brandId))]
   return { type: 'brand' as const, id: brandIds.length === 1 ? brandIds[0] : undefined }
+}
+
+function unresolvedLoadedResourceScope(scope: ReturnType<typeof resolveAuthorizationResourceScope>) {
+  return scope?.type === 'brand' || scope?.type === 'account' ? { type: scope.type, id: undefined } : scope
 }
 
 export function workspaceCapabilitySourceForBrandScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, atoms: readonly PermissionAtom[]) {
