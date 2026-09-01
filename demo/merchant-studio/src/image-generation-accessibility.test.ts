@@ -55,6 +55,10 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true"')
     expect(app).toContain('aria-describedby={imageGenerationError ? \'image-generation-error\' : undefined}')
     expect(app).toContain('请修正表单后重新提交。')
+    expect(app).toContain("const [imageGenerationErrorField, setImageGenerationErrorField] = useState<'direction' | 'count' | null>(null)")
+    expect(app).toContain("aria-invalid={imageGenerationErrorField === 'direction'}")
+    expect(app).toContain("aria-invalid={imageGenerationErrorField === 'count'}")
+    expect(app).toContain('跳转到需要修正的字段')
   })
 
   it('announces the six-candidate limit and blocked candidate recovery path', () => {
