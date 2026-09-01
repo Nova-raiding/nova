@@ -4365,6 +4365,7 @@ function Products({
   const [importOpen, setImportOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
+  const [importErrorField, setImportErrorField] = useState<'title' | 'category' | 'price' | 'stock' | null>(null)
   const [importDraft, setImportDraft] = useState({
     title: '',
     platform: 'taobao' as PlatformId,
@@ -4377,6 +4378,7 @@ function Products({
     string[]
   >([])
   const [importAssetsLoading, setImportAssetsLoading] = useState(false)
+  const importErrorRef = useRef<HTMLDivElement>(null)
   const [groupConfirmOpen, setGroupConfirmOpen] = useState(false)
   const [imageReviewMessage, setImageReviewMessage] = useState('')
   const [imageGenerationTarget, setImageGenerationTarget] = useState<Target | null>(null)
@@ -4631,6 +4633,7 @@ function Products({
     })
     setSelectedImportAssetIds([])
     setImportError('')
+    setImportErrorField(null)
     setImportOpen(true)
     if (baseUrl) {
       setImportAssetsLoading(true)
@@ -4650,22 +4653,27 @@ function Products({
     const stock = Number(importDraft.stock)
     if (!title) {
       setImportError('请输入商品名称。')
+      setImportErrorField('title')
       return
     }
     if (!category) {
       setImportError('请输入平台类目；创建商品时不能省略。')
+      setImportErrorField('category')
       return
     }
     if (!Number.isFinite(price) || price < 0) {
       setImportError('价格必须是大于或等于 0 的数字。')
+      setImportErrorField('price')
       return
     }
     if (!Number.isInteger(stock) || stock < 0) {
       setImportError('库存必须是大于或等于 0 的整数。')
+      setImportErrorField('stock')
       return
     }
     setImporting(true)
     setImportError('')
+    setImportErrorField(null)
     try {
       await importProduct(baseUrl, {
         platform: importDraft.platform,
@@ -4682,10 +4690,15 @@ function Products({
       loadProducts()
     } catch (cause) {
       setImportError(describeApiError(cause))
+      setImportErrorField(null)
     } finally {
       setImporting(false)
     }
   }
+  useEffect(() => {
+    if (!importOpen || importing || !importError) return
+    window.requestAnimationFrame(() => importErrorRef.current?.focus({ preventScroll: true }))
+  }, [importError, importOpen, importing])
   const toggleTarget = (target: Target) =>
     setSelectedTargets((current) => toggleBatchTarget(current, target))
   const batchReadiness = resolveBatchReadiness(
@@ -5293,7 +5306,10 @@ function Products({
                     title: event.target.value,
                   }))
                   setImportError('')
+                  setImportErrorField(null)
                 }}
+                aria-invalid={importErrorField === 'title'}
+                aria-describedby={importError ? 'import-product-error' : undefined}
                 maxLength={200}
               />
             </label>
@@ -5327,7 +5343,10 @@ function Products({
                     category: event.target.value,
                   }))
                   setImportError('')
+                  setImportErrorField(null)
                 }}
+                aria-invalid={importErrorField === 'category'}
+                aria-describedby={importError ? 'import-product-error' : undefined}
                 maxLength={200}
               />
             </label>
@@ -5338,13 +5357,16 @@ function Products({
                   id="import-product-price"
                   inputMode="decimal"
                   value={importDraft.price}
-                  onChange={(event) => {
-                    setImportDraft((current) => ({
-                      ...current,
-                      price: event.target.value,
-                    }))
-                    setImportError('')
-                  }}
+                onChange={(event) => {
+                  setImportDraft((current) => ({
+                    ...current,
+                    price: event.target.value,
+                  }))
+                  setImportError('')
+                  setImportErrorField(null)
+                }}
+                aria-invalid={importErrorField === 'price'}
+                aria-describedby={importError ? 'import-product-error' : undefined}
                 />
               </label>
               <label htmlFor="import-product-stock">
@@ -5353,13 +5375,16 @@ function Products({
                   id="import-product-stock"
                   inputMode="numeric"
                   value={importDraft.stock}
-                  onChange={(event) => {
-                    setImportDraft((current) => ({
-                      ...current,
-                      stock: event.target.value,
-                    }))
-                    setImportError('')
-                  }}
+                onChange={(event) => {
+                  setImportDraft((current) => ({
+                    ...current,
+                    stock: event.target.value,
+                  }))
+                  setImportError('')
+                  setImportErrorField(null)
+                }}
+                aria-invalid={importErrorField === 'stock'}
+                aria-describedby={importError ? 'import-product-error' : undefined}
                 />
               </label>
             </div>
@@ -5403,7 +5428,27 @@ function Products({
                 绑定会随商品导入请求提交到服务端；取消导入不会产生绑定。
               </small>
             </fieldset>
-            {importError && <ErrorNotice message={importError} compact />}
+            {importError && (
+              <div
+                ref={importErrorRef}
+                id="import-product-error"
+                className="error-notice"
+                role="alert"
+                tabIndex={-1}
+                aria-live="assertive"
+                aria-atomic="true"
+                aria-labelledby="import-product-error-title"
+              >
+                <strong id="import-product-error-title">无法导入商品</strong>
+                <span>{importError}</span>
+                {importErrorField && (
+                  <a href={`#import-product-${importErrorField}`}>
+                    跳转到需要修正的字段
+                  </a>
+                )}
+                <span className="sr-only">请修正表单后重新提交；已填写内容会保留。</span>
+              </div>
+            )}
           </div>
         </DialogFrame>
       )}
