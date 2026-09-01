@@ -18,4 +18,16 @@ describe('canonical backfill conflict queue safety', () => {
     expect(canonicalBackfillRunCanRetry({ error: ' ' })).toBe(false)
     expect(canonicalBackfillRunCanRetry({ conflicts: [{ code: 'MISSING_BRAND' }] })).toBe(false)
   })
+
+  it('keeps conflict-bearing failures terminal even when an executor error is present', () => {
+    expect(canonicalBackfillRunCanRetry({
+      error: 'backfill completed with conflicts',
+      conflicts: [{ code: 'MISSING_BRAND' }],
+    })).toBe(false)
+  })
+
+  it('does not retry missing or malformed executor errors', () => {
+    expect(canonicalBackfillRunCanRetry({})).toBe(false)
+    expect(canonicalBackfillRunCanRetry({ error: 503 })).toBe(false)
+  })
 })

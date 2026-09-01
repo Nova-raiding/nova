@@ -10,7 +10,9 @@ export interface CanonicalBackfillConflictQueueFailure {
  * reviewed their queued evidence.
  */
 export function canonicalBackfillRunCanRetry(lastResult: Record<string, unknown>): boolean {
-  return typeof lastResult.error === 'string' && lastResult.error.trim().length > 0
+  return typeof lastResult.error === 'string'
+    && lastResult.error.trim().length > 0
+    && !Array.isArray(lastResult.conflicts)
 }
 
 /**
