@@ -26,6 +26,7 @@ export interface PlatformCapabilityEvidenceDocument {
     platform?: string
     application_id?: string
     test_store_id?: string
+    tenant_context?: { workspace_id?: string; account_id?: string }
     capabilities?: Record<string, {
       state?: string
       evidence_ref?: string
@@ -33,6 +34,14 @@ export interface PlatformCapabilityEvidenceDocument {
       verified_at?: string
       api_version?: string
       scope?: string
+      protocol?: { name?: string; version?: string }
+      error_evidence?: {
+        request_id?: string
+        code?: string
+        message?: string
+        observed_at?: string
+        retryable?: boolean
+      }
     }>
   }>
 }
@@ -67,6 +76,8 @@ export interface PlatformPreflightOptions {
   /** Optional evidence JSON loaded by the caller from a secure artifact. */
   evidence?: unknown
   requireProductionCanary?: boolean
+  /** Real connector checks must be bound to an explicit tenant/account context. */
+  tenantContext?: { workspaceId: string; accountId: string }
   /** Factory injection makes the fixture contract deterministic and testable. */
   createConnector?: (platform: Platform) => PlatformConnector
 }
@@ -75,6 +86,59 @@ const nonEmpty = (value: unknown): value is string => typeof value === 'string' 
 const hasValue = (value: unknown): boolean => value !== undefined && value !== null && value !== ''
 const secretKey = /secret|token|password|access[_-]?key|private[_-]?key/i
 const placeholderValue = /^(SET_|CHANGE_ME|REPLACE_ME|TODO|TBD|<[^>]+>)/i
+const safeIdentifier = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
+const protocolName = /^[A-Za-z][A-Za-z0-9+.-]{1,31}$/u
+
+function isUsableIdentifier(value: unknown): value is string {
+  return nonEmpty(value) && safeIdentifier.test(value.trim()) && !placeholderValue.test(value.trim())
+}
+
+function validateEvidenceProtocol(value: { name?: string; version?: string } | undefined, path: string, errors: string[]): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${path}.protocol is required for production_canary`)
+    return
+  }
+  if (!nonEmpty(value.name) || !protocolName.test(value.name.trim())) errors.push(`${path}.protocol.name is invalid`)
+  if (!isUsableIdentifier(value.version)) errors.push(`${path}.protocol.version is invalid`)
+}
+
+function validateErrorEvidence(value: unknown, path: string, errors: string[]): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${path}.error_evidence is required for production_canary`)
+    return
+  }
+  const evidence = value as Record<string, unknown>
+  if (!isUsableIdentifier(evidence.request_id)) errors.push(`${path}.error_evidence.request_id is invalid`)
+  if (!isUsableIdentifier(evidence.code)) errors.push(`${path}.error_evidence.code is invalid`)
+  if (!nonEmpty(evidence.message) || placeholderValue.test(String(evidence.message))) errors.push(`${path}.error_evidence.message is invalid`)
+  if (!isIsoDate(evidence.observed_at)) errors.push(`${path}.error_evidence.observed_at must be an ISO date`)
+  if (typeof evidence.retryable !== 'boolean') errors.push(`${path}.error_evidence.retryable must be boolean`)
+}
+
+function validateConnectorConfig(platform: Platform, config: HttpConnectorConfig | undefined): string[] {
+  const errors: string[] = []
+  if (!config) return ['CONFIG_MISSING']
+  const strings: Array<[string, unknown]> = [
+    ['clientId', config.clientId],
+    ['oauth.authorizeUrl', config.oauth?.authorizeUrl], ['oauth.tokenUrl', config.oauth?.tokenUrl],
+    ['oauth.refreshUrl', config.oauth?.refreshUrl], ['oauth.revokeUrl', config.oauth?.revokeUrl],
+    ['api.baseUrl', config.api?.baseUrl], ['api.syncPath', config.api?.syncPath],
+    ['api.createPath', config.api?.createPath], ['api.updatePath', config.api?.updatePath], ['api.queryPath', config.api?.queryPath],
+  ]
+  for (const [path, value] of strings) {
+    if (value === undefined) continue
+    if (typeof value !== 'string' || !nonEmpty(value) || placeholderValue.test(value.trim())) errors.push(`${platform}.${path} contains an invalid or placeholder value`)
+  }
+  for (const [path, value] of [['oauth.authorizeUrl', config.oauth?.authorizeUrl], ['oauth.tokenUrl', config.oauth?.tokenUrl], ['oauth.refreshUrl', config.oauth?.refreshUrl], ['oauth.revokeUrl', config.oauth?.revokeUrl], ['api.baseUrl', config.api?.baseUrl] ] as Array<[string, unknown]>) {
+    if (value === undefined) continue
+    try {
+      if (new URL(String(value)).protocol !== 'https:') errors.push(`${platform}.${path} must use https protocol`)
+    } catch { errors.push(`${platform}.${path} must be an absolute https URL`) }
+  }
+  if (config.oauth?.scopes?.some(scope => typeof scope !== 'string' || !isUsableIdentifier(scope))) errors.push(`${platform}.oauth.scopes contains an invalid or placeholder scope`)
+  if (config.allowedHosts?.some(host => typeof host !== 'string' || !isUsableIdentifier(host) || host.includes('/'))) errors.push(`${platform}.allowedHosts contains an invalid or placeholder host`)
+  return errors
+}
 
 function isIsoDate(value: unknown): boolean {
   // Date.parse accepts locale-ish and date-only strings. Evidence needs a
@@ -123,6 +187,10 @@ export function validatePlatformCapabilityEvidence(
     seen.add(name as string)
     if (!nonEmpty(item.application_id)) errors.push(`${name}.application_id is required`)
     if (!nonEmpty(item.test_store_id)) errors.push(`${name}.test_store_id is required`)
+    if (options.requireCanary) {
+      if (!item.tenant_context || !isUsableIdentifier(item.tenant_context.workspace_id) || !isUsableIdentifier(item.tenant_context.account_id)) errors.push(`${name}.tenant_context.workspace_id/account_id are required for production_canary`)
+      else if (placeholderValue.test(item.tenant_context.workspace_id) || placeholderValue.test(item.tenant_context.account_id)) errors.push(`${name}.tenant_context cannot contain placeholders for production_canary`)
+    }
     if (!item.capabilities || typeof item.capabilities !== 'object' || Array.isArray(item.capabilities)) {
       errors.push(`${name}.capabilities is required`)
       continue
@@ -142,6 +210,8 @@ export function validatePlatformCapabilityEvidence(
         if (placeholderValue.test(evidence.evidence_ref ?? '') || placeholderValue.test(evidence.verified_by ?? '') || placeholderValue.test(evidence.api_version ?? '') || placeholderValue.test(evidence.scope ?? '')) {
           errors.push(`${name}.${capability} contains a placeholder production_canary field`)
         }
+        validateEvidenceProtocol(evidence.protocol, `${name}.${capability}`, errors)
+        validateErrorEvidence(evidence.error_evidence, `${name}.${capability}`, errors)
       }
       if (options.requireCanary && evidence.state !== 'production_canary') errors.push(`${name}.${capability} must be production_canary`)
       if (options.requireCanary) {
@@ -245,7 +315,15 @@ export async function runPlatformPreflight(options: PlatformPreflightOptions = {
   // Keep evidenceValid separate from the promotion decision: a complete and
   // well-formed fixture/test-e2e matrix is valid evidence, but is intentionally
   // not production-ready until every capability reaches production_canary.
+  // `requireProductionCanary` controls promotion, not whether fixture/test-e2e
+  // evidence is structurally valid. The per-capability state check below keeps
+  // lower-grade evidence blocked without mislabelling it as malformed.
   const evidenceErrors = options.evidence === undefined ? [] : validatePlatformCapabilityEvidence(options.evidence)
+  const promotionEvidenceErrors = options.requireProductionCanary && options.evidence !== undefined
+    ? validatePlatformCapabilityEvidence(options.evidence, { requireCanary: true }) : []
+  const configErrors = Object.entries(options.configs ?? {}).flatMap(([platform, config]) => validateConnectorConfig(platform as Platform, config))
+  const tenantErrors = options.configs && (!options.tenantContext || !isUsableIdentifier(options.tenantContext.workspaceId) || !isUsableIdentifier(options.tenantContext.accountId))
+    ? ['tenantContext.workspaceId/accountId are required when connector configs are supplied'] : []
   const results: PlatformPreflightPlatformResult[] = []
   for (const platform of PLATFORM_CAPABILITY_CONTRACT_PLATFORMS) {
     const checks = await runFixtureContract(platform, createConnector(platform))
@@ -254,11 +332,14 @@ export async function runPlatformPreflight(options: PlatformPreflightOptions = {
     const gaps: string[] = []
     if (!readiness) gaps.push('HTTP connector config not supplied; official endpoint/signer/mapping readiness is unverified')
     else if (!readiness.ready) gaps.push(...readiness.reasons)
+    gaps.push(...configErrors.filter(error => error.startsWith(`${platform}.`)))
+    if (tenantErrors.length) gaps.push(...tenantErrors)
     if (!productionCanaryReady) gaps.push('all nine capabilities lack production_canary evidence')
     results.push({ platform, contractPassed: checks.every(item => item.passed), checks, ...(readiness ? { readiness } : {}), productionCanaryReady, gaps: [...new Set(gaps)] })
   }
-  const gaps = [...new Set([...evidenceErrors, ...results.flatMap(item => item.gaps)])]
+  const gaps = [...new Set([...evidenceErrors, ...promotionEvidenceErrors, ...configErrors, ...tenantErrors, ...results.flatMap(item => item.gaps)])]
   const fixtureContractPassed = results.every(item => item.contractPassed)
-  const productionReady = fixtureContractPassed && evidenceErrors.length === 0 && results.every(item => item.productionCanaryReady && item.readiness?.ready)
-  return { passed: options.requireProductionCanary ? productionReady : fixtureContractPassed && evidenceErrors.length === 0, fixtureContractPassed, evidenceValid: evidenceErrors.length === 0, productionReady, platforms: results, gaps }
+  const configurationValid = configErrors.length === 0 && tenantErrors.length === 0
+  const productionReady = fixtureContractPassed && evidenceErrors.length === 0 && promotionEvidenceErrors.length === 0 && configurationValid && results.every(item => item.productionCanaryReady && item.readiness?.ready)
+  return { passed: options.requireProductionCanary ? productionReady : fixtureContractPassed && evidenceErrors.length === 0 && configurationValid, fixtureContractPassed, evidenceValid: evidenceErrors.length === 0, productionReady, platforms: results, gaps }
 }

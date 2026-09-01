@@ -11,9 +11,12 @@ function evidence(state: string = 'production_canary') {
   return {
     schema_version: '1', release_id: 'release-preflight', environment: 'preproduction', generated_at: '2026-08-23T00:00:00.000Z',
     platforms: PLATFORM_CAPABILITY_CONTRACT_PLATFORMS.map(platform => ({
-      platform, application_id: `${platform}-app`, test_store_id: `${platform}-store`,
+    platform, application_id: `${platform}-app`, test_store_id: `${platform}-store`,
+      tenant_context: { workspace_id: `${platform}-workspace`, account_id: `${platform}-account` },
       capabilities: Object.fromEntries(PLATFORM_CAPABILITY_CONTRACT_CAPABILITIES.map(capability => [capability, {
         state, evidence_ref: 'artifact://platform/preflight', verified_by: 'qa', verified_at: '2026-08-23T00:00:00.000Z', api_version: 'v1', scope: 'product.read product.write',
+        protocol: { name: 'https', version: '1.0' },
+        error_evidence: { request_id: `error-${platform}-${capability}`, code: 'VALIDATION_FAILED', message: 'controlled negative-path response', observed_at: '2026-08-23T00:00:00.000Z', retryable: false },
       }])),
     })),
   }
@@ -71,5 +74,30 @@ describe('platform capability preflight', () => {
     expect(errors).toContain('missing platform: pinduoduo')
     expect(errors).toContain('missing platform: xiaohongshu')
     expect(errors).toContain('missing platform: douyin')
+  })
+
+  it('rejects production evidence without protocol, tenant context, or attributable error evidence', () => {
+    const value = evidence() as any
+    delete value.platforms[0].tenant_context
+    delete value.platforms[0].capabilities.read.protocol
+    delete value.platforms[0].capabilities.read.error_evidence
+    const errors = validatePlatformCapabilityEvidence(value, { requireCanary: true })
+    expect(errors).toContain('jd.tenant_context.workspace_id/account_id are required for production_canary')
+    expect(errors).toContain('jd.read.protocol is required for production_canary')
+    expect(errors).toContain('jd.read.error_evidence is required for production_canary')
+  })
+
+  it('rejects connector config placeholders, non-HTTPS endpoints, and missing tenant binding', async () => {
+    const result = await runPlatformPreflight({
+      configs: { jd: {
+        clientId: 'SET_JD_CLIENT_ID',
+        oauth: { authorizeUrl: 'http://jd.example/authorize', tokenUrl: 'https://jd.example/token' },
+        api: { baseUrl: 'https://jd.example/api', syncPath: '/sync', createPath: '/create', updatePath: '/update', queryPath: '/query' },
+      } },
+    })
+    expect(result.passed).toBe(false)
+    expect(result.gaps).toContain('jd.clientId contains an invalid or placeholder value')
+    expect(result.gaps).toContain('jd.oauth.authorizeUrl must use https protocol')
+    expect(result.gaps).toContain('tenantContext.workspaceId/accountId are required when connector configs are supplied')
   })
 })
