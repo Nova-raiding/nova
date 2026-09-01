@@ -6174,6 +6174,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   if (!baseUrl) return <div ref={imageJobConfigurationErrorRef} className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-title" aria-describedby="image-job-config-description">
     <strong id="image-job-config-title">图片任务暂不可用</strong>
     <span id="image-job-config-description">尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。请联系管理员完成测试环境配置后，再刷新此页面。</span>
+    <button className="secondary-button" type="button" onClick={() => window.location.reload()}>刷新页面</button>
   </div>
   const isTerminal = job?.state === 'succeeded' || job?.state === 'failed'
   return <section className="panel image-generation-job-panel" aria-labelledby="image-job-title" aria-busy={loading}>

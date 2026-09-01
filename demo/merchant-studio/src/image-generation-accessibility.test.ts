@@ -46,6 +46,7 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('模型中转配置尚未就绪')
     expect(app).toContain('API 返回配置阻断')
     expect(app).toContain('setConfigurationError(isImageGenerationConfigurationError(cause))')
+    expect(app).toContain('className="secondary-button" type="button" onClick={() => window.location.reload()}>刷新页面</button>')
   })
 
   it('focuses the task discovery configuration blocker and prevents fake tasks', () => {
