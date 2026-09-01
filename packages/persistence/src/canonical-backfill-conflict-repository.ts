@@ -17,7 +17,10 @@ export class CanonicalBackfillConflictRevisionConflictError extends Error { cons
 export class CanonicalBackfillConflictIdempotencyConflictError extends Error { constructor() { super('CANONICAL_BACKFILL_CONFLICT_IDEMPOTENCY_CONFLICT'); this.name = 'CanonicalBackfillConflictIdempotencyConflictError' } }
 export class CanonicalBackfillConflictRecheckMismatchError extends Error { constructor() { super('CANONICAL_BACKFILL_CONFLICT_RECHECK_MISMATCH'); this.name = 'CanonicalBackfillConflictRecheckMismatchError' } }
 
-const conflictCodes: readonly CanonicalBackfillConflict['code'][] = ['MISSING_BRAND', 'CANONICAL_MAPPING_AMBIGUOUS', 'CANONICAL_BRAND_MISMATCH', 'CANONICAL_ID_COLLISION', 'TASK_ACCOUNT_MISMATCH']
+// Keep the durable queue vocabulary aligned with the dry-run inventory. A
+// dangling canonical -> legacy reference blocks migration validation and must
+// be auditable instead of being silently discarded by the scan route.
+const conflictCodes: readonly CanonicalBackfillConflict['code'][] = ['MISSING_BRAND', 'CANONICAL_MAPPING_AMBIGUOUS', 'CANONICAL_BRAND_MISMATCH', 'CANONICAL_LEGACY_PRODUCT_MISSING', 'CANONICAL_ID_COLLISION', 'TASK_ACCOUNT_MISMATCH']
 const validateConflict = (conflict: CanonicalBackfillConflict) => {
   required(conflict.legacyProductId, 'CANONICAL_BACKFILL_CONFLICT_LEGACY_PRODUCT_ID_REQUIRED')
   if (!conflictCodes.includes(conflict.code)) throw new Error('CANONICAL_BACKFILL_CONFLICT_CODE_INVALID')

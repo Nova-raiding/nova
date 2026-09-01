@@ -61,4 +61,20 @@ describe('canonical backfill conflict queue', () => {
     await expect(repository.list({ workspaceId: 'ws_conflict_other' })).resolves.toEqual([])
     await expect(repository.claim({ workspaceId: 'ws_conflict_other', id: row!.id, expectedRevision: 1, assigneeId: 'ops-2' })).rejects.toThrow('CANONICAL_BACKFILL_CONFLICT_NOT_FOUND')
   })
+
+  it('queues dangling legacy references and rechecks them within their workspace', async () => {
+    const repository = new MemoryCanonicalBackfillConflictRepository()
+    const [row] = await repository.enqueue({
+      workspaceId: 'ws_dangling_owner',
+      runId: 'run_1',
+      conflicts: [{ legacyProductId: 'legacy_missing', code: 'CANONICAL_LEGACY_PRODUCT_MISSING', canonicalIds: ['canonical_orphan'] }],
+    })
+    expect(row).toMatchObject({ code: 'CANONICAL_LEGACY_PRODUCT_MISSING', status: 'open' })
+    await expect(repository.list({ workspaceId: 'ws_dangling_other' })).resolves.toEqual([])
+    await expect(repository.recheck({
+      workspaceId: 'ws_dangling_owner', id: row!.id, expectedRevision: row!.revision,
+      observed: { code: 'CANONICAL_LEGACY_PRODUCT_MISSING', canonicalIds: ['canonical_orphan'] },
+      evidence: { source: 'migration-prevalidation' },
+    })).resolves.toMatchObject({ verificationEvidence: { observedCode: 'CANONICAL_LEGACY_PRODUCT_MISSING' } })
+  })
 })
