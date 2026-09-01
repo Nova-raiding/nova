@@ -52,6 +52,7 @@ export function FeatureFlagEditor({ open, flag, saving, defaultEnvironment = "pr
   const [form] = Form.useForm<EditorForm>();
   const [dirty, setDirty] = useState(false);
   useUnsavedChanges(open && dirty, "功能开关编辑表单");
+  const cancel = () => { setDirty(false); onCancel(); };
   const valueType = Form.useWatch("valueType", form) ?? flag?.defaultValue.type ?? "boolean";
   const flagKey = Form.useWatch("key", form);
   const flagEnvironment = Form.useWatch("environment", form);
@@ -61,7 +62,7 @@ export function FeatureFlagEditor({ open, flag, saving, defaultEnvironment = "pr
   const initialValues = useMemo<Partial<EditorForm>>(() => ({ key: flag?.key ?? "", environment: flag?.environment ?? defaultEnvironment, description: flag?.description ?? "", valueType: flag?.defaultValue.type ?? "boolean", valueText: displayValue(flag), enabled: flag?.enabled ?? false, validFrom: featureFlagDateTimeInput(flag?.validFrom), validTo: featureFlagDateTimeInput(flag?.validTo), reason: "", targets: flag?.targets.map(target => ({ type: target.type, value: target.value, enabled: target.enabled, overrideText: target.override ? (target.override.type === "string" ? String(target.override.value) : JSON.stringify(target.override.value)) : undefined })) ?? [] }), [defaultEnvironment, flag]);
   useEffect(() => { if (open) { form.setFieldsValue(initialValues); setDirty(false); } }, [form, initialValues, open]);
 
-  return <Modal open={open} title={flag ? `编辑 ${flag.key}` : "新建功能开关"} onCancel={onCancel} footer={null} destroyOnHidden width={720} aria-labelledby="feature-flag-editor-title">
+  return <Modal open={open} title={flag ? `编辑 ${flag.key}` : "新建功能开关"} onCancel={cancel} footer={null} destroyOnHidden width={720} aria-labelledby="feature-flag-editor-title">
     <Typography.Paragraph id="feature-flag-editor-title" type="secondary">仅支持布尔、字符串、数字和 16KiB 内 JSON；不执行脚本或表达式。新开关默认关闭。</Typography.Paragraph>
     {canonicalWarning && <Alert role="alert" type="warning" showIcon title="Canonical 商品链切读前置条件" description={canonicalWarning} style={{ marginBottom: 16 }} />}
     <Form form={form} layout="vertical" initialValues={initialValues} scrollToFirstError={{ focus: true }} onValuesChange={() => setDirty(true)} onFinish={async values => {
@@ -69,7 +70,7 @@ export function FeatureFlagEditor({ open, flag, saving, defaultEnvironment = "pr
       const targets = (values.targets ?? []).map(target => ({ type: target.type, value: target.value.trim(), enabled: target.enabled, ...(target.overrideText?.trim() ? { override: { type: values.valueType, value: parseFeatureFlagValue(values.valueType, target.overrideText) } } : {}) }));
       await onSave({ id: flag?.id, key: values.key.trim(), environment: values.environment.trim(), description: values.description.trim(), defaultValue, enabled: values.enabled, targets, validFrom: values.validFrom ? new Date(values.validFrom).toISOString() : undefined, validTo: values.validTo ? new Date(values.validTo).toISOString() : undefined, expectedRevision: flag?.revision, idempotencyKey: crypto.randomUUID(), reason: values.reason.trim() });
       setDirty(false);
-      onCancel();
+      cancel();
     }}>
       <Space wrap size={16} style={{ width: "100%" }} align="start">
         <Form.Item name="key" label="开关键" rules={[{ required: true }, { pattern: /^[a-z][a-z0-9_.-]{1,127}$/, message: "使用小写字母开头及字母、数字、点、横线" }]}><Input disabled={Boolean(flag)} autoComplete="off" /></Form.Item>
@@ -98,7 +99,7 @@ export function FeatureFlagEditor({ open, flag, saving, defaultEnvironment = "pr
         <Button type="dashed" style={{ minHeight: 44 }} icon={<PlusOutlined aria-hidden />} onClick={() => add({ type: "workspace", value: "", enabled: true })}>添加定向规则</Button>
       </Space>}</Form.List>
       <Form.Item name="reason" label="变更原因" rules={[{ required: true, min: 3, message: "至少输入 3 个字符，原因会写入不可变审计" }, { max: 500 }]} style={{ marginTop: 16 }}><Input.TextArea rows={2} showCount maxLength={500} /></Form.Item>
-      <Space><Button style={{ minHeight: 44 }} onClick={onCancel}>取消</Button><Button style={{ minHeight: 44 }} type="primary" htmlType="submit" loading={saving}>保存并记录审计</Button></Space>
+      <Space><Button style={{ minHeight: 44 }} onClick={cancel}>取消</Button><Button style={{ minHeight: 44 }} type="primary" htmlType="submit" loading={saving}>保存并记录审计</Button></Space>
     </Form>
   </Modal>;
 }

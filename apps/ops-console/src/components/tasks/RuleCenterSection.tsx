@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Button, Card, Form, Input, Modal, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Rule } from "../../types/ops";
@@ -8,12 +8,24 @@ interface RuleCenterSectionProps {
   model: OpsConsoleModel;
 }
 
+const initialChecksJson = '{"forbiddenTerms":[]}';
+
+export function hasRuleDraftChanges(values: Readonly<Record<string, unknown>>) {
+  return ["packId", "name", "version", "sourceReference", "reason"].some((key) => String(values[key] ?? "").trim())
+    || (typeof values.checksJson === "string" && values.checksJson !== initialChecksJson);
+}
+
 export function RuleCenterSection({ model }: RuleCenterSectionProps) {
   const { canRules, publishRuleDraft, ruleForm, ruleMutationKey, rules, updateRuleStatus } =
     model;
   const [activationTarget, setActivationTarget] = useState<Rule>();
   const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string }>();
   const [draftDirty, setDraftDirty] = useState(false);
+  useEffect(() => {
+    // The form instance belongs to the page model and can survive a transient
+    // authorization remount even when AntD resets its touched metadata.
+    setDraftDirty(hasRuleDraftChanges(ruleForm.getFieldsValue(true)));
+  }, [ruleForm]);
   useUnsavedChanges(draftDirty, "规则草稿表单");
 
   const activateRule = async () => {
@@ -75,7 +87,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         <Form.Item
           name="checksJson"
           label="检查规则"
-          initialValue='{"forbiddenTerms":[]}'
+          initialValue={initialChecksJson}
           rules={[{ required: true, message: "请输入检查规则 JSON" }]}
         >
           <Input placeholder="checks JSON" />

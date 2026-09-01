@@ -246,10 +246,11 @@ function OpsConsoleControllerContent() {
   const [switchingWorkbench, setSwitchingWorkbench] = useState(false);
   const [availableWorkbenches, setAvailableWorkbenches] = useState<readonly OpsWorkbench[]>([activeWorkbench]);
   const [pendingWorkbench, setPendingWorkbench] = useState<{ next: OpsWorkbench; pushHistory: boolean }>();
-  const { labels: unsavedLabels } = useUnsavedChangesState();
+  const { clearAll: clearUnsavedChanges, labels: unsavedLabels } = useUnsavedChangesState();
 
   const commitWorkbench = (next: OpsWorkbench, pushHistory: boolean) => {
     if (next === activeWorkbench && contextReady) return;
+    clearUnsavedChanges();
     setSwitchingWorkbench(true);
     commitOpsWorkbenchTransition(next, pushHistory);
     setActiveWorkbench(next);

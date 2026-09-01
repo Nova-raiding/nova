@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { commitOpsWorkbenchTransition, shouldConfirmWorkbenchTransition } from "./OpsConsoleController.js";
+import { hasRuleDraftChanges } from "../components/tasks/RuleCenterSection.js";
 
 describe("ops workbench transition", () => {
   it("aborts before committing context and URL atomically", () => {
@@ -21,5 +22,10 @@ describe("ops workbench transition", () => {
     expect(shouldConfirmWorkbenchTransition("workspace", "platform", ["事故创建表单"])).toBe(true);
     expect(shouldConfirmWorkbenchTransition("workspace", "platform", [])).toBe(false);
     expect(shouldConfirmWorkbenchTransition("workspace", "workspace", ["规则草稿表单"])).toBe(false);
+  });
+
+  it("recovers rule draft dirtiness from values after touched metadata is remounted", () => {
+    expect(hasRuleDraftChanges({ checksJson: '{"forbiddenTerms":[]}' })).toBe(false);
+    expect(hasRuleDraftChanges({ packId: "retained-draft", checksJson: '{"forbiddenTerms":[]}' })).toBe(true);
   });
 });
