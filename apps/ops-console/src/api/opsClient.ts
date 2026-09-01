@@ -93,9 +93,14 @@ export function purgeLocalOpsCredentialsForManagedSession(
   managed = managedOpsSession,
 ): void {
   if (!managed) return;
-  storage.removeItem("ops_connection_config_v1");
-  storage.removeItem("ops_actor_id");
-  storage.removeItem("ops_api_token");
+  for (const key of [
+    "ops_connection_config_v1",
+    "ops_api_base",
+    "ops_workspace_id",
+    "ops_actor_id",
+    "ops_api_token",
+    "ops_workbench",
+  ]) storage.removeItem(key);
 }
 
 export const OPS_REQUEST_TIMEOUT_MS = 10_000;
@@ -165,10 +170,6 @@ function legacyConnectionConfig(): OpsConnectionConfig {
   return {
     apiBase: normalizedApiBase(
       storage.getItem("ops_api_base") ||
-      // OpsHeader historically stores this key in localStorage in both modes.
-      // Preserve compatibility without making local Bearer credentials
-      // available to managed production sessions.
-      (managedOpsSession ? localStorage.getItem("ops_api_base") : "") ||
       viteEnv.VITE_API_BASE,
     ),
     workspaceId: storage.getItem("ops_workspace_id")?.trim() ?? "",
