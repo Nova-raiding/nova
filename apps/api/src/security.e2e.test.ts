@@ -1049,6 +1049,10 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 7.029, 'content.modify', { content_version_id: 'content_protected_brand', changes_json: '{invalid', reason: '无编辑权限' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.03, 'content.modify', { content_version_id: 'content_hidden_brand', changes_json: '{invalid', reason: '无品牌权限' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect(service.contentVersions.size).toBe(contentVersionsBeforeDeniedBrandModify)
+    const contentVersionsBeforeDeniedBrandRestore = service.contentVersions.size
+    expect((await mcp(editorHeaders, 7.031, 'content.restore', { content_version_id: 'content_protected_brand', expected_version: '999' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 7.032, 'content.restore', { content_version_id: 'content_hidden_brand', expected_version: '999' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect(service.contentVersions.size).toBe(contentVersionsBeforeDeniedBrandRestore)
     expect((await mcp(editorHeaders, 7.03, 'task.answer', { task_id: protectedTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.04, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(ownerHeaders, 7.05, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toBeNull()
