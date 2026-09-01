@@ -7,6 +7,16 @@ const event = (overrides: Partial<DurableOutboxEvent> = {}): DurableOutboxEvent 
   payload: { taskId: 'task_1' }, createdAt: new Date(1_000).toISOString(), ...overrides,
 })
 
+const authorizedEvent = (overrides: Partial<DurableOutboxEvent> = {}): DurableOutboxEvent => event({
+  id: 'evt_authorized', aggregateId: 'publish_1', eventType: 'publish.requested',
+  payload: {
+    authorization_snapshot: {
+      decision_id: 'decision_enqueue', trace_id: 'trace_enqueue',
+    },
+  },
+  ...overrides,
+})
+
 class Store implements DurableOutboxStore {
   readonly events = new Map<string, DurableOutboxEvent>()
   claimCount = 0
@@ -126,6 +136,20 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_unknown')?.publishedAt).toBeUndefined()
     expect(store.events.get('evt_unknown')?.unknownAt).toBeTruthy()
     expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('keeps authorization correlation on unknown and dead-letter outcomes', async () => {
+    const unknownStore = new Store(authorizedEvent({ id: 'evt_unknown_correlated' })); const unknownQueue = new InMemoryQueue<DurableOutboxEvent>()
+    const unknownDispatcher = new DurableOutboxDispatcher(unknownStore, unknownQueue, async () => ({ state: 'unknown' as const }))
+    await unknownDispatcher.restore('ws_1')
+    expect((await unknownDispatcher.dispatchOnce()).state).toBe('unknown')
+    expect(unknownStore.events.get('evt_unknown_correlated')?.lastError).toMatchObject({ code: 'UNKNOWN', decisionId: 'decision_enqueue', eventId: 'evt_unknown_correlated', workspaceId: 'ws_1', traceId: 'trace_enqueue' })
+
+    const deadStore = new Store(authorizedEvent({ id: 'evt_dead_correlated', attempts: 4 })); const deadQueue = new InMemoryQueue<DurableOutboxEvent>()
+    const deadDispatcher = new DurableOutboxDispatcher(deadStore, deadQueue, async () => { throw new WorkerFailure({ code: 'TEMPORARY_FAILURE', message: 'retry exhausted', retryable: true, unknown: false }) })
+    await deadDispatcher.restore('ws_1')
+    expect((await deadDispatcher.dispatchOnce()).state).toBe('dead_letter')
+    expect(deadStore.events.get('evt_dead_correlated')?.lastError).toMatchObject({ code: 'TEMPORARY_FAILURE', decisionId: 'decision_enqueue', eventId: 'evt_dead_correlated', workspaceId: 'ws_1', traceId: 'trace_enqueue' })
   })
 
   it('requeues when persistence ack fails so a later worker can recover', async () => {

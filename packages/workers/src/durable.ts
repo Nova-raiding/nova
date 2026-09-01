@@ -263,9 +263,9 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       await stopHeartbeat()
       if (leaseError !== undefined) return this.handleLeaseError(event, message, leaseError)
       if (handlerTimedOut || cause instanceof WorkerTimeoutError) {
-        return this.recordHandlerFailure(event, message, { code: 'WORKER_HANDLER_TIMEOUT', message: 'worker handler timed out; outcome requires reconciliation', retryable: false, unknown: true })
+        return this.recordHandlerFailure(event, message, withAuthorizationCorrelation(event, { code: 'WORKER_HANDLER_TIMEOUT', message: 'worker handler timed out; outcome requires reconciliation', retryable: false, unknown: true }))
       }
-      const failure = normalizeDurableError(cause)
+      const failure = withAuthorizationCorrelation(event, normalizeDurableError(cause))
       return this.recordHandlerFailure(event, message, failure)
     }
     if (timeoutRejectTimer !== undefined) clearTimeout(timeoutRejectTimer)
@@ -274,7 +274,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
 
     try {
       if (normalized.state === 'unknown') {
-        const updated = await this.store.markUnknown(event.workspaceId, event.id, { code: 'UNKNOWN', message: 'worker returned unknown outcome', retryable: false, unknown: true }, event.leaseToken)
+        const updated = await this.store.markUnknown(event.workspaceId, event.id, withAuthorizationCorrelation(event, { code: 'UNKNOWN', message: 'worker returned unknown outcome', retryable: false, unknown: true }), event.leaseToken)
         await this.queue.ack(message)
         return { state: 'unknown', event: updated }
       }
@@ -372,5 +372,27 @@ function normalizeDurableError(cause: unknown): WorkerError {
     message: candidate?.message ?? 'Worker execution failed',
     retryable: candidate?.retryable ?? false,
     unknown: candidate?.unknown ?? false,
+  }
+}
+
+/**
+ * Durable outcomes are also the audit trail for work that never reaches a
+ * connector. Keep the authorization decision attached to retries, unknown
+ * outcomes, and dead letters even when the handler threw a generic error.
+ * Only copy bounded, printable identifiers from the event payload; malformed
+ * snapshots must not become a new trust boundary or log-injection vector.
+ */
+function withAuthorizationCorrelation(event: DurableOutboxEvent, failure: WorkerError): WorkerError {
+  const raw = event.payload.authorization_snapshot
+  const snapshot = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : undefined
+  const safeId = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\u0000-\u001F\u007F]/u.test(value) ? value : undefined
+  const decisionId = safeId(snapshot?.decision_id)
+  const traceId = safeId(snapshot?.trace_id)
+  return {
+    ...failure,
+    eventId: failure.eventId ?? event.id,
+    workspaceId: failure.workspaceId ?? event.workspaceId,
+    ...(decisionId && !failure.decisionId ? { decisionId } : {}),
+    ...(traceId && !failure.traceId ? { traceId } : {}),
   }
 }

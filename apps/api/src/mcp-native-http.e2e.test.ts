@@ -31,6 +31,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(listed.status).toBe(200)
     expect(payload.result.tools.length).toBeGreaterThan(0)
     expect(payload.result.tools.every(tool => !tool.name.startsWith('ops.'))).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name === 'asset.scan')).toBe(false)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)
   })
 
@@ -48,6 +49,10 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const response = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'ops.finance.export', arguments: {} } }) })
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ jsonrpc: '2.0', id: 3, error: { code: -32601 } })
+
+    const compatibilityTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'asset.scan', arguments: {} } }) })
+    expect(compatibilityTool.status).toBe(200)
+    expect(await compatibilityTool.json()).toMatchObject({ jsonrpc: '2.0', id: 7, error: { code: -32601 } })
   })
 
   it('returns standard JSON-RPC invalid-request and invalid-params errors', async () => {

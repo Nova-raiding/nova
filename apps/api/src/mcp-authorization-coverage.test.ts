@@ -1,8 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope } from './server.js'
+import { registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope, workspaceAccountPermissionAtoms } from './server.js'
 import { AUTHZ_POLICY_VERSION, MCP_METHODS, getMcpMethodPolicy, type MethodPolicy } from '../../../packages/contracts/src/index.js'
 
 describe('registered MCP authorization coverage', () => {
+  it('projects a workspace role to an exact account only when the account belongs to that workspace', () => {
+    const policy = getMcpMethodPolicy('platform.store.alias.set')!
+    const workspaceAtom = {
+      capability: policy.capability,
+      effect: 'allow' as const,
+      scope: { type: 'workspace' as const, ids: ['ws_scope'] },
+      source: 'workspace_membership' as const,
+      sourceId: 'membership_1',
+      obligations: [] as const,
+    }
+
+    const allowed = workspaceAccountPermissionAtoms(policy, 'ws_scope', 'account_a', ['account_a', 'account_b'], [workspaceAtom])
+    expect(allowed).toEqual(expect.arrayContaining([
+      workspaceAtom,
+      expect.objectContaining({ source: 'resource_grant', sourceId: 'workspace-account:ws_scope:account_a', scope: { type: 'account', ids: ['account_a'] } }),
+    ]))
+    expect(workspaceAccountPermissionAtoms(policy, 'ws_scope', 'account_foreign', ['account_a'], [workspaceAtom])).toEqual([workspaceAtom])
+  })
+
+  it('never derives an account grant from a temporary workspace grant', () => {
+    const policy = getMcpMethodPolicy('platform.store.alias.set')!
+    const temporaryWorkspaceAtom = {
+      capability: policy.capability,
+      effect: 'allow' as const,
+      scope: { type: 'workspace' as const, ids: ['ws_scope'] },
+      source: 'temporary_grant' as const,
+      sourceId: 'grant_1',
+      obligations: [] as const,
+    }
+    expect(workspaceAccountPermissionAtoms(policy, 'ws_scope', 'account_a', ['account_a'], [temporaryWorkspaceAtom])).toEqual([temporaryWorkspaceAtom])
+  })
+
   it('produces one unique strict authorization decision for every live MCP method', () => {
     const decisions = MCP_METHODS.map((method, index) => {
       const policy = getMcpMethodPolicy(method)
