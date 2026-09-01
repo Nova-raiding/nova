@@ -8629,8 +8629,8 @@ async function externalProviderUsageStatement(input: {
     const localTokens = input.modelUsage.reduce((sum, item) => sum + (item.totalTokens ?? 0), 0)
     const providerTokens = statement.records.reduce((sum, item) => sum + (item.totalTokens ?? 0), 0)
     const tokenDifference = providerTokens - localTokens
-    const matched = unmatchedLocal === 0 && unmatchedProvider === 0 && comparison.duplicateLocalCount === 0 && comparison.tokenMismatchCount === 0 && tokenDifference === 0
-    return { status: matched ? 'balanced' : 'needs_review', source: 'wormhole_new_api_log_self', endpoint: '/api/log/self', auth: 'user_session_required', pages: statement.pages, provider_record_count: statement.records.length, matched_record_count: comparison.matchedRecordCount, unmatched_local_count: unmatchedLocal, unmatched_provider_count: unmatchedProvider, duplicate_local_count: comparison.duplicateLocalCount, token_mismatch_count: comparison.tokenMismatchCount, local_total_tokens: localTokens, provider_total_tokens: providerTokens, token_difference: tokenDifference, note: matched ? '中转站用户日志与本地 provider request ID、逐笔 token 核对一致；金额仍以供应商账单或 quota 口径单独核验。' : '中转站用户日志与本地账本存在记录、重复 request 或逐笔 token 差异，已阻断平账。' }
+    const matched = unmatchedLocal === 0 && unmatchedProvider === 0 && comparison.duplicateLocalCount === 0 && comparison.duplicateProviderCount === 0 && comparison.tokenMismatchCount === 0 && tokenDifference === 0
+    return { status: matched ? 'balanced' : 'needs_review', source: 'wormhole_new_api_log_self', endpoint: '/api/log/self', auth: 'user_session_required', pages: statement.pages, provider_record_count: statement.records.length, matched_record_count: comparison.matchedRecordCount, unmatched_local_count: unmatchedLocal, unmatched_provider_count: unmatchedProvider, duplicate_local_count: comparison.duplicateLocalCount, duplicate_provider_count: comparison.duplicateProviderCount, token_mismatch_count: comparison.tokenMismatchCount, local_total_tokens: localTokens, provider_total_tokens: providerTokens, token_difference: tokenDifference, note: matched ? '中转站用户日志与本地 provider request ID、逐笔 token 核对一致；金额仍以供应商账单或 quota 口径单独核验。' : '中转站用户日志与本地账本存在记录、重复 request 或逐笔 token 差异，已阻断平账。' }
   } catch (error) {
     return { status: 'externally_unverified', source: 'wormhole_new_api_log_self', endpoint: '/api/log/self', auth: 'user_session_required', error: error instanceof Error ? error.message.slice(0, 200) : 'provider usage query failed', note: '中转站日志读取失败；不会把本地一致视为供应商已平账。' }
   }
@@ -8648,9 +8648,14 @@ export function compareProviderUsageRecords(
     if (localByRequest.has(id)) duplicateLocalCount += 1
     else localByRequest.set(id, item)
   }
-  const providerByRequest = new Map(provider.map(item => [item.providerRecordId, item]))
+  const providerByRequest = new Map<string, typeof provider[number]>()
+  let duplicateProviderCount = 0
+  for (const item of provider) {
+    if (providerByRequest.has(item.providerRecordId)) duplicateProviderCount += 1
+    else providerByRequest.set(item.providerRecordId, item)
+  }
   const unmatchedLocal = [...localByRequest.keys()].filter(id => !providerByRequest.has(id)).length
-  const unmatchedProvider = provider.filter(item => !localByRequest.has(item.providerRecordId)).length
+  const unmatchedProvider = [...providerByRequest.keys()].filter(id => !localByRequest.has(id)).length
   let tokenMismatchCount = 0
   let matchedRecordCount = 0
   for (const [id, localRecord] of localByRequest) {
@@ -8659,7 +8664,7 @@ export function compareProviderUsageRecords(
     matchedRecordCount += 1
     if ((localRecord.inputTokens ?? 0) !== (providerRecord.inputTokens ?? 0) || (localRecord.outputTokens ?? 0) !== (providerRecord.outputTokens ?? 0) || (localRecord.totalTokens ?? 0) !== (providerRecord.totalTokens ?? 0)) tokenMismatchCount += 1
   }
-  return { localByRequest, unmatchedLocal, unmatchedProvider, duplicateLocalCount, tokenMismatchCount, matchedRecordCount }
+  return { localByRequest, unmatchedLocal, unmatchedProvider, duplicateLocalCount, duplicateProviderCount, tokenMismatchCount, matchedRecordCount }
 }
 
 export function shouldHydrateKnowledgeForMethod(method: string, bypassWorkspaceLifecycleGate: boolean, isOpsDomainMethod: boolean) {

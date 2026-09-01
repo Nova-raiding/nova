@@ -24,6 +24,14 @@ describe('provider usage reconciliation', () => {
     )
     expect(result).toMatchObject({ unmatchedLocal: 0, unmatchedProvider: 0, duplicateLocalCount: 1, tokenMismatchCount: 1, matchedRecordCount: 2 })
   })
+
+  it('blocks reconciliation when the provider statement repeats a request id', () => {
+    const result = compareProviderUsageRecords(
+      [{ providerRequestId: 'r1', inputTokens: 1, outputTokens: 2, totalTokens: 3 }],
+      [{ providerRecordId: 'r1', inputTokens: 1, outputTokens: 2, totalTokens: 3 }, { providerRecordId: 'r1', inputTokens: 1, outputTokens: 2, totalTokens: 3 }],
+    )
+    expect(result).toMatchObject({ unmatchedLocal: 0, unmatchedProvider: 0, duplicateProviderCount: 1, tokenMismatchCount: 0, matchedRecordCount: 1 })
+  })
 })
 
 describe('worker authorization snapshot eligibility', () => {
