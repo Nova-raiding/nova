@@ -1038,6 +1038,9 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 7.03, 'task.answer', { task_id: protectedTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.04, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(ownerHeaders, 7.05, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toBeNull()
+    expect((await mcp(editorHeaders, 7.06, 'task.select_direction', { task_id: protectedTask.id, direction_id: 'A' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 7.07, 'task.select_direction', { task_id: hiddenTask.id, direction_id: 'A' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(ownerHeaders, 7.08, 'task.select_direction', { task_id: hiddenTask.id, direction_id: 'A' })).error).toBeNull()
     const restPublishDenied = await fetch(`${base}/v1/publish-jobs`, {
       method: 'POST',
       headers: { ...editorHeaders, 'idempotency-key': 'brand-editor-publish-denied' },
