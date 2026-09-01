@@ -314,19 +314,19 @@ POLICY CONTRACT                                  REAL FLOW
 
 - [x] **T1 (P0，human: ~2d / CC: ~2h)** — Authz SSOT — 建立 capability/method policy registry，并让 CI/启动校验全量 MCP + HTTP handler 完整覆盖。
   - 来源：P0-2、P0-4
-  - 验证：contract inventory、unknown method startup failure、allow/deny table tests；已由 `6ab248a`、`e5832d4`、`3c80ff4` 的本地契约测试证实。
+  - 验证：contract inventory、unknown method startup failure、allow/deny table tests；已由 `6ab248a`、`e5832d4`、`3c80ff4` 的本地契约测试证实。`acab8ae` 进一步覆盖 revoked/expired grant、scope 和时间边界的 fail-closed 行为。
 - [x] **T2 (P0，human: ~2d / CC: ~2h)** — Session — 实现 principal resolver 与 `ops.session.v2`，返回 effective roles/capabilities/scopes/policy version。
   - 来源：P0-1
   - 验证：gateway/member mismatch、suspended identity、session expiry、scope tests；本地 session/grant 契约由 `3c80ff4`、`112cce5` 覆盖。
 - [ ] **T3 (P0，human: ~3d / CC: ~3h)** — Enforcement — MCP/HTTP 统一 `authorizeRequest()`，先迁移 critical/high-risk 方法。
   - 来源：P0-2、P0-3
-  - 验证：MCP/HTTP parity、customer data/finance/publish/identity negative E2E
+  - 验证：MCP/HTTP parity、customer data/finance/publish/identity negative E2E。`6ab248a`、`e5832d4` 只证明 policy coverage/contract inventory，不能证明所有 critical/high-risk handler 已统一执行 enforcement；全量 enforcement 及真实负向 E2E 仍未完成。
 - [ ] **T4 (P0，human: ~3d / CC: ~3h)** — Grants — 建立持久可撤销临时客户数据 grant 和 append-only events，拆开 platform 与 workspace 身份路径。
   - 来源：P0-3、P1-7
-  - 验证：真实 PostgreSQL 过期/撤销/重放/并发/双审批测试
+  - 验证：真实 PostgreSQL 过期/撤销/重放/并发/双审批测试。`acab8ae` 已补齐本地 revoked/expired/scope fail-closed contract，但持久化 grant、真实 PostgreSQL、并发和双审批证据仍未完成。
 - [x] **T5 (P1，human: ~3d / CC: ~3h)** — Ops UI — 建立 AuthorizationProvider，删除导航、hook、财务和组件角色数组。
   - 来源：P1-5、P1-6
-  - 验证：本地 capability projection、PermissionGate、session/workbench 状态及页面契约由 `d497dc8`、`013ed94`、`962cbbd`、`60c71c8`、`c432df7` 等测试证实；桌面全角色页面/动作/深链矩阵仍未完成。
+  - 验证：本地 capability projection、PermissionGate、session/workbench 状态及页面契约由 `d497dc8`、`013ed94`、`962cbbd`、`60c71c8`、`c432df7`、`818e62a` 的测试证实；其中 `013ed94` 覆盖权限验证状态播报，`962cbbd` 覆盖服务端 capability 投影，`60c71c8` 覆盖 canonical 权限/状态边界，`c432df7`、`818e62a` 覆盖审计导出/详情错误恢复。桌面全角色页面/动作/深链矩阵仍未完成。
 - [ ] **T6 (P1，human: ~3d / CC: ~3h)** — Database — 收敛最终 RLS/ACL，保持 tenant 与 ops pool 隔离并加入生产 SQL probes。
   - 来源：RLS 审计
   - 验证：merchant_app/merchant_ops 正负矩阵、GUC 泄漏、append-only

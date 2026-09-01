@@ -333,9 +333,9 @@ type AccessDecision = {
 
 ## 11. 前端落地顺序
 
-- [x] **T1（P1）统一能力契约**：用 `AccessDecision/capabilityKey` 替代页面内角色数组；先解决财务、规则、任务域当前差异。验证：角色 × 域 × 动作契约测试。已由 `AuthorizationProvider`、`PermissionGate`、服务端 capability projection 及 `d497dc8`、`013ed94`、`962cbbd` 的定向测试证实。
+- [x] **T1（P1）统一能力契约**：用 `AccessDecision/capabilityKey` 替代页面内角色数组；先解决财务、规则、任务域当前差异。验证：角色 × 域 × 动作契约测试。已由 `AuthorizationProvider`、`PermissionGate`、服务端 capability projection 及 `d497dc8`、`013ed94`、`962cbbd` 的定向测试证实；`6ab248a`、`acab8ae` 同时为前端消费的 policy/grant 状态提供本地精确 coverage 与 fail-closed 边界。
 - [ ] **T2（P1）重构 Shell**：实现 `OpsAppShell + RoleScopeBar + ConnectionHealthDrawer`，移除首屏 Token 表单与硬编码全平台文案。验证：platform/workspace/controlled 三类会话截图与键盘路径。
-- [x] **T3（P1）统一权限状态**：实现 `PermissionBoundary/Hint/AccessDeniedResult`，覆盖导航隐藏、只读、前置禁用、服务端 403。验证：每类状态至少一个浏览器用例；本地组件/契约测试由 `d497dc8`、`013ed94`、`3c80ff4`、`c432df7` 等提交证实。
+- [x] **T3（P1）统一权限状态**：实现 `PermissionBoundary/Hint/AccessDeniedResult`，覆盖导航隐藏、只读、前置禁用、服务端 403。验证：每类状态至少一个浏览器用例；本地组件/契约测试由 `d497dc8`、`013ed94`、`3c80ff4`、`c432df7`、`60c71c8`、`818e62a` 等提交证实。`c432df7` 覆盖审计导出 capability/scope 限制、错误聚焦和键盘重试，`818e62a` 覆盖审计详情错误摘要焦点恢复；这些是本地 UI 证据，不替代完整浏览器矩阵。
 - [ ] **T4（P2）统一页面骨架**：PageHeader、FilterBar、DataTable、Drawer、DangerActionModal；先迁移用户、成员、财务三个高风险页。验证：无 Card 套 Table、焦点恢复、错误保留输入。
 - [ ] **T5（P2）迁移其余 10 域**：按域逐一移除局部硬编码权限和随机样式。验证：13 域视觉快照 + 角色导航矩阵。
 - [ ] **T6（P2）应用 AntD tokens**：根 ConfigProvider + 组件 token；清理业务组件内颜色/圆角/大面积 inline style。验证：1440/1920 桌面截图、对比度与 reduced-motion。
@@ -357,6 +357,14 @@ type AccessDecision = {
 - `permissionUx.test.tsx` 6/6 通过，`npm run typecheck`、`npm run build:ops-console` 和 `git diff --check` 通过。
 - 该项只归档权限错误状态的可访问性补强；真实 OIDC 403、request/trace ID 传播、RLS 与桌面角色矩阵仍未完成，因此本设计文档继续保持 `TODO / UI NO-GO`。
 - 完整 Ops Console 回归随后复核为 67 个测试文件、312/312 通过；该数字只证明当前前端回归，不替代真实 OIDC、RLS、审计 sink 和生产桌面证据。
+
+### 2026-09-01 本地 authz/UI/audit 证据回填
+
+- `6ab248a`、`acab8ae`：本地 policy coverage 以及 revoked/expired grant、scope 边界的 fail-closed 契约已验证；这不等同于全量 MCP/HTTP enforcement 或持久化 JIT grant。
+- `013ed94`、`962cbbd`：权限验证状态、服务端 capability projection、只读/无权限/错误恢复状态已在 Ops UI 定向测试中验证。
+- `c432df7`、`818e62a`：审计导出与详情错误具备 scope/capability 约束、敏感失败反馈、焦点恢复和可访问重试路径。
+- `60c71c8`：canonical 页面如实展示服务端状态、next action、权限限制和错误/空结果区别。
+- 以下仍明确未完成：全量 enforcement、真实 OIDC/RLS、持久 JIT、真实 audit sink，以及完整 1280/1440/1920 多角色桌面浏览器矩阵；本地契约和组件测试不能替代这些证据。
 
 - 可复用：Ant Design、`Layout/Sider`、13 域路由注册、React.lazy、`OpsDataState`、错误边界、Drawer 焦点恢复、危险操作 Modal、服务端 403 兜底、部分领域能力布尔值与测试。
 - 需要替换：硬编码“平台级/全平台”、常驻连接表单、页面各自定义权限文案、无原因 disabled、Card 拼盘、移动端验收条款。
