@@ -177,4 +177,22 @@ describe('knowledge module', () => {
       { aggregateId: 'asset-1', sequence: 1, eventType: 'knowledge.asset.updated', payload: { ...payload, revision: 2 } },
     ])).toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_SEQUENCE_OUT_OF_ORDER'))
   })
+
+  it('accepts exact durable-event replays but rejects conflicting replays', () => {
+    const restored = createModule()
+    const event = {
+      id: 'event-asset-1', aggregateId: 'asset-1', sequence: 1,
+      eventType: 'knowledge.asset.created',
+      payload: { id: 'asset-1', workspaceId: 'ws-a', kind: 'brand', name: 'A', content: 'x', approvalStatus: 'pending', rightsStatus: 'unknown', tags: [], revision: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+    } as const
+
+    restored.hydrate([event])
+    restored.hydrate([{ ...event, payload: { ...event.payload } }])
+    expect(restored.getAsset('ws-a', 'asset-1')?.revision).toBe(1)
+
+    expect(() => restored.hydrate([{ ...event, payload: { ...event.payload, name: 'tampered' } }]))
+      .toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_CONFLICT'))
+    expect(() => restored.hydrate([{ ...event, id: 'event-asset-2', payload: { ...event.payload, content: 'tampered' } }]))
+      .toThrowError(new KnowledgeError('KNOWLEDGE_EVENT_CONFLICT'))
+  })
 })

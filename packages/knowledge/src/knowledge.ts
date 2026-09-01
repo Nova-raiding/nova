@@ -257,6 +257,15 @@ export interface KnowledgeEvent {
 
 const clone = <T>(value: T): T => structuredClone(value)
 
+const stableSerialize = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableSerialize(nested)}`)
+    .join(',')}}`
+}
+
 const requiredText = (value: string | undefined, code: string): string => {
   if (typeof value !== 'string' || !value.trim()) throw new KnowledgeError(code)
   return value.trim()
@@ -366,6 +375,7 @@ export class KnowledgeModule {
   private readonly suggestions = new Map<string, LearningSuggestion>()
   private readonly competitors = new Map<string, CompetitorAnalysis>()
   private readonly hydratedSequences = new Map<string, number>()
+  private readonly hydratedEventFingerprints = new Map<string, string>()
 
   constructor(options: KnowledgeModuleOptions = {}) {
     this.clock = options.clock ?? (() => new Date().toISOString())
@@ -384,12 +394,29 @@ export class KnowledgeModule {
     for (const event of events) {
       const known = new Set(['knowledge.rule.created', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
       if (!known.has(event.eventType)) throw new KnowledgeError('KNOWLEDGE_EVENT_UNKNOWN', `unsupported knowledge event: ${event.eventType}`)
+      const fingerprint = stableSerialize(event)
+      const eventKey = event.id ? `event:${event.id}` : undefined
+      if (eventKey) {
+        const previous = this.hydratedEventFingerprints.get(eventKey)
+        if (previous !== undefined) {
+          if (previous !== fingerprint) throw new KnowledgeError('KNOWLEDGE_EVENT_CONFLICT')
+          continue
+        }
+      }
       if (event.aggregateId && event.sequence !== undefined) {
         if (!Number.isSafeInteger(event.sequence) || event.sequence < 1) throw new KnowledgeError('KNOWLEDGE_EVENT_SEQUENCE_INVALID')
+        const sequenceKey = `sequence:${event.aggregateId}:${event.sequence}`
+        const previousFingerprint = this.hydratedEventFingerprints.get(sequenceKey)
+        if (previousFingerprint !== undefined) {
+          if (previousFingerprint !== fingerprint) throw new KnowledgeError('KNOWLEDGE_EVENT_CONFLICT')
+          continue
+        }
         const previous = this.hydratedSequences.get(event.aggregateId)
         if (previous !== undefined && event.sequence <= previous) throw new KnowledgeError('KNOWLEDGE_EVENT_SEQUENCE_OUT_OF_ORDER')
         this.hydratedSequences.set(event.aggregateId, event.sequence)
+        this.hydratedEventFingerprints.set(sequenceKey, fingerprint)
       }
+      if (eventKey) this.hydratedEventFingerprints.set(eventKey, fingerprint)
       const payload = event.payload
       const id = typeof payload.id === 'string' ? payload.id : undefined
       if (id) {
