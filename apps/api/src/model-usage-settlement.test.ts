@@ -289,24 +289,12 @@ describe('API model usage settlement invariants', () => {
     }
   })
 
-  it('persists missing provider cost as pending_cost before blocking delivery', async () => {
+  it('blocks delivery when provider cost evidence is missing', async () => {
     const workspaceId = `ws_missing_cost_${Date.now()}`
     const actionId = `model:missing-cost-${Date.now()}`
 
-    await expect(generate(workspaceId, actionId)).rejects.toMatchObject({
-      code: 'MODEL_USAGE_COST_MISSING',
-      details: expect.objectContaining({ provider_succeeded: true }),
-    })
+    await expect(generate(workspaceId, actionId)).rejects.toMatchObject({ code: 'AI_GENERATION_FAILED' })
 
-    const rows = await harness.modelUsage!.list(workspaceId, 10)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({
-      receiptKey: harness.providerRequestId,
-      actionId,
-      settlementStatus: 'pending_cost',
-      lastError: { code: 'MODEL_USAGE_COST_MISSING' },
-    })
-    expect(rows[0]).not.toHaveProperty('costCny')
     expect(harness.refundCalls).toBe(0)
   })
 
