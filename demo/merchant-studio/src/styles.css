@@ -284,3 +284,4 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 .image-generation-job-panel .image-candidate-fallback {
   color: #7a2424;
 }
+.image-candidate-pagination{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:14px;color:#43534a;font-size:12px;line-height:1.45;text-align:center}.image-candidate-pagination .secondary-button{min-width:88px}
