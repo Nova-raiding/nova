@@ -20,7 +20,19 @@ const REQUIRED_SCENARIOS = [
   'automation_host_absent',
 ] as const
 type ScenarioId = typeof REQUIRED_SCENARIOS[number]
-type Scenario = { id?: ScenarioId; state?: string; evidence_ref?: string; console_errors?: number; network_errors?: number }
+type ErrorRecoveryEvidence = {
+  trigger_http_status?: number
+  trigger_error_code?: string
+  request_id?: string
+  trace_id?: string
+  recovery_action?: 'query_provider' | 'refresh_status' | 'manual_reconcile'
+  retry_allowed?: boolean
+  before_state?: 'provider_started' | 'outcome_unknown'
+  after_state?: 'reconciled_succeeded' | 'reconciled_failed' | 'outcome_unknown'
+  reconciliation_required?: boolean
+  outcome_evidence_ref?: string
+}
+type Scenario = { id?: ScenarioId; state?: string; evidence_ref?: string; console_errors?: number; network_errors?: number; error_recovery?: ErrorRecoveryEvidence }
 type HostEvidence = { schema_version?: string; release_id?: string; environment?: string; generated_at?: string; host?: string; app_version?: string; plugin_version?: string; mcp_base_url?: string; bridge_sha256?: string; simulated?: boolean; scenarios?: Scenario[] }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
@@ -91,6 +103,22 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
     else if (options.artifactRoot) errors.push(...validateArtifact(scenario.evidence_ref, options.artifactRoot, `${scenario.id}.evidence_ref`))
     if (scenario.console_errors !== 0) errors.push(`${scenario.id}.console_errors must be 0`)
     if (scenario.network_errors !== 0) errors.push(`${scenario.id}.network_errors must be 0`)
+    if (scenario.id === 'error_recovery') {
+      const recovery = scenario.error_recovery
+      if (!recovery || typeof recovery !== 'object') errors.push('error_recovery.evidence is required')
+      else {
+        if (recovery.trigger_http_status !== 503) errors.push('error_recovery.trigger_http_status must be 503')
+        if (recovery.trigger_error_code !== 'MODEL_PROVIDER_OUTCOME_UNKNOWN') errors.push('error_recovery.trigger_error_code must be MODEL_PROVIDER_OUTCOME_UNKNOWN')
+        for (const field of ['request_id', 'trace_id'] as const) if (!nonEmpty(recovery[field]) || recovery[field]!.length > 256 || /[\u0000-\u001f\u007f]/u.test(recovery[field]!)) errors.push(`error_recovery.${field} must be a safe correlation id`)
+        if (!['query_provider', 'refresh_status', 'manual_reconcile'].includes(recovery.recovery_action ?? '')) errors.push('error_recovery.recovery_action must be an approved recovery action')
+        if (recovery.retry_allowed !== false) errors.push('error_recovery.retry_allowed must be false')
+        if (!['provider_started', 'outcome_unknown'].includes(recovery.before_state ?? '')) errors.push('error_recovery.before_state is invalid')
+        if (!['reconciled_succeeded', 'reconciled_failed', 'outcome_unknown'].includes(recovery.after_state ?? '')) errors.push('error_recovery.after_state is invalid')
+        if (recovery.reconciliation_required !== true) errors.push('error_recovery.reconciliation_required must be true')
+        if (!immutableArtifact.test(recovery.outcome_evidence_ref ?? '')) errors.push('error_recovery.outcome_evidence_ref must be an immutable production artifact')
+        else if (options.artifactRoot) errors.push(...validateArtifact(recovery.outcome_evidence_ref, options.artifactRoot, 'error_recovery.outcome_evidence_ref'))
+      }
+    }
   }
   for (const id of REQUIRED_SCENARIOS) if (!seen.has(id)) errors.push(`${id} scenario is required`)
   return errors

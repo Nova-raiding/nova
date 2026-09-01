@@ -22,7 +22,7 @@ const evidence = {
     'selection_not_published',
     'automation_read_only',
     'automation_host_absent',
-  ].map(id => ({ id, state: 'passed', evidence_ref: artifact(id), console_errors: 0, network_errors: 0 })),
+  ].map(id => ({ id, state: 'passed', evidence_ref: artifact(id), console_errors: 0, network_errors: 0, ...(id === 'error_recovery' ? { error_recovery: { trigger_http_status: 503, trigger_error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', request_id: 'request-503', trace_id: 'trace-503', recovery_action: 'query_provider' as const, retry_allowed: false, before_state: 'outcome_unknown' as const, after_state: 'reconciled_failed' as const, reconciliation_required: true, outcome_evidence_ref: artifact('error-recovery-outcome') } } : {}) })),
 }
 
 describe('Codex App host evidence gate', () => {
@@ -66,6 +66,17 @@ describe('Codex App host evidence gate', () => {
     expect(validateCodexAppHostEvidence(invalid)).toEqual(expect.arrayContaining([
       'automation_read_only scenario is required',
       'automation_host_absent scenario is required',
+    ]))
+  })
+
+  it('rejects an error recovery scenario that only claims passed without 503 evidence', () => {
+    const invalid = structuredClone(evidence)
+    invalid.scenarios.find(({ id }) => id === 'error_recovery')!.error_recovery = { trigger_http_status: 500, retry_allowed: true } as unknown as NonNullable<typeof invalid.scenarios[number]['error_recovery']>
+    expect(validateCodexAppHostEvidence(invalid)).toEqual(expect.arrayContaining([
+      'error_recovery.trigger_http_status must be 503',
+      'error_recovery.trigger_error_code must be MODEL_PROVIDER_OUTCOME_UNKNOWN',
+      'error_recovery.retry_allowed must be false',
+      'error_recovery.outcome_evidence_ref must be an immutable production artifact',
     ]))
   })
 })
