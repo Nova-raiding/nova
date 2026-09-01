@@ -547,13 +547,13 @@ P0 已交付并验证的边界：246/246 method policy inventory、canonical rol
 
 ### 19.2 每次提交必跑的动态 inventory 门禁
 
-- [ ] **P1-GATE-001：MCP 集合精确相等。** 在最终提交执行下面命令，必须输出 `methods === policies === declared === registered`；命令不得断言固定数字。
+- [x] **P1-GATE-001：MCP 集合精确相等（本地契约已验证）。** `6ab248a` 的 `authz.test.ts` 补齐精确 policy coverage；对应测试验证实时方法集合与 policy 注册表一致，并拒绝未知方法。仍需在最终发布提交上动态重跑，不能将本地结果当作生产证据。
 
 ```bash
 npx tsx -e "import { MCP_METHODS } from './packages/contracts/src/mcp.ts'; import { MCP_METHOD_POLICIES, assertMcpMethodPolicyCoverage } from './packages/contracts/src/authz.ts'; const coverage=assertMcpMethodPolicyCoverage(); if (MCP_METHODS.length !== Object.keys(MCP_METHOD_POLICIES).length) process.exit(1); console.log(JSON.stringify({methods:MCP_METHODS.length,policies:Object.keys(MCP_METHOD_POLICIES).length,...coverage}))"
 ```
 
-- [ ] **P1-GATE-002：集合内容相等而非只比数量。** `authz.test.ts` 必须继续断言排序后的 method key 集合与 `MCP_METHODS` 完全相等、未知方法无 wildcard/prefix fallback。新增、删除或重命名任一方法时，该测试必须先红后补策略。
+- [x] **P1-GATE-002：集合内容相等而非只比数量（本地契约已验证）。** `6ab248a` 的 `authz.test.ts` 已验证 method key 集合与 `MCP_METHODS` 精确相等，并对未知方法 fail-closed；新增、删除或重命名方法仍必须在最终提交重新执行该门禁。
 - [ ] **P1-GATE-003：handler/contract/policy 三集合相等。** CI 从 MCP handler dispatch/注册真源生成第三个集合，断言 `declared = registered policy = implemented handler`；不能只凭 switch 可编译推断 handler 存在。
 - [ ] **P1-GATE-004：HTTP parity（生产运行证据仍未完成）。** 契约层已由 `HTTP_OPERATION_POLICIES`、OpenAPI 一一覆盖测试及服务端 `enforceRegisteredHttpCapability()` 接入同一 MCP policy；剩余验收是逐路由真实 allow/deny、scope、obligation、JIT、decision audit 和生产 OIDC/RLS 证据，不能仅凭契约测试勾选完成。
 
@@ -767,3 +767,24 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 
 2026-08-31 桌面运行态增量：连接诊断默认折叠，避免 Drawer 遮挡桌面导航；`OpsHeader` 定向回归 11/11。重新构建并重启 `ops-ui` 后，真实 Compose Chrome 桌面入口 `ops.spec.js` 为 1 passed，入口响应成功、HTTP 错误 0、请求失败 0、console/page 错误 0。跨到 workspace 后的 support/incidents 导航仍由服务端授权投影控制，未授权时隐藏属于 fail-closed 预期；全域深链仍需按角色拆分验收，不迁移为 done。
 深链验收随后按真实权限语义完成拆分：`ops-deeplink.spec.js` 桌面 Chrome 全套 15/15 通过，覆盖 11 个可访问域的深链刷新、平台工作台导航历史/前进后退，以及 support/incidents 无权态刷新；未通过前端显示隐藏域规避服务端 RBAC。
+
+## 28. 本地契约证据逐条核对（2026-09-01）
+
+本节只登记已经提交、可由对应定向测试复核的本地代码/契约证据，不把局部实现升级为完整验收，也不替代真实运行环境证据。
+
+- [x] **策略集合精确覆盖。** `6ab248a`；`packages/contracts/src/authz.test.ts` 定向测试通过，覆盖 policy key 精确匹配与未知方法 fail-closed。对应完整验收项为 P1-GATE-001/P1-GATE-002；仍需最终提交动态重跑。
+- [x] **撤销/过期授权拒绝。** `acab8ae`；Authz 定向测试 18/18 通过，覆盖 revoked、expired、非法时间、空/控制字符 scope 和 wildcard scope 拒绝。该证据仅关闭本地 grant 校验子项，不关闭 P1-BE-007 的持久 JIT、生产并发和真实 OIDC 要求。
+- [x] **Ops session/grant 契约。** `3c80ff4`；API 定向测试 4/4 通过，覆盖 workbench/workspace 裁剪、grant issue/revoke、expiry projection 和 403 decision evidence。该证据不等于真实 OIDC 或跨副本生命周期验收。
+- [x] **用户治理 capability 投影。** `962cbbd`；Users 页面定向测试 10/10 通过，覆盖服务端 capability projection、无权限 fail-closed、只读说明和键盘可达恢复。该证据不关闭完整角色矩阵、生产 RLS 或全桌面浏览器验收。
+- [x] **Ops RBAC API 接口契约。** `e5832d4`；API 定向测试 3/3 通过，覆盖 MCP 方法授权矩阵、平台权限边界、双工作台 session 裁剪和 403 decision/request evidence。该证据不等于逐路由生产 parity。
+
+以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
+
+- [ ] 真实 OIDC 签名、issuer/audience/nonce、受控主体和 gateway/membership 一致性。
+- [ ] 生产-like PostgreSQL 双 role、RLS 攻击矩阵、连接池隔离和迁移后真实数据门禁。
+- [ ] 持久 JIT 的真实审批、撤销竞态、nonce/max-use 并发及跨副本一致性。
+- [ ] 不可变 audit sink 的真实写入、失败阻断、查询重建和保留策略。
+- [ ] 全量 HTTP/MCP/Worker enforcement 与逐方法 allow/deny/scope/obligation parity。
+- [ ] 1280/1440/1920 桌面角色矩阵、JIT 到期/撤销和跨租户 IDOR 的完整浏览器证据。
+
+因此本地契约子项已按证据勾选，但本文件总体仍为 **TODO / LOCAL VERIFIED WITH BLOCKERS / PRODUCTION NO-GO**；不得据此迁移到 `doc/done`。
