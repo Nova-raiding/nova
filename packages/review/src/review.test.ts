@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildReviewReport, isReviewBlocking, reviewDeterministic, reviewProductImages, REVIEW_EVIDENCE_BOUNDARY } from './review.js'
+import { buildReviewReport, isReviewBlocking, reviewDeterministic, reviewProductImages, REVIEW_EVIDENCE_BOUNDARY, validateReviewDecision } from './review.js'
 import { defaultRuleCenterSeeds, RuleCenter } from './rule-center.js'
 
 describe('deterministic content review', () => {
@@ -253,5 +253,27 @@ describe('deterministic content review', () => {
     }])
     center.setStatus({ packId: 'expired-status', status: 'expired', actorId: 'rules-owner', reason: '平台规则已替换' })
     expect(center.evaluate({}, '2026-08-24T12:00:00.000Z').findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'error' }))
+  })
+
+  describe('review decision state contract', () => {
+    const finding = { code: 'DUPLICATE_IMAGE' as const, field: 'images[1]', status: 'open' as const, severity: 'warning' as const, priority: 'P2' as const }
+    const input = { finding, status: 'acknowledged' as const, actorId: 'reviewer-1', canDecide: true, expectedRevision: 3, currentRevision: 3, contentStatus: 'review_required' as const }
+
+    it('requires permission, a matching revision, and a non-terminal content version', () => {
+      expect(() => validateReviewDecision({ ...input, canDecide: false }, '2026-08-31T00:00:00.000Z')).toThrow('REVIEW_DECISION_PERMISSION_DENIED')
+      expect(() => validateReviewDecision({ ...input, expectedRevision: 2 }, '2026-08-31T00:00:00.000Z')).toThrow('REVIEW_DECISION_VERSION_CONFLICT')
+      expect(() => validateReviewDecision({ ...input, contentStatus: 'approved' }, '2026-08-31T00:00:00.000Z')).toThrow('REVIEW_DECISION_TERMINAL_VERSION')
+    })
+
+    it('rejects terminal findings and P0/error bypass attempts', () => {
+      expect(() => validateReviewDecision({ ...input, status: 'acknowledged', finding: { ...finding, status: 'waived' } }, '2026-08-31T00:00:00.000Z')).toThrow('REVIEW_FINDING_TERMINAL')
+      expect(() => validateReviewDecision({ ...input, finding: { ...finding, priority: 'P0' } }, '2026-08-31T00:00:00.000Z')).toThrow('REVIEW_P0_DECISION_FORBIDDEN')
+      expect(() => validateReviewDecision({ ...input, finding: { ...finding, severity: 'error' } }, '2026-08-31T00:00:00.000Z')).toThrow('REVIEW_P0_DECISION_FORBIDDEN')
+    })
+
+    it('requires a reason for waiver and returns a stable auditable decision', () => {
+      expect(() => validateReviewDecision({ ...input, status: 'waived' }, '2026-08-31T00:00:00.000Z')).toThrow('REVIEW_DECISION_REASON_REQUIRED')
+      expect(validateReviewDecision({ ...input, status: 'waived', reason: '内部对比图，交付前移除' }, '2026-08-31T00:00:00.000Z')).toEqual({ key: 'DUPLICATE_IMAGE:images[1]', status: 'waived', reason: '内部对比图，交付前移除', actorId: 'reviewer-1', updatedAt: '2026-08-31T00:00:00.000Z' })
+    })
   })
 })

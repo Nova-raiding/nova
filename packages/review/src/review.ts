@@ -5,6 +5,53 @@ export type ReviewPriority = 'P0' | 'P1' | 'P2'
 export type ReviewFindingStatus = 'open' | 'acknowledged' | 'resolved' | 'waived'
 export type ReviewCategoryId = 'product_truth' | 'brand_consistency' | 'copy_price_compliance' | 'visual_brief_quality' | 'technical_specification' | 'platform_preflight'
 
+export type ReviewDecisionStatus = 'acknowledged' | 'waived'
+export type ReviewContentStatus = 'draft' | 'review_required' | 'approved' | 'delivered'
+
+export interface ReviewDecisionRequest {
+  finding: Pick<ReviewFinding, 'code' | 'field' | 'status' | 'severity' | 'priority'>
+  status: ReviewDecisionStatus
+  actorId: string
+  canDecide: boolean
+  reason?: string
+  expectedRevision: number
+  currentRevision: number
+  contentStatus: ReviewContentStatus
+}
+
+export interface ReviewDecisionResult {
+  key: string
+  status: ReviewDecisionStatus
+  reason: string
+  actorId: string
+  updatedAt: string
+}
+
+/**
+ * Validate the state transition at the review boundary.
+ *
+ * This is intentionally pure and requires the caller to provide both the
+ * authorization decision and the optimistic-lock revision. A missing or
+ * stale value therefore fails closed instead of being treated as a default.
+ */
+export function validateReviewDecision(input: ReviewDecisionRequest, now: string = new Date().toISOString()): ReviewDecisionResult {
+  if (input.canDecide !== true) throw new Error('REVIEW_DECISION_PERMISSION_DENIED')
+  if (!input.actorId.trim()) throw new Error('REVIEW_DECISION_ACTOR_REQUIRED')
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || !Number.isSafeInteger(input.currentRevision) || input.currentRevision < 0) {
+    throw new Error('REVIEW_DECISION_REVISION_INVALID')
+  }
+  if (input.expectedRevision !== input.currentRevision) throw new Error('REVIEW_DECISION_VERSION_CONFLICT')
+  if (input.contentStatus === 'approved' || input.contentStatus === 'delivered') throw new Error('REVIEW_DECISION_TERMINAL_VERSION')
+  if (input.contentStatus !== 'review_required' && input.contentStatus !== 'draft') throw new Error('REVIEW_DECISION_STATE_INVALID')
+  if (input.status !== 'acknowledged' && input.status !== 'waived') throw new Error('REVIEW_DECISION_STATUS_INVALID')
+  if (input.finding.status === 'resolved' || input.finding.status === 'waived') throw new Error('REVIEW_FINDING_TERMINAL')
+  if (input.finding.priority === 'P0' || input.finding.severity === 'error') throw new Error('REVIEW_P0_DECISION_FORBIDDEN')
+  const reason = input.reason?.trim() ?? ''
+  if (input.status === 'waived' && !reason) throw new Error('REVIEW_DECISION_REASON_REQUIRED')
+  if (!now.trim() || Number.isNaN(Date.parse(now))) throw new Error('REVIEW_DECISION_TIMESTAMP_INVALID')
+  return { key: `${input.finding.code}:${input.finding.field}`, status: input.status, reason: reason || '商家已知悉该建议', actorId: input.actorId.trim(), updatedAt: now }
+}
+
 /**
  * Evidence is deliberately scoped to checks performed by this application.
  * `externalVerification` is a boundary marker, not a claim about any platform.
