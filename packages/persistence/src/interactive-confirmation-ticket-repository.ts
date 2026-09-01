@@ -14,9 +14,22 @@ export type ConsumeInteractiveConfirmationTicketInput = Omit<InteractiveConfirma
   legacyNonceHash?: string
 }
 
+export interface ReserveInteractiveConfirmationTicketInput extends ConsumeInteractiveConfirmationTicketInput {
+  reservationId: string
+  reservationExpiresAt: string
+}
+
+export type FinalizeInteractiveConfirmationTicketInput = Omit<ReserveInteractiveConfirmationTicketInput, 'reservationExpiresAt'>
+
 export interface InteractiveConfirmationTicketRepository {
   issue(input: InteractiveConfirmationTicket): Promise<InteractiveConfirmationTicket>
   consume(input: ConsumeInteractiveConfirmationTicketInput): Promise<boolean>
+}
+
+export interface ReservableInteractiveConfirmationTicketRepository extends InteractiveConfirmationTicketRepository {
+  reserve(input: ReserveInteractiveConfirmationTicketInput): Promise<boolean>
+  finalize(input: FinalizeInteractiveConfirmationTicketInput): Promise<boolean>
+  release(input: FinalizeInteractiveConfirmationTicketInput): Promise<boolean>
 }
 
 const MAX_TICKET_TTL_MS = 15 * 60 * 1_000
@@ -52,8 +65,27 @@ function scope(input: ConsumeInteractiveConfirmationTicketInput) {
   }
 }
 
-export class MemoryInteractiveConfirmationTicketRepository implements InteractiveConfirmationTicketRepository {
-  private readonly tickets = new Map<string, InteractiveConfirmationTicket>()
+function reservation(input: FinalizeInteractiveConfirmationTicketInput) {
+  return { ...scope(input), reservationId: identifier(input.reservationId, 'INTERACTIVE_CONFIRMATION_RESERVATION_ID_INVALID', 255) }
+}
+
+function reservationExpiry(value: string, now: Date) {
+  const milliseconds = Date.parse(value)
+  if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString() !== value) throw new Error('INTERACTIVE_CONFIRMATION_RESERVATION_EXPIRES_AT_INVALID')
+  if (milliseconds <= now.getTime()) throw new Error('INTERACTIVE_CONFIRMATION_RESERVATION_EXPIRED')
+  if (milliseconds - now.getTime() > MAX_TICKET_TTL_MS) throw new Error('INTERACTIVE_CONFIRMATION_RESERVATION_TTL_EXCEEDED')
+  return value
+}
+
+interface MemoryTicketState {
+  ticket: InteractiveConfirmationTicket
+  reservationId?: string
+  reservationExpiresAt?: string
+  consumedAt?: string
+}
+
+export class MemoryInteractiveConfirmationTicketRepository implements ReservableInteractiveConfirmationTicketRepository {
+  private readonly tickets = new Map<string, MemoryTicketState>()
 
   constructor(private readonly clock: () => Date = () => new Date()) {}
 
@@ -61,21 +93,60 @@ export class MemoryInteractiveConfirmationTicketRepository implements Interactiv
     const bound = scope(input)
     const ticket = { ...bound, expiresAt: expiry(input.expiresAt, this.clock()) }
     if (this.tickets.has(ticket.nonceHash)) throw new Error('INTERACTIVE_CONFIRMATION_NONCE_CONFLICT')
-    this.tickets.set(ticket.nonceHash, ticket)
+    this.tickets.set(ticket.nonceHash, { ticket })
     return ticket
   }
 
   async consume(input: ConsumeInteractiveConfirmationTicketInput) {
     const ticket = scope(input)
     const stored = this.tickets.get(ticket.nonceHash)
-    if (!stored || stored.workspaceId !== ticket.workspaceId || stored.actorId !== ticket.actorId || stored.sessionId !== ticket.sessionId || stored.intentHash !== ticket.intentHash) return false
-    if (Date.parse(stored.expiresAt) <= this.clock().getTime()) return false
-    this.tickets.delete(ticket.nonceHash)
+    if (!stored || !this.matches(stored, ticket) || stored.consumedAt) return false
+    const now = this.clock()
+    if (Date.parse(stored.ticket.expiresAt) <= now.getTime()) return false
+    if (stored.reservationId && Date.parse(stored.reservationExpiresAt!) > now.getTime()) return false
+    stored.consumedAt = now.toISOString()
     return true
+  }
+
+  async reserve(input: ReserveInteractiveConfirmationTicketInput) {
+    const bound = reservation(input)
+    const now = this.clock()
+    const leaseExpiry = reservationExpiry(input.reservationExpiresAt, now)
+    const stored = this.tickets.get(bound.nonceHash)
+    if (!stored || !this.matches(stored, bound) || stored.consumedAt || Date.parse(stored.ticket.expiresAt) <= now.getTime() || Date.parse(leaseExpiry) > Date.parse(stored.ticket.expiresAt)) return false
+    if (stored.reservationId && stored.reservationId !== bound.reservationId && Date.parse(stored.reservationExpiresAt!) > now.getTime()) return false
+    stored.reservationId = bound.reservationId
+    stored.reservationExpiresAt = leaseExpiry
+    return true
+  }
+
+  async finalize(input: FinalizeInteractiveConfirmationTicketInput) {
+    const bound = reservation(input)
+    const stored = this.tickets.get(bound.nonceHash)
+    if (!stored || !this.matches(stored, bound) || stored.reservationId !== bound.reservationId) return false
+    if (stored.consumedAt) return true
+    const now = this.clock()
+    if (Date.parse(stored.ticket.expiresAt) <= now.getTime() || Date.parse(stored.reservationExpiresAt!) <= now.getTime()) return false
+    stored.consumedAt = now.toISOString()
+    return true
+  }
+
+  async release(input: FinalizeInteractiveConfirmationTicketInput) {
+    const bound = reservation(input)
+    const stored = this.tickets.get(bound.nonceHash)
+    if (!stored || !this.matches(stored, bound) || stored.consumedAt || stored.reservationId !== bound.reservationId) return false
+    delete stored.reservationId
+    delete stored.reservationExpiresAt
+    return true
+  }
+
+  private matches(stored: MemoryTicketState, input: ConsumeInteractiveConfirmationTicketInput) {
+    const ticket = stored.ticket
+    return ticket.workspaceId === input.workspaceId && ticket.actorId === input.actorId && ticket.sessionId === input.sessionId && ticket.intentHash === input.intentHash
   }
 }
 
-export class PostgresInteractiveConfirmationTicketRepository implements InteractiveConfirmationTicketRepository {
+export class PostgresInteractiveConfirmationTicketRepository implements ReservableInteractiveConfirmationTicketRepository {
   constructor(private readonly pool: SqlPool, private readonly clock: () => Date = () => new Date()) {}
 
   async issue(input: InteractiveConfirmationTicket) {
@@ -108,8 +179,89 @@ export class PostgresInteractiveConfirmationTicketRepository implements Interact
               OR (nonce_digest_version=1 AND nonce_hash IN ($5,$6))
             )
             AND consumed_at IS NULL
+            AND (reservation_id IS NULL OR reservation_expires_at<=now())
             AND expires_at>now()`,
         [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.legacyNonceHash ?? ticket.nonceHash],
+      )
+      return result.rowCount === 1
+    })
+  }
+
+  async reserve(input: ReserveInteractiveConfirmationTicketInput) {
+    const ticket = reservation(input)
+    const reservationExpiresAt = reservationExpiry(input.reservationExpiresAt, this.clock())
+    return withWorkspaceTransaction(this.pool, ticket.workspaceId, async client => {
+      const result = await client.query(
+        `UPDATE interactive_confirmation_tickets
+            SET reservation_id=$6,
+                reserved_at=now(),
+                reservation_expires_at=$7::timestamptz
+          WHERE workspace_id=$1
+            AND actor_id=$2
+            AND session_id=$3
+            AND intent_hash=$4
+            AND nonce_hash=$5
+            AND consumed_at IS NULL
+            AND expires_at>now()
+            AND $7::timestamptz>now()
+            AND $7::timestamptz<=expires_at
+            AND (reservation_id IS NULL OR reservation_expires_at<=now() OR reservation_id=$6)`,
+        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId, reservationExpiresAt],
+      )
+      return result.rowCount === 1
+    })
+  }
+
+  async finalize(input: FinalizeInteractiveConfirmationTicketInput) {
+    const ticket = reservation(input)
+    return withWorkspaceTransaction(this.pool, ticket.workspaceId, async client => {
+      const result = await client.query(
+        `UPDATE interactive_confirmation_tickets
+            SET consumed_at=now()
+          WHERE workspace_id=$1
+            AND actor_id=$2
+            AND session_id=$3
+            AND intent_hash=$4
+            AND nonce_hash=$5
+            AND reservation_id=$6
+            AND reservation_expires_at>now()
+            AND expires_at>now()
+            AND consumed_at IS NULL`,
+        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId],
+      )
+      if (result.rowCount === 1) return true
+      const replay = await client.query(
+        `SELECT 1
+           FROM interactive_confirmation_tickets
+          WHERE workspace_id=$1
+            AND actor_id=$2
+            AND session_id=$3
+            AND intent_hash=$4
+            AND nonce_hash=$5
+            AND reservation_id=$6
+            AND consumed_at IS NOT NULL`,
+        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId],
+      )
+      return replay.rowCount === 1
+    })
+  }
+
+  async release(input: FinalizeInteractiveConfirmationTicketInput) {
+    const ticket = reservation(input)
+    return withWorkspaceTransaction(this.pool, ticket.workspaceId, async client => {
+      const result = await client.query(
+        `UPDATE interactive_confirmation_tickets
+            SET reservation_id=NULL,
+                reserved_at=NULL,
+                reservation_expires_at=NULL
+          WHERE workspace_id=$1
+            AND actor_id=$2
+            AND session_id=$3
+            AND intent_hash=$4
+            AND nonce_hash=$5
+            AND reservation_id=$6
+            AND consumed_at IS NULL`,
+        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId],
       )
       return result.rowCount === 1
     })

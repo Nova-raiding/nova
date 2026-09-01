@@ -10,6 +10,6 @@ describe('migration 138 interactive confirmation ticket nonce digest', () => {
     expect(sql).toContain('ALTER COLUMN nonce_digest_version SET DEFAULT 2')
     expect(sql).toContain('GRANT INSERT (workspace_id, actor_id, session_id, intent_hash, nonce_hash, expires_at)')
     expect(sql).toContain('REVOKE UPDATE (nonce_digest_version) ON interactive_confirmation_tickets FROM merchant_app')
-    expect((await loadMigrations()).at(-1)).toMatchObject({ version: 138, name: 'interactive_confirmation_ticket_nonce_digest' })
+    expect((await loadMigrations()).find(item => item.version === 138)).toMatchObject({ version: 138, name: 'interactive_confirmation_ticket_nonce_digest' })
   })
 })

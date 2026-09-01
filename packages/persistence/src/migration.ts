@@ -416,6 +416,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const authorizationEventScopeIntegrity = await readFile(new URL('./migrations/135_authorization_event_scope_integrity.sql', import.meta.url), 'utf8')
   const taskCanonicalListingIdentity = await readFile(new URL('./migrations/137_task_canonical_listing_identity.sql', import.meta.url), 'utf8')
   const interactiveConfirmationTicketNonceDigest = await readFile(new URL('./migrations/138_interactive_confirmation_ticket_nonce_digest.sql', import.meta.url), 'utf8')
+  const interactiveConfirmationTicketReservations = await readFile(new URL('./migrations/139_interactive_confirmation_ticket_reservations.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -555,6 +556,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 136, name: 'workspace_operation_audit_truncate_guard', sql: workspaceOperationAuditTruncateGuard },
     { version: 137, name: 'task_canonical_listing_identity', sql: taskCanonicalListingIdentity },
     { version: 138, name: 'interactive_confirmation_ticket_nonce_digest', sql: interactiveConfirmationTicketNonceDigest },
+    { version: 139, name: 'interactive_confirmation_ticket_reservations', sql: interactiveConfirmationTicketReservations },
   ]
 }
 
