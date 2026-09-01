@@ -953,7 +953,83 @@ function merchantPlatformLabel(value) {
   return ({ jd: '京东', taobao: '淘宝', tmall: '天猫', pinduoduo: '拼多多', xiaohongshu: '小红书', douyin: '抖音' })[String(value ?? '').toLowerCase()] ?? String(value ?? '')
 }
 
+function detailDecisionVersions(method, result) {
+  if (method === 'content.generate') {
+    if (result && typeof result === 'object' && !Array.isArray(result) && result.body && typeof result.body === 'object' && !Array.isArray(result.body)) return [result]
+    return []
+  }
+  if (method !== 'content.versions') return []
+  if (Array.isArray(result)) return result.filter(item => item && typeof item === 'object' && !Array.isArray(item) && item.body && typeof item.body === 'object' && !Array.isArray(item.body))
+  if (result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.items)) {
+    return result.items.filter(item => item && typeof item === 'object' && !Array.isArray(item) && item.body && typeof item.body === 'object' && !Array.isArray(item.body))
+  }
+  return []
+}
+
+function detailDecisionBlocker(contract) {
+  if (!contract || typeof contract !== 'object' || Array.isArray(contract)) return undefined
+  const evidence = contract.evidence && typeof contract.evidence === 'object' && !Array.isArray(contract.evidence) ? contract.evidence : {}
+  if (evidence.status === 'missing' && contract.optional !== true) return {
+    reason: '缺少可验证证据，这一屏暂不能进入正式详情。',
+    next: '补齐与宣称匹配的商品事实和视觉证据后，重新生成并审核。',
+  }
+  if (evidence.status === 'conflict') return {
+    reason: '宣称与当前证据存在冲突，这一屏暂不能进入正式详情。',
+    next: '先核对并统一商品事实与证据，再重新生成并审核。',
+  }
+  if (evidence.status === 'expired') return {
+    reason: '宣称证据已过期，这一屏暂不能进入正式详情。',
+    next: '更新有效证据后，重新生成并审核。',
+  }
+  return undefined
+}
+
+function detailDecisionSummary(method, result) {
+  const versions = detailDecisionVersions(method, result)
+  if (!versions.length) {
+    if (method === 'content.versions' && (Array.isArray(result) || result && typeof result === 'object' && !Array.isArray(result) && Array.isArray(result.items))) return '暂未找到可展示的详情内容版本。'
+    return undefined
+  }
+  return versions.map((version, versionIndex) => {
+    const body = version.body
+    const title = typeof body.title === 'string' && body.title.trim() ? sanitizeMerchantText(body.title.trim()) : '未命名商品详情'
+    const sellingPoints = Array.isArray(body.sellingPoints)
+      ? body.sellingPoints.filter(point => typeof point === 'string' && point.trim()).map(point => sanitizeMerchantText(point.trim()))
+      : []
+    const modules = Array.isArray(body.modules) ? body.modules : []
+    const visibleModules = modules.filter(module => {
+      if (!module || typeof module !== 'object' || Array.isArray(module)) return false
+      const contract = module.decisionContract
+      const evidence = contract && typeof contract === 'object' && !Array.isArray(contract) && contract.evidence && typeof contract.evidence === 'object' && !Array.isArray(contract.evidence) ? contract.evidence : undefined
+      return !(contract?.optional === true && evidence?.status === 'missing')
+    })
+    const moduleLines = visibleModules.flatMap((module, index) => {
+      const contract = module.decisionContract && typeof module.decisionContract === 'object' && !Array.isArray(module.decisionContract) ? module.decisionContract : undefined
+      const moduleTitle = typeof module.title === 'string' && module.title.trim() ? sanitizeMerchantText(module.title.trim()) : `详情模块 ${index + 1}`
+      const buyerQuestion = typeof contract?.buyerQuestion === 'string' && contract.buyerQuestion.trim()
+        ? sanitizeMerchantText(contract.buyerQuestion.trim())
+        : typeof module.purpose === 'string' && module.purpose.trim() ? sanitizeMerchantText(module.purpose.trim()) : '这一屏需要帮助买家做什么判断？'
+      const blocker = detailDecisionBlocker(contract)
+      if (blocker) return [`${index + 1}. ${moduleTitle}（已阻断）`, `买家问题：${buyerQuestion}`, `阻断原因：${blocker.reason}`, `下一步：${blocker.next}`]
+      const moduleBody = typeof module.body === 'string' && module.body.trim() ? sanitizeMerchantText(module.body.trim()) : '暂无可展示正文。'
+      return [`${index + 1}. ${moduleTitle}`, `买家问题：${buyerQuestion}`, `正文：${moduleBody}`]
+    })
+    const detail = typeof body.detail === 'string' && body.detail.trim() ? sanitizeMerchantText(body.detail.trim()) : '暂无可展示详情正文。'
+    return [
+      ...(versions.length > 1 ? [`第 ${versionIndex + 1} 版`] : []),
+      `标题：${title}`,
+      '核心卖点：',
+      ...(sellingPoints.length ? sellingPoints.map(point => `- ${point}`) : ['- 暂无可展示的已确认卖点']),
+      `详情正文：${detail}`,
+      '详情模块：',
+      ...(moduleLines.length ? moduleLines : ['暂无可展示模块。']),
+    ].join('\n')
+  }).join('\n\n')
+}
+
 function userFacingToolText(method, result) {
+  const decisionSummary = detailDecisionSummary(method, result)
+  if (decisionSummary) return decisionSummary
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   }

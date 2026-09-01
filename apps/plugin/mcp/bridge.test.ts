@@ -1615,6 +1615,92 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('renders merchant-visible detail decision summaries without changing structured content', async () => {
+    const internalHash = `sha256:${'a'.repeat(64)}`
+    const module = (title: string, buyerQuestion: string, body: string, status: 'verified' | 'missing' | 'conflict' | 'expired', optional: boolean) => ({
+      key: title,
+      title,
+      purpose: `解决${buyerQuestion}`,
+      body,
+      factSourceIds: [internalHash],
+      decisionContract: {
+        buyerQuestion,
+        pageTask: `回答${buyerQuestion}`,
+        claim: { text: body, factSourceIds: [internalHash], platforms: ['taobao'], limitations: [] },
+        evidence: { type: 'parameter', sourceIds: status === 'missing' ? [] : [internalHash], status },
+        visualContract: { requiredElements: [], protectedElements: [], prohibitedImplications: [], accessibilityText: body },
+        priority: 1,
+        optional,
+      },
+    })
+    const generated = {
+      id: 'content_internal_123456',
+      revision: 19,
+      body: {
+        title: '轻量无氟钛炒锅',
+        detail: '按买家问题组织的详情正文。',
+        sellingPoints: ['更轻便', '多炉具适配'],
+        modules: [
+          module('购买理由', '为什么值得继续看？', '一个主购买理由。', 'verified', false),
+          module('材料安全', '材料是否安心？', '这段可选缺失正文不应出现。', 'missing', true),
+          module('功能结果', '少油不粘是否有证据？', '未证明的功能正文不应出现。', 'missing', false),
+          module('规格选择', '哪个规格适合我？', '冲突的规格正文不应出现。', 'conflict', true),
+          module('适配说明', '我家炉具能用吗？', '过期的适配正文不应出现。', 'expired', false),
+        ],
+      },
+    }
+    const older = {
+      ...generated,
+      id: 'content_internal_older',
+      revision: 18,
+      body: { ...generated.body, title: '轻量无氟钛炒锅旧版' },
+    }
+    const results = [generated, [older, generated]]
+    let calls = 0
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) { /* consume request */ }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: results[calls++] } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1' } } })}\n`)
+      const generatedResponse = await nextLine(child.stdout)
+      const generatedText = generatedResponse.result.content[0].text
+      expect(generatedResponse.result.structuredContent).toEqual(generated)
+      expect(generatedText).toContain('标题：轻量无氟钛炒锅')
+      expect(generatedText).toContain('核心卖点：\n- 更轻便\n- 多炉具适配')
+      expect(generatedText).toContain('买家问题：为什么值得继续看？\n正文：一个主购买理由。')
+      expect(generatedText).not.toContain('材料安全')
+      expect(generatedText).not.toContain('这段可选缺失正文不应出现')
+      expect(generatedText).toContain('功能结果（已阻断）')
+      expect(generatedText).toContain('阻断原因：缺少可验证证据')
+      expect(generatedText).toContain('规格选择（已阻断）')
+      expect(generatedText).toContain('宣称与当前证据存在冲突')
+      expect(generatedText).toContain('适配说明（已阻断）')
+      expect(generatedText).toContain('宣称证据已过期')
+      expect(generatedText).not.toMatch(/content_internal|decisionContract|sha256:|a{64}|revision/iu)
+      expect(generatedText.indexOf('购买理由')).toBeLessThan(generatedText.indexOf('功能结果'))
+      expect(generatedText.indexOf('功能结果')).toBeLessThan(generatedText.indexOf('规格选择'))
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'content.versions', arguments: { task_id: 'task_1' } } })}\n`)
+      const versionsResponse = await nextLine(child.stdout)
+      const versionsText = versionsResponse.result.content[0].text
+      expect(versionsResponse.result.structuredContent).toEqual([older, generated])
+      expect(versionsText).toContain('第 1 版\n标题：轻量无氟钛炒锅旧版')
+      expect(versionsText).toContain('第 2 版\n标题：轻量无氟钛炒锅')
+      expect(versionsText).not.toMatch(/content_internal|decisionContract|sha256:|a{64}|revision/iu)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('returns generated data URI images as MCP image content', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
