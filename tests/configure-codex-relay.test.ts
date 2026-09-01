@@ -79,7 +79,27 @@ describe('Codex relay configuration renderer', () => {
     }
     const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
     const result = validateCodexRelay(config, environment)
-    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({ object: 'list', data: [{ id: 'responses-model' }], models: [{ id: 'responses-model' }] })))
+    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({
+      object: 'list',
+      data: [{ id: 'responses-model', supported_endpoint_types: ['openai-response'] }],
+      models: [{ slug: 'responses-model', context_window: 128_000 }],
+    })))
     expect(result.errors).toEqual([])
+  })
+
+  it('rejects an id-only pseudo Codex catalog or a model without Responses routing', async () => {
+    const environment = {
+      DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
+      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
+    }
+    const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
+    const result = validateCodexRelay(config, environment)
+    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({
+      object: 'list', data: [{ id: 'responses-model' }], models: [{ id: 'responses-model' }],
+    })))
+    expect(result.errors).toEqual(expect.arrayContaining([
+      'Codex host relay 当前 host model 未声明 openai-response 能力：responses-model',
+      'Codex host relay Codex models[] 未声明当前 host model slug：responses-model',
+    ]))
   })
 })

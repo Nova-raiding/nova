@@ -55,14 +55,13 @@ export function runCodexRelayValidation(configPath: string, env: RelayEnvironmen
   return result
 }
 
-function catalogModelIds(payload: Record<string, unknown>) {
-  const entries = [...(Array.isArray(payload.data) ? payload.data : []), ...(Array.isArray(payload.models) ? payload.models : [])]
-  return new Set(entries.flatMap(entry => {
-    if (typeof entry === 'string' && entry.trim()) return [entry.trim()]
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
-    const id = (entry as Record<string, unknown>).id
-    return typeof id === 'string' && id.trim() ? [id.trim()] : []
-  }))
+function objectEntries(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)) : []
+}
+
+function supportsResponses(entry: Record<string, unknown>) {
+  const endpointTypes = entry.supported_endpoint_types
+  return Array.isArray(endpointTypes) && endpointTypes.includes('openai-response')
 }
 
 export async function probeCodexRelayCatalog(
@@ -104,7 +103,11 @@ export async function probeCodexRelayCatalog(
     // additional field. A relay can satisfy the public OpenAI data[] contract
     // yet still leave the desktop app on a stale cross-provider model cache.
     if (!Array.isArray(catalog.models)) result.errors.push('Codex host relay /models 与当前 Codex App 目录契约不兼容：缺少顶层 models 数组')
-    if (!catalogModelIds(catalog).has(result.model)) result.errors.push(`Codex host relay /models 未声明当前 host model：${result.model}`)
+    const openAiModel = objectEntries(catalog.data).find(entry => entry.id === result.model)
+    const codexModel = objectEntries(catalog.models).find(entry => entry.slug === result.model)
+    if (!openAiModel) result.errors.push(`Codex host relay OpenAI data[] 未声明当前 host model：${result.model}`)
+    else if (!supportsResponses(openAiModel)) result.errors.push(`Codex host relay 当前 host model 未声明 openai-response 能力：${result.model}`)
+    if (!codexModel) result.errors.push(`Codex host relay Codex models[] 未声明当前 host model slug：${result.model}`)
   } catch (error) {
     result.errors.push(`Codex host relay /models 探测失败：${error instanceof Error && error.name === 'TimeoutError' ? '请求超时' : '连接失败'}`)
   }
