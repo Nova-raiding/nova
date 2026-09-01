@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CanonicalBackfillRunRevisionConflictError, MemoryCanonicalBackfillRunRepository } from './canonical-backfill-run-repository.js'
+import { CanonicalBackfillRunRevisionConflictError, CanonicalBackfillRunStateError, MemoryCanonicalBackfillRunRepository } from './canonical-backfill-run-repository.js'
 
 describe('canonical backfill run repository', () => {
   it('creates, advances and rejects stale concurrent updates', async () => {
@@ -15,5 +15,15 @@ describe('canonical backfill run repository', () => {
     const repository = new MemoryCanonicalBackfillRunRepository()
     const run = await repository.create({ workspaceId: 'ws_run_owner', dryRun: false, createdBy: 'ops', reason: '执行' })
     await expect(repository.get({ workspaceId: 'ws_run_other', id: run.id })).resolves.toBeUndefined()
+  })
+
+  it('enforces terminal and pause/resume transitions at the repository boundary', async () => {
+    const repository = new MemoryCanonicalBackfillRunRepository()
+    const run = await repository.create({ workspaceId: 'ws_state', dryRun: false, createdBy: 'ops', reason: '执行' })
+    const started = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: run.revision, status: 'running' })
+    const paused = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: started.revision, status: 'paused' })
+    const resumed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: paused.revision, status: 'running' })
+    const completed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: resumed.revision, status: 'completed' })
+    await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: completed.revision, status: 'running' })).rejects.toBeInstanceOf(CanonicalBackfillRunStateError)
   })
 })
