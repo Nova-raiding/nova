@@ -113,6 +113,11 @@ describe('ConnectorRuntime', () => {
     expect(result.connectorStatus?.state).toBe('succeeded')
   })
 
+  it('keeps fixture writes closed unless explicitly enabled', async () => {
+    const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: false })
+    await expect(runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws-fixture-closed', accountId: 'acct-fixture-closed' }, fields: { title: '禁止写入', category: '服饰', price: 10, stock: 1 }, idempotencyKey: 'fixture-write-closed' })).rejects.toThrow('platform write is not admitted')
+  })
+
   it('creates new products and updates existing products based on remote identity', async () => {
     const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true })
     const created = await runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws_1', accountId: 'acct_1', traceId: 'trace_1' }, fields: { title: '新商品', category: '服饰 > 外套', price: 169, stock: 10 }, idempotencyKey: 'runtime-create-1' })
@@ -173,17 +178,16 @@ describe('ConnectorRuntime', () => {
     })
   })
 
-  it('maps source fields through a verified gate before both direct and worker writes', async () => {
+  it('keeps fixture writes out of the production write boundary', async () => {
     const write = vi.fn(({ platform, fields }: { platform: Platform; fields: Readonly<Record<string, unknown>> }) => writePlan(platform, fields))
     const runtime = new ConnectorRuntime({ fixtureMode: true, allowFixtureWrites: true, environment: 'production', mappingPreflight: { write } })
     const sourceFields = { sourceTitle: '门禁映射商品', sourceCategory: '服饰 > 外套', sourcePrice: 199, sourceStock: 6 }
 
-    const direct = await runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws-write-gate', accountId: 'acct-write-gate' }, fields: sourceFields, idempotencyKey: 'runtime-gated-direct' })
-    const worker = await runtime.publish({ platform: 'taobao', context: { workspaceId: 'ws-write-gate', accountId: 'acct-write-gate' }, fields: sourceFields, idempotencyKey: 'runtime-gated-worker' })
-
+    await expect(runtime.executePublish({ platform: 'jd', context: { workspaceId: 'ws-write-gate', accountId: 'acct-write-gate' }, fields: sourceFields, idempotencyKey: 'runtime-gated-direct' })).rejects.toThrow('platform write is not admitted')
+    await expect(runtime.publish({ platform: 'taobao', context: { workspaceId: 'ws-write-gate', accountId: 'acct-write-gate' }, fields: sourceFields, idempotencyKey: 'runtime-gated-worker' })).rejects.toThrow('platform write is not admitted')
     expect(write).toHaveBeenCalledTimes(2)
-    expect(direct.receipt).toMatchObject({ platform: 'jd', operation: 'create', idempotencyKey: 'runtime-gated-direct' })
-    expect(worker.connectorStatus?.state).toBe('succeeded')
+    await expect(runtime.connector('jd').queryWrite({ workspaceId: 'ws-write-gate', accountId: 'acct-write-gate' }, { idempotencyKey: 'runtime-gated-direct' })).resolves.toMatchObject({ found: false })
+    await expect(runtime.connector('taobao').queryWrite({ workspaceId: 'ws-write-gate', accountId: 'acct-write-gate' }, { idempotencyKey: 'runtime-gated-worker' })).resolves.toMatchObject({ found: false })
   })
 
   it('fails production writes closed when no verified schema/mapping adapter is provided', async () => {

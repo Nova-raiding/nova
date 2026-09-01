@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
-import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured, createConfiguredConnector, createFakeConnector, profiles, validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConfigSource, type ConnectorReadiness, type CredentialProvider, type HttpConnectorConfig, type Platform, type PlatformConnector, type StructuredPlatformConfig } from '../../../packages/connectors/src/index.js'
+import { buildHttpConnectorConfigs, buildHttpConnectorConfigsFromStructured, createConfiguredConnector, createFakeConnector, isProductionCanaryReady, profiles, validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConfigSource, type ConnectorReadiness, type CredentialProvider, type HttpConnectorConfig, type Platform, type PlatformConnector, type StructuredPlatformConfig } from '../../../packages/connectors/src/index.js'
+import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
 import type { FetchLike } from '../../../packages/connectors/src/http-connector.js'
 import { createPublishWorker } from '../../../packages/workers/src/factories.js'
 import { createPublishHandler } from '../../../packages/workers/src/publish-adapter.js'
@@ -40,8 +41,12 @@ export class ConnectorRuntime {
   readonly capabilityEvidence: Readonly<Record<Platform, readonly CapabilityEvidence[]>>
   private readonly mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter
   private readonly productionWrites: boolean
+  private readonly fixtureMode: boolean
+  private readonly allowFixtureWrites: boolean
   constructor(options: { fixtureMode?: boolean; allowFixtureWrites?: boolean; connectorConfigs?: Partial<Record<Platform, HttpConnectorConfig>>; configSource?: ConfigSource; structuredConfig?: Partial<Record<Platform, StructuredPlatformConfig>>; credentialProvider?: CredentialProvider; fetch?: FetchLike; mappingPreflight?: ConnectorRuntimeMappingPreflightAdapter; environment?: 'development' | 'test' | 'production' } = {}) {
     const fixtureMode = options.fixtureMode ?? false
+    this.fixtureMode = fixtureMode
+    this.allowFixtureWrites = options.allowFixtureWrites ?? fixtureMode
     this.mappingPreflight = options.mappingPreflight
     this.productionWrites = (options.environment ?? (process.env.NODE_ENV === 'production' ? 'production' : 'development')) === 'production'
     // Fixture mode is an explicit local/test choice and wins over ambient
@@ -141,6 +146,19 @@ export class ConnectorRuntime {
     return safeFields
   }
 
+  private assertWriteAllowed(platform: Platform) {
+    const allowed = platformWriteAllowed({
+      production: this.productionWrites,
+      fixtureMode: this.fixtureMode,
+      connectorConfigured: this.fixtureMode || this.isHttpConfigured(platform),
+      pluginWriteEnabled: this.allowFixtureWrites,
+      canaryReady: isProductionCanaryReady(this.capabilityEvidence[platform] ?? [], platform),
+    })
+    if (!allowed) {
+      throw new Error(`platform write is not admitted for ${platform}: connector configuration, production canary evidence, or fixture policy is missing`)
+    }
+  }
+
   async sync(platform: Platform, context: ConnectorContext, initialCursor?: string, onPage?: (page: { pageNumber: number; cursor?: string; nextCursor?: string; items: ReturnType<PlatformConnector['mapToCanonical']>[]; source: 'fixture' | 'official_api'; simulated: boolean }) => Promise<void> | void) {
     const connector = this.connector(platform)
     const items = [] as ReturnType<typeof connector.mapToCanonical>[]
@@ -184,6 +202,7 @@ export class ConnectorRuntime {
   async publish(input: { platform: Platform; context: ConnectorContext; fields: Record<string, unknown>; remoteId?: string; idempotencyKey: string }) {
     const connector = this.connector(input.platform)
     const fields = await this.preflightWrite(input)
+    this.assertWriteAllowed(input.platform)
     const worker = createPublishWorker(createPublishHandler(connector, async payload => ({ accountId: input.context.accountId, fields: payload.fields ?? {}, ...payload })))
     const job = worker.enqueue({ workspaceId: input.context.workspaceId, idempotencyKey: input.idempotencyKey, payload: { taskId: 'runtime-task', contentVersionId: 'runtime-content', platform: input.platform, idempotencyKey: input.idempotencyKey, fields: { ...fields, ...(input.remoteId ? { remoteId: input.remoteId } : {}) } } })
     await worker.runNext()
@@ -195,6 +214,7 @@ export class ConnectorRuntime {
     const connector = this.connector(input.platform)
     input.context.signal?.throwIfAborted()
     let fields = await this.preflightWrite(input)
+    this.assertWriteAllowed(input.platform)
     if (input.media?.length) {
       if (typeof connector.uploadMedia !== 'function') throw new Error('selected product visuals require a platform media upload adapter')
       const uploaded = []
