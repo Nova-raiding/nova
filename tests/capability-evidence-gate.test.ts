@@ -6,7 +6,22 @@ import { REQUIRED_CAPABILITIES, REQUIRED_PLATFORMS, validateCapabilityEvidence, 
 function document(state: string = 'production_canary') {
   return {
     schema_version: '1', release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-23T00:00:00Z',
-    platforms: REQUIRED_PLATFORMS.map(platform => ({ platform, application_id: `${platform}-app`, test_store_id: `${platform}-store`, capabilities: Object.fromEntries(REQUIRED_CAPABILITIES.map(capability => [capability, { state, evidence_ref: 'artifact://evidence/1', verified_by: 'qa', verified_at: '2026-08-23T00:00:00Z', api_version: 'v1', scope: 'product.read product.write' }])) })),
+    platforms: REQUIRED_PLATFORMS.map(platform => ({
+      platform,
+      application_id: `${platform}-app`,
+      test_store_id: `${platform}-store`,
+      tenant_context: { workspace_id: `${platform}-workspace`, account_id: `${platform}-account` },
+      capabilities: Object.fromEntries(REQUIRED_CAPABILITIES.map(capability => [capability, {
+        state,
+        evidence_ref: 'artifact://evidence/1',
+        verified_by: 'qa',
+        verified_at: '2026-08-23T00:00:00Z',
+        api_version: 'v1',
+        scope: 'product.read product.write',
+        protocol: { name: 'https', version: '1.0' },
+        error_evidence: { request_id: `error-${platform}-${capability}`, code: 'VALIDATION_FAILED', message: 'controlled negative-path response', observed_at: '2026-08-23T00:00:00Z', retryable: false },
+      }]))
+    })),
   }
 }
 
