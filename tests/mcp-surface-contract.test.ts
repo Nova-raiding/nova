@@ -226,6 +226,7 @@ describe('MCP surface coverage', () => {
   it('does not retain the obsolete eight-capability display copy', () => {
     const app = readFileSync(new URL('../demo/merchant-studio/src/App.tsx', import.meta.url), 'utf8')
     expect(app).not.toContain('/8 canary')
-    expect(app).toContain('{canaryCount}/{item.capabilities.length} canary')
+    expect(app).not.toContain('fetchPlatformCapabilities(baseUrl)')
+    expect(app).toContain('平台能力证据属于平台运营工作台')
   })
 })
