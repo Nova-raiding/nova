@@ -46,7 +46,7 @@ import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOper
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
-import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, MCP_METHODS, MCP_METHOD_POLICIES, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, MCP_METHODS, MCP_METHOD_POLICIES, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
 import { planSupportSlaScan } from '../../../packages/workers/src/support-sla-scan.js'
@@ -4639,9 +4639,9 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const enforce = runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(capabilityDomain)
   const principal = requestPrincipals.get(req)
   const resourceScope = authorizationResourceScope(policy, workspaceId, params, principal)
-  const decision = evaluatePermissionAtoms({
+  const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,
-    policy,
+    method,
     atoms: projection.atoms,
     satisfiedObligations: satisfiedAuthorizationObligations(params, req),
     resourceScope,
@@ -4677,6 +4677,30 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
     }
   }
   return policy
+}
+
+export function registeredMcpAuthorizationDecision(input: {
+  decisionId: string
+  method: string
+  atoms: readonly PermissionAtom[]
+  satisfiedObligations?: readonly AuthorizationObligation[]
+  resourceScope?: Parameters<typeof evaluatePermissionAtoms>[0]['resourceScope']
+  workbench: OpsWorkbench
+  mode: AuthorizationDecisionMode
+  now?: string
+}) {
+  const policy = getMcpMethodPolicy(input.method)
+  if (!policy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前方法缺少服务端授权策略，已拒绝执行', 503, authorizationPolicyUnavailableDetails({ transport: 'mcp', method: input.method }))
+  return evaluatePermissionAtoms({
+    decisionId: input.decisionId,
+    policy,
+    atoms: input.atoms,
+    satisfiedObligations: input.satisfiedObligations,
+    resourceScope: input.resourceScope,
+    workbench: input.workbench,
+    mode: input.mode,
+    now: input.now,
+  })
 }
 
 async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, workspaceId: string): Promise<HttpOperationPolicy | undefined> {
