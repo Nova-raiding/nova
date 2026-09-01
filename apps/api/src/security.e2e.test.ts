@@ -1710,6 +1710,22 @@ describe('security and access-control acceptance gates', () => {
     expect(signedEnvelope.data).toMatchObject({ workspaceId, reportId: expect.stringMatching(/^sla-report-/u) })
   })
 
+  it('authorizes image reconciliation listings only for the reconcile worker', async () => {
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ reconcile: { token: 'reconcile-token', signing_secret: 'reconcile-secret' }, generation: { token: 'generation-token', signing_secret: 'generation-secret' } }))
+    const base = await start()
+    const workspaceId = `ws_image_reconcile_${Date.now()}`
+    const path = '/v1/internal/image-generation-jobs/reconciliation'
+    const body = JSON.stringify({ workspace_id: workspaceId, limit: 10, query_only: true })
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+
+    const crossRole = await fetch(`${base}${path}`, { method: 'POST', headers: { ...headers, authorization: 'Bearer generation-token', ...workerProofHeaders({ role: 'generation', secret: 'generation-secret', method: 'POST', path, workspaceId, body }) }, body })
+    expect(crossRole.status).toBe(403)
+    const signed = await fetch(`${base}${path}`, { method: 'POST', headers: { ...headers, authorization: 'Bearer reconcile-token', ...workerProofHeaders({ role: 'reconcile', secret: 'reconcile-secret', method: 'POST', path, workspaceId, body }) }, body })
+    expect(signed.status).toBe(200)
+    expect((await signed.json() as Envelope<{ attention: unknown[]; next_cursor: string | null }>).data).toMatchObject({ attention: [], next_cursor: null })
+  })
+
   it('fails closed when worker role credentials are shared or a rotation window exceeds two credentials', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     const base = await start(); const workspaceId = 'ws_worker_bad_credentials'; const path = '/v1/internal/automation/tick'

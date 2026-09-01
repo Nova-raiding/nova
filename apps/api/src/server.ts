@@ -7838,6 +7838,7 @@ function workerRouteRoles(method: string | undefined, path: string): WorkerReque
   }
   if (method === 'POST') {
     if (/^\/v1\/sync-jobs\/[^/]+\/(?:progress|result)$/u.test(path)) return ['sync']
+    if (path === '/v1/internal/image-generation-jobs/reconciliation') return ['reconcile']
     if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return ['generation']
     if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) return ['publish', 'reconcile']
     if (path === '/v1/internal/automation/tick') return ['automation']
