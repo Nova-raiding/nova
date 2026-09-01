@@ -38,7 +38,7 @@ export function validateCanonicalProductCutoverEvidence(document: unknown, optio
   if (value.canonical_read_mode !== 'legacy_shadow') errors.push('canonical_read_mode must be legacy_shadow for the current release')
   if (value.canonical_read_enabled !== false) errors.push('canonical_read_enabled must be false for the current release')
   if (!Number.isInteger(value.workspace_count) || value.workspace_count! < 1) errors.push('workspace_count must be a positive integer')
-  if (!Number.isInteger(value.shadow_check_cycles) || value.shadow_check_cycles! >= 0 === false) errors.push('shadow_check_cycles must be a non-negative integer')
+  if (!Number.isInteger(value.shadow_check_cycles) || value.shadow_check_cycles! < 2) errors.push('shadow_check_cycles must be at least two consecutive cycles')
   const statuses = value.status_counts
   if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) errors.push('status_counts is required')
   else for (const [name, count] of Object.entries(statuses)) if (!Number.isInteger(count) || count < 0) errors.push(`status_counts.${name} must be a non-negative integer`)

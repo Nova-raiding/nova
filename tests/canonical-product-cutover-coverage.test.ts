@@ -31,7 +31,7 @@ describe('canonical product cutover release-gate coverage', () => {
       'release_id is required', 'release_id must match release-expected', 'environment must be production',
       'simulated must be false', 'database_identity_sha256 must be a SHA-256 digest',
       'canonical_read_enabled must be false for the current release', 'workspace_count must be a positive integer',
-      'shadow_check_cycles must be a non-negative integer', 'status_counts.verified must be a non-negative integer',
+      'shadow_check_cycles must be at least two consecutive cycles', 'status_counts.verified must be a non-negative integer',
       'evidence_ref must be an immutable production artifact',
       'rollback_evidence_ref must be an immutable production artifact',
     ]))
