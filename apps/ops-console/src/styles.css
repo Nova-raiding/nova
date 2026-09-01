@@ -5,6 +5,17 @@
   --ops-focus-offset: 3px;
   --ops-focus-width: 3px;
   --ops-motion-fast: 120ms;
+  /* Ops navigation tokens: one desktop surface, shared by scope and action controls. */
+  --ops-nav-surface: #12234f;
+  --ops-nav-surface-raised: rgb(15 34 78 / 72%);
+  --ops-nav-text: #d6def0;
+  --ops-nav-text-muted: #93a4ca;
+  --ops-nav-text-subtle: #aebcda;
+  --ops-nav-text-active: #fff;
+  --ops-nav-active: #1e40af;
+  --ops-nav-hover: #1b3475;
+  --ops-nav-focus: #fbbf24;
+  --ops-nav-radius: 8px;
   font-family: 'Fira Sans', sans-serif;
   color: #172554;
   background: #f8fafc;
@@ -21,7 +32,7 @@ html { scroll-padding-top: 16px; }
 :where(button, input, textarea, select, a, [tabindex]):focus-visible { scroll-margin-block: 24px; }
 body { margin: 0; min-width: 320px; background: #f8fafc; }
 .ops-shell { min-height: 100vh; background: #f8fafc; }
-.ops-sider { background: #12234f !important; padding: 22px 14px; }
+.ops-sider { background: var(--ops-nav-surface) !important; padding: 22px 14px; }
 .ops-skip-link { position: absolute; z-index: 1200; top: 8px; left: 8px; transform: translateY(-160%); padding: 10px 14px; border-radius: 6px; background: #172554; color: #fff; font-size: 14px; font-weight: 700; text-decoration: none; box-shadow: 0 2px 8px rgb(15 23 42 / 24%); transition: transform var(--ops-motion-fast) ease-in-out; }
 .ops-skip-link:focus-visible { transform: translateY(0); outline: 3px solid #fbbf24; outline-offset: 2px; }
 .mobile-menu-trigger, .ops-nav-backdrop { display: none; }
@@ -30,29 +41,29 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .brand-mark strong, .brand-mark small { display: block; }
 .brand-mark small { color: #b8c4df; margin-top: 3px; }
 .sider-caption, .eyebrow { letter-spacing: .12em; font-family: 'Fira Code'; font-size: 11px; }
-.sider-caption { color: #93a4ca; padding: 12px 10px; }
-.ops-scope-panel { margin: 0 4px 14px; padding: 12px 10px; border: 1px solid rgb(147 164 202 / 36%); border-radius: 10px; background: rgb(15 34 78 / 72%); color: #d6def0; }
+.sider-caption { color: var(--ops-nav-text-muted); padding: 12px 10px; }
+.ops-scope-panel { margin: 0 4px 14px; padding: 12px 10px; border: 1px solid rgb(147 164 202 / 36%); border-radius: 10px; background: var(--ops-nav-surface-raised); color: var(--ops-nav-text); }
 .ops-scope-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
 .ops-scope-title { color: #fff; font-size: 12px; font-weight: 700; }
 .ops-scope-badge { flex: 0 0 auto; padding: 2px 6px; border: 1px solid rgb(52 211 153 / 46%); border-radius: 999px; color: #a7f3d0; font-size: 10px; font-weight: 700; line-height: 1.3; }
 .ops-scope-status { margin-bottom: 6px; color: #bfdbfe; font-size: 11px; line-height: 1.45; }
 .ops-scope-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 11px; line-height: 1.45; }
-.ops-scope-row span { color: #93a4ca; }
+.ops-scope-row span { color: var(--ops-nav-text-muted); }
 .ops-scope-row strong { min-width: 0; overflow: hidden; color: #f8fafc; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.ops-scope-note, .ops-scope-selection { color: #aebcda; font-size: 11px; line-height: 1.5; }
+.ops-scope-note, .ops-scope-selection { color: var(--ops-nav-text-subtle); font-size: 11px; line-height: 1.5; }
 .ops-scope-selection { margin-top: 5px; color: #93c5fd; }
 .ops-nav-group { margin: 0 0 12px; }
-.ops-nav-group-title { margin: 0 10px 4px; color: #93a4ca; font-family: 'Fira Code'; font-size: 10px; font-weight: 500; letter-spacing: .1em; line-height: 1.5; text-transform: uppercase; }
-.sider-item { width: 100%; min-height: 44px; border: 0; text-align: left; font: inherit; cursor: pointer; color: #d6def0; background: transparent; padding: 12px 10px; border-radius: 8px; display: flex; gap: 10px; align-items: center; margin: 4px 0; }
-.sider-item:hover { background: #1b3475; color: #fff; }
-.sider-item.active { background: #1e40af; color: #fff; }
+.ops-nav-group-title { margin: 0 10px 4px; color: var(--ops-nav-text-muted); font-family: 'Fira Code'; font-size: 10px; font-weight: 500; letter-spacing: .1em; line-height: 1.5; text-transform: uppercase; }
+.sider-item { width: 100%; min-height: 44px; border: 0; text-align: left; font: inherit; cursor: pointer; color: var(--ops-nav-text); background: transparent; padding: 12px 10px; border-radius: var(--ops-nav-radius); display: flex; gap: 10px; align-items: center; margin: 4px 0; }
+.sider-item:hover { background: var(--ops-nav-hover); color: var(--ops-nav-text-active); }
+.sider-item.active { background: var(--ops-nav-active); color: var(--ops-nav-text-active); }
 .store-tree-caption { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
 .store-tree-caption span, .store-tree-platform span { color: #93a4ca; font-family: 'Fira Code'; font-size: 11px; }
 .store-tree-group { margin: 2px 0 6px; }
 .store-tree-platform { color: #e0e7ff; font-size: 12px; padding: 6px 12px 3px 34px; display: flex; justify-content: space-between; }
 .sider-subitem { width: 100%; min-height: 44px; border: 0; text-align: left; font: inherit; cursor: pointer; color: #c9d3e9; background: transparent; padding: 7px 10px 7px 34px; border-radius: 7px; display: flex; gap: 8px; align-items: center; margin: 2px 0; font-size: 12px; white-space: nowrap; overflow: hidden; }
 .sider-subitem:hover, .sider-subitem.selected { background: #1e3a8a; color: #fff; }
-.sider-item:focus-visible, .sider-subitem:focus-visible, .mobile-menu-trigger:focus-visible, .ops-nav-backdrop:focus-visible { outline: 3px solid #fbbf24; outline-offset: 2px; }
+.sider-item:focus-visible, .sider-subitem:focus-visible, .mobile-menu-trigger:focus-visible, .ops-nav-backdrop:focus-visible { outline: 3px solid var(--ops-nav-focus); outline-offset: 2px; }
 .store-tree-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .store-status { width: 6px; height: 6px; border-radius: 999px; flex: 0 0 auto; background: #64748b; }
 .store-status.online { background: #34d399; box-shadow: 0 0 0 3px rgb(52 211 153 / 12%); }
