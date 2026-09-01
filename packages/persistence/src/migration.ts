@@ -402,6 +402,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const campaignItemLegacyCanonicalIntegrity = await readFile(new URL('./migrations/122_campaign_item_legacy_canonical_integrity.sql', import.meta.url), 'utf8')
   const commercialOrderSnapshots = await readFile(new URL('./migrations/123_commercial_order_snapshots.sql', import.meta.url), 'utf8')
   const blockPlatformRoleInWorkspaceMembers = await readFile(new URL('./migrations/124_block_platform_role_in_workspace_members.sql', import.meta.url), 'utf8')
+  const authorizationEventsAppendOnly = await readFile(new URL('./migrations/125_authorization_events_append_only.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -527,6 +528,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 122, name: 'campaign_item_legacy_canonical_integrity', sql: campaignItemLegacyCanonicalIntegrity },
     { version: 123, name: 'commercial_order_snapshots', sql: commercialOrderSnapshots },
     { version: 124, name: 'block_platform_role_in_workspace_members', sql: blockPlatformRoleInWorkspaceMembers },
+    { version: 125, name: 'authorization_events_append_only', sql: authorizationEventsAppendOnly },
   ]
 }
 

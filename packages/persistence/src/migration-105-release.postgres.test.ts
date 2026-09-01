@@ -44,6 +44,16 @@ describe('migration 105 PostgreSQL release acceptance', () => {
       expect(consumed.filter(Boolean)).toHaveLength(1)
       expect(await repository.getAuthorizationRevision(identityId)).toBe(3)
       const consumedGrant = consumed.find(Boolean)!
+      const roleEventId = (await database.query<{ id: string }>(
+        `SELECT id FROM platform_role_assignment_events WHERE assignment_id=$1 ORDER BY created_at DESC LIMIT 1`,
+        [role.id],
+      )).rows[0]!.id
+      const grantEventId = (await database.query<{ id: string }>(
+        `SELECT id FROM ops_access_grant_events WHERE grant_id=$1 ORDER BY created_at DESC LIMIT 1`,
+        [grant.id],
+      )).rows[0]!.id
+      await expect(database.query(`UPDATE platform_role_assignment_events SET reason='tampered' WHERE id=$1`, [roleEventId])).rejects.toThrow(/append-only/u)
+      await expect(database.query(`DELETE FROM ops_access_grant_events WHERE id=$1`, [grantEventId])).rejects.toThrow(/append-only/u)
       await repository.revokeGrant({ id: grant.id, subjectIdentityId: identityId, actorId: 'security-admin', reason: 'customer withdrew approval', expectedRevision: consumedGrant.revision, expectedAuthorizationRevision: 3 })
       await repository.revokePlatformRole({ id: role.id, subjectIdentityId: identityId, actorId: 'security-admin', reason: 'support rotation ended', expectedRevision: 1, expectedAuthorizationRevision: 4 })
       expect(await repository.listActiveGrants(identityId, 'ws_authz_a', new Date(now).toISOString())).toEqual([])
