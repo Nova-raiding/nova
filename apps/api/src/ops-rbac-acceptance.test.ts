@@ -127,6 +127,41 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     expect(denied.body.trace_id).toBe(denied.body.request_id)
   })
 
+  it('enforces the registered HTTP policy on a real route for allow and deny', async () => {
+    const workspaceId = `ws_ops_http_parity_${Date.now()}`
+    const merchantActorId = `ops-http-merchant-${Date.now()}`
+    const deniedActorId = `ops-http-denied-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: merchantActorId, displayName: 'HTTP merchant operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: deniedActorId, displayName: 'HTTP denied operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'ops-http-merchant-token': { workspaces: [workspaceId], actor_id: merchantActorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+      'ops-http-denied-token': { workspaces: [workspaceId], actor_id: deniedActorId, roles: ['merchant_admin'], denied_capabilities: ['store.connection.read'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const headers = { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' }
+
+    const allowed = await fetch(`${base}/v1/products`, { headers: { ...headers, authorization: 'Bearer ops-http-merchant-token' } })
+    // The authorization decision is evaluated before the merchant onboarding
+    // prerequisite. A fresh local workspace therefore returns the expected
+    // business precondition, which is evidence that the HTTP policy allowed
+    // the request rather than treating it as an authorization failure.
+    expect(allowed.status).toBe(428)
+    const allowedBody = await allowed.json() as RpcBody<{ items: unknown[]; total: number }>
+    expect(allowedBody.data).toBeNull()
+    expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+
+    const denied = await fetch(`${base}/v1/platform-accounts`, { headers: { ...headers, authorization: 'Bearer ops-http-denied-token' } })
+    expect(denied.status).toBe(403)
+    const deniedBody = await denied.json() as RpcBody
+    expect(deniedBody.data).toBeNull()
+    expect(deniedBody.error).toMatchObject({
+      code: 'FORBIDDEN',
+      details: { reason_code: expect.any(String), decision_id: expect.any(String), policy_version: AUTHZ_POLICY_VERSION },
+    })
+    expect(deniedBody.request_id).toMatch(/^req_/)
+    expect(deniedBody.trace_id).toBe(deniedBody.request_id)
+  })
+
   it('projects one selected workbench in session and keeps rejection evidence stable', async () => {
     const workspaceId = `ws_ops_session_contract_${Date.now()}`
     const actorId = `ops-session-actor-${Date.now()}`
