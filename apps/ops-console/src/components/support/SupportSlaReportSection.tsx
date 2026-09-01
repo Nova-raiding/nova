@@ -80,7 +80,15 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
         }}
       >
         <Typography.Paragraph>服务端会用当前事件重建同一报告周期。只有事实变化时才会生成待审批 correction。</Typography.Paragraph>
-        {correctionError && <Alert role="alert" type="error" showIcon message={correctionError} description="请修正后再次提交；原窗口仍保持打开。" action={<Button size="small" onClick={() => { if (!model.createCorrection) return; setCorrectionError(""); void model.createCorrection(reason).then(() => setCorrectionOpen(false)).catch(error => setCorrectionError(supportSlaActionErrorMessage(error))); }}>重试提交</Button>} />}
+        {correctionError && <Alert role="alert" aria-live="assertive" type="error" showIcon message={correctionError} description="请修正后再次提交；原窗口仍保持打开，已填写的理由不会清空。" action={<Button
+          size="small"
+          style={{ minHeight: 44 }}
+          loading={model.correctionLoading ?? false}
+          disabled={model.correctionLoading ?? false}
+          aria-busy={model.correctionLoading || undefined}
+          aria-label={model.correctionLoading ? "正在重试提交 correction" : "重试提交 correction"}
+          onClick={() => { if (!model.createCorrection || model.correctionLoading) return; setCorrectionError(""); void model.createCorrection(reason).then(() => setCorrectionOpen(false)).catch(error => setCorrectionError(supportSlaActionErrorMessage(error))); }}
+        >重试提交</Button>} />}
         <Input.TextArea aria-label="correction 理由" rows={4} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明迟到事实来源和复核范围（至少 3 个字符）" />
       </Modal>
       <Modal
@@ -100,7 +108,15 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
         }}
       >
         <Typography.Paragraph>该决策将作为不可变审计证据保存，每个 correction 只能决策一次。</Typography.Paragraph>
-        {decisionError && <Alert role="alert" type="error" showIcon message={decisionError} description="请确认理由和权限后再次提交；当前决策窗口仍保持打开。" action={<Button size="small" onClick={() => { if (!decisionOpen || !model.decideCorrection) return; setDecisionError(""); void model.decideCorrection(decisionOpen, reason).then(() => setDecisionOpen(undefined)).catch(error => setDecisionError(supportSlaActionErrorMessage(error))); }}>重试提交</Button>} />}
+        {decisionError && <Alert role="alert" aria-live="assertive" type="error" showIcon message={decisionError} description="请确认理由和权限后再次提交；当前决策窗口仍保持打开，已填写的理由不会清空。" action={<Button
+          size="small"
+          style={{ minHeight: 44 }}
+          loading={model.correctionLoading ?? false}
+          disabled={model.correctionLoading ?? false}
+          aria-busy={model.correctionLoading || undefined}
+          aria-label={model.correctionLoading ? "正在重试提交 correction 决策" : "重试提交 correction 决策"}
+          onClick={() => { if (!decisionOpen || !model.decideCorrection || model.correctionLoading) return; setDecisionError(""); void model.decideCorrection(decisionOpen, reason).then(() => setDecisionOpen(undefined)).catch(error => setDecisionError(supportSlaActionErrorMessage(error))); }}
+        >重试提交</Button>} />}
         <Input.TextArea aria-label="审批理由" rows={4} value={reason} onChange={event => setReason(event.target.value)} placeholder="填写审批或拒绝理由（至少 3 个字符）" />
       </Modal>
     </Card>

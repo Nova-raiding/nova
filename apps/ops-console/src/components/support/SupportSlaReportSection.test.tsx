@@ -20,6 +20,11 @@ describe("SupportSlaReportSection", () => {
     expect(supportSlaActionErrorMessage(new Error("权限不足"))).toBe("权限不足");
     expect(supportSlaActionErrorMessage({})).toBe("提交失败，请检查网络或权限后重试。");
     expect(SupportSlaReportSection.toString()).toContain("重试提交");
-    expect(SupportSlaReportSection.toString()).toContain("原窗口仍保持打开");
+    const source = SupportSlaReportSection.toString();
+    expect(source).toContain("原窗口仍保持打开，已填写的理由不会清空");
+    expect(source).toContain('"aria-live": "assertive"');
+    expect(source).toContain("minHeight: 44");
+    expect(source).toContain('"aria-busy": model.correctionLoading || undefined');
+    expect(source).toContain("model.correctionLoading");
   });
 });
