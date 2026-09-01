@@ -278,6 +278,7 @@ export class UserRequestGate {
   private directory?: AbortController;
   private detail?: AbortController;
   private exportJob?: AbortController;
+  private workspaceDirectory?: AbortController;
 
   beginDirectory() {
     this.directory?.abort();
@@ -294,6 +295,11 @@ export class UserRequestGate {
     return (this.exportJob = new AbortController());
   }
 
+  beginWorkspaceDirectory() {
+    this.workspaceDirectory?.abort("工作台已切换");
+    return (this.workspaceDirectory = new AbortController());
+  }
+
   finishDirectory(controller: AbortController) { if (this.directory === controller) this.directory = undefined; }
   finishDetail(controller: AbortController) { if (this.detail === controller) this.detail = undefined; }
   finishExport(controller: AbortController) {
@@ -302,13 +308,21 @@ export class UserRequestGate {
     return true;
   }
 
+  finishWorkspaceDirectory(controller: AbortController) {
+    if (this.workspaceDirectory !== controller) return false;
+    this.workspaceDirectory = undefined;
+    return true;
+  }
+
   cancelAll() {
     this.directory?.abort();
     this.detail?.abort();
     this.exportJob?.abort();
+    this.workspaceDirectory?.abort("工作台已切换");
     this.directory = undefined;
     this.detail = undefined;
     this.exportJob = undefined;
+    this.workspaceDirectory = undefined;
   }
 }
 
@@ -1179,6 +1193,7 @@ export function useOpsConsoleModel() {
   };
   const loadWorkspaceDirectory = async (filters: { query?: string; status?: "active" | "disabled"; subscriptionStatus?: string; page?: number; pageSize?: number } = {}) => {
     if (!hasOpsConnection() || !authorization.can("workspace.directory.read")) return false;
+    const controller = userRequestsRef.current.beginWorkspaceDirectory();
     const requestId = ++workspaceDirectoryRequestRef.current;
     const page = filters.page ?? Math.floor(workspaceDirectory.offset / workspaceDirectory.limit) + 1;
     const pageSize = filters.pageSize ?? workspaceDirectory.limit;
@@ -1190,17 +1205,20 @@ export function useOpsConsoleModel() {
         ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.subscriptionStatus?.trim() ? { subscription_status: filters.subscriptionStatus.trim() } : {}),
-      });
+      }, { signal: controller.signal });
       if (requestId !== workspaceDirectoryRequestRef.current) return false;
       const next = value as unknown as WorkspaceDirectoryPage;
       setWorkspaceDirectory(next);
       setWorkspaceRows(next.items ?? []);
       return true;
     } catch (cause) {
-      if (requestId === workspaceDirectoryRequestRef.current) message.error(describeOpsError(cause));
+      if (!controller.signal.aborted && requestId === workspaceDirectoryRequestRef.current) message.error(describeOpsError(cause));
       return false;
     } finally {
-      if (requestId === workspaceDirectoryRequestRef.current) setWorkspaceDirectoryLoading(false);
+      if (requestId === workspaceDirectoryRequestRef.current) {
+        userRequestsRef.current.finishWorkspaceDirectory(controller);
+        setWorkspaceDirectoryLoading(false);
+      }
     }
   };
   const exportUsers = async (filters: { query?: string; status?: string; workspaceId?: string } = {}) => {

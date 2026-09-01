@@ -153,6 +153,20 @@ describe("Ops Console model helpers", () => {
     expect(exportJob?.signal.aborted).toBe(true);
   });
 
+  it("cancels a workspace directory request when the workbench changes", () => {
+    const gate = new UserRequestGate();
+    const first = gate.beginWorkspaceDirectory();
+    const second = gate.beginWorkspaceDirectory();
+
+    expect(first.signal.aborted).toBe(true);
+    expect(second.signal.aborted).toBe(false);
+
+    gate.cancelAll();
+    expect(second.signal.aborted).toBe(true);
+    expect(gate.finishWorkspaceDirectory(first)).toBe(false);
+    expect(gate.finishWorkspaceDirectory(second)).toBe(false);
+  });
+
   it("locks user export until the active job finishes", () => {
     const gate = new UserRequestGate();
     const first = gate.beginExport();
