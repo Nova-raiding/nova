@@ -1,4 +1,6 @@
-import { Alert, Card, Col, Row, Statistic, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Row, Statistic, Tag, Typography } from "antd";
+import { ReloadOutlined } from "@ant-design/icons";
+import { useEffect, useRef } from "react";
 import type { StorageReconciliationSummary } from "../../types/ops";
 
 interface StorageReconciliationSectionProps {
@@ -6,6 +8,7 @@ interface StorageReconciliationSectionProps {
   error?: string;
   summary?: StorageReconciliationSummary;
   summaries?: StorageReconciliationSummary[];
+  onRetry?: () => void;
 }
 
 function bytes(value?: number | null) {
@@ -16,7 +19,11 @@ function bytes(value?: number | null) {
   return `${(value / 1024 ** 3).toFixed(2)} GB`;
 }
 
-export function StorageReconciliationSection({ loading = false, error, summary, summaries = [] }: StorageReconciliationSectionProps) {
+export function StorageReconciliationSection({ loading = false, error, summary, summaries = [], onRetry }: StorageReconciliationSectionProps) {
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) errorRef.current?.focus({ preventScroll: true });
+  }, [error]);
   const counts = summary?.counts;
   const unavailable = !loading && !error && (!summary || summary.status === "unavailable");
   const attention = summary?.status === "attention_required";
@@ -29,9 +36,11 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
   const workspaceRows = summaries.filter(item => item.workspaceId);
   return (
     <>
-    <Card title="对象存储容量与对账" extra={<Tag color={statusColor}>{statusLabel}</Tag>}>
-      {loading ? <Alert type="info" showIcon title="正在加载对账结果" description="正在读取平台范围的脱敏容量和一致性摘要。" /> : null}
-      {error ? <Alert type="error" showIcon title="对账结果加载失败" description={error} /> : null}
+    <Card title="对象存储容量与对账" extra={<Tag color={statusColor}>{statusLabel}</Tag>} aria-busy={loading}>
+      {loading ? <Alert role="status" aria-live="polite" showIcon title="正在加载对账结果" description="正在读取平台范围的脱敏容量和一致性摘要。" /> : null}
+      {error ? <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" data-state="error">
+        <Alert type="error" showIcon title="对账结果加载失败" description={error} action={onRetry ? <Button type="primary" icon={<ReloadOutlined aria-hidden />} aria-label="重试加载对账结果" style={{ minHeight: 44 }} onClick={onRetry}>重试</Button> : undefined} />
+      </div> : null}
       {unavailable ? <Alert type="info" showIcon title="暂无可验证的对象清单对账结果" description={summary?.message ?? "该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。"} /> : null}
       {attention ? <Alert type="warning" showIcon title="发现存储一致性问题" description="请由存储负责人查看受控对账证据；此页面不展示客户对象详情。" /> : null}
       {failed ? <Alert type="error" showIcon title="最近一次对账失败" description="对账没有产出可验证结果；请检查对象清单、数据库和定时任务后重试。" /> : null}
