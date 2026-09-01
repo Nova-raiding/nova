@@ -211,6 +211,49 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     expect(body.trace_id).toBe(body.request_id)
   })
 
+  it('enforces the HTTP platform-connect policy before OAuth state or connector handling', async () => {
+    const workspaceId = `ws_ops_http_connect_${Date.now()}`
+    const allowedActorId = `ops-http-connect-allowed-${Date.now()}`
+    const deniedActorId = `ops-http-connect-denied-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: allowedActorId, displayName: 'HTTP connect operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: deniedActorId, displayName: 'HTTP connect denied operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    vi.stubEnv('TAOBAO_OAUTH_REDIRECT_URI', 'https://merchant.test/v1/oauth/callback/taobao')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'ops-http-connect-allowed-token': { workspaces: [workspaceId], actor_id: allowedActorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+      'ops-http-connect-denied-token': { workspaces: [workspaceId], actor_id: deniedActorId, roles: ['merchant_admin'], denied_capabilities: ['store.connection.update'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' }
+
+    const allowed = await fetch(`${base}/v1/platform-accounts/taobao/authorize`, {
+      method: 'POST',
+      headers: { ...headers, authorization: 'Bearer ops-http-connect-allowed-token' },
+      body: JSON.stringify({}),
+    })
+    const allowedBody = await allowed.json() as RpcBody
+    // Authorization is evaluated before connector readiness. The local test
+    // intentionally has no Taobao OAuth credentials, so this business-level
+    // 503 proves the HTTP policy allowed the request into the route.
+    expect(allowed.status).toBe(503)
+    expect(allowedBody.data).toBeNull()
+    expect(allowedBody.error).toMatchObject({ code: 'NOT_CONFIGURED' })
+
+    const denied = await fetch(`${base}/v1/platform-accounts/taobao/authorize`, {
+      method: 'POST',
+      headers: { ...headers, authorization: 'Bearer ops-http-connect-denied-token' },
+      body: JSON.stringify({}),
+    })
+    const deniedBody = await denied.json() as RpcBody
+    expect(denied.status).toBe(403)
+    expect(deniedBody.data).toBeNull()
+    expect(deniedBody.error).toMatchObject({
+      code: 'FORBIDDEN',
+      details: { reason_code: 'AUTHZ_EXPLICIT_DENY', decision_id: expect.any(String), policy_version: AUTHZ_POLICY_VERSION },
+    })
+    expect(deniedBody.request_id).toMatch(/^req_/)
+    expect(deniedBody.trace_id).toBe(deniedBody.request_id)
+  })
+
   it('projects one selected workbench in session and keeps rejection evidence stable', async () => {
     const workspaceId = `ws_ops_session_contract_${Date.now()}`
     const actorId = `ops-session-actor-${Date.now()}`

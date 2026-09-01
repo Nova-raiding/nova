@@ -217,10 +217,13 @@ describe('security and access-control acceptance gates', () => {
         body: JSON.stringify({ jsonrpc: '2.0', id: 'authz-audit-failure', method: 'ops.feature-flag.emergency.set', params: { id: 'flag-audit-failure', disabled: 'true', expected_revision: '1', idempotency_key: 'authz-audit-failure-1', reason: '验证授权审计不可用时拒绝请求' } }),
       })
       const body = await response.json() as Envelope
-      expect(response.status).toBe(500)
-      expect(body.error?.code).toBe('INTERNAL_ERROR')
+      expect(response.status).toBe(503)
+      expect(body.error).toMatchObject({
+        code: 'AUTHZ_AUDIT_UNAVAILABLE',
+        details: { decision_id: expect.any(String), policy_version: '2026-08-31.v2' },
+      })
       expect(append).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, actorId: 'authz-audit-failure-actor', action: 'authz.decision', resourceType: 'mcp_method', resourceId: 'ops.feature-flag.emergency.set', after: expect.objectContaining({ result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' }) }))
-      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('AUTHZ_AUDIT_SINK_UNAVAILABLE'))
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('AUTHZ_AUDIT_UNAVAILABLE'), expect.objectContaining({ message: 'AUTHZ_AUDIT_SINK_UNAVAILABLE' }))
     } finally {
       append.mockRestore()
       consoleError.mockRestore()
