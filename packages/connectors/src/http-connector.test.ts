@@ -152,6 +152,32 @@ describe('HttpPlatformConnector', () => {
     }
   })
 
+  it('preserves provider rejection evidence while normalizing a status response', async () => {
+    const connector = createConfiguredConnector('jd', {
+      config: {
+        ...readyConfig,
+        mapWriteStatus: () => ({
+          found: true,
+          state: 'rejected',
+          simulated: false,
+          rejection: { rawCode: 'JD-SKU-400', message: 'SKU 校验失败', fields: [{ path: 'sku[0].price', rawCode: 'PRICE_INVALID', message: '价格无效' }] },
+        }),
+        capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })),
+      },
+      credentials: credentials(),
+      fetch: async () => response({ state: 'rejected' }),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+
+    await expect(connector.queryWrite({ workspaceId: 'ws', accountId: 'acct' }, { idempotencyKey: 'rejection-evidence' }))
+      .resolves.toMatchObject({
+        found: true,
+        state: 'rejected',
+        rejection: { rawCode: 'JD-SKU-400', fields: [{ path: 'sku[0].price', rawCode: 'PRICE_INVALID' }] },
+      })
+  })
+
   it('does not treat malformed query request IDs as publish evidence', async () => {
     const connector = createConfiguredConnector('jd', {
       config: { ...readyConfig, mapWriteStatus: undefined, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },

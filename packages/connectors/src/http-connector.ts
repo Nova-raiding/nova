@@ -134,6 +134,7 @@ function normalizeWriteStatus(value: WriteStatus, request: WriteIdentity): Write
     ...(remoteId ? { remoteId } : {}),
     ...(requestId ? { requestId } : {}),
     simulated: false,
+    ...(value.rejection ? { rejection: value.rejection } : {}),
   }
 }
 
