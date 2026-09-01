@@ -1028,6 +1028,12 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 6.4, 'catalog.image.generate', { product_id: source.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `viewer-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 6.5, 'catalog.image.generate', { product_id: hiddenSource.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `hidden-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect(service.imageGenerationJobs.size).toBe(imageJobsBeforeDeniedBrandCalls)
+    const protectedProductBeforeDeniedUpdates = structuredClone(service.products.get(source.id))
+    const hiddenProductBeforeDeniedUpdates = structuredClone(service.products.get(hiddenSource.id))
+    expect((await mcp(editorHeaders, 6.51, 'catalog.product.update', { product_id: source.id, attributes_json: '{invalid-json' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 6.52, 'catalog.product.update', { product_id: hiddenSource.id, title: '不应写入的隐藏品牌标题' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect(service.products.get(source.id)).toEqual(protectedProductBeforeDeniedUpdates)
+    expect(service.products.get(hiddenSource.id)).toEqual(hiddenProductBeforeDeniedUpdates)
     const generatedJob = service.enqueueImageGeneration({ workspaceId, productId: source.id, idempotencyKey: `brand-image-${workspaceId}`, count: 1 })
     const generatedVisualRef = `dvis_${'B'.repeat(24)}`
     const selectionIntentHash = createHash('sha256').update(JSON.stringify({ method: 'catalog.image.select', jobId: generatedJob.id, visualRef: generatedVisualRef, expectedRevision: generatedJob.revision })).digest('hex')

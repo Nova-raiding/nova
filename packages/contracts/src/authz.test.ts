@@ -175,8 +175,8 @@ describe('authorization policy registry', () => {
 
   it('allows an unexpired exact-scope grant and rejects a different resource', () => {
     const policy = getMcpMethodPolicy('catalog.product.update')!
-    const atom = { capability: policy.capability, effect: 'allow' as const, scope: { type: 'workspace' as const, ids: ['ws_1'] }, source: 'temporary_grant' as const, sourceId: 'grant_exact', obligations: [] as const, expiresAt: '2026-09-01T00:01:00.000Z' }
-    expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-allow', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'workspace', id: 'ws_1' } })).toMatchObject({ authorized: true, result: 'allow' })
-    expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-deny', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'workspace', id: 'ws_2' } })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+    const atom = { capability: policy.capability, effect: 'allow' as const, scope: { type: 'brand' as const, ids: ['brand_1'] }, source: 'temporary_grant' as const, sourceId: 'grant_exact', obligations: [] as const, expiresAt: '2026-09-01T00:01:00.000Z' }
+    expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-allow', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'brand', id: 'brand_1' } })).toMatchObject({ authorized: true, result: 'allow' })
+    expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-deny', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'brand', id: 'brand_2' } })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
   })
 })
