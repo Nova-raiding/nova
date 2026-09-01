@@ -3806,7 +3806,7 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
     const requiredCapability = workerOperationCapabilities[snapshot.capability]
     if (!canonicalMemberRole || !capabilitiesForRoles([canonicalMemberRole]).includes(requiredCapability)) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '当前成员角色不再具备该 worker 操作能力，已拒绝执行', 403)
     const brandContext = snapshot.capability === 'publish.execute' ? /^brand:(.+)$/u.exec(snapshot.contextId) : undefined
-    if (brandContext && canonicalMemberRole !== 'workspace_owner') {
+    if (brandContext && member.role !== 'workspace_owner') {
       const stillPublisher = await (persistence.brandUnits ?? memoryBrandUnits).hasBrandAccess({ workspaceId, brandId: brandContext[1]!, externalSubject: snapshot.actorId, minimumRole: 'publisher' })
       if (!stillPublisher) throw new DomainError('AUTHZ_EXECUTION_REVOKED', '入队后品牌发布权限已撤销，已拒绝执行', 403)
     }
