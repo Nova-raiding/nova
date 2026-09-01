@@ -253,3 +253,10 @@
 - 复核发现上述“Ops 队列投影未完成”结论已过时：队列查询已覆盖 `provider_reserved`、`provider_dispatching`、`provider_started`、`outcome_unknown`，本轮补齐了前两个中间态的 `lastAction` 真实文案，避免误报为“Provider 已启动”。
 - `apps/api/src/server.test.ts` 增加源码契约回归，API 定向测试 55/55 通过；全局 TypeScript 检查和 `git diff --check` 通过。提交：`e935c51`。
 - 当前仍未闭合的是真实 Provider、对象存储、OIDC/RLS、多副本恢复、网络故障注入、正式 ChatGPT Host 和生产 canary 证据；本地可验证的状态投影子项已完成，文档继续保留在 `doc/todo`，不迁移到 `doc/done`。
+
+### 2026-09-02 本地模型配置阻断就近呈现
+
+- 商品工作区的图片生成对话框现在直接消费模型中转 readiness 和 `image_generation` 能力证据；模型状态读取中、读取失败、未就绪或图片能力未开放时，表单内显示可聚焦的 `role="alert"` 阻断摘要。
+- 阻断摘要明确说明不会生成或扣费，并提供“重新检查模型中转”恢复动作；“确认生成”在 readiness 未确认前保持禁用，避免仅因 API 地址存在而提交会失败或产生费用的请求。
+- 按 `ui-ux-pro-max` 的错误摘要焦点、ARIA 播报、恢复路径和键盘交互规则复核；Merchant Studio 定向测试 15/15、生产构建和 `git diff --check` 通过。
+- 该增量只关闭本地配置阻断 UI 子项；真实 API/模型中转凭据、Provider、对象存储、ChatGPT Host 和生产网络验收仍未完成，顶部“桌面浏览器真实 API 验收”门槛继续保持未勾选。
