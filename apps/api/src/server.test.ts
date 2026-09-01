@@ -234,6 +234,18 @@ describe('API application wiring', () => {
     expect(resolveCanonicalProductReadScope({ mode: 'canonical_read', candidates: [{ id: 'cp_1', brandId: 'brand_1', title: '标准标题' }], listings: [{ id: 'listing_1' }] })).toMatchObject({ status: 'blocked', code: 'CANONICAL_PRODUCT_FACTS_REQUIRED' })
     expect(resolveCanonicalProductReadScope({ mode: 'canonical_read', candidates: [{ id: 'cp_1', brandId: 'brand_1', title: '标准标题', facts: { category: '女装' } }], listings: [{ id: 'listing_1' }] })).toEqual({ status: 'verified', canonicalProductId: 'cp_1', brandId: 'brand_1', listingId: 'listing_1', title: '标准标题', facts: { category: '女装' } })
   })
+  it('fails closed when listing identity does not match the canonical read scope', () => {
+    expect(resolveCanonicalProductReadScope({
+      mode: 'canonical_read', workspaceId: 'ws_1', platform: 'taobao', accountId: 'store_1',
+      candidates: [{ id: 'cp_1', brandId: 'brand_1', title: '标准标题', facts: { category: '女装' } }],
+      listings: [{ id: 'listing_attacker', workspaceId: 'ws_1', brandId: 'brand_1', canonicalProductId: 'cp_other', platform: 'taobao', accountId: 'store_1' }],
+    })).toEqual({ status: 'blocked', code: 'CANONICAL_PRODUCT_LISTING_SCOPE_INVALID', reason: 'CANONICAL_LISTING_SCOPE_MISMATCH' })
+    expect(resolveCanonicalProductReadScope({
+      mode: 'canonical_read', workspaceId: 'ws_1', platform: 'taobao', accountId: 'store_1',
+      candidates: [{ id: 'cp_1', brandId: 'brand_1', title: '标准标题', facts: { category: '女装' } }],
+      listings: [{ id: 'listing_wrong_store', workspaceId: 'ws_2', brandId: 'brand_1', canonicalProductId: 'cp_1', platform: 'taobao', accountId: 'store_1' }],
+    })).toMatchObject({ status: 'blocked', code: 'CANONICAL_PRODUCT_LISTING_SCOPE_INVALID' })
+  })
   it('publishes API-owned canonical consistency evidence without changing the domain report', () => {
     const input = {
       workspaceId: 'ws_api_contract',

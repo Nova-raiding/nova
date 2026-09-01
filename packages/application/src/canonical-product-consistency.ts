@@ -25,11 +25,17 @@ export interface CanonicalProductReadScopeCandidate {
 
 export interface CanonicalProductReadListingCandidate {
   id: string
+  /** Optional identity facts supplied by persistence for defense-in-depth validation. */
+  workspaceId?: string
+  brandId?: string
+  canonicalProductId?: string
+  platform?: string
+  accountId?: string
 }
 
 export type CanonicalProductReadScopeResult =
   | { status: 'verified'; canonicalProductId: string; brandId: string; listingId: string; title: string; facts: Record<string, unknown> }
-  | { status: 'blocked'; code: 'CANONICAL_PRODUCT_MAPPING_REQUIRED' | 'CANONICAL_PRODUCT_LISTING_REQUIRED' | 'CANONICAL_PRODUCT_FACTS_REQUIRED'; reason: string }
+  | { status: 'blocked'; code: 'CANONICAL_PRODUCT_MAPPING_REQUIRED' | 'CANONICAL_PRODUCT_LISTING_REQUIRED' | 'CANONICAL_PRODUCT_FACTS_REQUIRED' | 'CANONICAL_PRODUCT_LISTING_SCOPE_INVALID'; reason: string }
 
 /**
  * Resolves the minimum scope required before a workspace may read canonical
@@ -39,6 +45,9 @@ export type CanonicalProductReadScopeResult =
  */
 export function resolveCanonicalProductReadScope(input: {
   mode: CanonicalProductReadMode
+  workspaceId?: string
+  platform?: string
+  accountId?: string
   candidates: readonly CanonicalProductReadScopeCandidate[]
   listings: readonly CanonicalProductReadListingCandidate[]
 }): CanonicalProductReadScopeResult | undefined {
@@ -58,10 +67,21 @@ export function resolveCanonicalProductReadScope(input: {
     }
   }
   const canonical = input.candidates[0]!
+  const listing = input.listings[0]!
+  const identityMatches = [
+    input.workspaceId === undefined || listing.workspaceId === undefined || listing.workspaceId === input.workspaceId,
+    listing.brandId === undefined || listing.brandId === canonical.brandId,
+    listing.canonicalProductId === undefined || listing.canonicalProductId === canonical.id,
+    input.platform === undefined || listing.platform === undefined || listing.platform === input.platform,
+    input.accountId === undefined || listing.accountId === undefined || listing.accountId === input.accountId,
+  ].every(Boolean)
+  if (!identityMatches) {
+    return { status: 'blocked', code: 'CANONICAL_PRODUCT_LISTING_SCOPE_INVALID', reason: 'CANONICAL_LISTING_SCOPE_MISMATCH' }
+  }
   if (!canonical.facts || Object.keys(canonical.facts).length === 0) {
     return { status: 'blocked', code: 'CANONICAL_PRODUCT_FACTS_REQUIRED', reason: 'CANONICAL_FACTS_MISSING' }
   }
-  return { status: 'verified', canonicalProductId: canonical.id, brandId: canonical.brandId, listingId: input.listings[0]!.id, title: canonical.title, facts: structuredClone(canonical.facts) }
+  return { status: 'verified', canonicalProductId: canonical.id, brandId: canonical.brandId, listingId: listing.id, title: canonical.title, facts: structuredClone(canonical.facts) }
 }
 
 export function canonicalProductReadModeFromFlag(input: { enabled: boolean; value?: unknown }): CanonicalProductReadMode {
