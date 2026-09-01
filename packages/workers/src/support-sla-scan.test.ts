@@ -34,6 +34,19 @@ describe('support SLA scan planner', () => {
     ])
   })
 
+  it('deduplicates replayed rows without emitting duplicate durable actions', () => {
+    const sla = createSupportSlaProjection('urgent', new Date('2026-08-31T09:00:00.000Z'))
+    const ticket = { workspaceId: 'ws-a', ticketId: 'ticket-duplicate', status: 'open' as const, sla }
+    expect(planSupportSlaScan([ticket, { ...ticket }], new Date('2026-08-31T12:00:00.000Z'))).toHaveLength(1)
+  })
+
+  it('fails closed when duplicate rows disagree about the SLA projection', () => {
+    const sla = createSupportSlaProjection('urgent', new Date('2026-08-31T09:00:00.000Z'))
+    const ticket = { workspaceId: 'ws-a', ticketId: 'ticket-conflict', status: 'open' as const, sla }
+    const conflicting = { ...ticket, sla: { ...sla, resolutionDueAt: '2026-08-31T10:00:00.000Z' } }
+    expect(planSupportSlaScan([ticket, conflicting], new Date('2026-08-31T12:00:00.000Z'))).toEqual([])
+  })
+
   it('schedules the previous month only after its third business-day cutoff', () => {
     expect(planSupportSlaReportSchedule(new Date('2026-09-02T23:59:59.000Z'))).toBeUndefined()
     expect(planSupportSlaReportSchedule(new Date('2026-09-03T00:00:00.000Z'))).toEqual({

@@ -46,7 +46,24 @@ export function planSupportSlaScan(
   now = new Date(),
 ): SlaScanAction[] {
   const actions: SlaScanAction[] = []
+  // A scan may combine pages from more than one read (or receive a replayed
+  // page after a lease retry). Treat a ticket identity as unique at the
+  // planner boundary so one tick cannot emit duplicate durable events. If two
+  // rows for the same identity disagree, skip them both: choosing one would
+  // turn an inconsistent read into an SLA fact.
+  const uniqueTickets = new Map<string, SlaScanTicket | undefined>()
   for (const ticket of tickets) {
+    const key = `${ticket.workspaceId}:${ticket.ticketId}`
+    if (!uniqueTickets.has(key)) {
+      uniqueTickets.set(key, ticket)
+      continue
+    }
+    const previous = uniqueTickets.get(key)
+    if (!previous) continue
+    if (JSON.stringify(previous) !== JSON.stringify(ticket)) uniqueTickets.set(key, undefined)
+  }
+  for (const ticket of uniqueTickets.values()) {
+    if (!ticket) continue
     if (ticket.status === 'waiting_customer' || ticket.status === 'resolved' || ticket.status === 'closed') continue
     // The stored state is only a cache; the scan must evaluate deadlines at
     // scan time so a missed tick cannot hide a newly breached ticket.
