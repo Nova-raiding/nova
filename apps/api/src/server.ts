@@ -4536,6 +4536,7 @@ function effectiveAuthorizationProjection(principal: RequestPrincipal | undefine
         const ids = scope === 'self' ? (principal?.actorId ? [principal.actorId] : [])
           : scope === 'platform' ? ['*']
             : scope === 'workspace' && workspaceId ? [workspaceId]
+              : scope === 'account' ? workspaceStoreDirectory(workspaceId).map(store => store.accountId)
               : []
         if (ids.length) atoms.push({ capability, effect: 'allow', scope: { type: scope, ids }, source, sourceId, obligations: [], ...(assignment?.expiresAt ? { expiresAt: assignment.expiresAt } : {}), ...(assignment ? { revision: String(assignment.authorizationRevision) } : {}) })
       }

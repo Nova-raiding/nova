@@ -896,6 +896,7 @@ describe('security and access-control acceptance gates', () => {
     const workspaceId = `ws_sensitive_ops_${Date.now()}`
     const otherWorkspaceId = `${workspaceId}_other`
     vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
     await configureBearerMembers([
       { token: 'sensitive-owner-token', workspaceId, actorId: 'sensitive-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
       { token: 'sensitive-admin-token', workspaceId, actorId: 'sensitive-admin', role: 'merchant_admin', gatewayRoles: ['merchant_admin'] },
@@ -956,7 +957,7 @@ describe('security and access-control acceptance gates', () => {
       expect((await call(token, 'billing.export', { format: 'json' })).data?.result).toMatchObject({ scope: 'mine', filename: 'my-billing.json' })
     }
 
-    expect((await call('sensitive-owner-token', 'platform.store.alias.set', { platform: 'taobao', account_id: foreignAccount.id, alias: '跨租户修改', expected_revision: String(foreignAccount.revision) })).error?.code).toBe('PLATFORM_ACCOUNT_NOT_FOUND')
+    expect((await call('sensitive-owner-token', 'platform.store.alias.set', { platform: 'taobao', account_id: foreignAccount.id, alias: '跨租户修改', expected_revision: String(foreignAccount.revision) })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'account' } })
     expect((await call('sensitive-owner-token', 'platform.revoke', { platform: 'taobao', account_id: foreignAccount.id })).error?.code).toBe('PLATFORM_ACCOUNT_NOT_FOUND')
     const unchangedForeignAccount = service.getPlatformAccount(otherWorkspaceId, foreignAccount.id, 'taobao')
     expect(unchangedForeignAccount.tokenState).toBe('connected')
