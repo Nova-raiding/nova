@@ -409,13 +409,17 @@ export function buildCanonicalChainConsistencyReport(input: CanonicalChainConsis
 
     const listings = canonical ? (input.listings ?? []).filter(item => item.workspaceId === workspaceId && item.canonicalProductId === canonical.id) : []
     const listingIds = sorted(listings.map(item => item.id))
+    const targetListings = legacy.platform && legacy.accountId
+      ? listings.filter(item => item.platform === legacy.platform && item.accountId === legacy.accountId)
+      : []
     for (const listing of listings) {
       if (listing.brandId !== canonical?.brandId) codes.push('LISTING_BRAND_SCOPE_MISMATCH')
       if (!listing.platform || !listing.accountId) codes.push('LISTING_STORE_SCOPE_MISSING')
       if (legacy.platform && listing.platform !== legacy.platform) codes.push('LISTING_PLATFORM_MISMATCH')
       if (legacy.accountId && listing.accountId !== legacy.accountId) codes.push('LISTING_ACCOUNT_MISMATCH')
     }
-    if (canonical && (legacy.platform || legacy.accountId) && listings.length === 0) codes.push('LISTING_MAPPING_MISSING')
+    if (canonical && (legacy.platform || legacy.accountId) && targetListings.length === 0) codes.push('LISTING_MAPPING_MISSING')
+    if (targetListings.length > 1) codes.push('LISTING_TARGET_AMBIGUOUS')
 
     const campaignItems = canonical ? input.campaignItems.filter(item => item.workspaceId === workspaceId && item.canonicalProductId === canonical.id) : []
     const campaignItemIds = sorted(campaignItems.map(item => item.id))
