@@ -60,7 +60,7 @@ describe("managed session gate", () => {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain('aria-label="重试运营权限验证"');
+    expect(source).toContain('aria-label="重试权限验证"');
     expect(source).toContain("style={{ minHeight: 44 }}");
   });
 });
