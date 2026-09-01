@@ -24,6 +24,12 @@ export interface WorkerError {
   unknown?: boolean
   /** Correlation retained when an authorization gate blocks queued work. */
   decisionId?: string
+  /** Original principal and policy evidence for manual reconciliation. */
+  actorId?: string
+  identityId?: string
+  capability?: string
+  policyVersion?: string
+  requestId?: string
   /** Commercial evidence retained when the point/access gate blocks I/O. */
   accessRevision?: string
   reservationId?: string

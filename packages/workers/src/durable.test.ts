@@ -139,17 +139,31 @@ describe('durable outbox dispatcher', () => {
   })
 
   it('keeps authorization correlation on unknown and dead-letter outcomes', async () => {
-    const unknownStore = new Store(authorizedEvent({ id: 'evt_unknown_correlated' })); const unknownQueue = new InMemoryQueue<DurableOutboxEvent>()
+    const correlationSnapshot = { decision_id: 'decision_enqueue', actor_id: 'merchant_1', identity_id: 'identity_1', capability: 'publish.execute', policy_version: 'policy_3', request_id: 'req_1', trace_id: 'trace_enqueue' }
+    const unknownStore = new Store(authorizedEvent({ id: 'evt_unknown_correlated', payload: { authorization_snapshot: correlationSnapshot } })); const unknownQueue = new InMemoryQueue<DurableOutboxEvent>()
     const unknownDispatcher = new DurableOutboxDispatcher(unknownStore, unknownQueue, async () => ({ state: 'unknown' as const }))
     await unknownDispatcher.restore('ws_1')
     expect((await unknownDispatcher.dispatchOnce()).state).toBe('unknown')
-    expect(unknownStore.events.get('evt_unknown_correlated')?.lastError).toMatchObject({ code: 'UNKNOWN', decisionId: 'decision_enqueue', eventId: 'evt_unknown_correlated', workspaceId: 'ws_1', traceId: 'trace_enqueue' })
+    expect(unknownStore.events.get('evt_unknown_correlated')?.lastError).toMatchObject({ code: 'UNKNOWN', decisionId: 'decision_enqueue', actorId: 'merchant_1', identityId: 'identity_1', capability: 'publish.execute', policyVersion: 'policy_3', requestId: 'req_1', eventId: 'evt_unknown_correlated', workspaceId: 'ws_1', traceId: 'trace_enqueue' })
 
-    const deadStore = new Store(authorizedEvent({ id: 'evt_dead_correlated', attempts: 4 })); const deadQueue = new InMemoryQueue<DurableOutboxEvent>()
+    const deadStore = new Store(authorizedEvent({ id: 'evt_dead_correlated', attempts: 4, payload: { authorization_snapshot: correlationSnapshot } })); const deadQueue = new InMemoryQueue<DurableOutboxEvent>()
     const deadDispatcher = new DurableOutboxDispatcher(deadStore, deadQueue, async () => { throw new WorkerFailure({ code: 'TEMPORARY_FAILURE', message: 'retry exhausted', retryable: true, unknown: false }) })
     await deadDispatcher.restore('ws_1')
     expect((await deadDispatcher.dispatchOnce()).state).toBe('dead_letter')
-    expect(deadStore.events.get('evt_dead_correlated')?.lastError).toMatchObject({ code: 'TEMPORARY_FAILURE', decisionId: 'decision_enqueue', eventId: 'evt_dead_correlated', workspaceId: 'ws_1', traceId: 'trace_enqueue' })
+    expect(deadStore.events.get('evt_dead_correlated')?.lastError).toMatchObject({ code: 'TEMPORARY_FAILURE', decisionId: 'decision_enqueue', actorId: 'merchant_1', identityId: 'identity_1', capability: 'publish.execute', policyVersion: 'policy_3', requestId: 'req_1', eventId: 'evt_dead_correlated', workspaceId: 'ws_1', traceId: 'trace_enqueue' })
+  })
+
+  it('does not copy malformed authorization identities into durable failure evidence', async () => {
+    const store = new Store(authorizedEvent({
+      id: 'evt_malformed_correlation',
+      payload: { authorization_snapshot: { decision_id: 'decision_safe', actor_id: 'actor\nforged', request_id: 'request_safe', trace_id: 'trace_safe' } },
+    }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => ({ state: 'unknown' as const }))
+    await dispatcher.restore('ws_1')
+    await dispatcher.dispatchOnce()
+    expect(store.events.get('evt_malformed_correlation')?.lastError).toMatchObject({ decisionId: 'decision_safe', requestId: 'request_safe', traceId: 'trace_safe' })
+    expect(store.events.get('evt_malformed_correlation')?.lastError).not.toHaveProperty('actorId')
   })
 
   it('requeues when persistence ack fails so a later worker can recover', async () => {

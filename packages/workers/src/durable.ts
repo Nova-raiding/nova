@@ -387,12 +387,22 @@ function withAuthorizationCorrelation(event: DurableOutboxEvent, failure: Worker
   const snapshot = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : undefined
   const safeId = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\u0000-\u001F\u007F]/u.test(value) ? value : undefined
   const decisionId = safeId(snapshot?.decision_id)
+  const actorId = safeId(snapshot?.actor_id)
+  const identityId = safeId(snapshot?.identity_id)
+  const capability = safeId(snapshot?.capability)
+  const policyVersion = safeId(snapshot?.policy_version)
+  const requestId = safeId(snapshot?.request_id)
   const traceId = safeId(snapshot?.trace_id)
   return {
     ...failure,
     eventId: failure.eventId ?? event.id,
     workspaceId: failure.workspaceId ?? event.workspaceId,
     ...(decisionId && !failure.decisionId ? { decisionId } : {}),
+    ...(actorId && !failure.actorId ? { actorId } : {}),
+    ...(identityId && !failure.identityId ? { identityId } : {}),
+    ...(capability && !failure.capability ? { capability } : {}),
+    ...(policyVersion && !failure.policyVersion ? { policyVersion } : {}),
+    ...(requestId && !failure.requestId ? { requestId } : {}),
     ...(traceId && !failure.traceId ? { traceId } : {}),
   }
 }
