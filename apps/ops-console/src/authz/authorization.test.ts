@@ -138,4 +138,42 @@ describe("authorization projection", () => {
     expect(canViewDomain(authorization, "tasks")).toBe(false);
     expect(canViewDomain(authorization, "feature-flags")).toBe(false);
   });
+
+  it("filters workspace-scoped capabilities out of the platform workbench", () => {
+    const authorization = createAuthorizationProjection(session(["platform_ops"], {
+      workbench: "platform",
+      scope: { type: "platform", ids: ["*"] },
+      effective_permissions: [
+        { capability: "identity.read", effect: "allow", scope: { type: "platform", ids: ["*"] } },
+        { capability: "workspace.member.read", effect: "allow", scope: { type: "workspace", ids: ["ws_1"] } },
+      ],
+    }), true);
+    expect(authorization.can("identity.read")).toBe(true);
+    expect(authorization.can("workspace.member.read")).toBe(false);
+    expect(authorization.scopeFor("workspace.member.read")).toBeUndefined();
+  });
+
+  it("denies the entire projection for a platform workbench with a workspace session scope", () => {
+    const authorization = createAuthorizationProjection(session(["platform_ops"], {
+      workbench: "platform",
+      scope: { type: "workspace", ids: ["ws_1"] },
+      capabilities: ["identity.read", "platform.summary.read"],
+    }), true);
+    expect(authorization.capabilities.size).toBe(0);
+    expect(canViewDomain(authorization, "users")).toBe(false);
+    expect(canViewDomain(authorization, "overview")).toBe(false);
+  });
+
+  it("filters platform capabilities out of the workspace workbench", () => {
+    const authorization = createAuthorizationProjection(session(["workspace_owner"], {
+      workbench: "workspace",
+      scope: { type: "workspace", ids: ["ws_1"] },
+      effective_permissions: [
+        { capability: "workspace.member.read", effect: "allow", scope: { type: "workspace", ids: ["ws_1"] } },
+        { capability: "platform.settings.read", effect: "allow", scope: { type: "platform", ids: ["*"] } },
+      ],
+    }), false);
+    expect(authorization.can("workspace.member.read")).toBe(true);
+    expect(authorization.can("platform.settings.read")).toBe(false);
+  });
 });

@@ -75,6 +75,11 @@ function serverPermissions(session: OpsSession) {
   };
 }
 
+function scopeMatchesWorkbench(scope: OpsScope | undefined, workbench: OpsSession["workbench"]): boolean {
+  if (!workbench || !scope) return true;
+  return workbench === "platform" ? scope.kind === "platform" : scope.kind !== "platform";
+}
+
 function inferScope(session: OpsSession | undefined): OpsScope {
   const explicit = session?.scope;
   if (explicit) return { kind: explicit.type, id: explicit.id ?? explicit.ids?.[0], ids: explicit.ids };
@@ -101,6 +106,20 @@ export function createAuthorizationProjection(
   const projected = session
     ? serverPermissions(session)
     : { allow: new Set<string>(), deny: new Set<string>(), present: false, scopes: new Map<string, OpsScope>() };
+  const sessionScope = session?.scope
+    ? { kind: session.scope.type, id: session.scope.id ?? session.scope.ids?.[0], ids: session.scope.ids } satisfies OpsScope
+    : session?.scopes?.find((candidate) => candidate.type === "platform")
+      ? { kind: "platform" as const, id: session.scopes.find((candidate) => candidate.type === "platform")?.ids[0], ids: session.scopes.find((candidate) => candidate.type === "platform")?.ids }
+      : session?.scopes?.find((candidate) => candidate.type === "workspace")
+        ? { kind: "workspace" as const, id: session.scopes.find((candidate) => candidate.type === "workspace")?.ids[0], ids: session.scopes.find((candidate) => candidate.type === "workspace")?.ids }
+        : undefined;
+  const workbenchScopeValid = scopeMatchesWorkbench(sessionScope, session?.workbench);
+  for (const capability of [...projected.allow]) {
+    if (!workbenchScopeValid || !scopeMatchesWorkbench(projected.scopes.get(capability), session?.workbench)) {
+      projected.allow.delete(capability);
+      projected.scopes.delete(capability);
+    }
+  }
   // Credential transport (OIDC vs local Bearer) never changes authorization.
   // Both modes consume the server projection and remain deny-all before the
   // session arrives.
