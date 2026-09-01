@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
+import { validateLocalFaultEvidence } from './fault-acceptance.js'
 
 const compose = ['compose', '-p', 'local', '--env-file', '.env', '-f', 'infra/local/docker-compose.yml']
 const redisService = 'redis'
@@ -58,6 +59,25 @@ describe('local Docker fault acceptance', () => {
       expect(recovered.body.data?.redis?.ready).toBe(true)
       expect(recovered.body.request_id).toBeTruthy()
       expect(recovered.body.trace_id).toBeTruthy()
+
+      const evidence = {
+        schema_version: '1' as const,
+        environment: 'test' as const,
+        cloud_gate: false as const,
+        status: 'pass' as const,
+        generated_at: new Date().toISOString(),
+        ended_at: new Date().toISOString(),
+        scenarios: [{
+          name: 'redis_restart', status: 'pass' as const,
+          degraded_status: degraded.status,
+          degraded_code: degraded.body.error?.code ?? '',
+          recovered_status: recovered.status,
+          recovered_ready: recovered.body.data?.redis?.ready === true,
+          request_id: degraded.body.request_id ?? '',
+          trace_id: degraded.body.trace_id ?? '',
+        }],
+      }
+      expect(validateLocalFaultEvidence(evidence)).toEqual([])
     } finally {
       // Restore the shared local stack even if an assertion or probe fails.
       docker(['start', redisService])

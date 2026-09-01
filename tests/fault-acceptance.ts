@@ -3,6 +3,65 @@ import { createConfiguredConnector, type CredentialProvider, type HttpConnectorC
 import { createPublishWorker } from '../packages/workers/src/index.js'
 import { WorkerFailure } from '../packages/workers/src/runner.js'
 
+export type LocalFaultEvidence = {
+  schema_version: '1'
+  environment: 'test'
+  cloud_gate: false
+  status: 'pass' | 'fail'
+  generated_at: string
+  ended_at: string
+  scenarios: Array<{
+    name: string
+    status: 'pass' | 'fail'
+    degraded_status: number
+    degraded_code: string
+    recovered_status: number
+    recovered_ready: boolean
+    request_id: string
+    trace_id: string
+  }>
+}
+
+const isUtcInstant = (value: unknown): value is string => typeof value === 'string'
+  && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(value)
+  && Number.isFinite(Date.parse(value))
+
+/**
+ * Validates local fault evidence without allowing it to masquerade as a
+ * cloud/production attestation. This is intentionally independent of the
+ * production evidence gates, which require signed external evidence.
+ */
+export function validateLocalFaultEvidence(value: unknown): string[] {
+  const errors: string[] = []
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ['document must be a JSON object']
+  const evidence = value as Partial<LocalFaultEvidence>
+  if (evidence.schema_version !== '1') errors.push('schema_version must be 1')
+  if (evidence.environment !== 'test') errors.push('environment must be test')
+  if (evidence.cloud_gate !== false) errors.push('cloud_gate must be false for local fault evidence')
+  if (evidence.status !== 'pass' && evidence.status !== 'fail') errors.push('status must be pass or fail')
+  if (!isUtcInstant(evidence.generated_at)) errors.push('generated_at must be a UTC ISO instant')
+  if (!isUtcInstant(evidence.ended_at)) errors.push('ended_at must be a UTC ISO instant')
+  if (isUtcInstant(evidence.generated_at) && isUtcInstant(evidence.ended_at) && Date.parse(evidence.ended_at) < Date.parse(evidence.generated_at)) errors.push('ended_at must not be before generated_at')
+  if (!Array.isArray(evidence.scenarios) || evidence.scenarios.length === 0) {
+    errors.push('scenarios must contain at least one result')
+  } else {
+    for (const [index, scenario] of evidence.scenarios.entries()) {
+      const prefix = `scenarios[${index}]`
+      if (!scenario || typeof scenario !== 'object') { errors.push(`${prefix} must be an object`); continue }
+      if (typeof scenario.name !== 'string' || scenario.name.trim() === '') errors.push(`${prefix}.name is required`)
+      if (scenario.status !== 'pass') errors.push(`${prefix}.status must be pass`)
+      if (scenario.degraded_status !== 503) errors.push(`${prefix}.degraded_status must be 503`)
+      if (scenario.degraded_code !== 'REDIS_UNAVAILABLE') errors.push(`${prefix}.degraded_code must be REDIS_UNAVAILABLE`)
+      if (scenario.recovered_status !== 200) errors.push(`${prefix}.recovered_status must be 200`)
+      if (scenario.recovered_ready !== true) errors.push(`${prefix}.recovered_ready must be true`)
+      if (typeof scenario.request_id !== 'string' || scenario.request_id.trim() === '') errors.push(`${prefix}.request_id is required`)
+      if (typeof scenario.trace_id !== 'string' || scenario.trace_id.trim() === '') errors.push(`${prefix}.trace_id is required`)
+    }
+  }
+  if (evidence.status === 'pass' && evidence.scenarios?.some(scenario => scenario.status !== 'pass')) errors.push('pass evidence cannot contain a failed scenario')
+  return errors
+}
+
 const config: HttpConnectorConfig = {
   clientId: 'acceptance-client',
   oauth: {
