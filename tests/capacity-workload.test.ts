@@ -127,4 +127,28 @@ describe('capacity workload contract', () => {
       'accepted_jobs must be a non-negative safe integer for local capacity evidence',
     ]))
   })
+
+  it('fails closed when an observation is outside the configured workspace scope', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_MODE: 'compose', CAPACITY_WORKLOAD_WORKSPACES: '50' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0,
+      timings: [{ workspace: 'ws_capacity_50', phase: 'sustained', elapsedMs: 12, ok: true, status: 200 }],
+      runtimeServices: LOCAL_CAPACITY_REQUIRED_SERVICES.map(service => ({ service, state: 'running', health: 'healthy' })),
+    })
+
+    expect(report.status).toBe('fail')
+    expect(report.completeness.observations_valid).toBe(false)
+    expect(validateLocalCapacityEvidence(report)).toContain('completeness.observations_valid must be true for local capacity evidence')
+  })
+
+  it('fails closed when an observation uses a non-canonical workspace identifier', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_MODE: 'compose' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0,
+      timings: [{ workspace: 'workspace-0', phase: 'sustained', elapsedMs: 12, ok: true, status: 200 }],
+    })
+
+    expect(report.status).toBe('fail')
+    expect(report.completeness.observations_valid).toBe(false)
+  })
 })

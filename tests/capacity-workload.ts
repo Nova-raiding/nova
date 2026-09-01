@@ -45,6 +45,16 @@ function capacityTimingErrors(timings: readonly CapacityWorkloadTiming[]): numbe
   ).length
 }
 
+function capacityTimingScopeErrors(config: CapacityWorkloadConfig, timings: readonly CapacityWorkloadTiming[]): number {
+  return timings.filter(item => {
+    if (!item || typeof item.workspace !== 'string') return true
+    const match = /^ws_capacity_(\d+)$/.exec(item.workspace.trim())
+    if (!match) return true
+    const index = Number(match[1])
+    return !Number.isSafeInteger(index) || index < 0 || index >= config.workspaces
+  }).length
+}
+
 /** Capture the Compose state that the local capacity report is allowed to claim. */
 export function readLocalDockerRuntimeSnapshot(cwd = process.cwd()): LocalRuntimeService[] {
   const compose = ['compose', '-p', 'local', '--env-file', '.env', '-f', 'infra/local/docker-compose.yml', 'ps', '--format', 'json']
@@ -245,8 +255,9 @@ export function buildCapacityEvidenceDocument(
 ) {
   const timings = [...input.timings]
   const invalidTimingCount = capacityTimingErrors(timings)
+  const invalidTimingScopeCount = capacityTimingScopeErrors(config, timings)
   const acceptedJobsValid = Number.isSafeInteger(input.acceptedJobs) && input.acceptedJobs >= 0
-  const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length + invalidTimingCount + (acceptedJobsValid ? 0 : 1)
+  const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length + invalidTimingCount + invalidTimingScopeCount + (acceptedJobsValid ? 0 : 1)
   // A run with no observations is incomplete in every mode. In particular,
   // real_cloud must not serialize an unexecuted run as a passing report.
   const incomplete = timings.length === 0
@@ -300,7 +311,7 @@ export function buildCapacityEvidenceDocument(
     },
     accepted_jobs: input.acceptedJobs,
     completeness: {
-      observations_valid: invalidTimingCount === 0,
+      observations_valid: invalidTimingCount === 0 && invalidTimingScopeCount === 0,
       accepted_jobs_valid: acceptedJobsValid,
     },
     coverage: 'api_http_and_job_admission',
