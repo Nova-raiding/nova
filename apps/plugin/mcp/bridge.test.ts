@@ -1243,6 +1243,16 @@ describe('Codex stdio MCP bridge', () => {
         expect(html).toContain('@media(prefers-reduced-motion:reduce)')
         expect(html).not.toContain('context-v2')
         expect(html).not.toContain('大麦商家工作台')
+        if (uri === 'ui://merchant-marketing/publish-confirm-v1.html') {
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_REQUIRED'")
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_INVALID'")
+          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_INTENT_MISMATCH'")
+          expect(html).toContain("primary.textContent='重新核对并确认'")
+          expect(html).toContain('本次确认已失效，发布请求未提交。请重新核对以上内容，勾选确认后再提交。')
+          expect(html).toContain('ackInput.checked=false')
+          expect(html).toContain('ackInput.focus()')
+          expect(html).toContain("publishIdempotencyKey=publishIdempotencyKey||'publish-card-'")
+        }
       }
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'store', platform: 'taobao', account_id: 'acct_1' } } })}\n`)
       const response = await nextLine(child.stdout)
