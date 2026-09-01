@@ -43,6 +43,9 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('role="alert" tabIndex={-1} aria-labelledby="image-job-config-title"')
     expect(app).toContain('尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。')
     expect(app).toContain('请联系管理员完成测试环境配置后，再刷新此页面。')
+    expect(app).toContain('模型中转配置尚未就绪')
+    expect(app).toContain('API 返回配置阻断')
+    expect(app).toContain('setConfigurationError(isImageGenerationConfigurationError(cause))')
   })
 
   it('focuses image generation form errors and links them to both fields', () => {

@@ -41,3 +41,10 @@ export function imageGenerationRetryAllowed(input: { state?: string; executionSt
     && !imageGenerationProviderExecutionStates.includes(input.executionState as typeof imageGenerationProviderExecutionStates[number])
     && input.nextActionAllowed === true
 }
+
+/** Configuration failures must be visually distinct from transient read errors. */
+export function isImageGenerationConfigurationError(error: unknown) {
+  const candidate = error as { code?: unknown; status?: unknown } | undefined
+  const code = typeof candidate?.code === 'string' ? candidate.code.trim().toUpperCase() : ''
+  return candidate?.status === 503 && /^(?:MODEL_RELAY|AI_GENERATION|IMAGE_GENERATION|IMAGE_EDIT|VIDEO_GENERATION)(?:_|$)/u.test(code)
+}

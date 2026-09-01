@@ -140,7 +140,7 @@ import {
   type TaskUnderstanding,
   type WorkspaceMetrics,
 } from './api'
-import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed } from './image-generation-state'
+import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
 import { resolveStoreSyncTargets } from './store-sync'
 import {
   storeIdentityLabel,
@@ -5968,6 +5968,7 @@ function ImageGenerationJobDiscovery({ baseUrl }: { baseUrl?: string }) {
 function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: string }) {
   const [job, setJob] = useState<ImageGenerationJob | null>(null)
   const [error, setError] = useState('')
+  const [configurationError, setConfigurationError] = useState(false)
   const [loading, setLoading] = useState(Boolean(baseUrl))
   const [reload, setReload] = useState(0)
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set())
@@ -6001,12 +6002,16 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
           retryErrorFocusRequestedRef.current = false
           setJob(next)
           setError('')
+          setConfigurationError(false)
           pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'success')
         }
       } catch (cause) {
         shouldPoll = true
         pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'error')
-        if (active) setError(describeApiError(cause))
+        if (active) {
+          setConfigurationError(isImageGenerationConfigurationError(cause))
+          setError(describeApiError(cause))
+        }
       } finally {
         if (active) {
           // A terminal read must clear the busy state too; otherwise the
@@ -6032,6 +6037,9 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
       window.requestAnimationFrame(() => imageJobReadErrorRef.current?.focus())
     }
   }, [error, job, loading])
+  useEffect(() => {
+    if (configurationError && !loading) window.requestAnimationFrame(() => imageJobConfigurationErrorRef.current?.focus())
+  }, [configurationError, loading])
   useEffect(() => {
     if (!baseUrl) window.requestAnimationFrame(() => imageJobConfigurationErrorRef.current?.focus())
   }, [baseUrl])
@@ -6090,7 +6098,8 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   return <section className="panel image-generation-job-panel" aria-labelledby="image-job-title" aria-busy={loading}>
     <div className="detail-section-head"><div><span className="section-kicker">IMAGE JOB</span><h3 id="image-job-title">图片生成任务</h3></div><StatusChip tone={displayStateTone}>{loading && !job ? '读取中…' : displayStateLabels[displayState] ?? '状态待确认'}</StatusChip></div>
     <div className="info-notice" role="status" aria-live="polite" aria-atomic="true">{job ? `任务 ${job.jobId} · 商品 ${job.productId} · 最后更新 ${new Date(job.updatedAt).toLocaleString('zh-CN', { hour12: false })}` : '正在读取任务状态…'}</div>
-    {error && <div ref={imageJobReadErrorRef} id="image-job-read-error" className="error-notice image-job-read-error" role="alert" tabIndex={-1} aria-atomic="true"><span>任务状态读取失败：{error}。已保留上次可信状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
+    {configurationError && <div ref={imageJobConfigurationErrorRef} id="image-job-config-error" className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-error-title" aria-describedby="image-job-config-error-description"><strong id="image-job-config-error-title">模型中转配置尚未就绪</strong><span id="image-job-config-error-description">API 返回配置阻断（{error}）。系统不会生成、扣费或发布；请联系管理员完成测试环境模型中转配置后，再刷新任务状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setConfigurationError(false); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
+    {error && !configurationError && <div ref={imageJobReadErrorRef} id="image-job-read-error" className="error-notice image-job-read-error" role="alert" tabIndex={-1} aria-atomic="true"><span>任务状态读取失败：{error}。已保留上次可信状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
     {job && <dl className="image-job-evidence" aria-label="图片执行证据"><div><dt>执行状态</dt><dd>{labels[job.executionState ?? ''] ?? job.executionState ?? '未记录'}</dd></div><div><dt>归档状态</dt><dd>{archiveLabels[job.archiveState] ?? '状态未知'}</dd></div><div><dt>执行尝试</dt><dd>{job.executionAttempt ?? '未记录'}</dd></div><div><dt>Provider 请求</dt><dd>{job.providerRequestId ?? '尚未确认'}</dd></div><div><dt>任务版本</dt><dd>{job.revision}</dd></div></dl>}
     {job?.errorMessage && <div id="image-job-error" className="error-notice" role="alert" tabIndex={-1}><AlertCircle size={16} /><span>{job.errorCode ?? 'IMAGE_GENERATION_FAILED'}：{job.errorMessage}</span></div>}
     {job?.availabilityWarning && <div className="info-notice"><ShieldCheck size={16} /><span>{job.availabilityWarning}</span></div>}
