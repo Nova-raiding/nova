@@ -11,6 +11,7 @@ const evidenceRef = process.env.PLATFORM_CANARY_EVIDENCE_REF?.trim()
 const verifiedBy = process.env.PLATFORM_CANARY_VERIFIED_BY?.trim()
 const apiVersion = process.env.PLATFORM_CANARY_API_VERSION?.trim()
 const scope = process.env.PLATFORM_CANARY_SCOPE?.trim()
+const expectedRemoteId = process.env.PLATFORM_CANARY_EXPECTED_REMOTE_ID?.trim()
 const applicationId = process.env.PLATFORM_CANARY_APPLICATION_ID?.trim()
 const confirm = process.env.PLATFORM_CANARY_CONFIRM === 'true'
 const allowWrite = process.env.PLATFORM_CANARY_ALLOW_WRITE === 'true'
@@ -36,7 +37,7 @@ const mediaBytes = readFileSync(mediaFile)
 const result = await runPlatformCanary({
   connector: runtime.connector(platform!),
   context: { workspaceId: requireValue(workspaceId, 'PLATFORM_CANARY_WORKSPACE_ID'), accountId: requireValue(accountId, 'PLATFORM_CANARY_ACCOUNT_ID'), traceId: `platform-canary-${Date.now()}` },
-  evidenceRef: requireValue(evidenceRef, 'PLATFORM_CANARY_EVIDENCE_REF'), verifiedBy: requireValue(verifiedBy, 'PLATFORM_CANARY_VERIFIED_BY'), apiVersion: requireValue(apiVersion, 'PLATFORM_CANARY_API_VERSION'), scope: requireValue(scope, 'PLATFORM_CANARY_SCOPE'),
+  evidenceRef: requireValue(evidenceRef, 'PLATFORM_CANARY_EVIDENCE_REF'), verifiedBy: requireValue(verifiedBy, 'PLATFORM_CANARY_VERIFIED_BY'), apiVersion: requireValue(apiVersion, 'PLATFORM_CANARY_API_VERSION'), scope: requireValue(scope, 'PLATFORM_CANARY_SCOPE'), expectedRemoteId: requireValue(expectedRemoteId, 'PLATFORM_CANARY_EXPECTED_REMOTE_ID'),
   allowWrite, allowRevoke, ...(writeFields ? { writeFields } : {}),
   promoteToProductionCanary: true,
   mediaFile: { bytes: mediaBytes, mimeType: process.env.PLATFORM_CANARY_MEDIA_MIME_TYPE?.trim() || 'image/png', sha256: createHash('sha256').update(mediaBytes).digest('hex') },

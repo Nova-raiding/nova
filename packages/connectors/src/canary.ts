@@ -9,6 +9,8 @@ export interface PlatformCanaryInput {
   verifiedAt?: string
   apiVersion: string
   scope: string
+  /** The controlled test-store product that a read canary must actually return. */
+  expectedRemoteId: string
   /** Real create/update calls are opt-in because they mutate a test store. */
   allowWrite: boolean
   /** Revoke is separately opt-in because it invalidates the test account. */
@@ -71,9 +73,11 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
   let full: Awaited<ReturnType<PlatformConnector['syncProducts']>> | undefined
   try {
     full = await input.connector.syncProducts(input.context)
-    const passed = full.source === 'official_api' && !full.simulated && full.items.length >= 0
-    add('read', passed, full.simulated)
-    add('full_sync', passed, full.simulated)
+    const containsExpected = full.items.some(item => item.remoteId === input.expectedRemoteId)
+    const passed = full.source === 'official_api' && !full.simulated && containsExpected
+    const detail = containsExpected ? undefined : `read canary did not return expected remote product ${input.expectedRemoteId}`
+    add('read', passed, full.simulated, detail)
+    add('full_sync', passed, full.simulated, detail)
   } catch (error) {
     add('read', false, false, error instanceof Error ? error.message : String(error))
     add('full_sync', false, false, error instanceof Error ? error.message : String(error))

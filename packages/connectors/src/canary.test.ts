@@ -66,6 +66,7 @@ describe('platform canary runner', () => {
       verifiedBy: 'local-contract-test',
       apiVersion: 'sandbox-contract-v1',
       scope: 'sandbox.product.read sandbox.product.write',
+      expectedRemoteId: profiles.taobao.fixture.remoteId,
       allowWrite: true,
       allowRevoke: true,
       mediaFile: { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png', sha256: 'a'.repeat(64) },
@@ -85,6 +86,7 @@ describe('platform canary runner', () => {
       connector,
       context: { workspaceId: 'ws_local_sandbox', accountId: 'acct_local_sandbox' },
       evidenceRef: 'artifact://sandbox/local-taobao', verifiedBy: 'local-contract-test', apiVersion: 'sandbox-contract-v1', scope: 'sandbox.product.read',
+      expectedRemoteId: profiles.taobao.fixture.remoteId,
       allowWrite: false, allowRevoke: false,
       promoteToProductionCanary: true,
     })
@@ -97,6 +99,7 @@ describe('platform canary runner', () => {
       connector: createFakeConnector('taobao', { configured: true, allowFakeWrites: true }),
       context: { workspaceId: 'ws_canary', accountId: 'acct_canary' },
       evidenceRef: 'artifact://canary/test', verifiedBy: 'qa', apiVersion: 'fixture', scope: 'fixture', allowWrite: false, allowRevoke: false,
+      expectedRemoteId: profiles.taobao.fixture.remoteId,
     })
     expect(result.passed).toBe(false)
     expect(result.evidence.every(item => item.state !== 'production_canary')).toBe(true)
@@ -108,6 +111,7 @@ describe('platform canary runner', () => {
       connector: createFakeConnector('jd', { configured: true, allowFakeWrites: true }),
       context: { workspaceId: 'ws_canary', accountId: 'acct_canary' },
       evidenceRef: 'artifact://canary/fixture', verifiedBy: 'qa', apiVersion: 'fixture', scope: 'fixture', allowWrite: true, allowRevoke: true,
+      expectedRemoteId: profiles.jd.fixture.remoteId,
     })
     expect(result.passed).toBe(false)
     expect(result.checks.filter(item => ['create', 'update', 'query_status'].includes(item.capability)).some(item => item.simulated)).toBe(true)
