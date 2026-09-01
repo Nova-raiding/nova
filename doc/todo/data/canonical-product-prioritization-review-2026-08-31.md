@@ -64,10 +64,10 @@
 
 ### A. 数据与身份
 
-- [ ] 每个可进入生产任务的商品都具备：`workspace_id`、`brand_id`、唯一 `canonical_product_id`。
+- [x] 每个可进入生产任务的商品都具备：`workspace_id`、`brand_id`、唯一 `canonical_product_id`。（本地 L2：`8e6b108` 的 canonical task read/preflight 及 `canonical-product-target-consistency` 回归会在 workspace、brand、canonical 关系不完整或不一致时 fail-closed；不代表现有生产数据已完成全量清理。）
 - [x] 每个可发布的平台/店铺目标都具备唯一 `listing_id`，并能校验 `workspace + brand + canonical + platform + platform_account` 五元组。（本地 L2：`d936ed6` 事务/advisory-lock 与唯一性测试，`171e8fc` 精确发布目标测试；`f2cef8d` 提供跨平台 canonical fixture 对照；不代表全量数据已清理。）
 - [x] `campaign_item` 的生产目标是 `listing_id`；`legacy_product_id` 仅作追溯字段，不作为发布主键。（本地 L2：`PostgresBrandUnitRepository` 与 `MemoryBrandUnitRepository` 在进入生产状态、任务分配、恢复和重试前 fail-closed；`brand-unit-repository.test.ts` 覆盖 legacy-only 草稿兼容与生产门禁。真实 workspace 全量迁移仍未完成。）
-- [ ] canonical→legacy 的品牌组合关系有数据库级约束或等价的事务性校验；冲突数据在约束验证前已列出并有处理结果。
+- [x] canonical→legacy 的品牌组合关系有数据库级约束或等价的事务性校验；冲突数据在约束验证前已列出并有处理结果。（本地 L2：`f11fab5` / `migration-106-release.postgres.test.ts` 验证合法绑定、跨品牌写入、legacy/canonical 品牌变更均被阻断，并通过真实本地 PostgreSQL 回归；生产全量冲突清理与审计结果仍未完成。）
 - [x] 未绑定或多绑定记录不会被自动猜测、覆盖或伪造为 `planned-listing:*` 生产身份。（本地 L2：`1418a10` 歧义 listing 阻断、`171e8fc` 精确目标校验及 canonical consistency 测试。）
 
 ### B. 一致性与迁移
@@ -83,7 +83,7 @@
 - [ ] 新建商品、listing、campaign、task、内容生成、规则预检、发布准备和计费关联使用统一 canonical scope。
 - [x] legacy `product_id` 兼容请求必须先解析到唯一 `verified listing`；0 个或多个候选均 fail-closed，并返回可修复错误。（本地 L2：`171e8fc` 精确 platform/account listing 目标、`1418a10` 多绑定阻断、`629d05f` queue 过滤测试。）
 - [x] worker 不得绕过 API execution gate；执行、用量、发布回执至少可追溯到 task、campaign item、canonical、listing 和 context hash。（本地 L2：`6378205` receipt/usage trace 测试及既有 execution binding 回归；`59c0df1` 补充 queued 后授权撤销、scope/revision 漂移时禁止 provider 外呼；未证明真实 worker/平台链路。）
-- [ ] 新任务读取 canonical facts，平台字段读取 listing，店铺身份读取 platform account；历史任务继续读取冻结快照。
+- [x] 新任务读取 canonical facts，平台字段读取 listing，店铺身份读取 platform account；历史任务继续读取冻结快照。（本地 L2：`8e6b108` 的 canonical task read evidence 回归验证 canonical facts、listing/platform 字段、脱敏 account 身份及无 canonical 绑定时冻结快照回退；真实 workspace/平台回读仍未完成。）
 - [ ] 标准链写入与旧投影同步失败有 outbox/retry/reconciliation，且不制造“已发布但来源不明”的成功状态。
 
 本轮核对说明：以上勾选仅表示已有本地 L2 代码/测试证据，不等同于预发布或生产完成。真实 workspace canary、生产 PostgreSQL/RLS 攻击矩阵、全量 backfill（含 unresolved 处理与重试）以及 shadow/cutover 前后指标仍未完成，原因是当前缺少真实 workspace 数据、目标环境和可审计运行证据；相关条目必须保持未完成。
