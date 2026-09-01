@@ -57,6 +57,15 @@ describe('durable authorization repository', () => {
     expect(await repo.getAuthorizationRevision(subject)).toBe(0)
   })
 
+  it('rejects capabilities with whitespace or control characters before advancing authorization state', async () => {
+    const repo = repository()
+    const issue = (capability: string) => repo.issueGrant({ grantKind: 'temporary', accessMode: 'read', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: [capability], resourceScope: { product_ids: ['p-capability'] }, reason: 'inspect capability boundary', ticketRef: `CAP-${capability.length}-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 1 })
+
+    await expect(issue(' customer.content.read')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    await expect(issue('customer.content.read\n')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    expect(await repo.getAuthorizationRevision(subject)).toBe(0)
+  })
+
   it('revokes immediately and invalidates the observed authorization revision', async () => {
     const repo = repository()
     const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'read', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.read'], resourceScope: { task_ids: ['t-1'] }, reason: 'inspect failed generation', ticketRef: 'OPS-10', issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 2 })
