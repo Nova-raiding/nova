@@ -227,7 +227,7 @@ function Dashboard({
               void model.loadUsers();
           }}
         />
-        <Content id="ops-main-content" className="ops-content" tabIndex={-1} aria-busy={Boolean(loadingMessage)}>
+        <Content id="ops-main-content" className="ops-content" role="main" tabIndex={-1} aria-busy={Boolean(loadingMessage)}>
           <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
             {loadingMessage}
           </span>

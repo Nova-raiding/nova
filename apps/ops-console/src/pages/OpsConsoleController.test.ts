@@ -44,6 +44,7 @@ describe("desktop keyboard navigation", () => {
     expect(source).toContain('className="ops-skip-link"');
     expect(source).toContain('href="#ops-main-content"');
     expect(source).toContain("跳转到主要内容");
+    expect(source).toContain('id="ops-main-content" className="ops-content" role="main"');
     expect(styles).toContain(".ops-skip-link:focus-visible");
   });
 });
