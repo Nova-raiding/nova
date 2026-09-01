@@ -57,6 +57,16 @@ describe('relay usage normalization', () => {
     expect(usage?.metadata).toEqual({ usage_observed: true, provider_response_id: 'req_recorded', settlement: 'recorded' })
   })
 
+  it('accepts missing provider cost only when the settlement sink attests derived cost', async () => {
+    const usage = await emitRelayUsage(
+      async () => ({ recorded: true, costEvidence: true }),
+      { id: 'req_derived_cost', usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } },
+      new Headers({ 'x-request-id': 'request_derived_cost' }),
+      { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_derived_cost' } },
+    )
+    expect(usage.metadata).toMatchObject({ usage_observed: true, cost_evidence: 'settlement_sink', settlement: 'recorded' })
+  })
+
   it('wraps settlement failure without exposing provider or sink details', async () => {
     const providerSecret = 'provider-response-secret'
     let caught: unknown
@@ -84,7 +94,7 @@ describe('relay usage normalization', () => {
       new Headers(),
       { modality: 'text', model: 'relay-text', context: { workspaceId: 'ws_cost', actionId: 'task_cost', providerAttemptId: 'attempt_cost' } },
     )
-    await expect(rejection).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
+    await expect(rejection).rejects.toBe(sinkError)
   })
 
   it.each([

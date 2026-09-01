@@ -603,15 +603,23 @@ describe('worker production entry', () => {
 
   it('submits signed relay usage to the API before generated content is accepted', async () => {
     const requests: Array<{ url: string; body: string; headers: Headers }> = []
-    await postModelUsage({
+    await expect(postModelUsage({
       apiBaseUrl: 'https://api.test', apiToken: 'worker-token', signingSecret: 'worker-secret',
       usage: { workspaceId: 'ws_a', actionId: 'model:generation:idem_1', runKey: 'task:content_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), modality: 'text', model: 'relay-text', providerRequestId: 'relay_req_1', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.02, observedAt: '2026-08-28T00:00:00.000Z' },
-      fetcher: async (input, init) => { requests.push({ url: String(input), body: String(init?.body), headers: new Headers(init?.headers) }); return new Response('{}', { status: 200 }) },
-    })
+      fetcher: async (input, init) => { requests.push({ url: String(input), body: String(init?.body), headers: new Headers(init?.headers) }); return new Response(JSON.stringify({ data: { recorded: true } }), { status: 200 }) },
+    })).resolves.toEqual({ recorded: true, costEvidence: true })
     expect(requests[0]?.url).toBe('https://api.test/v1/internal/model-usage')
     expect(JSON.parse(requests[0]!.body)).toMatchObject({ workspaceId: 'ws_a', actionId: 'model:generation:idem_1', runKey: 'task:content_1', contextLinkId: 'context_link_1', contextHash: 'a'.repeat(64), providerRequestId: 'relay_req_1', totalTokens: 15, costCny: 0.02 })
     expect(requests[0]?.headers.get('x-workspace-id')).toBe('ws_a')
     expect(requests[0]?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
+  })
+
+  it('rejects a successful model usage callback without settlement evidence', async () => {
+    await expect(postModelUsage({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token',
+      usage: { workspaceId: 'ws_a', actionId: 'model:generation:idem_missing_receipt', runKey: 'task:content_missing_receipt', modality: 'text', model: 'relay-text', providerRequestId: 'relay_req_missing_receipt', inputTokens: 1, outputTokens: 1, totalTokens: 2, observedAt: '2026-08-28T00:00:00.000Z' },
+      fetcher: async () => new Response('{}', { status: 200 }),
+    })).rejects.toMatchObject({ code: 'MODEL_USAGE_CALLBACK_REJECTED' })
   })
 
   it('submits signed workspace-scoped model usage reconciliation requests', async () => {

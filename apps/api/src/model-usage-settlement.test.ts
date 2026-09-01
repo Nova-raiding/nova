@@ -315,7 +315,7 @@ describe('API model usage settlement invariants', () => {
     const workspaceId = `ws_missing_cost_${Date.now()}`
     const actionId = `model:missing-cost-${Date.now()}`
 
-    await expect(generate(workspaceId, actionId)).rejects.toMatchObject({ code: 'AI_GENERATION_FAILED' })
+    await expect(generate(workspaceId, actionId)).rejects.toMatchObject({ code: 'MODEL_USAGE_COST_MISSING' })
 
     expect(harness.refundCalls).toBe(0)
   })

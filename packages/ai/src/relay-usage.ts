@@ -35,7 +35,13 @@ export interface RelayUsageRecord {
 
 export type RelayUsageSettlement = 'recorded' | 'unknown'
 
-export type RelayUsageSink = (record: RelayUsageRecord) => void | Promise<void>
+export interface RelayUsageSettlementReceipt {
+  recorded: true
+  /** The settlement boundary verified provider or versioned derived cost. */
+  costEvidence: true
+}
+
+export type RelayUsageSink = (record: RelayUsageRecord) => void | RelayUsageSettlementReceipt | Promise<void | RelayUsageSettlementReceipt>
 
 export class ModelUsageSettlementPendingError extends Error {
   readonly code = 'MODEL_USAGE_SETTLEMENT_PENDING'
@@ -167,15 +173,19 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
 export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: unknown, headers: Headers, defaults: { modality: RelayUsageModality; model: string; context?: RelayUsageContext }) {
   const usage = parseRelayUsage(payload, headers, defaults)
   if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
-  if (usage.costCny === undefined) throw new ModelUsageEvidenceMissingError('cost')
   if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity')
   if (!sink) throw new ModelUsageEvidenceMissingError('sink')
+  let settlementReceipt: void | RelayUsageSettlementReceipt
   try {
-    await sink(usage)
+    settlementReceipt = await sink(usage)
   } catch (error) {
     if (['MODEL_USAGE_COST_MISSING', 'MODEL_TASK_COST_ACTUAL_EXCEEDED', 'MODEL_DAILY_COST_ACTUAL_EXCEEDED'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
     throw new ModelUsageSettlementPendingError(relayUsageReceiptKey(usage))
   }
-  usage.metadata = { ...(usage.metadata ?? {}), settlement: 'recorded' satisfies RelayUsageSettlement }
+  // Some relays return tokens but omit currency. Only a trusted settlement
+  // sink may fill that gap from a versioned pricing snapshot; a plain sink
+  // success is not sufficient cost evidence.
+  if (usage.costCny === undefined && settlementReceipt?.costEvidence !== true) throw new ModelUsageEvidenceMissingError('cost')
+  usage.metadata = { ...(usage.metadata ?? {}), ...(usage.costCny === undefined ? { cost_evidence: 'settlement_sink' } : {}), settlement: 'recorded' satisfies RelayUsageSettlement }
   return usage
 }

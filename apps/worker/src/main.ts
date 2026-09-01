@@ -567,6 +567,9 @@ export async function postModelUsage(input: { apiBaseUrl: string; apiToken: stri
     const error = Object.assign(new Error(`model usage API returned ${response.status}`), { code: response.status === 409 || response.status === 503 ? 'MODEL_USAGE_SETTLEMENT_PENDING' : 'MODEL_USAGE_CALLBACK_REJECTED' })
     throw error
   }
+  const envelope = await parseWorkerApiJson(response) as { data?: { recorded?: unknown } }
+  if (envelope.data?.recorded !== true) throw Object.assign(new Error('model usage API omitted settlement evidence'), { code: 'MODEL_USAGE_CALLBACK_REJECTED' })
+  return { recorded: true, costEvidence: true } as const
 }
 
 export async function postModelUsageReconciliation(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
