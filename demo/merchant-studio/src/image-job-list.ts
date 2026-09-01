@@ -10,10 +10,18 @@ export function mergeImageGenerationJobs(
   next: readonly ImageGenerationJobListItem[],
 ): ImageGenerationJobListItem[] {
   const byId = new Map(next.map(job => [job.jobId, job]))
+  const retainedIds = new Set<string>()
   const stableExisting = previous
     .map(job => byId.get(job.jobId))
-    .filter((job): job is ImageGenerationJobListItem => Boolean(job))
-  const existingIds = new Set(previous.map(job => job.jobId))
-  const newJobs = next.filter(job => !existingIds.has(job.jobId))
+    .filter((job): job is ImageGenerationJobListItem => {
+      if (!job || retainedIds.has(job.jobId)) return false
+      retainedIds.add(job.jobId)
+      return true
+    })
+  const newJobs = next.filter(job => {
+    if (retainedIds.has(job.jobId)) return false
+    retainedIds.add(job.jobId)
+    return true
+  })
   return [...stableExisting, ...newJobs]
 }

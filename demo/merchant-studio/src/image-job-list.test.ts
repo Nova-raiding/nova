@@ -32,4 +32,12 @@ describe('image generation desktop list refresh', () => {
 
     expect(mergeImageGenerationJobs([first, second], [third, second])).toEqual([second, third])
   })
+
+  it('deduplicates repeated server rows so refresh cannot render duplicate job IDs', () => {
+    const first = job('job-a', '2026-09-01T00:00:01.000Z')
+    const second = job('job-b', '2026-09-01T00:00:02.000Z')
+
+    expect(mergeImageGenerationJobs([], [first, first, second, second])).toEqual([first, second])
+    expect(mergeImageGenerationJobs([first, first], [second, first, first])).toEqual([first, second])
+  })
 })
