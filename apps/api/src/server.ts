@@ -5035,6 +5035,39 @@ async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: st
   })
   const actorId = requestPrincipals.get(req)?.actorId
   if (!authorizationDecisionRequiresAudit(decision)) return
+  if (decision.workbench === 'platform') {
+    if (!actorId) {
+      throw new DomainError('AUTHZ_AUDIT_CONTEXT_INVALID', '平台授权审计缺少操作者身份，操作已拒绝', 503, {
+        decision_id: decision.decision_id,
+        policy_version: decision.policy_version,
+      })
+    }
+    try {
+      await (persistence.platformAuthorizationAudit ?? memoryPlatformAuthorizationAudit).append({
+        decisionId: decision.decision_id,
+        policyVersion: decision.policy_version,
+        actorId,
+        workbench: 'platform',
+        capability: decision.capability,
+        method: decision.method,
+        result: decision.result === 'allow' || decision.result === 'shadow_allow' ? 'allow' : 'deny',
+        reasonCode: decision.reason_code,
+        resourceType: decision.scope.required,
+        resourceId: decision.scope.resource_id ?? '*',
+        resourceScope: { required: decision.scope.required, resolved: decision.scope.resolved.map(scope => ({ type: scope.type, ids: [...scope.ids] })) },
+        requestId: correlation.requestId,
+        traceId: correlation.traceId,
+        evidence: authorizationDecisionAuditEvidence(decision, correlation),
+      })
+    } catch (error) {
+      console.error(`AUTHZ_PLATFORM_AUDIT_UNAVAILABLE decision=${decision.decision_id} method=${decision.method}`, error)
+      throw new DomainError('AUTHZ_AUDIT_UNAVAILABLE', '平台授权审计暂不可用，操作已拒绝且未执行', 503, {
+        decision_id: decision.decision_id,
+        policy_version: decision.policy_version,
+      })
+    }
+    return
+  }
   if (!authorizationDecisionAuditContextIsValid(decision, workspaceId, actorId)) {
     throw new DomainError('AUTHZ_AUDIT_CONTEXT_INVALID', '授权审计缺少工作区或操作者身份，操作已拒绝', 503, {
       decision_id: decision.decision_id,
