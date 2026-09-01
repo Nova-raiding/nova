@@ -120,7 +120,10 @@ function genericProducts(payload: unknown, platform: Platform, mapping?: Generic
 
 function genericWriteReceipt(payload: unknown, input: { idempotencyKey: string; remoteId?: string }, operation: 'create' | 'update', platform: Platform, mapping?: GenericResponseMapping): WriteReceipt {
   const item = record(payload) ?? {}
-  return { platform, operation, remoteId: text(pathValue(item, mapping?.remoteIdPath)) ?? text(item.remoteId) ?? text(item.id) ?? input.remoteId ?? '', requestId: text(pathValue(item, mapping?.requestIdPath)) ?? text(item.requestId) ?? text(item.request_id) ?? `http_req_${input.idempotencyKey}`, status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
+  // A local idempotency key is not provider evidence.  Leave the receipt
+  // uncorrelated when the provider omits its request identity; the HTTP
+  // connector will reject it before recording or exposing a write receipt.
+  return { platform, operation, remoteId: text(pathValue(item, mapping?.remoteIdPath)) ?? text(item.remoteId) ?? text(item.id) ?? input.remoteId ?? '', requestId: text(pathValue(item, mapping?.requestIdPath)) ?? text(item.requestId) ?? text(item.request_id) ?? '', status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
 }
 
 function genericWriteStatus(payload: unknown, request: WriteIdentity, _platform: Platform, mapping?: GenericResponseMapping): WriteStatus {
