@@ -1,0 +1,8 @@
+{
+  "name": "chatgpt-all-functions-dogfood",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "1.55.1"
+  }
+}
