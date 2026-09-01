@@ -12137,7 +12137,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const canonicalListings = canonical
         ? await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform: requestedPlatform, ...(product.accountId ? { accountId: product.accountId } : {}) })
         : []
-      const canonicalScope = resolveCanonicalProductReadScope({ mode: readControl.mode, candidates: canonicalCandidates, listings: canonicalListings })
+      const canonicalScope = resolveCanonicalProductReadScope({
+        mode: readControl.mode,
+        workspaceId,
+        platform: requestedPlatform,
+        ...(product.accountId ? { accountId: product.accountId } : {}),
+        candidates: canonicalCandidates,
+        listings: canonicalListings,
+      })
       if (canonicalScope?.status === 'blocked') {
         throw new DomainError(canonicalScope.code, '标准商品链未完成验证，已阻断标题优化', 409, { reason: canonicalScope.reason, next_action: 'canonical.product.consistency', read_mode: readControl.mode })
       }

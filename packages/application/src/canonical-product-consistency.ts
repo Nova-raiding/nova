@@ -18,6 +18,8 @@ export const CANONICAL_PRODUCT_READ_MODES: readonly CanonicalProductReadMode[] =
 
 export interface CanonicalProductReadScopeCandidate {
   id: string
+  /** Optional identity supplied by persistence for defense-in-depth validation. */
+  workspaceId?: string
   brandId: string
   title: string
   facts?: Record<string, unknown>
@@ -69,6 +71,7 @@ export function resolveCanonicalProductReadScope(input: {
   const canonical = input.candidates[0]!
   const listing = input.listings[0]!
   const identityMatches = [
+    input.workspaceId === undefined || canonical.workspaceId === undefined || canonical.workspaceId === input.workspaceId,
     input.workspaceId === undefined || listing.workspaceId === undefined || listing.workspaceId === input.workspaceId,
     listing.brandId === undefined || listing.brandId === canonical.brandId,
     listing.canonicalProductId === undefined || listing.canonicalProductId === canonical.id,
