@@ -109,13 +109,13 @@ describe('Merchant Studio store identity safety', () => {
     expect(validateTargetStoreIdentity(target)).toBeNull()
     expect(validateProductStoreIdentity(target, target)).toBeNull()
     expect(validateTaskStoreIdentity(target, { accountId: 'store-a' })).toBeNull()
-    expect(storeIdentityLabel(target)).toBe('淘宝 A 店 · 账号 store-a')
+    expect(storeIdentityLabel(target)).toBe('淘宝 A 店 · 店铺身份已确认')
   })
 
   it('fails closed for missing identity fields', () => {
     expect(validateTargetStoreIdentity({ storeName: '淘宝 A 店' })).toContain('缺少完整店铺身份')
     expect(validateProductStoreIdentity(target, { storeName: '淘宝 A 店' })).toContain('商品事实缺少完整店铺身份')
-    expect(validateTaskStoreIdentity(target, {})).toContain('任务缺少稳定的店铺账号 ID')
+    expect(validateTaskStoreIdentity(target, {})).toContain('任务缺少稳定的店铺身份')
   })
 
   it('fails closed for product or task identity mismatches', () => {
