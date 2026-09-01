@@ -1685,7 +1685,7 @@ describe('API HTTP vertical slice', () => {
     expect(settledResult.state).toBe('queued')
     const crossTenant = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'x-workspace-id': 'ws_other' }, body: JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'content.review', params: { content_version_id: versionId } }) }).then(json)
     expect(crossTenant.error?.code).toBe('WORKSPACE_SCOPE_MISMATCH')
-    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: publishId, status: { found: true, state: 'rejected', requestId: `cleanup-${publishId}`, simulated: false, rejection: { code: 'TEST_CLEANUP', message: '测试完成后释放活动任务配额' } } })
+    service.recordPublishObservation({ workspaceId: 'ws_demo', publishJobId: publishId, status: { found: true, state: 'rejected', requestId: `cleanup-${publishId}`, simulated: false, rejection: { rawCode: 'TEST_CLEANUP', message: '测试完成后释放活动任务配额', fields: [] } } })
   })
 
   it('rechecks approved content against the latest platform rules before publish preparation', async () => {
