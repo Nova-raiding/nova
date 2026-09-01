@@ -75,6 +75,17 @@ describe('merchant_ops workspace summary RLS boundary', () => {
         await expect(ops.query(`SELECT * FROM ${table}`)).rejects.toMatchObject({ code: '42501' })
       }
       await ops.query('COMMIT')
+
+      const customerTableAcl = await database.query<{ table_name: string; can_select: boolean }>(`
+        SELECT table_name, has_table_privilege('merchant_ops', table_name, 'SELECT') AS can_select
+        FROM unnest(ARRAY['products', 'tasks', 'content_versions']::text[]) AS tables(table_name)
+        ORDER BY table_name
+      `)
+      expect(customerTableAcl.rows).toEqual([
+        { table_name: 'content_versions', can_select: false },
+        { table_name: 'products', can_select: false },
+        { table_name: 'tasks', can_select: false },
+      ])
     } finally {
       await ops?.end()
       await database?.end()
