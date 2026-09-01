@@ -778,6 +778,8 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 
 - [x] **HTTP platform sync allow/deny 前置门禁（本地 test 环境切片）。** `待提交`；真实 HTTP `POST /v1/platform-accounts/taobao/sync` 通过注册的 `catalog.sync` policy：允许主体进入业务前置门禁并返回 `STORE_ONBOARDING_REQUIRED`，显式 deny 在连接器与业务处理前返回 403，保留 `decision_id`、`policy_version`、`request_id` 和 `trace_id`，请求体中的账号标识不进入拒绝详情。`apps/api/src/ops-rbac-acceptance.test.ts` 定向 1/1 通过。该证据仅关闭一条本地逐路由 allow/deny 子项，不代表 P1-GATE-004 全量 HTTP/MCP/Worker parity 或生产 OIDC/RLS 完成。
 
+- [x] **HTTP/MCP platform account list parity（本地 test 环境切片）。** 本次原子提交新增 `apps/api/src/ops-rbac-http-platform-accounts-parity.acceptance.test.ts`：`GET /v1/platform-accounts` 与 `platform.store.list` 对同一工作区返回一致结果；显式 capability deny 在 HTTP/MCP 两侧均返回 403，并保留 `decision_id`、`policy_version`、workbench、request/trace ID 及持久审计；跨工作区 token 请求两侧均 fail-closed，且不回显 foreign workspace。定向 2/2、仓库级 `npm run typecheck` 与 `git diff --check` 通过。该证据只关闭一个资源列表的本地 parity/scope/audit 子项，不代表全量 HTTP/MCP/Worker parity、生产 OIDC/RLS 或生产发布门禁完成。
+
 - [x] **策略集合精确覆盖。** `6ab248a`；`packages/contracts/src/authz.test.ts` 定向测试通过，覆盖 policy key 精确匹配与未知方法 fail-closed。对应完整验收项为 P1-GATE-001/P1-GATE-002；仍需最终提交动态重跑。
 - [x] **撤销/过期授权拒绝。** `acab8ae`；Authz 定向测试 18/18 通过，覆盖 revoked、expired、非法时间、空/控制字符 scope 和 wildcard scope 拒绝。该证据仅关闭本地 grant 校验子项，不关闭 P1-BE-007 的持久 JIT、生产并发和真实 OIDC 要求。
 - [x] **Ops session/grant 契约。** `3c80ff4`；API 定向测试 4/4 通过，覆盖 workbench/workspace 裁剪、grant issue/revoke、expiry projection 和 403 decision evidence。该证据不等于真实 OIDC 或跨副本生命周期验收。
