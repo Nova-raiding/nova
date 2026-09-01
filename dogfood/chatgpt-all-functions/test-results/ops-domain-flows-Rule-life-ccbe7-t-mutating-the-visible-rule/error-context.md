@@ -1,0 +1,61 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - generic "当前平台与租户范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 平台级
+        - status [ref=e19]: 正在查看平台聚合与控制面数据
+        - generic [ref=e20]:
+          - generic [ref=e21]: 平台范围
+          - strong [ref=e22]: 全平台
+        - generic [ref=e23]:
+          - generic [ref=e24]: 工作区上下文
+          - strong [ref=e25]: ws_demo
+        - generic [ref=e26]: 客户内容默认不可见；进入工作区需受控授权
+      - navigation "平台运营功能导航"
+  - generic [ref=e27]:
+    - banner [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]: WORKSPACE OPERATIONS
+        - heading "商业与平台控制台" [level=2] [ref=e31]
+        - region "当前身份与权限范围" [ref=e32]:
+          - generic [ref=e33]:
+            - img [ref=e35]:
+              - img [ref=e36]
+            - strong [ref=e40]: platform_ops
+            - generic [ref=e42]: 身份 actor_demo
+            - generic [ref=e44]: 商家工作区
+            - generic [ref=e46]: 平台全局
+            - generic [ref=e48]: 策略 未返回
+      - button "连接诊断" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51] [cursor=pointer]: 连接诊断
+    - main [ref=e52]:
+      - generic [ref=e53]:
+        - img "Unauthorized" [ref=e55]
+        - generic [ref=e109]: 无权访问“平台规则”
+        - generic [ref=e110]: 当前会话不具备此运营域的读取能力；服务端仍会独立校验每个请求。
+        - generic [ref=e112]:
+          - button "返回运营总览" [ref=e114] [cursor=pointer]:
+            - generic [ref=e115] [cursor=pointer]: 返回运营总览
+          - button "刷新权限" [ref=e117] [cursor=pointer]:
+            - generic [ref=e118] [cursor=pointer]: 刷新权限
+        - alert [ref=e120]:
+          - generic [ref=e121]:
+            - text: 缺失能力：
+            - code [ref=e123]: rule.read
+          - generic [ref=e124]:
+            - text: 当前范围：
+            - code [ref=e126]: 平台全局
+```
