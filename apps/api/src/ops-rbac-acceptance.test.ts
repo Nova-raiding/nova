@@ -162,6 +162,26 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     expect(deniedBody.trace_id).toBe(deniedBody.request_id)
   })
 
+  it('fails closed before business handling when a workspace HTTP route lacks tenant scope', async () => {
+    const actorId = `ops-http-missing-scope-${Date.now()}`
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'ops-http-missing-scope-token': { workspaces: [], actor_id: actorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+
+    const response = await fetch(`${base}/v1/products`, {
+      headers: { authorization: 'Bearer ops-http-missing-scope-token' },
+    })
+    const body = await response.json() as RpcBody
+    expect(response.status).toBe(403)
+    expect(body.data).toBeNull()
+    expect(body.workspace_id).toBe('unknown')
+    expect(body.error).toMatchObject({ code: 'FORBIDDEN' })
+    expect(body.error?.details).toBeUndefined()
+    expect(body.request_id).toMatch(/^req_/)
+    expect(body.trace_id).toBe(body.request_id)
+  })
+
   it('projects one selected workbench in session and keeps rejection evidence stable', async () => {
     const workspaceId = `ws_ops_session_contract_${Date.now()}`
     const actorId = `ops-session-actor-${Date.now()}`
