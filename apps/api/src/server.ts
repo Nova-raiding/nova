@@ -3559,24 +3559,38 @@ async function reconcileAutomationClaims(workspaceId: string) {
 
 type DurableStateSnapshot = { aggregateId: string; sequence: number; payload: Record<string, unknown> }
 
-function hydrateOutboxSnapshot(workspaceId: string, snapshot: DurableStateSnapshot) {
+function recordInvalidDurableSnapshot(workspaceId: string, entityType: string, entityId: string, error: unknown) {
+  const candidate = error as { code?: string; details?: { missing?: unknown } }
+  const missing = Array.isArray(candidate.details?.missing) ? candidate.details.missing.filter((item): item is string => typeof item === 'string') : [candidate.code ?? 'unknown']
+  const warnings = invalidDurableSnapshots.get(workspaceId) ?? []
+  if (!warnings.some(item => item.entityType === entityType && item.entityId === entityId)) warnings.push({ entityType, entityId, missing })
+  invalidDurableSnapshots.set(workspaceId, warnings)
+}
+
+export function hydrateOutboxSnapshot(workspaceId: string, snapshot: DurableStateSnapshot) {
   const payload = snapshot.payload
-  if (payload.entityType === 'publish_batch') {
-    const entity = payload.entity as (PublishBatch & { id?: string }) | undefined
-    if (!entity) return
-    const batchId = String(entity.id ?? snapshot.aggregateId)
-    publishBatches.set(batchId, entity)
-    persistedPublishBatches.set(batchId, structuredClone(entity))
-  }
-  else if (payload.entityType === 'automation_policy') {
-    const policy = payload.entity as AutomationPolicy | undefined
-    if (policy) automationPolicies.set(automationPolicyKey(workspaceId, policy.platform, policy.accountId), policy)
-  }
-  else if (payload.entityType === 'merchant_intent' && payload.entity && typeof payload.entity === 'object') {
-    merchantIntents.set(`${workspaceId}:${snapshot.aggregateId}`, payload.entity as Record<string, unknown>)
-  }
-  else if (payload.entityType === 'product' || payload.entityType === 'task' || payload.entityType === 'content_version' || payload.entityType === 'publish_job' || payload.entityType === 'platform_account' || payload.entityType === 'generation_job' || payload.entityType === 'image_generation_job' || payload.entityType === 'brand_profile' || payload.entityType === 'asset' || payload.entityType === 'feedback' || payload.entityType === 'sync_job') {
-    service.hydrateSnapshot({ entityType: payload.entityType, entity: payload.entity })
+  try {
+    if (payload.entityType === 'publish_batch') {
+      const entity = payload.entity as (PublishBatch & { id?: string }) | undefined
+      if (!entity) return
+      const batchId = String(entity.id ?? snapshot.aggregateId)
+      publishBatches.set(batchId, entity)
+      persistedPublishBatches.set(batchId, structuredClone(entity))
+    }
+    else if (payload.entityType === 'automation_policy') {
+      const policy = payload.entity as AutomationPolicy | undefined
+      if (policy) automationPolicies.set(automationPolicyKey(workspaceId, policy.platform, policy.accountId), policy)
+    }
+    else if (payload.entityType === 'merchant_intent' && payload.entity && typeof payload.entity === 'object') {
+      merchantIntents.set(`${workspaceId}:${snapshot.aggregateId}`, payload.entity as Record<string, unknown>)
+    }
+    else if (payload.entityType === 'product' || payload.entityType === 'task' || payload.entityType === 'content_version' || payload.entityType === 'publish_job' || payload.entityType === 'platform_account' || payload.entityType === 'generation_job' || payload.entityType === 'image_generation_job' || payload.entityType === 'brand_profile' || payload.entityType === 'asset' || payload.entityType === 'feedback' || payload.entityType === 'sync_job') {
+      service.hydrateSnapshot({ entityType: payload.entityType, entity: payload.entity })
+    }
+  } catch (error) {
+    const entity = payload.entity as { id?: unknown } | undefined
+    const entityId = typeof entity?.id === 'string' ? entity.id : snapshot.aggregateId
+    recordInvalidDurableSnapshot(workspaceId, typeof payload.entityType === 'string' ? payload.entityType : 'unknown', entityId, error)
   }
 }
 
@@ -3601,14 +3615,10 @@ async function hydrateWorkspaceFromPersistence(workspaceId: string, options: { e
     else {
       try { service.hydrateSnapshot({ entityType: snapshot.entityType, entity: snapshot.payload }) }
       catch (error) {
-        const candidate = error as { code?: string; details?: { missing?: unknown } }
         // A malformed durable entity must remain unavailable, but it must not
         // prevent unrelated entities in the same workspace from hydrating.
         // Keep the invalid-snapshot evidence for Ops/metrics and continue.
-        const missing = Array.isArray(candidate.details?.missing) ? candidate.details.missing.filter((item): item is string => typeof item === 'string') : [candidate.code ?? 'unknown']
-        const warnings = invalidDurableSnapshots.get(workspaceId) ?? []
-        if (!warnings.some(item => item.entityType === snapshot.entityType && item.entityId === snapshot.entityId)) warnings.push({ entityType: snapshot.entityType, entityId: snapshot.entityId, missing })
-        invalidDurableSnapshots.set(workspaceId, warnings)
+        recordInvalidDurableSnapshot(workspaceId, snapshot.entityType, snapshot.entityId, error)
       }
     }
   }
