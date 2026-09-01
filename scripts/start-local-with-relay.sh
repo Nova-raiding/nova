@@ -24,7 +24,7 @@ export AI_MODEL=${AI_MODEL:-deepseek-v4-pro}
 export IMAGE_MODEL=${IMAGE_MODEL:-qwen-image-3.0}
 export IMAGE_EDIT_MODEL=${IMAGE_EDIT_MODEL:-qwen-image-3.0}
 export IMAGE_RESPONSE_FORMAT=${IMAGE_RESPONSE_FORMAT:-url}
-export OCR_MODEL=${OCR_MODEL:-qwen3-max}
+export OCR_MODEL=${OCR_MODEL:-agnes-2.5-flash}
 # The SVIP relay key exposes HappyHorse video models. The current application
 # sends text-only prompts, so use T2V until the I2V first-frame payload is
 # implemented end-to-end.
