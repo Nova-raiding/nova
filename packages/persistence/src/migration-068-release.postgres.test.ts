@@ -147,7 +147,6 @@ describe('persistence migration 068 release acceptance', () => {
       await app?.end()
       await Promise.all([fresh?.end(), upgrade?.end(), restored?.end()])
       for (const name of [freshName, upgradeName, restoreName]) {
-        await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [name])
         await admin.query(`DROP DATABASE IF EXISTS "${name}"`)
       }
       await admin.query(`DROP ROLE IF EXISTS "${probeRole}"`)
