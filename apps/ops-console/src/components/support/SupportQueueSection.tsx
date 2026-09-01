@@ -32,6 +32,7 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
   return (
     <Card
       title="客服工单队列"
+      aria-busy={model.loading}
       extra={<Space wrap>
         <Button icon={<ReloadOutlined aria-hidden="true" />} loading={model.loading} onClick={() => void model.reload()}>刷新</Button>
         <Button type="primary" icon={<PlusOutlined aria-hidden="true" />} disabled={initialLoadFailed} title={initialLoadFailed ? "请先修复工作区配置并刷新工单" : undefined} onClick={() => setCreateOpen(true)}>新建工单</Button>
