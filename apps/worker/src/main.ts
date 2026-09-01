@@ -703,7 +703,7 @@ function imageReconciliationCandidates(page: unknown): ImageGenerationReconcilia
     const providerRequestId = typeof item.provider_request_id === 'string' ? item.provider_request_id.trim() : ''
     const executionAttempt = Number(item.execution_attempt ?? item.attempt ?? 0)
     const queryAttempt = Number(item.query_attempt ?? executionAttempt)
-    const key = `${jobId}:${executionAttempt}:${providerRequestId}`
+    const key = `${jobId}:${eventId}:${intentHash}:${executionAttempt}:${providerRequestId}`
     if (!jobId || !eventId || !/^[a-f0-9]{64}$/u.test(intentHash) || !providerRequestId || !Number.isSafeInteger(executionAttempt) || executionAttempt < 1 || !Number.isSafeInteger(queryAttempt) || queryAttempt < 1 || seen.has(key)) return []
     seen.add(key)
     const actionId = typeof item.action_id === 'string' && item.action_id.trim() ? item.action_id.trim() : undefined
@@ -743,7 +743,7 @@ export async function reconcileImageGenerationWorkspace(input: Parameters<typeof
     const candidates = imageReconciliationCandidates(page)
     const statusResults: unknown[] = []
     if (input.queryStatus) for (const candidate of candidates) {
-      const candidateKey = `${candidate.jobId}:${candidate.executionAttempt}:${candidate.providerRequestId}`
+      const candidateKey = `${candidate.jobId}:${candidate.eventId}:${candidate.intentHash}:${candidate.executionAttempt}:${candidate.providerRequestId}`
       if (queriedCandidates.has(candidateKey)) continue
       queriedCandidates.add(candidateKey)
       let status: ImageGenerationReconciliationEvidence

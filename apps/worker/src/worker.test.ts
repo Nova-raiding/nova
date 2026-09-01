@@ -634,6 +634,26 @@ describe('worker production entry', () => {
     expect(statusRequest?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
   })
 
+  it('does not collapse distinct event bindings that reuse a provider request id', async () => {
+    const queried: string[] = []
+    const evidence: string[] = []
+    await reconcileImageGenerationWorkspace({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a',
+      queryStatus: async providerRequestId => { queried.push(providerRequestId); return { state: 'processing', providerRequestId, evidence: { observedAt: '2026-08-31T00:00:00.000Z', source: 'provider_status' } } },
+      fetcher: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [
+          { job_id: 'job_1', event_id: 'event_1', intent_hash: 'a'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_1' },
+          { job_id: 'job_1', event_id: 'event_2', intent_hash: 'b'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_1' },
+        ], next_cursor: null }), { status: 200 })
+        evidence.push(JSON.parse(String(init?.body)).event_id)
+        return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
+      },
+    })
+    expect(queried).toEqual(['provider_1', 'provider_1'])
+    expect(evidence).toEqual(['event_1', 'event_2'])
+  })
+
   it('derives the same idempotency key for an identical provider observation', () => {
     const input = { workspaceId: 'ws_a', jobId: 'job_1', eventId: 'event_1', intentHash: 'a'.repeat(64), executionAttempt: 2, queryAttempt: 3, providerRequestId: 'provider_1' } as const
     expect(imageReconciliationIdempotencyKey(input)).toBe(imageReconciliationIdempotencyKey({ ...input }))
