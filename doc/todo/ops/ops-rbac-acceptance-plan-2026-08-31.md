@@ -574,7 +574,7 @@ rg -n --glob '!**/*.test.*' "(sessionRoles|opsSession\\?\\.roles|model\\.session
 - [x] **P1-FE-007：403 相关信息可传播。** `OpsRequestError.requestId/traceId/details.decision_id/reason_code/obligations_missing` 已映射到统一错误呈现并由 `opsClient.test.ts`、`OpsPageError.test.tsx`、`permissionUx.test.tsx` 覆盖；客户端预判不生成 request/trace ID，明确区分尚未发请求与服务端拒绝。
 - [ ] **P1-FE-008：根 AntD 设计系统。** 根 `ConfigProvider` 提供批准的 token/component token；`AntApp` 保持位于所有 `useApp()` consumer 外层。1440×900 与 1920×1080 桌面截图、键盘路径、对比度、reduced-motion 通过；移动/平板不作为本项目门禁。
 - [ ] **P1-FE-009：连接诊断不占主工作区。** OIDC 生产态不常驻 API/token 表单；连接信息进入诊断 Drawer，token 永不回显。local development adapter 必须有醒目标记且不能进入 production build/runtime 配置。
-- [x] **P1-FE-009：连接诊断与生产认证边界（本地切片完成）。** 连接配置仅在诊断 Drawer 展示；已保存 Bearer token 不进入表单草稿或 DOM，空 token 保存保持既有凭据。production bundle 无条件启用 OIDC，`VITE_OPS_AUTH_MODE=local` 不能降级。`OpsHeader.test.tsx`、`opsClient.test.ts`、production build 及 1440×900 production preview 验证预置 secret 不在 DOM、无 actor/token 字段且显示 SSO 托管会话；真实 OIDC gateway 登录与部署证据仍为上线门禁。
+- [x] **P1-FE-009：连接诊断与生产认证边界（本地切片完成）。** 连接配置仅在诊断 Drawer 展示；已保存 Bearer token 不进入表单草稿或 DOM，空 token 保存保持既有凭据。production bundle 无条件启用 OIDC，`VITE_OPS_AUTH_MODE=local` 不能降级；启动时同时清除 localStorage/sessionStorage 的 local adapter 配置、endpoint、actor、token、workspace/workbench 覆盖。`OpsHeader.test.tsx`、`opsClient.test.ts`、production build 及 1440×900 production preview 验证预置 secret 不在 DOM、无 actor/token 字段、无本地 `8787` 请求、console 无错误且显示 SSO 托管会话；真实 OIDC gateway 登录与部署证据仍为上线门禁。
 
 ### 19.4 后端授权、scope、审计 P1 completion checklist
 
