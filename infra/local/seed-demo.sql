@@ -89,6 +89,45 @@ VALUES ('ws_demo','trialing','demo_fixture','Local Demo (Fixture)','monthly',0,6
   '2026-08-01T00:00:00Z','2026-09-01T00:00:00Z')
 ON CONFLICT (workspace_id) DO NOTHING;
 
+-- The scanner contract exercises the real asset.uploaded worker path. Seed an
+-- authoritative, non-production creative-point grant so that the commercial
+-- access recheck can admit that local scan without falling back to a legacy
+-- quota or an unknown balance. The rows are fixed and replay-safe.
+INSERT INTO creative_point_access_state (
+  workspace_id, available_points, reserved_points, settled_points, revision, updated_at
+)
+VALUES ('ws_demo', 10000, 0, 0, 1, '2026-08-29T00:02:00Z')
+ON CONFLICT (workspace_id) DO NOTHING;
+
+INSERT INTO creative_point_operations (
+  id, workspace_id, kind, idempotency_key, status, request, result, created_at, completed_at
+)
+VALUES (
+  'cpo_demo_fixture_grant', 'ws_demo', 'grant', 'demo-fixture-grant-v1', 'completed',
+  '{"source_type":"local_fixture","source_id":"ws_demo","points":10000,"expires_at":null,"metadata":{"fixture":true,"productionEvidence":false}}',
+  '{"fixture":true,"productionEvidence":false}', '2026-08-29T00:02:00Z', '2026-08-29T00:02:00Z'
+)
+ON CONFLICT (workspace_id, id) DO NOTHING;
+
+INSERT INTO creative_point_grants (
+  id, workspace_id, operation_id, source_type, source_id, points, expires_at, metadata, created_at
+)
+VALUES (
+  'cpg_demo_fixture_grant', 'ws_demo', 'cpo_demo_fixture_grant', 'local_fixture', 'ws_demo', 10000, NULL,
+  '{"fixture":true,"productionEvidence":false}', '2026-08-29T00:02:00Z'
+)
+ON CONFLICT (workspace_id, id) DO NOTHING;
+
+INSERT INTO creative_point_ledger_events (
+  id, workspace_id, operation_id, event_type, points_delta,
+  available_after, reserved_after, settled_after, access_revision, metadata, created_at
+)
+VALUES (
+  'cpl_demo_fixture_grant', 'ws_demo', 'cpo_demo_fixture_grant', 'granted', 10000,
+  10000, 0, 0, 1, '{"fixture":true,"productionEvidence":false}', '2026-08-29T00:02:00Z'
+)
+ON CONFLICT (workspace_id, id) DO NOTHING;
+
 INSERT INTO workspace_platform_settings (workspace_id,platform,enabled,display_name,store_alias,updated_by)
 VALUES
  ('ws_demo','jd',true,'京东 · Fixture','京东演示','local_compose_seed'),

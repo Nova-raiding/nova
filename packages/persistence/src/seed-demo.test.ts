@@ -19,6 +19,7 @@ describe('local PostgreSQL demo seed contract', () => {
 
     for (const relation of [
       'workspace_commercial_settings', 'workspace_subscriptions', 'workspace_platform_settings',
+      'creative_point_access_state', 'creative_point_operations', 'creative_point_grants', 'creative_point_ledger_events',
       'platform_accounts', 'products', 'tasks', 'business_entity_snapshots', 'rule_pack_versions',
       'workspace_operation_alerts', 'workspace_operation_audit', 'workspace_support_tickets',
       'workspace_support_ticket_events', 'ops_incidents', 'ops_incident_timeline',
@@ -27,6 +28,9 @@ describe('local PostgreSQL demo seed contract', () => {
 
     expect(sql).toContain("'pending','fixture'")
     expect(sql).toContain("'pending_cost'")
+    expect(sql).toContain("'cpo_demo_fixture_grant'")
+    expect(sql).toContain("'cpg_demo_fixture_grant'")
+    expect(sql).toContain("'cpl_demo_fixture_grant'")
     expect((sql.match(/ON CONFLICT/gu) ?? []).length).toBeGreaterThanOrEqual(18)
   })
 })
