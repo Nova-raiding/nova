@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const WORKER_REQUEST_PROOF_MAX_SKEW_SECONDS = 60
+const MAX_CONFIGURED_SKEW_SECONDS = 15 * 60
 export const WORKER_ROLES = ['sync', 'generation', 'publish', 'reconcile', 'automation', 'scan'] as const
 export type WorkerRequestRole = typeof WORKER_ROLES[number]
 
@@ -58,7 +59,7 @@ export function verifyWorkerRequestProof(input: ProofBase & { timestamp: string;
     const maxSkewSeconds = input.maxSkewSeconds ?? WORKER_REQUEST_PROOF_MAX_SKEW_SECONDS
     if (!WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !isSafeRequestTarget(input.requestTarget)
       || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
-      || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0
+      || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0 || maxSkewSeconds > MAX_CONFIGURED_SKEW_SECONDS
       || Math.abs(nowSeconds - timestampSeconds) > maxSkewSeconds || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
     const actualDigest = workerRequestBodySha256(input.body)
     if (!safeEqualHex(input.bodySha256.toLowerCase(), actualDigest)) return false

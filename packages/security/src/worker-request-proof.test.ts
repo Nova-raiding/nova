@@ -21,6 +21,8 @@ describe('worker request proof', () => {
     expect(verifyWorkerRequestProof({ ...base, requestTarget: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
     expect(verifyWorkerRequestProof({ ...base, secret: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
     expect(verifyWorkerRequestProof({ ...base, maxSkewSeconds: Number.NaN, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyWorkerRequestProof({ ...base, maxSkewSeconds: 901, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyWorkerRequestProof({ ...base, maxSkewSeconds: 900, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature, nowSeconds: base.timestampSeconds! + 900 })).toBe(true)
   })
 
   it('rejects control characters and oversized request targets', () => {

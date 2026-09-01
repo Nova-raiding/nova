@@ -41,6 +41,8 @@ describe('scanner request proof', () => {
     expect(verifyScannerRequestProof({ ...vector, requestTarget: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
     expect(verifyScannerRequestProof({ ...vector, secret: null as unknown as string, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
     expect(verifyScannerRequestProof({ ...vector, maxSkewSeconds: Number.NaN, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyScannerRequestProof({ ...vector, maxSkewSeconds: 901, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature })).toBe(false)
+    expect(verifyScannerRequestProof({ ...vector, maxSkewSeconds: 900, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature, nowSeconds: Number(vector.timestamp) + 900 })).toBe(true)
   })
 
   it('rejects control characters and oversized request targets', () => {

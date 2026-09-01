@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export const SCANNER_REQUEST_PROOF_MAX_SKEW_SECONDS = 60
+const MAX_CONFIGURED_SKEW_SECONDS = 15 * 60
 const MAX_REQUEST_TARGET_LENGTH = 2_048
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u
 
@@ -104,7 +105,7 @@ export function verifyScannerRequestProof(input: ScannerRequestProofVerification
     if (!/^[A-Z]+$/u.test(input.method) || !isSafeRequestTarget(input.requestTarget)
       || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId)
       || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
-      || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0
+      || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0 || maxSkewSeconds > MAX_CONFIGURED_SKEW_SECONDS
       || Math.abs(nowSeconds - timestampSeconds) > maxSkewSeconds || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
     const actualBodySha256 = scannerRequestBodySha256(input.body)
     if (!safeEqualHex(input.bodySha256.toLowerCase(), actualBodySha256)) return false
