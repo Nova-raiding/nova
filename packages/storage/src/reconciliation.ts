@@ -39,7 +39,7 @@ export interface ReconciliationReport {
    * the inventory health result so a failed attempt cannot look clean. */
   runStatus?: 'succeeded' | 'failed'
   lastRunAt?: string
-  error?: { code: string; message: string }
+  error?: ReconciliationErrorEvidence
   quota: {
     limitBytes?: number
     reservedBytes: number
@@ -59,6 +59,14 @@ export interface ReconciliationReport {
     invalidMetadata: number
   }
   findings: ReconciliationFinding[]
+}
+
+export interface ReconciliationErrorEvidence {
+  code: string
+  message: string
+  /** Present on runner-produced failures; optional for legacy persisted snapshots. */
+  retryable?: boolean
+  nextActions?: readonly ('retry' | 'manual_review')[]
 }
 
 export interface ReconciliationInput {

@@ -30,9 +30,25 @@ describe('storage reconciliation runner', () => {
     await expect(status.get('ws_b')).resolves.toMatchObject({
       status: 'attention_required',
       runStatus: 'failed',
-      error: { code: 'RECONCILIATION_PROVIDER_FAILED', message: 'provider unavailable' },
+      error: { code: 'RECONCILIATION_PROVIDER_FAILED', message: 'provider unavailable', retryable: true, nextActions: ['retry'] },
     })
     await expect(status.list('ws_b')).resolves.toHaveLength(1)
+  })
+
+  it('rejects malformed workspace batches before invoking providers', async () => {
+    const status = new MemoryReconciliationStatusStore()
+    const list = async () => { throw new Error('provider must not be called') }
+    await expect(runReconciliationCycle({ workspaces: ['ws_a', ''], inventory: { list }, references: { list }, status }))
+      .rejects.toThrow('RECONCILIATION_WORKSPACE_REQUIRED')
+    await expect(runReconciliationCycle({ workspaces: ['ws_a', 'ws_a'], inventory: { list }, references: { list }, status }))
+      .rejects.toThrow('RECONCILIATION_WORKSPACE_DUPLICATE')
+  })
+
+  it('records retryable evidence for transient failures and manual review for unknown failures', async () => {
+    const status = new MemoryReconciliationStatusStore()
+    await runReconciliationCycle({ workspaces: ['ws_transient', 'ws_unknown'], inventory: { list: async workspaceId => { throw new Error(workspaceId === 'ws_transient' ? 'provider temporarily unavailable' : 'schema mismatch') } }, references: { list: async () => refs }, status })
+    await expect(status.get('ws_transient')).resolves.toMatchObject({ error: { retryable: true, nextActions: ['retry'] } })
+    await expect(status.get('ws_unknown')).resolves.toMatchObject({ error: { retryable: false, nextActions: ['manual_review'] } })
   })
 
   it('coalesces overlapping timer ticks and can be stopped', async () => {

@@ -1,4 +1,4 @@
-import { reconcileObjectInventory, type DurableObjectReference, type ObjectInventoryEntry, type ReconciliationReport } from './reconciliation.js'
+import { reconcileObjectInventory, type DurableObjectReference, type ObjectInventoryEntry, type ReconciliationErrorEvidence, type ReconciliationReport } from './reconciliation.js'
 
 export interface ObjectInventoryProvider {
   list(workspaceId: string): Promise<readonly ObjectInventoryEntry[]>
@@ -44,7 +44,28 @@ export interface ReconciliationCycleResult {
   reports: ReconciliationReport[]
 }
 
+function validateWorkspaces(workspaces: readonly string[]): void {
+  const seen = new Set<string>()
+  for (const workspaceId of workspaces) {
+    if (typeof workspaceId !== 'string' || !workspaceId.trim()) throw new Error('RECONCILIATION_WORKSPACE_REQUIRED')
+    if (seen.has(workspaceId)) throw new Error('RECONCILIATION_WORKSPACE_DUPLICATE')
+    seen.add(workspaceId)
+  }
+}
+
+function reconciliationErrorEvidence(error: unknown): ReconciliationErrorEvidence {
+  const message = error instanceof Error ? error.message.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 1_000) : 'reconciliation provider failed'
+  const retryable = error instanceof Error && /(?:temporarily|timeout|unavailable|rate limit|too many requests|network)/iu.test(message)
+  return {
+    code: 'RECONCILIATION_PROVIDER_FAILED',
+    message,
+    retryable,
+    nextActions: retryable ? ['retry'] : ['manual_review'],
+  }
+}
+
 export async function runReconciliationCycle(input: ReconciliationCycleInput): Promise<ReconciliationCycleResult> {
+  validateWorkspaces(input.workspaces)
   const reports: ReconciliationReport[] = []
   let failed = 0
   for (const workspaceId of input.workspaces) {
@@ -67,7 +88,7 @@ export async function runReconciliationCycle(input: ReconciliationCycleInput): P
         quota: { reservedBytes: 0, usedBytes: 0, projectedBytes: 0 },
         counts: { references: 0, inventoryObjects: 0, matched: 0, missing: 0, metadataMismatches: 0, orphans: 0, crossWorkspace: 0, duplicates: 0, invalidMetadata: 0 },
         findings: [],
-        error: { code: 'RECONCILIATION_PROVIDER_FAILED', message: error instanceof Error ? error.message.slice(0, 1_000) : 'reconciliation provider failed' },
+        error: reconciliationErrorEvidence(error),
       }
       await input.status.put(failure)
       input.onError?.(workspaceId, error)
