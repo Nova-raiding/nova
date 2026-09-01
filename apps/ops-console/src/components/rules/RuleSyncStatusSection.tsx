@@ -1,10 +1,12 @@
 import { ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Table, Tag, Typography } from "antd";
+import { useEffect, useId, useRef } from "react";
 import type { RuleSyncStatus } from "../../types/ops";
 
 interface RuleSyncStatusSectionProps {
   loading: boolean;
   statuses: RuleSyncStatus[];
+  error?: string | null;
   onRefresh: () => void;
 }
 
@@ -17,9 +19,17 @@ const statePresentation: Record<RuleSyncStatus["state"], { color: string; label:
 export function RuleSyncStatusSection({
   loading,
   statuses,
+  error,
   onRefresh,
 }: RuleSyncStatusSectionProps) {
   const blocked = statuses.filter((item) => item.state !== "ready").length;
+  const errorRef = useRef<HTMLDivElement>(null);
+  const errorTitleId = useId();
+  const errorDescriptionId = useId();
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus({ preventScroll: true });
+  }, [error]);
 
   return (
     <section aria-label="六平台规则同步" aria-busy={loading}>
@@ -35,12 +45,38 @@ export function RuleSyncStatusSection({
             disabled={loading}
             aria-busy={loading}
             aria-label={loading ? "正在刷新规则同步状态" : "刷新规则同步状态"}
+            style={{ minHeight: 44 }}
             onClick={onRefresh}
           >
             {loading ? "刷新中" : "刷新状态"}
           </Button>
         }
       >
+      {error ? (
+        <div
+          ref={errorRef}
+          tabIndex={-1}
+          aria-label="规则同步错误摘要"
+          aria-labelledby={errorTitleId}
+          aria-describedby={errorDescriptionId}
+          data-focus-target="error-summary"
+        >
+          <Alert
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            type="error"
+            showIcon
+            title={<span id={errorTitleId}>规则同步状态读取失败</span>}
+            description={<span id={errorDescriptionId}>{error}</span>}
+            action={
+              <Button htmlType="button" style={{ minHeight: 44 }} onClick={onRefresh}>
+                重试规则同步
+              </Button>
+            }
+          />
+        </div>
+      ) : null}
       <Alert
         type={statuses.length > 0 && blocked === 0 ? "success" : "warning"}
         showIcon

@@ -19,6 +19,7 @@ export function RulesPage({ model }: RulesPageProps) {
       <RuleSyncStatusSection
         loading={model.ruleSyncLoading}
         statuses={model.ruleSyncStatuses}
+        error={model.error}
         onRefresh={() => void model.loadRules()}
       />
       <RuleCenterSection model={model} />

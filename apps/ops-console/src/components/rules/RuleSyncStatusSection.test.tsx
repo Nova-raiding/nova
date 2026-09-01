@@ -57,4 +57,34 @@ describe("RuleSyncStatusSection", () => {
     expect(html).toContain('aria-label="正在刷新规则同步状态"');
     expect(html).toContain("2026.08");
   });
+
+  it("keeps known statuses visible and exposes a focusable error recovery summary", () => {
+    const html = renderToStaticMarkup(
+      <RuleSyncStatusSection
+        loading={false}
+        error="规则服务暂时不可用"
+        onRefresh={() => undefined}
+        statuses={[{
+          platform: "douyin",
+          label: "抖音",
+          officialUrl: "https://example.test/rules",
+          configured: true,
+          machineReadable: true,
+          latestVersion: "2026.08",
+          sourceCheckedAt: "2026-08-31T00:00:00.000Z",
+          ageHours: 1,
+          stale: false,
+          state: "ready",
+          reason: "规则来源在检查窗口内",
+        }]}
+      />,
+    );
+
+    expect(html).toContain('data-focus-target="error-summary"');
+    expect(html).toContain('aria-label="规则同步错误摘要"');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("规则服务暂时不可用");
+    expect(html).toContain("重试规则同步");
+    expect(html).toContain("2026.08");
+  });
 });
