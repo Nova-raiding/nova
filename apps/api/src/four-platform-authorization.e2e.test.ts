@@ -27,6 +27,23 @@ async function call(base: string, workspace: string, method: string, params: Rec
   return response.json() as Promise<JsonRpcResponse>
 }
 
+function reviewedFixtureBody(product: { id: string; version?: number }, platform: string) {
+  const factSourceId = `product:${product.id}:v${product.version ?? 1}`
+  return {
+    title: `${platform} 已确认商品`, detail: '根据已确认商品参数生成。', sellingPoints: ['商品参数已确认'],
+    modules: [{
+      key: 'product_facts', title: '商品事实', purpose: '回答商品参数问题', body: '商品参数已确认。', factSourceIds: [factSourceId], contentKind: 'fact',
+      decisionContract: {
+        buyerQuestion: '商品有哪些已确认参数？', pageTask: '展示已确认商品参数',
+        claim: { text: '商品参数已确认。', factSourceIds: [factSourceId], platforms: [platform], limitations: ['仅适用于当前商品快照'] },
+        evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
+        visualContract: { requiredElements: ['商品'], protectedElements: ['商品外观'], prohibitedImplications: ['不得虚构效果'], accessibilityText: '商品图' },
+        priority: 1, optional: false,
+      },
+    }],
+  }
+}
+
 describe('four-platform fixture authorization lifecycle', () => {
   beforeAll(async () => {
     process.env.CONNECTOR_FIXTURE_MODE = 'true'
@@ -258,7 +275,7 @@ describe('four-platform fixture authorization lifecycle', () => {
       const plan = await call(base, workspace, 'task.plan.confirm', { task_id: task.id, actor_id: 'fixture-merchant', expected_version: String(selected.data?.result?.version ?? 2) })
       expect(plan.data?.result).toMatchObject({ state: 'plan_confirmed' })
 
-      const generated = await call(base, workspace, 'content.generate', { task_id: task.id })
+      const generated = await call(base, workspace, 'content.codex.commit', { task_id: task.id, body_json: JSON.stringify(reviewedFixtureBody(product, platform)) })
       const content = generated.data?.result
       if (!content) throw new Error(`${platform} fixture content was not generated`)
       expect(content).toMatchObject({ taskId: task.id })

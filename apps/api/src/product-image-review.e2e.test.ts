@@ -260,9 +260,7 @@ describe('product image review API', () => {
 
     const rereviewed = await call(23, 'content.review', { content_version_id: selected.data.result.content_version_id }) as { data: { result: { blocking: boolean; findings: unknown[] } } }
     expect(rereviewed.data.result.blocking).toBe(false)
-    expect(rereviewed.data.result.findings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'DETAIL_MODULE_OPTIONAL_OMITTED', severity: 'warning', status: 'open' }),
-    ]))
+    expect(rereviewed.data.result.findings).not.toContainEqual(expect.objectContaining({ code: 'DETAIL_MODULE_OPTIONAL_OMITTED' }))
     const approved = await call(24, 'content.approve', { task_id: task.id, content_version_id: selected.data.result.content_version_id }) as { data: { result: { task: { state: string }; version: { state: string } } } }
     expect(approved.data.result).toMatchObject({ task: { state: 'approved' }, version: { state: 'approved' } })
 

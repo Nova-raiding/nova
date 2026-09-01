@@ -28,7 +28,20 @@ describe('brand-bound content review', () => {
     expect(task.data.answers.brand_id).toBe(brand.data.id)
     await fetch(`${base}/v1/tasks/${task.data.id}/directions`, { method: 'POST', headers, body: JSON.stringify({ direction_id: 'A' }) })
     await fetch(`${base}/v1/tasks/${task.data.id}/plan/confirm`, { method: 'POST', headers, body: '{}' })
-    const committed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'content.codex.commit', params: { task_id: task.data.id, body_json: JSON.stringify({ title: '云朵顶级外套', detail: '根据已确认商品事实生成。', sellingPoints: ['事实可追溯'] }) } }) }).then(response => response.json()) as { data: { result: { id: string } } }
+    const factSourceId = `product:${product.data.id}:v2`
+    const committed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'content.codex.commit', params: { task_id: task.data.id, body_json: JSON.stringify({
+      title: '云朵顶级外套', detail: '根据已确认商品事实生成。', sellingPoints: ['事实可追溯'],
+      modules: [{
+        key: 'product_facts', title: '商品事实', purpose: '说明已确认商品事实', body: '云朵顶级外套，事实可追溯。', factSourceIds: [factSourceId], contentKind: 'fact',
+        decisionContract: {
+          buyerQuestion: '这件商品有哪些已确认信息？', pageTask: '展示已确认商品事实',
+          claim: { text: '云朵顶级外套，事实可追溯。', factSourceIds: [factSourceId], platforms: ['taobao'], limitations: ['仅适用于当前商品快照'] },
+          evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
+          visualContract: { requiredElements: ['商品'], protectedElements: ['商品外观'], prohibitedImplications: ['不得虚构功效'], accessibilityText: '云朵外套商品图' },
+          priority: 1, optional: false,
+        },
+      }],
+    }) } }) }).then(response => response.json()) as { data: { result: { id: string } } }
 
     const reviewed = await fetch(`${base}/v1/content-versions/${committed.data.result.id}/review`, { headers }).then(response => response.json()) as { data: { blocking: boolean; findings: Array<{ code: string; priority: string; evidence: { kind: string; sourceIds: string[] } }>; categories: Array<{ id: string; status: string }> } }
     expect(reviewed.data.blocking).toBe(true)
