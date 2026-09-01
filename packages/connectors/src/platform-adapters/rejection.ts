@@ -23,11 +23,18 @@ export function platformEnvelope(value: unknown): JsonRecord | undefined {
 /** Provider correlation evidence only. Local idempotency keys are deliberately
  * not accepted as a fallback. */
 export function providerRequestId(value: unknown): string | undefined {
-  const root = platformEnvelope(value)
-  const candidate = root?.request_id ?? root?.requestId ?? root?.provider_request_id
-    ?? root?.providerRequestId ?? root?.task_id ?? root?.taskId ?? root?.transaction_id
-  const result = text(candidate)
-  return result && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(result) && result.length <= 256 ? result : undefined
+  let root = platformEnvelope(value)
+  for (let depth = 0; root && depth < 3; depth += 1) {
+    const candidate = root.request_id ?? root.requestId ?? root.provider_request_id
+      ?? root.providerRequestId ?? root.task_id ?? root.taskId ?? root.transaction_id
+    const result = text(candidate)
+    if (result && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(result) && result.length <= 256) return result
+    // Error responses use a second, documented envelope after `data`/`result`.
+    // Follow only provider error keys; never recursively search arbitrary data.
+    root = [root.error_response, root.platform_rejection, root.rejection, root.error]
+      .map(record).find(Boolean)
+  }
+  return undefined
 }
 
 function text(...values: unknown[]): string | undefined {
