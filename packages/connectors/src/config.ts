@@ -180,7 +180,9 @@ function buildOne(platform: Platform, source: ConfigSource): { config?: HttpConn
   if (!validUrl(authorizeUrl)) missing.push(`${prefix}_OAUTH_AUTHORIZE_URL`)
   if (!validUrl(tokenUrl)) missing.push(`${prefix}_OAUTH_TOKEN_URL`)
   if (!validUrl(baseUrl)) missing.push(`${prefix}_API_BASE_URL`)
-  if (process.env.NODE_ENV === 'production') {
+  // Read the environment from the supplied source so config-center/fixture
+  // callers get the same fail-closed path contract as process.env callers.
+  if (value(source, 'NODE_ENV') === 'production') {
     for (const key of [`${prefix}_SYNC_PATH`, `${prefix}_CREATE_PATH`, `${prefix}_UPDATE_PATH`, `${prefix}_QUERY_PATH`]) {
       if (!value(source, key)) missing.push(key)
     }

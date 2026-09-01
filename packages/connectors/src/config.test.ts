@@ -18,6 +18,15 @@ describe('platform HTTP configuration', () => {
     expect(result.readiness.jd.reasons).toContain('HTTPS_REQUIRED')
   })
 
+  it('requires explicit API paths when the injected source is production', () => {
+    const result = buildHttpConnectorConfigs({ ...base, NODE_ENV: 'production' })
+    expect(result.missing.jd).toEqual(expect.arrayContaining([
+      'JD_SYNC_PATH', 'JD_CREATE_PATH', 'JD_UPDATE_PATH', 'JD_QUERY_PATH',
+    ]))
+    expect(result.readiness.jd.reasons).toContain('CONFIG_MISSING')
+    expect(result.configs.jd).toBeUndefined()
+  })
+
   it('builds four independent configs and does not merge taobao with tmall', () => {
     const result = buildHttpConnectorConfigs(base)
     expect(Object.keys(result.configs)).toEqual([])
