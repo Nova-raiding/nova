@@ -152,6 +152,14 @@ describe('PostgresBillingRepository recharge order reporting', () => {
 })
 
 describe('PostgresBillingRepository recharge settlement atomicity', () => {
+  it('rejects a callback without a provider trade id before changing the order', async () => {
+    const client = new RecordingClient()
+    const repository = new PostgresBillingRepository(new RecordingPool(client))
+
+    await expect(repository.markPaid({ workspaceId: 'ws_wallet', orderId: 'recharge_1', providerTradeId: '  ', amountFen: 1000, eventSource: 'provider_callback' })).rejects.toThrow('billing callback provider trade id required')
+    expect(client.calls).toHaveLength(0)
+  })
+
   it('appends the paid outbox event inside the same transaction as the order and wallet credit', async () => {
     const client = new RecordingClient()
     const pending = { id: 'recharge_1', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: 1000, state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }
