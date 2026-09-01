@@ -46,6 +46,24 @@ describe('BrandUnitService', () => {
     expect(() => service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-1' })).toThrowError(expect.objectContaining({ code: 'LISTING_CONFLICT' }))
   })
 
+  it('returns workspace-scoped canonical detail and fail-closed publish status', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, id: 'canonical-detail-1', title: '详情外套' })
+    const draft = service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-detail-1' })
+
+    expect(service.getCanonicalProductDetail('ws_1', product.id)).toMatchObject({
+      product: { id: product.id, workspaceId: 'ws_1' },
+      brand: { id: a.id, workspaceId: 'ws_1' },
+      listings: [{ id: draft.id, workspaceId: 'ws_1', state: 'draft' }],
+      publishGate: { status: 'blocked', blockers: ['CANONICAL_LISTING_NOT_ACTIVE'] },
+    })
+    expect(() => service.getCanonicalProductDetail('ws_other', product.id)).toThrowError(expect.objectContaining({ code: 'PRODUCT_NOT_FOUND' }))
+
+    service.listings.set(draft.id, { ...draft, state: 'active' })
+    expect(service.getCanonicalProductDetail('ws_1', product.id).publishGate).toEqual({ status: 'verified', blockers: [] })
+  })
+
   it('preflights up to 50 items, aggregates blocked scope and is idempotent', () => {
     const { service, a, b, store } = setup()
     service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })

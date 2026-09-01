@@ -49,7 +49,7 @@ import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOper
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
-import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
 import { planSupportSlaScan } from '../../../packages/workers/src/support-sla-scan.js'
@@ -9247,7 +9247,7 @@ function isNativeMcpMethod(method: unknown): method is 'initialize' | 'tools/lis
 
 function nativeMcpTools() {
   return MCP_METHOD_CONTRACTS
-    .filter(contract => !contract.method.startsWith('ops.'))
+    .filter(contract => !contract.method.startsWith('ops.') && !(MCP_NON_PRODUCTION_METHODS as readonly string[]).includes(contract.method))
     .map(contract => ({
       name: contract.method,
       description: contract.description,
@@ -9288,7 +9288,7 @@ async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, input: 
   if (!params || typeof params !== 'object' || Array.isArray(params)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call params 必须是 JSON 对象', 400)
   const name = (params as Record<string, unknown>).name
   if (typeof name !== 'string' || !name.trim()) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call 必须提供工具名称', 400)
-  if (name.startsWith('ops.') || !MCP_METHOD_CONTRACTS.some(contract => contract.method === name)) {
+  if (name.startsWith('ops.') || (MCP_NON_PRODUCTION_METHODS as readonly string[]).includes(name) || !MCP_METHOD_CONTRACTS.some(contract => contract.method === name)) {
     throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, '原生 MCP 工具不存在或不属于 ChatGPT 商家插件', 404)
   }
   const args = (params as Record<string, unknown>).arguments

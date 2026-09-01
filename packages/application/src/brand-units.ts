@@ -54,6 +54,16 @@ export interface ProductListing {
   state: 'draft' | 'active'
 }
 
+export interface CanonicalProductDetail {
+  product: CanonicalProduct
+  brand: BrandUnit
+  listings: ProductListing[]
+  publishGate: {
+    status: 'verified' | 'blocked'
+    blockers: string[]
+  }
+}
+
 export interface BatchCampaignItemInput {
   brandId: string
   canonicalProductId: string
@@ -184,6 +194,32 @@ export class BrandUnitService {
     const listing: ProductListing = { id, workspaceId: input.workspaceId, brandId: input.brandId, canonicalProductId: input.canonicalProductId, platform: input.platform, accountId: input.accountId, ...(input.remoteProductId?.trim() ? { remoteProductId: input.remoteProductId.trim() } : {}), state: input.state ?? 'draft' }
     this.listings.set(listing.id, listing)
     return { ...listing }
+  }
+
+  /**
+   * Return the complete, workspace-scoped detail needed by a desktop
+   * canonical-product drawer. The publish gate is intentionally derived from
+   * persisted facts only; it never guesses a listing or treats a draft as
+   * publishable.
+   */
+  getCanonicalProductDetail(workspaceId: string, canonicalProductId: string): CanonicalProductDetail {
+    const scope = text(workspaceId, 'workspaceId')
+    const product = this.requireProduct(scope, text(canonicalProductId, 'canonicalProductId'))
+    const brand = this.requireBrand(scope, product.brandId)
+    const listings = [...this.listings.values()]
+      .filter(listing => listing.workspaceId === scope && listing.canonicalProductId === product.id)
+      .map(listing => ({ ...listing }))
+    const blockers: string[] = []
+    if (brand.state !== 'active') blockers.push('BRAND_UNIT_NOT_ACTIVE')
+    if (product.state !== 'active') blockers.push('CANONICAL_PRODUCT_NOT_ACTIVE')
+    if (listings.length === 0) blockers.push('CANONICAL_LISTING_REQUIRED')
+    else if (!listings.some(listing => listing.state === 'active')) blockers.push('CANONICAL_LISTING_NOT_ACTIVE')
+    return {
+      product: { ...product },
+      brand: { ...brand },
+      listings,
+      publishGate: { status: blockers.length ? 'blocked' : 'verified', blockers },
+    }
   }
 
   preflightCampaign(input: { workspaceId: string; idempotencyKey: string; items: BatchCampaignItemInput[] }): BatchCampaignManifest {
