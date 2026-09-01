@@ -1,4 +1,5 @@
 import { Alert, Button, Descriptions, Drawer, Empty, Skeleton, Tag, Typography } from "antd";
+import { useEffect, useRef } from "react";
 import type { FinanceRecordDetail, FinanceSearchRecord } from "../../../../../packages/contracts/src/ops/finance-search.js";
 
 interface FinanceDetailDrawerProps {
@@ -13,6 +14,12 @@ interface FinanceDetailDrawerProps {
 const time = (value: string) => new Date(value).toLocaleString();
 
 export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry, onClose }: FinanceDetailDrawerProps) {
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus({ preventScroll: true });
+  }, [error]);
+
   return (
     <Drawer
       open={Boolean(selected)}
@@ -21,9 +28,12 @@ export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry,
       onClose={onClose}
       destroyOnHidden
       aria-label="财务记录详情"
+      aria-busy={loading || undefined}
     >
-      {loading && <Skeleton active paragraph={{ rows: 8 }} aria-label="正在加载财务详情" />}
-      {!loading && error && <Alert type="error" showIcon title="详情加载失败" description={error} action={<Button onClick={onRetry}>重试详情</Button>} role="alert" />}
+      {loading && <div role="status" aria-live="polite" aria-label="正在加载财务详情"><Skeleton active paragraph={{ rows: 8 }} /></div>}
+      {!loading && error && <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-label="财务详情错误摘要">
+        <Alert type="error" showIcon title="详情加载失败" description={error} action={<Button htmlType="button" onClick={onRetry} aria-label="重试财务详情" style={{ minHeight: 44 }}>重试详情</Button>} />
+      </div>}
       {!loading && !error && !detail && <Empty description="没有可显示的财务详情" />}
       {!loading && detail && (
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>

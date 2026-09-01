@@ -17,6 +17,7 @@ const money = (value: number | undefined, precision = 2) => value === undefined 
 export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) {
   const [form] = Form.useForm<Filters>();
   const initialErrorRef = useRef<HTMLDivElement>(null);
+  const detailTriggerRef = useRef<HTMLElement>(null);
   const summary = controller.page?.summary;
   const initialLoadFailed = Boolean(controller.error && !controller.page && controller.records.length === 0);
   useEffect(() => {
@@ -32,7 +33,7 @@ export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) 
     { title: "Provider 成本", dataIndex: "providerCostCny", width: 140, align: "right", render: value => money(value, 6) },
     { title: "客户计费", dataIndex: "customerChargeCny", width: 130, align: "right", render: value => money(value, 6) },
     { title: "发生时间", dataIndex: "occurredAt", width: 180, render: value => new Date(value).toLocaleString() },
-    { title: "操作", key: "action", width: 100, fixed: "right", render: (_, record) => <Button type="link" onClick={() => void controller.openDetail(record)} aria-label={`查看 ${record.label} ${record.id} 详情`}>详情</Button> },
+    { title: "操作", key: "action", width: 100, fixed: "right", render: (_, record) => <Button type="link" ref={button => { if (controller.selected?.id === record.id) detailTriggerRef.current = button; }} onClick={event => { detailTriggerRef.current = event.currentTarget; void controller.openDetail(record); }} aria-label={`查看 ${record.label} ${record.id} 详情`}>详情</Button> },
   ];
 
   const submit = async (values: Filters) => controller.search({
@@ -92,7 +93,7 @@ export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) 
           <Typography.Text type="secondary">财务数据尚未取得，当前状态不能解释为零记录或零金额。</Typography.Text>
         </div>
       )}
-      <FinanceDetailDrawer selected={controller.selected} detail={controller.detail} loading={controller.detailLoading} error={controller.detailError} onRetry={() => void controller.retryDetail()} onClose={controller.closeDetail} />
+      <FinanceDetailDrawer selected={controller.selected} detail={controller.detail} loading={controller.detailLoading} error={controller.detailError} onRetry={() => void controller.retryDetail()} onClose={() => { controller.closeDetail(); window.requestAnimationFrame(() => detailTriggerRef.current?.focus({ preventScroll: true })); }} />
     </Card>
   );
 }

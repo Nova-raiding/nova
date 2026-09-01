@@ -70,5 +70,18 @@ describe("FinanceSearchSection", () => {
     expect(source).toContain("详情加载失败");
     expect(source).toContain("onClick={onRetry}");
     expect(source).toContain("重试详情");
+    expect(source).toContain('role="alert" aria-live="assertive" aria-atomic="true"');
+    expect(source).toContain('aria-label="财务详情错误摘要"');
+    expect(source).toContain('errorRef.current?.focus({ preventScroll: true })');
+  });
+
+  it("keeps detail loading announced and restores focus after closing", () => {
+    const drawer = readFileSync(new URL("./FinanceDetailDrawer.tsx", import.meta.url), "utf8");
+    const section = readFileSync(new URL("./FinanceSearchSection.tsx", import.meta.url), "utf8");
+    expect(drawer).toContain('role="status" aria-live="polite" aria-label="正在加载财务详情"');
+    expect(drawer).toContain('aria-busy={loading || undefined}');
+    expect(drawer).toContain('htmlType="button"');
+    expect(drawer).toContain('style={{ minHeight: 44 }}');
+    expect(section).toContain('detailTriggerRef.current?.focus({ preventScroll: true })');
   });
 });
