@@ -10,6 +10,7 @@ import {
   evaluateAuthorizationDecision,
   evaluatePermissionAtoms,
   getMcpMethodPolicy,
+  requireMcpMethodPolicy,
   resolveCanonicalRoles,
 } from './authz.js'
 
@@ -19,6 +20,11 @@ describe('authorization policy registry', () => {
     expect(MCP_METHODS.length).toBeGreaterThanOrEqual(231)
     expect(Object.keys(MCP_METHOD_POLICIES).sort()).toEqual([...MCP_METHODS].sort())
     expect(getMcpMethodPolicy('unknown.future.method')).toBeUndefined()
+  })
+
+  it('provides an exact policy lookup that denies unknown methods by default', () => {
+    expect(requireMcpMethodPolicy('asset.scan')).toMatchObject({ method: 'asset.scan', effect: 'write' })
+    expect(() => requireMcpMethodPolicy('unknown.future.method')).toThrow('AUTHZ_POLICY_NOT_REGISTERED:unknown.future.method')
   })
 
   it('keeps ambiguous allow_and_deny obligation gaps explicit and reviewable', () => {

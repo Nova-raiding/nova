@@ -403,7 +403,10 @@ function buildPolicyRegistry(groups: readonly PolicyGroup[]): Readonly<Record<Mc
     }
   }
   const declared = new Set<McpMethod>([...MCP_METHODS, ...(exposeNonProductionMethods ? MCP_NON_PRODUCTION_METHODS : [])])
-  const missing = MCP_METHODS.filter(method => !policies.has(method))
+  // Keep the coverage check on the same effective declaration set used by
+  // the runtime. Compatibility/non-production methods are still contractual
+  // when exposed, so omitting one must fail closed during module startup.
+  const missing = [...declared].filter(method => !policies.has(method))
   const extra = [...policies.keys()].filter(method => !declared.has(method))
   if (missing.length || extra.length) throw new Error(`AUTHZ_POLICY_COVERAGE_INVALID:missing=${missing.join(',')};extra=${extra.join(',')}`)
   return Object.freeze(Object.fromEntries(policies) as Record<McpMethod, MethodPolicy>)
@@ -415,9 +418,25 @@ export function getMcpMethodPolicy(method: string): MethodPolicy | undefined {
   return MCP_METHOD_POLICIES[method as McpMethod]
 }
 
+/**
+ * Runtime authorization callers must use an exact registered method policy.
+ * Unknown methods are not implicitly readable or writable: fail closed with
+ * a stable error that can be surfaced as a configuration/deployment fault.
+ */
+export function requireMcpMethodPolicy(method: string): MethodPolicy {
+  const policy = getMcpMethodPolicy(method)
+  if (!policy) throw new Error(`AUTHZ_POLICY_NOT_REGISTERED:${method}`)
+  return policy
+}
+
 export function assertMcpMethodPolicyCoverage(): { declared: number; registered: number; policyVersion: string } {
   const registered = Object.keys(MCP_METHOD_POLICIES).length
-  const declared = new Set<McpMethod>([...MCP_METHODS, ...(exposeNonProductionMethods ? MCP_NON_PRODUCTION_METHODS : [])]).size
-  if (registered !== declared) throw new Error(`AUTHZ_POLICY_COVERAGE_INVALID:declared=${declared};registered=${registered}`)
+  const declaredMethods = new Set<McpMethod>([...MCP_METHODS, ...(exposeNonProductionMethods ? MCP_NON_PRODUCTION_METHODS : [])])
+  const declared = declaredMethods.size
+  const missing = [...declaredMethods].filter(method => !Object.prototype.hasOwnProperty.call(MCP_METHOD_POLICIES, method))
+  const extra = Object.keys(MCP_METHOD_POLICIES).filter(method => !declaredMethods.has(method as McpMethod))
+  if (missing.length || extra.length || registered !== declared) {
+    throw new Error(`AUTHZ_POLICY_COVERAGE_INVALID:declared=${declared};registered=${registered};missing=${missing.join(',')};extra=${extra.join(',')}`)
+  }
   return { declared, registered, policyVersion: AUTHZ_POLICY_VERSION }
 }
