@@ -2030,6 +2030,24 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('preserves redacted authorization decision evidence for ChatGPT', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(403, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'FORBIDDEN', message: 'denied', details: { decision_id: 'authz_decision_1', capability: 'customer.content.read', reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', workbench: 'workspace', explicit_deny: false, obligations_missing: ['confirmation'], policy_version: '2026-08-31.v2', authorization: 'Bearer should-not-cross', internal_path: '/Users/private/secret' } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative.brief', arguments: { product_id: 'product_1', asset_type: 'banner' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'FORBIDDEN', details: { decision_id: 'authz_decision_1', capability: 'customer.content.read', reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', workbench: 'workspace', explicit_deny: false, obligations_missing: ['confirmation'], policy_version: '2026-08-31.v2' } } })
+      expect(response.result.structuredContent.details).not.toHaveProperty('authorization')
+      expect(response.result.structuredContent.details).not.toHaveProperty('internal_path')
+    } finally {
+      child.kill(); await close(server)
+    }
+  })
+
   it('serializes requests received on one Codex stdio session', async () => {
     const requests: string[] = []
     let active = 0
