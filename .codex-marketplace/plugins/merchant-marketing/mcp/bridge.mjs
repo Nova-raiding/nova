@@ -981,6 +981,18 @@ function detailDecisionBlocker(contract) {
     reason: '宣称证据已过期，这一屏暂不能进入正式详情。',
     next: '更新有效证据后，重新生成并审核。',
   }
+  const claim = contract.claim && typeof contract.claim === 'object' && !Array.isArray(contract.claim) ? contract.claim : {}
+  const claimSourceIds = Array.isArray(claim.factSourceIds) ? claim.factSourceIds.filter(sourceId => typeof sourceId === 'string' && sourceId.trim()) : []
+  const evidenceSourceIds = Array.isArray(evidence.sourceIds) ? evidence.sourceIds.filter(sourceId => typeof sourceId === 'string' && sourceId.trim()) : []
+  const verifiedEvidenceComplete = evidence.status === 'verified'
+    && typeof claim.text === 'string' && Boolean(claim.text.trim())
+    && claimSourceIds.length > 0
+    && evidenceSourceIds.length > 0
+    && evidenceSourceIds.every(sourceId => claimSourceIds.includes(sourceId))
+  if (!verifiedEvidenceComplete) return {
+    reason: '证据合同不完整或状态未核验，这一屏暂不能进入正式详情。',
+    next: '补齐宣称与可追溯证据的一致绑定后，重新审核。',
+  }
   return undefined
 }
 
@@ -993,9 +1005,6 @@ function detailDecisionSummary(method, result) {
   return versions.map((version, versionIndex) => {
     const body = version.body
     const title = typeof body.title === 'string' && body.title.trim() ? sanitizeMerchantText(body.title.trim()) : '未命名商品详情'
-    const sellingPoints = Array.isArray(body.sellingPoints)
-      ? body.sellingPoints.filter(point => typeof point === 'string' && point.trim()).map(point => sanitizeMerchantText(point.trim()))
-      : []
     const modules = Array.isArray(body.modules) ? body.modules : []
     const visibleModules = modules.filter(module => {
       if (!module || typeof module !== 'object' || Array.isArray(module)) return false
@@ -1006,21 +1015,30 @@ function detailDecisionSummary(method, result) {
     const moduleLines = visibleModules.flatMap((module, index) => {
       const contract = module.decisionContract && typeof module.decisionContract === 'object' && !Array.isArray(module.decisionContract) ? module.decisionContract : undefined
       const moduleTitle = typeof module.title === 'string' && module.title.trim() ? sanitizeMerchantText(module.title.trim()) : `详情模块 ${index + 1}`
-      const buyerQuestion = typeof contract?.buyerQuestion === 'string' && contract.buyerQuestion.trim()
+      if (!contract) return [
+        `${index + 1}. ${moduleTitle}（legacy_review_required）`,
+        '阻断原因：历史模块缺少买家问题和证据决策合同，原正文未作为事实展示。',
+        '下一步：补齐决策合同和可追溯证据后，重新审核该模块。',
+      ]
+      const buyerQuestion = typeof contract.buyerQuestion === 'string' && contract.buyerQuestion.trim()
         ? sanitizeMerchantText(contract.buyerQuestion.trim())
-        : typeof module.purpose === 'string' && module.purpose.trim() ? sanitizeMerchantText(module.purpose.trim()) : '这一屏需要帮助买家做什么判断？'
+        : '这一屏的买家问题尚未完整说明。'
       const blocker = detailDecisionBlocker(contract)
       if (blocker) return [`${index + 1}. ${moduleTitle}（已阻断）`, `买家问题：${buyerQuestion}`, `阻断原因：${blocker.reason}`, `下一步：${blocker.next}`]
-      const moduleBody = typeof module.body === 'string' && module.body.trim() ? sanitizeMerchantText(module.body.trim()) : '暂无可展示正文。'
-      return [`${index + 1}. ${moduleTitle}`, `买家问题：${buyerQuestion}`, `正文：${moduleBody}`]
+      const claim = contract.claim
+      return [`${index + 1}. ${moduleTitle}`, `买家问题：${buyerQuestion}`, `正文：${sanitizeMerchantText(claim.text.trim())}`]
     })
-    const detail = typeof body.detail === 'string' && body.detail.trim() ? sanitizeMerchantText(body.detail.trim()) : '暂无可展示详情正文。'
+    const verifiedClaims = visibleModules.flatMap(module => {
+      const contract = module?.decisionContract
+      if (!contract || typeof contract !== 'object' || Array.isArray(contract) || detailDecisionBlocker(contract)) return []
+      return [sanitizeMerchantText(contract.claim.text.trim())]
+    })
     return [
       ...(versions.length > 1 ? [`第 ${versionIndex + 1} 版`] : []),
       `标题：${title}`,
-      '核心卖点：',
-      ...(sellingPoints.length ? sellingPoints.map(point => `- ${point}`) : ['- 暂无可展示的已确认卖点']),
-      `详情正文：${detail}`,
+      '状态：仅展示当前内容版本中有完整证据绑定的宣称，不代表内容已批准或已发布。',
+      '已验证宣称：',
+      ...(verifiedClaims.length ? verifiedClaims.map(point => `- ${point}`) : ['- 暂无可展示的已验证宣称']),
       '详情模块：',
       ...(moduleLines.length ? moduleLines : ['暂无可展示模块。']),
     ].join('\n')
