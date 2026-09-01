@@ -33,6 +33,23 @@ describe('content generator', () => {
     expect(String(calls[0]?.body)).toContain('不得出现 restrictedSubjects')
   })
 
+  it('accepts a single full-response JSON fence but does not extract JSON from prose', async () => {
+    const content = validGeneratedContent({ title: '围栏 JSON 标题' })
+    const fenced = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => new Response(JSON.stringify({ id: 'fenced-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(content)}\n\`\`\`` } }] }), { status: 200 }),
+    })
+    await expect(fenced.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 } })).resolves.toMatchObject({ title: '围栏 JSON 标题' })
+
+    let attempts = 0
+    const prose = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => { attempts += 1; return new Response(JSON.stringify({ id: `prose-${attempts}`, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: `结果如下：\n\`\`\`json\n${JSON.stringify(content)}\n\`\`\`` } }] }), { status: 200 }) },
+    })
+    await expect(prose.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 } })).rejects.toThrow('CONTENT_SCHEMA_INVALID')
+    expect(attempts).toBe(3)
+  })
+
   it('cancels an in-flight model provider request when the caller signal aborts', async () => {
     const controller = new AbortController()
     let providerSignal: AbortSignal | undefined

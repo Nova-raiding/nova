@@ -139,7 +139,14 @@ function readContent(payload: unknown): unknown {
   if (!isRecord(choice) || !isRecord(choice.message)) return undefined
   const content = choice.message.content
   if (typeof content !== 'string') return content
-  try { return JSON.parse(content) } catch { return undefined }
+  try { return JSON.parse(content) } catch {
+    // A few OpenAI-compatible relays wrap otherwise valid JSON in one
+    // Markdown code fence even when json_object was requested. Accept only a
+    // fence that covers the entire response; never extract JSON from prose.
+    const fenced = /^```(?:json)?\s*\n?([\s\S]*?)\n?```$/iu.exec(content.trim())
+    if (!fenced?.[1]) return undefined
+    try { return JSON.parse(fenced[1].trim()) } catch { return undefined }
+  }
 }
 
 function normalizeProviderStructure(value: unknown, input: ContentGenerationInput): unknown {
