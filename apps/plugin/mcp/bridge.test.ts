@@ -1617,7 +1617,7 @@ describe('Codex stdio MCP bridge', () => {
 
   it('renders merchant-visible detail decision summaries without changing structured content', async () => {
     const internalHash = `sha256:${'a'.repeat(64)}`
-    const module = (title: string, buyerQuestion: string, body: string, status: 'verified' | 'missing' | 'conflict' | 'expired', optional: boolean) => ({
+    const module = (title: string, buyerQuestion: string, body: string, status: 'verified' | 'missing' | 'conflict' | 'expired', optional: boolean, claimText = body, sourceIds = status === 'missing' ? [] : [internalHash]) => ({
       key: title,
       title,
       purpose: `解决${buyerQuestion}`,
@@ -1626,8 +1626,8 @@ describe('Codex stdio MCP bridge', () => {
       decisionContract: {
         buyerQuestion,
         pageTask: `回答${buyerQuestion}`,
-        claim: { text: body, factSourceIds: [internalHash], platforms: ['taobao'], limitations: [] },
-        evidence: { type: 'parameter', sourceIds: status === 'missing' ? [] : [internalHash], status },
+        claim: { text: claimText, factSourceIds: [internalHash], platforms: ['taobao'], limitations: [] },
+        evidence: { type: 'parameter', sourceIds, status },
         visualContract: { requiredElements: [], protectedElements: [], prohibitedImplications: [], accessibilityText: body },
         priority: 1,
         optional,
@@ -1638,14 +1638,16 @@ describe('Codex stdio MCP bridge', () => {
       revision: 19,
       body: {
         title: '轻量无氟钛炒锅',
-        detail: '按买家问题组织的详情正文。',
-        sellingPoints: ['更轻便', '多炉具适配'],
+        detail: '顶层未验证详情不得展示。',
+        sellingPoints: ['顶层未验证卖点一', '顶层未验证卖点二'],
         modules: [
-          module('购买理由', '为什么值得继续看？', '一个主购买理由。', 'verified', false),
+          module('购买理由', '为什么值得继续看？', '模块正文中未受合同约束的表达不应出现。', 'verified', false, '合同内已验证的主购买理由。'),
           module('材料安全', '材料是否安心？', '这段可选缺失正文不应出现。', 'missing', true),
           module('功能结果', '少油不粘是否有证据？', '未证明的功能正文不应出现。', 'missing', false),
           module('规格选择', '哪个规格适合我？', '冲突的规格正文不应出现。', 'conflict', true),
           module('适配说明', '我家炉具能用吗？', '过期的适配正文不应出现。', 'expired', false),
+          { key: 'legacy', title: '历史材料页', purpose: '旧用途', body: '历史正文不得当作事实展示。', factSourceIds: [] },
+          module('证据不完整页', '这条宣称真的有证据吗？', '伪 verified 模块正文不得展示。', 'verified', false, '伪 verified 宣称不得展示。', []),
         ],
       },
     }
@@ -1674,16 +1676,30 @@ describe('Codex stdio MCP bridge', () => {
       const generatedText = generatedResponse.result.content[0].text
       expect(generatedResponse.result.structuredContent).toEqual(generated)
       expect(generatedText).toContain('标题：轻量无氟钛炒锅')
-      expect(generatedText).toContain('核心卖点：\n- 更轻便\n- 多炉具适配')
-      expect(generatedText).toContain('买家问题：为什么值得继续看？\n正文：一个主购买理由。')
+      expect(generatedText).toContain('不代表内容已批准或已发布')
+      expect(generatedText).toContain('已验证宣称：\n- 合同内已验证的主购买理由。')
+      expect(generatedText).toContain('买家问题：为什么值得继续看？\n正文：合同内已验证的主购买理由。')
+      expect(generatedText).not.toContain('顶层未验证详情')
+      expect(generatedText).not.toContain('顶层未验证卖点')
+      expect(generatedText).not.toContain('模块正文中未受合同约束的表达')
       expect(generatedText).not.toContain('材料安全')
       expect(generatedText).not.toContain('这段可选缺失正文不应出现')
       expect(generatedText).toContain('功能结果（已阻断）')
       expect(generatedText).toContain('阻断原因：缺少可验证证据')
+      expect(generatedText).not.toContain('未证明的功能正文')
       expect(generatedText).toContain('规格选择（已阻断）')
       expect(generatedText).toContain('宣称与当前证据存在冲突')
+      expect(generatedText).not.toContain('冲突的规格正文')
       expect(generatedText).toContain('适配说明（已阻断）')
       expect(generatedText).toContain('宣称证据已过期')
+      expect(generatedText).not.toContain('过期的适配正文')
+      expect(generatedText).toContain('历史材料页（legacy_review_required）')
+      expect(generatedText).toContain('历史模块缺少买家问题和证据决策合同')
+      expect(generatedText).not.toContain('历史正文不得当作事实展示')
+      expect(generatedText).toContain('证据不完整页（已阻断）')
+      expect(generatedText).toContain('证据合同不完整或状态未核验')
+      expect(generatedText).not.toContain('伪 verified 模块正文')
+      expect(generatedText).not.toContain('伪 verified 宣称')
       expect(generatedText).not.toMatch(/content_internal|decisionContract|sha256:|a{64}|revision/iu)
       expect(generatedText.indexOf('购买理由')).toBeLessThan(generatedText.indexOf('功能结果'))
       expect(generatedText.indexOf('功能结果')).toBeLessThan(generatedText.indexOf('规格选择'))
