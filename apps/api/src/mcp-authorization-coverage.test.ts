@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { registeredMcpAuthorizationDecision } from './server.js'
-import { AUTHZ_POLICY_VERSION, MCP_METHODS, getMcpMethodPolicy } from '../../../packages/contracts/src/index.js'
+import { registeredMcpAuthorizationDecision, resolveAuthorizationResourceScope } from './server.js'
+import { AUTHZ_POLICY_VERSION, MCP_METHODS, getMcpMethodPolicy, type MethodPolicy } from '../../../packages/contracts/src/index.js'
 
 describe('registered MCP authorization coverage', () => {
   it('produces one unique strict authorization decision for every live MCP method', () => {
@@ -51,5 +51,22 @@ describe('registered MCP authorization coverage', () => {
       result: 'deny',
       reason_code: 'AUTHZ_CAPABILITY_MISSING',
     })
+  })
+
+  it.each([
+    ['platform', {}, undefined, { type: 'platform', id: '*' }],
+    ['workspace', {}, undefined, { type: 'workspace', id: 'ws_exact' }],
+    ['self', {}, { actorId: 'actor_exact' }, { type: 'self', id: 'actor_exact' }],
+    ['brand', { brand_id: ' brand_exact ' }, undefined, { type: 'brand', id: 'brand_exact' }],
+    ['account', { account_id: ' account_exact ' }, undefined, { type: 'account', id: 'account_exact' }],
+  ] as const)('resolves an exact %s scope without accepting an untrimmed identifier', (scope, params, principal, expected) => {
+    const policy = { ...getMcpMethodPolicy('ops.session')!, scope } as MethodPolicy
+    expect(resolveAuthorizationResourceScope(policy, ' ws_exact ', params, principal)).toEqual(expected)
+  })
+
+  it.each(['workspace', 'self', 'brand', 'account'] as const)('leaves a missing %s identifier unresolved so evaluation fails closed', scope => {
+    const policy = { ...getMcpMethodPolicy('ops.session')!, scope } as MethodPolicy
+    const resourceScope = resolveAuthorizationResourceScope(policy, '   ', { brand_id: ' ', account_id: '' })
+    expect(resourceScope).toEqual({ type: scope, id: undefined })
   })
 })

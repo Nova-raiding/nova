@@ -4585,13 +4585,14 @@ function satisfiedAuthorizationObligations(params: Record<string, unknown>, req:
   return satisfied
 }
 
-function authorizationResourceScope(policy: ReturnType<typeof getMcpMethodPolicy>, workspaceId: string, params: Record<string, unknown>, principal?: RequestPrincipal) {
+export function resolveAuthorizationResourceScope(policy: ReturnType<typeof getMcpMethodPolicy>, workspaceId: string, params: Record<string, unknown>, principal?: Pick<RequestPrincipal, 'actorId'>) {
   if (!policy) return undefined
   if (policy.scope === 'platform') return { type: 'platform' as const, id: '*' }
-  if (policy.scope === 'workspace') return { type: 'workspace' as const, id: workspaceId }
-  if (policy.scope === 'self') return { type: 'self' as const, id: principal?.actorId }
-  if (policy.scope === 'brand') return { type: 'brand' as const, id: typeof params.brand_id === 'string' ? params.brand_id : undefined }
-  return { type: 'account' as const, id: typeof params.account_id === 'string' ? params.account_id : undefined }
+  const exactId = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined
+  if (policy.scope === 'workspace') return { type: 'workspace' as const, id: exactId(workspaceId) }
+  if (policy.scope === 'self') return { type: 'self' as const, id: exactId(principal?.actorId) }
+  if (policy.scope === 'brand') return { type: 'brand' as const, id: exactId(params.brand_id) }
+  return { type: 'account' as const, id: exactId(params.account_id) }
 }
 
 async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: string, decision: AuthorizationDecision) {
@@ -4666,7 +4667,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const capabilityDomain = policy.capability.split('.')[0]!
   const enforce = runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(capabilityDomain)
   const principal = requestPrincipals.get(req)
-  const resourceScope = authorizationResourceScope(policy, workspaceId, params, principal)
+  const resourceScope = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,
     method,
