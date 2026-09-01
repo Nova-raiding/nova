@@ -1915,6 +1915,53 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('does not retry a non-idempotent write after a rate limit response', async () => {
+    let attempts = 0
+    const server = createServer((_req, res) => {
+      attempts += 1
+      res.writeHead(429, { 'content-type': 'application/json', 'retry-after': '0' })
+      res.end(JSON.stringify({ error: { code: 'RATE_LIMITED', message: 'write outcome is unknown' } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'RATE_LIMITED' } })
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not retry a non-idempotent write after an ambiguous network reset', async () => {
+    let attempts = 0
+    const server = createServer(req => {
+      attempts += 1
+      req.socket.destroy()
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('preserves actionable gateway error codes and field-level details for Codex', async () => {
     const server = createServer((_req, res) => {
       res.writeHead(409, { 'content-type': 'application/json' })

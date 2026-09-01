@@ -1945,6 +1945,7 @@ async function callRemote(method, params) {
   const maxAttempts = Math.max(1, Number(process.env.MERCHANT_MCP_RETRY_ATTEMPTS ?? 5))
   const retryDelayMs = Math.max(50, Number(process.env.MERCHANT_MCP_RETRY_DELAY_MS ?? 200))
   const deadline = Date.now() + timeoutMs
+  const retrySafe = READ_ONLY_METHODS.has(method) || headers['idempotency-key'] !== undefined
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const remainingMs = deadline - Date.now()
@@ -1960,8 +1961,7 @@ async function callRemote(method, params) {
           signal: controller.signal,
         })
         const payload = await responseJsonWithLimit(response)
-        const retrySafe = READ_ONLY_METHODS.has(method) || headers['idempotency-key'] !== undefined
-        const transient = response.status === 429 || ((response.status === 502 || response.status === 503 || response.status === 504) && retrySafe)
+        const transient = retrySafe && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || payload.error) && (!transient || attempt === maxAttempts)) {
           const error = payload?.error ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
@@ -1995,7 +1995,7 @@ async function callRemote(method, params) {
         return result
       } catch (error) {
         const retryableNetworkError = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
-        if (!retryableNetworkError || attempt === maxAttempts || Date.now() >= deadline) throw error
+        if (!retrySafe || !retryableNetworkError || attempt === maxAttempts || Date.now() >= deadline) throw error
         await wait(Math.min(retryDelayMs * (2 ** (attempt - 1)), Math.max(50, deadline - Date.now())))
       } finally {
         clearTimeout(timer)
