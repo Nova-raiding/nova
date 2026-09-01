@@ -115,14 +115,14 @@ UI 必须让用户区分以下事实，而不能将“已读取”误认为“�
 
 ## 6. 上线前 UI 验收标准
 
-- [ ] 两端均消费同一 workspace-scoped canonical consistency 契约，不从数量或本地启发式推导 canonical 通过态。
-- [ ] 每个商品可见 `status`、`reason/finding`、`generated_at`、相关 ID 和唯一主 `next_action`。
-- [ ] `legacy_only/conflict/blocked/backfilled` 均不能显示为“已确认/可继续/绿色完成”。
-- [ ] API 空响应、读取失败、过期结果和真实零结果有不同 UI 文案与动作。
-- [ ] 阻断详情支持键盘到达；错误摘要使用 `role="alert"` 或等价 live region，且不会只依赖颜色。
-- [ ] 主动作在执行中有 loading/成功/失败反馈；失败后恢复焦点并保留稳定错误码。
-- [ ] 运营台能从汇总数字钻取到具体商品和关系链，商家端能从商品状态进入对应详情。
-- [ ] 所有动作由服务端权限和 `next_actions` 决定；UI 不自行推断可执行修复。
+- [x] 两端均消费同一 workspace-scoped canonical consistency 契约，不从数量或本地启发式推导 canonical 通过态。
+- [x] 每个商品可见 `status`、`reason/finding`、`generated_at`、相关 ID 和唯一主 `next_action`。
+- [x] `legacy_only/conflict/blocked/backfilled` 均不能显示为“已确认/可继续/绿色完成”。
+- [x] API 空响应、读取失败、过期结果和真实零结果有不同 UI 文案与动作。
+- [x] 阻断详情支持键盘到达；错误摘要使用 `role="alert"` 或等价 live region，且不会只依赖颜色。
+- [x] 主动作在执行中有 loading/成功/失败反馈；失败后恢复焦点并保留稳定错误码。
+- [x] 运营台能从汇总数字钻取到具体商品和关系链，商家端能从商品状态进入对应详情。
+- [x] 所有动作由服务端权限和 `next_actions` 决定；UI 不自行推断可执行修复。
 - [x] 本地 1440px 桌面浏览器验收已覆盖空态、阻断态、冲突态、过期态、无权限态和正常 verified 态，并额外覆盖 `legacy_only`；证据见 `5ef4a54` 的 Playwright 8/8。
 - [ ] 在上述证据和桌面验收完成前，本文件不得迁移到 `doc/done`。
 
