@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CloudObjectNotFoundError, LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, isRetryableObjectStorageReadError, parseS3CompatibleObjectStorageConfig, type CloudObjectTransport, withObjectStorageReadRetry } from './object-storage.js'
+import { CloudObjectNotFoundError, LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, isRetryableObjectStorageReadError, parseS3CompatibleObjectStorageConfig, type CloudObjectTransport, withObjectStorageCleanupRetry, withObjectStorageReadRetry } from './object-storage.js'
 
 const digest = (body: Uint8Array) => createHash('sha256').update(body).digest('hex')
 
@@ -34,6 +34,29 @@ describe('object storage read retry policy', () => {
     await expect(withObjectStorageReadRetry(operation, { baseDelayMs: Number.NaN })).rejects.toMatchObject({ code: 'OBJECT_RETRY_CONFIG_INVALID' })
     await expect(withObjectStorageReadRetry(operation, { baseDelayMs: 1.5 })).rejects.toMatchObject({ code: 'OBJECT_RETRY_CONFIG_INVALID' })
     await expect(withObjectStorageReadRetry(operation, { baseDelayMs: 60_001 })).rejects.toMatchObject({ code: 'OBJECT_RETRY_CONFIG_INVALID' })
+    expect(operation).not.toHaveBeenCalled()
+  })
+})
+
+describe('object storage cleanup retry policy', () => {
+  it('retries only transient, idempotent cleanup failures', async () => {
+    let calls = 0
+    await expect(withObjectStorageCleanupRetry(async () => {
+      calls += 1
+      if (calls < 3) throw Object.assign(new Error('provider busy'), { code: 'SlowDown' })
+    }, { baseDelayMs: 0, attempts: 3 })).resolves.toBeUndefined()
+    expect(calls).toBe(3)
+  })
+
+  it('does not retry a missing object or unsafe configuration', async () => {
+    let calls = 0
+    await expect(withObjectStorageCleanupRetry(async () => {
+      calls += 1
+      throw new CloudObjectNotFoundError()
+    }, { baseDelayMs: 0, attempts: 3 })).rejects.toMatchObject({ code: 'OBJECT_NOT_FOUND' })
+    expect(calls).toBe(1)
+    const operation = vi.fn(async () => undefined)
+    await expect(withObjectStorageCleanupRetry(operation, { attempts: 0 })).rejects.toMatchObject({ code: 'OBJECT_RETRY_CONFIG_INVALID' })
     expect(operation).not.toHaveBeenCalled()
   })
 })
@@ -320,18 +343,27 @@ describe('S3CompatibleObjectStorage', () => {
       async head() { return null },
       async get() { throw new CloudObjectNotFoundError() },
       async put(key) {
-        if (key.endsWith('.merchant-meta.json')) throw new Error('metadata provider outage')
+        if (key.endsWith('.merchant-meta.json')) throw new Error('metadata provider outage https://provider.example/write?token=secret-token')
       },
-      async delete() { throw new Error('cleanup provider outage') },
+      async delete() { throw new Error('cleanup provider outage apiKey=secret-key') },
     }
     const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
 
-    await expect(store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_orphan', fileName: 'x.txt', contentType: 'text/plain', body: new TextEncoder().encode('orphan me') }))
-      .rejects.toMatchObject({
+    let error: ObjectStoragePartialWriteError | undefined
+    try {
+      await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_orphan', fileName: 'x.txt', contentType: 'text/plain', body: new TextEncoder().encode('orphan me') })
+    } catch (caught) {
+      error = caught as ObjectStoragePartialWriteError
+    }
+    expect(error).toMatchObject({
         name: 'ObjectStoragePartialWriteError',
         orphanKey: 'quarantine/ws_cloud/asset_orphan/x.txt',
         cleanupErrors: [expect.any(Error), expect.any(Error)],
       } satisfies Partial<ObjectStoragePartialWriteError>)
+    expect(error?.causeMessage).toBe('metadata provider outage https://provider.example/write?[REDACTED]')
+    expect(error?.cleanupErrorMessages).toEqual(['cleanup provider outage apiKey=[REDACTED]', 'cleanup provider outage apiKey=[REDACTED]'])
+    expect(JSON.stringify(error)).not.toContain('secret-token')
+    expect(JSON.stringify(error)).not.toContain('secret-key')
   })
 
   it('rejects a same-byte retry when immutable content metadata conflicts', async () => {

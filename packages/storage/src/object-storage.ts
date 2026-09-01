@@ -95,9 +95,17 @@ export class CloudObjectNotFoundError extends Error {
 
 export class ObjectStoragePartialWriteError extends Error {
   readonly code = 'OBJECT_STORAGE_PARTIAL_WRITE'
-  constructor(readonly orphanKey: string, readonly cause: unknown, readonly cleanupErrors: unknown[]) {
+  readonly cause!: unknown
+  readonly cleanupErrors!: unknown[]
+  readonly causeMessage: string
+  readonly cleanupErrorMessages: readonly string[]
+  constructor(readonly orphanKey: string, cause: unknown, cleanupErrors: unknown[]) {
     super('object body was written but compensation could not fully remove it')
     this.name = 'ObjectStoragePartialWriteError'
+    Object.defineProperty(this, 'cause', { value: cause, enumerable: false, writable: false })
+    Object.defineProperty(this, 'cleanupErrors', { value: cleanupErrors, enumerable: false, writable: false })
+    this.causeMessage = safeStorageErrorMessage(cause)
+    this.cleanupErrorMessages = cleanupErrors.map(safeStorageErrorMessage)
   }
 }
 
@@ -209,10 +217,15 @@ export function isRetryableObjectStorageReadError(error: unknown) {
   return ['SlowDown', 'RequestTimeout', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'NETWORK_ERROR'].includes(String(value.code ?? value.name ?? ''))
 }
 
-export async function withObjectStorageReadRetry<T>(operation: () => Promise<T>, options: { attempts?: number; baseDelayMs?: number } = {}) {
+function validateRetryOptions(options: { attempts?: number; baseDelayMs?: number }): { attempts: number; baseDelayMs: number } {
   const attempts = options.attempts ?? 3
   const baseDelayMs = options.baseDelayMs ?? 25
   if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 10 || !Number.isSafeInteger(baseDelayMs) || baseDelayMs < 0 || baseDelayMs > 60_000) throw new ObjectStorageError('OBJECT_RETRY_CONFIG_INVALID', '对象存储重试参数无效', 500)
+  return { attempts, baseDelayMs }
+}
+
+export async function withObjectStorageReadRetry<T>(operation: () => Promise<T>, options: { attempts?: number; baseDelayMs?: number } = {}) {
+  const { attempts, baseDelayMs } = validateRetryOptions(options)
   let lastError: unknown
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try { return await operation() } catch (error) {
@@ -222,6 +235,30 @@ export async function withObjectStorageReadRetry<T>(operation: () => Promise<T>,
     }
   }
   throw lastError
+}
+
+/** Only use this for the idempotent delete operation, never promotion/write. */
+export async function withObjectStorageCleanupRetry<T>(operation: () => Promise<T>, options: { attempts?: number; baseDelayMs?: number } = {}) {
+  const { attempts, baseDelayMs } = validateRetryOptions(options)
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try { return await operation() } catch (error) {
+      lastError = error
+      if (!isRetryableObjectStorageReadError(error) || attempt === attempts - 1) throw error
+      await new Promise(resolve => setTimeout(resolve, baseDelayMs * (attempt + 1)))
+    }
+  }
+  throw lastError
+}
+
+function safeStorageErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : 'storage operation failed'
+  return raw.replace(/[\u0000-\u001f\u007f]/gu, ' ')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [REDACTED]')
+    .replace(/([?&](?:access_token|api[_-]?key|token|secret|signature|password|authorization|code)=)[^&\s]+/giu, '$1[REDACTED]')
+    .replace(/\b(api[_-]?key|access[_-]?token|accessToken|refresh[_-]?token|refreshToken|client[_-]?secret|clientSecret|private[_-]?key|privateKey|password|authorization)\s*[:=]\s*[^,;\s}]+/giu, '$1=[REDACTED]')
+    .replace(/https?:\/\/[^\s]+/giu, value => value.replace(/([?&]).*$/u, '$1[REDACTED]'))
+    .trim().slice(0, 1_000) || 'storage operation failed'
 }
 
 const SHA256 = /^[a-f0-9]{64}$/i
@@ -619,10 +656,15 @@ export class LocalObjectStorage implements ObjectStoragePort {
  */
 export class S3CompatibleObjectStorage implements ObjectStoragePort {
   readonly maxObjectBytes: number
-  constructor(private readonly transport: CloudObjectTransport, options: { keyPrefix?: string; maxObjectBytes?: number } = {}) {
+  private readonly cleanupAttempts: number
+  private readonly cleanupBaseDelayMs: number
+  constructor(private readonly transport: CloudObjectTransport, options: { keyPrefix?: string; maxObjectBytes?: number; cleanupAttempts?: number; cleanupBaseDelayMs?: number } = {}) {
     this.keyPrefix = validateKeyPrefix(options.keyPrefix)
     this.maxObjectBytes = options.maxObjectBytes ?? 50 * 1024 * 1024
     if (!Number.isSafeInteger(this.maxObjectBytes) || this.maxObjectBytes < 1) throw new ObjectStorageError('OBJECT_LIMIT_INVALID', '对象大小限制无效', 500)
+    const retry = validateRetryOptions({ attempts: options.cleanupAttempts ?? 1, baseDelayMs: options.cleanupBaseDelayMs ?? 25 })
+    this.cleanupAttempts = retry.attempts
+    this.cleanupBaseDelayMs = retry.baseDelayMs
   }
   private readonly keyPrefix: string
   private objectKey(key: string) { return this.keyPrefix ? `${this.keyPrefix}/${key}` : key }
@@ -768,10 +810,10 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
     this.assertReadableZone(parsed.zone, options.includeQuarantine === true)
     // Deletion is intentionally idempotent so orphan cleanup converges after
     // a previous attempt deleted either the body or its metadata successfully.
-    try { await this.transport.delete(this.objectKey(parsed.relative)) } catch (error) {
+    try { await withObjectStorageCleanupRetry(() => this.transport.delete(this.objectKey(parsed.relative)), { attempts: this.cleanupAttempts, baseDelayMs: this.cleanupBaseDelayMs }) } catch (error) {
       if (!isCloudNotFound(error)) throw cloudStorageError(error)
     }
-    try { await this.transport.delete(this.metadataKey(parsed.relative)) } catch (error) {
+    try { await withObjectStorageCleanupRetry(() => this.transport.delete(this.metadataKey(parsed.relative)), { attempts: this.cleanupAttempts, baseDelayMs: this.cleanupBaseDelayMs }) } catch (error) {
       if (!isCloudNotFound(error)) throw cloudStorageError(error)
     }
   }
