@@ -3193,6 +3193,75 @@ export class MerchantService {
     } as unknown as ReviewFinding))
   }
 
+  private detailPageDecisionReviewFindings(input: {
+    modules: ReadonlyArray<Record<string, unknown>>
+    skuIds: readonly string[]
+    platform: Platform
+  }): ReviewFinding[] {
+    const findings: ReviewFinding[] = []
+    const knownSkuIds = new Set(input.skuIds)
+    const seenKeys = new Map<string, number>()
+    const add = (finding: Omit<ReviewFinding, 'code'> & { code: string }) => findings.push(finding as unknown as ReviewFinding)
+    for (const [index, module] of input.modules.entries()) {
+      const moduleKey = typeof module.key === 'string' && module.key.trim() ? module.key.trim() : `legacy_${index + 1}`
+      const field = `modules.${moduleKey}.decisionContract`
+      const firstIndex = seenKeys.get(moduleKey)
+      if (firstIndex !== undefined) add({
+        code: 'DETAIL_MODULE_DUPLICATE_KEY', severity: 'error', priority: 'P0', status: 'open', field: `modules[${index}].key`,
+        message: `详情页模块 key “${moduleKey}” 与 modules[${firstIndex}] 重复，无法确定审核和编排目标。`, repairSuggestion: '为每个详情页模块设置唯一 key 后创建新版本并重新审核。',
+        evidence: { kind: 'content', sourceIds: [`module:${moduleKey}`], verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
+      })
+      else seenKeys.set(moduleKey, index)
+
+      const contract = module.decisionContract
+      if (!contract || typeof contract !== 'object' || Array.isArray(contract)) {
+        add({
+          code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', severity: 'warning', priority: 'P1', status: 'open', field,
+          message: `详情页模块 “${moduleKey}” 来自历史版本，缺少买家问题与证据决策契约。`, repairSuggestion: '历史版本仍可读取；重新批准前请补齐决策契约并人工复核该模块。',
+          evidence: { kind: 'content', sourceIds: [`module:${moduleKey}`], verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
+        })
+        continue
+      }
+      const decision = contract as Record<string, unknown>
+      const claim = decision.claim && typeof decision.claim === 'object' && !Array.isArray(decision.claim) ? decision.claim as Record<string, unknown> : {}
+      const evidence = decision.evidence && typeof decision.evidence === 'object' && !Array.isArray(decision.evidence) ? decision.evidence as Record<string, unknown> : {}
+      const optional = decision.optional === true
+      const evidenceStatus = evidence.status
+      const sourceIds = Array.isArray(evidence.sourceIds) ? evidence.sourceIds.filter((value): value is string => typeof value === 'string') : []
+      if (evidenceStatus === 'missing') add({
+        code: optional ? 'DETAIL_MODULE_OPTIONAL_OMITTED' : 'DETAIL_MODULE_REQUIRED_EVIDENCE_MISSING',
+        severity: optional ? 'warning' : 'error', priority: optional ? 'P1' : 'P0', status: 'open', field: `${field}.evidence`,
+        message: optional ? `可选详情页模块 “${moduleKey}” 缺少证据，已标记为 omitted，不应进入正式详情正文。` : `必选详情页模块 “${moduleKey}” 缺少可验证证据。`,
+        repairSuggestion: optional ? '补齐证据后再展示该可选模块，或保持 omitted。' : '补齐与宣称匹配的事实和视觉证据后创建新版本并重新审核。',
+        evidence: { kind: 'content', sourceIds, verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
+      })
+      if (evidenceStatus === 'expired' || typeof claim.validUntil === 'string' && Number.isFinite(Date.parse(claim.validUntil)) && Date.parse(claim.validUntil) <= Date.now()) add({
+        code: 'DETAIL_MODULE_EVIDENCE_EXPIRED', severity: 'error', priority: 'P0', status: 'open', field: `${field}.evidence`,
+        message: `详情页模块 “${moduleKey}” 的宣称证据已过期。`, repairSuggestion: '更新有效证据及有效期后创建新版本并重新审核。',
+        evidence: { kind: 'content', sourceIds, verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
+      })
+      if (evidenceStatus === 'conflict') add({
+        code: 'DETAIL_MODULE_EVIDENCE_CONFLICT', severity: 'error', priority: 'P0', status: 'open', field: `${field}.evidence`,
+        message: `详情页模块 “${moduleKey}” 的宣称与证据存在冲突。`, repairSuggestion: '解决冲突并绑定一致的事实证据后创建新版本。',
+        evidence: { kind: 'content', sourceIds, verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
+      })
+      const claimSkuIds = Array.isArray(claim.skuIds) ? claim.skuIds.filter((value): value is string => typeof value === 'string') : []
+      const mismatchedSkuIds = claimSkuIds.filter(skuId => !knownSkuIds.has(skuId))
+      if (mismatchedSkuIds.length) add({
+        code: 'DETAIL_MODULE_SKU_SCOPE_MISMATCH', severity: 'error', priority: 'P0', status: 'open', field: `${field}.claim.skuIds`,
+        message: `详情页模块 “${moduleKey}” 引用了当前版本未确认的 SKU：${mismatchedSkuIds.join('、')}。`, repairSuggestion: '将宣称限定到当前版本已确认的 SKU，或重新确认 SKU 事实。',
+        evidence: { kind: 'fact', sourceIds: mismatchedSkuIds.map(skuId => `sku:${skuId}`), verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
+      })
+      const platforms = Array.isArray(claim.platforms) ? claim.platforms.filter((value): value is string => typeof value === 'string') : []
+      if (platforms.length > 0 && !platforms.includes(input.platform)) add({
+        code: 'DETAIL_MODULE_PLATFORM_SCOPE_MISMATCH', severity: 'error', priority: 'P0', status: 'open', field: `${field}.claim.platforms`,
+        message: `详情页模块 “${moduleKey}” 的宣称不适用于当前平台 ${input.platform}。`, repairSuggestion: '绑定当前平台适用的宣称证据，或从该平台版本中移除该模块。',
+        evidence: { kind: 'content', sourceIds: platforms.map(platform => `platform:${platform}`), verified: true, scope: 'local_deterministic', externalVerification: 'not_performed', boundary: REVIEW_EVIDENCE_BOUNDARY },
+      })
+    }
+    return findings
+  }
+
   reviewContent(workspaceId: string, contentVersionId: string, rules?: { availableRuleVersionIds: string[]; forbiddenTerms: string[]; ruleHits?: RuleHit[] }): ReviewFinding[] {
     const version = this.getContentVersion(workspaceId, contentVersionId)
     const task = this.mustTask(version.taskId)
@@ -3203,11 +3272,18 @@ export class MerchantService {
     // legacy optional fields for read-time review without mutating history; a
     // missing value must become a finding, never an unhandled TypeError.
     const rawModules = (version.body.modules ?? []) as unknown as ReadonlyArray<Record<string, unknown>>
-    const reviewModules = rawModules.map((module, index) => ({
+    const activeRawModules = rawModules.filter(module => {
+      const contract = module.decisionContract
+      if (!contract || typeof contract !== 'object' || Array.isArray(contract)) return true
+      const decision = contract as Record<string, unknown>
+      const evidence = decision.evidence && typeof decision.evidence === 'object' && !Array.isArray(decision.evidence) ? decision.evidence as Record<string, unknown> : undefined
+      return !(decision.optional === true && evidence?.status === 'missing')
+    })
+    const reviewModules = activeRawModules.map((module, index) => ({
       key: typeof module.key === 'string' && module.key.trim() ? module.key : `legacy_${index + 1}`,
       factSourceIds: Array.isArray(module.factSourceIds) ? module.factSourceIds.filter((value): value is string => typeof value === 'string') : [],
     }))
-    const referencedSkuIds = rawModules.flatMap(module => Array.isArray(module.referencedSkuIds) ? module.referencedSkuIds.filter((value): value is string => typeof value === 'string') : [])
+    const referencedSkuIds = activeRawModules.flatMap(module => Array.isArray(module.referencedSkuIds) ? module.referencedSkuIds.filter((value): value is string => typeof value === 'string') : [])
     const rawBrief = version.body.brief as unknown as Record<string, unknown> | undefined
     const briefText = (key: string) => typeof rawBrief?.[key] === 'string' ? rawBrief[key] : ''
     const briefList = (key: string) => Array.isArray(rawBrief?.[key]) ? rawBrief[key].filter((value): value is string => typeof value === 'string') : []
@@ -3240,7 +3316,7 @@ export class MerchantService {
       technical: { schemaValid: Boolean(version.body.title.trim() && version.body.detail.trim() && Array.isArray(version.body.sellingPoints) && reviewModules.every(module => module.key && module.factSourceIds.length) && (!rawBrief || Object.values(reviewBrief!).every(value => Array.isArray(value) ? value.length > 0 : value.trim()))) },
       ...(snapshot?.promotions ? { promotions: snapshot.promotions.map(promotion => ({ platform: promotion.platform, productId: promotion.productId, ...(promotion.accountId ? { accountId: promotion.accountId } : {}), skuIds: promotion.skuIds, ...(promotion.validFrom ? { validFrom: promotion.validFrom } : {}), ...(promotion.validTo ? { validTo: promotion.validTo } : {}), sourceId: `promotion:${promotion.id}` })), promotionContext: { platform: task.platform, productId: task.productId, ...(task.accountId ? { accountId: task.accountId } : {}), skuIds: snapshot.skuIds } } : {}),
       ...(brandSnapshot ? { brand: { forbiddenTerms: [...(brandSnapshot.forbiddenTerms ?? []), ...Object.values(brandSnapshot.visualRules?.restrictedSubjects ?? {}).flat()], sourceIds: [`brand:${brandSnapshot.id}:r${brandSnapshot.revision}`] } } : {}),
-    }), ...brandVisualFindings, ...this.competitorReferenceReviewFindings(snapshot, version, product), ...(product?.images ? reviewProductImages(product.images) : [])]
+    }), ...this.detailPageDecisionReviewFindings({ modules: rawModules, skuIds: version.versionVector?.skuIds ?? product?.skus?.map(sku => sku.id) ?? [], platform: task.platform }), ...brandVisualFindings, ...this.competitorReferenceReviewFindings(snapshot, version, product), ...(product?.images ? reviewProductImages(product.images) : [])]
     const decisions = new Map((version.reviewDecisions ?? []).map(decision => [decision.key, decision]))
     return findings.map(item => {
       const decision = decisions.get(`${item.code}:${item.field}`)
@@ -3263,14 +3339,21 @@ export class MerchantService {
       ruleHits: rules?.ruleHits ?? this.ruleCenter.evaluate({ platform: task.platform, ...(product?.category ? { category: product.category } : {}), ...(brandSnapshot?.name ? { brand: brandSnapshot.name } : {}), ...(product?.storeName ? { store: product.storeName } : {}) }).hits,
     })
     const competitorFindings = findings.filter(finding => String(finding.code).startsWith('COMPETITOR_'))
-    if (!competitorFindings.length) return report
+    const detailDecisionFindings = findings.filter(finding => String(finding.code).startsWith('DETAIL_MODULE_'))
+    if (!competitorFindings.length && !detailDecisionFindings.length) return report
     return {
       ...report,
-      categories: report.categories.map(category => category.id !== 'copy_price_compliance' ? category : {
-        ...category,
-        status: competitorFindings.some(finding => finding.severity === 'error') ? 'blocking' as const : category.status === 'blocking' ? category.status : 'warning' as const,
-        findingCount: category.findingCount + competitorFindings.length,
-        summary: competitorFindings.some(finding => finding.severity === 'error') ? `${category.findingCount + competitorFindings.length} 项阻断问题` : `${category.findingCount + competitorFindings.length} 项竞品参考人工复核建议`,
+      categories: report.categories.map(category => {
+        const customFindings = category.id === 'copy_price_compliance' ? competitorFindings : category.id === 'product_truth' ? detailDecisionFindings : []
+        if (!customFindings.length) return category
+        const findingCount = category.findingCount + customFindings.length
+        const blocking = customFindings.some(finding => finding.severity === 'error')
+        return {
+          ...category,
+          status: blocking ? 'blocking' as const : category.status === 'blocking' ? category.status : 'warning' as const,
+          findingCount,
+          summary: blocking ? `${findingCount} 项阻断问题` : category.id === 'product_truth' ? `${findingCount} 项详情页决策复核建议` : `${findingCount} 项竞品参考人工复核建议`,
+        }
       }),
     }
   }
@@ -4465,7 +4548,11 @@ function detailPageDecisionContract(module: ContentModule, product: Product, pla
       accessibilityText: `${module.title}：${module.body}`,
     },
     priority: priorityByKey[module.key] ?? 50,
-    optional: !['hero', 'selling_points', 'specifications', 'sku', 'cta'].includes(module.key),
+    // A module whose source material is absent is an omitted candidate, not a
+    // mandatory page merely because its template key is normally important.
+    // Explicit model/Codex contracts can still declare optional=false and are
+    // then blocked by review when their evidence is missing.
+    optional: pending || !['hero', 'selling_points', 'specifications', 'sku', 'cta'].includes(module.key),
   }
 }
 

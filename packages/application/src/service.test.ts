@@ -1836,7 +1836,85 @@ describe('MerchantService', () => {
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
     const draft = service.createDraft(task.id)
-    expect(service.reviewContent('ws_demo', draft.id)).toEqual([])
+    expect(service.reviewContent('ws_demo', draft.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'DETAIL_MODULE_OPTIONAL_OMITTED', severity: 'warning', priority: 'P1' }),
+    ]))
+    expect(service.approveContent(task.id, draft.id).version.state).toBe('approved')
+  })
+
+  it('enforces P0 detail decision evidence, scope and duplicate-key review gates', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    const modules = draft.body.modules!
+    const cloneModule = (index: number, key: string, overrides: Record<string, unknown>) => {
+      const source = structuredClone(modules[index]!)
+      return { ...source, key, decisionContract: { ...source.decisionContract!, ...overrides } }
+    }
+    draft.body.modules = [
+      cloneModule(0, 'required_missing', { optional: false, evidence: { ...modules[0]!.decisionContract!.evidence, sourceIds: [], status: 'missing' } }),
+      cloneModule(0, 'expired', { evidence: { ...modules[0]!.decisionContract!.evidence, status: 'expired' } }),
+      cloneModule(0, 'conflict', { evidence: { ...modules[0]!.decisionContract!.evidence, status: 'conflict' } }),
+      cloneModule(0, 'sku_scope', { claim: { ...modules[0]!.decisionContract!.claim, skuIds: ['sku-foreign'] } }),
+      cloneModule(0, 'platform_scope', { claim: { ...modules[0]!.decisionContract!.claim, platforms: ['jd'] } }),
+      cloneModule(0, 'duplicate', {}),
+      cloneModule(0, 'duplicate', {}),
+    ]
+
+    const findings = service.reviewContent('ws_demo', draft.id)
+    expect(findings.map(finding => finding.code as string)).toEqual(expect.arrayContaining([
+      'DETAIL_MODULE_REQUIRED_EVIDENCE_MISSING',
+      'DETAIL_MODULE_EVIDENCE_EXPIRED',
+      'DETAIL_MODULE_EVIDENCE_CONFLICT',
+      'DETAIL_MODULE_SKU_SCOPE_MISMATCH',
+      'DETAIL_MODULE_PLATFORM_SCOPE_MISMATCH',
+      'DETAIL_MODULE_DUPLICATE_KEY',
+    ]))
+    expect(findings.filter(finding => String(finding.code).startsWith('DETAIL_MODULE_') && finding.severity === 'error')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ priority: 'P0', status: 'open' })]),
+    )
+    expect(service.reviewContentReport('ws_demo', draft.id)).toMatchObject({
+      blocking: true,
+      categories: expect.arrayContaining([expect.objectContaining({ id: 'product_truth', status: 'blocking' })]),
+    })
+    expect(() => service.approveContent(task.id, draft.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+  })
+
+  it('diagnoses optional missing detail evidence without blocking approval', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    const source = structuredClone(draft.body.modules![0]!)
+    draft.body.modules = [{
+      ...source,
+      key: 'optional_missing',
+      factSourceIds: [],
+      decisionContract: { ...source.decisionContract!, optional: true, claim: { ...source.decisionContract!.claim, factSourceIds: [] }, evidence: { ...source.decisionContract!.evidence, sourceIds: [], status: 'missing' } },
+    }]
+
+    const findings = service.reviewContent('ws_demo', draft.id)
+    expect(findings).toContainEqual(expect.objectContaining({ code: 'DETAIL_MODULE_OPTIONAL_OMITTED', severity: 'warning', priority: 'P1' }))
+    expect(findings).not.toContainEqual(expect.objectContaining({ code: 'MISSING_SOURCE', field: 'modules.optional_missing' }))
+    expect(findings.some(finding => finding.severity === 'error')).toBe(false)
+    expect(service.approveContent(task.id, draft.id).version.state).toBe('approved')
+  })
+
+  it('keeps historical modules readable and warns before re-approval when decision contracts are absent', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+    const legacy = structuredClone(draft.body.modules![0]!)
+    delete legacy.decisionContract
+    draft.body.modules = [legacy]
+
+    expect(service.getContentVersion('ws_demo', draft.id).body.modules?.[0]?.title).toBe(legacy.title)
+    expect(service.reviewContent('ws_demo', draft.id)).toContainEqual(expect.objectContaining({
+      code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', severity: 'warning', priority: 'P1',
+      repairSuggestion: expect.stringContaining('重新批准前'),
+    }))
     expect(service.approveContent(task.id, draft.id).version.state).toBe('approved')
   })
 
