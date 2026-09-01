@@ -76,7 +76,7 @@ const READ_ONLY_METHODS = new Set([
 // entry with the shared server registry. It is intentionally separate from
 // READ_ONLY_METHODS, which controls MCP annotations and transport retries,
 // not commercial access or zero-point recovery.
-const COMMERCIAL_REGISTRY_VERSION = 'commercial-mcp-foundation.v1'
+const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
 const COMMERCIAL_RECOVERY_METHODS = new Set([
   'subscription.get', 'subscription.orders.list', 'billing.status',
   'billing.recharge.get', 'billing.recharge.list', 'billing.transactions',
@@ -2489,7 +2489,7 @@ async function handle(request) {
     if (COMMERCIAL_DISABLED_METHODS.has(name)) {
       const structuredContent = {
         code: 'COMMERCIAL_OPERATION_DISABLED',
-        message: '该旧版商业操作尚未接入创意点 SKU 契约，已停用且未发送 API 请求。',
+        message: '该商业操作在共享 registry 中为 disabled，已在 API 前失败关闭。',
         commercial_registry_version: COMMERCIAL_REGISTRY_VERSION,
       }
       return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })

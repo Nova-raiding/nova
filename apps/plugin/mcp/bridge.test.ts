@@ -84,6 +84,9 @@ describe('Codex stdio MCP bridge', () => {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name: operation, arguments: {} } })}\n`)
         const response = await nextLine(child.stdout)
         expect(Boolean(response.error || response.result?.isError), `${operation} must fail closed before API forwarding`).toBe(true)
+        if (!operation.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(operation)) {
+          expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
+        }
       }
     } finally {
       child.kill()

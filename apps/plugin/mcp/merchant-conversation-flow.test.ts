@@ -115,24 +115,16 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
-  it.each([
-    ['缺少已确认商品事实', 'FACTS_CONFIRMATION_REQUIRED', '请先确认商品事实'],
-    ['缺少服务端权限', 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
-    ['余额不足', 'RECHARGE_REQUIRED', '余额不足，请先充值'],
-  ])('surfaces the %s blocker without claiming task success', async (_label, code, message) => {
+  it('rejects disabled content generation before older downstream blockers can be reached', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
-      if (request.method === 'content.generate') {
-        res.end(json(failure(code, message)))
-      } else {
-        res.end(json(ok(request, { enabled: true })))
-      }
+      res.end(json(ok(request, { enabled: true })))
     }, async (child, calls) => {
       expect((await request(child, 1, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })).result).toMatchObject({ isError: false })
       const response = await request(child, 2, 'content.generate', { task_id: 'task_1' })
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code, message } })
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
       expect(JSON.stringify(response.result)).not.toContain('success')
-      expect(calls.map(call => call.method)).toEqual(['content.generate'])
+      expect(calls).toEqual([])
     })
   })
 
@@ -191,15 +183,15 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
-  it('returns a successful deliverable as an actionable artifact card', async () => {
+  it('returns an existing successful deliverable as an actionable artifact card', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')
-      res.end(json(ok(request, request.method === 'content.generate'
+      res.end(json(ok(request, request.method === 'generation.get'
         ? { status: 'completed', deliverable: { title: '轻云防晒外套详情页', version: 'v3' }, action_cards: [{ method: 'content.export', label: '导出交付包', description: '可下载的内容交付物' }] }
         : { enabled: true })))
     }, async (child) => {
       await request(child, 1, 'workspace.interactive.confirm', { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' })
-      const response = await request(child, 2, 'content.generate', { task_id: 'task_1' })
+      const response = await request(child, 2, 'generation.get', { job_id: 'job_1' })
       const result = response.result as Json
       expect(result).toMatchObject({ isError: false, structuredContent: { status: 'completed', deliverable: { version: 'v3' } } })
       expect((result.structuredContent as Json).action_cards).toEqual([expect.objectContaining({ tool: 'content.export', label: '导出交付包', requires_confirmation: false })])
