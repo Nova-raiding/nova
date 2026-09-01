@@ -8,6 +8,8 @@ describe('marketing queue delivery evidence', () => {
   it('gives every asynchronous state a truthful, user-facing label', () => {
     expect(queueStateLabel('queued')).toBe('排队中')
     expect(queueStateLabel('processing')).toBe('处理中')
+    expect(queueStateLabel('archiving')).toBe('归档中')
+    expect(queueStateLabel('scanning')).toBe('安全扫描中')
     expect(queueStateLabel('failed')).toBe('失败')
     expect(queueStateLabel('unknown')).toBe('待对账')
     expect(queueStateLabel('outcome_unknown')).toBe('结果待对账')

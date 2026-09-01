@@ -82,6 +82,8 @@ export function queueStateLabel(state: string) {
     queued: "排队中",
     running: "处理中",
     processing: "处理中",
+    archiving: "归档中",
+    scanning: "安全扫描中",
     provider_reserved: "生成请求已登记，等待提交",
     provider_dispatching: "正在提交模型请求，等待受理确认",
     dispatching: "正在提交模型请求，等待受理确认",
