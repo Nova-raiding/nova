@@ -44,4 +44,21 @@ describe('OAuth security', () => {
     await expect(store.consume(state, { workspaceId: 'ws_redis', platform: 'jd' })).resolves.toMatchObject({ codeVerifier: 'verifier', consumed: true })
     await expect(store.consume(state, { workspaceId: 'ws_redis', platform: 'jd' })).rejects.toThrow(/invalid/)
   })
+
+  it('rejects unsafe state inputs and malformed Redis records fail closed', async () => {
+    const store = new OAuthStateStore()
+    expect(() => store.issue({ workspaceId: 'ws\n1', actorId: 'actor', platform: 'jd' })).toThrowError(/workspace is invalid/)
+    expect(() => new OAuthStateStore(0)).toThrow(/TTL is invalid/)
+
+    const data = new Map<string, string>()
+    const redis: OAuthRedisPort = {
+      async set(key, value) { data.set(key, value) },
+      async get(key) { return data.get(key) ?? null },
+      async eval(_script, keys) { return data.has(keys[0]!) ? ['ok', '{malformed'] : ['missing', ''] },
+    }
+    const redisStore = new RedisOAuthStateStore(redis, 'test:oauth', 60)
+    const state = await redisStore.issue({ workspaceId: 'ws_1', actorId: 'actor', platform: 'jd' })
+    data.set(`test:oauth:${state}`, '{malformed')
+    await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
+  })
 })
