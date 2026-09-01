@@ -16,11 +16,17 @@ export class InMemoryJobRunner<T, R> {
   constructor(readonly kind: WorkerKind, private readonly handler: WorkerHandler<T, R>, options: RunnerOptions = {}) {
     this.baseDelayMs = options.baseDelayMs ?? 100
     this.maxDelayMs = options.maxDelayMs ?? 30_000
+    if (!Number.isSafeInteger(this.baseDelayMs) || this.baseDelayMs < 0 || this.baseDelayMs > 86_400_000) throw new Error('WORKER_RETRY_BASE_DELAY_INVALID')
+    if (!Number.isSafeInteger(this.maxDelayMs) || this.maxDelayMs < 0 || this.maxDelayMs > 86_400_000) throw new Error('WORKER_RETRY_MAX_DELAY_INVALID')
+    if (this.maxDelayMs < this.baseDelayMs) throw new Error('WORKER_RETRY_DELAY_ORDER_INVALID')
     this.clock = options.now ?? (() => Date.now())
     this.idFactory = options.idFactory ?? (() => randomUUID())
   }
 
   enqueue(input: { workspaceId: string; idempotencyKey: string; payload: T; maxAttempts?: number }): WorkerJob<T> {
+    if (typeof input.workspaceId !== 'string' || !input.workspaceId.trim()) throw new Error('WORKER_WORKSPACE_REQUIRED')
+    if (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey.trim()) throw new Error('WORKER_IDEMPOTENCY_KEY_REQUIRED')
+    if (input.maxAttempts !== undefined && (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 100)) throw new Error('WORKER_MAX_ATTEMPTS_INVALID')
     // Idempotency is tenant-scoped. A merchant-supplied key may legitimately
     // be reused in another workspace and must never return that workspace's job.
     const scopedKey = `${input.workspaceId.length}:${input.workspaceId}:${input.idempotencyKey}`
@@ -82,6 +88,8 @@ export class InMemoryJobRunner<T, R> {
 
 export function normalizeWorkerError(cause: unknown): WorkerError {
   if (cause instanceof WorkerFailure) return cause.error
-  const candidate = cause as Partial<WorkerError> | undefined
-  return { code: candidate?.code ?? 'WORKER_ERROR', message: candidate?.message ?? 'Worker execution failed', retryable: candidate?.retryable ?? false, unknown: candidate?.unknown ?? false }
+  const candidate = cause && typeof cause === 'object' ? cause as Partial<WorkerError> : undefined
+  const code = typeof candidate?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/u.test(candidate.code) ? candidate.code : 'WORKER_ERROR'
+  const rawMessage = typeof candidate?.message === 'string' && candidate.message.trim() ? candidate.message : 'Worker execution failed'
+  return { code, message: rawMessage.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 2_000), retryable: candidate?.retryable === true, unknown: candidate?.unknown === true }
 }
