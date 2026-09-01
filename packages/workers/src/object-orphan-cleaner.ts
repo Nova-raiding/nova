@@ -22,7 +22,7 @@ export async function cleanObjectStorageOrphans(input: { workspaceId: string; re
   if (input.maxAttempts !== undefined && (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 100)) throw new Error('OBJECT_ORPHAN_MAX_ATTEMPTS_INVALID')
   const now = input.now ?? new Date()
   const maxAttempts = input.maxAttempts ?? 5
-  const rows = await input.repository.listPending(input.workspaceId, input.limit ?? 100)
+  const rows = await input.repository.claimPending(input.workspaceId, { limit: input.limit ?? 100, now: now.toISOString() })
   const result: ObjectOrphanCleanupResult = { scanned: rows.length, cleaned: 0, retrying: 0, manualAttention: 0 }
   for (const row of rows) {
     const key = `${repositoryId(input.repository)}:${input.workspaceId}:${row.id}`
@@ -47,14 +47,14 @@ async function cleanOneOrphan(input: { workspaceId: string; repository: ObjectOr
   try {
     await input.deleteObject(row.objectKey)
     await input.onDeleted?.(row)
-    await input.repository.markCleaned({ workspaceId: input.workspaceId, id: row.id })
+    await input.repository.markCleaned({ workspaceId: input.workspaceId, id: row.id, leaseToken: row.leaseToken })
     return 'cleaned'
   } catch (error) {
     const nextAttempts = row.attempts + 1
     const manualAttention = nextAttempts >= maxAttempts
     const delayMs = Math.min(24 * 60 * 60 * 1_000, 30_000 * 2 ** Math.max(0, nextAttempts - 2))
     const message = error instanceof Error ? error.message.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 2_000) : 'object delete failed'
-    await input.repository.markRetry({ workspaceId: input.workspaceId, id: row.id, error: message, nextAttemptAt: new Date(now.getTime() + delayMs).toISOString(), manualAttention })
+    await input.repository.markRetry({ workspaceId: input.workspaceId, id: row.id, error: message, nextAttemptAt: new Date(now.getTime() + delayMs).toISOString(), manualAttention, leaseToken: row.leaseToken })
     return manualAttention ? 'manual_attention' : 'retrying'
   }
 }
