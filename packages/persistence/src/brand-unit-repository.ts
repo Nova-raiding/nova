@@ -96,9 +96,15 @@ export class CampaignLifecycleError extends Error {
 
 function validateCampaignTargets(targets: readonly CampaignTargetRow[] | undefined) {
   for (const target of targets ?? []) {
+    // A target is the campaign/task five-tuple boundary.  Do not allow a
+    // partially populated target to become a durable item: downstream code
+    // must never have to infer tenant, product, or store identity.
+    const hasProduct = Boolean(target.productId?.trim())
+    const hasPlatform = Boolean(target.platform?.trim())
+    const hasAccount = Boolean(target.accountId?.trim())
     const hasCanonical = Boolean(target.canonicalProductId?.trim())
     const hasListing = Boolean(target.listingId?.trim())
-    if (hasCanonical !== hasListing) throw new Error('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
+    if (!hasProduct || !hasPlatform || !hasAccount || hasCanonical !== hasListing) throw new Error('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
   }
 }
 

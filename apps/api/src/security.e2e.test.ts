@@ -1035,10 +1035,12 @@ describe('security and access-control acceptance gates', () => {
     expect(service.products.get(source.id)).toEqual(protectedProductBeforeDeniedUpdates)
     expect(service.products.get(hiddenSource.id)).toEqual(hiddenProductBeforeDeniedUpdates)
     const generatedJob = service.enqueueImageGeneration({ workspaceId, productId: source.id, idempotencyKey: `brand-image-${workspaceId}`, count: 1 })
+    const generatedJobBeforeDeniedSelection = structuredClone(generatedJob)
     const generatedVisualRef = `dvis_${'B'.repeat(24)}`
     const selectionIntentHash = createHash('sha256').update(JSON.stringify({ method: 'catalog.image.select', jobId: generatedJob.id, visualRef: generatedVisualRef, expectedRevision: generatedJob.revision })).digest('hex')
     const viewerSelection = await mcp(editorHeaders, 6.6, 'catalog.image.select', { job_id: generatedJob.id, visual_ref: generatedVisualRef, expected_revision: String(generatedJob.revision), idempotency_key: `brand-select-${workspaceId}`, reason: '品牌候选图选择', confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: selectionIntentHash })
-    expect(viewerSelection.error).toMatchObject({ code: 'BRAND_ACCESS_REQUIRED', details: { required_role: 'editor' } })
+    expect(viewerSelection.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect(service.imageGenerationJobs.get(generatedJob.id)).toEqual(generatedJobBeforeDeniedSelection)
     expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const protectedTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
     const hiddenTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })

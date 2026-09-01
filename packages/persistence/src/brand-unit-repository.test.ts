@@ -188,6 +188,18 @@ describe('PostgresBrandUnitRepository', () => {
     })).rejects.toThrow('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
   })
 
+  it('fails closed when a campaign target omits any five-tuple identity', async () => {
+    const repository = new MemoryBrandUnitRepository()
+    const base = {
+      id: 'campaign_incomplete_five_tuple', workspaceId: 'ws_scope', brandId: 'brand_scope',
+      platform: 'taobao' as BrandUnitPlatform, accountId: 'acct_scope', productIds: ['legacy_product'], state: 'draft' as const,
+    }
+
+    await expect(repository.createCampaign({ ...base, targets: [{ productId: '', platform: 'taobao', accountId: 'acct_scope' }] })).rejects.toThrow('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
+    await expect(repository.createCampaign({ ...base, id: 'campaign_missing_platform', targets: [{ productId: 'legacy_product', platform: '' as BrandUnitPlatform, accountId: 'acct_scope' }] })).rejects.toThrow('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
+    await expect(repository.createCampaign({ ...base, id: 'campaign_missing_account', targets: [{ productId: 'legacy_product', platform: 'taobao', accountId: '' }] })).rejects.toThrow('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
+  })
+
   it('persists per-item task assignments so campaign generation can resume without a process map', async () => {
     const repository = new MemoryBrandUnitRepository()
     const created = await repository.createCampaign({ id: 'campaign_resume', workspaceId: 'ws_resume', brandId: 'brand_resume', platform: 'taobao', accountId: 'acct_resume', productIds: ['product_a', 'product_b'], state: 'draft' })

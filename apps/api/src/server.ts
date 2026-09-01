@@ -4642,7 +4642,13 @@ async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<Retur
     return { type: 'account' as const, id: task.accountId }
   }
   const productId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : undefined
-  const product = productId ? service.products.get(productId) : undefined
+  const imageJobId = typeof params.job_id === 'string' && params.job_id.trim() ? params.job_id.trim() : undefined
+  const imageJob = imageJobId ? service.imageGenerationJobs.get(imageJobId) : undefined
+  const product = productId
+    ? service.products.get(productId)
+    : imageJob?.workspaceId === workspaceId
+      ? service.products.get(imageJob.productId)
+      : undefined
   if (!product || product.workspaceId !== workspaceId) return direct
   if (direct.type === 'account') return { type: 'account' as const, id: product.accountId }
   const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
