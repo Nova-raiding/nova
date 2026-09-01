@@ -4510,7 +4510,7 @@ const platformCanonicalRoles = new Set<CanonicalRole>(['platform_admin', 'ops_ad
 const alwaysEnforcedMcpMethods = new Set([
   'ops.user.suspend', 'ops.user.activate', 'ops.user.risk.transition', 'ops.user.session.revoke',
   'ops.member.upsert', 'ops.member.suspend', 'ops.feature-flag.upsert', 'ops.feature-flag.emergency.set',
-  'ops.data.delete.cancel', 'ops.data.delete.approve', 'billing.usage.refund', 'billing.refund',
+  'ops.data.delete.cancel', 'ops.data.delete.approve', 'workspace.data.delete.request', 'billing.usage.refund', 'billing.refund',
   'rule.publish', 'publish.confirm', 'publish.batch.confirm',
   'catalog.image.select',
   'ops.marketing.asset_scan.retry',
