@@ -3579,14 +3579,6 @@ async function requestCatalogSync(workspaceId: string, req: IncomingMessage, par
     service.removeSyncJob(workspaceId, job.id)
     throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '商品同步缺少持久身份授权快照，已拒绝入队', 503)
   }
-  const syncEntitlementKey = `bulk-sync-job:${job.id}`
-  let syncEntitlement: Awaited<ReturnType<typeof consumeEntitlement>>
-  try {
-    syncEntitlement = await consumeEntitlement({ workspaceId, kind: 'bulk_sync', actionKey: syncEntitlementKey, actionKind: 'catalog_sync', actorId: requestActor(req), description: '商品批量同步权益（可选加购）' })
-  } catch (error) {
-    service.removeSyncJob(workspaceId, job.id)
-    throw error
-  }
   try {
     await persistSnapshot(workspaceId, 'sync_job', job, job as unknown as Record<string, unknown>)
     await persistEvent(workspaceId, job.id, 'sync.requested', job.revision, { job_id: job.id, platform, account_id: accountId, mode: job.mode, ...(job.resumeCursor ? { cursor: job.resumeCursor } : {}), ...(authorizationSnapshot ? { authorization_snapshot: serializedWorkerAuthorizationSnapshot(authorizationSnapshot) } : {}) })
@@ -3599,7 +3591,6 @@ async function requestCatalogSync(workspaceId: string, req: IncomingMessage, par
       failureProjected = true
     } catch { /* preserve the original failure; remove the in-memory ghost below */ }
     if (!failureProjected) service.removeSyncJob(workspaceId, job.id)
-    if (syncEntitlement) await refundEntitlement({ workspaceId, actionKey: syncEntitlementKey, reason: '同步任务持久化失败' }).catch(() => undefined)
     throw error
   }
   if (fixtureMode) {
@@ -3617,7 +3608,6 @@ async function requestCatalogSync(workspaceId: string, req: IncomingMessage, par
       const failed = service.updateSyncJob(workspaceId, job.id, { state: 'failed', errorMessage: error instanceof Error ? error.message : '同步 provider 调用失败' })
       await persistSnapshot(workspaceId, 'sync_job', failed, failed as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, job.id, 'sync.failed', failed.revision, { job_id: job.id, platform, account_id: accountId, error_message: failed.errorMessage ?? '同步 provider 调用失败', simulated: true })
-      if (syncEntitlement) await refundEntitlement({ workspaceId, actionKey: syncEntitlementKey, reason: '商品批量同步失败' })
       throw error
     }
   }
@@ -9525,7 +9515,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   let workspaceId = method === 'workspace.bootstrap'
     ? ''
     : requestWorkbench === 'platform'
-      ? header(req, 'x-workspace-id')?.trim() ?? ''
+      ? header(req, 'x-workspace-id')?.trim()
+        || (typeof params.target_workspace_id === 'string' ? params.target_workspace_id.trim() : '')
+        || (typeof params.workspace_id === 'string' ? params.workspace_id.trim() : '')
       : resolveWorkspace(req, isPlatformWideUserGovernance ? undefined : params.workspace_id)
   enrichRequestObservation(req, {
     workspaceId: workspaceId || undefined,
@@ -9605,8 +9597,21 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         updated_at: balance?.updatedAt ?? null,
       })
     }
-    case 'creative-points.statement.list':
-      throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未实现，不能返回伪造的空流水', 503, { entries: null })
+    case 'creative-points.statement.list': {
+      await persistenceReady
+      if (!persistence.creativePoints) throw new DomainError('CREATIVE_POINT_STATEMENT_REPOSITORY_UNAVAILABLE', '创意点流水读取仓储尚未配置', 503, { entries: null })
+      const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 50
+      let cursor: { createdAt: string; id: string } | undefined
+      if (typeof params.cursor === 'string' && params.cursor.trim()) {
+        try {
+          const decoded = JSON.parse(Buffer.from(params.cursor, 'base64url').toString('utf8')) as unknown
+          if (!isObject(decoded) || typeof decoded.createdAt !== 'string' || typeof decoded.id !== 'string') throw new Error('invalid')
+          cursor = { createdAt: decoded.createdAt, id: decoded.id }
+        } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'cursor 无效', 400) }
+      }
+      const statement = await persistence.creativePoints.listStatement(workspaceId, { limit, ...(cursor ? { cursor } : {}) })
+      return result({ schema_version: 'creative-points.statement.v1', entries: statement.items, next_cursor: statement.nextCursor ? Buffer.from(JSON.stringify(statement.nextCursor)).toString('base64url') : null })
+    }
     case 'commercial.catalog.get': {
       await persistenceReady
       if (!persistence.commercialCatalog) throw new DomainError('COMMERCIAL_CATALOG_REPOSITORY_UNAVAILABLE', 'V2 商业目录仓储未配置', 503, { catalog: null })
@@ -10060,12 +10065,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const setup = setupDiagnostics()
       await persistenceReady
       const brandNavigation = await accessibleBrandNavigation(req, workspaceId)
-      const startWalletBalanceFen = persistence.billing ? await persistence.billing.balanceFen(workspaceId) : walletBalanceFen(workspaceId)
-      // A subscription quota is reported separately, but the plugin's paid
-      // capability card must only say "unlocked" after wallet settlement.
-      // Generation/publish gates already use the same wallet boundary.
-      const walletUnlocked = startWalletBalanceFen > 0
-      const walletCapabilities = billingCapabilityEntitlements({ balanceFen: startWalletBalanceFen, usage: persistence.usage ? await persistence.usage.get(workspaceId) : undefined, setup, stores: directory })
+      const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
+      const pointAccessAllowed = pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0
       const current = onboarding.currentStep
       const platformOptions = merchantPlatformOptions(workspaceId, directory)
       const nextPrompt = current.id === 'bind-store'
@@ -10089,15 +10090,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         nextInstruction: `你可以直接说：“${nextPrompt}”。`,
         onboarding: onboarding.steps,
         summary: onboarding.summary,
-        wallet: {
-          balance_cny: (startWalletBalanceFen / 100).toFixed(2),
-          unlocked: walletUnlocked,
-          recharge_channels: ['alipay', 'wechat'],
-          status_method: 'billing.status',
-          recharge_method: 'billing.recharge.create',
-          message: walletUnlocked ? '已解锁生成、图片、视频、OCR、SEO/GEO 和发布能力' : '充值到账后解锁生成、图片、视频、OCR、SEO/GEO 和发布能力',
-          capabilities: walletCapabilities,
-        },
+        creative_points: { balance_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: pointBalance?.availablePoints ?? null, reserved_points: pointBalance?.reservedPoints ?? null, access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
         stores: directory.map(store => ({ platform: store.platform, label: store.label, state: store.state, dataMode: store.dataMode, readable: store.readable, writeEnabled: store.writeEnabled })),
         availablePlatforms: SUPPORTED_PLATFORMS,
         platformOptions,
@@ -10112,7 +10105,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const cta = card.id === 'stores-products' ? '选择店铺并查看商品' : card.id === 'knowledge-assets' ? '上传商品图片和资料' : card.id === 'content' ? '开始内容任务' : card.title
           const action = merchantCapabilityCardAction(card, onboarding, directory)
           const paidCapability = ['content', 'visuals', 'review-publish', 'bulk-publish'].includes(card.id)
-          const capabilityGate = paidCapability ? { unlocked: walletUnlocked, method: 'billing.status', reason: walletUnlocked ? '钱包已到账；仍需事实、审核和交互确认门禁' : '充值到账后解锁该能力；授权、只读商品查看和创建充值订单仍可继续' } : undefined
+          const capabilityGate = paidCapability ? { unlocked: pointAccessAllowed, method: 'commercial.access.get', reason: pointAccessAllowed ? '创意点访问事实已通过；仍需具体操作的精确费率、事实、审核和交互确认门禁' : '创意点访问事实未通过；使用恢复读取确认余额、目录与下一步' } : undefined
           return { id: card.id, title: card.title, summary: card.summary, entryMethod: card.entryMethod, readOnly: card.readOnly, state: onboardingState, cta, requiredScope: card.id === 'stores-products' || card.id === 'content' ? 'platform + accountId' : 'workspace', ...(capabilityGate ? { capabilityGate } : {}), action: { ...action, confirmation: card.readOnly ? 'none' : 'interactive_confirmation' }, blocked_by: action.blocked_by, next_actions: [{ method: action.method, arguments: action.arguments, reason: action.reason, required_inputs: action.required_inputs }] }
         }),
       })
@@ -11065,8 +11058,25 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.commercial.orders-v2.list':
       throw new DomainError('COMMERCIAL_ORDER_V2_REPOSITORY_UNAVAILABLE', 'V2 订单与支付快照仓储尚未实现，不能回退到钱包订单', 503)
-    case 'ops.commercial.rate-cards.list':
-      throw new DomainError('COMMERCIAL_RATE_CARD_LIST_REPOSITORY_UNAVAILABLE', '费率卡列表仓储尚未实现；单动作执行仍只读取批准且可执行的不可变费率', 503)
+    case 'ops.commercial.rate-cards.list': {
+      if (!persistence.commercialCatalog) throw new DomainError('COMMERCIAL_RATE_CARD_LIST_REPOSITORY_UNAVAILABLE', 'V2 费率卡读取仓储尚未配置', 503)
+      const rates = await persistence.commercialCatalog.listRates()
+      const items = rates.map(rate => ({
+        id: rate.id,
+        action_code: rate.actionCode,
+        action_label: rate.actionCode,
+        unit_label: rate.unit,
+        points_rule: rate.pricingMode === 'fixed' && rate.integerPoints !== null ? `${rate.integerPoints} 点/${rate.unit}` : rate.pricingMode,
+        version: `${rate.rateCardId}:v${rate.version}:${rate.checksum}`,
+        approval_state: rate.approvalStatus,
+        valid_from: rate.effectiveAt,
+        valid_to: null,
+        blocking_reason: rate.blockers.length ? rate.blockers.join('；') : rate.executable && rate.ruleExecutable ? null : 'RATE_NOT_EXECUTABLE',
+        lifecycle: rate.lifecycle,
+        executable: rate.executable && rate.ruleExecutable,
+      }))
+      return result({ schema_version: 'creative-point-rates.v2', items, total: items.length })
+    }
     case 'ops.commercial.service-fulfillment.list':
       throw new DomainError('COMMERCIAL_SERVICE_FULFILLMENT_REPOSITORY_UNAVAILABLE', '服务履约事实仓储尚未实现，不能虚构服务进度', 503)
     case 'ops.commercial.offers.list':
@@ -12112,31 +12122,23 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const balanceFen = persistence.billing ? await persistence.billing.balanceFen(workspaceId) : walletBalanceFen(workspaceId)
       const usage = persistence.usage ? await persistence.usage.get(workspaceId) : undefined
       const stores = await storeCapacity(workspaceId)
-      const setup = setupDiagnostics()
-      const directory = workspaceStoreDirectory(workspaceId)
       const actions = persistence.actionLedger ? await persistence.actionLedger.list(workspaceId, 1000) : []
       const pendingActions = actions.filter(item => ['authorized', 'pending_receipt', 'manual_attention'].includes(item.settlementStatus ?? ''))
       const pendingAuthorizationFen = pendingActions.reduce((sum, item) => sum + (item.reservedAmountFen ?? item.amountFen), 0)
       const billingRoles = authorizedRoles(requestPrincipals.get(req))
       const canViewWorkspaceBilling = !requiresStrictAuth() || billingRoles.some(role => ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'].includes(role))
+      const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
       return result({
-        currency: 'CNY',
-        balance_cny: (balanceFen / 100).toFixed(2),
-        available_balance_cny: (balanceFen / 100).toFixed(2),
-        pending_authorization_cny: (pendingAuthorizationFen / 100).toFixed(2),
-        wallet_total_cny: ((balanceFen + pendingAuthorizationFen) / 100).toFixed(2),
-        settlement_pending_count: pendingActions.length,
-        settlement_message: pendingAuthorizationFen > 0 ? `¥${(pendingAuthorizationFen / 100).toFixed(2)} 正在等待模型成本确认，暂未作为最终消费` : null,
-        billing_mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture',
-        model_access: { ownership: 'platform', user_key_required: false, access_state: balanceFen > 0 && usage && usage.remainingTasks > 0 ? 'included_quota_available' : balanceFen > 0 ? 'wallet_overage_available' : 'recharge_required', message: balanceFen <= 0 ? '请先充值插件钱包，到账后开放生成、图片、OCR、SEO/GEO、视频和发布能力' : usage && usage.remainingTasks > 0 ? `当前套餐剩余 ${usage.remainingTasks} 次模型行动额度，优先消耗套餐额度` : '套餐额度已用尽，将从插件钱包余额扣除套餐外模型行动' },
-        action_entitlement: usage ? { included_tasks: usage.includedTasks, used_tasks: usage.usedTasks, remaining_tasks: usage.remainingTasks, overage_policy: 'wallet' } : { overage_policy: 'wallet' },
-        plugin_access: { unlocked: balanceFen > 0, balance_cny: (balanceFen / 100).toFixed(2), unlocks: ['内容生成', '图片生成', '图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '视频请求', '发布任务'] },
-        capability_entitlements: billingCapabilityEntitlements({ balanceFen, usage, setup, stores: directory }),
-        recharge_channels: ['alipay', 'wechat'],
-        store_capacity: { ...stores, upgrade_actions: ['升级套餐增加店铺数', '购买店铺加购包'], action_cards: commercialActionCards() },
-        provider_ready: process.env.PAYMENT_MODE === 'provider' && paymentProviderReadiness().ready,
-        next_actions: balanceFen <= 0 ? ['选择支付宝或微信创建充值订单'] : [],
-        action_cards: billingActionCards(),
+        schema_version: 'commercial.billing-status.v2',
+        workspace_id: workspaceId,
+        balance_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known',
+        available_points: pointBalance?.availablePoints ?? null,
+        reserved_points: pointBalance?.reservedPoints ?? null,
+        settled_points: pointBalance?.settledPoints ?? null,
+        access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision),
+        allowed: pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0,
+        next_actions: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
+        legacy_non_authoritative: { currency: 'CNY', wallet_balance_cny: (balanceFen / 100).toFixed(2), pending_authorization_cny: (pendingAuthorizationFen / 100).toFixed(2), settlement_pending_count: pendingActions.length, billing_mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', historical_task_quota: usage ? { included_tasks: usage.includedTasks, used_tasks: usage.usedTasks, remaining_tasks: usage.remainingTasks } : null, store_capacity: stores, provider_ready: process.env.PAYMENT_MODE === 'provider' && paymentProviderReadiness().ready, note: '仅供历史对账；不得参与业务准入、恢复建议或 worker execution-check。' },
         viewer: { default_scope: 'mine', available_scopes: canViewWorkspaceBilling ? ['mine', 'workspace'] : ['mine'] },
       })
     }
@@ -12532,18 +12534,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'platform.connect': {
       const platform = required(params, 'platform') as Platform
       await requireStoreCapacity(workspaceId)
-      const platformEntitlementKey = `platform-connect:${workspaceId}:${platform}:${typeof params.store_key === 'string' ? params.store_key.trim() : 'default'}`
-      // Authorization is the activation/readiness step. It remains available
-      // before wallet recharge; an optional platform add-on can still settle
-      // the action when present, but it must not gate first-run onboarding.
-      const platformEntitlement = await consumeEntitlement({ workspaceId, kind: 'platform', actionKey: platformEntitlementKey, actionKind: 'platform_connect', actorId: requestActor(req), description: '平台连接权益（可选加购）' })
       let authorization: Awaited<ReturnType<typeof beginPlatformAuthorization>>
       try {
         authorization = await beginPlatformAuthorization(req, platform, params, workspaceId)
-      } catch (error) {
-        if (platformEntitlement) await refundEntitlement({ workspaceId, actionKey: platformEntitlementKey, reason: '平台授权入口创建失败' })
-        throw error
-      }
+      } catch (error) { throw error }
       if (!fixtureMode || authorization.ok !== true) return result(authorization)
       // Explicit local演练 shortcut: production still requires the official OAuth
       // callback and never creates an account from an authorization URL alone.
@@ -13790,8 +13784,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产同步必须指定已授权平台账号', 400)
       const platformAccount = isProduction() || fixtureMode ? requireActivePlatformAccount(workspaceId, accountId, platform) : undefined
       await ensureFixtureAccount(workspaceId, platform, accountId)
-      const syncEntitlementKey = `bulk-sync:${workspaceId}:${platform}:${accountId}:${typeof params.cursor === 'string' ? params.cursor : 'full'}:${header(req, 'idempotency-key')?.trim() ?? 'default'}`
-      const syncEntitlement = await consumeEntitlement({ workspaceId, kind: 'bulk_sync', actionKey: syncEntitlementKey, actionKind: 'catalog_sync', actorId: requestActor(req), description: '商品批量同步权益（可选加购）' })
       try {
         const synced = await connectorRuntime.sync(platform, { workspaceId, accountId, ...(platformAccount ? { credentialRef: platformAccount.credentialRef } : {}), traceId: requestId(req) }, typeof params.cursor === 'string' ? params.cursor : undefined)
         const products = service.upsertSyncedProducts({ workspaceId, platform, accountId, items: synced.items })
@@ -13799,10 +13791,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         for (const product of products) await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
         const automation = await scanAutomationAfterOperationalCompletion(workspaceId, platform, accountId, 'catalog.sync.completed')
         return result({ ...synced, products, automation })
-      } catch (error) {
-        if (syncEntitlement) await refundEntitlement({ workspaceId, actionKey: syncEntitlementKey, reason: '商品批量同步失败' })
-        throw error
-      }
+      } catch (error) { throw error }
     }
     case 'catalog.sync.start': {
       return result(await requestCatalogSync(workspaceId, req, params))
@@ -16501,11 +16490,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       throw new DomainError('SYNC_JOB_TERMINAL_CONFLICT', '同步任务已进入不可逆终态，拒绝迟到结果覆盖', 409, { current_state: job.state, attempted_state: state })
     }
     const updated = service.updateSyncJob(workspaceId, job.id, { state, ...(state === 'succeeded' ? { nextCursor: undefined, resumeCursor: undefined } : {}), ...(typeof input.error_message === 'string' ? { errorMessage: input.error_message } : {}) })
-    if (state === 'failed') {
-      const syncEntitlementKey = `bulk-sync-job:${job.id}`
-      const entitlement = await refundEntitlement({ workspaceId, actionKey: syncEntitlementKey, reason: '异步商品批量同步失败' })
-      if (!entitlement.refunded && isProduction()) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: `sync:${syncEntitlementKey}`, actorId: 'worker', reason: '异步商品批量同步失败' })
-    }
     await persistSnapshot(workspaceId, 'sync_job', updated, updated as unknown as Record<string, unknown>)
     const automation = state === 'succeeded' || state === 'partial'
       ? await scanAutomationAfterOperationalCompletion(workspaceId, job.platform, job.accountId, `sync-job.result.${state}`)

@@ -60,7 +60,7 @@ paths:
     get:
       tags: [Commercial]
       operationId: listCreativePointStatement
-      description: Reads authoritative ledger evidence. Until a V2 ledger reader is available this endpoint returns 503 and never fabricates an empty statement.
+      description: Reads authoritative creative-point ledger evidence from the workspace-scoped repository; unavailable storage is explicit and never projected as an empty statement.
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { $ref: '#/components/parameters/Limit' }

@@ -43,6 +43,7 @@ describe('MemoryCommercialCatalogRepository', () => {
       integerPoints: 1, checksum: 'draft', effectiveAt: '2026-09-01T00:00:00.000Z',
       lifecycle: 'pending_business_approval', executable: false,
     }])
+    expect(await repository.listRates()).toMatchObject([{ actionCode: 'image.generate.standard', lifecycle: 'pending_business_approval', executable: false }])
     await expect(repository.resolveApprovedRate('image.generate.standard')).rejects.toBeInstanceOf(CreativePointRateUnavailableError)
   })
 
@@ -86,6 +87,17 @@ describe('PostgresCommercialCatalogRepository', () => {
     expect(client.calls[0]?.text).toContain("c.approval_status = 'approved'")
     expect(client.calls[0]?.text).toContain("r.pricing_mode = 'fixed'")
     expect(client.calls[0]?.text).toContain('LIMIT 2')
+  })
+
+  it('lists draft rate facts without treating them as approved execution rates', async () => {
+    const client = new FakeClient([{
+      id: 'rate-image', rateCardId: 'draft-v1', version: 1, actionCode: 'image.generate.standard', unit: 'image',
+      integerPoints: '1', pricingMode: 'fixed', lifecycle: 'pending_business_approval', approvalStatus: 'pending_business_approval',
+      executable: false, ruleExecutable: false, checksum: 'checksum', effectiveAt: null, blockers: ['BUSINESS_APPROVAL_REQUIRED'],
+    }])
+    const repository = new PostgresCommercialCatalogRepository(new FakePool(client))
+    expect(await repository.listRates()).toEqual([expect.objectContaining({ id: 'rate-image', integerPoints: 1, effectiveAt: null, blockers: ['BUSINESS_APPROVAL_REQUIRED'] })])
+    expect(client.calls[0]?.text).not.toContain("c.lifecycle = 'approved'")
   })
 
   it('maps unsafe approved point values to RATE_CARD_UNAVAILABLE', async () => {

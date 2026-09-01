@@ -33,6 +33,30 @@ describe('central commercial access gate', () => {
     await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'content.generate')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED', status: 503 })
     await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'unregistered.business.action')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_UNCLASSIFIED', status: 503 })
   })
+
+  it('keeps all statement recovery surfaces backed by the creative-point ledger', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const mcpStart = source.indexOf("case 'creative-points.statement.list':")
+    const mcpEnd = source.indexOf("case 'commercial.catalog.get':", mcpStart)
+    const httpStart = source.indexOf("path === '/v1/creative-points/statement'")
+    const httpEnd = source.indexOf("path === '/v1/commercial/catalog'", httpStart)
+    expect(source.slice(mcpStart, mcpEnd)).toContain('persistence.creativePoints.listStatement')
+    expect(source.slice(httpStart, httpEnd)).toContain('persistence.creativePoints.listStatement')
+  })
+
+  it('returns ops commercial DTOs in the desktop parser shape', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const access = source.slice(source.indexOf("case 'ops.commercial.access.summary':"), source.indexOf("case 'ops.commercial.catalog-v2.list':"))
+    const catalog = source.slice(source.indexOf("case 'ops.commercial.catalog-v2.list':"), source.indexOf("case 'ops.commercial.access-blocks.list':"))
+    expect(access).toContain('decision_id:')
+    expect(access).toContain('allowed:')
+    expect(access).not.toContain('decision: access')
+    for (const field of ['name', 'type', 'price_label', 'benefits_summary', 'approval_state']) expect(catalog).toContain(field)
+    expect(catalog).toContain("capabilities.has('commercial.private_sku.read')")
+    const rates = source.slice(source.indexOf("case 'ops.commercial.rate-cards.list':"), source.indexOf("case 'ops.commercial.service-fulfillment.list':"))
+    expect(rates).toContain('persistence.commercialCatalog.listRates()')
+    for (const field of ['action_code', 'action_label', 'unit_label', 'points_rule', 'approval_state', 'blocking_reason']) expect(rates).toContain(field)
+  })
 })
 
 describe('canonical read rollout safety', () => {

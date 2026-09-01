@@ -45,6 +45,23 @@ export interface ApprovedCreativePointRate {
   effectiveAt: string
 }
 
+export interface CreativePointRateSnapshot {
+  id: string
+  rateCardId: string
+  version: number
+  actionCode: string
+  unit: ApprovedCreativePointRate['unit']
+  integerPoints: number | null
+  pricingMode: 'fixed' | 'starts_at' | 'unresolved'
+  lifecycle: CommercialCatalogLifecycle
+  approvalStatus: 'pending_business_approval' | 'approved' | 'rejected'
+  executable: boolean
+  ruleExecutable: boolean
+  checksum: string
+  effectiveAt: string | null
+  blockers: string[]
+}
+
 export interface CommercialCatalogReadOptions {
   includePrivate?: boolean
   capabilities?: readonly string[]
@@ -70,6 +87,7 @@ export interface CommercialCatalogRepository {
   list(options?: CommercialCatalogReadOptions): Promise<CommercialCatalogSkuSnapshot[]>
   get(code: string, options?: CommercialCatalogReadOptions): Promise<CommercialCatalogSkuSnapshot | undefined>
   resolveApprovedExecutableSku(code: string, options?: CommercialCatalogReadOptions): Promise<CommercialCatalogSkuSnapshot>
+  listRates(): Promise<CreativePointRateSnapshot[]>
   resolveApprovedRate(actionCode: string): Promise<ApprovedCreativePointRate>
 }
 
@@ -106,6 +124,25 @@ export class MemoryCommercialCatalogRepository implements CommercialCatalogRepos
       && Number.isFinite(Date.parse(item.effectiveAt)) && Date.parse(item.effectiveAt) <= this.now())
     if (candidates.length !== 1) throw new CommercialCatalogUnavailableError()
     return cloneSnapshot(candidates[0]!)
+  }
+
+  async listRates(): Promise<CreativePointRateSnapshot[]> {
+    return this.rates.map((rate, index): CreativePointRateSnapshot => ({
+      id: `${rate.rateCardId}:${rate.actionCode}:${index + 1}`,
+      rateCardId: rate.rateCardId,
+      version: rate.version,
+      actionCode: rate.actionCode,
+      unit: rate.unit,
+      integerPoints: rate.integerPoints,
+      pricingMode: 'fixed',
+      lifecycle: rate.lifecycle ?? 'approved',
+      approvalStatus: (rate.lifecycle ?? 'approved') === 'approved' ? 'approved' : 'pending_business_approval',
+      executable: rate.executable ?? true,
+      ruleExecutable: rate.executable ?? true,
+      checksum: rate.checksum,
+      effectiveAt: rate.effectiveAt,
+      blockers: [],
+    })).map(rate => structuredClone(rate))
   }
 
   async resolveApprovedRate(actionCode: string): Promise<ApprovedCreativePointRate> {
@@ -148,13 +185,20 @@ interface CatalogRow {
 }
 
 interface RateRow {
+  id?: string
   rateCardId: string
   version: number
   actionCode: string
   unit: ApprovedCreativePointRate['unit']
-  integerPoints: number | string
+  integerPoints: number | string | null
+  pricingMode?: CreativePointRateSnapshot['pricingMode']
+  lifecycle?: CommercialCatalogLifecycle
+  approvalStatus?: CreativePointRateSnapshot['approvalStatus']
+  executable?: boolean
+  ruleExecutable?: boolean
   checksum: string
-  effectiveAt: string | Date
+  effectiveAt: string | Date | null
+  blockers?: unknown
 }
 
 const catalogProjection = `
@@ -206,6 +250,18 @@ function approvedRatePoints(value: number | string): number {
   const parsed = typeof value === 'number' ? value : Number(value)
   if (!Number.isSafeInteger(parsed) || parsed < 1) throw new CreativePointRateUnavailableError()
   return parsed
+}
+
+function ratePoints(value: number | string | null): number | null {
+  if (value === null) return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new CommercialCatalogUnavailableError('rate integerPoints is invalid')
+  return parsed
+}
+
+function rateBlockers(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every(item => typeof item === 'string')) throw new CommercialCatalogUnavailableError('rate blockers are invalid')
+  return [...value]
 }
 
 function approvedRateEffectiveAt(value: string | Date): string {
@@ -282,6 +338,31 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
     return rows[0]!
   }
 
+  async listRates(): Promise<CreativePointRateSnapshot[]> {
+    const client = await this.pool.connect()
+    try {
+      const result = await client.query<RateRow>(`
+        SELECT r.id, c.id AS "rateCardId", c.version, r.action_code AS "actionCode",
+          r.unit, r.integer_points AS "integerPoints", r.pricing_mode AS "pricingMode",
+          c.lifecycle, c.approval_status AS "approvalStatus", c.executable,
+          r.executable AS "ruleExecutable", c.checksum, c.effective_at AS "effectiveAt",
+          r.blockers
+        FROM creative_point_rate_card_versions_v2 c
+        JOIN creative_point_rate_rules_v2 r ON r.rate_card_version_id = c.id
+        ORDER BY c.version DESC, r.action_code
+      `)
+      return result.rows.map(row => ({
+        id: row.id!, rateCardId: row.rateCardId, version: row.version, actionCode: row.actionCode,
+        unit: row.unit, integerPoints: ratePoints(row.integerPoints), pricingMode: row.pricingMode!,
+        lifecycle: row.lifecycle!, approvalStatus: row.approvalStatus!, executable: row.executable!,
+        ruleExecutable: row.ruleExecutable!, checksum: row.checksum, effectiveAt: iso(row.effectiveAt),
+        blockers: rateBlockers(row.blockers),
+      }))
+    } finally {
+      client.release?.()
+    }
+  }
+
   async resolveApprovedRate(actionCode: string): Promise<ApprovedCreativePointRate> {
     const client = await this.pool.connect()
     try {
@@ -300,8 +381,8 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
       `, [actionCode])
       if (result.rows.length !== 1) throw new CreativePointRateUnavailableError()
       const row = result.rows[0]!
-      const integerPoints = approvedRatePoints(row.integerPoints)
-      const effectiveAt = approvedRateEffectiveAt(row.effectiveAt)
+      const integerPoints = approvedRatePoints(row.integerPoints!)
+      const effectiveAt = approvedRateEffectiveAt(row.effectiveAt!)
       return { ...row, integerPoints, effectiveAt }
     } finally {
       client.release?.()

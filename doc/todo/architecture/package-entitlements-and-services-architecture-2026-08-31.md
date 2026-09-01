@@ -111,7 +111,7 @@ interface CommercialEntryRegistration {
 
 平台连接/授权/同步、品牌/商品/listing/任务创建、上传、规则、生成、编辑、审核、批量、发布和服务预约均不属于恢复白名单。
 
-现有 `merchant.start`、`platform.connect`、`catalog.sync` 和 `content.export` 明确不是恢复入口；PRD 允许的是独立、workspace-scoped、可审计的数据导出，不是内容业务导出。当前 HTTP identity/session recovery route 数量为 0，实现必须先补齐与 MCP/Bridge 等价的登录、会话恢复和必要 workspace bootstrap HTTP 契约，完成 parity 后才能切换全局门禁。
+现有 `merchant.start`、`platform.connect`、`catalog.sync` 和 `content.export` 明确不是恢复入口；PRD 允许的是独立、workspace-scoped、可审计的数据导出，不是内容业务导出。实现已补齐 4 个 identity、workspace-scoped HTTP 恢复读契约：商业访问状态、商业目录、创意点余额和创意点流水。它们与 MCP/Bridge 恢复白名单等价；任一处缺少真实仓储事实时仍必须 fail-closed。
 
 每次构建必须验证：`MCP_METHODS`、Bridge merchant tools、注册 HTTP routes、Worker event+operation 与 registry 一一对应；新入口缺分类、重复分类、checksum 不一致或收费动作缺 action code 时构建失败。HTTP 使用 exact method+normalized-path key，不允许宽泛 prefix 放行。
 
@@ -316,7 +316,7 @@ Ops capability 至少拆分为目录 read/draft/approve/publish、费率 read/dr
 
 ## 11. Legacy 迁移
 
-当前仓库 migration 已使用到 143；编号必须在合并时读取最新值再顺延，文档不占用固定旧编号。逻辑批次为：
+本轮实现在合并时依据最新序列落了 migration 144（创意点账本/访问状态/RLS）和 146（不可变商业目录/费率草案）；145 为同期独立安全迁移，不属于本商业批次。编号仍必须在每次合并时读取最新值再顺延，不为了保持连续而改写已存迁移。以下为剩余逻辑批次：
 
 ```text
 N   immutable catalog/rate contract
