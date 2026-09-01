@@ -1,8 +1,18 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { featureFlagPermissionNotice, getFeatureFlagEnvironmentConfig } from "./FeatureFlagsPage";
 import { canonicalReadModeWarning } from "../components/feature-flags/FeatureFlagEditor";
 
 describe("FeatureFlagsPage environment configuration", () => {
+  const source = readFileSync(new URL("./FeatureFlagsPage.tsx", import.meta.url), "utf8");
+
+  it("moves focus to the announced page error and keeps a keyboard retry", () => {
+    expect(source).toContain("errorRef.current?.focus({ preventScroll: true })");
+    expect(source).toContain('tabIndex={-1} aria-label="功能开关错误摘要"');
+    expect(source).toContain('role="alert" aria-live="assertive" aria-atomic="true"');
+    expect(source).toContain('htmlType="button"');
+  });
+
   it("explains server-projected read-only and partially restricted states", () => {
     expect(featureFlagPermissionNotice(false, false)).toContain("feature_flag.update 或 feature_flag.emergency");
     expect(featureFlagPermissionNotice(false, true)).toContain("feature_flag.update");

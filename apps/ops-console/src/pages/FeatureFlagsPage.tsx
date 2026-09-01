@@ -1,6 +1,6 @@
 import { Alert, Button, Input, Modal, Select, Space, Typography } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { managedOpsSession } from "../api/opsClient";
 import { OpsPage } from "../components/OpsPage";
 import { FeatureFlagAuditDrawer } from "../components/feature-flags/FeatureFlagAuditDrawer";
@@ -29,10 +29,14 @@ export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {
   const model = useFeatureFlags(client, { environment: environmentConfig.defaultEnvironment });
   const [editing, setEditing] = useState<FeatureFlag | "new">(); const [audit, setAudit] = useState<FeatureFlag>(); const [emergencyTarget, setEmergencyTarget] = useState<FeatureFlag>(); const [emergencyReason, setEmergencyReason] = useState("");
   const auditTriggerRef = useRef<HTMLElement | null>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
   const initialLoadFailed = Boolean(model.error && !model.loading && model.items.length === 0);
   const permissionNotice = featureFlagPermissionNotice(canWrite, canEmergency);
+  useEffect(() => {
+    if (model.error) errorRef.current?.focus({ preventScroll: true });
+  }, [model.error]);
   return <OpsPage eyebrow="FEATURE FLAGS" title="功能开关" description="按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。">
-    {model.error && <Alert role="alert" type="error" showIcon title="功能开关操作失败" description={model.error} action={<Button style={{ minHeight: 44 }} onClick={() => void model.load()}>重试</Button>} />}
+    {model.error && <div ref={errorRef} tabIndex={-1} aria-label="功能开关错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="功能开关操作失败" description={model.error} action={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试</Button>} /></div>}
     {permissionNotice ? <Alert type="info" showIcon role="status" title="当前为受限操作状态" description={permissionNotice} /> : null}
     <Space wrap aria-label="功能开关筛选">
       <Input.Search allowClear aria-label="搜索开关键或说明" placeholder="搜索开关键或说明" style={{ width: 280 }} onSearch={query => model.setFilters({ ...model.filters, query })} />
