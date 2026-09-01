@@ -1,6 +1,6 @@
 import { Alert, Button, Input, Modal, Select, Space, Typography } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { managedOpsSession } from "../api/opsClient";
 import { OpsPage } from "../components/OpsPage";
 import { FeatureFlagAuditDrawer } from "../components/feature-flags/FeatureFlagAuditDrawer";
@@ -28,6 +28,7 @@ export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {
   const environmentConfig = getFeatureFlagEnvironmentConfig(managedOpsSession);
   const model = useFeatureFlags(client, { environment: environmentConfig.defaultEnvironment });
   const [editing, setEditing] = useState<FeatureFlag | "new">(); const [audit, setAudit] = useState<FeatureFlag>(); const [emergencyTarget, setEmergencyTarget] = useState<FeatureFlag>(); const [emergencyReason, setEmergencyReason] = useState("");
+  const auditTriggerRef = useRef<HTMLElement | null>(null);
   const initialLoadFailed = Boolean(model.error && !model.loading && model.items.length === 0);
   const permissionNotice = featureFlagPermissionNotice(canWrite, canEmergency);
   return <OpsPage eyebrow="FEATURE FLAGS" title="功能开关" description="按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。">
@@ -39,10 +40,10 @@ export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {
       <Button style={{ minHeight: 44 }} icon={<ReloadOutlined aria-hidden />} onClick={() => void model.load()}>刷新</Button>
       {canWrite && <Button style={{ minHeight: 44 }} type="primary" disabled={initialLoadFailed} title={initialLoadFailed ? "请先修复工作区配置并刷新开关" : undefined} icon={<PlusOutlined aria-hidden />} onClick={() => setEditing("new")}>新建开关</Button>}
     </Space>
-    {initialLoadFailed ? <Typography.Text type="secondary" role="status">功能开关数据尚未取得，请重试；当前状态不能解释为没有功能开关。</Typography.Text> : <FeatureFlagsTable items={model.items} loading={model.loading} canWrite={canWrite} canEmergency={canEmergency} onEdit={setEditing} onAudit={setAudit} onEmergency={flag => { setEmergencyTarget(flag); setEmergencyReason(""); }} />}
+    {initialLoadFailed ? <Typography.Text type="secondary" role="status">功能开关数据尚未取得，请重试；当前状态不能解释为没有功能开关。</Typography.Text> : <FeatureFlagsTable items={model.items} loading={model.loading} canWrite={canWrite} canEmergency={canEmergency} onEdit={setEditing} onAudit={(flag, trigger) => { auditTriggerRef.current = trigger; setAudit(flag); }} onEmergency={flag => { setEmergencyTarget(flag); setEmergencyReason(""); }} />}
     {model.nextCursor && <Button style={{ minHeight: 44 }} loading={model.loadingMore} onClick={() => void model.load(model.nextCursor)}>加载更多</Button>}
     <FeatureFlagEditor open={Boolean(editing)} flag={editing === "new" ? undefined : editing} saving={model.saving} defaultEnvironment={model.filters.environment ?? environmentConfig.defaultEnvironment} environments={environmentConfig.environments} onCancel={() => setEditing(undefined)} onSave={model.save} />
-    <FeatureFlagAuditDrawer flag={audit} loadEvents={model.loadEvents} onClose={() => setAudit(undefined)} />
+    <FeatureFlagAuditDrawer flag={audit} loadEvents={model.loadEvents} returnFocusTo={auditTriggerRef.current} onClose={() => setAudit(undefined)} />
     <Modal open={Boolean(emergencyTarget)} title={emergencyTarget?.emergencyDisabled ? "恢复功能开关？" : "紧急关闭功能开关？"} okText={emergencyTarget?.emergencyDisabled ? "确认恢复" : "紧急关闭"} okButtonProps={{ danger: !emergencyTarget?.emergencyDisabled, disabled: emergencyReason.trim().length < 3, loading: model.saving }} cancelText="取消" onCancel={() => setEmergencyTarget(undefined)} onOk={async () => { if (!emergencyTarget) return; await model.setEmergency({ id: emergencyTarget.id, disabled: !emergencyTarget.emergencyDisabled, expectedRevision: emergencyTarget.revision, idempotencyKey: crypto.randomUUID(), reason: emergencyReason.trim() }); setEmergencyTarget(undefined); }}>
       <Alert type={emergencyTarget?.emergencyDisabled ? "info" : "warning"} showIcon title={emergencyTarget?.emergencyDisabled ? "恢复后仍受总开关、有效期和定向规则约束。" : "紧急关闭优先于所有定向规则，并会写入不可变审计。"} />
       <label htmlFor="feature-flag-emergency-reason" style={{ display: "block", marginTop: 16, marginBottom: 8 }}>操作原因</label>
