@@ -66,7 +66,7 @@
 
 - [ ] 每个可进入生产任务的商品都具备：`workspace_id`、`brand_id`、唯一 `canonical_product_id`。
 - [x] 每个可发布的平台/店铺目标都具备唯一 `listing_id`，并能校验 `workspace + brand + canonical + platform + platform_account` 五元组。（本地 L2：`d936ed6` 事务/advisory-lock 与唯一性测试，`171e8fc` 精确发布目标测试；`f2cef8d` 提供跨平台 canonical fixture 对照；不代表全量数据已清理。）
-- [ ] `campaign_item` 的生产目标是 `listing_id`；`legacy_product_id` 仅作追溯字段，不作为发布主键。
+- [x] `campaign_item` 的生产目标是 `listing_id`；`legacy_product_id` 仅作追溯字段，不作为发布主键。（本地 L2：`PostgresBrandUnitRepository` 与 `MemoryBrandUnitRepository` 在进入生产状态、任务分配、恢复和重试前 fail-closed；`brand-unit-repository.test.ts` 覆盖 legacy-only 草稿兼容与生产门禁。真实 workspace 全量迁移仍未完成。）
 - [ ] canonical→legacy 的品牌组合关系有数据库级约束或等价的事务性校验；冲突数据在约束验证前已列出并有处理结果。
 - [x] 未绑定或多绑定记录不会被自动猜测、覆盖或伪造为 `planned-listing:*` 生产身份。（本地 L2：`1418a10` 歧义 listing 阻断、`171e8fc` 精确目标校验及 canonical consistency 测试。）
 

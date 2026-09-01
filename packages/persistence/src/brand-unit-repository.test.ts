@@ -216,9 +216,20 @@ describe('PostgresBrandUnitRepository', () => {
     await expect(repository.createCampaign({ ...base, id: 'campaign_missing_account', targets: [{ productId: 'legacy_product', platform: 'taobao', accountId: '' }] })).rejects.toThrow('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
   })
 
+  it('allows a legacy-only draft but blocks production task assignment without a listing identity', async () => {
+    const repository = new MemoryBrandUnitRepository()
+    const created = await repository.createCampaign({
+      id: 'campaign_legacy_draft', workspaceId: 'ws_scope', brandId: 'brand_scope', platform: 'taobao', accountId: 'acct_scope',
+      productIds: ['legacy_product'], state: 'draft',
+    })
+
+    await expect(repository.updateCampaignTasks({ workspaceId: 'ws_scope', id: created.campaign.id, taskIds: ['task_1'], state: 'generating' }))
+      .rejects.toThrow('CAMPAIGN_ITEM_LISTING_REQUIRED')
+  })
+
   it('persists per-item task assignments so campaign generation can resume without a process map', async () => {
     const repository = new MemoryBrandUnitRepository()
-    const created = await repository.createCampaign({ id: 'campaign_resume', workspaceId: 'ws_resume', brandId: 'brand_resume', platform: 'taobao', accountId: 'acct_resume', productIds: ['product_a', 'product_b'], state: 'draft' })
+    const created = await repository.createCampaign({ id: 'campaign_resume', workspaceId: 'ws_resume', brandId: 'brand_resume', platform: 'taobao', accountId: 'acct_resume', productIds: ['product_a', 'product_b'], targets: [{ productId: 'product_a', platform: 'taobao', accountId: 'acct_resume', canonicalProductId: 'canonical_a', listingId: 'listing_a' }, { productId: 'product_b', platform: 'taobao', accountId: 'acct_resume', canonicalProductId: 'canonical_b', listingId: 'listing_b' }], state: 'draft' })
     await repository.updateCampaignTasks({ workspaceId: 'ws_resume', id: created.campaign.id, taskIds: ['task_a', 'task_b'], state: 'generating' })
     const resumed = await repository.getCampaign({ workspaceId: 'ws_resume', id: created.campaign.id })
     expect(resumed?.taskIds).toEqual(['task_a', 'task_b'])
@@ -227,7 +238,7 @@ describe('PostgresBrandUnitRepository', () => {
 
   it('persists campaign pause/resume/retry with CAS and durable idempotent replay', async () => {
     const repository = new MemoryBrandUnitRepository()
-    const created = await repository.createCampaign({ id: 'campaign_lifecycle', workspaceId: 'ws_lifecycle', brandId: 'brand_lifecycle', platform: 'taobao', accountId: 'acct_lifecycle', productIds: ['product_a', 'product_b'], state: 'draft' })
+    const created = await repository.createCampaign({ id: 'campaign_lifecycle', workspaceId: 'ws_lifecycle', brandId: 'brand_lifecycle', platform: 'taobao', accountId: 'acct_lifecycle', productIds: ['product_a', 'product_b'], targets: [{ productId: 'product_a', platform: 'taobao', accountId: 'acct_lifecycle', canonicalProductId: 'canonical_a', listingId: 'listing_a' }, { productId: 'product_b', platform: 'taobao', accountId: 'acct_lifecycle', canonicalProductId: 'canonical_b', listingId: 'listing_b' }], state: 'draft' })
     expect(created.campaign.revision).toBe(1)
     const paused = await repository.transitionCampaignLifecycle({ workspaceId: 'ws_lifecycle', id: created.campaign.id, operation: 'pause', expectedRevision: 1, idempotencyKey: 'pause-key-1', reason: 'operator pause' })
     expect(paused).toMatchObject({ replayed: false, campaign: { state: 'paused', revision: 2, items: [{ state: 'paused' }, { state: 'paused' }] } })

@@ -108,6 +108,16 @@ function validateCampaignTargets(targets: readonly CampaignTargetRow[] | undefin
   }
 }
 
+const productionCampaignStates: ReadonlySet<CampaignBatchState> = new Set([
+  'preflighting', 'ready', 'generating', 'review_required', 'publishing', 'partial', 'completed',
+])
+
+function requireCanonicalListingForProduction(items: readonly Pick<CampaignItemRow, 'canonicalProductId' | 'listingId'>[]) {
+  if (items.some(item => !item.canonicalProductId?.trim() || !item.listingId?.trim())) {
+    throw new Error('CAMPAIGN_ITEM_LISTING_REQUIRED')
+  }
+}
+
 const now = () => new Date().toISOString()
 
 function validateCanonicalProductIdentity(input: { workspaceId: string; id: string; brandId: string; title: string }) {
@@ -183,8 +193,8 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
   async createCampaign(input: Omit<CampaignBatchRow, 'createdAt' | 'updatedAt'>) { validateCampaignTargets(input.targets); const key = input.idempotencyKey ? `${input.workspaceId}:${input.idempotencyKey}` : undefined; const existingId = key ? this.campaignIdempotency.get(key) : undefined; if (existingId) { const existing = this.campaigns.get(`${input.workspaceId}:${existingId}`); if (existing) { if (campaignIntent(existing) !== campaignIntent(input)) throw new CampaignIdempotencyConflictError(); return { campaign: existing, replayed: true } } } const timestamp = now(); const row = { ...input, revision: input.revision ?? 1, ...(input.targets ? { targets: input.targets.map(target => ({ ...target })) } : {}), items: campaignItems(input), manifestHash: campaignManifestHash(input), createdAt: timestamp, updatedAt: timestamp }; this.campaigns.set(`${input.workspaceId}:${input.id}`, row); if (key) this.campaignIdempotency.set(key, input.id); return { campaign: row, replayed: false } }
   async listCampaigns(input: { workspaceId: string; platform?: BrandUnitPlatform; accountId?: string; limit?: number }) { const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100); return [...this.campaigns.values()].filter(row => row.workspaceId === input.workspaceId && (!input.platform || row.platform === input.platform) && (!input.accountId || row.accountId === input.accountId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, limit).map(row => structuredClone(row)) }
   async getCampaign(input: { workspaceId: string; id: string }) { const row = this.campaigns.get(`${input.workspaceId}:${input.id}`); return row ? { ...row, ...(row.taskIds ? { taskIds: [...row.taskIds] } : {}) } : undefined }
-  async updateCampaignTasks(input: { workspaceId: string; id: string; taskIds: string[]; state: CampaignBatchRow['state'] }) { const row = this.campaigns.get(`${input.workspaceId}:${input.id}`); if (!row) throw new Error('CAMPAIGN_BATCH_NOT_FOUND'); const items = row.items?.map((item, index) => ({ ...item, ...(input.taskIds[index] ? { taskId: input.taskIds[index] } : {}), state: input.taskIds[index] ? 'generating' as const : item.state })); const updated = { ...row, ...(items ? { items } : {}), taskIds: [...input.taskIds], state: input.state, revision: (row.revision ?? 1) + 1, updatedAt: now() }; this.campaigns.set(`${input.workspaceId}:${input.id}`, updated); return updated }
-  async updateCampaignProgress(input: { workspaceId: string; id: string; state: CampaignBatchState; items: Array<{ id: string; taskId?: string; state: CampaignItemState; error?: CampaignItemRow['error'] }> }) { const row = this.campaigns.get(`${input.workspaceId}:${input.id}`); if (!row) throw new Error('CAMPAIGN_BATCH_NOT_FOUND'); const progress = new Map(input.items.map(item => [item.id, item])); const items = row.items?.map(item => { const next = progress.get(item.id); return next ? { ...item, ...(next.taskId ? { taskId: next.taskId } : {}), state: next.state, ...(next.error ? { error: { ...next.error } } : { error: undefined }) } : item }); const updated = { ...row, ...(items ? { items } : {}), state: input.state, revision: (row.revision ?? 1) + 1, updatedAt: now() }; this.campaigns.set(`${input.workspaceId}:${input.id}`, updated); return updated }
+  async updateCampaignTasks(input: { workspaceId: string; id: string; taskIds: string[]; state: CampaignBatchRow['state'] }) { const row = this.campaigns.get(`${input.workspaceId}:${input.id}`); if (!row) throw new Error('CAMPAIGN_BATCH_NOT_FOUND'); if (productionCampaignStates.has(input.state)) requireCanonicalListingForProduction(row.items ?? []); const items = row.items?.map((item, index) => ({ ...item, ...(input.taskIds[index] ? { taskId: input.taskIds[index] } : {}), state: input.taskIds[index] ? 'generating' as const : item.state })); const updated = { ...row, ...(items ? { items } : {}), taskIds: [...input.taskIds], state: input.state, revision: (row.revision ?? 1) + 1, updatedAt: now() }; this.campaigns.set(`${input.workspaceId}:${input.id}`, updated); return updated }
+  async updateCampaignProgress(input: { workspaceId: string; id: string; state: CampaignBatchState; items: Array<{ id: string; taskId?: string; state: CampaignItemState; error?: CampaignItemRow['error'] }> }) { const row = this.campaigns.get(`${input.workspaceId}:${input.id}`); if (!row) throw new Error('CAMPAIGN_BATCH_NOT_FOUND'); if (productionCampaignStates.has(input.state)) requireCanonicalListingForProduction(row.items ?? []); const progress = new Map(input.items.map(item => [item.id, item])); const items = row.items?.map(item => { const next = progress.get(item.id); return next ? { ...item, ...(next.taskId ? { taskId: next.taskId } : {}), state: next.state, ...(next.error ? { error: { ...next.error } } : { error: undefined }) } : item }); const updated = { ...row, ...(items ? { items } : {}), state: input.state, revision: (row.revision ?? 1) + 1, updatedAt: now() }; this.campaigns.set(`${input.workspaceId}:${input.id}`, updated); return updated }
   async transitionCampaignLifecycle(input: CampaignLifecycleTransitionInput) {
     const key = `${input.workspaceId}:${input.id}`; const receiptKey = `${key}:${createHash('sha256').update(input.idempotencyKey).digest('hex')}`
     const fingerprint = createHash('sha256').update(JSON.stringify({ operation: input.operation, reason: input.reason, itemIds: [...(input.itemIds ?? [])].sort() })).digest('hex')
@@ -206,6 +216,7 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
       if (!selected.size || [...selected].some(id => !items.some(item => item.id === id && item.state === 'failed'))) throw new CampaignLifecycleError('CAMPAIGN_RETRY_ITEM_INVALID')
       items = items.map(item => selected.has(item.id) ? { ...item, state: 'pending' as const, error: undefined } : item); state = 'generating'
     }
+    if (productionCampaignStates.has(state)) requireCanonicalListingForProduction(items)
     const updated: CampaignBatchRow = { ...row, state, items, revision: (row.revision ?? 1) + 1, updatedAt: now() }
     this.campaigns.set(key, updated); this.campaignLifecycleReceipts.set(receiptKey, { fingerprint, campaign: structuredClone(updated) })
     return { campaign: structuredClone(updated), replayed: false }
@@ -369,6 +380,10 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
   async updateCampaignTasks(input: { workspaceId: string; id: string; taskIds: string[]; state: CampaignBatchRow['state'] }) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      if (productionCampaignStates.has(input.state)) {
+        const items = await client.query<Pick<CampaignItemRow, 'canonicalProductId' | 'listingId'>>(`SELECT canonical_product_id AS "canonicalProductId", listing_id AS "listingId" FROM batch_campaign_items WHERE workspace_id=$1 AND campaign_id=$2 ORDER BY ordinal,created_at`, [input.workspaceId, input.id])
+        requireCanonicalListingForProduction(items.rows)
+      }
       const result = await client.query(`UPDATE batch_campaigns SET state=$3, data=jsonb_set(data, '{taskIds}', $4::jsonb, true), revision=revision+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, input.id, input.state, JSON.stringify(input.taskIds)])
       if (!result.rowCount) throw new Error('CAMPAIGN_BATCH_NOT_FOUND')
       for (const [index, taskId] of input.taskIds.entries()) await client.query(`UPDATE batch_campaign_items SET task_id=$4, state='generating', revision=revision+1, updated_at=now() WHERE workspace_id=$1 AND campaign_id=$2 AND ordinal=$3`, [input.workspaceId, input.id, index + 1, taskId])
@@ -380,6 +395,10 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
   async updateCampaignProgress(input: { workspaceId: string; id: string; state: CampaignBatchState; items: Array<{ id: string; taskId?: string; state: CampaignItemState; error?: CampaignItemRow['error'] }> }) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      if (productionCampaignStates.has(input.state)) {
+        const items = await client.query<Pick<CampaignItemRow, 'canonicalProductId' | 'listingId'>>(`SELECT canonical_product_id AS "canonicalProductId", listing_id AS "listingId" FROM batch_campaign_items WHERE workspace_id=$1 AND campaign_id=$2 ORDER BY ordinal,created_at`, [input.workspaceId, input.id])
+        requireCanonicalListingForProduction(items.rows)
+      }
       const result = await client.query(`UPDATE batch_campaigns SET state=$3, revision=revision+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, input.id, input.state])
       if (!result.rowCount) throw new Error('CAMPAIGN_BATCH_NOT_FOUND')
       for (const item of input.items) await client.query(`UPDATE batch_campaign_items SET task_id=COALESCE($4, task_id), state=$5, error=$6::jsonb, revision=revision+1, updated_at=now() WHERE workspace_id=$1 AND campaign_id=$2 AND id=$3`, [input.workspaceId, input.id, item.id, item.taskId ?? null, item.state, item.error ? JSON.stringify(item.error) : null])
@@ -414,6 +433,7 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
         if (!selected.size || [...selected].some(id => !items.some(item => item.id === id && item.state === 'failed'))) throw new CampaignLifecycleError('CAMPAIGN_RETRY_ITEM_INVALID')
         items = items.map(item => selected.has(item.id) ? { ...item, state: 'pending' as const, error: undefined } : item); state = 'generating'
       }
+      if (productionCampaignStates.has(state)) requireCanonicalListingForProduction(items)
       const timestamp = new Date().toISOString(); const revision = row.revision + 1
       const campaign: CampaignBatchRow = { id: row.id, workspaceId: row.workspaceId, brandId: row.data.brandId, platform: row.data.platform, accountId: row.data.accountId, productIds: row.data.productIds, ...(row.data.targets ? { targets: row.data.targets } : {}), ...(row.data.taskIds ? { taskIds: row.data.taskIds } : {}), items, state, manifestHash: row.manifestHash, revision, createdAt: row.createdAt, updatedAt: timestamp }
       const operations = { ...(lifecycle.operations ?? {}), [receiptHash]: { fingerprint, campaign } }
