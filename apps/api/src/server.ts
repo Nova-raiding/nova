@@ -4644,6 +4644,28 @@ async function permissionAtomsForResolvedResource(req: IncomingMessage, workspac
   return [...atoms, { capability: policy.capability, effect: 'allow' as const, scope: { type: 'brand' as const, ids: [resourceScope.id] }, source: 'resource_grant' as const, sourceId: `brand-access:${principal.actorId}:${resourceScope.id}`, obligations: capabilitySource.obligations, ...(capabilitySource.effectLimit ? { effectLimit: capabilitySource.effectLimit } : {}), ...(capabilitySource.expiresAt ? { expiresAt: capabilitySource.expiresAt } : {}), ...(capabilitySource.revision ? { revision: capabilitySource.revision } : {}) }]
 }
 
+export function authorizationDecisionAuditEvidence(decision: AuthorizationDecision, correlation: { requestId: string; traceId: string }) {
+  return {
+    decision_id: decision.decision_id,
+    request_id: correlation.requestId,
+    trace_id: correlation.traceId,
+    policy_version: decision.policy_version,
+    workbench: decision.workbench,
+    capability: decision.capability,
+    scope: decision.scope.required,
+    ...(decision.scope.resource_id ? { resource_id: decision.scope.resource_id } : {}),
+    resolved_scopes: decision.scope.resolved.map(scope => ({ type: scope.type, ids: [...scope.ids] })),
+    result: decision.result,
+    reason_code: decision.reason_code,
+    explicit_deny: decision.explicit_deny,
+    obligations: {
+      required: [...decision.obligations.required],
+      satisfied: [...decision.obligations.satisfied],
+      missing: [...decision.obligations.missing],
+    },
+  }
+}
+
 async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: string, decision: AuthorizationDecision) {
   const correlation = getRequestCorrelation(req)
   enrichRequestObservation(req, {
@@ -4662,7 +4684,7 @@ async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: st
     resourceType: 'mcp_method',
     resourceId: decision.method,
     before: {},
-    after: { decision_id: decision.decision_id, request_id: correlation.requestId, trace_id: correlation.traceId, policy_version: decision.policy_version, workbench: decision.workbench, capability: decision.capability, scope: decision.scope.required, result: decision.result, reason_code: decision.reason_code, obligations_missing: decision.obligations.missing },
+    after: authorizationDecisionAuditEvidence(decision, correlation),
     reason: decision.reason_code,
   })
 }
