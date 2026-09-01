@@ -3454,7 +3454,15 @@ export class MerchantService {
     for (const field of Object.keys(input.changes)) if (locked.has(field)) throw new DomainError('CONTENT_FIELD_LOCKED', `字段 ${field} 已锁定，不能局部修改`, 409)
     const product = this.products.get(task.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
-    const body = { ...clone(source.body), ...input.changes, ...(input.changes.sellingPoints ? { sellingPoints: [...input.changes.sellingPoints] } : {}), ...(input.changes.brief ? { brief: clone(input.changes.brief) } : {}) }
+    const mergedBody = { ...clone(source.body), ...input.changes, ...(input.changes.sellingPoints ? { sellingPoints: [...input.changes.sellingPoints] } : {}), ...(input.changes.brief ? { brief: clone(input.changes.brief) } : {}) }
+    let validatedBody: ContentVersion['body']
+    try {
+      const validated = validateContentSchema(mergedBody, 'content.modify', { requireDecisionContracts: true })
+      validatedBody = { ...validated, modules: orchestrateContentModules(validated.modules!, product) }
+    } catch (error) {
+      throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '修改后内容结构不合法', 400)
+    }
+    const body = validatedBody
     const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, createdBy: 'user', reason: input.reason, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id

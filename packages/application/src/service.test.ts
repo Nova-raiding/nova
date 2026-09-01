@@ -1319,6 +1319,32 @@ describe('MerchantService', () => {
     expect(asyncVersion.body.modules?.map(module => module.key)).toEqual(expectedKeys)
   })
 
+  it('validates and orchestrates the merged content before modify persistence', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    service.products.get('prod_fixture_1')!.category = '数码'
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const source = service.createDraft(task.id)
+    const versionsBefore = service.listContentVersions('ws_demo', task.id).length
+    const taskBefore = structuredClone(service.getTask(task.id))
+    const invalid = structuredClone(source.body.modules![0]!)
+    invalid.decisionContract!.evidence.status = 'unknown' as never
+
+    expect(() => service.modifyContentVersion({
+      workspaceId: 'ws_demo', sourceVersionId: source.id, changes: { modules: [invalid] }, reason: 'invalid contract must not persist',
+    })).toThrowError(expect.objectContaining({ code: 'CONTENT_SCHEMA_INVALID', message: expect.stringContaining('evidence.status') }))
+    expect(service.listContentVersions('ws_demo', task.id)).toHaveLength(versionsBefore)
+    expect(service.getTask(task.id)).toEqual(taskBefore)
+
+    const optionalMissing = decisionModule('optional_missing_modify', 1, { optional: true, status: 'missing' })
+    const late = decisionModule('late_modify', 30)
+    const early = decisionModule('early_modify', 10)
+    const modified = service.modifyContentVersion({
+      workspaceId: 'ws_demo', sourceVersionId: source.id, changes: { modules: [late, optionalMissing, early] }, reason: 'valid orchestrated modify',
+    })
+    expect(modified.version.body.modules?.map(module => module.key)).toEqual(['early_modify', 'late_modify'])
+  })
+
   it('serializes synchronous generation retries and replays the same content version', async () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
