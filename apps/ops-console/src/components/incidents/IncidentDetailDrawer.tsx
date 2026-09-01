@@ -1,5 +1,5 @@
 import { Alert, Button, Descriptions, Divider, Drawer, Form, Grid, Input, Space, Spin, Timeline, Typography } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { incidentNextStatus, type IncidentTimelineEntry, type OpsIncident } from '../../hooks/useIncidents'
 import { IncidentSeverityBadge, IncidentStatusBadge } from './IncidentBadges'
 
@@ -35,6 +35,14 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
   const [components, setComponents] = useState('')
   const [workspaces, setWorkspaces] = useState('')
   const [scopeNote, setScopeNote] = useState('')
+  const errorRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (incident) triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  }, [incident?.id])
+  useEffect(() => {
+    if (props.error) window.requestAnimationFrame(() => errorRef.current?.focus({ preventScroll: true }))
+  }, [props.error])
   useEffect(() => {
     setCommanderId(incident?.commanderId ?? '')
     setComponents(incident?.affectedComponents.join(', ') ?? '')
@@ -48,9 +56,11 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
   }
 
   return (
-    <Drawer open title={`事故详情 · ${incident.title}`} size={720} onClose={props.onClose} destroyOnHidden aria-label="事故详情">
+    <Drawer open title={`事故详情 · ${incident.title}`} size={720} onClose={props.onClose} destroyOnHidden aria-label="事故详情" afterOpenChange={(open) => {
+      if (!open && triggerRef.current?.isConnected) window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }))
+    }}>
       <Spin spinning={props.loading}>
-        {props.error ? <Alert role="alert" type="error" showIcon title="事故操作失败" description={props.error} style={{ marginBottom: 16 }} /> : null}
+        {props.error ? <div ref={errorRef} tabIndex={-1} aria-label="事故详情错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={props.error} style={{ marginBottom: 16 }} /></div> : null}
         <Descriptions bordered size="small" column={screens.md ? 2 : 1}>
           <Descriptions.Item label="严重度"><IncidentSeverityBadge severity={incident.severity} /></Descriptions.Item>
           <Descriptions.Item label="状态"><IncidentStatusBadge status={incident.status} /></Descriptions.Item>
