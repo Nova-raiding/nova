@@ -808,6 +808,7 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **Product 加载后 exact brand scope（本地切片）。** `bacc09e`；resolver 改为异步服务端链路并新增 `product_id → workspace product → canonical product source relation → unique brand` 解析；无 canonical 关系时仅回退服务端已记录 brand，多品牌歧义、跨 workspace 和不存在商品保持 unresolved。`creative.brief` 迁移为 brand read policy，未授权品牌在钱包、商品事实和创意生成前以 `AUTHZ_SCOPE_MISMATCH` 拒绝。本轮品牌场景 1/1、contracts/server 78/78 通过；并行 HTTP parity hunk 已通过分块暂存明确排除。其他 product 方法仍待迁移，P1-BE-003 保持 TODO。
 - [x] **创意预览 exact product-brand scope（本地切片）。** `d27f91d`；`creative.preview` 迁移为 brand read policy并复用 product resolver。未授权品牌在钱包扣费、商品事实、视觉准备和预览生成前以 `AUTHZ_SCOPE_MISMATCH` 拒绝，不再返回可用于探测商品存在性的 `PRODUCT_NOT_FOUND`。本轮品牌场景 1/1、contracts/server 78/78 通过。商品图片与更新方法仍待迁移，P1-BE-003 保持 TODO。
 - [x] **商品图片生成 exact product-brand editor scope（本地切片）。** `b2346a5`；`catalog.image.generate` 迁移为 brand write policy并复用 product resolver。viewer 对已授权品牌和未授权品牌均在商品读取、钱包扣费、模型中转和图片任务入队前以 `AUTHZ_SCOPE_MISMATCH` 拒绝；测试断言拒绝前后 image generation job 数量不变。本轮品牌场景 1/1、contracts/server 78/78 通过。其他商品更新与图片选择/审阅方法仍待迁移，P1-BE-003 保持 TODO。
+- [x] **商品事实修改 exact product-brand editor scope（本地切片）。** `536310e`；`catalog.product.update` 迁移为 brand write policy并复用 product resolver，exact-scope grant 契约同步改为 brand 资源。viewer 对已授权品牌提交非法 JSON 时仍先由 evaluator 拒绝，未授权品牌同样拒绝，避免泄露字段解析、canonical 映射和商品存在状态；测试断言两个商品对象均未变化。本轮品牌场景 1/1、contracts/server 78/78 通过。其他商品事实写方法与图片选择/审阅仍待迁移，P1-BE-003 保持 TODO。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
