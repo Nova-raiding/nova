@@ -144,7 +144,8 @@ function pathMatcher(pathTemplate: string) {
 const compiledHttpPolicies = HTTP_OPERATION_POLICIES.map(policy => ({ policy, matcher: pathMatcher(policy.pathTemplate) }))
 
 export function getHttpOperationPolicy(method: string | undefined, path: string): HttpOperationPolicy | undefined {
-  return compiledHttpPolicies.find(candidate => candidate.policy.method === method && candidate.matcher.test(path))?.policy
+  const normalizedMethod = method?.toUpperCase()
+  return compiledHttpPolicies.find(candidate => candidate.policy.method === normalizedMethod && candidate.matcher.test(path))?.policy
 }
 
 export function assertHttpOperationPolicyCoverage() {
