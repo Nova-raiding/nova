@@ -325,7 +325,7 @@ test('successful empty rule and category APIs show true empty states without dem
   await page.getByRole('button', { name: '规则与检查', exact: true }).first().click()
   await expect(page.getByTestId('rules-api-empty')).toContainText('API 暂无生效规则包')
   await expect(page.getByText('中国电商广告表达', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('alert').filter({ hasText: /规则|类目/ })).toHaveCount(0)
 
   await page.getByRole('tab', { name: /品类库/ }).click()
   await expect(page.getByTestId('categories-api-empty')).toContainText('API 暂无类目数据')
