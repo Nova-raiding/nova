@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
@@ -79,7 +79,7 @@ afterEach(async () => {
 
 describe('security and access-control acceptance gates', () => {
   it('requires full enforcement and durable role authority in production while retaining staged non-production policy tests', () => {
-    expect(productionAuthorizationReadiness({ NODE_ENV: 'production', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' })).toEqual({ ready: true, reasons: [] })
+    expect(productionAuthorizationReadiness({ NODE_ENV: 'production', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' })).toMatchObject({ ready: true, reasons: [], coverage: { mode: 'enforce', enforcement_ratio: 1, shadow_method_count: 0, shadow_domains: [] } })
     expect(productionAuthorizationReadiness({ NODE_ENV: 'production', MCP_AUTHZ_MODE: 'shadow', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' })).toMatchObject({ ready: false, reasons: ['mcp_authz_mode_not_enforce'] })
     expect(() => mcpAuthorizationRuntimeConfig({}, true, false)).toThrowError(expect.objectContaining({ code: 'AUTHORIZATION_RUNTIME_NOT_READY', status: 503 }))
     expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' }, true, false)).toThrowError(expect.objectContaining({ code: 'AUTHORIZATION_RUNTIME_NOT_READY', status: 503 }))
@@ -92,12 +92,19 @@ describe('security and access-control acceptance gates', () => {
     const staged = mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, false, false)
     expect(staged.mode).toBe('staged')
     expect([...staged.enforceDomains]).toEqual(['support', 'incident'])
-    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, false, false)).toHaveLength(17)
+    const shadowReport = mcpAuthorizationCoverageReport({ MCP_AUTHZ_MODE: 'shadow' }, false, false)
+    expect(shadowReport.enforced_method_count).toBeGreaterThan(0)
+    expect(shadowReport.enforced_method_count).toBeLessThan(MCP_METHODS.length)
+    expect(shadowReport.enforcement_ratio).toBeGreaterThan(0)
+    expect(shadowReport.enforcement_ratio).toBeLessThan(1)
+    expect(shadowReport.shadow_method_count).toBe(MCP_METHODS.length - shadowReport.enforced_method_count)
     expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, false, false)).toContain('catalog.image.select')
-    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'enforce' }, false, false)).toHaveLength(MCP_METHODS.length)
+    const enforceReport = mcpAuthorizationCoverageReport({ MCP_AUTHZ_MODE: 'enforce' }, false, false)
+    expect(enforceReport).toMatchObject({ method_total: MCP_METHODS.length, enforced_method_count: MCP_METHODS.length, shadow_method_count: 0, enforcement_ratio: 1, shadow_domains: [] })
+    expect(enforceReport.enforced_domains).toHaveLength(enforceReport.domain_total)
     expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: 'support' }, false, false)).toThrow('enforce 模式已经覆盖全部 capability 域')
     const stagedMethods = mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, false, false)
-    expect(stagedMethods.length).toBeGreaterThan(17)
+    expect(stagedMethods.length).toBeGreaterThan(shadowReport.enforced_method_count)
     expect(stagedMethods).toEqual(expect.arrayContaining(['ops.support.tickets.list', 'ops.support.ticket.comment', 'ops.incidents.list', 'ops.incident.transition']))
   })
   it('fails closed when production image selection tickets are not backed by Postgres', () => {

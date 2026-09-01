@@ -4444,7 +4444,15 @@ export function productionAuthorizationReadiness(source: NodeJS.ProcessEnv = pro
   if (source.MCP_AUTHZ_MODE !== 'enforce') reasons.push('mcp_authz_mode_not_enforce')
   if (source.AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED !== 'true') reasons.push('durable_assignments_not_required')
   if (source.MCP_AUTHZ_ENFORCE_DOMAINS?.trim()) reasons.push('enforce_domains_must_be_empty')
-  return { ready: reasons.length === 0, reasons }
+  let coverage: ReturnType<typeof mcpAuthorizationCoverageReport> | { mode: string; available: false }
+  try {
+    coverage = mcpAuthorizationCoverageReport(source, false, false)
+  } catch {
+    // Readiness is a diagnostic boundary: malformed configuration is reported
+    // as not ready while runtime admission still throws and refuses startup.
+    coverage = { mode: source.MCP_AUTHZ_MODE?.trim() || 'unset', available: false }
+  }
+  return { ready: reasons.length === 0, reasons, coverage }
 }
 
 function assertProductionAuthorizationRuntime(source: NodeJS.ProcessEnv = process.env, production = isProduction(), testRuntime = source.VITEST === 'true') {
@@ -4474,6 +4482,26 @@ export function mcpAuthorizationEnforcedMethods(source: NodeJS.ProcessEnv = proc
   return MCP_METHODS.filter(method => {
     const policy = getMcpMethodPolicy(method)!
     return runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(policy.capability.split('.')[0]!)
+  })
+}
+
+export function mcpAuthorizationCoverageReport(source: NodeJS.ProcessEnv = process.env, production = isProduction(), testRuntime = source.VITEST === 'true') {
+  const runtime = mcpAuthorizationRuntimeConfig(source, production, testRuntime)
+  const enforcedMethods = new Set(mcpAuthorizationEnforcedMethods(source, production, testRuntime))
+  const domains = [...knownAuthorizationDomains].sort()
+  const enforcedDomains = domains.filter(domain => MCP_METHODS
+    .filter(method => getMcpMethodPolicy(method)!.capability.split('.')[0] === domain)
+    .every(method => enforcedMethods.has(method)))
+  return Object.freeze({
+    mode: runtime.mode,
+    policy_version: AUTHZ_POLICY_VERSION,
+    method_total: MCP_METHODS.length,
+    enforced_method_count: enforcedMethods.size,
+    shadow_method_count: MCP_METHODS.length - enforcedMethods.size,
+    enforcement_ratio: enforcedMethods.size / MCP_METHODS.length,
+    domain_total: domains.length,
+    enforced_domains: enforcedDomains,
+    shadow_domains: domains.filter(domain => !enforcedDomains.includes(domain)),
   })
 }
 
