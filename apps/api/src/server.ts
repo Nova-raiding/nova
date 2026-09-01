@@ -13732,16 +13732,20 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     case 'publish.prepare': {
       const taskId = required(params, 'task_id')
       const task = scopeTask(req, taskId)
-      await assertCanonicalTaskScopeForAction(task)
+      const canonicalProof = await assertCanonicalTaskScopeForAction(task)
       await requireEnabledPlatform(workspaceId, task.platform)
       const mappingPreflight = await requireCurrentPlatformMapping(task)
       if ((isProduction() || fixtureMode) && !task.accountId) throw new DomainError('STORE_SELECTION_REQUIRED', '发布前必须明确选择商品所属店铺', 409)
       const currentRuleReview = await requireCurrentPublishReview(workspaceId, task)
+      const taskBeforePrepare = structuredClone(task)
       const preview = service.preparePublish(taskId)
-      const canonicalProof = await assertCanonicalTaskScopeForAction(preview.task)
       if (canonicalProof?.canonicalReadRevision && preview.task.pendingPublish) preview.task.pendingPublish.canonicalReadRevision = canonicalProof.canonicalReadRevision
-      await persistSnapshot(workspaceId, 'task', preview.task, preview.task as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, preview.task.id, 'publish.prepared', preview.task.version, { task_id: preview.task.id, content_version_id: preview.version.id, confirmation_hash: preview.confirmationHash, remote_snapshot_hash: preview.remoteSnapshotHash, payload_hash: preview.payloadHash, selection_hash: preview.selectionHash, selected_count: preview.visualPreview.count, image_mode: preview.visualPreview.imageMode })
+      try {
+        await persistSnapshotsAndEvent({ workspaceId, snapshots: [{ entityType: 'task', entityId: preview.task.id, entityVersion: preview.task.version, payload: preview.task as unknown as Record<string, unknown> }], aggregateId: preview.task.id, eventType: 'publish.prepared', sequence: preview.task.version, eventPayload: { task_id: preview.task.id, content_version_id: preview.version.id, confirmation_hash: preview.confirmationHash, remote_snapshot_hash: preview.remoteSnapshotHash, payload_hash: preview.payloadHash, selection_hash: preview.selectionHash, selected_count: preview.visualPreview.count, image_mode: preview.visualPreview.imageMode } })
+      } catch (error) {
+        service.tasks.set(task.id, taskBeforePrepare)
+        throw error
+      }
       return result({ ...preview, currentRuleReview, ...(mappingPreflight ? { mappingPreflight: { publishable: true, confirmationValid: true, mappedPayloadHash: mappingPreflight.mappedPayloadHash } } : {}) })
     }
     case 'publish.batch.prepare': {
@@ -16469,14 +16473,21 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   const prepareMatch = path.match(/^\/v1\/tasks\/([^/]+)\/publish-preview$/)
   if (req.method === 'POST' && prepareMatch) {
     const task = scopeTask(req, prepareMatch[1]!)
+    const canonicalProof = await assertCanonicalTaskScopeForAction(task)
     await requireEnabledPlatform(task.workspaceId, task.platform)
     const mappingPreflight = await requireCurrentPlatformMapping(task)
+    if ((isProduction() || fixtureMode) && !task.accountId) throw new DomainError('STORE_SELECTION_REQUIRED', '发布前必须明确选择商品所属店铺', 409)
+    const currentRuleReview = await requireCurrentPublishReview(task.workspaceId, task)
+    const taskBeforePrepare = structuredClone(task)
     const preview = service.preparePublish(prepareMatch[1]!)
-    const canonicalProof = await assertCanonicalTaskScopeForAction(preview.task)
     if (canonicalProof?.canonicalReadRevision && preview.task.pendingPublish) preview.task.pendingPublish.canonicalReadRevision = canonicalProof.canonicalReadRevision
-    await persistSnapshot(task.workspaceId, 'task', preview.task, preview.task as unknown as Record<string, unknown>)
-    await persistEvent(task.workspaceId, preview.task.id, 'publish.prepared', preview.task.version, { task_id: preview.task.id, content_version_id: preview.version.id, confirmation_hash: preview.confirmationHash, remote_snapshot_hash: preview.remoteSnapshotHash, payload_hash: preview.payloadHash, selection_hash: preview.selectionHash, selected_count: preview.visualPreview.count, image_mode: preview.visualPreview.imageMode })
-    return send(res, 200, task.workspaceId, { ...preview, ...(mappingPreflight ? { mappingPreflight: { publishable: true, confirmationValid: true, mappedPayloadHash: mappingPreflight.mappedPayloadHash } } : {}) }, null, req)
+    try {
+      await persistSnapshotsAndEvent({ workspaceId: task.workspaceId, snapshots: [{ entityType: 'task', entityId: preview.task.id, entityVersion: preview.task.version, payload: preview.task as unknown as Record<string, unknown> }], aggregateId: preview.task.id, eventType: 'publish.prepared', sequence: preview.task.version, eventPayload: { task_id: preview.task.id, content_version_id: preview.version.id, confirmation_hash: preview.confirmationHash, remote_snapshot_hash: preview.remoteSnapshotHash, payload_hash: preview.payloadHash, selection_hash: preview.selectionHash, selected_count: preview.visualPreview.count, image_mode: preview.visualPreview.imageMode } })
+    } catch (error) {
+      service.tasks.set(task.id, taskBeforePrepare)
+      throw error
+    }
+    return send(res, 200, task.workspaceId, { ...preview, currentRuleReview, ...(mappingPreflight ? { mappingPreflight: { publishable: true, confirmationValid: true, mappedPayloadHash: mappingPreflight.mappedPayloadHash } } : {}) }, null, req)
   }
   if (req.method === 'POST' && path === '/v1/publish-jobs') {
     const input = await body(req)
