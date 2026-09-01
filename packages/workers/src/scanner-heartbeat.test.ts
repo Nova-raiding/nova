@@ -29,6 +29,15 @@ describe('scanner heartbeat contract', () => {
     expect(createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: base.callback, queue: { backlog: 0, deadLetter: 1 } }).ready).toBe(false)
   })
 
+  it('fails closed and records malformed queue evidence instead of coercing it to healthy', () => {
+    const base = healthy('scan-a')
+    for (const queue of [{ backlog: -1, deadLetter: 0 }, { backlog: Number.NaN, deadLetter: 0 }, { backlog: 0, deadLetter: 1.5 }]) {
+      const heartbeat = createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: base.callback, queue })
+      expect(heartbeat.ready).toBe(false)
+      expect(heartbeat.failure).toMatchObject({ code: 'SCANNER_QUEUE_EVIDENCE_INVALID' })
+    }
+  })
+
   it('aggregates two replicas, excludes expired records and exposes degradation', () => {
     const first = healthy('scan-a')
     const second = { ...healthy('scan-b'), ready: false, failure: { code: 'CLAMAV_UNREACHABLE', message: 'connection failed' } }

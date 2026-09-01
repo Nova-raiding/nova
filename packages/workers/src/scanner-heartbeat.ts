@@ -131,12 +131,15 @@ export function createScannerHeartbeat(input: {
   const definitionsFresh = input.clamav.definitionsAgeSeconds !== undefined && input.clamav.definitionsAgeSeconds <= input.thresholds.definitionsMaxAgeSeconds
   const eicarFresh = input.eicar.passed && eicarAge !== undefined && eicarAge <= input.thresholds.eicarMaxAgeSeconds
   const callbackFresh = input.callback.configured && input.callback.capable && callbackAge !== undefined && callbackAge <= input.thresholds.callbackMaxAgeSeconds
+  const queueEvidenceValid = Number.isSafeInteger(input.queue.backlog) && input.queue.backlog >= 0
+    && Number.isSafeInteger(input.queue.deadLetter) && input.queue.deadLetter >= 0
   // Scanner dead letters are unresolved user uploads, not a harmless metric.
   // Keep the worker out of readiness until they are redriven or explicitly
   // resolved so uploads cannot remain "processing" behind a green service.
-  const queueHealthy = Number.isFinite(input.queue.deadLetter) && input.queue.deadLetter === 0
+  const queueHealthy = queueEvidenceValid && input.queue.deadLetter === 0
   const recoveryCapable = Object.values(input.checks).every(Boolean) && input.clamav.reachable && definitionsFresh && eicarFresh && callbackFresh && !input.failure
   const ready = recoveryCapable && queueHealthy
+  const failure = input.failure ?? (queueEvidenceValid ? undefined : { code: 'SCANNER_QUEUE_EVIDENCE_INVALID', message: 'scanner queue metrics must be non-negative safe integers' })
   return {
     schemaVersion: SCANNER_HEARTBEAT_SCHEMA,
     instanceId: input.instanceId,
@@ -149,7 +152,7 @@ export function createScannerHeartbeat(input: {
     eicar: { ...input.eicar, ...(eicarAge !== undefined ? { ageSeconds: eicarAge } : {}) },
     callback: { ...input.callback, ...(callbackAge !== undefined ? { ageSeconds: callbackAge } : {}) },
     queue: { backlog: Math.max(0, Math.floor(input.queue.backlog)), deadLetter: Math.max(0, Math.floor(input.queue.deadLetter)) },
-    ...(input.failure ? { failure: { ...input.failure } } : {}),
+    ...(failure ? { failure: { ...failure } } : {}),
   }
 }
 
