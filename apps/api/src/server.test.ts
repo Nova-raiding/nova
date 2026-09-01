@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
@@ -74,6 +74,18 @@ describe('publish batch state', () => {
       { taskId: 'task_2', platform: 'taobao', state: 'submitted' },
     ])).toBe('queued')
     expect(batchStateFromItems([{ taskId: 'task_1', platform: 'taobao', state: 'published' }])).toBe('completed')
+  })
+})
+describe('publish batch request contract', () => {
+  it('rejects duplicate task IDs before batch side effects', () => {
+    expect(() => assertUniqueBatchTaskIds([
+      { task_id: 'task_1', idempotency_key: 'publish:1' },
+      { task_id: ' task_1 ', idempotency_key: 'publish:2' },
+    ])).toThrowError(expect.objectContaining({ code: 'PUBLISH_BATCH_DUPLICATE_TASK', status: 400 }))
+    expect(() => assertUniqueBatchTaskIds([
+      { task_id: 'task_1', idempotency_key: 'publish:1' },
+      { task_id: 'task_2', idempotency_key: 'publish:2' },
+    ])).not.toThrow()
   })
 })
 describe('Codex-native Automation boundary', () => {

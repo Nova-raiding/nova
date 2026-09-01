@@ -13488,6 +13488,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 50 || parsed.some(item => !item || typeof item !== 'object')) throw new Error('invalid')
         confirmations = parsed as Array<Record<string, unknown>>
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'confirmations_json 必须是 1 至 50 个确认对象的 JSON 数组', 400) }
+      assertUniqueBatchTaskIds(confirmations)
       const items: Array<Record<string, unknown>> = []
       for (const confirmation of confirmations) {
         const taskId = typeof confirmation.task_id === 'string' ? confirmation.task_id.trim() : ''
@@ -13591,6 +13592,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!Array.isArray(parsed) || parsed.length < 1 || parsed.length > 50 || parsed.some(item => !item || typeof item !== 'object')) throw new Error('invalid')
         confirmations = parsed as Array<Record<string, unknown>>
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'confirmations_json 必须是 1 至 50 个确认对象的 JSON 数组', 400) }
+      assertUniqueBatchTaskIds(confirmations)
       const failedTaskIds = new Set(batch.items.filter(item => item.state === 'failed' || item.state === 'rejected' || item.state === 'unknown').map(item => item.taskId))
       const submittedTaskIds = confirmations.filter(item => typeof item.task_id === 'string').map(item => String(item.task_id))
       const invalid = submittedTaskIds.filter(taskId => !failedTaskIds.has(taskId))
@@ -16351,6 +16353,18 @@ function isClientDisconnect(error: unknown) {
   return error.message === 'aborted' || code === 'ECONNRESET' || code === 'ERR_STREAM_PREMATURE_CLOSE'
 }
 
+/**
+ * A batch request is item-addressed.  Accepting the same task twice would
+ * produce duplicate receipts and, depending on processing order, turn a
+ * caller mistake into a partial write.  Reject the whole request before any
+ * item is authorized, debited, or queued.
+ */
+function assertUniqueBatchTaskIds(confirmations: Array<Record<string, unknown>>) {
+  const taskIds = confirmations.map(item => typeof item.task_id === 'string' ? item.task_id.trim() : '')
+  const duplicates = [...new Set(taskIds.filter(Boolean).filter((taskId, index, all) => all.indexOf(taskId) !== index))]
+  if (duplicates.length) throw new DomainError('PUBLISH_BATCH_DUPLICATE_TASK', `批量发布请求包含重复任务: ${duplicates.join(', ')}`, 400, { task_ids: duplicates })
+}
+
 const server = createServer((req, res) => {
   const startedAt = process.hrtime.bigint()
   beginRequestObservation(req)
@@ -16420,4 +16434,4 @@ if (process.env.NODE_ENV !== 'test') {
   })
 }
 
-export { server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits }
+export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits }
