@@ -1,4 +1,5 @@
 import { Alert, Button, Descriptions, Drawer, Empty, Skeleton, Tag, Typography } from 'antd'
+import { useEffect, useRef } from 'react'
 import type { AuditCenterDetail, AuditCenterRecord } from '../../../../../packages/contracts/src/ops/audit-center.js'
 
 interface Props {
@@ -13,6 +14,12 @@ interface Props {
 const evidenceValue = (value: string | number | boolean | null) => value === null ? 'null' : String(value)
 
 export function AuditDetailDrawer({ selected, detail, loading, error, onRetry, onClose }: Props) {
+  const errorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus()
+  }, [error])
+
   return <Drawer
     open={Boolean(selected)}
     title="审计证据详情（已脱敏）"
@@ -24,8 +31,11 @@ export function AuditDetailDrawer({ selected, detail, loading, error, onRetry, o
     aria-label="审计证据详情"
     styles={{ body: { overflowWrap: 'anywhere' } }}
   >
-    {error ? <Alert role="alert" type="error" showIcon title="详情加载失败" description={error}
-      action={onRetry ? <Button onClick={onRetry} style={{ minHeight: 44 }}>重试</Button> : undefined} /> : null}
+    {error ? <div ref={errorRef} role="alert" tabIndex={-1} aria-labelledby="audit-detail-error-title"
+      style={{ outlineOffset: 3 }}>
+      <Alert type="error" showIcon message={<span id="audit-detail-error-title">详情加载失败</span>} description={error}
+        action={onRetry ? <Button onClick={onRetry} style={{ minHeight: 44 }}>重试</Button> : undefined} />
+    </div> : null}
     {loading ? <Skeleton active aria-label="正在加载审计详情" /> : detail ? <>
       <Tag color="blue" style={{ marginBottom: 16 }}>服务端已脱敏</Tag>
       <Descriptions bordered size="small" column={1}>

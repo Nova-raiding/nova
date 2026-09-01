@@ -76,4 +76,15 @@ describe('audit center UI contract', () => {
     expect(drawer).toContain('keyboard')
     expect(drawer).toContain('autoFocus')
   })
+
+  it('moves keyboard focus to the detail error summary before offering retry', async () => {
+    const drawer = await readFile(new URL('./AuditDetailDrawer.tsx', import.meta.url), 'utf8')
+    expect(drawer).toContain('useEffect')
+    expect(drawer).toContain('errorRef.current?.focus()')
+    expect(drawer).toContain('tabIndex={-1}')
+    expect(drawer).toContain('role="alert"')
+    expect(drawer).toContain('aria-labelledby="audit-detail-error-title"')
+    expect(drawer).toContain('详情加载失败')
+    expect(drawer).toContain('重试')
+  })
 })
