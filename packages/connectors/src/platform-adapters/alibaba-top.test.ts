@@ -29,6 +29,11 @@ describe('Alibaba TOP signer', () => {
     expect(mapAlibabaTopWriteStatus({ success: true, num_iid: 1122 }, { idempotencyKey: 'req-1' }, 'taobao')).toMatchObject({ found: true, state: 'submitted', remoteId: '1122' })
   })
 
+  it.each(['taobao', 'tmall'] as const)('reads products from a controlled nested response envelope for %s', platform => {
+    const [product] = mapAlibabaTopProducts({ response: { data: { items: { item: [{ num_iid: 3344, title: `${platform} nested` }] } } } }, platform)
+    expect(product).toMatchObject({ remoteId: '3344', title: `${platform} nested` })
+  })
+
   it.each(['taobao', 'tmall'] as const)('does not use the local idempotency key as provider request evidence for %s', platform => {
     expect(mapAlibabaTopWriteStatus({ success: true, num_iid: 1122 }, { idempotencyKey: 'local-only' }, platform)).not.toHaveProperty('requestId')
   })

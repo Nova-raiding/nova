@@ -64,9 +64,9 @@ export { formatTopTimestamp }
 /** Conservative mapper for the common TOP item envelope. Unknown fields stay
  * in platformFields and are never promoted to confirmed facts automatically. */
 export function mapAlibabaTopProducts(payload: unknown, platform: 'taobao' | 'tmall'): RawProduct[] {
-  const record = asRecord(payload)
-  const itemEnvelope = asRecord(record?.items)
-  const candidates = Array.isArray(record?.items) ? record.items : Array.isArray(itemEnvelope?.item) ? itemEnvelope.item : record?.item ? [record.item] : []
+  const root = platformEnvelope(payload) ?? asRecord(payload)
+  const itemEnvelope = asRecord(root?.items)
+  const candidates = Array.isArray(root?.items) ? root.items : Array.isArray(itemEnvelope?.item) ? itemEnvelope.item : root?.item ? [root.item] : []
   return candidates.filter(asRecord).map((item, index) => {
     const sku = Array.isArray(item.skus) ? item.skus.filter(asRecord).map((value: Record<string, any>, skuIndex: number) => ({ id: stringValue(value.sku_id) ?? `${index}-${skuIndex}`, name: stringValue(value.properties_name) ?? stringValue(value.name) ?? '', price: numberValue(value.price), stock: numberValue(value.quantity) })) : []
     return {
