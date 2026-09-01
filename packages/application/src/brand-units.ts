@@ -143,7 +143,10 @@ export class BrandUnitService {
 
   createCanonicalProduct(input: Omit<CanonicalProduct, 'id' | 'factsVersion'> & { id?: string; factsVersion?: number }): CanonicalProduct {
     const brand = this.requireBrand(input.workspaceId, input.brandId)
-    const product: CanonicalProduct = { id: input.id?.trim() || `product_${randomUUID()}`, workspaceId: brand.workspaceId, brandId: brand.id, title: text(input.title, 'title'), factsVersion: input.factsVersion ?? 1 }
+    const id = input.id?.trim() || `product_${randomUUID()}`
+    const existing = this.canonicalProducts.get(id)
+    if (existing) throw new BrandUnitError('CANONICAL_PRODUCT_CONFLICT', 'canonical product id already exists')
+    const product: CanonicalProduct = { id, workspaceId: brand.workspaceId, brandId: brand.id, title: text(input.title, 'title'), factsVersion: input.factsVersion ?? 1 }
     this.canonicalProducts.set(product.id, product)
     return { ...product }
   }
@@ -155,7 +158,12 @@ export class BrandUnitService {
     const account = this.requireAccount(input.workspaceId, input.accountId)
     if (account.platform !== input.platform) throw new BrandUnitError('PLATFORM_MISMATCH', 'listing platform does not match account')
     this.requireBinding(input.workspaceId, input.brandId, input.accountId)
-    const listing: ProductListing = { id: input.id?.trim() || `listing_${randomUUID()}`, workspaceId: input.workspaceId, brandId: input.brandId, canonicalProductId: input.canonicalProductId, platform: input.platform, accountId: input.accountId, ...(input.remoteProductId?.trim() ? { remoteProductId: input.remoteProductId.trim() } : {}), state: input.state ?? 'draft' }
+    const id = input.id?.trim() || `listing_${randomUUID()}`
+    if (this.listings.has(id)) throw new BrandUnitError('LISTING_CONFLICT', 'listing id already exists')
+    if ([...this.listings.values()].some(item => item.workspaceId === input.workspaceId && item.canonicalProductId === input.canonicalProductId && item.platform === input.platform && item.accountId === input.accountId)) {
+      throw new BrandUnitError('LISTING_TARGET_CONFLICT', 'a listing already exists for this product and store')
+    }
+    const listing: ProductListing = { id, workspaceId: input.workspaceId, brandId: input.brandId, canonicalProductId: input.canonicalProductId, platform: input.platform, accountId: input.accountId, ...(input.remoteProductId?.trim() ? { remoteProductId: input.remoteProductId.trim() } : {}), state: input.state ?? 'draft' }
     this.listings.set(listing.id, listing)
     return { ...listing }
   }

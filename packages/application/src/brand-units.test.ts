@@ -36,6 +36,16 @@ describe('BrandUnitService', () => {
     expect(() => service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'jd', accountId: store.id })).toThrowError(expect.objectContaining({ code: 'PLATFORM_MISMATCH' }))
   })
 
+  it('fails closed instead of overwriting canonical products or duplicate store listings', () => {
+    const { service, a, store } = setup()
+    service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
+    const product = service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, id: 'canonical-1', title: '外套' })
+    expect(() => service.createCanonicalProduct({ workspaceId: 'ws_1', brandId: a.id, id: product.id, title: '被覆盖的外套' })).toThrowError(expect.objectContaining({ code: 'CANONICAL_PRODUCT_CONFLICT' }))
+    service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-1' })
+    expect(() => service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-2' })).toThrowError(expect.objectContaining({ code: 'LISTING_TARGET_CONFLICT' }))
+    expect(() => service.createListing({ workspaceId: 'ws_1', brandId: a.id, canonicalProductId: product.id, platform: 'taobao', accountId: store.id, id: 'listing-1' })).toThrowError(expect.objectContaining({ code: 'LISTING_CONFLICT' }))
+  })
+
   it('preflights up to 50 items, aggregates blocked scope and is idempotent', () => {
     const { service, a, b, store } = setup()
     service.bindStore({ workspaceId: 'ws_1', brandId: a.id, accountId: store.id })
