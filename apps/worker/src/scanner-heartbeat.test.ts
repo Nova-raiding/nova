@@ -42,7 +42,7 @@ describe('scanner heartbeat controller', () => {
     const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-'))
     const controller = new ScannerHeartbeatController({ instanceId: 'scan-b', readyFile: join(directory, 'ready'), scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected', target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) }, redis: { publish: async () => undefined, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => undefined }, thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86_400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86_400, minimumReadyInstances: 1 }, intervalMs: 5000, callbackConfigured: true, dependencyProbe: async () => ({ databaseReady: true, apiReady: true }), queueProbe: async () => ({ backlog: 0, deadLetter: 0 }), now: () => new Date('2026-08-30T10:00:00.000Z') })
     expect(await controller.tick()).toMatchObject({ ready: false, callback: { configured: true, capable: false } })
-    expect(controller.canProcessScans()).toBe(true)
+    expect(controller.canProcessScans()).toBe(false)
   })
 
   it('blocks business scans when ClamAV definitions exceed the freshness threshold', async () => {

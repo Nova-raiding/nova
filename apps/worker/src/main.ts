@@ -1465,12 +1465,12 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           return { backlog: metrics.backlog, deadLetter: metrics.deadLetter }
         },
         onHeartbeat: heartbeat => {
-          // The scan worker uses the signed scanner heartbeat as its readiness
-          // source. Keep the generic Compose file probe in sync with that
-          // source, and fail closed whenever callback or scanner dependencies
-          // are not capable.
-          void (heartbeat.ready
-            ? writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: 'ready', heartbeat }))
+          // Compose health describes process/dependency recovery capability,
+          // while API scanner readiness also gates on unresolved dead letters.
+          // Keep those signals separate: a scanner must stay healthy enough to
+          // recover its queue without making new business scans admissible.
+          void (heartbeat.recoveryCapable
+            ? writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: heartbeat.ready ? 'ready' : 'recovery', heartbeat }))
             : unlink(readyFile).catch(() => undefined))
           log({ level: heartbeat.ready ? 'info' : 'error', message: 'scanner heartbeat published', heartbeat })
         },
