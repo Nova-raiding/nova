@@ -571,7 +571,7 @@ rg -n --glob '!**/*.test.*' "(sessionRoles|opsSession\\?\\.roles|model\\.session
 - [x] **P1-FE-004：双工作台显式切换（本地代码切片完成）。** 服务端 `ops.session` 按 workbench 裁剪；UI 只使用服务端 `available_workbenches`，切换前显式清理授权数据/session，随后 abort 旧请求、持久化 workbench、更新 URL，并通过 keyed runtime 重新拉取 session。未保存表单确认与真实浏览器多角色证据仍为上线门禁。
 - [ ] **P1-FE-005：JIT 完整体验。** 支持申请、审批状态、精确 workspace/brand/store 与 read/write scope、倒计时、主动退出/撤销、过期自动清除数据；使用 fake timer 与浏览器测试证明到期瞬间导航/数据/动作同时收口，而不只是显示格式化到期时间。
 - [ ] **P1-FE-006：统一 403。** 深链拒绝显示缺失 capability、当前 scope、策略/decision reason、request ID（有服务端请求时）和刷新权限；action 403 保留用户输入、结束 loading、不自动重试。跨租户对象的 403/404 投影不得泄露对象是否存在。
-- [ ] **P1-FE-007：403 相关信息可传播。** `OpsRequestError.requestId/traceId/details.decision_id/reason_code/obligations_missing` 到页面呈现的映射有单元测试；客户端预判明确标注“尚未发请求”，不得伪造 request ID。
+- [x] **P1-FE-007：403 相关信息可传播。** `OpsRequestError.requestId/traceId/details.decision_id/reason_code/obligations_missing` 已映射到统一错误呈现并由 `opsClient.test.ts`、`OpsPageError.test.tsx`、`permissionUx.test.tsx` 覆盖；客户端预判不生成 request/trace ID，明确区分尚未发请求与服务端拒绝。
 - [ ] **P1-FE-008：根 AntD 设计系统。** 根 `ConfigProvider` 提供批准的 token/component token；`AntApp` 保持位于所有 `useApp()` consumer 外层。1440×900 与 1920×1080 桌面截图、键盘路径、对比度、reduced-motion 通过；移动/平板不作为本项目门禁。
 - [ ] **P1-FE-009：连接诊断不占主工作区。** OIDC 生产态不常驻 API/token 表单；连接信息进入诊断 Drawer，token 永不回显。local development adapter 必须有醒目标记且不能进入 production build/runtime 配置。
 
