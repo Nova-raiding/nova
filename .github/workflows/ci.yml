@@ -113,6 +113,7 @@ jobs:
           packages/persistence/src/campaign-lifecycle.postgres.test.ts
           packages/persistence/src/model-daily-budget.postgres.test.ts
           packages/persistence/src/migration-118-release.postgres.test.ts
+          packages/persistence/src/migration-119-120-release.postgres.test.ts
           packages/persistence/src/storage-quota-repository.postgres.test.ts
           packages/persistence/src/platform-media-spec-repository.test.ts
           packages/persistence/src/mapping-preflight-approval-repository.test.ts
