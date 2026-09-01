@@ -1,4 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { CanonicalProductConsistencySection } from "./CanonicalProductConsistencySection.js";
 import type { CanonicalProductConsistencyReport } from "../../types/ops.js";
@@ -14,6 +16,14 @@ const report: CanonicalProductConsistencyReport = {
 };
 
 describe("CanonicalProductConsistencySection", () => {
+  it("restores keyboard focus to the detail trigger after either drawer closes", () => {
+    const source = readFileSync(fileURLToPath(new URL("./CanonicalProductConsistencySection.tsx", import.meta.url)), "utf8");
+    expect(source).toContain("selectedTriggerRef.current = event.currentTarget");
+    expect(source).toContain("selectedOrphanTriggerRef.current = event.currentTarget");
+    expect(source).toContain("window.requestAnimationFrame(() => selectedTriggerRef.current?.focus({ preventScroll: true }))");
+    expect(source).toContain("window.requestAnimationFrame(() => selectedOrphanTriggerRef.current?.focus({ preventScroll: true }))");
+  });
+
   it("does not offer a recheck action without canonical evidence read permission", () => {
     const markup = renderToStaticMarkup(<CanonicalProductConsistencySection canRead={false} />);
     expect(markup).toContain("当前会话无权读取一致性证据");

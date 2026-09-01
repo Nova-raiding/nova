@@ -77,6 +77,8 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [selected, setSelected] = useState<CanonicalProductConsistencyReport["findings"][number]>();
   const [selectedOrphan, setSelectedOrphan] = useState<CanonicalProductConsistencyReport["orphanFindings"][number]>();
+  const selectedTriggerRef = useRef<HTMLButtonElement>(null);
+  const selectedOrphanTriggerRef = useRef<HTMLButtonElement>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   const previousErrorSignature = useRef<string | undefined>(undefined);
   const findings = useMemo(() => report?.findings.filter(row => filter === "all" || row.status === filter) ?? [], [filter, report]);
@@ -89,6 +91,14 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     }
     previousErrorSignature.current = errorSignature;
   }, [errorSignature]);
+  const closeSelected = () => {
+    setSelected(undefined);
+    window.requestAnimationFrame(() => selectedTriggerRef.current?.focus({ preventScroll: true }));
+  };
+  const closeSelectedOrphan = () => {
+    setSelectedOrphan(undefined);
+    window.requestAnimationFrame(() => selectedOrphanTriggerRef.current?.focus({ preventScroll: true }));
+  };
   if (!canRead) return <Card className="canonical-consistency-card" title="规范商品一致性"><Alert type="info" showIcon title="当前会话无权读取一致性证据" description="这不是空结果；当前账号缺少 customer.content.read，服务端不会返回商品关系数据，也不能通过本页面发起重新检查。" /></Card>;
   if (!report) return <Card className="canonical-consistency-card" title="规范商品一致性" extra={<Button className="canonical-consistency-action" aria-label="重新检查一致性报告" icon={<ReloadOutlined />} loading={loading} onClick={onRefresh}>重新检查</Button>}><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可验证的一致性报告；当前不能视为已通过" /></Card>;
   const expired = report.freshness === "expired";
@@ -128,7 +138,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
           { title: "原因", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => row.codes.length ? row.codes.map(codeMessage).join("、") : "关系链已验证" },
           { title: "状态", dataIndex: "status", render: (value: Status) => <Tag color={statusMeta[value].color} icon={value === "verified" ? <CheckCircleOutlined /> : <WarningOutlined />}>{statusMeta[value].label}</Tag> },
           { title: "下一步", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <NextActionEvidence finding={row} onExecute={onNextAction} /> },
-          { title: "操作", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <Button className="canonical-consistency-action" type="link" aria-label={`查看 ${row.legacyProductId} 一致性详情`} onClick={() => setSelected(row)}>查看详情</Button> },
+          { title: "操作", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => <Button className="canonical-consistency-action" type="link" aria-label={`查看 ${row.legacyProductId} 一致性详情`} onClick={(event) => { selectedTriggerRef.current = event.currentTarget as HTMLButtonElement; setSelected(row); }}>查看详情</Button> },
         ]} /> : report.findings.length === 0 && report.orphanFindings.length === 0 ? <Alert
           type={report.status === "clean" && !hasAttention ? "success" : "warning"}
           showIcon
@@ -144,12 +154,12 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
             { title: "对象 ID", dataIndex: "entityId", ellipsis: true, render: (value: string) => <Typography.Text copyable={{ text: value }}>{value}</Typography.Text> },
             { title: "状态", dataIndex: "status", render: (value: "conflict" | "blocked") => <Tag color={statusMeta[value].color} icon={<WarningOutlined />}>{statusMeta[value].label}</Tag> },
             { title: "阻断原因", dataIndex: "codes", render: (codes: string[]) => codes.map(codeMessage).join("、") },
-            { title: "操作", render: (_: unknown, row: CanonicalProductConsistencyReport["orphanFindings"][number]) => <Button className="canonical-consistency-action" type="link" aria-label={`查看 ${row.entityId} 关系详情`} onClick={() => setSelectedOrphan(row)}>查看详情</Button> },
+            { title: "操作", render: (_: unknown, row: CanonicalProductConsistencyReport["orphanFindings"][number]) => <Button className="canonical-consistency-action" type="link" aria-label={`查看 ${row.entityId} 关系详情`} onClick={(event) => { selectedOrphanTriggerRef.current = event.currentTarget as HTMLButtonElement; setSelectedOrphan(row); }}>查看详情</Button> },
           ]} />
         </>}
       </Space>
     </Card>
-    <Drawer title="一致性详情" open={Boolean(selected)} onClose={() => setSelected(undefined)} size={480} destroyOnClose>
+    <Drawer title="一致性详情" open={Boolean(selected)} onClose={closeSelected} size={480} destroyOnClose>
       {selected && <Space orientation="vertical" style={{ width: "100%" }} size={16}>
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="旧商品 ID">{selected.legacyProductId}</Descriptions.Item>
@@ -166,7 +176,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
         {selected.codes.length ? <Alert type="error" showIcon title="阻断原因" description={<ul>{selected.codes.map(code => <li key={code}><Typography.Text code>{code}</Typography.Text>：{codeMessage(code)}</li>)}</ul>} /> : selected.evidence ? <Alert type="success" showIcon title="关系链已验证" /> : <Alert type="warning" showIcon title="验证证据不完整" description="服务端未返回该商品的证据摘要，当前不能作为发布依据。" />}
       </Space>}
     </Drawer>
-    <Drawer title="未挂接关系详情" open={Boolean(selectedOrphan)} onClose={() => setSelectedOrphan(undefined)} size={480} destroyOnClose>
+    <Drawer title="未挂接关系详情" open={Boolean(selectedOrphan)} onClose={closeSelectedOrphan} size={480} destroyOnClose>
       {selectedOrphan && <Space orientation="vertical" style={{ width: "100%" }} size={16}>
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="对象类型">{orphanEntityMeta[selectedOrphan.entityType]}</Descriptions.Item>
