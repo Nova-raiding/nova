@@ -22,6 +22,7 @@ export MODEL_RELAY_BASE_URL=${MODEL_RELAY_BASE_URL:-https://ai.wormholexyz.xyz/v
 sh scripts/ensure-local-scanner-key.sh
 export AI_MODEL=${AI_MODEL:-deepseek-v4-pro}
 export AI_THINKING_MODE=${AI_THINKING_MODE:-disabled}
+export AI_TIMEOUT_MS=${AI_TIMEOUT_MS:-180000}
 export IMAGE_MODEL=${IMAGE_MODEL:-qwen-image-3.0}
 export IMAGE_EDIT_MODEL=${IMAGE_EDIT_MODEL:-qwen-image-3.0}
 export IMAGE_RESPONSE_FORMAT=${IMAGE_RESPONSE_FORMAT:-url}
