@@ -26,6 +26,9 @@ describe('authorization decision audit PostgreSQL reconstruction boundary', () =
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: databaseConnection(base, databaseName) })
+      database.on('error', error => {
+        if ((error as { code?: string }).code !== '57P01') throw error
+      })
       const migrations = await loadMigrations()
       expect(await new MigrationRunner(database, migrations).run()).toEqual(migrations.map(item => item.version))
 
@@ -45,6 +48,9 @@ describe('authorization decision audit PostgreSQL reconstruction boundary', () =
       `, [auditA, auditB])
 
       app = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_app', 'merchant_app_local_only') })
+      app.on('error', error => {
+        if ((error as { code?: string }).code !== '57P01') throw error
+      })
       for (const workspaceId of ['audit_scope_a', 'audit_scope_b']) {
         await app.query('BEGIN')
         await app.query("SELECT set_config('app.workspace_id', $1, true)", [workspaceId])
@@ -70,9 +76,15 @@ describe('authorization decision audit PostgreSQL reconstruction boundary', () =
       await expect(app.query('TRUNCATE workspace_operation_audit')).rejects.toMatchObject({ code: '42501' })
 
       ops = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only') })
+      ops.on('error', error => {
+        if ((error as { code?: string }).code !== '57P01') throw error
+      })
       await ops.query('BEGIN')
       await ops.query("SELECT set_config('app.platform_scope', 'platform_ops', true)")
       expect((await ops.query('SELECT id FROM workspace_operation_audit ORDER BY id')).rows).toEqual([])
+      for (const table of ['products', 'content_versions']) {
+        await expect(ops.query(`SELECT * FROM ${table}`)).rejects.toMatchObject({ code: '42501' })
+      }
       await ops.query('COMMIT')
 
       expect((await database.query<{ count: number }>('SELECT count(*)::int AS count FROM workspace_operation_audit')).rows).toEqual([{ count: 2 }])
