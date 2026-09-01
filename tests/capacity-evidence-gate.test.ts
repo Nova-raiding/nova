@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 const base = {
-  schema_version: '1', status: 'pass', release_id: 'release-1', config_version: 'config-1', environment: 'preproduction', target_url: 'https://capacity.example.com', started_at: '2026-08-23T00:00:00Z', ended_at: '2026-08-23T06:00:00Z', profile: 'pilot_50', cloud_gate: true, raw_metrics_ref: 'artifact://metrics/1', platform_mock_ratio: 0, model_mock_ratio: 0, sign_off: { verified_by: 'qa', verified_at: '2026-08-23T06:00:00Z' }, metrics: { workspaces: 50, client_connections: 150, sustained_rps: 30, sustained_duration_minutes: 30, burst_rps: 60, burst_duration_seconds: 60, async_jobs_per_minute: 50, p95_ms: 100, p99_ms: 150, error_count: 0, duplicate_writes: 0, lost_jobs: 0, fairness_p95_degradation_percent: 10, stability_hours: 6 },
+  schema_version: '1', status: 'pass', release_id: 'release-1', config_version: 'config-1', environment: 'preproduction', target_url: 'https://capacity.example.com', started_at: '2026-08-23T00:00:00Z', ended_at: '2026-08-23T06:00:00Z', expires_at: '2026-09-30T00:00:00Z', profile: 'pilot_50', cloud_gate: true, raw_metrics_ref: 'artifact://metrics/1', platform_mock_ratio: 0, model_mock_ratio: 0, duration: { sustained_minutes: 30, burst_seconds: 60, stability_hours: 6 }, tenant: { workspace_count: 50, noise_multiplier: 10, isolation_verified: true, max_p95_degradation_percent: 20 }, fault: { injected: true, scenarios: ['redis_restart', 'db_pool_exhaustion', 'platform_timeout'], passed: true }, steady_state: { verified: true, queue_converged: true, stability_hours: 6 }, sign_off: { verified_by: 'qa', verified_at: '2026-08-23T06:00:00Z' }, metrics: { workspaces: 50, client_connections: 150, sustained_rps: 30, sustained_duration_minutes: 30, burst_rps: 60, burst_duration_seconds: 60, async_jobs_per_minute: 50, p95_ms: 100, p99_ms: 150, error_count: 0, duplicate_writes: 0, lost_jobs: 0, fairness_p95_degradation_percent: 10, stability_hours: 6 },
 }
 
 describe('capacity evidence gate', () => {
   it('accepts a complete real-cloud pilot report', () => expect(validateCapacityEvidence(base, { requireCloudGate: true })).toEqual([]))
   it('rejects a report that does not meet the target profile', () => expect(validateCapacityEvidence({ ...base, profile: 'target_500' }, { requireCloudGate: true }).some(error => error.includes('workspaces'))).toBe(true))
   it('accepts the intermediate wave profiles when their thresholds are met', () => {
-    expect(validateCapacityEvidence({ ...base, profile: 'wave_100', metrics: { ...base.metrics, workspaces: 100, client_connections: 300, sustained_rps: 60, burst_rps: 120, async_jobs_per_minute: 100 } }, { requireCloudGate: true })).toEqual([])
-    expect(validateCapacityEvidence({ ...base, profile: 'wave_250', metrics: { ...base.metrics, workspaces: 250, client_connections: 375, sustained_rps: 75, burst_rps: 150, async_jobs_per_minute: 250 } }, { requireCloudGate: true })).toEqual([])
+    expect(validateCapacityEvidence({ ...base, profile: 'wave_100', tenant: { ...base.tenant, workspace_count: 100 }, metrics: { ...base.metrics, workspaces: 100, client_connections: 300, sustained_rps: 60, burst_rps: 120, async_jobs_per_minute: 100 } }, { requireCloudGate: true })).toEqual([])
+    expect(validateCapacityEvidence({ ...base, profile: 'wave_250', tenant: { ...base.tenant, workspace_count: 250 }, metrics: { ...base.metrics, workspaces: 250, client_connections: 375, sustained_rps: 75, burst_rps: 150, async_jobs_per_minute: 250 } }, { requireCloudGate: true })).toEqual([])
   })
   it('rejects mock-only evidence as a real-cloud report', () => expect(validateCapacityEvidence({ ...base, platform_mock_ratio: 1 }, { requireCloudGate: true })).toContain('cloud gate requires zero platform/model mock ratio'))
   it('binds a report to both the release and requested capacity wave', () => {
@@ -33,5 +33,24 @@ describe('capacity evidence gate', () => {
   it('requires sign-off to occur during the measured interval', () => {
     const value = { ...base, sign_off: { verified_by: 'qa', verified_at: '2026-08-23T07:00:00Z' } }
     expect(validateCapacityEvidence(value)).toContain('sign_off.verified_at must fall within the test interval')
+  })
+  it('requires duration, tenant, fault and steady-state evidence for cloud gates', () => {
+    for (const field of ['duration', 'tenant', 'fault', 'steady_state'] as const) {
+      const value = { ...base, [field]: undefined }
+      expect(validateCapacityEvidence(value, { requireCloudGate: true, now: new Date('2026-08-24T00:00:00Z') })).toContain(`${field} is required`)
+    }
+  })
+  it('rejects inconsistent duration and tenant evidence', () => {
+    const value = { ...base, duration: { ...base.duration, sustained_minutes: 29 }, tenant: { ...base.tenant, workspace_count: 49 } }
+    expect(validateCapacityEvidence(value, { requireCloudGate: true, now: new Date('2026-08-24T00:00:00Z') })).toEqual(expect.arrayContaining([
+      'duration.sustained_minutes must match metrics.sustained_duration_minutes',
+      'tenant.workspace_count must match metrics.workspaces',
+    ]))
+  })
+  it('rejects missing fault recovery, steady state, and expired evidence', () => {
+    const value = { ...base, expires_at: '2026-08-23T06:00:00Z', fault: { ...base.fault, passed: false }, steady_state: { ...base.steady_state, queue_converged: false } }
+    expect(validateCapacityEvidence(value, { requireCloudGate: true, now: new Date('2026-08-24T00:00:00Z') })).toEqual(expect.arrayContaining([
+      'capacity evidence is expired', 'fault.passed must be true', 'steady_state.queue_converged must be true',
+    ]))
   })
 })

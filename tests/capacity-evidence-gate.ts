@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs'
 
 type Profile = 'pilot_50' | 'wave_100' | 'wave_250' | 'target_500'
-type CapacityEvidence = { schema_version?: string; status?: string; release_id?: string; config_version?: string; environment?: string; target_url?: string; started_at?: string; ended_at?: string; profile?: Profile; cloud_gate?: boolean; raw_metrics_ref?: string; metrics?: Record<string, number>; platform_mock_ratio?: number; model_mock_ratio?: number; sign_off?: { verified_by?: string; verified_at?: string } }
+type CapacityEvidence = {
+  schema_version?: string; status?: string; release_id?: string; config_version?: string; environment?: string; target_url?: string
+  started_at?: string; ended_at?: string; expires_at?: string; profile?: Profile; cloud_gate?: boolean; raw_metrics_ref?: string
+  metrics?: Record<string, number>; platform_mock_ratio?: number; model_mock_ratio?: number
+  duration?: { sustained_minutes?: number; burst_seconds?: number; stability_hours?: number }
+  tenant?: { workspace_count?: number; noise_multiplier?: number; isolation_verified?: boolean; max_p95_degradation_percent?: number }
+  fault?: { injected?: boolean; scenarios?: string[]; passed?: boolean }
+  steady_state?: { verified?: boolean; queue_converged?: boolean; stability_hours?: number }
+  sign_off?: { verified_by?: string; verified_at?: string }
+}
 
 const minimums: Record<Profile, Record<string, number>> = {
   pilot_50: { workspaces: 50, client_connections: 150, sustained_rps: 30, sustained_duration_minutes: 30, burst_rps: 60, burst_duration_seconds: 60, async_jobs_per_minute: 50 },
@@ -17,7 +26,7 @@ const isIsoInstant = (value: unknown): value is string => nonEmpty(value)
   && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
   && !Number.isNaN(Date.parse(value))
 
-export function validateCapacityEvidence(document: unknown, options: { requireCloudGate?: boolean; expectedReleaseId?: string; expectedProfile?: Profile } = {}): string[] {
+export function validateCapacityEvidence(document: unknown, options: { requireCloudGate?: boolean; expectedReleaseId?: string; expectedProfile?: Profile; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as CapacityEvidence
@@ -57,6 +66,50 @@ export function validateCapacityEvidence(document: unknown, options: { requireCl
     if (value.environment !== 'preproduction' && value.environment !== 'production') errors.push('environment must be preproduction or production')
     try { if (new URL(value.target_url!).protocol !== 'https:') errors.push('target_url must use HTTPS') } catch { errors.push('target_url must be a valid URL') }
     if (value.platform_mock_ratio !== 0 || value.model_mock_ratio !== 0) errors.push('cloud gate requires zero platform/model mock ratio')
+    if (!isIsoInstant(value.expires_at)) errors.push('expires_at must be an ISO instant')
+    else {
+      const expiresAt = Date.parse(value.expires_at)
+      const now = (options.now ?? new Date()).getTime()
+      if (isIsoInstant(value.ended_at) && expiresAt <= Date.parse(value.ended_at)) errors.push('expires_at must be after ended_at')
+      if (expiresAt <= now) errors.push('capacity evidence is expired')
+    }
+
+    const duration = value.duration
+    if (!duration || typeof duration !== 'object') errors.push('duration is required')
+    else {
+      for (const field of ['sustained_minutes', 'burst_seconds', 'stability_hours'] as const) {
+        if (typeof duration[field] !== 'number' || !Number.isFinite(duration[field]) || duration[field] <= 0) errors.push(`duration.${field} must be a positive finite number`)
+      }
+      if (typeof duration.sustained_minutes === 'number' && duration.sustained_minutes !== metrics.sustained_duration_minutes) errors.push('duration.sustained_minutes must match metrics.sustained_duration_minutes')
+      if (typeof duration.burst_seconds === 'number' && duration.burst_seconds !== metrics.burst_duration_seconds) errors.push('duration.burst_seconds must match metrics.burst_duration_seconds')
+      if (typeof duration.stability_hours === 'number' && duration.stability_hours !== metrics.stability_hours) errors.push('duration.stability_hours must match metrics.stability_hours')
+    }
+
+    const tenant = value.tenant
+    if (!tenant || typeof tenant !== 'object') errors.push('tenant is required')
+    else {
+      if (tenant.workspace_count !== metrics.workspaces) errors.push('tenant.workspace_count must match metrics.workspaces')
+      if (typeof tenant.workspace_count !== 'number' || !Number.isSafeInteger(tenant.workspace_count) || tenant.workspace_count <= 0) errors.push('tenant.workspace_count must be a positive safe integer')
+      if (typeof tenant.noise_multiplier !== 'number' || !Number.isFinite(tenant.noise_multiplier) || tenant.noise_multiplier < 10) errors.push('tenant.noise_multiplier must be at least 10')
+      if (tenant.isolation_verified !== true) errors.push('tenant.isolation_verified must be true')
+      if (tenant.max_p95_degradation_percent !== 20) errors.push('tenant.max_p95_degradation_percent must be 20')
+    }
+
+    const fault = value.fault
+    if (!fault || typeof fault !== 'object') errors.push('fault is required')
+    else {
+      if (fault.injected !== true) errors.push('fault.injected must be true')
+      if (!Array.isArray(fault.scenarios) || fault.scenarios.length === 0 || fault.scenarios.some(scenario => !nonEmpty(scenario))) errors.push('fault.scenarios must contain at least one named scenario')
+      if (fault.passed !== true) errors.push('fault.passed must be true')
+    }
+
+    const steadyState = value.steady_state
+    if (!steadyState || typeof steadyState !== 'object') errors.push('steady_state is required')
+    else {
+      if (steadyState.verified !== true) errors.push('steady_state.verified must be true')
+      if (steadyState.queue_converged !== true) errors.push('steady_state.queue_converged must be true')
+      if (steadyState.stability_hours !== metrics.stability_hours || typeof steadyState.stability_hours !== 'number' || steadyState.stability_hours < 6) errors.push('steady_state.stability_hours must match metrics.stability_hours and be at least 6')
+    }
   }
   return errors
 }
