@@ -4529,6 +4529,14 @@ function detailPageDecisionContract(module: ContentModule, product: Product, pla
     : ['details_craft', 'real_images', 'usage_scenarios'].includes(module.key) ? 'real_image'
       : ['solution', 'selling_points'].includes(module.key) ? 'usage_result'
         : 'parameter'
+  // A confirmed product snapshot can prove its own scalar parameters, but it
+  // is not visual, outcome, comparison or report evidence. Those evidence
+  // types remain missing until a purpose-built source is bound explicitly.
+  const parameterEvidenceVerified = evidenceType === 'parameter'
+    && !pending
+    && module.contentKind === 'fact'
+    && product.factsConfirmed
+    && module.factSourceIds.length > 0
   const questionByKey: Record<string, string> = {
     hero: '为什么值得继续了解这件商品？', selling_points: '它最重要的购买理由是什么？', solution: '它能解决我的什么问题？',
     details_craft: '材质、成分和工艺是否可信？', usage_scenarios: '买回去以后我会怎样使用？', specifications: '关键参数是否适合我？',
@@ -4542,7 +4550,7 @@ function detailPageDecisionContract(module: ContentModule, product: Product, pla
     buyerQuestion: questionByKey[module.key] ?? `这部分信息如何帮助我判断${product.title}是否适合？`,
     pageTask: module.purpose,
     claim: { text: module.body, factSourceIds: [...module.factSourceIds], ...(skuIds.length ? { skuIds } : {}), platforms: [platform], limitations: pending ? ['资料尚未确认，不得作为可发布宣称'] : ['仅适用于当前已确认商品、SKU 与平台快照'] },
-    evidence: { type: evidenceType, sourceIds: pending ? [] : [...module.factSourceIds], status: pending ? 'missing' : 'verified' },
+    evidence: { type: evidenceType, sourceIds: parameterEvidenceVerified ? [...module.factSourceIds] : [], status: parameterEvidenceVerified ? 'verified' : 'missing' },
     visualContract: {
       requiredElements: [module.title, pending ? '资料缺失状态' : '与宣称对应的可核验商品信息'],
       protectedElements: ['商品颜色与结构', 'Logo', '包装文字', '认证标识'],

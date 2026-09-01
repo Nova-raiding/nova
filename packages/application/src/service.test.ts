@@ -1973,6 +1973,24 @@ describe('MerchantService', () => {
     expect(() => service.approveContent(task.id, draft.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
   })
 
+  it('does not treat a confirmed product snapshot as visual, outcome or report evidence', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    product.attributes = { 材质: '钛合金', 功能: '日常煎炒', 规格: '30CM' }
+    product.images = ['fixture://confirmed-product-image.png']
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+
+    expect(draft.body.modules?.find(module => module.key === 'hero')?.decisionContract?.evidence).toMatchObject({ type: 'parameter', status: 'verified' })
+    expect(draft.body.modules?.find(module => module.key === 'selling_points')?.decisionContract?.evidence).toEqual({ type: 'usage_result', sourceIds: [], status: 'missing' })
+    expect(draft.body.modules?.find(module => module.key === 'evidence')?.decisionContract?.evidence).toEqual({ type: 'test_report', sourceIds: [], status: 'missing' })
+    expect(draft.body.modules?.map(module => module.key)).not.toContain('details_craft')
+    expect(draft.body.modules?.map(module => module.key)).not.toContain('usage_scenarios')
+    expect(draft.body.modules?.map(module => module.key)).not.toContain('real_images')
+    expect(service.reviewContent('ws_demo', draft.id)).toContainEqual(expect.objectContaining({ code: 'DETAIL_MODULE_REQUIRED_EVIDENCE_MISSING', field: 'modules.selling_points.decisionContract.evidence' }))
+  })
+
   it('diagnoses optional missing detail evidence without blocking approval', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
