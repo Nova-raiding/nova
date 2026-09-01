@@ -48,6 +48,8 @@ describe('HTTP authorization policy registry', () => {
     expect(getHttpOperationPolicy('GET', '/v1/publish-jobs')).toMatchObject({ mcpMethod: 'publish.batch.get', authentication: 'identity' })
     expect(getHttpOperationPolicy('GET', '/v1/publish-jobs/job-1')).toMatchObject({ mcpMethod: 'publish.get', authentication: 'identity' })
     expect(getHttpOperationPolicy('GET', '/v1/oauth/callback/jd')).toMatchObject({ authentication: 'oauth_callback' })
+    expect(getHttpOperationPolicy('POST', '/v1/internal/support/sla-scan')).toMatchObject({ authentication: 'worker' })
+    expect(getHttpOperationPolicy('POST', '/v1/internal/support/sla-report')).toMatchObject({ authentication: 'worker' })
     expect(getHttpOperationPolicy('GET', '/v1/tasks/task-1/approve')).toBeUndefined()
     expect(getHttpOperationPolicy('POST', '/v1/tasks/task-1/approve/extra')).toBeUndefined()
   })

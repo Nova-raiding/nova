@@ -118,6 +118,8 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/internal/model-usage', 'worker'),
   machine('POST', '/v1/internal/model-usage/reconciliation', 'worker'),
   machine('POST', '/v1/internal/storage/reconciliation', 'worker'),
+  machine('POST', '/v1/internal/support/sla-scan', 'worker'),
+  machine('POST', '/v1/internal/support/sla-report', 'worker'),
   machine('POST', '/v1/internal/storage/orphans/cleanup', 'worker'),
   machine('POST', '/v1/internal/image-generation-jobs/reconciliation', 'worker'),
   machine('POST', '/v1/internal/image-generation-jobs/{jobId}/result', 'worker'),
