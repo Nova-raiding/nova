@@ -32,7 +32,11 @@ const closeServer = (server: Server) => new Promise<void>((resolve, reject) => {
  * evidence of platform or cloud capacity.
  */
 export async function runHttpConcurrencySmoke(workspaces = 50): Promise<HttpSmokeSummary> {
+  const previousFixtureMode = process.env.CONNECTOR_FIXTURE_MODE
+  const previousPluginWriteEnabled = process.env.PLUGIN_WRITE_ENABLED
   process.env.NODE_ENV = 'test'
+  process.env.CONNECTOR_FIXTURE_MODE = 'true'
+  process.env.PLUGIN_WRITE_ENABLED = 'true'
   const api = await import('../apps/api/src/server.js')
   // Use the exported application server so its production error boundary is
   // exercised as well as the route. It is not a direct service invocation.
@@ -123,6 +127,10 @@ export async function runHttpConcurrencySmoke(workspaces = 50): Promise<HttpSmok
     }
   } finally {
     await closeServer(server)
+    if (previousFixtureMode === undefined) delete process.env.CONNECTOR_FIXTURE_MODE
+    else process.env.CONNECTOR_FIXTURE_MODE = previousFixtureMode
+    if (previousPluginWriteEnabled === undefined) delete process.env.PLUGIN_WRITE_ENABLED
+    else process.env.PLUGIN_WRITE_ENABLED = previousPluginWriteEnabled
   }
 }
 
