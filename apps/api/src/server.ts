@@ -2788,8 +2788,8 @@ async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: Worke
   }
   const subscriptionFact = currentPointAccessExecutionFact(event.workspaceId, balance)
   const accessRevision = String(balance.revision)
-  const subscriptionMatches = snapshot.subscriptionSnapshotId === subscriptionFact.id
-    && snapshot.subscriptionSnapshotChecksum === subscriptionFact.checksum
+  const entitlementMatches = snapshot.entitlementSnapshotId === subscriptionFact.id
+    && snapshot.entitlementSnapshotChecksum === subscriptionFact.checksum
   const accessMatches = snapshot.accessRevision === accessRevision
   if (snapshot.accessMode === 'POINT_CHARGED') {
     // The repository currently exposes no authoritative reservation read. Do
@@ -2801,7 +2801,7 @@ async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: Worke
       access_revision: accessRevision,
     })
   }
-  const allowed = balance.availablePoints > 0 && accessMatches && subscriptionMatches
+  const allowed = balance.availablePoints > 0 && accessMatches && entitlementMatches
   return {
     recheckId: `commercial_recheck_${randomUUID()}`,
     workspaceId: event.workspaceId,
@@ -2809,8 +2809,8 @@ async function recheckWorkerCommercialAccess(event: OutboxEvent, snapshot: Worke
     accessMode: snapshot.accessMode,
     accessRevision,
     balanceState: 'known',
-    subscriptionSnapshotId: subscriptionFact.id,
-    subscriptionSnapshotChecksum: subscriptionFact.checksum,
+    entitlementSnapshotId: subscriptionFact.id,
+    entitlementSnapshotChecksum: subscriptionFact.checksum,
     rateVersion: null,
     quotedPoints: 0,
     reservationState: 'not_required',
@@ -2828,8 +2828,8 @@ function serializedWorkerCommercialRecheck(recheck: WorkerCommercialAccessRechec
     access_mode: recheck.accessMode,
     access_revision: recheck.accessRevision,
     balance_state: recheck.balanceState,
-    subscription_snapshot_id: recheck.subscriptionSnapshotId,
-    subscription_snapshot_checksum: recheck.subscriptionSnapshotChecksum,
+    entitlement_snapshot_id: recheck.entitlementSnapshotId,
+    entitlement_snapshot_checksum: recheck.entitlementSnapshotChecksum,
     rate_version: recheck.rateVersion,
     quoted_points: recheck.quotedPoints,
     ...(recheck.reservationId ? { reservation_id: recheck.reservationId } : {}),
@@ -2882,8 +2882,8 @@ async function withCommercialWorkerSnapshot(workspaceId: string, eventType: stri
       access_mode: 'POINT_REQUIRED_NO_CHARGE',
       access_revision: String(balance.revision),
       balance_state: 'known',
-      subscription_snapshot_id: subscriptionFact.id,
-      subscription_snapshot_checksum: subscriptionFact.checksum,
+      entitlement_snapshot_id: subscriptionFact.id,
+      entitlement_snapshot_checksum: subscriptionFact.checksum,
       rate_version: null,
       quoted_points: 0,
       decided_at: new Date().toISOString(),
@@ -17142,7 +17142,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId, { eventId: event.id }),
       recheckWorkerCommercialAccess(event, commercialSnapshot),
     ])
-    return send(res, 200, workspaceId, { authorization_recheck: authorizationRecheck, commercial_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
+    return send(res, 200, workspaceId, { authorization_recheck: authorizationRecheck, commercial_access_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
   }
   if (req.method === 'GET' && publishExecutionCheckMatch) {
     await requireWorkerCredentialAuthorization(req)
@@ -17175,7 +17175,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     let commercialSnapshot: WorkerCommercialAccessSnapshot
     try { commercialSnapshot = parseWorkerCommercialAccessSnapshot(publishEvent, 'publish.execute') } catch { throw new DomainError('COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', '发布事件缺少有效且精确绑定的商业访问快照', 403) }
     const commercialRecheck = await recheckWorkerCommercialAccess(publishEvent, commercialSnapshot)
-    return send(res, 200, workspaceId, { allowed: true, job_id: job.id, account_id: job.accountId, account_revision: job.accountRevision, credential_ref: account.credentialRef, payload_hash: job.payloadHash, media_required: job.selectedVisuals.length > 0, authorization_snapshot: { ...serializedWorkerAuthorizationSnapshot(snapshot), resource_id: job.id }, authorization_recheck: authorizationRecheck, commercial_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
+    return send(res, 200, workspaceId, { allowed: true, job_id: job.id, account_id: job.accountId, account_revision: job.accountRevision, credential_ref: account.credentialRef, payload_hash: job.payloadHash, media_required: job.selectedVisuals.length > 0, authorization_snapshot: { ...serializedWorkerAuthorizationSnapshot(snapshot), resource_id: job.id }, authorization_recheck: authorizationRecheck, commercial_access_recheck: serializedWorkerCommercialRecheck(commercialRecheck) }, null, req)
   }
   const publishMediaMatch = path.match(/^\/v1\/publish-jobs\/([^/]+)\/media$/)
   if (req.method === 'GET' && publishMediaMatch) {
