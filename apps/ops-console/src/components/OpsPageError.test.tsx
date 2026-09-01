@@ -10,6 +10,7 @@ describe("OpsPageError", () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain('aria-label="重试加载运营数据"');
+    expect(markup).toContain("min-height:44px");
     expect(markup).toContain("运营 API 请求超时");
   });
 
@@ -39,6 +40,7 @@ describe("OpsPageError", () => {
 
     expect(markup).toContain("登录状态已失效");
     expect(markup).toContain('aria-label="重新登录运营后台"');
+    expect(markup).toContain("min-height:44px");
     expect(markup).not.toContain("gateway session expired");
   });
 
@@ -74,6 +76,7 @@ describe("OpsPageError", () => {
 
     expect(markup).toContain("运营环境尚未配置完整");
     expect(markup).toContain('aria-label="联系平台支持"');
+    expect(markup).toContain("min-height:44px");
     expect(markup).not.toContain("VITE_API_BASE");
     expect(markup).toContain("API_NOT_CONFIGURED");
   });

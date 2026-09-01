@@ -18,14 +18,14 @@ export function OpsPageError({ error, onRetry, onReauthenticate, onContactSuppor
   if (!presentation) return null;
 
   const primaryAction = presentation.recovery === "reauthenticate"
-    ? <Button size="small" aria-label="重新登录运营后台" onClick={onReauthenticate ?? (() => window.location.reload())}>重新登录</Button>
+    ? <Button size="small" style={{ minHeight: 44 }} aria-label="重新登录运营后台" onClick={onReauthenticate ?? (() => window.location.reload())}>重新登录</Button>
     : presentation.recovery === "contact_support"
       ? onContactSupport
-        ? <Button size="small" aria-label="联系平台支持" onClick={onContactSupport}>联系支持</Button>
+        ? <Button size="small" style={{ minHeight: 44 }} aria-label="联系平台支持" onClick={onContactSupport}>联系支持</Button>
         : undefined
       : onRetry
-        ? <Button size="small" aria-label="重试加载运营数据" onClick={onRetry}>重试</Button>
-        : <Button size="small" aria-label="刷新运营后台页面" onClick={() => window.location.reload()}>刷新页面</Button>;
+        ? <Button size="small" style={{ minHeight: 44 }} aria-label="重试加载运营数据" onClick={onRetry}>重试</Button>
+        : <Button size="small" style={{ minHeight: 44 }} aria-label="刷新运营后台页面" onClick={() => window.location.reload()}>刷新页面</Button>;
 
   const hasDiagnostics = Boolean(presentation.code || presentation.requestId || presentation.traceId || presentation.decisionId || presentation.reasonCode || presentation.obligationsMissing?.length);
   return (
