@@ -52,27 +52,69 @@ export interface PaymentProvider {
   refund(input: PaymentRefundInput): Promise<PaymentRefundResult>
 }
 
+function requiredText(value: string, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`payment ${field} is required`)
+  return value
+}
+
+function validAmount(amountFen: number): number {
+  if (!Number.isSafeInteger(amountFen) || amountFen <= 0) throw new Error('payment amount must be a positive safe integer in fen')
+  return amountFen
+}
+
+function validChannel(channel: string): asserts channel is PaymentChannel {
+  if (channel !== 'alipay' && channel !== 'wechat') throw new Error('payment channel is unsupported')
+}
+
+function validateCheckoutInput(input: PaymentCheckoutInput): void {
+  validChannel(input.channel)
+  requiredText(input.orderId, 'order id')
+  requiredText(input.idempotencyKey, 'idempotency key')
+  requiredText(input.workspaceId, 'workspace id')
+  validAmount(input.amountFen)
+  requiredText(input.callbackUrl, 'callback url')
+  requiredText(input.description, 'description')
+}
+
+function validateStatusInput(input: PaymentStatusInput): void {
+  validChannel(input.channel)
+  requiredText(input.orderId, 'order id')
+  requiredText(input.workspaceId, 'workspace id')
+}
+
+function validateRefundInput(input: PaymentRefundInput): void {
+  validChannel(input.channel)
+  requiredText(input.orderId, 'order id')
+  requiredText(input.providerTradeId, 'provider trade id')
+  requiredText(input.workspaceId, 'workspace id')
+  validAmount(input.amountFen)
+  requiredText(input.reason, 'refund reason')
+}
+
 /** Deterministic local checkout used only by explicit fixture environments. */
 export class FixturePaymentProvider implements PaymentProvider {
-  private readonly orders = new Map<string, { amountFen: number; state: PaymentStatusResult['state']; tradeId?: string }>()
+  private readonly orders = new Map<string, { amountFen: number; idempotencyKey: string; state: PaymentStatusResult['state']; tradeId?: string }>()
 
   private orderKey(input: Pick<PaymentCheckoutInput, 'workspaceId' | 'channel' | 'orderId'>): string {
     return `${input.workspaceId}\u0000${input.channel}\u0000${input.orderId}`
   }
 
   async createCheckout(input: PaymentCheckoutInput): Promise<PaymentCheckoutResult> {
+    validateCheckoutInput(input)
     const existing = this.orders.get(this.orderKey(input))
-    if (existing && existing.amountFen !== input.amountFen) throw new Error('fixture payment order amount conflict')
-    if (!existing) this.orders.set(this.orderKey(input), { amountFen: input.amountFen, state: 'pending' })
+    if (existing && (existing.amountFen !== input.amountFen || existing.idempotencyKey !== input.idempotencyKey)) throw new Error('fixture payment order idempotency conflict')
+    if (!existing) this.orders.set(this.orderKey(input), { amountFen: input.amountFen, idempotencyKey: input.idempotencyKey, state: 'pending' })
     return { paymentUrl: `fixture://${input.channel}/${input.workspaceId}/${input.amountFen}?order_id=${encodeURIComponent(input.orderId)}`, providerOrderId: input.orderId }
   }
 
   async queryStatus(input: PaymentStatusInput): Promise<PaymentStatusResult> {
+    validateStatusInput(input)
     const order = this.orders.get(this.orderKey(input))
     return order ? { state: order.state, ...(order.tradeId ? { providerTradeId: order.tradeId } : {}), amountFen: order.amountFen } : { state: 'failed' }
   }
 
   async refund(input: PaymentRefundInput): Promise<PaymentRefundResult> {
+    validateRefundInput(input)
     const order = this.orders.get(this.orderKey(input))
     if (!order || order.amountFen !== input.amountFen || order.state !== 'paid') throw new Error('fixture payment order is not refundable')
     order.state = 'closed'
@@ -81,6 +123,7 @@ export class FixturePaymentProvider implements PaymentProvider {
 
   /** Test/local checkout confirmation; never exposed through production configuration. */
   confirm(input: { workspaceId: string; channel: PaymentChannel; orderId: string; providerTradeId?: string }) {
+    validateStatusInput(input)
     const order = this.orders.get(this.orderKey(input))
     if (!order) throw new Error('fixture payment order not found')
     order.state = 'paid'
@@ -122,6 +165,7 @@ export class HttpPaymentProvider implements PaymentProvider {
   }
 
   async queryStatus(input: PaymentStatusInput): Promise<PaymentStatusResult> {
+    validateStatusInput(input)
     if (!this.options.queryEndpoint) throw new Error('payment provider query endpoint is not configured')
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 15_000)
@@ -144,6 +188,10 @@ export class HttpPaymentProvider implements PaymentProvider {
   }
 
   async createCheckout(input: PaymentCheckoutInput): Promise<PaymentCheckoutResult> {
+    validateCheckoutInput(input)
+    let callback: URL
+    try { callback = new URL(input.callbackUrl) } catch { throw new Error('payment callback url is invalid') }
+    if (callback.protocol !== 'https:') throw new Error('payment callback url must use HTTPS')
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 15_000)
     try {
@@ -163,6 +211,7 @@ export class HttpPaymentProvider implements PaymentProvider {
   }
 
   async refund(input: PaymentRefundInput): Promise<PaymentRefundResult> {
+    validateRefundInput(input)
     if (!this.options.refundEndpoint) throw new Error('payment provider refund endpoint is not configured')
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 15_000)

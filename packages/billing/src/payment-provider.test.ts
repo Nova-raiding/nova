@@ -18,7 +18,25 @@ describe('payment provider adapter', () => {
     const input = { channel: 'wechat' as const, orderId: 'fixture-order-2', idempotencyKey: 'fixture-key-2', workspaceId: 'ws-fixture', amountFen: 2000, callbackUrl: 'fixture://callback', description: 'local test' }
     await provider.createCheckout(input)
     await expect(provider.createCheckout(input)).resolves.toMatchObject({ providerOrderId: input.orderId })
-    await expect(provider.createCheckout({ ...input, amountFen: 3000 })).rejects.toThrow('amount conflict')
+    await expect(provider.createCheckout({ ...input, amountFen: 3000 })).rejects.toThrow('idempotency conflict')
+  })
+
+  it('fails closed when an existing tenant order is retried with a different idempotency key', async () => {
+    const provider = new FixturePaymentProvider()
+    const input = { channel: 'alipay' as const, orderId: 'fixture-order-idempotency', idempotencyKey: 'key-original', workspaceId: 'ws-fixture', amountFen: 1000, callbackUrl: 'fixture://callback', description: 'local test' }
+    await provider.createCheckout(input)
+    await expect(provider.createCheckout({ ...input, idempotencyKey: 'key-replayed' })).rejects.toThrow('idempotency conflict')
+  })
+
+  it('rejects invalid payment identity and money inputs before fixture state changes', async () => {
+    const provider = new FixturePaymentProvider()
+    const valid = { channel: 'wechat' as const, orderId: 'fixture-order-validation', idempotencyKey: 'key-validation', workspaceId: 'ws-fixture', amountFen: 1000, callbackUrl: 'fixture://callback', description: 'local test' }
+    await expect(provider.createCheckout({ ...valid, workspaceId: ' ' })).rejects.toThrow('workspace id is required')
+    await expect(provider.createCheckout({ ...valid, amountFen: 0 })).rejects.toThrow('positive safe integer')
+    await expect(provider.createCheckout({ ...valid, channel: 'paypal' as never })).rejects.toThrow('unsupported')
+    await expect(provider.queryStatus({ channel: valid.channel, orderId: valid.orderId, workspaceId: '' })).rejects.toThrow('workspace id is required')
+    await expect(provider.refund({ channel: valid.channel, orderId: valid.orderId, providerTradeId: '', workspaceId: valid.workspaceId, amountFen: valid.amountFen, reason: 'test' })).rejects.toThrow('provider trade id is required')
+    await expect(provider.queryStatus({ channel: valid.channel, orderId: valid.orderId, workspaceId: valid.workspaceId })).resolves.toEqual({ state: 'failed' })
   })
 
   it('isolates identical order ids across workspaces and payment channels', async () => {
@@ -42,6 +60,13 @@ describe('payment provider adapter', () => {
     expect(requestBody).toContain('"idempotency_key":"recharge-key-1"')
     expect(() => new HttpPaymentProvider({ endpoint: 'http://payments.example/checkout', apiKey: 'key', merchantId: 'merchant' })).toThrow()
     expect(() => new HttpPaymentProvider({ endpoint: 'https://127.0.0.1/checkout', apiKey: 'key', merchantId: 'merchant' })).toThrow(/PRIVATE_ADDRESS_BLOCKED/)
+  })
+
+  it('rejects non-HTTPS provider callback URLs before making a request', async () => {
+    let called = false
+    const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'key', merchantId: 'merchant', fetch: async () => { called = true; return new Response('{}') } })
+    await expect(provider.createCheckout({ channel: 'wechat', orderId: 'order-1', idempotencyKey: 'key-1', workspaceId: 'ws-1', amountFen: 100, callbackUrl: 'http://merchant.example/callback', description: '充值' })).rejects.toThrow('callback url must use HTTPS')
+    expect(called).toBe(false)
   })
 
   it('does not create a provider from incomplete deployment configuration', () => {
