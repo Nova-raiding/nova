@@ -45,6 +45,9 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain("证据时间");
     expect(markup).toContain("2026-08-31T00:00:00.000Z");
     expect(markup).toContain("未找到规范商品映射");
+    expect(markup).toContain('id="canonical-consistency-error-summary"');
+    expect(markup).toContain('tabindex="-1"');
+    expect(markup).toContain('aria-labelledby="canonical-consistency-error-summary-label"');
   });
 
   it("renders orphan relation objects instead of hiding them in the blocked count", () => {
