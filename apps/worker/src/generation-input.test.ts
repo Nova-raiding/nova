@@ -17,6 +17,10 @@ describe('durable generation prompt schema', () => {
     ['control character in product identity', { product: { ...valid().product, id: 'product\u0001' } }],
     ['malformed asset preference', { referenceAssets: [{ id: 'asset_1', revision: 1, preference: { verdict: 'excellent', reasons: [] } }] }],
     ['control character in asset preference', { referenceAssets: [{ id: 'asset_1', revision: 1, preference: { verdict: 'disliked', reasons: ['bad\u0001'] } }] }],
+    ['duplicate fact references', { confirmedFactSourceIds: ['fact_1', 'fact_1'] }],
+    ['control character in fact reference', { confirmedFactSourceIds: ['fact\u0001'] }],
+    ['malformed promotion', { promotions: [{ kind: 'discount', label: '促销', skuIds: [] }] }],
+    ['unconfirmed knowledge asset', { knowledgeContext: { rules: [], assets: [{ id: 'asset', kind: 'brand', name: '资料', content: 'x', revision: 1, confirmed: true }], confirmedLearningSuggestions: [] } }],
   ])('rejects %s before provider input is accepted', (_label, override) => {
     expect(() => assertGenerationInput({ ...valid(), ...override }, 'ws_1', 'model:job_1', 'task_1')).toThrowError(expect.objectContaining({ code: 'GENERATION_INPUT_SCHEMA_INVALID' }))
   })
