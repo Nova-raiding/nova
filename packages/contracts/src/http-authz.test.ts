@@ -16,6 +16,32 @@ describe('HTTP authorization policy registry', () => {
     }
   })
 
+  it('keeps HTTP identity write semantics aligned with the referenced MCP policy', () => {
+    const readMethods = new Set(['GET'])
+    const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+    // This endpoint computes a review decision/read model from the current
+    // content version; its MCP operation is intentionally customer-content
+    // update because the review computation is an authorization-sensitive
+    // mutation boundary, even though the HTTP transport is GET.
+    const readTransportWriteOperations = new Set([
+      'http:GET:/v1/content-versions/{contentVersionId}/review',
+      'http:GET:/v1/content-versions/{contentVersionId}/export',
+    ])
+
+    for (const policy of HTTP_OPERATION_POLICIES) {
+      if (policy.authentication !== 'identity') continue
+      const mcpPolicy = getMcpMethodPolicy(policy.mcpMethod!)!
+      const expectedEffect = readMethods.has(policy.method) ? 'read' : 'write'
+      if (readTransportWriteOperations.has(policy.operation)) {
+        expect(mcpPolicy.effect, `${policy.operation} must preserve its documented review boundary`).toBe('write')
+      } else {
+        expect(mcpPolicy.effect, `${policy.operation} must preserve MCP effect semantics`).toBe(expectedEffect)
+      }
+      expect(policy.operation).toBe(`http:${policy.method}:${policy.pathTemplate}`)
+      expect(readMethods.has(policy.method) || writeMethods.has(policy.method)).toBe(true)
+    }
+  })
+
   it('matches exact templates without accepting sibling or descendant paths', () => {
     expect(getHttpOperationPolicy('POST', '/v1/tasks/task-1/approve')).toMatchObject({ mcpMethod: 'content.approve', authentication: 'identity' })
     expect(getHttpOperationPolicy('post', '/v1/tasks/task-1/approve')).toMatchObject({ mcpMethod: 'content.approve', authentication: 'identity' })
