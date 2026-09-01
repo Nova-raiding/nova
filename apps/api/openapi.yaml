@@ -991,9 +991,10 @@ paths:
         - { $ref: '#/components/parameters/IdempotencyKeyOptional' }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/McpRequest' } } }
+        content: { application/json: { schema: { oneOf: [{ $ref: '#/components/schemas/McpRequest' }, { $ref: '#/components/schemas/McpNativeRequest' }] } } }
       description: |
         rule.sync.status is included in the MCP allowlist and exposes read-only rule freshness.
+        This endpoint also accepts native MCP JSON-RPC methods initialize, tools/list, and tools/call. Native tools/list is merchant-scoped and never advertises ops.* methods; native tools/call reuses the same authorization and business handler as the legacy method envelope.
         Allowlist: workspace.bootstrap, workspace.health, workspace.interactive.confirm, workspace.metrics, workspace.deactivate, workspace.activate, workspace.data.delete.request, platform.store.list, platform.connect, platform.store.alias.set, canonical.product.consistency, catalog.search, catalog.categories, catalog.title.optimize, catalog.title.accept, catalog.import, catalog.facts.confirm, catalog.product.disable, catalog.product.enable, catalog.image.generate, catalog.image.retry, catalog.image.get, catalog.image.select, catalog.image.review,
         sync.retry_failed, rule.list, rule.sync.status, rule.history, rule.audit, rule.publish, rule.status, asset.list, asset.parse, asset.facts.confirm, asset.preference.update, brand.get, brand.extract, brand.upsert, brand.tone.preview, asset.upload, asset.upload.batch, asset.scan, asset.generation.confirm, asset.rights.update, catalog.sync, catalog.sync.start, catalog.sync.get, deliverable.list, task.history, task.resume, task.clone, task.timeline, feedback.list, platform.revoke, task.create, task.answer,
         task.understand, task.request.create, task.sku.split, task.group.create, creative.directions, creative.brief, creative.preview, creative.directions.update, task.select_direction, task.plan.confirm, content.generate, generation.get, content.review, content.review.decide, content.versions, content.diff, content.export, content.approve,
@@ -1633,6 +1634,18 @@ components:
             platform.media.spec.expire: '#/components/schemas/McpPlatformMediaSpecTransitionParams'
             platform.mapping.preflight: '#/components/schemas/McpPlatformMappingPreflightParams'
             delivery.bundle.verify: '#/components/schemas/McpDeliveryBundleVerifyParams'
+      additionalProperties: false
+    McpNativeRequest:
+      type: object
+      required: [jsonrpc, id, method]
+      properties:
+        jsonrpc: { type: string, enum: ['2.0'] }
+        id: { oneOf: [{ type: string }, { type: integer }, { type: 'null' }] }
+        method: { type: string, enum: [initialize, tools/list, tools/call] }
+        params:
+          type: object
+          additionalProperties: true
+          description: initialize capabilities, optional tools/list cursor, or tools/call name and arguments.
       additionalProperties: false
     ApiWarning:
       type: object
