@@ -1019,6 +1019,7 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 4.3, 'asset.preference.update', { asset_id: ownAssetId, verdict: 'unrated' })).error).toBeNull()
 
     expect((await mcp(ownerHeaders, 5, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'viewer' })).error).toBeNull()
+    expect((await mcp(editorHeaders, 5.1, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'admin' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 6, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 1 })
     expect((await mcp(editorHeaders, 6.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation.items).toEqual([expect.objectContaining({ id: 'brand_access', title: '权限品', platforms: [expect.objectContaining({ platform: 'taobao', stores: [expect.objectContaining({ accountId: account.id })] })] })])
     expect((await mcp(editorHeaders, 6.2, 'creative.brief', { product_id: hiddenSource.id, asset_type: 'banner' })).error?.code).toBe('PRODUCT_NOT_FOUND')
