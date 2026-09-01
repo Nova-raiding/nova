@@ -1,5 +1,6 @@
 import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { composeServiceHealth, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
 
@@ -58,7 +59,10 @@ add('model_relay', relayReady ? 'pass' : production ? 'fail' : 'warn', relayRead
 const identitySessionReady = Boolean(process.env.SESSION_ID_HASH_SECRET) || containerEnv.has('SESSION_ID_HASH_SECRET')
 add('identity_session_hash', identitySessionReady ? 'pass' : production ? 'fail' : 'warn', identitySessionReady ? '平台身份会话指纹密钥已注入（值已隐藏）' : '平台身份会话指纹密钥未注入', '通过 Secret Manager 注入独立 SESSION_ID_HASH_SECRET；不得复用 OIDC 或 API token。')
 const hostRelayReady = commandReady('npm', ['run', 'codex:relay:validate', '--silent'])
-add('host_model_relay', hostRelayReady ? 'pass' : production ? 'fail' : 'warn', hostRelayReady ? '宿主 Codex 中转合同有效（值已隐藏）' : '宿主 Codex 中转合同未就绪；容器配置不代表宿主可调用', '按 ~/.codex/config.toml 中 provider 的 env_key 注入宿主密钥，并确认 model_provider 指向同一 provider；随后运行 npm run codex:relay:validate。')
+const codexConfigPath = resolve(process.env.CODEX_CONFIG_PATH?.trim() || `${homedir()}/.codex/config.toml`)
+const codexUsesSubscription = existsSync(codexConfigPath) && !/^\s*(?:model_provider|model)\s*=/mu.test(readFileSync(codexConfigPath, 'utf8'))
+const hostAuthMessage = codexUsesSubscription ? '宿主 Codex 使用 ChatGPT 会员登录（业务模型仍走中转）' : '宿主 Codex 中转合同有效（值已隐藏）'
+add('host_model_relay', hostRelayReady ? 'pass' : production ? 'fail' : 'warn', hostRelayReady ? hostAuthMessage : '宿主 Codex 认证/中转合同未就绪；容器配置不代表宿主可调用', '使用 ChatGPT 会员登录宿主 Codex，或按 ~/.codex/config.toml 中 provider 的 env_key 注入宿主密钥；随后运行 npm run codex:relay:validate。')
 
 const opsApiBaseReady = process.env.VITE_API_BASE === '/api' || Boolean(process.env.VITE_API_BASE)
 add('ops_api_base', opsApiBaseReady ? 'pass' : 'warn', opsApiBaseReady ? 'VITE_API_BASE 已配置' : '当前 shell 未设置 VITE_API_BASE；npm run dev:ops-console 会自动使用 /api', '手工启动 Ops Console 时设置 VITE_API_BASE=/api。')
