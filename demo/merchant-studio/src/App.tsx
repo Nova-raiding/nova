@@ -187,6 +187,27 @@ import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
 import { resolveProductAssetRelation } from './product-assets.js'
 import { ContextRecoveryCard } from './ContextRecoveryCard.js'
 import { canonicalProductActionAllowed, groupTasksForRecovery, prioritizeProducts } from './merchant-ia.js'
+
+const MERCHANT_READ_ONLY_ROLES = new Set(['viewer', 'knowledge_reader'])
+const merchantRole = (import.meta.env.VITE_MERCHANT_ROLE ?? '').trim().toLowerCase()
+const merchantReadOnly = MERCHANT_READ_ONLY_ROLES.has(merchantRole)
+
+function projectMerchantWriteControls(root: HTMLElement, readOnly: boolean) {
+  const writeAction = /同步|授权|撤销|导入|上传|保存|充值|发布|生成|创建|绑定|解除|确认(?:需求|商品|方案|事实|选择)|修改|评价|解析|重试/iu
+  const readAction = /关闭|取消|查看|刷新|回到|返回|帮助|诊断|工作区信息|下一步/iu
+  root.querySelectorAll<HTMLElement>('button, input, select, textarea').forEach((control) => {
+    if (!readOnly) {
+      control.removeAttribute('data-permission-state')
+      control.removeAttribute('aria-disabled')
+      return
+    }
+    const label = `${control.getAttribute('aria-label') ?? ''} ${control.textContent ?? ''} ${control.getAttribute('placeholder') ?? ''}`
+    if (!writeAction.test(label) || readAction.test(label)) return
+    control.setAttribute('data-permission-state', 'read-only')
+    control.setAttribute('aria-disabled', 'true')
+    if ('disabled' in control) (control as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled = true
+  })
+}
 import {
   resolveAssetPrimaryAction,
   resolveAssetPrimaryStatus,
@@ -9752,6 +9773,14 @@ export default function App() {
   const publishPreviewLock = useRef(false)
   const routeRequestId = useRef(0)
   const mainContentRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const root = mainContentRef.current
+    if (!root) return
+    projectMerchantWriteControls(root, merchantReadOnly)
+    const observer = new MutationObserver(() => projectMerchantWriteControls(root, merchantReadOnly))
+    observer.observe(root, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [page, utilityPanel, merchantReadOnly])
   const routeCanonicalized = useRef(false)
   const focusMainAfterNavigation = () =>
     focusMainAfterMerchantNavigation(
@@ -10148,7 +10177,12 @@ export default function App() {
     navigateTo('products', { searchQuery: query, clearContext: true })
   }
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-merchant-role={merchantRole || 'workspace_owner'} data-merchant-permission={merchantReadOnly ? 'read-only' : 'write'}>
+      {merchantReadOnly && (
+        <div className="info-notice" role="status" data-testid="merchant-read-only-banner">
+          当前账号为只读角色，商品、素材、任务、充值和发布等写操作已禁用；如需修改，请联系工作区管理员。
+        </div>
+      )}
       <button
         className="skip-link"
         inert={publishModal || Boolean(utilityPanel)}

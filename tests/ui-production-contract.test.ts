@@ -22,6 +22,14 @@ describe('Merchant Studio production UI contract', () => {
     expect(api).toContain('account_id?: string')
   })
 
+  it('projects read-only merchant roles into disabled write controls', () => {
+    expect(app).toContain("new Set(['viewer', 'knowledge_reader'])")
+    expect(app).toContain("data-testid=\"merchant-read-only-banner\"")
+    expect(app).toContain("data-merchant-permission={merchantReadOnly ? 'read-only' : 'write'}")
+    expect(app).toContain("control.setAttribute('aria-disabled', 'true')")
+    expect(app).toContain(".disabled = true")
+  })
+
   it('bounds API outage waits and presents a distinct timeout error', () => {
     expect(api).toContain('API_REQUEST_TIMEOUT_MS = 10_000')
     expect(api).toContain('new AbortController()')
