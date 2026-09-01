@@ -48,6 +48,9 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain('id="canonical-consistency-error-summary"');
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-labelledby="canonical-consistency-error-summary-label"');
+    expect(markup).toContain('canonical-consistency-card');
+    expect(markup).toContain('canonical-consistency-filter');
+    expect(markup).toContain('canonical-consistency-action');
   });
 
   it("renders orphan relation objects instead of hiding them in the blocked count", () => {
