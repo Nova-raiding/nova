@@ -245,6 +245,7 @@ function Dashboard({
               obligationsMissing={sessionAccessDeniedEvidence.obligationsMissing}
               onBack={() => navigateToDomain("overview")}
               onRefresh={() => void model.load()}
+              refreshing={model.loading}
             />
           )}
         </Content>

@@ -27,6 +27,7 @@ export function AccessDeniedResult({
   obligationsMissing,
   onBack,
   onRefresh,
+  refreshing = false,
 }: {
   domainLabel: string;
   capability: string;
@@ -38,6 +39,7 @@ export function AccessDeniedResult({
   obligationsMissing?: readonly string[];
   onBack: () => void;
   onRefresh: () => void;
+  refreshing?: boolean;
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -50,7 +52,19 @@ export function AccessDeniedResult({
       status="403"
       title={<span ref={headingRef} tabIndex={-1} role="heading" aria-level={1}>无权访问“{domainLabel}”</span>}
       subTitle={<span id="access-denied-context">{accessContext}{requestId ? ` 请求 ID：${requestId}。` : ""}</span>}
-      extra={<Space className="access-denied-actions"><Button type="primary" onClick={onBack}>返回运营总览</Button><Button onClick={onRefresh}>刷新权限</Button></Space>}
+      extra={<Space className="access-denied-actions" aria-busy={refreshing || undefined}>
+        <Button type="primary" onClick={onBack}>返回运营总览</Button>
+        <Button
+          onClick={onRefresh}
+          loading={refreshing}
+          disabled={refreshing}
+          aria-busy={refreshing || undefined}
+          aria-label={refreshing ? "正在刷新权限" : "刷新权限"}
+        >
+          {refreshing ? "正在刷新权限" : "刷新权限"}
+        </Button>
+        {refreshing ? <span className="sr-only" role="status" aria-live="polite">正在刷新权限，请稍候</span> : null}
+      </Space>}
     >
       <div className="access-denied-evidence" role="alert" aria-live="assertive" aria-labelledby="access-denied-evidence-title">
         <Typography.Title level={5} id="access-denied-evidence-title" className="sr-only">权限拒绝详情</Typography.Title>

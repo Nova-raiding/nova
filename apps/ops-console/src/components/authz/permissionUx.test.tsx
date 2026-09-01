@@ -182,4 +182,20 @@ describe("desktop permission UX", () => {
     expect(html).toContain("AUTHZ_SCOPE_MISMATCH");
     expect(html).not.toContain("对象存在");
   });
+
+  it("keeps permission refresh state visible and non-repeatable", () => {
+    const html = renderToStaticMarkup(<AccessDeniedResult
+      domainLabel="用户与租户"
+      capability="identity.read"
+      scope={{ kind: "workspace", id: "ws_1" }}
+      refreshing
+      onBack={() => undefined}
+      onRefresh={() => undefined}
+    />);
+    expect(html).toContain("正在刷新权限");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('disabled=""');
+  });
 });
