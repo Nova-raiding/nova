@@ -17418,7 +17418,8 @@ export function modelSettlementDomainError(error: unknown) {
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
     const source = error as { details?: unknown; providerIdempotencyKey?: unknown; providerRequestId?: unknown; status?: unknown }
     const details = source.details && typeof source.details === 'object' && !Array.isArray(source.details) ? source.details as Record<string, unknown> : {}
-    const providerStatus = Number.isInteger(source.status) && source.status >= 400 && source.status <= 599 ? source.status : details.provider_status
+    const sourceStatus = typeof source.status === 'number' ? source.status : Number.NaN
+    const providerStatus = Number.isInteger(sourceStatus) && sourceStatus >= 400 && sourceStatus <= 599 ? sourceStatus : details.provider_status
     const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
     const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
     return new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型中转请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试，请先查询结果或人工对账', 503, {
