@@ -21,6 +21,12 @@ describe('persistence migration 128 listing identity uniqueness', () => {
       const migrations = await loadMigrations()
       await new MigrationRunner(database, migrations).run()
 
+      // T8 migration idempotency: a restart/re-run must not execute the
+      // listing identity DDL again or create a second equivalent index.
+      await expect(new MigrationRunner(database, migrations).run()).resolves.toEqual([])
+      expect((await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM schema_migrations`)).rows[0]?.count).toBe(migrations.length)
+      expect((await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM pg_indexes WHERE indexname = 'product_listings_canonical_identity_key'`)).rows[0]?.count).toBe(1)
+
       await database.query(`INSERT INTO workspaces (id,status) VALUES ('ws_128','active')`)
       await database.query(`INSERT INTO platform_accounts (id,workspace_id,platform,remote_account_id,credential_ref,token_state)
         VALUES ('acct_128','ws_128','taobao','remote_128','secret://128','connected')`)
