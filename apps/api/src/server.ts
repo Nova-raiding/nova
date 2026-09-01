@@ -10818,7 +10818,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           if (visibleProductIds !== undefined && !visibleProductIds.has(job.productId)) return []
           if (!matchesTask(job.taskId ?? '', task?.platform ?? product?.platform, task?.accountId ?? product?.accountId, job.productId, execution.state)) return []
           const reconciliation = await persistence.reconciliationStatuses?.getLatest({ workspaceId, resourceType: 'image_generation_execution', resourceId: job.id })
-          const lastAction = typeof reconciliation?.details.resolution === 'string' ? `人工收口：${reconciliation.details.resolution}` : execution.state === 'outcome_unknown' ? 'Provider 结果未知，等待对账' : 'Provider 已启动，等待结果'
+          const lastAction = typeof reconciliation?.details.resolution === 'string'
+            ? `人工收口：${reconciliation.details.resolution}`
+            : execution.state === 'outcome_unknown'
+              ? 'Provider 结果未知，等待对账'
+              : execution.state === 'provider_reserved'
+                ? '生成请求已登记，等待提交'
+                : execution.state === 'provider_dispatching'
+                  ? '正在提交模型请求，等待受理确认'
+                  : 'Provider 已启动，等待结果'
           const alertState = Date.now() - Date.parse(execution.updatedAt) >= 15 * 60 * 1000 ? 'open' : 'monitoring'
           return [{ jobId: job.id, taskId: job.taskId ?? null, productId: job.productId, state: execution.state, archiveState: job.archiveState, eventId: execution.eventId, attempt: execution.attempt, providerRequestId: execution.providerRequestId ?? null, errorCode: execution.errorCode ?? null, errorMessage: execution.errorMessage ?? null, assignedOperatorId: job.assignedOperatorId ?? null, assignedAt: job.assignedAt ?? null, revision: job.revision, updatedAt: execution.updatedAt, reconciliationStatus: reconciliation?.status ?? null, reconciliationRevision: reconciliation?.revision ?? null, reconciliationEvidenceRef: typeof reconciliation?.details.evidenceRef === 'string' ? reconciliation.details.evidenceRef : null, reconciliationReason: typeof reconciliation?.details.reason === 'string' ? reconciliation.details.reason : null, alertState, lastAction, closureEvidence: reconciliation?.details.evidenceRef ?? null, nextAction: '查询真实 provider 状态或人工确认；禁止自动重试' }]
         }))).flat()

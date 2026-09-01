@@ -462,6 +462,10 @@ describe('API application wiring', () => {
     expect(queueEnd).toBeGreaterThan(queueStart)
     const queue = source.slice(queueStart, queueEnd)
     expect(queue).toContain("states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown']")
+    expect(queue).toContain("execution.state === 'provider_reserved'")
+    expect(queue).toContain("execution.state === 'provider_dispatching'")
+    expect(queue).toContain('生成请求已登记，等待提交')
+    expect(queue).toContain('正在提交模型请求，等待受理确认')
 
     const reconciliationStart = source.indexOf("if (req.method === 'POST' && path === '/v1/internal/image-generation-jobs/reconciliation')")
     const reconciliationEnd = source.indexOf("path === '/v1/internal/model-usage/reconciliation'", reconciliationStart)
