@@ -61,7 +61,7 @@ export class ModelUsageEvidenceMissingError extends Error {
   readonly code = 'MODEL_USAGE_EVIDENCE_MISSING'
   readonly providerSucceeded = true
 
-  constructor(readonly missing: 'usage' | 'cost' | 'sink') {
+  constructor(readonly missing: 'usage' | 'cost' | 'sink' | 'identity') {
     super(`model usage ${missing} evidence is missing`)
     this.name = 'ModelUsageEvidenceMissingError'
   }
@@ -137,7 +137,9 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     || (typeof data?.request_id === 'string' && data.request_id.trim() ? data.request_id.trim() : undefined)
     || (typeof nestedData?.provider_request_id === 'string' && nestedData.provider_request_id.trim() ? nestedData.provider_request_id.trim() : undefined)
     || (typeof nestedData?.request_id === 'string' && nestedData.request_id.trim() ? nestedData.request_id.trim() : undefined)
-  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || costCny !== undefined
+  // Cost is not usage. A relay that reports only a price has not provided
+  // enough metering evidence to settle a model call safely.
+  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
     ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}),
@@ -166,6 +168,7 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   const usage = parseRelayUsage(payload, headers, defaults)
   if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
   if (usage.costCny === undefined) throw new ModelUsageEvidenceMissingError('cost')
+  if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity')
   if (!sink) throw new ModelUsageEvidenceMissingError('sink')
   try {
     await sink(usage)

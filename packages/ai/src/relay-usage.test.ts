@@ -28,6 +28,15 @@ describe('relay usage normalization', () => {
     expect(parseRelayUsage({ data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ modality: 'image', model: 'image-v1', metadata: { usage_observed: false } })
   })
 
+  it('does not treat a cost-only response as usage evidence', async () => {
+    await expect(emitRelayUsage(
+      async () => {},
+      { id: 'req_cost_only', usage: { cost_cny: 0.01 } },
+      new Headers(),
+      { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_cost_only' } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'usage' })
+  })
+
   it('accepts only integer token counts and drops an inconsistent reported total', () => {
     expect(parseRelayUsage({ usage: { input_tokens: 1.5, output_tokens: 2, total_tokens: 3.5 } }, new Headers(), { modality: 'text', model: 'm' })).not.toHaveProperty('inputTokens')
     const usage = parseRelayUsage({ usage: { input_tokens: 2, output_tokens: 3, total_tokens: 99 } }, new Headers(), { modality: 'text', model: 'm' })
@@ -98,6 +107,15 @@ describe('relay usage normalization', () => {
       new Headers(),
       { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_missing_sink' } },
     )).rejects.toBeInstanceOf(ModelUsageEvidenceMissingError)
+  })
+
+  it('fails closed when metering has no provider request or attempt identity', async () => {
+    await expect(emitRelayUsage(
+      async () => {},
+      { id: 'completion_only', usage: { total_tokens: 3, cost_cny: 0.01 } },
+      new Headers(),
+      { modality: 'text', model: 'relay-text' },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'identity' })
   })
 
   it('preserves a committed actual-cost overrun at the provider boundary', async () => {
