@@ -130,4 +130,15 @@ describe('platform HTTP configuration', () => {
     expect(result.allConfigs.jd?.signer?.kind).toBe('platform')
     expect(result.allConfigs.pinduoduo?.signer?.kind).toBe('platform')
   })
+
+  it('does not expose a structured client secret to the API/MCP connector config', () => {
+    const result = buildHttpConnectorConfigsFromStructured({
+      jd: { clientId: 'jd', clientSecret: 'jd-secret', oauth: { authorizeUrl: 'https://jd.test/a', tokenUrl: 'https://jd.test/t' }, api: { baseUrl: 'https://jd.test/api', syncPath: '/i', createPath: '/c', updatePath: '/u', queryPath: '/q' } },
+    })
+
+    expect(result.allConfigs.jd).toBeDefined()
+    expect(result.allConfigs.jd).not.toHaveProperty('clientSecret')
+    expect(JSON.stringify(result.allConfigs.jd)).not.toContain('jd-secret')
+    expect(result.allConfigs.jd?.signer?.kind).toBe('platform')
+  })
 })

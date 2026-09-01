@@ -295,11 +295,11 @@ export function buildHttpConnectorConfigsFromStructured(source: Partial<Record<P
     if (!value?.oauth?.authorizeUrl || !validUrl(value.oauth.authorizeUrl)) missingFields.push('oauth.authorizeUrl')
     if (!value?.oauth?.tokenUrl || !validUrl(value.oauth.tokenUrl)) missingFields.push('oauth.tokenUrl')
     if (!value?.api?.baseUrl || !validUrl(value.api.baseUrl)) missingFields.push('api.baseUrl')
-    const candidate = value && missingFields.length === 0 ? withPlatformAdapters(platform, {
+    const candidate = value && missingFields.length === 0 ? stripStructuredSecret(withPlatformAdapters(platform, {
       ...value,
       oauth: { ...value.oauth },
       api: { ...value.api },
-    }) : undefined
+    })) : undefined
     const state = validateConnectorReadiness(platform, candidate)
     readiness[platform] = state
     if (candidate) allConfigs[platform] = candidate
@@ -308,6 +308,19 @@ export function buildHttpConnectorConfigsFromStructured(source: Partial<Record<P
     missing[platform] = [...missingFields, ...state.reasons]
   }
   return { configs, allConfigs, candidates, missing, readiness }
+}
+
+/**
+ * Structured configuration may be assembled from a secret/config service and
+ * temporarily carry a client secret so a platform signer can be constructed.
+ * The secret must never become part of the connector config consumed by the
+ * API/MCP runtime, though: credentials belong behind CredentialProvider.
+ * Keep the signer closure (which needs the secret to sign) but remove the
+ * enumerable config field before exposing the candidate or readiness result.
+ */
+function stripStructuredSecret(config: HttpConnectorConfig): HttpConnectorConfig {
+  const { clientSecret: _clientSecret, ...withoutSecret } = config
+  return withoutSecret
 }
 
 export function platformConfigPrefix(platform: Platform): string { return platformPrefixes[platform] }
