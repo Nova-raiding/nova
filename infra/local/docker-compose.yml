@@ -250,6 +250,10 @@ services:
       # customer-data bypass explicit on the replica so both API instances
       # enforce the same local acceptance policy.
       LOCAL_COMPOSE: "true"
+      # The replica must use the same durable authorization/member projection
+      # as the primary. Without this override `extends` falls back to the
+      # in-memory repository and browser requests become replica-dependent.
+      PERSISTENCE_MODE: postgres
       OTEL_SERVICE_NAME: merchant-api-replica
 
   worker-sync:
