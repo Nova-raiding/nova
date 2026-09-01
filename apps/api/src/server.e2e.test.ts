@@ -1358,8 +1358,8 @@ describe('API HTTP vertical slice', () => {
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ direction_id: 'A' }) })
     await fetch(`${base}/v1/tasks/${taskId}/plan/confirm`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-actor-id': 'test-merchant' }, body: JSON.stringify({ expected_version: 2 }) })
     const contentVersionId = service.createDraft(taskId).id
-    const usageAudit = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo', 'x-role': 'support' }, body: JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'ops.audit.list', params: { workspace_id: 'ws_demo', limit: '100' } }) }).then(json)
-    expect((usageAudit.data as { result: { records: Array<{ action: string }> } }).result.records.map(item => item.action)).toContain('usage.consume')
+    const planAudit = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo', 'x-role': 'support' }, body: JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'ops.audit.list', params: { workspace_id: 'ws_demo', limit: '100' } }) }).then(json)
+    expect((planAudit.data as { result: { records: Array<{ action: string }> } }).result.records.map(item => item.action)).toContain('task.plan_confirmed')
     await fetch(`${base}/v1/tasks/${taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content_version_id: contentVersionId }) })
     const preview = await fetch(`${base}/v1/tasks/${taskId}/publish-preview`, { method: 'POST' }).then(json)
     const previewData = preview.data as { confirmationHash: string; remoteSnapshotHash: string }
