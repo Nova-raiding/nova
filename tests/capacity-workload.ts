@@ -35,6 +35,16 @@ export interface CapacityWorkloadConfig {
 
 export type LocalRuntimeService = { service: string; state: string; health: string }
 
+function capacityTimingErrors(timings: readonly CapacityWorkloadTiming[]): number {
+  return timings.filter(item =>
+    !item || typeof item.workspace !== 'string' || item.workspace.trim() === ''
+    || typeof item.phase !== 'string' || item.phase.trim() === ''
+    || typeof item.elapsedMs !== 'number' || !Number.isFinite(item.elapsedMs) || item.elapsedMs < 0
+    || !Number.isSafeInteger(item.status) || item.status < 0 || item.status > 599
+    || typeof item.ok !== 'boolean'
+  ).length
+}
+
 /** Capture the Compose state that the local capacity report is allowed to claim. */
 export function readLocalDockerRuntimeSnapshot(cwd = process.cwd()): LocalRuntimeService[] {
   const compose = ['compose', '-p', 'local', '--env-file', '.env', '-f', 'infra/local/docker-compose.yml', 'ps', '--format', 'json']
@@ -122,6 +132,10 @@ export function validateLocalCapacityEvidence(document: unknown): string[] {
   if (!metrics || typeof metrics !== 'object' || typeof metrics.observed_request_count !== 'number' || !Number.isSafeInteger(metrics.observed_request_count) || metrics.observed_request_count < 1) {
     errors.push('metrics.observed_request_count must be a positive integer for local capacity evidence')
   }
+  const completeness = value.completeness as Record<string, unknown> | undefined
+  if (!completeness || completeness.observations_valid !== true) errors.push('completeness.observations_valid must be true for local capacity evidence')
+  if (!completeness || completeness.accepted_jobs_valid !== true) errors.push('completeness.accepted_jobs_valid must be true for local capacity evidence')
+  if (typeof value.accepted_jobs !== 'number' || !Number.isSafeInteger(value.accepted_jobs) || value.accepted_jobs < 0) errors.push('accepted_jobs must be a non-negative safe integer for local capacity evidence')
   try {
     const target = new URL(String(value.target_url ?? ''))
     if (target.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1'].includes(target.hostname)) errors.push('target_url must be a local HTTP endpoint for local capacity evidence')
@@ -230,7 +244,9 @@ export function buildCapacityEvidenceDocument(
   input: { timings: readonly CapacityWorkloadTiming[]; acceptedJobs: number; startedAt: string; endedAt: string; runtimeServices?: readonly LocalRuntimeService[] },
 ) {
   const timings = [...input.timings]
-  const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length
+  const invalidTimingCount = capacityTimingErrors(timings)
+  const acceptedJobsValid = Number.isSafeInteger(input.acceptedJobs) && input.acceptedJobs >= 0
+  const errors = timings.filter(item => !item.ok && !isExpectedCapacityStatus(item.status)).length + invalidTimingCount + (acceptedJobsValid ? 0 : 1)
   // A run with no observations is incomplete in every mode. In particular,
   // real_cloud must not serialize an unexecuted run as a passing report.
   const incomplete = timings.length === 0
@@ -283,6 +299,10 @@ export function buildCapacityEvidenceDocument(
       observed_request_count: timings.length,
     },
     accepted_jobs: input.acceptedJobs,
+    completeness: {
+      observations_valid: invalidTimingCount === 0,
+      accepted_jobs_valid: acceptedJobsValid,
+    },
     coverage: 'api_http_and_job_admission',
     platform_traffic_exercised: false,
     ...(config.mode === 'compose' ? { runtime_services: input.runtimeServices ? [...input.runtimeServices] : [] } : {}),

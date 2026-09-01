@@ -110,4 +110,21 @@ describe('capacity workload contract', () => {
     expect(report.status).toBe('fail')
     expect(report.metrics.observed_request_count).toBe(0)
   })
+
+  it('fails closed when workload observations or accepted-job counts are malformed', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_MODE: 'compose' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: -1,
+      timings: [{ workspace: '', phase: 'sustained', elapsedMs: -1, ok: true, status: 700 }],
+      runtimeServices: LOCAL_CAPACITY_REQUIRED_SERVICES.map(service => ({ service, state: 'running', health: 'healthy' })),
+    })
+
+    expect(report.status).toBe('fail')
+    expect(report.completeness).toEqual({ observations_valid: false, accepted_jobs_valid: false })
+    expect(validateLocalCapacityEvidence(report)).toEqual(expect.arrayContaining([
+      'completeness.observations_valid must be true for local capacity evidence',
+      'completeness.accepted_jobs_valid must be true for local capacity evidence',
+      'accepted_jobs must be a non-negative safe integer for local capacity evidence',
+    ]))
+  })
 })

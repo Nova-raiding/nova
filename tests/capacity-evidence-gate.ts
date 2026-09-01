@@ -10,6 +10,8 @@ type CapacityEvidence = {
   fault?: { injected?: boolean; scenarios?: string[]; passed?: boolean }
   steady_state?: { verified?: boolean; queue_converged?: boolean; stability_hours?: number }
   sign_off?: { verified_by?: string; verified_at?: string }
+  accepted_jobs?: number
+  completeness?: { observations_valid?: boolean; accepted_jobs_valid?: boolean }
 }
 
 const minimums: Record<Profile, Record<string, number>> = {
