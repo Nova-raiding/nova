@@ -19,6 +19,7 @@ describe('audit export security boundary', () => {
     rejectsWithCode(() => validateAuditExportRequest({ scope: { ...scope, tenantId: 'tenant_2' } }, authorized), 'AUDIT_EXPORT_SCOPE_MISMATCH')
     rejectsWithCode(() => validateAuditExportRequest({ scope: { ...scope, workspaceId: 'ws_other' } }, authorized), 'AUDIT_EXPORT_SCOPE_MISMATCH')
     rejectsWithCode(() => validateAuditExportRequest({ scope: { ...scope, platformId: 'jd' } }, authorized), 'AUDIT_EXPORT_SCOPE_MISMATCH')
+    rejectsWithCode(() => validateAuditExportRequest({ scope }, { tenantId: 'tenant_1', workspaceIds: ['ws_1'] }), 'AUDIT_EXPORT_SCOPE_MISMATCH')
     expect(validateAuditExportRequest({ scope }, authorized)).toEqual(scope)
   })
 

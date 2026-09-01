@@ -59,7 +59,7 @@ export function validateAuditExportRequest(input: AuditExportRequest, authorized
   if (tenantId !== authorizedTenant || !authorized.workspaceIds.includes(workspaceId)) {
     throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_MISMATCH', 'audit export is outside the authorized tenant/workspace scope')
   }
-  if (platformId !== undefined && authorized.platformIds && !authorized.platformIds.includes(platformId)) {
+  if (platformId !== undefined && (!authorized.platformIds || !authorized.platformIds.includes(platformId))) {
     throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_MISMATCH', 'audit export is outside the authorized platform scope')
   }
   return { tenantId, workspaceId, ...(platformId ? { platformId } : {}) }
