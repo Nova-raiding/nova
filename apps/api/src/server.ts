@@ -4648,12 +4648,16 @@ async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<Retur
   if (resourceTask && requestedProduct && resourceTask.productId !== requestedProduct.id) return direct
   const generationJobId = policy.method === 'generation.get' && typeof params.job_id === 'string' && params.job_id.trim() ? params.job_id.trim() : undefined
   const generationJob = generationJobId ? service.generationJobs.get(generationJobId) : undefined
+  const publishJobId = policy.method === 'publish.get' && typeof params.publish_job_id === 'string' && params.publish_job_id.trim() ? params.publish_job_id.trim() : undefined
+  const publishJob = publishJobId ? service.publishJobs.get(publishJobId) : undefined
   const task = requestedTask
     ? requestedTask
     : contentTask
       ? contentTask
       : generationJob?.workspaceId === workspaceId
         ? service.tasks.get(generationJob.taskId)
+        : publishJob?.workspaceId === workspaceId
+          ? service.tasks.get(publishJob.taskId)
         : undefined
   if (task?.workspaceId === workspaceId) {
     if (direct.type === 'brand') return { type: 'brand' as const, id: task.brandId }
@@ -4869,6 +4873,10 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
     && req.method !== 'GET'
     && (header(req, 'content-type') ?? '').toLowerCase().includes('application/json')
   if (hasJsonAuthorizationParams) Object.assign(params, await body(req))
+  // HTTP routes do not carry the MCP envelope's workspace_id. Bind the
+  // already-resolved request scope before evaluating the shared policy so a
+  // missing body/query field cannot silently widen or bypass tenant scope.
+  params.workspace_id = workspaceId
   await enforceRegisteredMcpCapability(req, workspaceId, httpPolicy.mcpMethod, params)
   return httpPolicy
 }
