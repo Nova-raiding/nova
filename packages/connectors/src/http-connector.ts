@@ -187,7 +187,10 @@ export class HttpPlatformConnector implements PlatformConnector {
   private notConfigured<T>(): never { throw new ConnectorFailure(this.normalizeError({ code: 'NOT_CONFIGURED', message: `${this.platform} HTTP connector is not ready` })) as never }
   private requireConfig(): HttpConnectorConfig { if (!this.config || !this.options.credentials || !this.readiness.ready) this.notConfigured(); return this.config }
   private requireOAuthConfig(): HttpConnectorConfig { if (!this.config || !this.options.credentials || !this.authorizationReadiness.ready) this.notConfigured(); return this.config }
-  private requireRevokeConfig(): HttpConnectorConfig { if (!this.config || !this.options.credentials) this.notConfigured(); return this.config }
+  private requireRevokeConfig(): HttpConnectorConfig {
+    if (!this.config || !this.options.credentials || !this.config.oauth.revokeUrl?.trim()) this.notConfigured()
+    return this.config
+  }
   private requireProvider(): VaultCredentialProvider {
     const provider = this.options.credentials
     if (!provider || !provider.store || !provider.kind || (provider.kind !== 'vault' && provider.kind !== 'external' && !(provider.kind === 'test' && this.options.allowTestCredentials))) this.notConfigured()

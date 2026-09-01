@@ -39,6 +39,13 @@ describe('HttpPlatformConnector', () => {
     await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
   })
 
+  it('fails closed before local revoke when the remote revoke endpoint is missing', async () => {
+    const store = credentials()
+    const connector = createConfiguredConnector('jd', { config: { ...config, oauth: { ...config.oauth, revokeUrl: undefined } }, credentials: store, allowTestCredentials: true })
+    await expect(connector.revoke({ accountId: 'acct-1', credentialRef: 'vault://acct-1' })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
+    expect(store.saved).toHaveLength(0)
+  })
+
   it('rejects unsafe OAuth callback URLs before building the authorization request', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     try {
