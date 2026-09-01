@@ -17530,4 +17530,4 @@ if (process.env.NODE_ENV !== 'test') {
   })
 }
 
-export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits }
+export { assertUniqueBatchTaskIds, server, service, persistenceReady, memoryMembers as workspaceMembers, memoryOperations as operationAudits, memoryCreativePoints as creativePointsForTests }

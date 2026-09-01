@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ASSET_SCAN_RECEIPT_SCHEMA, parseAssetScanReceipt, signAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
-import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, server, service, workspaceMembers } from './server.js'
+import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, server, service, workspaceMembers } from './server.js'
 
 type Envelope<T> = { data: T; error: { code: string } | null }
 
@@ -75,6 +75,13 @@ beforeAll(async () => {
   vi.stubEnv('ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS', 'scanner-e2e')
   vi.stubEnv('ASSET_SCAN_POLICY_VERSION', 'test-policy')
   vi.stubEnv('ASSET_SCAN_MIN_DEFINITIONS_VERSION', '27800')
+  await creativePointsForTests.grant({
+    workspaceId,
+    idempotencyKey: 'asset-scan-worker-e2e-points-v1',
+    sourceType: 'test_fixture',
+    sourceId: 'asset-scan-worker-e2e',
+    points: 100,
+  })
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
