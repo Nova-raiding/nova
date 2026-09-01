@@ -367,11 +367,17 @@ function isStaleOutboxError(error: unknown): boolean {
 function normalizeDurableError(cause: unknown): WorkerError {
   const wrapped = cause as { error?: unknown } | undefined
   const candidate = (wrapped?.error && typeof wrapped.error === 'object' ? wrapped.error : cause) as Partial<WorkerError> | undefined
+  const code = typeof candidate?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/u.test(candidate.code)
+    ? candidate.code
+    : 'WORKER_ERROR'
+  const rawMessage = typeof candidate?.message === 'string' && candidate.message.trim()
+    ? candidate.message
+    : 'Worker execution failed'
   return {
-    code: candidate?.code ?? 'WORKER_ERROR',
-    message: candidate?.message ?? 'Worker execution failed',
-    retryable: candidate?.retryable ?? false,
-    unknown: candidate?.unknown ?? false,
+    code,
+    message: rawMessage.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 2_000),
+    retryable: candidate?.retryable === true,
+    unknown: candidate?.unknown === true,
   }
 }
 

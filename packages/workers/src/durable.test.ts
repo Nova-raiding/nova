@@ -138,6 +138,20 @@ describe('durable outbox dispatcher', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it('sanitizes malformed durable error evidence before deciding retry', async () => {
+    const store = new Store(event({ id: 'evt_malformed_error' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => {
+      throw { code: 'not-a-code', message: `line\nitem\u0000${'x'.repeat(2_100)}`, retryable: 'yes', unknown: 1 }
+    })
+    await dispatcher.restore('ws_1')
+    const result = await dispatcher.dispatchOnce()
+    expect(result.state).toBe('dead_letter')
+    expect(store.events.get('evt_malformed_error')?.lastError).toEqual({
+      code: 'WORKER_ERROR', message: `line item ${'x'.repeat(2_000 - 'line item '.length)}`, retryable: false, unknown: false,
+      eventId: 'evt_malformed_error', workspaceId: 'ws_1',
+    })
+  })
+
   it('keeps authorization correlation on unknown and dead-letter outcomes', async () => {
     const correlationSnapshot = { decision_id: 'decision_enqueue', actor_id: 'merchant_1', identity_id: 'identity_1', capability: 'publish.execute', policy_version: 'policy_3', request_id: 'req_1', trace_id: 'trace_enqueue' }
     const unknownStore = new Store(authorizedEvent({ id: 'evt_unknown_correlated', payload: { authorization_snapshot: correlationSnapshot } })); const unknownQueue = new InMemoryQueue<DurableOutboxEvent>()
