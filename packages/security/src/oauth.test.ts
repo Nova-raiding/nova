@@ -54,7 +54,14 @@ describe('OAuth security', () => {
     const redis: OAuthRedisPort = {
       async set(key, value) { data.set(key, value) },
       async get(key) { return data.get(key) ?? null },
-      async eval(_script, keys) { return data.has(keys[0]!) ? ['ok', '{malformed'] : ['missing', ''] },
+      async eval(script, keys) {
+        const raw = data.get(keys[0]!)
+        if (!raw) return ['missing', '']
+        if (script.includes('pcall(cjson.decode')) {
+          try { JSON.parse(raw) } catch { return ['invalid', ''] }
+        }
+        return ['ok', raw]
+      },
     }
     const redisStore = new RedisOAuthStateStore(redis, 'test:oauth', 60)
     const state = await redisStore.issue({ workspaceId: 'ws_1', actorId: 'actor', platform: 'jd' })
@@ -63,6 +70,9 @@ describe('OAuth security', () => {
 
     const validRecord = JSON.stringify({ state, workspaceId: 'ws_1', actorId: 'actor', platform: 'jd', expiresAt: Number.NaN, consumed: false })
     data.set(`test:oauth:${state}`, validRecord)
+    await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
+
+    data.set(`test:oauth:${state}`, JSON.stringify({ state, workspaceId: 'ws_1', actorId: { forged: true }, platform: 'jd', expiresAt: Date.now() + 30_000, consumed: false }))
     await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
   })
 })

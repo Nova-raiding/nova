@@ -41,7 +41,7 @@ export class RedisOAuthStateStore {
     if (status !== 'ok' || typeof payload !== 'string' || !payload) throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid')
     let record: OAuthState
     try { record = JSON.parse(payload) as OAuthState } catch { throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid') }
-    if (!record || record.state !== state || typeof record.workspaceId !== 'string' || typeof record.platform !== 'string' || !Number.isSafeInteger(record.expiresAt)) {
+    if (!validOAuthRecord(record, state)) {
       throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid')
     }
     if (Date.now() >= record.expiresAt) throw new OAuthStateError('STATE_EXPIRED', 'OAuth state has expired')
@@ -56,7 +56,7 @@ export class RedisOAuthStateStore {
     if (!raw) throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid')
     let record: OAuthState
     try { record = JSON.parse(raw) as OAuthState } catch { throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid') }
-    if (!record || typeof record.workspaceId !== 'string' || typeof record.platform !== 'string') throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid')
+    if (!validOAuthRecord(record, state)) throw new OAuthStateError('INVALID_STATE', 'OAuth state is invalid')
     return this.consume(state, { workspaceId: record.workspaceId, platform })
   }
 
@@ -70,10 +70,26 @@ function safeOAuthText(value: unknown, field: string): string {
   return value
 }
 
+function validOAuthRecord(value: unknown, expectedState: string): value is OAuthState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Partial<OAuthState>
+  if (record.state !== expectedState || typeof record.consumed !== 'boolean' || !Number.isSafeInteger(record.expiresAt)) return false
+  try {
+    safeOAuthText(record.state, 'state')
+    safeOAuthText(record.workspaceId, 'workspace')
+    safeOAuthText(record.actorId, 'actor')
+    safeOAuthText(record.platform, 'platform')
+    if (record.codeChallenge !== undefined) safeOAuthText(record.codeChallenge, 'code challenge')
+    if (record.codeVerifier !== undefined) safeOAuthText(record.codeVerifier, 'code verifier')
+  } catch { return false }
+  return true
+}
+
 const CONSUME_SCRIPT = `
 local value = redis.call('GET', KEYS[1])
 if not value then return {'missing', ''} end
-local record = cjson.decode(value)
+local ok, record = pcall(cjson.decode, value)
+if not ok or type(record) ~= 'table' or type(record.workspaceId) ~= 'string' or type(record.platform) ~= 'string' then return {'invalid', ''} end
 if record.workspaceId ~= ARGV[1] or record.platform ~= ARGV[2] then return {'scope', ''} end
 redis.call('DEL', KEYS[1])
 return {'ok', value}
