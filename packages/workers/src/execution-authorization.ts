@@ -128,10 +128,12 @@ export function createExecutionAuthorizationGuard(
 ): WorkerExecutionAuthorizationGuard {
   const now = options.now ?? (() => Date.now())
   const maxEvidenceAgeMs = options.maxEvidenceAgeMs ?? 30_000
+  if (!Number.isFinite(maxEvidenceAgeMs) || maxEvidenceAgeMs <= 0) throw new RangeError('maxEvidenceAgeMs must be a positive finite number')
   return {
     async assertAuthorized(event, operation, signal) {
       signal?.throwIfAborted()
       const snapshot = parseWorkerAuthorizationSnapshot(event, operation)
+      validateSnapshotFreshness(snapshot, now(), maxEvidenceAgeMs)
       let current: WorkerAuthorizationRecheck
       try {
         current = await recheck({ event, operation, snapshot, ...(signal ? { signal } : {}) })
@@ -151,10 +153,10 @@ export function createExecutionAuthorizationGuard(
   }
 }
 
-export function createUnavailableExecutionAuthorizationGuard(reason = 'authoritative execution authorization repository is not configured'): WorkerExecutionAuthorizationGuard {
+export function createUnavailableExecutionAuthorizationGuard(reason = 'authoritative execution authorization repository is not configured', options: { now?: () => number; maxEvidenceAgeMs?: number } = {}): WorkerExecutionAuthorizationGuard {
   return createExecutionAuthorizationGuard(async () => {
     throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RECHECK_UNAVAILABLE', reason, { retryable: true })
-  })
+  }, options)
 }
 
 /**
@@ -218,6 +220,11 @@ function validateRecheck(current: WorkerAuthorizationRecheck, snapshot: WorkerAu
   if (current.identityId !== snapshot.identityId || current.workspaceId !== event.workspaceId || current.contextId !== snapshot.contextId || current.workbench !== snapshot.workbench) throw recheckInvalid('execution authorization context binding mismatch')
   if (current.capability !== operation || current.capability !== snapshot.capability || current.resourceId !== event.aggregateId || current.resourceId !== snapshot.resourceId) throw recheckInvalid('execution authorization resource binding mismatch')
   if (!nonEmpty(current.contextVersion) || !nonEmpty(current.policyVersion) || !nonEmpty(current.grantRevision) || !nonEmpty(current.identityId) || current.workbench !== 'workspace' || current.scopeHash !== snapshot.scopeHash || current.resourceRevision !== snapshot.resourceRevision || current.requestId !== snapshot.requestId || current.traceId !== snapshot.traceId || !Array.isArray(current.grantIds) || current.grantIds.join(',') !== snapshot.grantIds?.join(',')) throw recheckInvalid('execution authorization version or scope evidence is incomplete')
+}
+
+function validateSnapshotFreshness(snapshot: WorkerAuthorizationSnapshot, now: number, maxAgeMs: number): void {
+  const decidedAt = Date.parse(snapshot.decidedAt)
+  if (decidedAt > now + 5_000 || now - decidedAt > maxAgeMs) throw snapshotError('authorization snapshot evidence is stale')
 }
 
 function snapshotError(message: string) {

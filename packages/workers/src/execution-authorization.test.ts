@@ -8,7 +8,7 @@ function event(overrides: Record<string, unknown> = {}): DurableOutboxEvent {
     id: 'evt_publish', workspaceId: 'ws_a', aggregateId: 'publish_1', eventType: 'publish.requested', sequence: 1, createdAt: '2026-08-31T09:59:00.000Z',
     payload: {
       authorization_snapshot: {
-        schema_version: 1, decision_id: 'decision_enqueue', actor_id: 'merchant_1', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_7', policy_version: 'policy_3', grant_revision: 'grant_11', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'publish.execute', resource_id: 'publish_1', resource_revision: '1', request_id: 'req_1', trace_id: 'trace_1', authorized: true, decided_at: '2026-08-31T09:59:00.000Z',
+        schema_version: 1, decision_id: 'decision_enqueue', actor_id: 'merchant_1', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_7', policy_version: 'policy_3', grant_revision: 'grant_11', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'publish.execute', resource_id: 'publish_1', resource_revision: '1', request_id: 'req_1', trace_id: 'trace_1', authorized: true, decided_at: '2026-08-31T09:59:40.000Z',
         ...overrides,
       },
     },
@@ -33,6 +33,19 @@ describe('worker execution-time authorization', () => {
     await expect(guard.assertAuthorized(event({ scope_hash: undefined }), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
     await expect(guard.assertAuthorized(event({ trace_id: undefined }), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
     expect(recheck).not.toHaveBeenCalled()
+  })
+
+  it('rejects stale or future enqueue snapshots before authoritative recheck', async () => {
+    const recheck = vi.fn()
+    const guard = createExecutionAuthorizationGuard(recheck, { now: () => now, maxEvidenceAgeMs: 30_000 })
+    await expect(guard.assertAuthorized(event({ decided_at: '2026-08-31T09:59:00.000Z' }), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', retryable: false })
+    await expect(guard.assertAuthorized(event({ decided_at: '2026-08-31T10:00:06.000Z' }), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', retryable: false })
+    expect(recheck).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid snapshot freshness configuration', () => {
+    expect(() => createExecutionAuthorizationGuard(vi.fn(), { maxEvidenceAgeMs: 0 })).toThrow('maxEvidenceAgeMs')
+    expect(() => createExecutionAuthorizationGuard(vi.fn(), { maxEvidenceAgeMs: Number.NaN })).toThrow('maxEvidenceAgeMs')
   })
 
   it('rejects revoke, stale evidence and resource substitution', async () => {
@@ -76,7 +89,7 @@ describe('worker execution-time authorization', () => {
   })
 
   it('exposes an explicit unavailable-authority blocker instead of manufacturing an allow', async () => {
-    await expect(createUnavailableExecutionAuthorizationGuard().assertAuthorized(event(), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_UNAVAILABLE', retryable: true })
+    await expect(createUnavailableExecutionAuthorizationGuard('authoritative execution authorization repository is not configured', { now: () => now }).assertAuthorized(event(), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_UNAVAILABLE', retryable: true })
   })
 
   it('supports a redriven asset scan capability without weakening its event binding', async () => {
