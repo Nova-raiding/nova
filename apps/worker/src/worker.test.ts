@@ -873,6 +873,36 @@ describe('worker production entry', () => {
     expect(called).toBe(false)
   })
 
+  it('rejects malformed cost and usage evidence before network I/O', async () => {
+    const invalidCases = [
+      { field: 'inputTokens', value: -1 },
+      { field: 'outputTokens', value: Number.NaN },
+      { field: 'totalTokens', value: Number.POSITIVE_INFINITY },
+      { field: 'costCny', value: -0.01 },
+    ] as const
+    for (const invalid of invalidCases) {
+      let called = false
+      await expect(postModelUsage({
+        apiBaseUrl: 'http://api.test',
+        apiToken: 'worker-token',
+        usage: { workspaceId: 'ws-1', actionId: 'model:generation:idem_invalid_evidence', runKey: 'task:invalid_evidence', modality: 'text', model: 'test-model', [invalid.field]: invalid.value, observedAt: '2026-08-29T00:00:00.000Z' },
+        fetcher: async () => { called = true; return new Response('{}', { status: 200 }) },
+      })).rejects.toThrow(`model usage callback ${invalid.field}`)
+      expect(called).toBe(false)
+    }
+  })
+
+  it('rejects inconsistent token totals before network I/O', async () => {
+    let called = false
+    await expect(postModelUsage({
+      apiBaseUrl: 'http://api.test',
+      apiToken: 'worker-token',
+      usage: { workspaceId: 'ws-1', actionId: 'model:generation:idem_inconsistent_tokens', runKey: 'task:inconsistent_tokens', modality: 'text', model: 'test-model', inputTokens: 3, outputTokens: 2, totalTokens: 4, observedAt: '2026-08-29T00:00:00.000Z' },
+      fetcher: async () => { called = true; return new Response('{}', { status: 200 }) },
+    })).rejects.toThrow('totalTokens must equal inputTokens plus outputTokens')
+    expect(called).toBe(false)
+  })
+
   it('requires the execution gate to return the frozen publish payload hash', async () => {
     const event = { id: 'evt_gate', workspaceId: 'ws_a', aggregateId: 'job_gate', eventType: 'publish.requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
     const validHash = 'a'.repeat(64)

@@ -4751,6 +4751,23 @@ export function workspaceCapabilitySourceForBrandScope(policy: NonNullable<Retur
     && atom.source !== 'temporary_grant')
 }
 
+export function workspaceAccountPermissionAtoms(
+  policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>,
+  workspaceId: string,
+  accountId: string,
+  workspaceAccountIds: readonly string[],
+  atoms: readonly PermissionAtom[],
+) {
+  if (!workspaceAccountIds.includes(accountId)) return atoms
+  const workspaceSource = atoms.find(atom => atom.capability === policy.capability
+    && atom.effect === 'allow'
+    && atom.scope.type === 'workspace'
+    && atom.scope.ids.includes(workspaceId)
+    && atom.source !== 'temporary_grant')
+  if (!workspaceSource) return atoms
+  return [...atoms, { ...workspaceSource, scope: { type: 'account' as const, ids: [accountId] }, source: 'resource_grant' as const, sourceId: `workspace-account:${workspaceId}:${accountId}` }]
+}
+
 export function minimumBrandRoleForPolicy(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>): BrandAccessRole {
   if (policy.capability === 'customer.publish.execute') return 'publisher'
   return policy.effect === 'write' ? 'editor' : 'viewer'
@@ -4760,14 +4777,10 @@ async function permissionAtomsForResolvedResource(req: IncomingMessage, workspac
   if (resourceScope?.type === 'account' && resourceScope.id) {
     const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
     const task = taskId ? service.tasks.get(taskId) : undefined
-    const workspaceSource = atoms.find(atom => atom.capability === policy.capability
-      && atom.effect === 'allow'
-      && atom.scope.type === 'workspace'
-      && atom.scope.ids.includes(workspaceId)
-      && atom.source !== 'temporary_grant')
-    if (task?.workspaceId === workspaceId && task.accountId === resourceScope.id && workspaceSource) {
-      return [...atoms, { ...workspaceSource, scope: { type: 'account' as const, ids: [resourceScope.id] }, source: 'resource_grant' as const, sourceId: `task-account:${task.id}` }]
-    }
+    if (taskId && (!task || task.workspaceId !== workspaceId || task.accountId !== resourceScope.id)) return atoms
+    const accountIds = workspaceStoreDirectory(workspaceId).map(store => store.accountId)
+    const scoped = workspaceAccountPermissionAtoms(policy, workspaceId, resourceScope.id, accountIds, atoms)
+    if (scoped.length !== atoms.length) return scoped.map(atom => atom.sourceId === `workspace-account:${workspaceId}:${resourceScope.id}` ? { ...atom, sourceId: task ? `task-account:${task.id}` : atom.sourceId } : atom)
   }
   if (resourceScope?.type !== 'brand' || !resourceScope.id) return atoms
   const principal = requestPrincipals.get(req)

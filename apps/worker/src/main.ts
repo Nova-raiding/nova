@@ -583,6 +583,16 @@ export async function postModelUsage(input: { apiBaseUrl: string; apiToken: stri
   if (!workspaceId) throw new Error('model usage callback requires workspaceId')
   if (!input.usage.actionId?.trim()) throw new Error('model usage callback requires actionId')
   if (!input.usage.runKey?.trim()) throw new Error('model usage callback requires runKey')
+  const usage = input.usage
+  for (const [field, value] of [['inputTokens', usage.inputTokens], ['outputTokens', usage.outputTokens], ['totalTokens', usage.totalTokens]] as const) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new Error(`model usage callback ${field} must be a non-negative safe integer`)
+  }
+  if (usage.inputTokens !== undefined && usage.outputTokens !== undefined && usage.totalTokens !== undefined && usage.totalTokens !== usage.inputTokens + usage.outputTokens) {
+    throw new Error('model usage callback totalTokens must equal inputTokens plus outputTokens')
+  }
+  if (usage.costCny !== undefined && (!Number.isFinite(usage.costCny) || usage.costCny < 0)) {
+    throw new Error('model usage callback costCny must be a finite non-negative number')
+  }
   const path = '/v1/internal/model-usage'
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/, '')}${path}`, {
     method: 'POST',
