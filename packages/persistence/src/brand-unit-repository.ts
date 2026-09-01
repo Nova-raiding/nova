@@ -326,7 +326,14 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
       const manifestHash = campaignManifestHash(input)
       await client.query(`INSERT INTO batch_campaigns (id, workspace_id, state, idempotency_key, manifest_hash, created_by, data) VALUES ($1,$2,'draft',$3,$4,$5,$6)`, [input.id, input.workspaceId, idempotencyKey, manifestHash, 'merchant', JSON.stringify({ brandId: input.brandId, platform: input.platform, accountId: input.accountId, productIds: input.productIds, ...(input.targets ? { targets: input.targets } : {}) })])
       const items = campaignItems(input)
-      for (const item of items) await client.query(`INSERT INTO batch_campaign_items (id, workspace_id, campaign_id, brand_id, canonical_product_id, listing_id, legacy_product_id, platform, platform_account_id, state, ordinal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10)`, [item.id, item.workspaceId, item.campaignId, item.brandId, item.canonicalProductId ?? null, item.listingId ?? null, item.productId, item.platform, item.accountId, item.ordinal])
+      for (const item of items) {
+        if (item.canonicalProductId || item.listingId) {
+          const scope = await client.query<{ brandId: string; canonicalProductId: string; platform: BrandUnitPlatform; accountId: string }>(`SELECT brand_id AS "brandId", canonical_product_id AS "canonicalProductId", platform, platform_account_id AS "accountId" FROM product_listings WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, item.listingId ?? ''])
+          const listing = scope.rows[0]
+          if (!item.canonicalProductId || !item.listingId || !listing || listing.brandId !== item.brandId || listing.canonicalProductId !== item.canonicalProductId || listing.platform !== item.platform || listing.accountId !== item.accountId) throw new Error('CAMPAIGN_ITEM_LISTING_SCOPE_INVALID')
+        }
+        await client.query(`INSERT INTO batch_campaign_items (id, workspace_id, campaign_id, brand_id, canonical_product_id, listing_id, legacy_product_id, platform, platform_account_id, state, ordinal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10)`, [item.id, item.workspaceId, item.campaignId, item.brandId, item.canonicalProductId ?? null, item.listingId ?? null, item.productId, item.platform, item.accountId, item.ordinal])
+      }
       return { campaign: { ...input, revision: 1, idempotencyKey, items, manifestHash, createdAt: timestamp, updatedAt: timestamp }, replayed: false }
     })
   }
