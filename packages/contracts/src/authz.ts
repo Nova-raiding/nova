@@ -187,6 +187,10 @@ export function evaluatePermissionAtoms(input: {
 }): AuthorizationDecision {
   const now = input.now === undefined ? Date.now() : Date.parse(input.now)
   const usable = Number.isFinite(now) ? input.atoms.filter(atom => {
+    // Every permission atom must remain attributable to a persisted assignment
+    // or grant. An empty or control-character source ID cannot be correlated
+    // with audit evidence, so it is never authorization material.
+    if (atom.sourceId.length === 0 || /[\u0000-\u001f\u007f]/.test(atom.sourceId)) return false
     if (atom.revokedAt !== undefined) return false
     if (atom.expiresAt !== undefined) {
       const expiresAt = Date.parse(atom.expiresAt)

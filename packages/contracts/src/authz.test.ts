@@ -168,6 +168,8 @@ describe('authorization policy registry', () => {
       { ...base, revokedAt: '2026-08-31T23:00:00.000Z' },
       { ...base, scope: { type: 'workspace' as const, ids: ['*'] } },
       { ...base, scope: { type: 'workspace' as const, ids: [] } },
+      { ...base, sourceId: '' },
+      { ...base, sourceId: 'grant_\u0000corrupt' },
     ]) {
       expect(evaluate(atom)).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_CAPABILITY_MISSING' })
     }
