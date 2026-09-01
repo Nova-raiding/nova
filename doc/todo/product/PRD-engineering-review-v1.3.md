@@ -161,10 +161,10 @@ Synthesized from this review's findings. Run with Codex; checkbox as you ship.
   - Surfaced by: Architecture A1 — 登录数不能证明在线操作容量。
   - Files: `tests/load/`, `config/capacity/`, `doc/runbooks/`
   - Verify: 同一 workload profile 可在 CI/预发布重复执行并生成版本化报告。
-- [ ] **T2 (P1, human: ~2d / Codex: ~4h)** — Stateless runtime — 部署 WAF/LB 和 3–12 个无状态 MCP/API 副本
+- [x] **T2 (P1, human: ~2d / Codex: ~4h)** — Stateless runtime — 部署 WAF/LB 和 3–12 个无状态 MCP/API 副本
   - Surfaced by: Architecture A2 — 单实例是入口和会话单点。
   - Files: `infra/kubernetes/overlays/`, `infra/kubernetes/base/api.yaml`, `tests/fault/`
-  - Verify: 500 会话下滚动删除任一 API 副本，已接收作业不丢且 P95 达标。
+  - Verify: 仓库合同已验证 target-500 使用 12 个 API 副本、RollingUpdate 且 `maxUnavailable: 0`、readiness probe 存在且无粘性会话配置；500 会话下滚动删除任一 API 副本、已接收作业不丢且 P95 达标仍需真实预发布/云报告。
 - [x] **T3 (P1, human: ~2d / Codex: ~5h)** — Workload isolation — 拆分四类 Worker 队列并实现 workspace 公平调度
   - Surfaced by: Architecture A3 — 大店同步会饿死发布与对账。
   - Files: `mcp/workers/`, `mcp/queues/`, `mcp/scheduler/`, `tests/load/`
@@ -189,7 +189,7 @@ Synthesized from this review's findings. Run with Codex; checkbox as you ship.
 - Step 0：保留模块化单体和 9 人/15 日，运行形态升级，不引入微服务。
 - Architecture Review：5 个问题，全部写回。
 - Code Quality Review：0 个代码级结论；6 条实现合同已定义。
-- Test Review：覆盖图已产出；T3 Worker 公平调度、T5 配额 admission 已有实现级测试，T1/T2/T4/T6 的真实云运行证据仍待外部环境。
+- Test Review：覆盖图已产出；T2 的本地无状态部署合同、T3 Worker 公平调度、T5 配额 admission 已有实现级测试，T1/T2/T4/T6 的真实云运行证据仍待外部环境。
 - Performance Review：4 个问题，全部写回；本地/Compose 结果继续明确标记为 `cloudGate=false`。
 - NOT in scope：5 项已写。
 - What already exists：复用 v1.2 设计和托管基础设施。
