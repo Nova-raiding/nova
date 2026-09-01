@@ -20,7 +20,10 @@ export function decideStorageLifecycle(input: { object: LifecycleObject; policy:
   const createdAt = date(input.object.createdAt, 'STORAGE_LIFECYCLE_CREATED_AT_INVALID')
   const referencedAt = input.object.lastReferencedAt === undefined ? undefined : date(input.object.lastReferencedAt, 'STORAGE_LIFECYCLE_REFERENCE_AT_INVALID')
   const deletionRequestedAt = input.object.deletionRequestedAt === undefined ? undefined : date(input.object.deletionRequestedAt, 'STORAGE_LIFECYCLE_DELETION_REQUEST_INVALID')
+  if (input.object.zone !== 'quarantine' && input.object.zone !== 'clean') throw new Error('STORAGE_LIFECYCLE_ZONE_INVALID')
+  if (createdAt > now) throw new Error('STORAGE_LIFECYCLE_CREATED_AT_IN_FUTURE')
   if (referencedAt !== undefined && referencedAt > now) throw new Error('STORAGE_LIFECYCLE_REFERENCE_IN_FUTURE')
+  if (deletionRequestedAt !== undefined && deletionRequestedAt > now) throw new Error('STORAGE_LIFECYCLE_DELETION_REQUEST_IN_FUTURE')
   const ageDays = Math.max(0, (now - createdAt) / 86_400_000)
   if (referencedAt !== undefined && referencedAt >= createdAt) return { action: 'retain', reason: 'active_reference' }
   if (deletionRequestedAt === undefined) {

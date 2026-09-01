@@ -12,4 +12,10 @@ describe('storage lifecycle policy', () => {
     expect(decideStorageLifecycle({ object: { key: 'clean/ws/a/file', zone: 'clean', createdAt: '2026-01-01T00:00:00Z', deletionRequestedAt: '2026-08-28T00:00:00Z' }, policy, now })).toMatchObject({ action: 'retain' })
     expect(decideStorageLifecycle({ object: { key: 'clean/ws/a/file', zone: 'clean', createdAt: '2026-01-01T00:00:00Z', deletionRequestedAt: '2026-08-20T00:00:00Z' }, policy, now })).toMatchObject({ action: 'delete', reason: 'deletion_grace_expired' })
   })
+
+  it('fails closed for invalid lifecycle zones and future timestamps', () => {
+    expect(() => decideStorageLifecycle({ object: { key: 'other/ws/a/file', zone: 'other' as never, createdAt: '2026-01-01T00:00:00Z' }, policy, now })).toThrow('STORAGE_LIFECYCLE_ZONE_INVALID')
+    expect(() => decideStorageLifecycle({ object: { key: 'clean/ws/a/file', zone: 'clean', createdAt: '2026-09-02T00:00:00Z' }, policy, now })).toThrow('STORAGE_LIFECYCLE_CREATED_AT_IN_FUTURE')
+    expect(() => decideStorageLifecycle({ object: { key: 'clean/ws/a/file', zone: 'clean', createdAt: '2026-01-01T00:00:00Z', deletionRequestedAt: '2026-09-02T00:00:00Z' }, policy, now })).toThrow('STORAGE_LIFECYCLE_DELETION_REQUEST_IN_FUTURE')
+  })
 })
