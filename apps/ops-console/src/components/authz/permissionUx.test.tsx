@@ -67,6 +67,18 @@ describe("desktop permission UX", () => {
     expect(html).toContain("平台运营视图");
   });
 
+  it("announces whether the server authorization projection is verified", () => {
+    const verified = renderToStaticMarkup(<RoleScopeBar session={session} authorization={createAuthorizationProjection(session, true)} />);
+    expect(verified).toContain("授权状态：已由服务端验证");
+    expect(verified).toContain('id="role-scope-verification"');
+    expect(verified).toContain('aria-live="polite"');
+    expect(verified).toContain('aria-atomic="true"');
+
+    const pending = renderToStaticMarkup(<RoleScopeBar authorization={createAuthorizationProjection(undefined, true)} activeWorkbench="workspace" />);
+    expect(pending).toContain("授权状态：未验证，正在等待服务端授权");
+    expect(pending).toContain('aria-describedby="role-scope-verification role-scope-boundary"');
+  });
+
   it("keeps a single server-projected workbench static", () => {
     const workspaceSession = { ...session, workbench: "workspace" as const, available_workbenches: ["workspace" as const], scopes: [{ type: "workspace" as const, ids: ["ws_1"] }] };
     const html = renderToStaticMarkup(<RoleScopeBar session={workspaceSession} authorization={createAuthorizationProjection(workspaceSession, true)} />);

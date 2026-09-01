@@ -84,11 +84,22 @@ export function RoleScopeBar({
   // Candidate workbenches come only from the server projection. Raw roles are
   // never used to manufacture a switch target.
   const availableWorkbenches = session?.available_workbenches ?? projectedWorkbenches ?? [workbench];
+  const authorizationVerified = Boolean(session);
   return (
-    <section className="role-scope-bar" aria-label="当前身份与权限范围">
+    <section className="role-scope-bar" aria-label="当前身份与权限范围" aria-describedby="role-scope-verification role-scope-boundary">
       <Space size={8} wrap>
         <SafetyCertificateOutlined aria-hidden="true" />
         <Typography.Text strong>{primaryRole}</Typography.Text>
+        <Typography.Text
+          id="role-scope-verification"
+          className="role-scope-verification"
+          type={authorizationVerified ? "success" : "warning"}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {authorizationVerified ? "授权状态：已由服务端验证" : "授权状态：未验证，正在等待服务端授权"}
+        </Typography.Text>
         <Typography.Text type="secondary">身份 {session?.actor_id ?? "未验证"}</Typography.Text>
         {roles.length > 1 ? <Tag>+{roles.length - 1} 个角色</Tag> : null}
         <OpsWorkbenchSwitcher value={workbench} available={availableWorkbenches} switching={switching} onChange={onWorkbenchChange} />
@@ -107,7 +118,7 @@ export function RoleScopeBar({
           </span>
         ) : null}
       </Space>
-      <Typography.Text className="ops-workbench-boundary" type="secondary" role="status">
+      <Typography.Text id="role-scope-boundary" className="ops-workbench-boundary" type="secondary" role="status">
         {workbenchBoundaryMessage(workbench)}
       </Typography.Text>
     </section>
