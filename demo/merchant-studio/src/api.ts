@@ -530,7 +530,8 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
 
 export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo'): Promise<T> {
   const token = runtimeConfig('VITE_API_TOKEN')?.trim()
-  if (!token) {
+  const sameOriginProxy = baseUrl.trim().startsWith('/')
+  if (!token && !sameOriginProxy) {
     const error = new Error('商家工作区鉴权未配置，已阻止请求') as ApiError
     error.code = 'API_AUTH_TOKEN_MISSING'
     throw error
@@ -544,7 +545,7 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   headers.set('accept', 'application/json')
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
   headers.set('x-workspace-id', workspaceId)
-  headers.set('authorization', `Bearer ${token}`)
+  if (token) headers.set('authorization', `Bearer ${token}`)
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS)
   const forwardAbort = () => controller.abort()
