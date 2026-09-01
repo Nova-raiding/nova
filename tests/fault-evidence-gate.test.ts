@@ -33,4 +33,16 @@ describe('local fault evidence gate', () => {
       'data_version is required',
     ]))
   })
+
+  it('rejects a failed report that contains only successful scenarios', () => {
+    expect(validateLocalFaultEvidence({ ...base, status: 'fail' })).toContain('fail evidence must contain a failed scenario')
+  })
+
+  it('rejects duplicate scenario names instead of collapsing evidence', () => {
+    expect(validateLocalFaultEvidence({ ...base, scenarios: [base.scenarios[0], { ...base.scenarios[0] }] })).toContain('scenario names must be unique')
+  })
+
+  it('accepts an explicitly failed recovery scenario in a failed report', () => {
+    expect(validateLocalFaultEvidence({ ...base, status: 'fail', scenarios: [{ ...base.scenarios[0], status: 'fail', recovered_status: 503, recovered_ready: false }] })).toEqual([])
+  })
 })

@@ -56,16 +56,22 @@ export function validateLocalFaultEvidence(value: unknown): string[] {
       const prefix = `scenarios[${index}]`
       if (!scenario || typeof scenario !== 'object') { errors.push(`${prefix} must be an object`); continue }
       if (typeof scenario.name !== 'string' || scenario.name.trim() === '') errors.push(`${prefix}.name is required`)
-      if (scenario.status !== 'pass') errors.push(`${prefix}.status must be pass`)
+      if (scenario.status !== 'pass' && scenario.status !== 'fail') errors.push(`${prefix}.status must be pass or fail`)
       if (scenario.degraded_status !== 503) errors.push(`${prefix}.degraded_status must be 503`)
       if (scenario.degraded_code !== 'REDIS_UNAVAILABLE') errors.push(`${prefix}.degraded_code must be REDIS_UNAVAILABLE`)
-      if (scenario.recovered_status !== 200) errors.push(`${prefix}.recovered_status must be 200`)
-      if (scenario.recovered_ready !== true) errors.push(`${prefix}.recovered_ready must be true`)
+      if (scenario.status === 'pass' && scenario.recovered_status !== 200) errors.push(`${prefix}.recovered_status must be 200`)
+      if (scenario.status === 'pass' && scenario.recovered_ready !== true) errors.push(`${prefix}.recovered_ready must be true`)
       if (typeof scenario.request_id !== 'string' || scenario.request_id.trim() === '') errors.push(`${prefix}.request_id is required`)
       if (typeof scenario.trace_id !== 'string' || scenario.trace_id.trim() === '') errors.push(`${prefix}.trace_id is required`)
     }
   }
-  if (evidence.status === 'pass' && evidence.scenarios?.some(scenario => scenario.status !== 'pass')) errors.push('pass evidence cannot contain a failed scenario')
+  if (Array.isArray(evidence.scenarios)) {
+    const names = evidence.scenarios.map(scenario => scenario && typeof scenario === 'object' && typeof scenario.name === 'string' ? scenario.name.trim() : '')
+    if (new Set(names.filter(Boolean)).size !== names.filter(Boolean).length) errors.push('scenario names must be unique')
+    const hasFailedScenario = evidence.scenarios.some(scenario => scenario && typeof scenario === 'object' && scenario.status === 'fail')
+    if (evidence.status === 'pass' && hasFailedScenario) errors.push('pass evidence cannot contain a failed scenario')
+    if (evidence.status === 'fail' && !hasFailedScenario) errors.push('fail evidence must contain a failed scenario')
+  }
   return errors
 }
 
