@@ -95,6 +95,21 @@ describe("local Docker runtime contract", () => {
       minimum: 1,
       maximum: sourceTail,
     })
+
+    const orphanLeaseSchema = docker([
+      ...project,
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "-U",
+      "merchant",
+      "-d",
+      "merchant",
+      "-Atqc",
+      "SELECT (SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='object_storage_orphans' AND column_name IN ('lease_token', 'lease_until'))::int || ':' || (SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexname='object_storage_orphans_claim_idx')::int",
+    ])
+    expect(orphanLeaseSchema).toBe("2:1")
   }, 15_000)
 
   it("refreshes scanner callback evidence through a real local scan", async () => {
