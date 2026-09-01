@@ -73,7 +73,7 @@ function safeOAuthText(value: unknown, field: string): string {
 function validOAuthRecord(value: unknown, expectedState: string): value is OAuthState {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Partial<OAuthState>
-  if (record.state !== expectedState || typeof record.consumed !== 'boolean' || !Number.isSafeInteger(record.expiresAt)) return false
+  if (record.state !== expectedState || record.consumed !== false || !Number.isSafeInteger(record.expiresAt)) return false
   try {
     safeOAuthText(record.state, 'state')
     safeOAuthText(record.workspaceId, 'workspace')
@@ -89,7 +89,7 @@ const CONSUME_SCRIPT = `
 local value = redis.call('GET', KEYS[1])
 if not value then return {'missing', ''} end
 local ok, record = pcall(cjson.decode, value)
-if not ok or type(record) ~= 'table' or type(record.workspaceId) ~= 'string' or type(record.platform) ~= 'string' then return {'invalid', ''} end
+if not ok or type(record) ~= 'table' or type(record.workspaceId) ~= 'string' or type(record.platform) ~= 'string' or record.consumed ~= false then return {'invalid', ''} end
 if record.workspaceId ~= ARGV[1] or record.platform ~= ARGV[2] then return {'scope', ''} end
 redis.call('DEL', KEYS[1])
 return {'ok', value}

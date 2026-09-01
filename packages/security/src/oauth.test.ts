@@ -45,7 +45,8 @@ describe('OAuth security', () => {
       async eval(_script, keys, args) {
         const raw = data.get(keys[0]!)
         if (!raw) return ['missing', '']
-        const record = JSON.parse(raw) as { workspaceId: string; platform: string }
+        const record = JSON.parse(raw) as { workspaceId: string; platform: string; consumed?: boolean }
+        if (record.consumed !== false) return ['invalid', '']
         if (record.workspaceId !== args[0] || record.platform !== args[1]) return ['scope', '']
         data.delete(keys[0]!)
         return ['ok', raw]
@@ -86,6 +87,9 @@ describe('OAuth security', () => {
     await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
 
     data.set(`test:oauth:${state}`, JSON.stringify({ state, workspaceId: 'ws_1', actorId: { forged: true }, platform: 'jd', expiresAt: Date.now() + 30_000, consumed: false }))
+    await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
+
+    data.set(`test:oauth:${state}`, JSON.stringify({ state, workspaceId: 'ws_1', actorId: 'actor', platform: 'jd', expiresAt: Date.now() + 30_000, consumed: true }))
     await expect(redisStore.consume(state, { workspaceId: 'ws_1', platform: 'jd' })).rejects.toMatchObject({ code: 'INVALID_STATE' })
   })
 })
