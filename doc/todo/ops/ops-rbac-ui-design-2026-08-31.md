@@ -337,6 +337,7 @@ type AccessDecision = {
 - [ ] **T2（P1）重构 Shell**：实现 `OpsAppShell + RoleScopeBar + ConnectionHealthDrawer`，移除首屏 Token 表单与硬编码全平台文案。验证：platform/workspace/controlled 三类会话截图与键盘路径。
 - [x] **T3（P1）统一权限状态**：实现 `PermissionBoundary/Hint/AccessDeniedResult`，覆盖导航隐藏、只读、前置禁用、服务端 403。验证：每类状态至少一个浏览器用例；本地组件/契约测试由 `d497dc8`、`013ed94`、`3c80ff4`、`c432df7`、`60c71c8`、`818e62a` 等提交证实。`c432df7` 覆盖审计导出 capability/scope 限制、错误聚焦和键盘重试，`818e62a` 覆盖审计详情错误摘要焦点恢复；这些是本地 UI 证据，不替代完整浏览器矩阵。
 - [ ] **T4（P2）统一页面骨架**：PageHeader、FilterBar、DataTable、Drawer、DangerActionModal；先迁移用户、成员、财务三个高风险页。验证：无 Card 套 Table、焦点恢复、错误保留输入。
+- 本地可闭环子项：`PageHeader` 已由 `OpsPage` 统一承载用户、成员、财务页面的语义标题、描述关联和下一步状态播报；`PageHeader.test.tsx` 覆盖标题层级、`aria-describedby` 目标及空动作区，尚不代表 T4 的完整骨架迁移完成。
 - [ ] **T5（P2）迁移其余 10 域**：按域逐一移除局部硬编码权限和随机样式。验证：13 域视觉快照 + 角色导航矩阵。
 - [ ] **T6（P2）应用 AntD tokens**：根 ConfigProvider + 组件 token；清理业务组件内颜色/圆角/大面积 inline style。验证：1440/1920 桌面截图、对比度与 reduced-motion。
 - [ ] **T7（P1）真实链路验收**：SSO → capability → 页面 → API 403/成功 → 审计证据，在真实桌面浏览器与容器环境验证；fixture 仅做开发辅助。
