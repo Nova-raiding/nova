@@ -7,7 +7,7 @@ describe('migration 109 asset scan redrive', () => {
   it('registers the next complete migration and preserves outbox evidence', async () => {
     const migrations = await loadMigrations()
     expect(migrations.find(item => item.version === 109)).toMatchObject({ version: 109, name: 'asset_scan_redrive' })
-    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 122 }, (_, index) => index + 1))
+    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 123 }, (_, index) => index + 1))
     const sql = await readFile(new URL('./migrations/109_asset_scan_redrive.sql', import.meta.url), 'utf8')
     expect(sql).toContain('outbox event identity and payload are immutable')
     expect(sql).toContain('outbox events are durable and cannot be deleted')
