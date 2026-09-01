@@ -5,66 +5,63 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import './detail-decision-contract.css'
-import type { DetailPageDecisionContract } from './detail-decision-contract'
+import {
+  moduleDecisionPresentation,
+  type DetailModuleDecisionPresentation,
+} from './detail-decision-contract'
 
-const statusPresentation = {
-  verified: {
-    label: '已验证',
-    detail: '证据已通过当前合同校验',
+const dispositionIcon = {
+  ready: {
     Icon: CheckCircle2,
   },
-  missing: {
-    label: '缺少证据',
-    detail: '证据不完整，当前内容不能据此确认',
+  omitted: {
     Icon: AlertCircle,
   },
-  expired: {
-    label: '证据已过期',
-    detail: '需要更新证据后重新校验',
+  blocked: {
     Icon: Clock3,
   },
-  conflict: {
-    label: '证据冲突',
-    detail: '证据之间存在冲突，需要人工处理',
+  legacy_review_required: {
     Icon: ShieldAlert,
   },
 } as const
 
 export function DetailDecisionContract({
-  contract,
+  module,
 }: {
-  contract: DetailPageDecisionContract | null
+  module: unknown
 }) {
-  if (!contract) return null
-
-  const presentation = statusPresentation[contract.evidence.status]
-  const StatusIcon = presentation.Icon
+  const presentation: DetailModuleDecisionPresentation = moduleDecisionPresentation(module)
+  const contract = presentation.contract
+  const StatusIcon = dispositionIcon[presentation.disposition].Icon
 
   return (
     <section
       className="detail-decision-contract"
-      aria-label="详情页决策合同"
-      data-evidence-status={contract.evidence.status}
+      aria-label={`详情页决策合同：${presentation.label}`}
+      data-disposition={presentation.disposition}
+      data-evidence-status={presentation.evidenceStatus ?? 'legacy'}
     >
       <b className="decision-contract-title">详情页决策合同</b>
-      <dl className="decision-contract-summary">
-        <div>
-          <dt>买家问题</dt>
-          <dd>{contract.buyerQuestion}</dd>
-        </div>
-        <div>
-          <dt>页面任务</dt>
-          <dd>{contract.pageTask}</dd>
-        </div>
-      </dl>
+      {contract && (
+        <dl className="decision-contract-summary">
+          <div>
+            <dt>买家问题</dt>
+            <dd>{contract.buyerQuestion}</dd>
+          </div>
+          <div>
+            <dt>页面任务</dt>
+            <dd>{contract.pageTask}</dd>
+          </div>
+        </dl>
+      )}
       <div className="decision-evidence-status">
         <StatusIcon size={15} aria-hidden="true" focusable="false" />
         <span>
-          <b>证据状态：{presentation.label}</b>
+          <b>展示状态：{presentation.label}</b>
           <small>{presentation.detail}</small>
         </span>
       </div>
-      <div className="decision-limitations">
+      {contract && <div className="decision-limitations">
         <b>限制条件</b>
         {contract.claim.limitations.length ? (
           <ul>
@@ -75,7 +72,12 @@ export function DetailDecisionContract({
         ) : (
           <p>当前合同未记录限制条件</p>
         )}
-      </div>
+      </div>}
+      {presentation.recovery && (
+        <p className="decision-recovery" role="note" aria-label="恢复提示">
+          <b>下一步：</b>{presentation.recovery}
+        </p>
+      )}
     </section>
   )
 }

@@ -3,7 +3,10 @@ import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { merchantConnectionPresentation } from './platform-connection-status'
 import { DetailDecisionContract } from './DetailDecisionContract'
-import { moduleDecisionContract } from './detail-decision-contract'
+import {
+  evidenceSafeTopLevelContent,
+  moduleDecisionPresentation,
+} from './detail-decision-contract'
 import {
   AlertCircle,
   ArrowLeftRight,
@@ -5734,12 +5737,10 @@ function ProductDetailPreview({
     setSelectedColor(colors[0] ?? '')
     setSelectedSize(sizes[0] ?? '')
   }, [product?.id, colorKey, sizeKey])
-  const sellingPoints = content?.body.sellingPoints ?? []
+  const topLevelContent = evidenceSafeTopLevelContent(content?.body)
   const detailModules = (content?.body.modules ?? []).filter(
     (module) =>
       ![
-        'hero',
-        'selling_points',
         'specifications',
         'sku',
         'real_images',
@@ -5756,7 +5757,7 @@ function ProductDetailPreview({
   )
   const moduleLabels = {
     all: '全部',
-    fact: '已确认事实',
+    fact: '事实内容',
     creative: '创意表达',
     pending: '待确认',
   } as const
@@ -5806,8 +5807,9 @@ function ProductDetailPreview({
           </div>
           <h4>{content?.body.title ?? title}</h4>
           <p className="storefront-subtitle">
-            {content?.body.detail ??
-              '内容尚未生成；当前只展示已保存的商品事实。'}
+            {content
+              ? topLevelContent.notice
+              : '内容尚未生成；当前只展示已保存的商品事实。'}
           </p>
           {!product?.factsConfirmed && (
             <p className="fact-safety-note">
@@ -5869,17 +5871,13 @@ function ProductDetailPreview({
       </div>
       <div className="detail-sections">
         <div className="detail-section-head">
-          <span>商品卖点</span>
-          <small>{content ? '来自当前内容版本' : '生成后展示'}</small>
+          <span>顶层详情与卖点</span>
+          <small>{content ? '证据边界检查' : '生成后检查'}</small>
         </div>
         {content ? (
-          <div className="selling-point-grid">
-            {sellingPoints.slice(0, 3).map((point, index) => (
-              <article key={point}>
-                <b>0{index + 1}</b>
-                <span>{point}</span>
-              </article>
-            ))}
+          <div className="detail-rule-note" role="note" aria-label="顶层内容恢复提示">
+            <AlertCircle size={14} aria-hidden="true" />
+            <span>{topLevelContent.notice}</span>
           </div>
         ) : (
           <div className="empty-inline">尚未生成商品卖点</div>
@@ -5937,37 +5935,30 @@ function ProductDetailPreview({
             <div className="detail-module-grid">
               {visibleModules.map((module) => {
                 const kind = moduleKind(module)
+                const decision = moduleDecisionPresentation(module)
                 return (
                   <article
-                    className={
+                    className={`${
                       kind === 'pending'
                         ? 'pending'
                         : kind === 'creative'
                           ? 'creative'
                           : ''
-                    }
+                    } decision-${decision.disposition}`.trim()}
                     key={module.key}
                   >
                     <div>
                       <b>{module.title}</b>
-                      <span>
-                        {kind === 'pending'
-                          ? '待确认 · 待补资料'
-                          : kind === 'creative'
-                            ? '创意表达'
-                            : '已确认事实'}
-                      </span>
+                      <span>{decision.label}</span>
                     </div>
-                    <p>{module.body}</p>
+                    {decision.bodyVisible && <p>{module.body}</p>}
                     {kind === 'pending' && module.pendingReason && (
                       <small>待确认原因：{module.pendingReason}</small>
                     )}
-                    {module.imageGuidance && (
+                    {decision.bodyVisible && module.imageGuidance && (
                       <small>配图：{module.imageGuidance}</small>
                     )}
-                    <DetailDecisionContract
-                      contract={moduleDecisionContract(module)}
-                    />
+                    <DetailDecisionContract module={module} />
                   </article>
                 )
               })}
@@ -6242,6 +6233,7 @@ function TaskWorkspace({
   const targetProductId = target?.productId
   const targetPlatform = target?.platform ?? 'taobao'
   const targetTitle = target?.title ?? '轻云防晒外套 2026'
+  const topLevelDraft = evidenceSafeTopLevelContent(content?.body)
   const directionsData = resolveTaskDirections({
     baseUrl,
     remote: remoteDirections,
@@ -8310,22 +8302,19 @@ function TaskWorkspace({
                     <div className="doc-label">首屏标题</div>
                     <h4>{content?.body.title ?? '等待内容版本'}</h4>
                     <p>
-                      {content?.body.detail ??
-                        '选择商品并生成内容版本后，这里显示真实草稿。'}
+                      {content
+                        ? topLevelDraft.notice
+                        : '选择商品并生成内容版本后，再按详情模块证据逐项审阅。'}
                     </p>
-                    <div className="source-note">
-                      <Link2 size={13} />
-                      引用 {content?.factVersionIds.length ?? 0} 条已确认事实 ·
-                      未使用推断值
+                    <div className="source-note" role="note" aria-label="顶层内容证据状态">
+                      <Link2 size={13} aria-hidden="true" />
+                      顶层 detail/sellingPoints 未作为已验证内容展示
                     </div>
                     <div className="doc-label">核心卖点</div>
-                    <ul>
-                      {(content?.body.sellingPoints ?? []).map((point) => (
-                        <li key={point}>
-                          <span>{point}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="detail-rule-note" role="note" aria-label="核心卖点恢复提示">
+                      <AlertCircle size={14} aria-hidden="true" />
+                      <span>{topLevelDraft.notice}</span>
+                    </div>
                     {content?.body.brief && (
                       <div className="brief-card">
                         <div className="doc-label">静态素材 Brief</div>
