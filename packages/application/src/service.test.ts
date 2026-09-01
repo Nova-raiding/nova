@@ -247,6 +247,25 @@ describe('MerchantService', () => {
     expect(() => service.approveContent(task.id, version.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
   })
 
+  it('freezes deterministic review evidence immediately for model-generated drafts', async () => {
+    const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => ({
+      title: '模型生成标题', detail: '仅陈述已确认商品信息。', sellingPoints: ['关键事实可追溯'],
+    }) } })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant')
+
+    const version = await service.generateDraft(task.id)
+    expect(version.state).toBe('review_required')
+    expect(version.reviewSnapshot).toMatchObject({
+      findings: [],
+      reviewedAt: expect.any(String),
+      evidenceBoundary: expect.any(String),
+      ruleVersionIds: version.ruleVersionIds,
+    })
+    expect(version.reviewSnapshot?.findings).toEqual(service.reviewContent('ws_demo', version.id))
+  })
+
   it('catches Unicode, zero-width, punctuation and synonym near-copy evasions in the generated draft', async () => {
     const sourceText = '极简布局突出核心卖点并以真实场景建立可信感'
     const evasiveText = '简约、版\u200b式强调主要利益点；采用实际使用场景营造可靠感'

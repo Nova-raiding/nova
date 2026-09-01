@@ -4253,6 +4253,16 @@ export class MerchantService {
     task.contentVersionId = version.id
     task.state = 'review_required'
     task.version += 1
+    // Review model output before exposing it as a generated candidate. Keep
+    // the deterministic findings with the version so a queued/synchronous
+    // generation has an auditable review result before approval is attempted.
+    // Approval still re-runs reviewContent to catch changes since generation.
+    version.reviewSnapshot = {
+      findings: clone(this.reviewContent(task.workspaceId, version.id)),
+      reviewedAt: now(),
+      evidenceBoundary: REVIEW_EVIDENCE_BOUNDARY,
+      ruleVersionIds: [...version.ruleVersionIds],
+    }
     return version
   }
 
