@@ -4623,6 +4623,16 @@ export function resolveAuthorizationResourceScope(policy: ReturnType<typeof getM
   return { type: 'account' as const, id: exactId(params.account_id) }
 }
 
+function resolveLoadedAuthorizationResourceScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, params: Record<string, unknown>, principal?: Pick<RequestPrincipal, 'actorId'>) {
+  const direct = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
+  if (direct?.id || (direct?.type !== 'brand' && direct?.type !== 'account')) return direct
+  const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
+  const task = taskId ? service.tasks.get(taskId) : undefined
+  if (!task || task.workspaceId !== workspaceId) return direct
+  if (direct.type === 'brand') return { type: 'brand' as const, id: task.brandId }
+  return { type: 'account' as const, id: task.accountId }
+}
+
 async function permissionAtomsForResolvedResource(req: IncomingMessage, workspaceId: string, policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, resourceScope: ReturnType<typeof resolveAuthorizationResourceScope>, atoms: readonly PermissionAtom[]) {
   if (resourceScope?.type !== 'brand' || !resourceScope.id) return atoms
   const principal = requestPrincipals.get(req)
@@ -4706,7 +4716,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const capabilityDomain = policy.capability.split('.')[0]!
   const enforce = runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(capabilityDomain)
   const principal = requestPrincipals.get(req)
-  const resourceScope = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
+  const resourceScope = resolveLoadedAuthorizationResourceScope(policy, workspaceId, params, principal)
   const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projection.atoms)
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,

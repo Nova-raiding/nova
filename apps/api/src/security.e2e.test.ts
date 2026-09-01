@@ -1033,6 +1033,8 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 7, 'brand-unit.product.create', { brand_id: 'brand_access', title: '无编辑权限', source_product_id: source.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const protectedTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
     const hiddenTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
+    expect((await mcp(editorHeaders, 7.01, 'task.timeline', { task_id: protectedTask.id })).error).toBeNull()
+    expect((await mcp(editorHeaders, 7.02, 'task.timeline', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const restPublishDenied = await fetch(`${base}/v1/publish-jobs`, {
       method: 'POST',
       headers: { ...editorHeaders, 'idempotency-key': 'brand-editor-publish-denied' },
