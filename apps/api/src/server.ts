@@ -16532,6 +16532,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
     }
     const authorizationSnapshot = existing ? undefined : requirePublishAuthorizationSnapshot(publishAuthorizationSnapshot(req, workspaceId, task))
+    if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: input })
     const reservationId = `publish:${key}`
     let reserved = false
     let walletDebited = false

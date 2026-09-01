@@ -1449,6 +1449,8 @@ components:
         confirmation_hash: { type: string, minLength: 1 }
         remote_snapshot_hash: { type: string, minLength: 1 }
         account_id: { type: string, description: Authorized platform account used for this publish. }
+        confirmation_ticket_nonce_hash: { type: string, pattern: '^[a-f0-9]{64}$', description: Raw one-time confirmation bearer; only its SHA-256 hash is stored. }
+        confirmation_ticket_intent_hash: { type: string, pattern: '^[a-f0-9]{64}$', description: Intent or interactive-session hash bound to the current actor and session. }
       additionalProperties: false
     PublishObservationRequest:
       type: object
