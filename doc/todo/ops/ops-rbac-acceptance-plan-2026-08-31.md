@@ -799,6 +799,7 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **任务方案确认加载后 exact brand scope（本地切片）。** `2d7eebb`；`task.plan.confirm` 迁移为 brand write policy并复用服务端 task resolver。未授权主体在 canonical listing、计划状态、版本和价格影响确认之前以 `AUTHZ_SCOPE_MISMATCH` 拒绝，不能借后续业务错误探测任务内部状态。定向测试 150/150、全项目 TypeScript 通过。内容生成、内容版本与 product resolver 仍待迁移，P1-BE-003 保持 TODO。
 - [x] **内容生成加载后 exact brand scope（本地切片）。** `9823759`；`content.generate` 迁移为 brand write policy并复用服务端 task resolver。未授权品牌请求在 canonical scope、插件钱包、规则预检、成本预算、用量消费、模型中转和 Worker 入队之前以 `AUTHZ_SCOPE_MISMATCH` 拒绝；运行测试同时断言 generation job 数量不变。定向测试 147/147、全项目 TypeScript 通过。内容版本与 product resolver 仍待迁移，P1-BE-003 保持 TODO。
 - [x] **内容版本列表加载后 exact brand scope（本地切片）。** `4f2e388`；`content.versions` 迁移为 brand read policy并复用服务端 task resolver。授权品牌无版本时保留真实空列表语义；未授权品牌不以空态冒充成功，而在 evaluator 阶段以 `AUTHZ_SCOPE_MISMATCH` 拒绝，避免泄露版本数量和生产进度。定向测试 142/142、全项目 TypeScript 通过。content-version ID 与 product resolver 仍待迁移，P1-BE-003 保持 TODO。
+- [x] **Content version 加载后 exact brand scope（本地切片）。** `584ab03`；resolver 新增服务端 `content_version_id → content version → task → brand` 链路，`content.diff` 迁移为 brand read policy。授权品牌可读取差异，未授权品牌在比较 against version 或正文前以 `AUTHZ_SCOPE_MISMATCH` 拒绝；跨 workspace、不存在版本和无品牌任务保持 unresolved。定向测试 150/150、全项目 TypeScript 通过。其他 content-version 写方法与 product resolver 仍待迁移，P1-BE-003 保持 TODO。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
