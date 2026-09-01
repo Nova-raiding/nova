@@ -4751,7 +4751,19 @@ export function minimumBrandRoleForPolicy(policy: NonNullable<ReturnType<typeof 
   return policy.effect === 'write' ? 'editor' : 'viewer'
 }
 
-async function permissionAtomsForResolvedResource(req: IncomingMessage, workspaceId: string, policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, resourceScope: ReturnType<typeof resolveAuthorizationResourceScope>, atoms: readonly PermissionAtom[]) {
+async function permissionAtomsForResolvedResource(req: IncomingMessage, workspaceId: string, policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, resourceScope: ReturnType<typeof resolveAuthorizationResourceScope>, atoms: readonly PermissionAtom[], params: Record<string, unknown>) {
+  if (resourceScope?.type === 'account' && resourceScope.id) {
+    const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
+    const task = taskId ? service.tasks.get(taskId) : undefined
+    const workspaceSource = atoms.find(atom => atom.capability === policy.capability
+      && atom.effect === 'allow'
+      && atom.scope.type === 'workspace'
+      && atom.scope.ids.includes(workspaceId)
+      && atom.source !== 'temporary_grant')
+    if (task?.workspaceId === workspaceId && task.accountId === resourceScope.id && workspaceSource) {
+      return [...atoms, { ...workspaceSource, scope: { type: 'account' as const, ids: [resourceScope.id] }, source: 'resource_grant' as const, sourceId: `task-account:${task.id}` }]
+    }
+  }
   if (resourceScope?.type !== 'brand' || !resourceScope.id) return atoms
   const principal = requestPrincipals.get(req)
   const capabilitySource = workspaceCapabilitySourceForBrandScope(policy, workspaceId, atoms)
@@ -4895,7 +4907,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const resourceScope = params.__http_authorization_scope_conflict === true
     ? { type: policy.scope, id: '__http_path_scope_conflict__' }
     : await resolveLoadedAuthorizationResourceScope(policy, workspaceId, params, principal)
-  const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projection.atoms)
+  const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projection.atoms, params)
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,
     method,
