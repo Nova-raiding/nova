@@ -13,7 +13,7 @@ describe('migration 090 isolate ops workspace directory', () => {
     expect(migrations.find(item => item.version === 95)).toMatchObject({ version: 95, name: 'runtime_append_only_privileges' })
     expect(migrations.find(item => item.version === 96)).toMatchObject({ version: 96, name: 'reconciliation_evidence' })
     expect(migrations.find(item => item.version === 97)).toMatchObject({ version: 97, name: 'reconciliation_evidence_unknown_errors' })
-    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
+    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 122 }, (_, index) => index + 1))
     expect(sql).toContain('WITH (security_barrier = true)')
     expect(sql).toContain('REVOKE ALL ON TABLE ops_workspace_summaries FROM merchant_app')
     expect(sql).toContain('GRANT SELECT ON TABLE ops_workspace_summaries TO merchant_ops')
