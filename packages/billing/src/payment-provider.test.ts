@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { HttpPaymentProvider, createPaymentProviderFromEnv } from './payment-provider.js'
+import { FixturePaymentProvider, HttpPaymentProvider, createPaymentProviderFromEnv } from './payment-provider.js'
 
 describe('payment provider adapter', () => {
+  it('completes a deterministic local fixture checkout and refund without network access', async () => {
+    const provider = new FixturePaymentProvider()
+    const input = { channel: 'alipay' as const, orderId: 'fixture-order-1', idempotencyKey: 'fixture-key-1', workspaceId: 'ws-fixture', amountFen: 1000, callbackUrl: 'fixture://callback', description: 'local test' }
+    await expect(provider.createCheckout(input)).resolves.toMatchObject({ paymentUrl: 'fixture://alipay/ws-fixture/1000?order_id=fixture-order-1', providerOrderId: 'fixture-order-1' })
+    await expect(provider.queryStatus({ channel: input.channel, orderId: input.orderId, workspaceId: input.workspaceId })).resolves.toMatchObject({ state: 'pending', amountFen: 1000 })
+    provider.confirm({ orderId: input.orderId })
+    await expect(provider.queryStatus({ channel: input.channel, orderId: input.orderId, workspaceId: input.workspaceId })).resolves.toMatchObject({ state: 'paid', providerTradeId: 'fixture-trade-fixture-order-1', amountFen: 1000 })
+    await expect(provider.refund({ channel: input.channel, orderId: input.orderId, providerTradeId: 'fixture-trade-fixture-order-1', workspaceId: input.workspaceId, amountFen: 1000, reason: 'test' })).resolves.toMatchObject({ providerRefundId: 'fixture-refund-fixture-order-1', state: 'accepted' })
+    await expect(provider.queryStatus({ channel: input.channel, orderId: input.orderId, workspaceId: input.workspaceId })).resolves.toMatchObject({ state: 'closed' })
+  })
+
+  it('keeps fixture orders idempotent and rejects amount reuse', async () => {
+    const provider = new FixturePaymentProvider()
+    const input = { channel: 'wechat' as const, orderId: 'fixture-order-2', idempotencyKey: 'fixture-key-2', workspaceId: 'ws-fixture', amountFen: 2000, callbackUrl: 'fixture://callback', description: 'local test' }
+    await provider.createCheckout(input)
+    await expect(provider.createCheckout(input)).resolves.toMatchObject({ providerOrderId: input.orderId })
+    await expect(provider.createCheckout({ ...input, amountFen: 3000 })).rejects.toThrow('amount conflict')
+  })
+
   it('creates a checkout through the server-side provider and accepts only HTTPS payment URLs', async () => {
     let requestBody = ''; let authorization = ''
     const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'server-only-key', merchantId: 'merchant-1', fetch: async (_url, init) => { requestBody = String(init?.body); authorization = String((init?.headers as Record<string, string>)?.authorization); return new Response(JSON.stringify({ payment_url: 'https://pay.example/order/1', provider_order_id: 'provider-1' }), { status: 200 }) } })

@@ -52,6 +52,39 @@ export interface PaymentProvider {
   refund(input: PaymentRefundInput): Promise<PaymentRefundResult>
 }
 
+/** Deterministic local checkout used only by explicit fixture environments. */
+export class FixturePaymentProvider implements PaymentProvider {
+  private readonly orders = new Map<string, { amountFen: number; state: PaymentStatusResult['state']; tradeId?: string }>()
+
+  async createCheckout(input: PaymentCheckoutInput): Promise<PaymentCheckoutResult> {
+    const existing = this.orders.get(input.orderId)
+    if (existing && existing.amountFen !== input.amountFen) throw new Error('fixture payment order amount conflict')
+    if (!existing) this.orders.set(input.orderId, { amountFen: input.amountFen, state: 'pending' })
+    return { paymentUrl: `fixture://${input.channel}/${input.workspaceId}/${input.amountFen}?order_id=${encodeURIComponent(input.orderId)}`, providerOrderId: input.orderId }
+  }
+
+  async queryStatus(input: PaymentStatusInput): Promise<PaymentStatusResult> {
+    const order = this.orders.get(input.orderId)
+    return order ? { state: order.state, ...(order.tradeId ? { providerTradeId: order.tradeId } : {}), amountFen: order.amountFen } : { state: 'failed' }
+  }
+
+  async refund(input: PaymentRefundInput): Promise<PaymentRefundResult> {
+    const order = this.orders.get(input.orderId)
+    if (!order || order.amountFen !== input.amountFen || order.state !== 'paid') throw new Error('fixture payment order is not refundable')
+    order.state = 'closed'
+    return { providerRefundId: `fixture-refund-${input.orderId}`, state: 'accepted' }
+  }
+
+  /** Test/local checkout confirmation; never exposed through production configuration. */
+  confirm(input: { orderId: string; providerTradeId?: string }) {
+    const order = this.orders.get(input.orderId)
+    if (!order) throw new Error('fixture payment order not found')
+    order.state = 'paid'
+    order.tradeId = input.providerTradeId ?? `fixture-trade-${input.orderId}`
+    return { ...order }
+  }
+}
+
 export interface HttpPaymentProviderOptions {
   endpoint: string
   refundEndpoint?: string
