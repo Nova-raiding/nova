@@ -125,6 +125,8 @@ export interface OpenAICompatibleGeneratorOptions {
   maxOutputTokens?: number
   /** Maximum output tokens reserved across the initial call and repairs. */
   maxTotalOutputTokens?: number
+  /** Relay-supported switch for reasoning models used for strict JSON tasks. */
+  disableThinking?: boolean
 }
 
 const MAX_TEXT_RELAY_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -393,7 +395,7 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
         const requestOutputTokens = attempt === 0 ? maxOutputTokens : Math.min(maxOutputTokens, REPAIR_MAX_OUTPUT_TOKENS)
         if (reservedOutputTokens + requestOutputTokens > maxTotalOutputTokens) throw new Error('OUTPUT_BUDGET_EXCEEDED: 累计模型输出 Token 预算已用尽，停止继续修复')
         reservedOutputTokens += requestOutputTokens
-        const requestBody = JSON.stringify({ model: this.options.model, temperature: attempt === 0 ? 0.4 : 0, max_tokens: requestOutputTokens, response_format: { type: 'json_object' }, messages })
+        const requestBody = JSON.stringify({ model: this.options.model, temperature: attempt === 0 ? 0.4 : 0, max_tokens: requestOutputTokens, response_format: { type: 'json_object' }, ...(this.options.disableThinking ? { thinking: { type: 'disabled' } } : {}), messages })
         const logicalAttemptKey = input.usageContext?.actionId?.trim()
           ? `mm-${createHash('sha256').update(JSON.stringify([input.usageContext.workspaceId?.trim() ?? '', input.usageContext.actionId.trim(), this.options.model.trim(), attempt, requestBody]), 'utf8').digest('hex')}`
           : providerIdempotencyKey({ operation: 'text_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, requestBody })
@@ -439,7 +441,9 @@ export function createContentGeneratorFromEnv(source: Record<string, string | un
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
   const model = source.AI_MODEL?.trim() || source.MODEL_ID?.trim()
   if (!relayUrl || !apiKey || !model) return undefined
+  const thinkingMode = source.AI_THINKING_MODE?.trim()
+  if (thinkingMode && thinkingMode !== 'disabled') throw new Error('AI_THINKING_MODE must be disabled when configured')
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
-  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens: resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 4_000, 'input'), maxOutputTokens: resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output'), ...(usageSink ? { usageSink } : {}) })
+  return new OpenAICompatibleContentGenerator({ baseUrl: relayUrl, apiKey, model, relaySecurity, timeoutMs: Number(source.AI_TIMEOUT_MS ?? 90_000), maxInputTokens: resolveTokenBudget(source.AI_MAX_INPUT_TOKENS, 4_000, 'input'), maxOutputTokens: resolveTokenBudget(source.AI_MAX_OUTPUT_TOKENS, 2_500, 'output'), ...(thinkingMode === 'disabled' ? { disableThinking: true } : {}), ...(usageSink ? { usageSink } : {}) })
 }

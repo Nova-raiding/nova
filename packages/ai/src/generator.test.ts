@@ -142,6 +142,18 @@ describe('content generator', () => {
     expect(createContentGeneratorFromEnv({ NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://169.254.169.254/metadata', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'model' })).toBeUndefined()
     expect(createContentGeneratorFromEnv({ NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'model' })).toBeUndefined()
     expect(createContentGeneratorFromEnv({ NODE_ENV: 'production', MODEL_RELAY_BASE_URL: 'https://relay.example/v1', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'model' })).toBeDefined()
+    expect(() => createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'model', AI_THINKING_MODE: 'maybe' })).toThrow('AI_THINKING_MODE')
+  })
+
+  it('sends the explicit relay thinking-disable switch for strict JSON generation', async () => {
+    let requestBody: Record<string, unknown> = {}
+    const generator = createContentGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'secret', AI_MODEL: 'reasoning-model', AI_THINKING_MODE: 'disabled' }, () => undefined) as OpenAICompatibleContentGenerator
+    Object.assign(generator as unknown as { fetchImpl: typeof fetch }, { fetchImpl: async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify({ id: 'thinking-disabled', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(validGeneratedContent()) } }] }), { status: 200 })
+    } })
+    await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 } })
+    expect(requestBody.thinking).toEqual({ type: 'disabled' })
   })
 
   it('accepts a structured static brief without exposing provider secrets', async () => {
