@@ -506,6 +506,18 @@ describe('deployment operation scripts', () => {
     expect(execFileSync('sh', ['-n', 'tests/backup-restore-acceptance.sh'], { encoding: 'utf8' })).toBe('')
   })
 
+  it('writes database backups through a verified temporary file and atomic rename', () => {
+    const script = readFileSync('infra/scripts/backup-postgres.sh', 'utf8')
+    expect(script).toContain('temporary=$(mktemp "$BACKUP_DIR/.merchant-${timestamp}.XXXXXX.dump")')
+    expect(script).toContain('trap cleanup EXIT HUP INT TERM')
+    expect(script).toContain('test -s "$temporary"')
+    expect(script).toContain('sha256sum "$temporary" > "$temporary_checksum"')
+    expect(script).toContain('mv -f -- "$temporary" "$output"')
+    expect(script).toContain('mv -f -- "$temporary_checksum" "$output.sha256"')
+    expect(script).toContain('rm -f -- "$temporary" "$temporary_checksum"')
+    expect(execFileSync('sh', ['-n', 'infra/scripts/backup-postgres.sh'], { encoding: 'utf8' })).toBe('')
+  })
+
   it('derives Compose acceptance migration expectations from the migration loader', () => {
     const script = readFileSync('tests/compose-acceptance.ts', 'utf8')
     const runner = readFileSync('tests/run-compose-acceptance.sh', 'utf8')
