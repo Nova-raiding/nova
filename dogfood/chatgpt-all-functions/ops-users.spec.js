@@ -51,7 +51,7 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(page).toHaveURL(/\/ops\/users(?:\?.*)?$/u)
   await expect(page.getByRole('heading', { name: '用户与租户' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('当前租户成员')).toHaveCount(0)
-  await waitForBackgroundHydration(page)
+  await expect(page.getByRole('form', { name: '用户目录筛选' })).toBeVisible({ timeout: 20_000 })
 
   const supportRow = await filterUserDirectory(page)
   await expect(supportRow).toBeVisible({ timeout: 20_000 })
