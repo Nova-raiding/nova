@@ -41,12 +41,21 @@ describe('content version provenance vector', () => {
       .toThrowError(expect.objectContaining({ code: 'TASK_SNAPSHOT_INVALID', status: 409 }))
   })
 
-  it('rejects conflicting rehydration instead of overwriting a newer task or content revision', () => {
+  it('accepts reordered and newer task snapshots while rejecting stale or same-version conflicts', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
-    service.hydrateSnapshot({ entityType: 'task', entity: structuredClone(task) })
-    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: { ...task, version: task.version + 1 } }))
+    const reordered = Object.fromEntries(Object.entries(structuredClone(task)).reverse())
+    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: reordered })).not.toThrow()
+    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: { ...task, state: 'draft' } }))
       .toThrowError(expect.objectContaining({ code: 'VERSION_CONFLICT', status: 409 }))
+    service.hydrateSnapshot({ entityType: 'task', entity: { ...task, version: task.version + 1 } })
+    expect(() => service.hydrateSnapshot({ entityType: 'task', entity: structuredClone(task) }))
+      .toThrowError(expect.objectContaining({ code: 'VERSION_CONFLICT', status: 409 }))
+  })
+
+  it('rejects conflicting content revision hydration', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
     const version = service.createDraft(task.id)
     service.hydrateSnapshot({ entityType: 'content_version', entity: structuredClone(version) })

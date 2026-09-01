@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { buildReviewReport, isReviewBlocking, reviewDeterministic, reviewProductImages, REVIEW_EVIDENCE_BOUNDARY, type ReviewFinding } from '../../../packages/review/src/review.js'
 import { budgetContentGenerationInput, estimateContentGenerationRequestTokens, resolveTokenBudget, validateContentSchema, type ContentGenerationInput, type ContentGenerator, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
 import type { ImageGenerator } from '../../../packages/ai/src/image-generator.js'
@@ -2127,7 +2128,7 @@ export class MerchantService {
       const normalizedTask = { ...task, inputSnapshotId: task.inputSnapshotId || `task:${task.id}:v${task.version || 1}`, answers: task.answers ?? {}, missingQuestions: task.missingQuestions ?? [], deferredQuestionIds: task.deferredQuestionIds ?? [], deferredQuestions: task.deferredQuestions ?? [] }
       this.validateHydratedTask(normalizedTask)
       const prior = this.tasks.get(entity.id)
-      if (prior && hash(prior) !== hash(normalizedTask)) throw new DomainError('VERSION_CONFLICT', '同一任务快照 ID 对应了冲突内容，已拒绝覆盖', 409, { task_id: entity.id, current_version: prior.version, incoming_version: normalizedTask.version })
+      if (prior && (normalizedTask.version < prior.version || (normalizedTask.version === prior.version && !isDeepStrictEqual(prior, normalizedTask)))) throw new DomainError('VERSION_CONFLICT', '同一任务快照 ID 对应了冲突内容，已拒绝覆盖', 409, { task_id: entity.id, current_version: prior.version, incoming_version: normalizedTask.version })
       this.tasks.set(entity.id, normalizedTask)
       if (task.inputSnapshot && task.inputSnapshot.id === task.inputSnapshotId && task.inputSnapshot.taskId === task.id && task.inputSnapshot.product?.workspaceId === task.workspaceId) this.taskInputSnapshots.set(task.inputSnapshot.id, deepFreeze(structuredClone(task.inputSnapshot)))
       if (task.taskGroupId && task.taskGroupKeyHash && task.taskGroupIntentHash) this.taskGroupIdempotency.set(`${task.workspaceId}:${task.taskGroupKeyHash}`, { groupId: task.taskGroupId, intentHash: task.taskGroupIntentHash, createdAt: task.createdAt })
