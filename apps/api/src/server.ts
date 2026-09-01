@@ -4778,6 +4778,14 @@ export function authorizationDecisionAuditEvidence(decision: AuthorizationDecisi
   }
 }
 
+export function authorizationDecisionRequiresAudit(decision: AuthorizationDecision) {
+  return decision.enforced && (!decision.authorized || getMcpMethodPolicy(decision.method)?.audit === 'allow_and_deny')
+}
+
+export function authorizationDecisionAuditContextIsValid(decision: AuthorizationDecision, workspaceId: string, actorId: string | undefined) {
+  return !authorizationDecisionRequiresAudit(decision) || Boolean(workspaceId && actorId)
+}
+
 async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: string, decision: AuthorizationDecision) {
   const correlation = getRequestCorrelation(req)
   enrichRequestObservation(req, {
@@ -4788,11 +4796,18 @@ async function recordAuthorizationDecision(req: IncomingMessage, workspaceId: st
     authorizationReason: decision.reason_code,
     authorizationCapability: decision.capability,
   })
-  if (!workspaceId || !requestPrincipals.get(req)?.actorId || (!decision.enforced || (decision.authorized && getMcpMethodPolicy(decision.method)?.audit !== 'allow_and_deny'))) return
+  const actorId = requestPrincipals.get(req)?.actorId
+  if (!authorizationDecisionRequiresAudit(decision)) return
+  if (!authorizationDecisionAuditContextIsValid(decision, workspaceId, actorId)) {
+    throw new DomainError('AUTHZ_AUDIT_CONTEXT_INVALID', '授权审计缺少工作区或操作者身份，操作已拒绝', 503, {
+      decision_id: decision.decision_id,
+      policy_version: decision.policy_version,
+    })
+  }
   try {
     await recordOperationAudit({
       workspaceId,
-      actorId: requestPrincipals.get(req)!.actorId,
+      actorId: actorId!,
       action: 'authz.decision',
       resourceType: 'mcp_method',
       resourceId: decision.method,
