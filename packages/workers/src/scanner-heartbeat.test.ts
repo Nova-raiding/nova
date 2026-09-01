@@ -11,6 +11,7 @@ function healthy(instanceId: string) {
 describe('scanner heartbeat contract', () => {
   it('parses engine and definition freshness from clamd VERSION', () => {
     expect(parseClamAvVersion('ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', now)).toEqual({ engineVersion: '1.4.2', definitionsVersion: '28108', definitionsPublishedAt: '2026-08-30T09:30:00.000Z', definitionsAgeSeconds: 1800 })
+    expect(parseClamAvVersion('ClamAV 1.4.6/28110/Tue Sep  1 06:26:54 2026', new Date('2026-09-01T07:00:00.000Z'))).toEqual({ engineVersion: '1.4.6', definitionsVersion: '28110', definitionsPublishedAt: '2026-09-01T06:26:54.000Z', definitionsAgeSeconds: 1986 })
   })
 
   it('admits only strictly parsed definitions inside the execution freshness window', () => {

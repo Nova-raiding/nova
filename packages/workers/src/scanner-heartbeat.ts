@@ -79,7 +79,9 @@ const ageSeconds = (nowMs: number, value: string | undefined): number | undefine
 
 /** Parses the clamd VERSION response without trusting locale-specific Date parsing. */
 export function parseClamAvVersion(raw: string, now = new Date()): Pick<ScannerHeartbeat['clamav'], 'engineVersion' | 'definitionsVersion' | 'definitionsPublishedAt' | 'definitionsAgeSeconds'> {
-  const match = /^ClamAV ([^/\s]+)\/(\d+)\/(?:[A-Za-z]{3} )?([A-Za-z]{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/u.exec(raw.trim())
+  // clamd formats a single-digit day with strftime's space-padded `%e`, so
+  // the separator after the month can legitimately contain two ASCII spaces.
+  const match = /^ClamAV ([^/\s]+)\/(\d+)\/(?:[A-Za-z]{3} )?([A-Za-z]{3}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/u.exec(raw.trim())
   if (!match) throw new Error('CLAMAV_VERSION_INVALID')
   const months: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
   const month = months[match[3]!]
