@@ -110,6 +110,12 @@ function validateCampaignTargets(targets: readonly CampaignTargetRow[] | undefin
 
 const now = () => new Date().toISOString()
 
+function validateCanonicalProductIdentity(input: { workspaceId: string; id: string; brandId: string; title: string }) {
+  if (!input.workspaceId.trim() || !input.id.trim() || !input.brandId.trim() || !input.title.trim()) {
+    throw new Error('CANONICAL_PRODUCT_SCOPE_INCOMPLETE')
+  }
+}
+
 function campaignIntent(input: { brandId: string; platform: BrandUnitPlatform; accountId: string; productIds: string[]; targets?: CampaignTargetRow[] }) {
   return JSON.stringify({ brandId: input.brandId, platform: input.platform, accountId: input.accountId, productIds: input.productIds, targets: (input.targets ?? []).map(target => ({ productId: target.productId, platform: target.platform, accountId: target.accountId, canonicalProductId: target.canonicalProductId ?? null, listingId: target.listingId ?? null })) })
 }
@@ -204,7 +210,7 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
     this.campaigns.set(key, updated); this.campaignLifecycleReceipts.set(receiptKey, { fingerprint, campaign: structuredClone(updated) })
     return { campaign: structuredClone(updated), replayed: false }
   }
-  async createCanonicalProduct(input: { workspaceId: string; id: string; brandId: string; title: string; facts?: Record<string, unknown>; sourceProductId?: string }) { if (this.canonicalProducts.has(`${input.workspaceId}:${input.id}`)) throw new Error('CANONICAL_PRODUCT_CONFLICT'); const timestamp = now(); const row = { ...input, facts: structuredClone(input.facts ?? {}), factsVersion: 1, createdAt: timestamp, updatedAt: timestamp }; this.canonicalProducts.set(`${input.workspaceId}:${input.id}`, row); return row }
+  async createCanonicalProduct(input: { workspaceId: string; id: string; brandId: string; title: string; facts?: Record<string, unknown>; sourceProductId?: string }) { validateCanonicalProductIdentity(input); if (this.canonicalProducts.has(`${input.workspaceId}:${input.id}`)) throw new Error('CANONICAL_PRODUCT_CONFLICT'); const timestamp = now(); const row = { ...input, facts: structuredClone(input.facts ?? {}), factsVersion: 1, createdAt: timestamp, updatedAt: timestamp }; this.canonicalProducts.set(`${input.workspaceId}:${input.id}`, row); return row }
   async getCanonicalProduct(input: { workspaceId: string; id: string }) { return this.canonicalProducts.get(`${input.workspaceId}:${input.id}`) }
   async listCanonicalProducts(input: { workspaceId: string; brandIds?: readonly string[] }) { return [...this.canonicalProducts.values()].filter(row => row.workspaceId === input.workspaceId && (!input.brandIds || input.brandIds.includes(row.brandId))) }
   async updateCanonicalProductTitle(input: { workspaceId: string; id: string; title: string; expectedFactsVersion: number }) {
@@ -419,6 +425,7 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
   }
   async createCanonicalProduct(input: { workspaceId: string; id: string; brandId: string; title: string; facts?: Record<string, unknown>; sourceProductId?: string }) {
     requireWorkspaceScope(input.workspaceId)
+    validateCanonicalProductIdentity(input)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
       const result = await client.query<CanonicalProductRow>(`INSERT INTO canonical_products (id, workspace_id, brand_id, title, facts, legacy_product_id) VALUES ($1,$2,$3,$4,$5::jsonb,$6) RETURNING id, workspace_id AS "workspaceId", brand_id AS "brandId", title, facts, facts_revision AS "factsVersion", legacy_product_id AS "sourceProductId", created_at AS "createdAt", updated_at AS "updatedAt"`, [input.id, input.workspaceId, input.brandId, input.title, JSON.stringify(input.facts ?? {}), input.sourceProductId ?? null])
       return result.rows[0]!

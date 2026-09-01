@@ -11,6 +11,14 @@ class Client implements SqlClient {
 }
 
 describe('PostgresBrandUnitRepository', () => {
+  it('rejects an incomplete canonical identity before opening a transaction', async () => {
+    const client = new Client()
+    await expect(new PostgresBrandUnitRepository({ connect: async () => client } satisfies SqlPool).createCanonicalProduct({
+      workspaceId: 'ws_1', id: ' ', brandId: 'brand_1', title: '商品',
+    })).rejects.toThrow('CANONICAL_PRODUCT_SCOPE_INCOMPLETE')
+    expect(client.calls).toEqual([])
+  })
+
   it('groups every selected brand column when aggregating store bindings', async () => {
     const client = new Client()
     client.enqueue() // BEGIN
@@ -148,6 +156,14 @@ describe('PostgresBrandUnitRepository', () => {
     await expect(repository.createListing({ workspaceId: 'ws_1', id: 'listing_2', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_1' })).rejects.toThrow('PRODUCT_LISTING_IDENTITY_CONFLICT')
     await expect(repository.createListing({ workspaceId: 'ws_1', id: 'listing_3', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_2' })).resolves.toMatchObject({ id: 'listing_3' })
     await expect(repository.createListing({ workspaceId: 'ws_2', id: 'listing_4', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_1' })).rejects.toThrow('PRODUCT_LISTING_CANONICAL_NOT_FOUND')
+  })
+
+  it('rejects an incomplete canonical identity in memory', async () => {
+    const repository = new MemoryBrandUnitRepository()
+    await expect(repository.createCanonicalProduct({ workspaceId: 'ws_1', id: 'canonical_1', brandId: ' ', title: '商品' }))
+      .rejects.toThrow('CANONICAL_PRODUCT_SCOPE_INCOMPLETE')
+    await expect(repository.createCanonicalProduct({ workspaceId: 'ws_1', id: 'canonical_2', brandId: 'brand_1', title: ' ' }))
+      .rejects.toThrow('CANONICAL_PRODUCT_SCOPE_INCOMPLETE')
   })
 
   it('loads all consistency rows in one workspace-scoped read transaction', async () => {
