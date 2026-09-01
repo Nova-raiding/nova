@@ -7,6 +7,7 @@ describe('image generation execution presentation', () => {
     expect(imageGenerationExecutionLabel('provider_dispatching')).toContain('提交模型请求')
     expect(imageGenerationExecutionLabel('provider_started')).toContain('已受理')
     expect(imageGenerationExecutionLabel('outcome_unknown')).toContain('禁止重复生成')
+    expect(imageGenerationExecutionLabel('provider_added_later')).toBe('状态待确认，请刷新或进入对账')
   })
 
   it('requires reconciliation for unknown outcomes and never permits retry', () => {

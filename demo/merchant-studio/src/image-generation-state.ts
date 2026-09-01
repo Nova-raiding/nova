@@ -25,7 +25,7 @@ const labels: Record<string, string> = {
 }
 
 export function imageGenerationExecutionLabel(state: ImageGenerationExecutionState) {
-  return state ? labels[state] ?? state : '未记录'
+  return state ? labels[state] ?? '状态待确认，请刷新或进入对账' : '未记录'
 }
 
 export function imageGenerationNeedsReconciliation(state: ImageGenerationExecutionState) {
