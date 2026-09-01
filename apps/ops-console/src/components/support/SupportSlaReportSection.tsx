@@ -11,10 +11,18 @@ function previousMonthWindow(now = new Date()) {
   return { periodStart: start.toISOString(), periodEnd: end.toISOString(), cutoffAt: cutoff.toISOString() };
 }
 
+export function supportSlaActionErrorMessage(error: unknown) {
+  return error instanceof Error && error.message
+    ? error.message
+    : "提交失败，请检查网络或权限后重试。";
+}
+
 export function SupportSlaReportSection({ model }: { model: SupportDomainModel }) {
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [decisionOpen, setDecisionOpen] = useState<"approved" | "rejected">();
   const [reason, setReason] = useState("");
+  const [correctionError, setCorrectionError] = useState("");
+  const [decisionError, setDecisionError] = useState("");
   const report = model.report;
   const load = () => void model.loadReport(previousMonthWindow());
   const rate = report && report.denominator > 0 ? `${((report.met / report.denominator) * 100).toFixed(1)}%` : "—";
@@ -44,23 +52,55 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
           {report.excluded > 0 && <Tag color="gold">排除 {report.excluded} 单（按合同/测试/合并规则）</Tag>}
           <Alert style={{ marginTop: 16 }} type="info" showIcon title={`报告 checksum：${report.checksum}`} description="历史报告为不可变证据。迟到事实必须创建 correction run，不得覆盖原报告。" />
           <Typography.Paragraph style={{ marginTop: 16, marginBottom: 8 }}>
-            <Button onClick={() => { setReason(""); setCorrectionOpen(true); }}>创建 correction</Button>
+            <Button onClick={() => { setReason(""); setCorrectionError(""); setCorrectionOpen(true); }}>创建 correction</Button>
             {model.correction && model.correction.status === "pending_review" && !(model.correctionDecision && "decision" in model.correctionDecision) && <>
               <Tag color="gold" style={{ marginLeft: 8 }}>待审批：{model.correction.correctionId}</Tag>
-              <Button size="small" type="primary" style={{ marginLeft: 8 }} onClick={() => { setReason(""); setDecisionOpen("approved"); }}>批准</Button>
-              <Button size="small" danger style={{ marginLeft: 8 }} onClick={() => { setReason(""); setDecisionOpen("rejected"); }}>拒绝</Button>
+              <Button size="small" type="primary" style={{ marginLeft: 8 }} onClick={() => { setReason(""); setDecisionError(""); setDecisionOpen("approved"); }}>批准</Button>
+              <Button size="small" danger style={{ marginLeft: 8 }} onClick={() => { setReason(""); setDecisionError(""); setDecisionOpen("rejected"); }}>拒绝</Button>
             </>}
             {model.correctionDecision && ("decision" in model.correctionDecision ? <Tag color={model.correctionDecision.decision === "approved" ? "green" : "red"} style={{ marginLeft: 8 }}>{model.correctionDecision.decision === "approved" ? "correction 已批准" : "correction 已拒绝"}</Tag> : <Tag color="gold" style={{ marginLeft: 8 }}>已完成 1/2 个独立批准</Tag>)}
           </Typography.Paragraph>
           {model.correction?.status === "pending_review" && !(model.correctionDecision && "decision" in model.correctionDecision) && <Typography.Paragraph type="secondary">已生成 correction 后，需两名不同运营人员独立批准；任一拒绝会立即终止，决策只写入一次，不会修改原报告。</Typography.Paragraph>}
         </>
       )}
-      <Modal open={correctionOpen} title="创建 SLA correction" okText="提交 correction" cancelText="取消" confirmLoading={model.correctionLoading ?? false} okButtonProps={{ disabled: reason.trim().length < 3 }} onCancel={() => setCorrectionOpen(false)} onOk={() => model.createCorrection && void model.createCorrection(reason).then(() => setCorrectionOpen(false))}>
+      <Modal
+        open={correctionOpen}
+        title="创建 SLA correction"
+        okText="提交 correction"
+        cancelText="取消"
+        confirmLoading={model.correctionLoading ?? false}
+        okButtonProps={{ disabled: reason.trim().length < 3 }}
+        onCancel={() => { setCorrectionError(""); setCorrectionOpen(false); }}
+        onOk={() => {
+          if (!model.createCorrection) return;
+          setCorrectionError("");
+          void model.createCorrection(reason)
+            .then(() => { setCorrectionOpen(false); })
+            .catch(error => { setCorrectionError(supportSlaActionErrorMessage(error)); });
+        }}
+      >
         <Typography.Paragraph>服务端会用当前事件重建同一报告周期。只有事实变化时才会生成待审批 correction。</Typography.Paragraph>
+        {correctionError && <Alert role="alert" type="error" showIcon message={correctionError} description="请修正后再次提交；原窗口仍保持打开。" action={<Button size="small" onClick={() => { if (!model.createCorrection) return; setCorrectionError(""); void model.createCorrection(reason).then(() => setCorrectionOpen(false)).catch(error => setCorrectionError(supportSlaActionErrorMessage(error))); }}>重试提交</Button>} />}
         <Input.TextArea aria-label="correction 理由" rows={4} value={reason} onChange={event => setReason(event.target.value)} placeholder="说明迟到事实来源和复核范围（至少 3 个字符）" />
       </Modal>
-      <Modal open={Boolean(decisionOpen)} title="确认 correction 决策" okText={decisionOpen === "approved" ? "批准" : "拒绝"} cancelText="取消" confirmLoading={model.correctionLoading ?? false} okButtonProps={{ disabled: reason.trim().length < 3 }} onCancel={() => setDecisionOpen(undefined)} onOk={() => decisionOpen && model.decideCorrection && void model.decideCorrection(decisionOpen, reason).then(() => setDecisionOpen(undefined))}>
+      <Modal
+        open={Boolean(decisionOpen)}
+        title="确认 correction 决策"
+        okText={decisionOpen === "approved" ? "批准" : "拒绝"}
+        cancelText="取消"
+        confirmLoading={model.correctionLoading ?? false}
+        okButtonProps={{ disabled: reason.trim().length < 3 }}
+        onCancel={() => { setDecisionError(""); setDecisionOpen(undefined); }}
+        onOk={() => {
+          if (!decisionOpen || !model.decideCorrection) return;
+          setDecisionError("");
+          void model.decideCorrection(decisionOpen, reason)
+            .then(() => { setDecisionOpen(undefined); })
+            .catch(error => { setDecisionError(supportSlaActionErrorMessage(error)); });
+        }}
+      >
         <Typography.Paragraph>该决策将作为不可变审计证据保存，每个 correction 只能决策一次。</Typography.Paragraph>
+        {decisionError && <Alert role="alert" type="error" showIcon message={decisionError} description="请确认理由和权限后再次提交；当前决策窗口仍保持打开。" action={<Button size="small" onClick={() => { if (!decisionOpen || !model.decideCorrection) return; setDecisionError(""); void model.decideCorrection(decisionOpen, reason).then(() => setDecisionOpen(undefined)).catch(error => setDecisionError(supportSlaActionErrorMessage(error))); }}>重试提交</Button>} />}
         <Input.TextArea aria-label="审批理由" rows={4} value={reason} onChange={event => setReason(event.target.value)} placeholder="填写审批或拒绝理由（至少 3 个字符）" />
       </Modal>
     </Card>
