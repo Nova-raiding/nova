@@ -27,6 +27,13 @@ export function campaignActionParams(input: { campaign: CampaignControlSnapshot;
   return { campaign_id: input.campaign.id, expected_revision: String(input.campaign.revision), idempotency_key: input.idempotencyKey, reason, ...(input.action === 'retry_failed' ? { item_ids_json: JSON.stringify(input.itemIds) } : {}) }
 }
 
+export function campaignActionRecoveryCopy(action: CampaignAction | undefined) {
+  if (action === 'pause') return '再次提交暂停操作'
+  if (action === 'resume') return '再次提交恢复操作'
+  if (action === 'retry_failed') return '再次提交失败项重试'
+  return '再次提交操作'
+}
+
 export function CampaignLifecycleControl({ canControl }: { canControl: boolean }) {
   const [campaignId, setCampaignId] = useState(''); const [campaign, setCampaign] = useState<CampaignControlSnapshot>(); const [loading, setLoading] = useState(false); const [error, setError] = useState('')
   const [action, setAction] = useState<CampaignAction>(); const [reason, setReason] = useState(''); const [confirmed, setConfirmed] = useState(false); const [selected, setSelected] = useState<string[]>([]); const [submitting, setSubmitting] = useState(false)
@@ -52,7 +59,7 @@ export function CampaignLifecycleControl({ canControl }: { canControl: boolean }
       {action === 'retry_failed' && <Form.Item style={{ marginTop: 16 }} label="选择失败项" required><Checkbox.Group style={{ display: 'grid', gap: 8 }} value={selected} onChange={values => setSelected(values.map(String))}>{failed.map(item => <Checkbox key={item.id} value={item.id}>{item.productId ?? item.id} · {item.platform ?? '平台未返回'} · {item.accountId ?? '店铺未返回'}</Checkbox>)}</Checkbox.Group></Form.Item>}
       <Form layout="vertical" style={{ marginTop: 16 }}><Form.Item label="操作原因" required extra="至少 3 个字符；原因进入审计。"><Input.TextArea autoFocus rows={4} maxLength={1000} showCount value={reason} disabled={submitting} onChange={event => setReason(event.target.value)}/></Form.Item></Form>
       <Checkbox checked={confirmed} disabled={submitting} onChange={event => setConfirmed(event.target.checked)}>我已核对 Campaign、失败项和 expected revision，并理解外部进行中工作不会被伪造为已取消。</Checkbox>
-      {error && <div ref={actionErrorRef} tabIndex={-1}><Alert style={{ marginTop: 16 }} role="alert" type="error" showIcon title="提交失败" description={error}/></div>}
+      {error && <div ref={actionErrorRef} tabIndex={-1}><Alert style={{ marginTop: 16 }} role="alert" aria-live="assertive" type="error" showIcon title="提交失败" description={error} action={<Button style={{ minHeight: 44 }} aria-label={campaignActionRecoveryCopy(action)} loading={submitting} disabled={submitting} onClick={() => void submit()}>{campaignActionRecoveryCopy(action)}</Button>}/></div>}
     </Modal>
   </Card>
 }
