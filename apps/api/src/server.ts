@@ -4676,9 +4676,7 @@ async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<Retur
   if (direct.type === 'account') return { type: 'account' as const, id: product.accountId }
   const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
   const brandIds = [...new Set(canonical.filter(item => item.sourceProductId === product.id).map(item => item.brandId))]
-  if (brandIds.length === 1) return { type: 'brand' as const, id: brandIds[0] }
-  const recordedBrandId = typeof (product as Product & { brandId?: unknown }).brandId === 'string' ? (product as Product & { brandId: string }).brandId.trim() : ''
-  return { type: 'brand' as const, id: brandIds.length === 0 && recordedBrandId ? recordedBrandId : undefined }
+  return { type: 'brand' as const, id: brandIds.length === 1 ? brandIds[0] : undefined }
 }
 
 export function workspaceCapabilitySourceForBrandScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, atoms: readonly PermissionAtom[]) {

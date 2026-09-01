@@ -996,6 +996,8 @@ describe('security and access-control acceptance gates', () => {
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `brand-store-${workspaceId}`, credentialRef: 'vault://brand-access' })
     const source = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-access-source', title: '品权限商品', stock: 3 })
     const hiddenSource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-hidden-source', title: '不可见商品', stock: 2 })
+    const legacyBrandOnlySource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'legacy-brand-only-source', title: '仅旧字段商品', stock: 1 }) as typeof source & { brandId?: string }
+    legacyBrandOnlySource.brandId = 'brand_access'
     const base = await start()
     const ownerHeaders = { authorization: 'Bearer brand-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const editorHeaders = { authorization: 'Bearer brand-editor-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
@@ -1024,6 +1026,7 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 6.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation.items).toEqual([expect.objectContaining({ id: 'brand_access', title: '权限品', platforms: [expect.objectContaining({ platform: 'taobao', stores: [expect.objectContaining({ accountId: account.id })] })] })])
     expect((await mcp(editorHeaders, 6.2, 'creative.brief', { product_id: hiddenSource.id, asset_type: 'banner' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 6.3, 'creative.preview', { product_id: hiddenSource.id, asset_type: 'banner' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(ownerHeaders, 6.31, 'creative.brief', { product_id: legacyBrandOnlySource.id, asset_type: 'banner' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const imageJobsBeforeDeniedBrandCalls = service.imageGenerationJobs.size
     expect((await mcp(editorHeaders, 6.4, 'catalog.image.generate', { product_id: source.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `viewer-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 6.5, 'catalog.image.generate', { product_id: hiddenSource.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `hidden-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
