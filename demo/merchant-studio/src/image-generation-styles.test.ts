@@ -30,6 +30,10 @@ describe('image candidate selection accessibility styles', () => {
     expect(styles).toContain('outline-offset:2px')
   })
 
+  it('keeps the focused candidate card visible without changing its layout bounds', () => {
+    expect(styles).toContain('.image-candidate-grid figure:focus-within{outline:3px solid #176b4d;outline-offset:3px}')
+  })
+
   it('provides a usable target for candidate selection', () => {
     expect(styles).toContain('.candidate-select-control{min-height:44px')
     expect(styles).toContain('.candidate-select-control input{width:24px;height:24px')
