@@ -43,7 +43,8 @@ describe('runtime database role verification', () => {
     expect(source).toContain('Ops database role must not own public application tables')
     expect(source).toContain('Ops database role lacks platform control-plane access')
     expect(source).toContain('Ops database role has unexpected tenant write access')
-    expect(source).toContain("'authorization_revisions','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events'")
+    expect(source).toContain("'authorization_revisions','authorization_execution_reservations','platform_role_assignments','platform_role_assignment_events','ops_access_grants','ops_access_grant_events'")
+    expect(source).toContain("'authorization_execution_reservations'")
     expect(source).toContain("'workspace_subscriptions', 'ops_access_grants', 'ops_access_grant_events'")
   })
 
@@ -69,6 +70,14 @@ describe('runtime database role verification', () => {
     const source = readFileSync(scriptPath, 'utf8')
     expect(source).toContain("has_table_privilege(current_user, 'public.interactive_confirmation_tickets', 'DELETE,TRUNCATE')")
     expect(source).toContain('tenant runtime role must not delete or truncate interactive confirmation tickets')
+  })
+
+  it('bounds authorization execution reservation privileges for both database roles', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+    expect(source).toContain("FROM unnest(ARRAY['platform_feature_flags','platform_feature_flag_targets','platform_feature_flag_events','authorization_revisions','authorization_execution_reservations'")
+    expect(source).toContain("'public.authorization_execution_reservations', 'SELECT,INSERT'")
+    expect(source).toContain('Ops database role has destructive authorization reservation access')
+    expect(source).toContain('authorization_execution_reservations')
   })
 
   it('re-applies the interactive confirmation ticket ACL guard after local compatibility grants', () => {
