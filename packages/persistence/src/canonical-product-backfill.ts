@@ -55,7 +55,19 @@ export function planCanonicalProductBackfill(input: {
   canonicalProducts: readonly CanonicalBackfillRow[]
 }): CanonicalBackfillPlan {
   const workspaceId = requireWorkspaceScope(input.workspaceId)
-  const products = input.products.filter(row => row.workspaceId === workspaceId).sort((a, b) => a.id.localeCompare(b.id))
+  const scopedProducts = input.products.filter(row => row.workspaceId === workspaceId).sort((a, b) => a.id.localeCompare(b.id) || (a.brandId ?? '').localeCompare(b.brandId ?? ''))
+  // A duplicated legacy identity with different brand claims is not safe to
+  // resolve by ordering. Treat it as an ambiguity; otherwise one retry could
+  // create a canonical row for the wrong brand. Exact duplicate observations
+  // are harmless and are collapsed deterministically.
+  const productClaims = new Map<string, Set<string>>()
+  for (const product of scopedProducts) {
+    const claims = productClaims.get(product.id) ?? new Set<string>()
+    claims.add(product.brandId?.trim() ?? '')
+    productClaims.set(product.id, claims)
+  }
+  const ambiguousProductIds = new Set([...productClaims].filter(([, claims]) => claims.size > 1).map(([id]) => id))
+  const products = [...new Map(scopedProducts.filter(product => !ambiguousProductIds.has(product.id)).map(product => [product.id, product])).values()]
   const canonical = input.canonicalProducts.filter(row => row.workspaceId === workspaceId)
   const byLegacy = new Map<string, CanonicalBackfillRow[]>()
   for (const row of canonical) if (row.legacyProductId) byLegacy.set(row.legacyProductId, [...(byLegacy.get(row.legacyProductId) ?? []), row])
@@ -64,6 +76,9 @@ export function planCanonicalProductBackfill(input: {
   const unchanged: string[] = []
   const conflicts: CanonicalBackfillConflict[] = []
   const productIds = new Set(products.map(product => product.id))
+  for (const legacyProductId of [...ambiguousProductIds].sort((a, b) => a.localeCompare(b))) {
+    conflicts.push({ legacyProductId, code: 'CANONICAL_MAPPING_AMBIGUOUS', canonicalIds: [] })
+  }
   for (const product of products) {
     const brandId = product.brandId?.trim()
     if (!brandId) { conflicts.push({ legacyProductId: product.id, code: 'MISSING_BRAND', canonicalIds: [] }); continue }
