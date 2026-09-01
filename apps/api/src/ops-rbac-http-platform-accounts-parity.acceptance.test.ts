@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { operationAudits, server, setAuthorizationRepositoryForTests, service, workspaceMembers } from './server.js'
+import { creativePointsForTests, operationAudits, server, setAuthorizationRepositoryForTests, service, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 
 type Envelope = {
@@ -49,6 +49,36 @@ async function callMcp(base: string, token: string, workspaceId: string) {
       id: `platform-store-list-${Date.now()}`,
       method: 'platform.store.list',
       params: {},
+    }),
+  })
+  return { response, body: await response.json() as Envelope }
+}
+
+async function callRevokeHttp(base: string, token: string, workspaceId: string, platform: string, accountId: string, headerAccount = false) {
+  const response = await fetch(`${base}/v1/platform-accounts/${platform}${headerAccount ? '' : `?account_id=${encodeURIComponent(accountId)}`}`, {
+    method: 'DELETE',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'x-workspace-id': workspaceId,
+      'x-ops-workbench': 'workspace',
+      ...(headerAccount ? { 'x-account-id': accountId } : {}),
+    },
+  })
+  return { response, body: await response.json() as Envelope }
+}
+
+async function callRevokeMcp(base: string, token: string, workspaceId: string, platform: string, accountId: string) {
+  const response = await fetch(`${base}/mcp`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      'x-workspace-id': workspaceId,
+      'x-ops-workbench': 'workspace',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: `platform-revoke-${Date.now()}`, method: 'platform.revoke',
+      params: { platform, account_id: accountId },
     }),
   })
   return { response, body: await response.json() as Envelope }
@@ -107,7 +137,11 @@ function resultOf(body: Envelope) {
 }
 
 beforeEach(() => {
-  vi.stubEnv('NODE_ENV', 'production')
+  // Keep the acceptance slice on the in-memory test adapter so its seeded
+  // commercial entitlement is deterministic; strict authorization remains on
+  // explicitly rather than relying on the environment name.
+  vi.stubEnv('NODE_ENV', 'test')
+  vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
   vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
   vi.stubEnv('SESSION_ID_HASH_SECRET', 'ops-rbac-platform-accounts-parity-secret')
   vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
@@ -125,6 +159,7 @@ describe('Ops HTTP/MCP platform account list parity', () => {
     const actorId = `platform-accounts-allow-${Date.now()}`
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
     service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `platform-accounts-${workspaceId}`, credentialRef: `vault://platform-accounts/${workspaceId}` })
+    await creativePointsForTests.grant({ workspaceId, idempotencyKey: `platform-accounts-allow-${workspaceId}`, sourceType: 'test_fixture', sourceId: `platform-accounts-allow-${workspaceId}`, points: 100 })
     configureToken('platform-accounts-allow-token', actorId, [workspaceId])
     const base = await start()
 
@@ -208,5 +243,30 @@ describe('Ops HTTP/MCP platform account list parity', () => {
     }
     expect(http.body.error?.details?.reason_code).toBe(mcp.body.error?.details?.reason_code)
     expect(http.body.error?.details?.required_scope).toBe(mcp.body.error?.details?.required_scope)
+  })
+
+  it('uses the exact account scope for platform revoke over HTTP and MCP', async () => {
+    const workspaceId = `ws_revoke_scope_${Date.now()}`
+    const foreignWorkspaceId = `${workspaceId}_foreign`
+    const actorId = `revoke-scope-owner-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    const localAccount = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `revoke-local-${workspaceId}`, credentialRef: `vault://revoke/${workspaceId}` })
+    const foreignAccount = service.registerPlatformAccount({ workspaceId: foreignWorkspaceId, platform: 'taobao', remoteAccountId: `revoke-foreign-${foreignWorkspaceId}`, credentialRef: `vault://revoke/${foreignWorkspaceId}` })
+    await creativePointsForTests.grant({ workspaceId, idempotencyKey: `revoke-scope-${workspaceId}`, sourceType: 'test_fixture', sourceId: `revoke-scope-${workspaceId}`, points: 100 })
+    configureToken('revoke-scope-owner-token', actorId, [workspaceId])
+    const base = await start()
+
+    const [http, mcp] = await Promise.all([
+      callRevokeHttp(base, 'revoke-scope-owner-token', workspaceId, 'taobao', localAccount.id, true),
+      callRevokeMcp(base, 'revoke-scope-owner-token', workspaceId, 'taobao', foreignAccount.id),
+    ])
+
+    expect(http.response.status, JSON.stringify(http.body)).toBe(503)
+    expect(http.body.error?.code).toBe('PLATFORM_REVOKE_REMOTE_FAILED')
+    expect(service.getPlatformAccount(workspaceId, localAccount.id, 'taobao').tokenState).toBe('revoked')
+    expect(mcp.response.status, JSON.stringify(mcp.body)).toBe(403)
+    expect(mcp.body.error).toMatchObject({ code: 'FORBIDDEN', details: { required_scope: 'account', reason_code: 'AUTHZ_SCOPE_MISMATCH' } })
+    expect(JSON.stringify(mcp.body)).not.toContain(foreignWorkspaceId)
+    expect(JSON.stringify(mcp.body)).not.toContain(foreignAccount.id)
   })
 })

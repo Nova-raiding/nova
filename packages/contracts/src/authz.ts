@@ -453,7 +453,11 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   // stay platform-only.
   read('model.status.read', 'workspace', 'platform_summary', ['platform.model.status']),
   read('store.connection.read', 'workspace', 'customer_metadata', ['platform.store.list']),
-  write('store.connection.update', 'workspace', 'customer_metadata', ['platform.connect', 'platform.revoke']),
+  write('store.connection.update', 'workspace', 'customer_metadata', ['platform.connect']),
+  // Revoke is account-scoped: the caller must identify the exact connected
+  // account so HTTP and MCP cannot authorize a different store in the same
+  // workspace by capability alone.
+  write('store.connection.update', 'account', 'customer_metadata', ['platform.revoke']),
   write('store.connection.update', 'account', 'customer_metadata', ['platform.store.alias.set']),
   read('customer.content.read', 'workspace', 'customer_content', ['brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get', 'catalog.search', 'catalog.categories', 'rule.list', 'rule.sync.status', 'rule.history', 'asset.list', 'brand.get', 'catalog.sync.get', 'deliverable.list', 'task.history', 'feedback.list', 'creative.directions', 'publish.batch.get', 'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.learning.list', 'knowledge.competitor.list', 'multimodal.video.get']),
   read('customer.content.read', 'brand', 'customer_content', ['catalog.image.get', 'generation.get', 'publish.get', 'task.timeline', 'content.versions', 'content.diff', 'creative.brief', 'creative.preview']),

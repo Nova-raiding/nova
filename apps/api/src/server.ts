@@ -5262,6 +5262,14 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
   if (!mcpPolicy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前 HTTP 操作引用的 MCP 授权策略不存在，已拒绝执行', 503, authorizationPolicyUnavailableDetails({ transport: 'http', method: httpPolicy.mcpMethod, operation: httpPolicy.operation }))
   if (mcpPolicy.scope !== 'platform' && workspaceId === 'unknown') throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, '当前 HTTP 操作需要明确工作区', 400, { operation: httpPolicy.operation })
   const params: Record<string, unknown> = Object.fromEntries(url.searchParams.entries())
+  // DELETE /platform-accounts/:platform accepts the account selector in the
+  // header as well as the query string. Bind both transport forms into the
+  // shared account resolver before authorization; a missing selector must
+  // remain an authorization denial instead of widening to workspace scope.
+  if (req.method === 'DELETE' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)$/u.test(url.pathname)) {
+    const accountId = header(req, 'x-account-id')?.trim()
+    if (accountId && params.account_id === undefined) params.account_id = accountId
+  }
   let pathScopeConflict = false
   const hasJsonAuthorizationParams = httpPolicy.pathTemplate !== '/v1/assets/upload'
     && req.method !== 'GET'

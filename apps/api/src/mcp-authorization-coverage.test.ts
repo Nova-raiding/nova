@@ -5,7 +5,7 @@ import { AUTHZ_POLICY_VERSION, MCP_METHODS, getHttpOperationPolicy, getMcpMethod
 describe('registered MCP authorization coverage', () => {
   it('keeps HTTP account/task routes on the same MCP scope contract', () => {
     const cases = [
-      ['DELETE', '/v1/platform-accounts/taobao', 'platform.revoke', 'workspace'],
+      ['DELETE', '/v1/platform-accounts/taobao', 'platform.revoke', 'account'],
       ['POST', '/v1/platform-accounts/taobao/sync', 'catalog.sync', 'workspace'],
       ['GET', '/v1/tasks/task_scope/timeline', 'task.timeline', 'brand'],
       ['POST', '/v1/tasks/task_scope/content', 'content.generate', 'brand'],
