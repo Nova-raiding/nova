@@ -60,6 +60,22 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('continues serving requests after a valid JSON value is not a JSON-RPC object', async () => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:9', MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write('null\n')
+      expect(await nextLine(child.stdout)).toMatchObject({ id: null, error: { code: -32603 } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping', params: {} })}\n`)
+      expect(await nextLine(child.stdout)).toEqual({ jsonrpc: '2.0', id: 2, result: {} })
+    } finally {
+      child.kill()
+    }
+  })
+
   it('blocks non-read-only tools before API forwarding unless interactive writes are explicitly enabled', async () => {
     let requests = 0
     const server = createServer((_req, res) => {

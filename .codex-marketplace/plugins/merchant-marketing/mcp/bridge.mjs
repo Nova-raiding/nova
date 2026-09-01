@@ -2468,8 +2468,8 @@ input.on('line', line => {
   if (!line.trim()) return
   let request
   try { request = JSON.parse(line) } catch { write(jsonRpcError(null, -32700, 'Parse error')); return }
-  requestQueue = requestQueue.then(() => handle(request))
-  requestQueue
+  requestQueue = requestQueue
+    .then(() => handle(request))
     .then(response => { if (response) write(response) })
-    .catch(error => write(jsonRpcError(request.id ?? null, -32603, error instanceof Error ? error.message : 'Internal error')))
+    .catch(error => write(jsonRpcError(request?.id ?? null, -32603, error instanceof Error ? error.message : 'Internal error')))
 })
