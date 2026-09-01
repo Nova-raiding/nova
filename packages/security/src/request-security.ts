@@ -13,7 +13,7 @@ export type RequestCorrelation = {
 }
 
 function id(value: string, field: string): string {
-  if (!ID.test(value) || /[\u0000\r\n]/u.test(value)) throw new Error(`invalid ${field}`)
+  if (typeof value !== 'string' || !ID.test(value) || /[\u0000\r\n]/u.test(value)) throw new Error(`invalid ${field}`)
   return value
 }
 
@@ -59,7 +59,7 @@ export class ReplayGuard {
   }
 
   checkAndRecord(input: { workspaceId: string; nonce: string; fingerprint?: string }): ReplayDecision {
-    if (!ID.test(input.workspaceId) || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce) || (input.fingerprint !== undefined && !HEX.test(input.fingerprint))) return { accepted: false, reason: 'invalid' }
+    if (typeof input.workspaceId !== 'string' || typeof input.nonce !== 'string' || (input.fingerprint !== undefined && typeof input.fingerprint !== 'string') || !ID.test(input.workspaceId) || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce) || (input.fingerprint !== undefined && !HEX.test(input.fingerprint))) return { accepted: false, reason: 'invalid' }
     const now = this.now()
     for (const [key, expiresAt] of this.entries) if (expiresAt <= now) this.entries.delete(key)
     const key = `${input.workspaceId}:${input.nonce}`

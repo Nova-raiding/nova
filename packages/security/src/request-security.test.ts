@@ -20,6 +20,17 @@ describe('request correlation and audit evidence', () => {
     expect(guard.checkAndRecord({ workspaceId: 'ws_1', nonce: 'short' })).toEqual({ accepted: false, reason: 'invalid' })
   })
 
+  it('fails closed for non-string correlation and replay inputs', () => {
+    expect(() => createRequestCorrelation({ workspaceId: 123 as unknown as string })).toThrow('invalid workspaceId')
+    expect(() => createRequestCorrelation({ workspaceId: 'ws_1', requestId: 123 as unknown as string })).toThrow('invalid requestId')
+
+    const guard = new ReplayGuard()
+    expect(guard.checkAndRecord({ workspaceId: 123 as unknown as string, nonce: 'n'.repeat(16) })).toEqual({ accepted: false, reason: 'invalid' })
+    expect(guard.checkAndRecord({ workspaceId: 'ws_1', nonce: 123 as unknown as string })).toEqual({ accepted: false, reason: 'invalid' })
+    expect(guard.checkAndRecord({ workspaceId: 'ws_1', nonce: 'n'.repeat(16), fingerprint: 123 as unknown as string })).toEqual({ accepted: false, reason: 'invalid' })
+    expect(guard.size()).toBe(0)
+  })
+
   it('isolates secrets, raw payloads, circular values and oversized strings', () => {
     const value: Record<string, unknown> = { authorization: 'Bearer secret', nested: { api_key: 'key', safe: 'ok' }, raw_payload: { pii: 'do not retain' }, long: 'x'.repeat(2050) }
     value.self = value
