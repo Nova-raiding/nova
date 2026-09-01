@@ -39,6 +39,37 @@ describe('canonical product consistency report', () => {
     expect(report.findings.find(item => item.legacyProductId === 'legacy_1')).toMatchObject({ status: 'conflict', codes: ['CANONICAL_MAPPING_AMBIGUOUS', 'TASK_CAMPAIGN_ITEM_SCOPE_MISMATCH', 'TASK_CANONICAL_SCOPE_MISMATCH', 'TASK_LISTING_SCOPE_MISMATCH', 'TASK_PLATFORM_MISMATCH'] })
   })
 
+  it('blocks a mapped task without canonical and listing scope', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      tasks: [{ id: 'task_unbound', workspaceId: 'ws_1', productId: 'legacy_1' }],
+    })
+
+    expect(report.findings.find(item => item.legacyProductId === 'legacy_1')).toMatchObject({
+      status: 'blocked',
+      codes: ['TASK_CANONICAL_SCOPE_MISSING', 'TASK_LISTING_SCOPE_MISSING'],
+    })
+  })
+
+  it('conflicts when a canonical target has duplicate listings for the same brand and store', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      listings: [
+        ...base.listings,
+        { id: 'listing_duplicate', workspaceId: 'ws_1', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'account_1' },
+      ],
+    })
+
+    expect(report.findings.find(item => item.legacyProductId === 'legacy_1')).toMatchObject({
+      status: 'conflict',
+      codes: ['LISTING_TARGET_AMBIGUOUS'],
+    })
+    expect(report.orphanFindings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entityType: 'listing', entityId: 'listing_1', status: 'conflict', codes: ['LISTING_TARGET_DUPLICATE'] }),
+      expect.objectContaining({ entityType: 'listing', entityId: 'listing_duplicate', status: 'conflict', codes: ['LISTING_TARGET_DUPLICATE'] }),
+    ]))
+  })
+
   it('is workspace-scoped and marks a canonical product with a missing required listing as blocked', () => {
     const report = buildCanonicalChainConsistencyReport({
       ...base,

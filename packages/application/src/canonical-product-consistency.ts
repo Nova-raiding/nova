@@ -359,6 +359,18 @@ export function buildCanonicalChainConsistencyReport(input: CanonicalChainConsis
     }
   }
   for (const listing of scopedListings) if (!canonicalIds.has(listing.canonicalProductId)) orphanFindings.push({ entityType: 'listing', entityId: listing.id, status: 'blocked', codes: ['LISTING_CANONICAL_ORPHAN'] })
+  const listingTargetGroups = new Map<string, ProductListingLinkInput[]>()
+  for (const listing of scopedListings) {
+    if (!listing.platform || !listing.accountId) continue
+    const key = [listing.brandId, listing.canonicalProductId, listing.platform, listing.accountId].join('\u001f')
+    listingTargetGroups.set(key, [...(listingTargetGroups.get(key) ?? []), listing])
+  }
+  for (const listings of listingTargetGroups.values()) {
+    if (listings.length < 2) continue
+    for (const listing of listings) {
+      orphanFindings.push({ entityType: 'listing', entityId: listing.id, status: 'conflict', codes: ['LISTING_TARGET_DUPLICATE'] })
+    }
+  }
   for (const item of scopedCampaignItems) {
     const codes = [...(!item.canonicalProductId || !canonicalIds.has(item.canonicalProductId) ? ['CAMPAIGN_CANONICAL_ORPHAN'] : []), ...(!item.listingId || !listingIds.has(item.listingId) ? ['CAMPAIGN_LISTING_ORPHAN'] : [])]
     if (codes.length) orphanFindings.push({ entityType: 'campaign_item', entityId: item.id, status: 'blocked', codes: sorted(codes) })
@@ -433,6 +445,8 @@ export function buildCanonicalChainConsistencyReport(input: CanonicalChainConsis
     const taskIds = sorted(tasks.map(task => task.id))
     const publishJobIds = sorted(scopedPublishJobs.filter(job => tasks.some(task => task.id === job.taskId)).map(job => job.id))
     for (const task of tasks) {
+      if (canonical && !task.canonicalProductId) codes.push('TASK_CANONICAL_SCOPE_MISSING')
+      if (canonical && !task.listingId) codes.push('TASK_LISTING_SCOPE_MISSING')
       if (task.brandId && legacy.brandId && task.brandId !== legacy.brandId) codes.push('TASK_BRAND_SCOPE_MISMATCH')
       if (task.canonicalProductId && task.canonicalProductId !== canonical?.id) codes.push('TASK_CANONICAL_SCOPE_MISMATCH')
       if (task.listingId && !listingIds.includes(task.listingId)) codes.push('TASK_LISTING_SCOPE_MISMATCH')
