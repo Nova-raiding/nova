@@ -51,6 +51,34 @@ unless config.is_a?(Hash)
   exit 1
 end
 
+required_keys = ENV.fetch('REQUIRED_PRODUCTION_CONFIG_KEYS', '').split
+missing_required_key = required_keys.find { |key| !config.key?(key) }
+if missing_required_key
+  warn "required production config key is missing: #{missing_required_key}"
+  exit 1
+end
+
+unsafe_placeholder = /(?:SET_[A-Z0-9_]+|BLOCKED_UNTIL_|\$\{[^}]+\}|\b(?:REPLACE_ME|CHANGE_ME|TODO|TBD)\b)/
+contains_unsafe_scalar = lambda do |value|
+  case value
+  when Hash
+    value.any? { |key, child| contains_unsafe_scalar.call(key) || contains_unsafe_scalar.call(child) }
+  when Array
+    value.any? { |child| contains_unsafe_scalar.call(child) }
+  when String
+    normalized = value.downcase
+    value.match?(unsafe_placeholder) || normalized.include?('pilot-local-token') ||
+      normalized.include?('localhost') || normalized.include?('127.0.0.1') ||
+      normalized.include?('model-relay.example.com')
+  else
+    false
+  end
+end
+if contains_unsafe_scalar.call(config)
+  warn 'production config contains unresolved placeholder or local-only value'
+  exit 1
+end
+
 def path_present?(config, path)
   cursor = config
   path.each do |segment|

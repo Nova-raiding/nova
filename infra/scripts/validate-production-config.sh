@@ -14,17 +14,17 @@ fi
 rendered_config_path=$config_path
 yaml_validator=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/validate-production-config-yaml.rb
 [ -f "$yaml_validator" ] || { echo "production config YAML validator is missing" >&2; exit 1; }
-ruby "$yaml_validator" "$rendered_config_path"
-filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-production-config.XXXXXX")
-trap 'rm -f -- "$filtered_config_path"' EXIT
-sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//' "$rendered_config_path" > "$filtered_config_path"
-config_path=$filtered_config_path
 
 # Every required setting must be an actual YAML key. The value checks below
 # intentionally remain dependency-free, but an unanchored grep can otherwise
 # mistake text such as `note: "plugin_enabled: true"` for configuration.
 required_keys='plugin_enabled merchant_bearer_hostname auth_enforcement session_id_hash_secret_ref jd_auth_enabled jd_read_enabled jd_write_enabled taobao_tmall_auth_enabled taobao_tmall_read_enabled taobao_tmall_write_enabled pinduoduo_auth_enabled pinduoduo_read_enabled pinduoduo_write_enabled object_storage_versioning lifecycle_policy_ref asset_quarantine_retention_days asset_clean_retention_days deletion_request_grace_days backup_retention_days alert_channel_secret_ref point_in_time_recovery_enabled database_pooler_enabled database_max_backend_connections database_connection_utilization_alert_percent secret_provider worker_api_credentials_ref worker_sync_api_token_ref worker_sync_api_signing_secret_ref worker_generation_api_token_ref worker_generation_api_signing_secret_ref worker_publish_api_token_ref worker_publish_api_signing_secret_ref worker_reconcile_api_token_ref worker_reconcile_api_signing_secret_ref worker_automation_api_token_ref worker_automation_api_signing_secret_ref merchant_ui_api_token_ref payment_mode payment_provider_adapters payment_checkout_base_url payment_provider_checkout_api_url payment_provider_query_api_url payment_provider_refund_api_url payment_provider_api_key_ref payment_provider_merchant_id payment_callback_base_url payment_callback_secret_ref payment_reconciliation_enabled payment_refund_enabled model_relay_base_url model_relay_api_key_ref text_model image_model image_edit_model ocr_model video_model approved_requests_per_minute approved_tokens_per_minute maximum_task_cost_cny object_storage_bucket object_storage_region object_storage_endpoint object_storage_kms_key asset_display_base_url asset_display_url_signing_secret_ref platform_rule_sync_manifest_url platform_rule_sync_signing_secret_ref platform_rule_sync_interval_hours asset_scanner_mode allow_local_asset_scan_fixture asset_scanner_api_token_ref asset_scanner_workspace_signing_secret_ref asset_scan_receipt_key_id asset_scan_receipt_private_key_ref asset_scan_trusted_public_keys_ref asset_scan_policy_version clamav_image_digest clamav_signature_max_age_minutes clamav_max_file_bytes'
 required_keys="$required_keys mcp_authorization_mode durable_platform_assignments_required"
+REQUIRED_PRODUCTION_CONFIG_KEYS="$required_keys" ruby "$yaml_validator" "$rendered_config_path"
+filtered_config_path=$(mktemp "${TMPDIR:-/tmp}/merchant-production-config.XXXXXX")
+trap 'rm -f -- "$filtered_config_path"' EXIT
+sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//' "$rendered_config_path" > "$filtered_config_path"
+config_path=$filtered_config_path
 missing_required_key=$(awk -v required_keys="$required_keys" '
   BEGIN { required_count = split(required_keys, required, /[[:space:]]+/) }
   /^[[:space:]]*[A-Za-z0-9_]+[[:space:]]*:/ {

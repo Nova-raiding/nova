@@ -131,6 +131,16 @@ describe('production config gate', () => {
 
   it('rejects unresolved Secret Manager placeholders', () => {
     expect(() => run(`${config()}\ndatabase_url: \"\${SECRET:DATABASE_URL}\"`)()).toThrow()
+    expect(() => run(config().replace('model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'model_relay_api_key_ref: "vault://approved # \${SECRET:MODEL_RELAY_API_KEY}"'))()).toThrow(/placeholder|local-only/)
+    expect(() => run(config().replace('model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'model_relay_api_key_ref: vault://REPLACE_ME'))()).toThrow(/placeholder|local-only/)
+  })
+
+  it('requires flat contract keys at the top level', () => {
+    const nestedRelayRef = config().replace(
+      'model_relay_api_key_ref: vault://merchant-model/relay-api-key',
+      'notes:\n  model_relay_api_key_ref: vault://merchant-model/relay-api-key',
+    )
+    expect(() => run(nestedRelayRef)()).toThrow(/required production config key is missing: model_relay_api_key_ref/)
   })
 
   it('requires a positive per-task model cost cap', () => {
