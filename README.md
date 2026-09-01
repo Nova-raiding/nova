@@ -1,5 +1,7 @@
 # 商家营销内容助手（桌面 ChatGPT 插件）
 
+发布元数据同步基线（2026-09-01）：MCP 契约注册表为 266 个唯一方法，商家插件运行态为 128 个 MCP 工具，PostgreSQL 迁移链已进入 147。
+
 当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及仅供开发调试的 Merchant Studio。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
 
 当前发布验收基线（2026-08-31）：Repository 为 0.1.1，plugin 为 0.1.0+codex.20260831142726，MCP 契约注册表为 249 个唯一方法，商家插件运行态为 149 个 MCP 工具，Ops Console 为 13 个独立一级域，PostgreSQL 迁移链已进入 108。060/062 采用非事务并发索引迁移；063–079 补齐 listing/canonical 品牌组合、身份 bootstrap、素材解析租约、媒体规格、字段映射审批、campaign ACL、legacy 平台/店铺作用域、商品素材完整性、Ops 数据契约、模型用量上下文、canonical 发布作用域和 workspace 知识快照游标；080 增加 workspace 存储配额与预留账本；098 增加 canonical 统一链审计，099 增加 canonical→legacy 品牌复合完整性约束，100 增加告警通知投递账本，101/102 增加 canonical backfill 批次控制与人工冲突队列，103 收紧告警通知账本的应用角色 ACL，104 增加一次性交互确认票据及最小权限消费约束，105 增加 durable authorization grants（持久化授权授予、撤销、JIT 时效/次数预算及双人审批约束），106 增加 NULL 品牌映射的 fail-closed 完整性守卫，107 增加 canonical backfill 冲突验证证据，108 强制已结算模型用量必须存在真实成本。正式发布仍须由 metadata 和发布门禁重新对账。

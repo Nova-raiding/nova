@@ -96,7 +96,7 @@ describe('Codex plugin package', () => {
   it('executes discovery from both source and marketplace bridge roots', async () => {
     const sourceTools = await discoveredToolNames(pluginRoot)
     const marketplaceTools = await discoveredToolNames(marketplaceRoot)
-    expect(sourceTools).toHaveLength(150)
+    expect(sourceTools).toHaveLength(128)
     expect(marketplaceTools).toEqual(sourceTools)
     expect(sourceTools.some(name => name.startsWith('ops.'))).toBe(false)
   })
@@ -105,7 +105,7 @@ describe('Codex plugin package', () => {
     const tools = await discoveredToolNames(pluginRoot)
     const readme = readPluginFile('README.md')
     expect(readme).toContain(`tools/list\` 为 ${tools.length} 个 MCP 工具`)
-    expect(readme).not.toContain('tools/list` 为 149 个 MCP 工具')
+    expect(readme).not.toContain('tools/list` 为 150 个 MCP 工具')
   })
 
   it('declares a confirmation-gated MCP plugin and entry skill', () => {

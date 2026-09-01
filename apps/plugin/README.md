@@ -1,5 +1,7 @@
 # Merchant Marketing Codex Plugin
 
+当前 `tools/list` 为 128 个 MCP 工具，以运行态契约测试为准。
+
 这是可安装的 Codex Plugin 源目录，包含：
 
 - `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260901203307`。

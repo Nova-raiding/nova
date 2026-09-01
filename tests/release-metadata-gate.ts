@@ -48,7 +48,9 @@ function countBridgeTools(root: string): number {
   const end = source.indexOf('\n}\n\n', start)
   const methods = start >= 0 && end > start ? source.slice(start, end) : ''
   const names = [...methods.matchAll(/^  '([^']+)'\s*:/gmu)].map(match => match[1]!)
-  return names.filter(name => !name.startsWith('ops.') && !merchantHiddenMethods.has(name)).length
+  const disabledBlock = source.match(/const COMMERCIAL_DISABLED_METHODS = new Set\(\[(.*?)\]\)/su)?.[1] ?? ''
+  const disabled = new Set([...disabledBlock.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
+  return names.filter(name => !name.startsWith('ops.') && !merchantHiddenMethods.has(name) && !disabled.has(name)).length
 }
 
 function countOpsDomains(root: string): number {

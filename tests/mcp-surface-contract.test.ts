@@ -32,6 +32,18 @@ const merchantHiddenMethods = new Set([
   'content.codex.prepare',
   'content.codex.commit',
 ])
+const commercialDisabledMethods = new Set([
+  'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert',
+  'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list',
+  'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get', 'ops.commercial.model-markup.update',
+  'subscription.order.create', 'subscription.change', 'billing.recharge.create', 'catalog.image.generate',
+  'multimodal.image.edit', 'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'merchant.first_value',
+  'campaign.batch.generate', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.image.retry',
+  'brand.extract', 'brand.tone.preview', 'task.understand', 'creative.directions', 'creative.brief', 'creative.preview',
+  'content.generate', 'content.codex.prepare', 'content.codex.commit', 'content.review', 'content.modify',
+  'automation.scan', 'automation.tick', 'multimodal.generate', 'multimodal.video.request', 'workspace.commercial.get',
+  'workspace.commercial.update', 'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund',
+])
 
 describe('MCP surface coverage', () => {
   it('keeps merchant.start intent fields optional, bounded, and fail-closed', () => {
@@ -49,7 +61,7 @@ describe('MCP surface coverage', () => {
 
   it('keeps current API and merchant-tool counts aligned across authoritative docs', () => {
     const merchantMethodCount = MCP_METHODS.filter(method =>
-      !method.startsWith('ops.') && !merchantHiddenMethods.has(method),
+      !method.startsWith('ops.') && !merchantHiddenMethods.has(method) && !commercialDisabledMethods.has(method),
     ).length
     const rootReadme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
     const status = readFileSync(new URL('../doc/todo/quality/implementation-status.md', import.meta.url), 'utf8')
@@ -91,9 +103,9 @@ describe('MCP surface coverage', () => {
         expect(installedBridge.includes(`'${method}':`), `${method} missing installed bridge definition`).toBe(true)
       }
     }
-    expect(bridge).toContain('filter(([name]) => isMerchantTool(name))')
+    expect(bridge).toContain('filter(([name]) => isMerchantTool(name) && !COMMERCIAL_DISABLED_METHODS.has(name))')
     expect(bridge).toContain('!isMerchantTool(name) || !METHODS[name]')
-    expect(installedBridge).toContain('filter(([name]) => isMerchantTool(name))')
+    expect(installedBridge).toContain('filter(([name]) => isMerchantTool(name) && !COMMERCIAL_DISABLED_METHODS.has(name))')
     expect(installedBridge).toContain('!isMerchantTool(name) || !METHODS[name]')
   })
 

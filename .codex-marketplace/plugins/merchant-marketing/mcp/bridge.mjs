@@ -59,7 +59,7 @@ const READ_ONLY_METHODS = new Set([
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
-  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
+  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.crm.export',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
@@ -70,6 +70,40 @@ const READ_ONLY_METHODS = new Set([
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
   'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list', 'automation.scan',
+])
+// Generated from packages/contracts COMMERCIAL_MCP_FOUNDATION_POLICIES.
+// Keep this standalone snapshot exact: bridge contract tests compare every
+// entry with the shared server registry. It is intentionally separate from
+// READ_ONLY_METHODS, which controls MCP annotations and transport retries,
+// not commercial access or zero-point recovery.
+const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
+const COMMERCIAL_RECOVERY_METHODS = new Set([
+  'subscription.get', 'subscription.orders.list', 'billing.status',
+  'billing.recharge.get', 'billing.recharge.list', 'billing.transactions',
+  'billing.export', 'workspace.data.delete.request', 'workspace.bootstrap',
+  'commercial.access.get', 'commercial.catalog.get',
+  'creative-points.balance.get', 'creative-points.statement.list',
+])
+const COMMERCIAL_DISABLED_METHODS = new Set([
+  'ops.commercial.offers.list', 'ops.commercial.offer.upsert',
+  'ops.commercial.addons.list', 'ops.commercial.addon.upsert',
+  'ops.commercial.coupons.list', 'ops.commercial.export',
+  'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list',
+  'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get',
+  'ops.commercial.model-markup.update',
+  'subscription.order.create', 'subscription.change', 'billing.recharge.create',
+  'catalog.image.generate', 'multimodal.image.edit',
+  'ops.marketing.generation.retry', 'ops.marketing.asset_scan.retry', 'merchant.first_value',
+  'campaign.batch.generate', 'campaign.batch.retry_failed',
+  'catalog.title.optimize', 'catalog.image.retry', 'brand.extract',
+  'brand.tone.preview', 'task.understand', 'creative.directions',
+  'creative.brief', 'creative.preview', 'content.generate',
+  'content.codex.prepare', 'content.codex.commit', 'content.review',
+  'content.modify', 'automation.scan', 'automation.tick',
+  'multimodal.generate', 'multimodal.video.request',
+  'workspace.commercial.get', 'workspace.commercial.update',
+  'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund',
+  'billing.refund',
 ])
 const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.model-usage.reconciliation.run',
@@ -97,16 +131,16 @@ const booleanString = { type: 'string', enum: ['true', 'false'] }
 const jsonObject = description => ({ type: 'string', contentMediaType: 'application/json', jsonShape: 'object', description })
 const jsonArray = description => ({ type: 'string', contentMediaType: 'application/json', jsonShape: 'array', description })
 const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计原因。')
-// These actions are explicitly part of first-run activation or read-only
-// catalog synchronization. They may create a pending order or a sync handle,
-// but do not consume wallet balance or publish content. Generation, editing,
-// approvals, and publish confirmation remain behind the interactive-write gate.
+// This set only decides whether the bridge requires an explicit interactive
+// write confirmation. It is not a commercial recovery allowlist and cannot
+// bypass the server-side CommercialAccessDecision. In particular,
+// platform.connect/catalog.sync/content.export remain business operations.
 const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
   'merchant.start',
   'content.export', 'catalog.image.review', 'catalog.image.select', 'workspace.bootstrap',
   'workspace.interactive.confirm',
-  'platform.store.list', 'platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start',
+  'platform.store.list', 'platform.connect', 'catalog.sync', 'catalog.sync.start',
 ])
 const ALWAYS_INTERACTIVE_WRITE_METHODS = new Set([
   'platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire',
@@ -118,7 +152,7 @@ const DESTRUCTIVE_WRITE_METHODS = new Set([
 ])
 const METHODS = {
   'merchant.start': {
-    description: '开始使用大麦；返回当前步骤、店铺/商品摘要和下一句可以直接照着说的话。会幂等记当前意图。',
+    description: '开始使用大麦；服务端先完成商业准入判定，通过后才会幂等记当前意图并返回下一步。零点或状态未知时仅返回服务端授权的恢复操作。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -221,6 +255,22 @@ const METHODS = {
   'workspace.usage.get': {
     description: '查看当前工作区本月任务额度使用情况。只读。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  'commercial.access.get': {
+    description: '查看服务端持有的当前商业准入决策；unknown 保持 null，不回退到旧钱包或任务额度。只读恢复入口。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  'commercial.catalog.get': {
+    description: '查看当前工作区可见的版本化商业目录；不可用时明确返回阻断，不回退到 legacy offer。只读恢复入口。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  'creative-points.balance.get': {
+    description: '查看当前工作区创意点余额和 access revision；未知余额是 null，不是 0。只读恢复入口。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  'creative-points.statement.list': {
+    description: '分页查看当前工作区的创意点账本明细；账本不可用时不伪造空页。只读恢复入口。',
+    inputSchema: { type: 'object', properties: { cursor: boundedString(4096), limit: pageLimit100 }, additionalProperties: false },
   },
   'ops.audit.list': {
     description: '查看套餐、额度、平台和退款操作审计。只读。',
@@ -1111,9 +1161,16 @@ function userFacingErrorText(code, details) {
   if (code === 'INTERACTIVE_WRITE_DISABLED' || code === 'INTERACTIVE_CONFIRMATION_REQUIRED') {
     return '这一步需要你的明确确认。确认后可以继续，未执行任何写操作。'
   }
-  if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') {
-    return '余额不足，请先充值'
+  if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完。当前仅可继续服务端授权的恢复操作，未执行业务写入。'
+  if (code === 'CREATIVE_POINTS_INSUFFICIENT') {
+    const available = Number.isInteger(details?.available_points) ? details.available_points : '未知'
+    const quoted = Number.isInteger(details?.quoted_points) ? details.quoted_points : '未知'
+    return `创意点不足（可用 ${available}，本次预估 ${quoted}）。未执行业务写入。`
   }
+  if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认创意点余额，已安全停止。未知余额不会按 0 处理。'
+  if (code === 'RATE_CARD_UNAVAILABLE') return '当前无法取得已批准的创意点费率，已安全停止，未扣点。'
+  if (code === 'COMMERCIAL_ACCESS_STALE') return '创意点准入状态已变更，请先刷新服务端返回的恢复状态，不要重复提交。'
+  if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return '旧版钱包充值已停用；请仅使用服务端返回的创意点包 SKU 恢复入口。'
   if (code === 'FACTS_CONFIRMATION_REQUIRED') return '请先确认商品事实'
   if (code === 'ASSET_PARSE_TIMEOUT') return '图片已保存并通过自动安全检查，但商品信息读取超时。要我重新读取一次吗？'
   if (code === 'ASSET_PARSE_FAILED' || code === 'ASSET_PARSE_EMPTY' || code === 'ASSET_PARSE_ATTEMPTS_EXHAUSTED') {
@@ -1161,17 +1218,27 @@ function safeErrorDetails(details) {
   if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
   const safe = {}
   const authorizationEvidenceKeys = ['decision_id', 'capability', 'reason_code', 'required_scope', 'workbench', 'explicit_deny', 'obligations_missing', 'policy_version']
+  const correlationEvidenceKeys = ['request_id', 'trace_id']
+  const evidenceString = value => typeof value === 'string'
+    && value.trim().length > 0
+    && !/[\u0000-\u001f\u007f\u2028\u2029]/u.test(value)
+    ? value.trim().slice(0, 256)
+    : undefined
+  const evidenceBoolean = value => typeof value === 'boolean' ? value : undefined
+  const evidenceStringList = value => Array.isArray(value)
+    ? value.map(item => evidenceString(item)).filter(item => item !== undefined).slice(0, 32)
+    : undefined
   const sanitize = (value, depth = 0) => {
     if (depth > 2) return undefined
     if (typeof value === 'string') {
       return value.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [REDACTED]').replace(/(?:api[_-]?key|token|secret|cookie|authorization)\s*[:=]\s*[^,;\s]+/giu, '$1=[REDACTED]').replace(/\/(?:Users|home|private|var)\/[^\s]+/gu, '[PATH_REDACTED]').slice(0, 240)
     }
-    if (typeof value === 'number' || typeof value === 'boolean') return value
-    if (Array.isArray(value)) return value.slice(0, 8).map(item => sanitize(item, depth + 1)).filter(item => item !== undefined)
+    if (value === null || typeof value === 'number' || typeof value === 'boolean') return value
+    if (Array.isArray(value)) return value.slice(0, 32).map(item => sanitize(item, depth + 1)).filter(item => item !== undefined)
     if (value && typeof value === 'object') {
       const nested = {}
       for (const [key, item] of Object.entries(value)) {
-        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'operation_status', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted'].includes(key)) {
+        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version'].includes(key)) {
           const sanitized = sanitize(item, depth + 1)
           if (sanitized !== undefined) nested[key] = sanitized
         }
@@ -1180,11 +1247,42 @@ function safeErrorDetails(details) {
     }
     return undefined
   }
-  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'operation_status', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', ...authorizationEvidenceKeys]) {
-    const value = sanitize(details[key])
+  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
+    const value = authorizationEvidenceKeys.includes(key) || correlationEvidenceKeys.includes(key)
+      ? key === 'explicit_deny'
+        ? evidenceBoolean(details[key])
+        : key === 'obligations_missing'
+          ? evidenceStringList(details[key])
+          : evidenceString(details[key])
+      : sanitize(details[key])
     if (value !== undefined) safe[key] = value
   }
   return Object.keys(safe).length ? safe : undefined
+}
+
+function commercialAccessErrorProjection(code, details) {
+  if (!['CREATIVE_POINTS_EXHAUSTED', 'CREATIVE_POINTS_INSUFFICIENT', 'CREATIVE_POINTS_UNAVAILABLE', 'RATE_CARD_UNAVAILABLE', 'COMMERCIAL_ACCESS_STALE'].includes(code)) return undefined
+  const pointValue = value => Number.isSafeInteger(value) && value >= 0 ? value : null
+  const nullableString = value => typeof value === 'string' && value.trim() ? value.trim().slice(0, 240) : null
+  const requestedActions = Array.isArray(details?.next_actions) ? details.next_actions : []
+  // next_actions is server-authored, but the bridge still intersects it with
+  // the exact enabled recovery registry so a malformed response cannot turn a
+  // business method (for example platform.connect) into a recovery control.
+  const nextActions = [...new Set(requestedActions.filter(value => typeof value === 'string' && COMMERCIAL_RECOVERY_METHODS.has(value)))]
+  const knownPoints = pointValue(details?.available_points)
+  const balanceState = details?.balance_state === 'known' && knownPoints !== null ? 'known' : 'unknown'
+  return {
+    commercial_registry_version: COMMERCIAL_REGISTRY_VERSION,
+    balance_state: balanceState,
+    available_points: balanceState === 'known' ? knownPoints : null,
+    quoted_points: pointValue(details?.quoted_points),
+    access_revision: nullableString(details?.access_revision),
+    rate_card_version: nullableString(details?.rate_card_version),
+    request_id: nullableString(details?.request_id),
+    trace_id: nullableString(details?.trace_id),
+    next_actions: nextActions,
+    recovery_only: true,
+  }
 }
 
 function deploymentEnvironment() {
@@ -1238,7 +1336,7 @@ function assertRelayEvidence(method, result) {
 function safeStructuredErrorMessage(error, code, details) {
   if (code === 'FACTS_CONFIRMATION_REQUIRED') return '请先确认商品事实'
   if (code === 'PERMISSION_DENIED') return '当前账号没有执行这一步的权限。任务和已有内容已保留。'
-  if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return '余额不足，请先充值'
+  if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return userFacingErrorText(code, details)
   const raw = error instanceof Error ? error.message : ''
   if (/^MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u.test(raw)) return raw
   if (/^content\.export ZIP 文件签名无效$/u.test(raw)) return '导出文件校验失败（ZIP 文件签名无效），未返回文件。请重新生成导出。'
@@ -1260,41 +1358,16 @@ function actionCards(method, result) {
     enabled: card.enabled ?? true,
     reason: sanitizeMerchantText(String(card.reason ?? card.description ?? '')),
     requires_confirmation: card.requires_confirmation ?? card.confirmation === 'interactive_confirmation',
-  })) : []
-  if (method === 'billing.status' && result.store_capacity && cards.length === 0) {
-    for (const [index, label] of (Array.isArray(result.store_capacity.upgrade_actions) ? result.store_capacity.upgrade_actions : []).entries()) {
-      cards.push({
-        id: `store-capacity-${index + 1}`,
-        type: index === 0 ? 'upgrade' : 'store_addon',
-        label: merchantActionLabel('subscription.change') ?? label,
-        // Store-capacity cards are rendered for merchants. Never point a
-        // merchant action at an ops-only tool hidden from tools/list.
-        tool: 'subscription.change',
-        arguments: {},
-        required_inputs: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'],
-        enabled: true,
-        reason: '当前店铺额度不足，请先增加可用店铺数。',
-        requires_confirmation: true,
-      })
-    }
-  }
-  if (method === 'billing.status' && cards.every(card => card.type !== 'recharge')) {
-    const nextActions = Array.isArray(result.next_actions) ? result.next_actions : []
-    if (nextActions.some(action => typeof action === 'string' && action.includes('充值'))) {
-      cards.push({ id: 'wallet-recharge', type: 'recharge', label: '创建充值订单', tool: 'billing.recharge.create', arguments: {}, required_inputs: ['channel', 'amount_cny'], enabled: true, reason: '钱包余额不足，请先创建充值订单。', requires_confirmation: true })
-    }
-  }
+  })).filter(card => !COMMERCIAL_DISABLED_METHODS.has(card.tool)) : []
   let sanitizedStoreCapacity = result.store_capacity
   if (result.store_capacity && typeof result.store_capacity === 'object' && !Array.isArray(result.store_capacity) && Array.isArray(result.store_capacity.action_cards)) {
     sanitizedStoreCapacity = {
       ...result.store_capacity,
-      action_cards: result.store_capacity.action_cards.map(card => card && typeof card === 'object' && !Array.isArray(card) && typeof card.tool === 'string' && card.tool.startsWith('ops.')
-        ? { ...card, tool: 'subscription.change', type: 'upgrade', required_inputs: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'], requires_confirmation: true }
-        : card),
+      action_cards: result.store_capacity.action_cards.filter(card => card && typeof card === 'object' && !Array.isArray(card) && typeof card.tool === 'string' && !card.tool.startsWith('ops.') && !COMMERCIAL_DISABLED_METHODS.has(card.tool)),
     }
   }
-  return cards.length || sanitizedStoreCapacity !== result.store_capacity
-    ? { ...result, ...(cards.length ? { action_cards: cards } : {}), ...(sanitizedStoreCapacity !== result.store_capacity ? { store_capacity: sanitizedStoreCapacity } : {}) }
+  return Array.isArray(result.action_cards) || sanitizedStoreCapacity !== result.store_capacity
+    ? { ...result, ...(Array.isArray(result.action_cards) ? { action_cards: cards } : {}), ...(sanitizedStoreCapacity !== result.store_capacity ? { store_capacity: sanitizedStoreCapacity } : {}) }
     : result
 }
 
@@ -1983,9 +2056,14 @@ async function callRemote(method, params) {
           signal: controller.signal,
         })
         const payload = await responseJsonWithLimit(response)
+        // The API currently wraps the JSON-RPC envelope in `data`, while
+        // gateways may also return a top-level error. Treat both locations as
+        // the same protocol boundary so authz/evidence details are not
+        // downgraded to a generic missing-result error.
+        const remoteError = payload?.error ?? payload?.data?.error
         const transient = retrySafe && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
-        if ((!response.ok || !payload || payload.error) && (!transient || attempt === maxAttempts)) {
-          const error = payload?.error ?? {
+        if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
+          const error = remoteError ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
             message: response.status === 401
               ? 'MCP gateway authentication failed'
@@ -1995,7 +2073,7 @@ async function callRemote(method, params) {
           }
           throw Object.assign(new Error(error.message ?? 'MCP gateway error'), { code: error.code, details: error.details })
         }
-        if (!response.ok || !payload || payload.error) {
+        if (!response.ok || !payload || remoteError) {
           const retryAfter = response.status === 429 ? Number(response.headers.get('retry-after') ?? '') : Number.NaN
           const retryAfterMs = Number.isFinite(retryAfter) ? Math.max(50, Math.ceil(retryAfter * 1_000)) : 0
           const backoffMs = retryAfterMs > 0 ? retryAfterMs : retryDelayMs * (2 ** (attempt - 1))
@@ -2401,7 +2479,7 @@ async function handle(request) {
     return jsonRpc(id, { contents: [{ uri: RECHARGE_UI_URI, mimeType: 'text/html;profile=mcp-app', text: rechargeUiHtml(), _meta: { ui: { prefersBorder: true } } }] })
   }
   if (request.method === 'tools/list') {
-    return jsonRpc(id, { tools: Object.entries(METHODS).filter(([name]) => isMerchantTool(name)).map(([name, value]) => ({
+    return jsonRpc(id, { tools: Object.entries(METHODS).filter(([name]) => isMerchantTool(name) && !COMMERCIAL_DISABLED_METHODS.has(name)).map(([name, value]) => ({
       name,
       ...value,
       ...(RECHARGE_UI_METHODS.has(name) || MERCHANT_CONTEXT_COMPONENT_METHODS.has(name) || IMAGE_EDIT_UI_METHODS.has(name) ? { _meta: { ...(RECHARGE_UI_METHODS.has(name) ? { ui: { resourceUri: RECHARGE_UI_URI }, 'openai/outputTemplate': RECHARGE_UI_URI, 'openai/toolInvocation/invoking': name.startsWith('billing.') ? '正在读取钱包…' : '正在检查余额与额度…', 'openai/toolInvocation/invoked': name.startsWith('billing.') ? '钱包已更新' : '余额检查完成' } : {}), ...(toolUiMetadata(name) ?? {}) } } : {}),
@@ -2413,6 +2491,14 @@ async function handle(request) {
     const args = request.params?.arguments
     if (typeof name !== 'string' || !isMerchantTool(name) || !METHODS[name]) return jsonRpcError(id, -32602, `Unknown tool: ${String(name)}`)
     if (!args || typeof args !== 'object' || Array.isArray(args)) return jsonRpcError(id, -32602, 'Tool arguments must be an object')
+    if (COMMERCIAL_DISABLED_METHODS.has(name)) {
+      const structuredContent = {
+        code: 'COMMERCIAL_OPERATION_DISABLED',
+        message: '该商业操作在共享 registry 中为 disabled，已在 API 前失败关闭。',
+        commercial_registry_version: COMMERCIAL_REGISTRY_VERSION,
+      }
+      return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })
+    }
     if (name === 'billing.recharge.get' && Object.prototype.hasOwnProperty.call(args, 'confirm_test_payment')) {
       return jsonRpcError(id, -32602, 'Unsupported tool argument: confirm_test_payment')
     }
@@ -2462,7 +2548,10 @@ async function handle(request) {
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'
       const details = safeErrorDetails(error && typeof error === 'object' ? error.details : undefined)
       const presentation = toolErrorPresentation(name, args, code, details)
-      const rechargeRequired = code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE'
+      const commercialAccess = commercialAccessErrorProjection(code, details)
+      const projectedDetails = commercialAccess && details
+        ? { ...details, balance_state: commercialAccess.balance_state, available_points: commercialAccess.available_points, quoted_points: commercialAccess.quoted_points, access_revision: commercialAccess.access_revision, rate_card_version: commercialAccess.rate_card_version, request_id: commercialAccess.request_id, trace_id: commercialAccess.trace_id, next_actions: commercialAccess.next_actions }
+        : details
       const parseRecovery = name === 'asset.parse'
         && ['ASSET_PARSE_TIMEOUT', 'ASSET_PARSE_FAILED', 'ASSET_PARSE_EMPTY', 'ASSET_PARSE_ATTEMPTS_EXHAUSTED'].includes(code)
         && typeof args.asset_id === 'string'
@@ -2485,7 +2574,14 @@ async function handle(request) {
             },
           }
         : {}
-      const structuredContent = { code, message: presentation.recovery ? presentation.text : safeStructuredErrorMessage(error, code, details), ...(details ? { details } : {}), ...(presentation.recovery ? { recovery: presentation.recovery } : {}), ...parseRecovery, ...(rechargeRequired ? { show_recharge: true, recharge_reason: '余额或套餐额度不足', recommended_amounts_cny: ['50.00', '100.00', '300.00'], recharge_channels: ['alipay', 'wechat'] } : {}) }
+      const structuredContent = {
+        code,
+        message: presentation.recovery ? presentation.text : safeStructuredErrorMessage(error, code, details),
+        ...(projectedDetails ? { details: projectedDetails } : {}),
+        ...(presentation.recovery ? { recovery: presentation.recovery } : {}),
+        ...parseRecovery,
+        ...(commercialAccess ?? {}),
+      }
       return jsonRpc(id, { content: [{ type: 'text', text: presentation.text }], structuredContent, ...(toolResultUiMetadata(name) ? { _meta: toolResultUiMetadata(name) } : {}), isError: true })
     }
   }

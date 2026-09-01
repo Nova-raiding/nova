@@ -1,5 +1,7 @@
 # 实现状态与上线门禁
 
+当前发布元数据同步基线（2026-09-01）：源码为 266 个唯一 MCP 方法、128 个商家 bridge 工具、13 个 Ops 一级域、迁移链 001–147；具体以 `release-metadata.json` 和发布门禁为准。
+
 ### 2026-08-31 桌面运行态增量
 
 - Ops 连接诊断默认折叠已落地并经 Compose Chrome 桌面入口验收：`ops.spec.js` 1 passed，0 HTTP 错误、0 请求失败、0 console/page 错误。

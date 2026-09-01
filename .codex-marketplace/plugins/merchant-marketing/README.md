@@ -1,5 +1,7 @@
 # Merchant Marketing Codex Plugin
 
+当前 `tools/list` 为 128 个 MCP 工具，以运行态契约测试为准。
+
 这是可安装的 Codex Plugin 源目录，包含：
 
 - `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260901203307`。
@@ -43,25 +45,27 @@ export MERCHANT_RULE_APPROVAL_TOKEN=<rule-approval-token>
 
 bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPACE_ID}` 默认失败关闭，避免 Codex App 或 Automation 静默分析错误工作区。只有本地 fixture 开发可以显式设置 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true`，此时才回退到 `http://127.0.0.1:8790` 和 `ws_demo`；Automation 与生产环境禁止开启该选项。
 
-插件运行时默认禁用高成本或高风险的 MCP 工具。`platform.connect`、`billing.recharge.create` 以及商品只读同步（`catalog.sync`、`catalog.sync.start`、`catalog.sync.get`）属于首步激活/只读数据入口，余额为 0 时仍可使用；商家明确要求生成、编辑、批准或发布时，Skill 先调用 `workspace.interactive.confirm` 开启当前 15 分钟交互写会话，不需要手工设置环境变量。Automation 不调用该确认工具并保持只读。该门禁发生在 API 转发前，避免模型误路由或不可信店铺文本触发任务创建、批准或发布等副作用；真实平台写入仍需叠加钱包、事实、审核、平台能力、确认哈希、幂等和审批门禁。
+插件中的 `READ_ONLY_METHODS` 只用于 MCP 工具注解和传输重试，`SAFE_WITHOUT_INTERACTIVE_WRITE` 只用于当前会话的人工写确认；两者都不是商业恢复白名单，不能绕过服务端 `CommercialAccessDecision`。零创意点、余额未知、点数不足、准入修订过期或费率不可用时，只显示共享 exact registry 中已启用且由服务端在 `next_actions` 授权的恢复入口。`platform.connect`、`catalog.sync`、`content.export` 是业务操作，不属于零点恢复。客户端门禁只改善交互，真实安全边界始终在 API/MCP、RLS 和 Worker 的服务端复核。
+
+共享 `COMMERCIAL_OPERATION_REGISTRY` 中所有 `surface=MCP + domain=COMMERCIAL + enabled=false` 的精确方法都不出现在 `tools/list`，直接调用也会在 API 前 fail-closed。这包括 `subscription.order.create`、`subscription.change`、接受任意人民币金额的旧 `billing.recharge.create`，以及当前因费率/生产证据未就绪而 disabled 的生成、编辑和预览类方法。未来的充值创建只能接受服务端发布的创意点包 SKU；Bridge 不生成 50/100/300 元等任意金额建议。
 
 ## 安装后第一步
 
-插件下载并启用后，第一步调用只读入口 `merchant.start`，展示当前步骤、四步 onboarding 和可直接复制的下一句；如尚未有工作区，再调用 `workspace.bootstrap`。随后展示京东、淘宝、天猫、拼多多、小红书、抖音六个平台的授权选项；商家选择平台和店铺后调用 `platform.connect`，授权回调完成后刷新 `workspace.health`，确认每个店铺的 `platform + account_id` 范围。小红书/抖音在官方能力未就绪时只能标记为 fixture/API 或待配置，不得显示为生产已授权。
+插件下载并启用后，第一步调用 `merchant.start`。它虽然幂等，但可能记录当前意图，因此不是只读恢复入口；服务端必须在任何意图写入、知识加载或业务 action 生成前完成创意点准入。零点或 unknown 时，返回内容只能包含余额/订单/支付状态等服务端授权恢复操作，不展示平台连接、目录同步、内容导出或其他业务下一步。如尚未有工作区，仅在服务端恢复契约允许时执行 `workspace.bootstrap`。准入通过后才展示京东、淘宝、天猫、拼多多、小红书、抖音六个平台，商家明确选择后调用 `platform.connect`，授权回调完成后用 `workspace.health` 刷新店铺状态。
 
-同一平台可以绑定多个店铺；商家必须明确选择店铺，不能默认使用列表第一家。绑定成功后再调用 `billing.status` 展示钱包余额与充值入口，最后才进入“上传我的商品图片和资料”：在新会话输入框左下角点击“+”添加商品图片、PDF、Word、Excel、CSV 或文字资料。插件会按已选店铺建立素材库和商品档案，不会自动拿演示商品替代用户商品。
+同一平台可以绑定多个店铺；商家必须明确选择店铺，不能默认使用列表第一家。通过创意点准入后才可继续平台连接、商品读取和素材建档。`billing.status` 展示服务端返回的创意点余额、到期和恢复状态；恢复后才进入“上传我的商品图片和资料”。人民币收款记录和 provider 成本只是证据账本，不能解锁业务功能。
 
 ## 在插件中查看订单与账单
 
-在 ChatGPT 会话中输入“查看我的订单和账单”，插件调用 `billing.status` 并在原生对话中展示余额、账务摘要和下一步操作；只有用户明确进入充值流程时才打开充值组件。账务查询默认 `scope=mine`，只展示当前认证用户创建或消费的记录；有权限的工作区角色可以切换到 `scope=workspace` 查看租户汇总。余额始终属于工作区共享钱包，不代表每个用户拥有独立资金账户。迁移前无法确定用户归属的旧记录只会出现在工作区视图，并明确标记为“历史未归属”。
+在 ChatGPT 会话中输入“查看我的订单和账单”，插件调用 `billing.status`、`subscription.orders.list` 或其他 exact recovery 查询，展示创意点的 `balance_state`、`available_points`、`quoted_points`、`access_revision`、`rate_card_version`、`request_id`、`trace_id` 和服务端授权的 `next_actions`。`balance_state=unknown` 时 `available_points` 必须保持 `null`，禁止显示为 0。旧钱包、任务额度和 add-on 只可作为历史证据，不贡献创意点也不解除门禁。
 
 也可以在新会话中输入“查看我的商品目录和平台连接状态”。插件应先调用 `workspace.health`，再调用 `catalog.search`：查看具体店铺时必须传 `platform + account_id`，只有明确要求全部店铺只读汇总时才传 `scope=workspace`。若出现 `MERCHANT_WORKSPACE_ID is required`、`WORKSPACE_SCOPE_REQUIRED` 或 MCP 工具不可见，应先修复环境变量、网关路由或身份映射，不要继续创建任务。
 
 任务需要补充信息时，使用 `task.answer` 保存答案和输入快照；事实未明确确认前，不进入正式生成和发布。
 
-当前 0.1.0 的商家侧 Codex MCP 源码运行态清单为 150 个工具（包含 `merchant.start`、只读的 `merchant.first_value`、`task.understand` 和当前工作区充值订单列表），覆盖完整主流程；运营、财务敏感工具、`asset.scan` 与 `content.codex.*` 开发入口不在商家插件展示。商家可在 Codex 内按六个平台、店铺、商品、任务和版本查找已批准/已交付内容摘要，以及与版本精确绑定的已归档主图候选摘要。列表不返回正文、图片字节或 URL；选中代表候选后由 `catalog.image.get` 按需读取。生成候选不会覆盖商品当前图片，也不能被称为平台已发布图。OAuth 授权回调仍由服务端 REST/官方页面承载；Merchant Studio 仅用于开发调试，商家不需要打开它。平台统一承担模型中转站费用，商家只需充值/购买额度，不需要提供自己的 Key。小红书/抖音在官方连接器证据齐全前仅显示为 fixture/API 可用，不代表生产可写。
+商家侧 `tools/list` 数量以当前运行态契约测试为准，不在文档中固化易过期的数字。它不得包含任何 `ops.*`、`asset.scan`、`content.codex.*` 开发入口，也不得包含共享商业 registry 中 disabled 的操作。生成候选不会覆盖商品当前图片，也不能被称为平台已发布图。OAuth 授权回调仍由服务端 REST/官方页面承载；平台统一承担模型中转费用，商家不需要提供自己的 Key。
 
-安装缓存更新后必须重新验证：当前商家插件源码运行态 `tools/list` 为 150 个 MCP 工具，且不得包含任何 `ops.*`、`asset.scan`、`content.codex.prepare`、`content.codex.commit` 或运营敏感工具，以 ChatGPT App 当前运行态清单为准。
+安装缓存更新后必须重新验证 `tools/list` 与共享 exact registry：恢复集合不得从前缀、HTTP 方法或“只读”推导，未分类或 disabled 操作必须 fail-closed。
 
 主图候选必须先由 `catalog.image.get` 展示、由 `catalog.image.review` 完成检查，再由商家明确选择 1–6 张及顺序后调用 `content.visual.select`。该操作不会改写原版本，而是派生一个新的 `review_required` 内容版本；选图确认、新版本审核与批准、最终发布确认是三个独立步骤，不得互相替代。任何选图集合或顺序变化都会使旧的 `publish.prepare` 预览和确认哈希失效，必须重新审核、批准、准备预览并获得新的明确确认。
 
@@ -97,4 +101,4 @@ bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPA
 发布必须严格按 `publish.prepare` → 展示字段 diff/两个 hash → 用户明确确认 → `publish.confirm` 执行；批量发布使用 `publish.batch.prepare` → 逐项确认 → `publish.batch.confirm`，可暂停/恢复并对失败项重新确认重试。`publish.confirm` 的重复请求使用参数派生的稳定幂等键；返回 `unknown` 只能进入人工对账，不能改写为 `published`。
 
 本插件默认不声明平台真实写权限；生产写入仍受服务端平台配置、人工确认和幂等门禁控制。修改插件后需在 Codex 中开启新会话，确保 Skill 和 MCP 工具重新加载。
-当前发布元数据同步基线（2026-08-31）：`tools/list` 为 150 个 MCP 工具；`asset.scan` 仅用于测试/显式本地 fixture，不在生产商家插件展示。
+当前发布元数据基线要求：`asset.scan` 仅用于测试/显式本地 fixture，不在生产商家插件展示；商业恢复类型以 `packages/contracts` 的共享 registry 为唯一真值并由 Bridge 契约测试校验。
