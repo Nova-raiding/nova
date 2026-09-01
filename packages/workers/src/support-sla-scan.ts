@@ -76,7 +76,10 @@ export function planSupportSlaScan(
       ticketId: ticket.ticketId,
       state,
       dueAt,
-      idempotencyKey: `support-sla:${ticket.ticketId}:${state}:${dueAt}`,
+      // Keep the event key globally distinguishable even when two tenants
+      // happen to use the same ticket id. The length prefix also prevents
+      // ambiguous concatenations when identifiers contain a colon.
+      idempotencyKey: `support-sla:${ticket.workspaceId.length}:${ticket.workspaceId}:${ticket.ticketId}:${state}:${dueAt}`,
     })
   }
   return actions.sort((a, b) => a.workspaceId.localeCompare(b.workspaceId) || a.ticketId.localeCompare(b.ticketId) || a.state.localeCompare(b.state))

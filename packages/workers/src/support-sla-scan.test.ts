@@ -40,6 +40,21 @@ describe('support SLA scan planner', () => {
     expect(planSupportSlaScan([ticket, { ...ticket }], new Date('2026-08-31T12:00:00.000Z'))).toHaveLength(1)
   })
 
+  it('scopes action keys by workspace when ticket ids overlap', () => {
+    const sla = createSupportSlaProjection('urgent', new Date('2026-08-31T09:00:00.000Z'))
+    const tickets = [
+      { workspaceId: 'ws-a', ticketId: 'shared-ticket', status: 'open' as const, sla },
+      { workspaceId: 'ws-b', ticketId: 'shared-ticket', status: 'open' as const, sla },
+    ]
+    const actions = planSupportSlaScan(tickets, new Date('2026-08-31T12:00:00.000Z'))
+    expect(actions).toHaveLength(2)
+    expect(actions[0]?.idempotencyKey).not.toBe(actions[1]?.idempotencyKey)
+    expect(actions.map(action => action.idempotencyKey)).toEqual([
+      'support-sla:4:ws-a:shared-ticket:at_risk:2026-08-31T11:00:00.000Z',
+      'support-sla:4:ws-b:shared-ticket:at_risk:2026-08-31T11:00:00.000Z',
+    ])
+  })
+
   it('fails closed when duplicate rows disagree about the SLA projection', () => {
     const sla = createSupportSlaProjection('urgent', new Date('2026-08-31T09:00:00.000Z'))
     const ticket = { workspaceId: 'ws-a', ticketId: 'ticket-conflict', status: 'open' as const, sla }
