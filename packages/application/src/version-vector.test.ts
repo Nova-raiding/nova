@@ -294,14 +294,14 @@ describe('content version provenance vector', () => {
     service.selectDirection(task.id, 'A')
     const source = service.createDraft(task.id)
     const sourceModules = source.body.modules!
-    const regenerated = service.regenerateContentModule({ workspaceId: 'ws_demo', sourceVersionId: source.id, moduleKey: 'details_craft', reason: '根据新素材重新生成材质模块' })
+    const regenerated = service.regenerateContentModule({ workspaceId: 'ws_demo', sourceVersionId: source.id, moduleKey: 'hero', reason: '根据已确认事实重新生成首屏模块' })
     expect(regenerated.version.parentId).toBe(source.id)
     expect(regenerated.version.state).toBe('review_required')
     expect(regenerated.version.body.modules).toHaveLength(sourceModules.length)
-    expect(regenerated.version.body.modules?.find(module => module.key === 'details_craft')).toMatchObject({ key: 'details_craft', contentKind: 'pending' })
-    expect(regenerated.version.body.modules?.filter(module => module.key !== 'details_craft')).toEqual(sourceModules.filter(module => module.key !== 'details_craft'))
+    expect(regenerated.version.body.modules?.find(module => module.key === 'hero')).toMatchObject({ key: 'hero', contentKind: 'fact' })
+    expect(regenerated.version.body.modules?.filter(module => module.key !== 'hero')).toEqual(sourceModules.filter(module => module.key !== 'hero'))
     expect(regenerated.version.factVersionIds).toEqual(source.factVersionIds)
-    expect(() => service.regenerateContentModule({ workspaceId: 'ws_demo', sourceVersionId: source.id, moduleKey: 'details_craft', lockedFields: ['details_craft'], reason: '锁定模块不可重生成' })).toThrowError(expect.objectContaining({ code: 'CONTENT_FIELD_LOCKED' }))
+    expect(() => service.regenerateContentModule({ workspaceId: 'ws_demo', sourceVersionId: source.id, moduleKey: 'hero', lockedFields: ['hero'], reason: '锁定模块不可重生成' })).toThrowError(expect.objectContaining({ code: 'CONTENT_FIELD_LOCKED' }))
   })
 
   it('returns explainable task understanding candidates and blocking questions', () => {
