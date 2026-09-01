@@ -26,6 +26,24 @@ function workerProofHeaders(input: { role: WorkerRequestRole; secret: string; me
   return createWorkerRequestProof({ secret: input.secret, role: input.role, method: input.method, requestTarget: input.path, workspaceId: input.workspaceId, body: input.body }).headers
 }
 
+function workerDecisionContent(productId: string) {
+  const factSourceId = `product:${productId}:v1`
+  return {
+    title: 'worker', detail: 'worker', sellingPoints: ['fact'],
+    modules: [{
+      key: 'selling_points', title: '核心卖点', purpose: '回答购买理由', body: 'fact',
+      factSourceIds: [factSourceId], contentKind: 'fact',
+      decisionContract: {
+        buyerQuestion: '为什么值得购买？', pageTask: '说明已确认卖点',
+        claim: { text: 'fact', factSourceIds: [factSourceId], platforms: ['taobao'], limitations: ['仅适用于当前商品快照'] },
+        evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
+        visualContract: { requiredElements: ['商品与卖点'], protectedElements: ['商品外观'], prohibitedImplications: ['不得扩大未确认效果'], accessibilityText: 'fact' },
+        priority: 1, optional: false,
+      },
+    }],
+  }
+}
+
 function signedOidcBootstrap(input: { issuer: string; subject: string; nonce: string; displayName: string; externalSubject?: string }) {
   const path = '/mcp'
   const timestamp = String(Math.floor(Date.now() / 1000))
@@ -1465,7 +1483,7 @@ describe('security and access-control acceptance gates', () => {
     expect((await execution.json() as Envelope<{ taskId: string; state: string }>).data).toMatchObject({ taskId: task.id, state: 'queued' })
 
     const path = `/v1/generation-jobs/${job.id}/result`
-    const body = JSON.stringify({ content: { title: 'worker', detail: 'worker', sellingPoints: ['fact'] } })
+    const body = JSON.stringify({ content: workerDecisionContent(productId) })
     const commonHeaders = { host: 'merchant-api', 'x-workspace-id': 'ws_worker', 'content-type': 'application/json' }
     const missing = await fetch(`${base}${path}`, { method: 'POST', headers: commonHeaders, body })
     expect(missing.status).toBe(403)
@@ -1581,9 +1599,9 @@ describe('security and access-control acceptance gates', () => {
     const taskId = (create.data as { id: string }).id
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': owner }, body: JSON.stringify({ direction_id: 'A' }) })
     await fetch(`${base}/v1/tasks/${taskId}/plan/confirm`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': owner }, body: JSON.stringify({ expected_version: 2 }) })
-    const draft = await fetch(`${base}/v1/tasks/${taskId}/content`, { method: 'POST', headers: { 'x-workspace-id': owner } }).then(response => response.json() as Promise<Envelope>)
-    const contentVersionId = (draft.data as { id: string }).id
-    await fetch(`${base}/v1/tasks/${taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': owner }, body: JSON.stringify({ content_version_id: contentVersionId }) })
+    const draft = service.createDraft(taskId)
+    const contentVersionId = draft.id
+    service.approveContent(taskId, contentVersionId)
     const preview = await fetch(`${base}/v1/tasks/${taskId}/publish-preview`, { method: 'POST', headers: { 'x-workspace-id': owner } }).then(response => response.json() as Promise<Envelope>)
     const data = preview.data as { confirmationHash: string; remoteSnapshotHash: string }
     const key = `security-idem-${Date.now()}`
