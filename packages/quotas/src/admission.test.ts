@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FixedWindowQuotaAdmission, InMemoryQuotaCounterStore, InvalidQuotaInputError, QuotaExceededError, QuotaStateUnavailableError, type QuotaCounterStore } from './admission.js'
+import { FixedWindowQuotaAdmission, InMemoryQuotaCounterStore, InvalidQuotaInputError, QuotaExceededError, QuotaStateUnavailableError, type QuotaAdmissionInput, type QuotaCounterStore } from './admission.js'
 
 describe('fixed-window quota admission', () => {
   it('admits up to the configured limit and exposes retry guidance', async () => {
@@ -36,7 +36,7 @@ describe('fixed-window quota admission', () => {
     let calls = 0
     const store: QuotaCounterStore = { increment: async () => { calls += 1; return 1 } }
     const admission = new FixedWindowQuotaAdmission(store)
-    await expect(admission.admit(input)).rejects.toBeInstanceOf(InvalidQuotaInputError)
+    await expect(admission.admit(input as QuotaAdmissionInput)).rejects.toBeInstanceOf(InvalidQuotaInputError)
     expect(calls).toBe(0)
   })
 
