@@ -6,8 +6,8 @@ describe('content generator', () => {
   it('calls an OpenAI-compatible provider and validates structured output', async () => {
     const calls: RequestInit[] = []
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
-      fetch: async (_url, init = {}) => { calls.push(init); return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '合规标题', detail: '商品详情', sellingPoints: ['事实卖点'] }) } }] }), { status: 200 }) },
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async (_url, init = {}) => { calls.push(init); return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '合规标题', detail: '商品详情', sellingPoints: ['事实卖点'] }) } }] }), { status: 200 }) },
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 }, brandVisualRules: { restrictedSubjects: { people: ['某艺人'], spokespersons: [], intellectualProperties: ['未授权动漫角色'], prohibitedContent: [] } } })).resolves.toEqual({ title: '合规标题', detail: '商品详情', sellingPoints: ['事实卖点'] })
     expect(calls[0]?.headers).toMatchObject({ authorization: 'Bearer secret' })
@@ -20,7 +20,7 @@ describe('content generator', () => {
     const controller = new AbortController()
     let providerSignal: AbortSignal | undefined
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
       fetch: async (_url, init) => {
         providerSignal = init?.signal ?? undefined
         return await new Promise<Response>((_resolve, reject) => providerSignal?.addEventListener('abort', () => reject(providerSignal?.reason), { once: true }))
@@ -36,7 +36,7 @@ describe('content generator', () => {
   it('emits relay usage with the workspace action context', async () => {
     const usage: unknown[] = []
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: value => { usage.push(value) },
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined, usageSink: value => { usage.push(value) },
       fetch: async () => new Response(JSON.stringify({ id: 'req_usage', usage: { prompt_tokens: 4, completion_tokens: 6, total_tokens: 10, cost_cny: 0.02 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200, headers: { 'x-request-id': 'header_usage' } }),
     })
     await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_usage', actionId: 'task_usage' } })
@@ -47,8 +47,8 @@ describe('content generator', () => {
     const usage: unknown[] = []
     let requestBody = ''
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: value => { usage.push(value) },
-      fetch: async (_url, init = {}) => { requestBody = String(init.body); return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 }) },
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined, usageSink: value => { usage.push(value) },
+      fetch: async (_url, init = {}) => { requestBody = String(init.body); return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 }) },
     })
     await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_private', actionId: 'action_private' } })
     expect(requestBody).not.toContain('ws_private')
@@ -58,9 +58,9 @@ describe('content generator', () => {
 
   it('does not deliver provider output when usage settlement fails', async () => {
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
       usageSink: async () => { throw new Error('ledger unavailable') },
-      fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 }),
+      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 }),
     })
 
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_usage', actionId: 'action_unknown' } })).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_PENDING', providerSucceeded: true, receiptKey: expect.stringMatching(/^relay_usage_[a-f0-9]{64}$/u), message: 'model usage settlement is pending' })
@@ -68,13 +68,13 @@ describe('content generator', () => {
 
   it('classifies text gateway ambiguity and accepted malformed JSON through the provider outcome contract', async () => {
     const gateway = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
       fetch: async () => new Response('', { status: 502 }),
     })
     await expect(gateway.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { actionId: 'text:gateway' } })).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown', reconciliationRequired: true, retryable: false })
 
     const malformed = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
       fetch: async () => new Response('{not-json', { status: 200 }),
     })
     await expect(malformed.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { actionId: 'text:malformed' } })).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown', reconciliationRequired: true, retryable: false })
@@ -87,7 +87,7 @@ describe('content generator', () => {
       { title: '标题', detail: '详情', sellingPoints: ['事实'] },
     ]
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
       usageSink: value => { usage.push(structuredClone(value)) },
       fetch: async () => new Response(JSON.stringify({ usage: { input_tokens: 2, output_tokens: 3, cost_cny: 0.01 }, choices: [{ message: { content: JSON.stringify(replies.shift()) } }] }), { status: 200 }),
     })
@@ -112,32 +112,32 @@ describe('content generator', () => {
 
   it('accepts a structured static brief without exposing provider secrets', async () => {
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
-      fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'sku', title: 'SKU', purpose: '区分规格', body: '蓝色/M', factSourceIds: ['product:p:v1'], contentKind: 'fact' }], brief: { platform: 'taobao', placement: '首图', targetDimensions: '800x800', visualHierarchy: ['商品图', '标题'], productImageGuidance: '使用真实图', logoSafety: '保留安全区', headline: '标题', subheadline: '副标题', coreSellingPoint: '卖点', cta: '立即查看', textDensity: '低', safeArea: '5%', protectedAreas: ['Logo'] } }) } }] }), { status: 200 }),
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'sku', title: 'SKU', purpose: '区分规格', body: '蓝色/M', factSourceIds: ['product:p:v1'], contentKind: 'fact' }], brief: { platform: 'taobao', placement: '首图', targetDimensions: '800x800', visualHierarchy: ['商品图', '标题'], productImageGuidance: '使用真实图', logoSafety: '保留安全区', headline: '标题', subheadline: '副标题', coreSellingPoint: '卖点', cta: '立即查看', textDensity: '低', safeArea: '5%', protectedAreas: ['Logo'] } }) } }] }), { status: 200 }),
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).resolves.toMatchObject({ modules: [{ key: 'sku' }], brief: { placement: '首图', targetDimensions: '800x800' } })
   })
 
   it('uses an explicit pending dimension instruction when the provider leaves only that creative field empty', async () => {
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
-      fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实卖点'], brief: { platform: 'taobao', placement: '详情页', targetDimensions: '', visualHierarchy: ['商品主体'], productImageGuidance: '使用真实商品图', logoSafety: '未提供 Logo 时不新增', headline: '标题', subheadline: '查看商品详情', coreSellingPoint: '事实卖点', cta: '查看详情', textDensity: '中', safeArea: '四周保留安全区', protectedAreas: ['商品主体'] } }) } }] }), { status: 200 }),
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实卖点'], brief: { platform: 'taobao', placement: '详情页', targetDimensions: '', visualHierarchy: ['商品主体'], productImageGuidance: '使用真实商品图', logoSafety: '未提供 Logo 时不新增', headline: '标题', subheadline: '查看商品详情', coreSellingPoint: '事实卖点', cta: '查看详情', textDensity: '中', safeArea: '四周保留安全区', protectedAreas: ['商品主体'] } }) } }] }), { status: 200 }),
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).resolves.toMatchObject({ brief: { targetDimensions: '按目标平台版位规范配置，未配置时由设计确认' } })
   })
 
   it('rejects empty module provenance instead of borrowing every frozen product source', async () => {
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
-      fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实卖点'], modules: [{ key: 'hero', title: '首屏', purpose: '展示商品', body: '商品标题', factSourceIds: [], contentKind: 'fact' }], brief: { platform: 'taobao', placement: '详情页', targetDimensions: '', visualHierarchy: [], productImageGuidance: '使用真实商品图', logoSafety: '未提供 Logo 时不新增', headline: '标题', subheadline: '查看商品详情', coreSellingPoint: '事实卖点', cta: '查看详情', textDensity: '中', safeArea: '四周保留安全区', protectedAreas: [] } }) } }] }), { status: 200 }),
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实卖点'], modules: [{ key: 'hero', title: '首屏', purpose: '展示商品', body: '商品标题', factSourceIds: [], contentKind: 'fact' }], brief: { platform: 'taobao', placement: '详情页', targetDimensions: '', visualHierarchy: [], productImageGuidance: '使用真实商品图', logoSafety: '未提供 Logo 时不新增', headline: '标题', subheadline: '查看商品详情', coreSellingPoint: '事实卖点', cta: '查看详情', textDensity: '中', safeArea: '四周保留安全区', protectedAreas: [] } }) } }] }), { status: 200 }),
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { id: 'p1', title: '商品', stock: 2, skuCount: 1 }, confirmedFactSourceIds: ['product:p1:v3'] })).rejects.toThrow('modules[0].factSourceIds')
   })
 
   it('rejects malformed optional structures instead of silently dropping them', async () => {
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
-      fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'sku', title: 'SKU', purpose: '用途', body: '', factSourceIds: [], contentKind: 'fact' }] }) } }] }), { status: 200 }),
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'sku', title: 'SKU', purpose: '用途', body: '', factSourceIds: [], contentKind: 'fact' }] }) } }] }), { status: 200 }),
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).rejects.toThrow('CONTENT_SCHEMA_INVALID')
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).rejects.toThrow('modules[0].body')
@@ -145,8 +145,8 @@ describe('content generator', () => {
 
   it('requires every model module to declare its fact, creative, or pending classification', async () => {
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
-      fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'hero', title: '首屏', purpose: '展示商品', body: '商品事实', factSourceIds: ['product:p:v1'] }] }) } }] }), { status: 200 }),
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['卖点'], modules: [{ key: 'hero', title: '首屏', purpose: '展示商品', body: '商品事实', factSourceIds: ['product:p:v1'] }] }) } }] }), { status: 200 }),
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).rejects.toThrow('modules[0].contentKind')
   })
@@ -158,11 +158,11 @@ describe('content generator', () => {
       { title: '标题', detail: '详情', sellingPoints: ['已确认卖点'] },
     ]
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
       fetch: async (_url, init = {}) => {
         calls.push(init)
         const content = responses.shift() ?? responses[0]
-        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200 })
+        return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200 })
       },
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 }, usageContext: { workspaceId: 'ws_a', actionId: 'action_retry_safe' } })).resolves.toMatchObject({ sellingPoints: ['已确认卖点'] })
@@ -193,10 +193,10 @@ describe('content generator', () => {
       usageContext: { workspaceId: 'ws_budget_reuse', actionId: 'action_budget_reuse' },
     }, 3_000)
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', maxInputTokens: 3_000,
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined, maxInputTokens: 3_000,
       fetch: async (_url, init = {}) => {
         calls.push(init)
-        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 })
+        return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 })
       },
     })
     await expect(generator.generate(input)).resolves.toMatchObject({ title: '标题' })
@@ -220,8 +220,8 @@ describe('content generator', () => {
   it('stops after the initial response and two failed repair attempts', async () => {
     let calls = 0
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
-      fetch: async () => { calls += 1; return new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] }), { status: 200 }) },
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      fetch: async () => { calls += 1; return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: '{}' } }] }), { status: 200 }) },
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).rejects.toThrow('CONTENT_SCHEMA_INVALID')
     expect(calls).toBe(3)
@@ -230,8 +230,8 @@ describe('content generator', () => {
   it('stops repairs when the action-level output budget is exhausted', async () => {
     let calls = 0
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', maxOutputTokens: 2_500, maxTotalOutputTokens: 2_500,
-      fetch: async () => { calls += 1; return new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] }), { status: 200 }) },
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined, maxOutputTokens: 2_500, maxTotalOutputTokens: 2_500,
+      fetch: async () => { calls += 1; return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: '{}' } }] }), { status: 200 }) },
     })
     await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 2, skuCount: 1 } })).rejects.toThrow('OUTPUT_BUDGET_EXCEEDED')
     expect(calls).toBe(1)
