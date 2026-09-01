@@ -268,3 +268,19 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 .image-generation-job-row b,.image-generation-job-row span,.image-candidate-metadata span,.image-job-evidence dd{min-width:0;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
 @media (min-width:1200px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (prefers-reduced-motion:reduce){.image-generation-job-panel *,.image-generation-job-panel *::before,.image-generation-job-panel *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+/* Image-generation status text must remain readable without relying on the
+   ready/blocked border colors. Every state also has visible text in the
+   caption and gate list; these darker tokens keep that text AA-compliant. */
+.image-generation-job-panel .info-notice,
+.image-generation-job-panel .muted-note,
+.image-generation-job-panel .image-job-evidence dt,
+.image-generation-job-panel .image-candidate-grid figcaption>span,
+.image-generation-job-panel .image-candidate-gates,
+.image-generation-job-panel .image-candidate-metadata {
+  color: #43534a;
+}
+.image-generation-job-panel .image-candidate-grid figcaption small,
+.image-generation-job-panel .image-candidate-fallback {
+  color: #7a2424;
+}

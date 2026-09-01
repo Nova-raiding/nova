@@ -4,6 +4,27 @@ import { describe, expect, it } from 'vitest'
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 
 describe('image candidate selection accessibility styles', () => {
+  const contrastRatio = (foreground: string, background: string) => {
+    const channel = (hex: string, offset: number) => {
+      const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+    }
+    const luminance = (hex: string) => 0.2126 * channel(hex, 1) + 0.7152 * channel(hex, 3) + 0.0722 * channel(hex, 5)
+    const light = Math.max(luminance(foreground), luminance(background))
+    const dark = Math.min(luminance(foreground), luminance(background))
+    return (light + 0.05) / (dark + 0.05)
+  }
+
+  it('uses AA-readable status tokens and visible semantic state text', () => {
+    expect(contrastRatio('#43534a', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('#43534a', '#f7f9fb')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('#7a2424', '#f1f4f6')).toBeGreaterThanOrEqual(4.5)
+    expect(styles).toContain('.image-generation-job-panel .info-notice')
+    expect(styles).toContain('.image-generation-job-panel .image-candidate-gates')
+    expect(styles).toContain('color: #43534a')
+    expect(styles).toContain('color: #7a2424')
+  })
+
   it('keeps the full selection control keyboard-visible', () => {
     expect(styles).toContain('.candidate-select-control:focus-within{outline:3px solid #176b4d')
     expect(styles).toContain('outline-offset:2px')
