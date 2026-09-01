@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const output = resolve('.')
+const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
 
 test.setTimeout(120_000)
 
@@ -31,7 +32,7 @@ test('inventory merchant studio as a user', async () => {
     }
   })
 
-  const response = await page.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  const response = await page.goto(studioUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
   await page.waitForTimeout(2_000)
   await page.screenshot({ path: `${output}/screenshots/merchant-desktop.png`, fullPage: true })
   const inventory = await page.evaluate(() => ({
@@ -45,11 +46,6 @@ test('inventory merchant studio as a user', async () => {
   }))
   await writeFile(`${output}/merchant-inventory.json`, JSON.stringify({ status: response?.status(), messages, failedRequests, badResponses, inventory }, null, 2))
 
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true })
-  const mobilePage = await mobile.newPage()
-  await mobilePage.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded', timeout: 30_000 })
-  await mobilePage.waitForTimeout(1_500)
-  await mobilePage.screenshot({ path: `${output}/screenshots/merchant-mobile.png`, fullPage: true })
   try {
     const consoleErrors = messages.filter(message => message.type === 'error' || message.type === 'pageerror')
     expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
@@ -57,7 +53,6 @@ test('inventory merchant studio as a user', async () => {
     expect(failedRequests, 'Merchant Studio inventory should not observe failed network requests').toEqual([])
     expect(consoleErrors, 'Merchant Studio inventory should not observe console or page errors').toEqual([])
   } finally {
-    await mobile.close()
     await context.close()
     await browser.close()
   }
