@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { fixturePaymentAllowed, oauthStates, rollbackBatchProducts, server, service, setPaymentProviderForTests, workspaceMembers } from './server.js'
+import { fixturePaymentAllowed, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPaymentProviderForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 
 type Envelope<T = unknown> = { request_id: string; trace_id: string; workspace_id: string; data: T | null; warnings: unknown[]; next_actions: unknown[]; error: { code: string; message: string } | null }
@@ -280,6 +280,10 @@ describe('API HTTP vertical slice', () => {
     expect(fixturePaymentAllowed({ ALLOW_LOCAL_PAYMENT_FIXTURE: 'true' })).toBe(true)
     expect(fixturePaymentAllowed({ ALLOW_LOCAL_PAYMENT_FIXTURE: 'false' })).toBe(false)
     expect(fixturePaymentAllowed({ NODE_ENV: 'production', ALLOW_LOCAL_PAYMENT_FIXTURE: 'true' })).toBe(false)
+  })
+
+  it('fails closed before publish side effects when authorization evidence is missing', () => {
+    expect(() => requirePublishAuthorizationSnapshot(undefined, true)).toThrowError(/已拒绝扣款、占槽和入队/u)
   })
 
   it('neutralizes formula-like audit fields in ops.audit.export CSV', async () => {

@@ -3733,6 +3733,11 @@ function publishAuthorizationSnapshot(req: IncomingMessage, workspaceId: string,
   return workerAuthorizationSnapshot(req, workspaceId, `pub-intent:${task.id}`, 'publish.execute', { method: 'publish.confirm', task_id: task.id, resource_revision: task.version })
 }
 
+export function requirePublishAuthorizationSnapshot(snapshot: ReturnType<typeof publishAuthorizationSnapshot>, required = isProduction()) {
+  if (!snapshot && required) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '发布确认缺少持久身份授权快照，已拒绝扣款、占槽和入队', 503)
+  return snapshot
+}
+
 function serializedWorkerAuthorizationSnapshot<T extends CriticalWorkerOperation>(snapshot: WorkerAuthorizationSnapshot & { capability: T }) {
   return { schema_version: snapshot.schemaVersion, decision_id: snapshot.decisionId, actor_id: snapshot.actorId, identity_id: snapshot.identityId, workspace_id: snapshot.workspaceId, workbench: snapshot.workbench, context_id: snapshot.contextId, context_version: snapshot.contextVersion, policy_version: snapshot.policyVersion, grant_revision: snapshot.grantRevision, grant_ids: snapshot.grantIds, scope_hash: snapshot.scopeHash, capability: snapshot.capability, resource_id: snapshot.resourceId, resource_revision: snapshot.resourceRevision, request_id: snapshot.requestId, trace_id: snapshot.traceId, authorized: snapshot.authorized, decided_at: snapshot.decidedAt }
 }
@@ -13539,6 +13544,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
           if (!existing) await hydrateDurableIdempotentJob(workspaceId, 'publish_job', itemKey)
           existing = existing ?? [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
+          const authorizationSnapshot = existing ? undefined : requirePublishAuthorizationSnapshot(publishAuthorizationSnapshot(req, workspaceId, task))
           if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: confirmation })
           const reservationId = `publish:${itemKey}`
           let reserved = false
@@ -13549,7 +13555,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
               walletDebited = true
             }
             reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
-            const job = service.confirmPublish({ workspaceId, taskId, batchId: batch.id, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey, ...(accountId ? { accountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot: publishAuthorizationSnapshot(req, workspaceId, task), deferCommit: true })
+            const job = service.confirmPublish({ workspaceId, taskId, batchId: batch.id, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey, ...(accountId ? { accountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), ...(authorizationSnapshot ? { authorizationSnapshot } : {}), deferCommit: true })
             await persistPublishJobWithBatch({ batch, task, job, itemState: 'queued' })
             scheduleFixturePublishObservation(job)
             items.push({ task_id: taskId, state: 'queued', job: jobWithQueueMetadata(job, workspaceId, 'publish') })
@@ -13644,6 +13650,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           let existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
           if (!existing) await hydrateDurableIdempotentJob(workspaceId, 'publish_job', itemKey)
           existing = existing ?? [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === itemKey)
+          const authorizationSnapshot = existing ? undefined : requirePublishAuthorizationSnapshot(publishAuthorizationSnapshot(req, workspaceId, task))
           if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: confirmation })
           const reservationId = `publish:${itemKey}`
           let reserved = false
@@ -13654,7 +13661,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
               walletDebited = true
             }
             reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
-            const job = service.confirmPublish({ workspaceId, taskId, batchId: batch.id, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey, ...(accountId ? { accountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot: publishAuthorizationSnapshot(req, workspaceId, task), deferCommit: true })
+            const job = service.confirmPublish({ workspaceId, taskId, batchId: batch.id, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: itemKey, ...(accountId ? { accountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), ...(authorizationSnapshot ? { authorizationSnapshot } : {}), deferCommit: true })
             await persistPublishJobWithBatch({ batch, task, job, itemState: 'queued' })
             scheduleFixturePublishObservation(job)
             items.push({ task_id: taskId, state: 'queued', job: jobWithQueueMetadata(job, workspaceId, 'publish') })
@@ -13697,6 +13704,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         await hydrateDurableIdempotentJob(workspaceId, 'publish_job', key)
         existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
       }
+      const authorizationSnapshot = existing ? undefined : requirePublishAuthorizationSnapshot(publishAuthorizationSnapshot(req, workspaceId, task))
       if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params })
       const reservationId = `publish:${key}`
       let reserved = false
@@ -13707,7 +13715,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           walletDebited = true
         }
         reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
-        const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot: publishAuthorizationSnapshot(req, workspaceId, task), deferCommit: true })
+        const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot, deferCommit: true })
         await persistSnapshotsAndEvent({ workspaceId, snapshots: [
           { entityType: 'task', entityId: task.id, entityVersion: task.version, payload: task as unknown as Record<string, unknown> },
           { entityType: 'publish_job', entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown> },
@@ -16203,6 +16211,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       await hydrateDurableIdempotentJob(workspaceId, 'publish_job', key)
       existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
     }
+    const authorizationSnapshot = existing ? undefined : requirePublishAuthorizationSnapshot(publishAuthorizationSnapshot(req, workspaceId, task))
     const reservationId = `publish:${key}`
     let reserved = false
     let walletDebited = false
@@ -16216,7 +16225,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
         walletDebited = true
       }
       reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
-      const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot: publishAuthorizationSnapshot(req, workspaceId, task), deferCommit: true })
+      const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot, deferCommit: true })
       const currentTask = { ...service.getTask(taskId), state: 'publishing' as const, version: service.getTask(taskId).version + 1 }
       await persistSnapshotsAndEvent({ workspaceId, snapshots: [
         { entityType: 'task', entityId: currentTask.id, entityVersion: currentTask.version, payload: currentTask as unknown as Record<string, unknown> },
