@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 test.setTimeout(120_000)
+const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
 
 const state = async (page, name) => ({
   name,
@@ -29,7 +30,7 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     try { body = (await response.text()).slice(0, 3_000) } catch {}
     badResponses.push({ method: response.request().method(), url: response.url(), status: response.status(), body })
   })
-  const response = await page.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded' })
+  const response = await page.goto(studioUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2_000)
   expect(await page.getByText('演示发布状态', { exact: true }).count(), 'Real API overview must not show fixture activity').toBe(0)
   const steps = []
@@ -105,6 +106,13 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
   if (await helpDialog.count()) await helpDialog.getByRole('button', { name: /知道了|关闭/ }).first().click()
   await page.getByRole('button', { name: '工作区信息', exact: true }).click(); await page.waitForTimeout(300)
   steps.push(await state(page, '工作区信息面板'))
+
+  // The current merchant self-ops shell exposes four separate new-session entry points.
+  // Verify the desktop navigation contract without treating them as duplicate pages.
+  for (const entry of ['知识库', '商品', '图片', '素材']) {
+    const entryButton = page.getByRole('button', { name: new RegExp(`^${entry}`) }).first()
+    await expect(entryButton, `Merchant self-ops entry ${entry} should be available`).toBeVisible()
+  }
 
   await writeFile('merchant-interactions.json', JSON.stringify({ steps, badResponses, requestFailures, consoleErrors }, null, 2))
   try {

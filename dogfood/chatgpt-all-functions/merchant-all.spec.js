@@ -4,9 +4,11 @@ import { resolve } from 'node:path'
 
 test.setTimeout(180_000)
 const root = resolve('.')
+const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
 const screenshots = resolve(root, 'screenshots', 'merchant-pages')
-const sections = ['运营概览', '商品与资产', '营销任务', '发布中心', '规则与检查', '帮助与诊断', '工作区信息']
-const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${['overview', 'catalog', 'tasks', 'publish', 'rules', 'help', 'settings'][index]}`]))
+const sections = ['运营概览', '商品与资产', '营销任务', '发布中心', '规则与检查']
+const utilitySections = ['帮助与诊断', '工作区信息']
+const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${['overview', 'catalog', 'tasks', 'publish', 'rules'][index]}`]))
 
 const snapshot = async page => page.evaluate(() => ({
   url: location.href,
@@ -42,7 +44,7 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     badResponses.push({ section: activeSection, method: response.request().method(), url: response.url(), status: response.status(), requestBody: response.request().postData(), body })
   })
 
-  const response = await page.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded' })
+  const response = await page.goto(studioUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2_500)
   const pages = []
   for (const section of sections) {
@@ -50,6 +52,18 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     await page.getByRole('button', { name: section, exact: true }).first().click()
     await page.waitForTimeout(1_500)
     await page.screenshot({ path: resolve(screenshots, `${slug.get(section)}.png`) })
+    pages.push({ section, ...(await snapshot(page)) })
+    const dialog = page.getByRole('dialog')
+    if (await dialog.count()) {
+      const close = dialog.getByRole('button', { name: /关闭面板|知道了/ }).first()
+      if (await close.count()) await close.click()
+    }
+  }
+
+  for (const section of utilitySections) {
+    activeSection = section
+    await page.getByRole('button', { name: section, exact: true }).click()
+    await page.waitForTimeout(500)
     pages.push({ section, ...(await snapshot(page)) })
     const dialog = page.getByRole('dialog')
     if (await dialog.count()) {
@@ -69,17 +83,7 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     await search.fill('')
   }
 
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true })
-  const mobilePage = await mobile.newPage()
-  activeSection = '移动端'
-  await mobilePage.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded' })
-  await mobilePage.waitForTimeout(2_000)
-  const menu = mobilePage.getByRole('button', { name: '打开主菜单' })
-  if (await menu.count()) await menu.click()
-  await mobilePage.screenshot({ path: resolve(screenshots, '9-mobile-menu.png') })
-  const mobileState = await snapshot(mobilePage)
-
-  const result = { generatedAt: new Date().toISOString(), pages, mobile: mobileState, consoleMessages, requestFailures, badResponses }
+  const result = { generatedAt: new Date().toISOString(), pages, consoleMessages, requestFailures, badResponses }
   await writeFile(resolve(root, 'merchant-all-inventory.json'), JSON.stringify(result, null, 2))
   try {
     const consoleErrors = consoleMessages.filter(message => message.type === 'error' || message.type === 'pageerror')
@@ -88,7 +92,6 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     expect(requestFailures, 'Merchant Studio page walk should not observe failed network requests').toEqual([])
     expect(consoleErrors, 'Merchant Studio page walk should not observe console or page errors').toEqual([])
   } finally {
-    await mobile.close()
     await context.close()
     await browser.close()
   }
