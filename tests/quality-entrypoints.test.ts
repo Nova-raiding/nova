@@ -96,6 +96,11 @@ describe('quality entrypoint coverage', () => {
     ]) {
       expect(ci).toContain(command)
     }
+
+    // A migration that is only covered by a source-level contract can still
+    // fail when applied by PostgreSQL. Keep the CI acceptance list aligned
+    // with the migration tail as well as the release-gate list.
+    expect(ci).toContain(`packages/persistence/src/migration-${latestMigration}.test.ts`)
   })
 
   it('keeps the current late-migration acceptance tests in CI', () => {
