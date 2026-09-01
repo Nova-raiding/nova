@@ -166,7 +166,7 @@ export async function assertWorkerReadinessDependencies(input: {
   return { migrationVersion: expected.at(-1)?.version ?? 0, apiReady: true }
 }
 
-function assetScanReceiptPrivateKeyPem(env: NodeJS.ProcessEnv): string | undefined {
+export function assetScanReceiptPrivateKeyPem(env: NodeJS.ProcessEnv): string | undefined {
   const direct = env.ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM?.trim()
   if (direct) return direct
   const encoded = env.ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64?.trim()
@@ -177,6 +177,16 @@ function assetScanReceiptPrivateKeyPem(env: NodeJS.ProcessEnv): string | undefin
   } catch {
     return undefined
   }
+}
+
+export function hasCompleteScanCallbackCredentials(config: Pick<WorkerConfig, 'apiBaseUrl'>, env: NodeJS.ProcessEnv): boolean {
+  return Boolean(
+    config.apiBaseUrl
+    && env.ASSET_SCANNER_API_TOKEN?.trim()
+    && env.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET?.trim()
+    && assetScanReceiptPrivateKeyPem(env)
+    && env.ASSET_SCAN_RECEIPT_KEY_ID?.trim(),
+  )
 }
 
 async function parseWorkerApiJson(response: Response): Promise<unknown> {
@@ -292,7 +302,15 @@ export async function postSupportSlaScan(input: { apiBaseUrl: string; apiToken: 
     method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
     body: JSON.stringify({ workspace_id: workspaceId, limit }), redirect: 'error', signal: input.signal,
   })
-  if (!response.ok) throw new Error(`support SLA scan API returned ${response.status}`)
+  if (!response.ok) {
+    let apiError: { code?: unknown; message?: unknown; details?: { retryable?: unknown } } | undefined
+    try { apiError = (await parseWorkerApiJson(response) as { error?: typeof apiError }).error } catch { /* preserve bounded HTTP fallback */ }
+    const code = typeof apiError?.code === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(apiError.code) ? apiError.code : 'SUPPORT_SLA_SCAN_FAILED'
+    const message = typeof apiError?.message === 'string' && apiError.message.trim() ? apiError.message : `support SLA scan API returned ${response.status}`
+    const explicitRetryable = apiError?.details?.retryable
+    const retryable = typeof explicitRetryable === 'boolean' ? explicitRetryable : response.status === 429 || response.status >= 500
+    throw Object.assign(new Error(message), { code, retryable, unknown: false })
+  }
   return await parseWorkerApiJson(response)
 }
 
@@ -1369,7 +1387,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           minimumReadyInstances: positiveInt(process.env.SCANNER_MINIMUM_READY_INSTANCES, 1, 'SCANNER_MINIMUM_READY_INSTANCES'),
         },
         intervalMs: heartbeatIntervalMs,
-        callbackConfigured: Boolean(config.apiBaseUrl && process.env.ASSET_SCANNER_API_TOKEN?.trim() && process.env.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET?.trim()),
+        callbackConfigured: hasCompleteScanCallbackCredentials(config, process.env),
         dependencyProbe: async () => {
           const state = await assertWorkerReadinessDependencies({ database: pool, ...(config.apiBaseUrl ? { apiBaseUrl: config.apiBaseUrl } : {}), apiHealthPath: '/healthz', expectedMigrations })
           return { databaseReady: true, apiReady: state.apiReady }

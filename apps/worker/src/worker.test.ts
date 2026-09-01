@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
+import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -142,6 +142,13 @@ describe('worker production entry', () => {
       .rejects.toThrow('returned 503')
   })
 
+  it('requires complete scan callback credentials before advertising scanner readiness', async () => {
+    const complete = { API_BASE_URL: 'http://api', ASSET_SCANNER_API_TOKEN: 'scanner-token', ASSET_SCANNER_WORKSPACE_SIGNING_SECRET: 'workspace-secret', ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64: Buffer.from('private-key').toString('base64'), ASSET_SCAN_RECEIPT_KEY_ID: 'key-1' }
+    expect(hasCompleteScanCallbackCredentials({ apiBaseUrl: complete.API_BASE_URL }, complete)).toBe(true)
+    expect(hasCompleteScanCallbackCredentials({ apiBaseUrl: complete.API_BASE_URL }, { ...complete, ASSET_SCAN_RECEIPT_KEY_ID: '' })).toBe(false)
+    expect(hasCompleteScanCallbackCredentials({ apiBaseUrl: complete.API_BASE_URL }, { ...complete, ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM_B64: '' })).toBe(false)
+  })
+
   it('rejects a production lease shorter than the bounded external operation window', () => {
     expect(() => readWorkerConfig({ ...baseEnv, NODE_ENV: 'production', WORKER_ROLE: 'generation', WORKER_API_BASE_URL: 'http://api', WORKER_API_TOKEN: 'token', WORKER_API_SIGNING_SECRET: 'signing-secret', AI_TIMEOUT_MS: '90000', WORKER_API_TIMEOUT_MS: '10000', WORKER_LEASE_MS: '109999' }))
       .toThrow('WORKER_LEASE_MS must be at least 170000ms')
@@ -224,6 +231,12 @@ describe('worker production entry', () => {
     const event: DurableOutboxEvent = { id: 'evt_sla_scan', workspaceId: 'ws_a', aggregateId: 'workspace', eventType: 'support.sla.scan_requested', sequence: 1, payload: {}, createdAt: new Date().toISOString() }
     await expect(handler({ event, attempt: 1, now: Date.now() })).resolves.toEqual({ value: { workspaceId: 'ws_a', planned: 2 } })
     expect(scan).toHaveBeenCalledWith(event, expect.anything(), undefined)
+  })
+
+  it('preserves structured SLA callback retry semantics', async () => {
+    const fetcher: typeof fetch = async () => new Response(JSON.stringify({ error: { code: 'SUPPORT_SLA_SCOPE_REVOKED', message: 'scope revoked', details: { retryable: false } } }), { status: 403, headers: { 'content-type': 'application/json' } })
+    await expect(postSupportSlaScan({ apiBaseUrl: 'https://api.example', apiToken: 'token', workspaceId: 'ws_a', fetcher }))
+      .rejects.toMatchObject({ code: 'SUPPORT_SLA_SCOPE_REVOKED', message: 'scope revoked', retryable: false, unknown: false })
   })
 
   it('fails closed before a critical side effect when no authorization authority is wired', async () => {
