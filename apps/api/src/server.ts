@@ -441,7 +441,10 @@ function paymentChannel(params: Record<string, unknown>): PaymentChannel {
 
 async function createSubscriptionCheckout(input: { channel: PaymentChannel; orderId: string; idempotencyKey: string; workspaceId: string; amountFen: number; kind: 'subscriptions' }) {
   const providerMode = process.env.PAYMENT_MODE === 'provider'
-  if (!providerMode) return fixturePaymentProvider.createCheckout({ ...input, callbackUrl: `fixture://${input.workspaceId}/callback`, description: `merchant-marketing 订阅订单 ${input.orderId}` })
+  if (!providerMode) {
+    if (!fixturePaymentAllowed()) throw new DomainError('PAYMENT_NOT_CONFIGURED', '本地 fixture 支付未显式开启', 503)
+    return fixturePaymentProvider.createCheckout({ ...input, callbackUrl: `fixture://${input.workspaceId}/callback`, description: `merchant-marketing 订阅订单 ${input.orderId}` })
+  }
   if (!paymentProvider) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付 provider adapter 未装配', 503)
   const callbackBase = process.env.PAYMENT_CALLBACK_BASE_URL?.trim().replace(/\/$/u, '')
   if (!callbackBase) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付回调地址未配置', 503)
@@ -12278,7 +12281,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
       }
       const localFixturePayment = fixturePaymentAllowed()
-      if (isProduction() && !providerMode && !localFixturePayment) throw new DomainError('PAYMENT_NOT_CONFIGURED', '生产环境未配置支付宝/微信支付服务商', 503)
+      if (!providerMode && !localFixturePayment) throw new DomainError('PAYMENT_NOT_CONFIGURED', '本地 fixture 支付未显式开启', 503)
       if (providerMode) {
         const readiness = paymentProviderReadiness()
         if (!readiness.ready) throw new DomainError('PAYMENT_NOT_CONFIGURED', `生产环境支付 provider 未就绪：${readiness.reasons.join(', ')}`, 503, { reasons: readiness.reasons })
