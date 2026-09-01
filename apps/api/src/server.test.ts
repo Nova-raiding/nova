@@ -282,6 +282,19 @@ describe('API application wiring', () => {
     expect(source).toContain('(!workerRoute || workerNeedsWorkspaceHydration)')
   })
 
+  it('replays an archived callback to close a matching provider lease without retrying the Provider', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const callbackStart = source.indexOf('const imageGenerationResultMatch = path.match')
+    const callbackEnd = source.indexOf("const imageGenerationExecutionMatch = path.match", callbackStart)
+    const callback = source.slice(callbackStart, callbackEnd)
+    expect(callback).toContain("job.state === 'succeeded' && job.archiveState === 'archived' && job.outputs?.length")
+    expect(callback).toContain('await persistImageGenerationCompletion(workspaceId, job)')
+    expect(callback).toContain("execution?.state === 'provider_started' && execution.eventId === eventId && execution.ownerToken === ownerToken")
+    expect(callback).toContain('markCompleted({ workspaceId, jobId, ownerToken })')
+    expect(callback.indexOf('markCompleted')).toBeGreaterThan(callback.indexOf('persistImageGenerationCompletion'))
+    expect(callback.indexOf('archiveGeneratedImages(workspaceId, job.id')).toBeGreaterThan(callback.indexOf('return send(res, 200, workspaceId, { job_id: job.id, state: job.state, archive_state: job.archiveState, already_completed: true }'))
+  })
+
   it('keeps image Provider reconciliation tenant-bound, idempotent, and fail-closed', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const reconciliationStart = source.indexOf("if (req.method === 'POST' && path === '/v1/internal/image-generation-jobs/reconciliation')")
