@@ -27,7 +27,7 @@ export function OpsDataState({ state, children, title, description, onRetry, ret
     const resolvedTitle = title || "数据加载失败";
     const resolvedDescription = description || "暂时无法读取运营数据，请重试。";
     const recover = onRetry ?? (() => window.location.reload());
-    return <div ref={errorRef} tabIndex={-1} className="ops-data-state" data-state="error" aria-labelledby={errorTitleId} aria-describedby={errorDescriptionId}>
+    return <div ref={errorRef} tabIndex={-1} className="ops-data-state" data-state="error" data-focus-target="error-summary" aria-labelledby={errorTitleId} aria-describedby={errorDescriptionId}>
       <Alert role="alert" aria-live="assertive" type="error" showIcon title={<span id={errorTitleId}>{resolvedTitle}</span>} description={<span id={errorDescriptionId}>{resolvedDescription}</span>} action={<Button aria-label={retryLabel} style={{ minHeight: 44 }} onClick={recover}>{retryLabel}</Button>} />
     </div>;
   }

@@ -20,6 +20,7 @@ describe("shared operations data states", () => {
     expect(error).toContain('aria-label="重试审计记录"');
     expect(error).toContain('style="min-height:44px"');
     expect(error).toContain('tabindex="-1"');
+    expect(error).toContain('data-focus-target="error-summary"');
     expect(error).toContain("aria-labelledby=");
     expect(error).toContain("aria-describedby=");
   });
