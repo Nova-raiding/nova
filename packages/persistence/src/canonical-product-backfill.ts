@@ -52,6 +52,12 @@ export function canonicalProductIdFor(workspaceId: string, productId: string, br
 export function planCanonicalProductBackfill(input: {
   workspaceId: string
   products: readonly CanonicalBackfillProduct[]
+  /**
+   * Product projections referenced by existing canonical rows outside the
+   * current write batch. They are used for integrity inventory only and are
+   * never eligible for INSERTs in this invocation.
+   */
+  referencedProducts?: readonly CanonicalBackfillProduct[]
   canonicalProducts: readonly CanonicalBackfillRow[]
 }): CanonicalBackfillPlan {
   const workspaceId = requireWorkspaceScope(input.workspaceId)
@@ -77,6 +83,7 @@ export function planCanonicalProductBackfill(input: {
     .filter(([, claims]) => claims.size > 1 || [...claims.values()].some(titles => titles.size > 1))
     .map(([id]) => id))
   const products = [...new Map(scopedProducts.filter(product => !ambiguousProductIds.has(product.id)).map(product => [product.id, product])).values()]
+  const referencedProducts = (input.referencedProducts ?? []).filter(product => product.workspaceId === workspaceId)
   const canonical = input.canonicalProducts.filter(row => row.workspaceId === workspaceId)
   const byLegacy = new Map<string, CanonicalBackfillRow[]>()
   for (const row of canonical) if (row.legacyProductId) byLegacy.set(row.legacyProductId, [...(byLegacy.get(row.legacyProductId) ?? []), row])
@@ -108,8 +115,12 @@ export function planCanonicalProductBackfill(input: {
   // no legacy product would otherwise be invisible to the product-driven
   // loop, yet migration 106 must reject it before the FK can be validated.
   for (const row of canonical) {
-    if (row.legacyProductId && !productIds.has(row.legacyProductId)) {
+    if (!row.legacyProductId || productIds.has(row.legacyProductId)) continue
+    const referenced = referencedProducts.find(product => product.id === row.legacyProductId)
+    if (!referenced) {
       conflicts.push({ legacyProductId: row.legacyProductId, code: 'CANONICAL_LEGACY_PRODUCT_MISSING', canonicalIds: [row.id] })
+    } else if (referenced.brandId?.trim() !== row.brandId) {
+      conflicts.push({ legacyProductId: row.legacyProductId, code: 'CANONICAL_BRAND_MISMATCH', canonicalIds: [row.id] })
     }
   }
   return { workspaceId, creates, unchanged: sort(unchanged), conflicts: conflicts.sort((a, b) => a.legacyProductId.localeCompare(b.legacyProductId) || a.code.localeCompare(b.code)) }
@@ -144,7 +155,11 @@ export async function runCanonicalProductBackfill(pool: SqlPool, input: { worksp
     const hasMore = limit !== undefined && products.rows.length > limit
     const batchProducts = hasMore ? products.rows.slice(0, limit) : products.rows
     const canonical = await client.query<CanonicalBackfillRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", title, legacy_product_id AS "legacyProductId" FROM canonical_products WHERE workspace_id=$1 ORDER BY id`, [workspaceId])
-    const plan = planCanonicalProductBackfill({ workspaceId, products: batchProducts, canonicalProducts: canonical.rows })
+    const referencedLegacyIds = [...new Set(canonical.rows.map(row => row.legacyProductId).filter((id): id is string => Boolean(id && !batchProducts.some(product => product.id === id))))]
+    const referencedProducts = referencedLegacyIds.length === 0
+      ? []
+      : (await client.query<CanonicalBackfillProduct>(`SELECT id, workspace_id AS "workspaceId", NULLIF(btrim(data->>'brandId'),'') AS "brandId", title FROM products WHERE workspace_id=$1 AND id = ANY($2::text[])`, [workspaceId, referencedLegacyIds])).rows
+    const plan = planCanonicalProductBackfill({ workspaceId, products: batchProducts, referencedProducts, canonicalProducts: canonical.rows })
     const insertedIds: string[] = []
     if (!dryRun) {
       for (const row of plan.creates) {
@@ -155,7 +170,7 @@ export async function runCanonicalProductBackfill(pool: SqlPool, input: { worksp
     const finalRows = dryRun
       ? canonical.rows
       : (await client.query<CanonicalBackfillRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", title, legacy_product_id AS "legacyProductId" FROM canonical_products WHERE workspace_id=$1 ORDER BY id`)).rows
-    const finalPlan = planCanonicalProductBackfill({ workspaceId, products: batchProducts, canonicalProducts: finalRows })
+    const finalPlan = planCanonicalProductBackfill({ workspaceId, products: batchProducts, referencedProducts, canonicalProducts: finalRows })
     return { ...finalPlan, insertedIds, dryRun, ...(hasMore && batchProducts.at(-1)?.id ? { nextProductId: batchProducts.at(-1)!.id } : {}) }
   })
 }

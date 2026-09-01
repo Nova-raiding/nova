@@ -75,6 +75,24 @@ describe('canonical product backfill memory contract', () => {
     expect(report.creates).toEqual([{ id: canonicalProductIdFor('ws_a', 'p_1', 'brand_a'), workspaceId: 'ws_a', brandId: 'brand_a', title: '商品一', legacyProductId: 'p_1' }])
     expect(report.conflicts).toEqual([{ legacyProductId: 'missing_legacy', code: 'CANONICAL_LEGACY_PRODUCT_MISSING', canonicalIds: ['c_dangling'] }])
   })
+
+  it('inventories a brand mismatch for a canonical reference outside the write batch without crossing workspaces', () => {
+    const report = planCanonicalProductBackfill({
+      workspaceId: 'ws_a',
+      products: [{ id: 'p_in_batch', workspaceId: 'ws_a', brandId: 'brand_a', title: '批次内商品' }],
+      referencedProducts: [
+        { id: 'p_outside_batch', workspaceId: 'ws_a', brandId: 'brand_actual', title: '批次外商品' },
+        { id: 'p_outside_workspace', workspaceId: 'ws_b', brandId: 'brand_wrong', title: '不应读取' },
+      ],
+      canonicalProducts: [
+        { id: 'c_mismatch', workspaceId: 'ws_a', brandId: 'brand_claimed', title: '规范商品', legacyProductId: 'p_outside_batch' },
+        { id: 'c_cross_workspace', workspaceId: 'ws_b', brandId: 'brand_wrong', title: '其他租户', legacyProductId: 'p_outside_workspace' },
+      ],
+    })
+    expect(report.conflicts).toContainEqual({ legacyProductId: 'p_outside_batch', code: 'CANONICAL_BRAND_MISMATCH', canonicalIds: ['c_mismatch'] })
+    expect(report.conflicts).not.toContainEqual(expect.objectContaining({ legacyProductId: 'p_outside_workspace' }))
+    expect(report.creates).toEqual([{ id: canonicalProductIdFor('ws_a', 'p_in_batch', 'brand_a'), workspaceId: 'ws_a', brandId: 'brand_a', title: '批次内商品', legacyProductId: 'p_in_batch' }])
+  })
 })
 
 class Client implements SqlClient {
