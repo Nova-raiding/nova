@@ -584,6 +584,7 @@ export type ImageGenerationReconciliationCandidate = {
   executionAttempt: number
   queryAttempt?: number
   providerRequestId: string
+  executionState: 'provider_started' | 'outcome_unknown'
   actionId?: string
 }
 
@@ -701,13 +702,17 @@ function imageReconciliationCandidates(page: unknown): ImageGenerationReconcilia
     const eventId = typeof item.event_id === 'string' ? item.event_id.trim() : ''
     const intentHash = typeof item.intent_hash === 'string' ? item.intent_hash.trim() : ''
     const providerRequestId = typeof item.provider_request_id === 'string' ? item.provider_request_id.trim() : ''
+    const executionState = item.execution_state === 'provider_started' || item.execution_state === 'outcome_unknown' ? item.execution_state : undefined
     const executionAttempt = Number(item.execution_attempt ?? item.attempt ?? 0)
     const queryAttempt = Number(item.query_attempt ?? executionAttempt)
     const key = `${jobId}:${eventId}:${intentHash}:${executionAttempt}:${providerRequestId}`
-    if (!jobId || !eventId || !/^[a-f0-9]{64}$/u.test(intentHash) || !providerRequestId || !Number.isSafeInteger(executionAttempt) || executionAttempt < 1 || !Number.isSafeInteger(queryAttempt) || queryAttempt < 1 || seen.has(key)) return []
+    // Reservation and dispatch fences are pre-provider states. Keep them
+    // observable to the API, but never query a Provider without an
+    // authoritative request id. Unknown execution states fail closed too.
+    if (!jobId || !eventId || !executionState || !/^[a-f0-9]{64}$/u.test(intentHash) || !providerRequestId || !Number.isSafeInteger(executionAttempt) || executionAttempt < 1 || !Number.isSafeInteger(queryAttempt) || queryAttempt < 1 || seen.has(key)) return []
     seen.add(key)
     const actionId = typeof item.action_id === 'string' && item.action_id.trim() ? item.action_id.trim() : undefined
-    return [{ jobId, eventId, intentHash, executionAttempt, queryAttempt, providerRequestId, ...(actionId ? { actionId } : {}) }]
+    return [{ jobId, eventId, intentHash, executionAttempt, queryAttempt, providerRequestId, executionState, ...(actionId ? { actionId } : {}) }]
   })
 }
 

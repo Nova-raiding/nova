@@ -622,7 +622,7 @@ describe('worker production entry', () => {
         const url = String(input)
         requests.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown>, headers: new Headers(init?.headers) })
         return url.endsWith('/reconciliation')
-          ? new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_1', event_id: 'event_1', intent_hash: 'a'.repeat(64), execution_attempt: 2, query_attempt: 3, provider_request_id: 'provider_1' }], next_cursor: null }), { status: 200 })
+          ? new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_1', event_id: 'event_1', intent_hash: 'a'.repeat(64), execution_attempt: 2, query_attempt: 3, execution_state: 'provider_started', provider_request_id: 'provider_1' }], next_cursor: null }), { status: 200 })
           : new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
       },
     })
@@ -634,6 +634,35 @@ describe('worker production entry', () => {
     expect(statusRequest?.headers.get('x-worker-workspace-signature')).toMatch(/^[a-f0-9]{64}$/u)
   })
 
+  it('does not query pre-provider states or malformed execution states', async () => {
+    const queried: string[] = []
+    const evidence: Record<string, unknown>[] = []
+    const result = await reconcileImageGenerationWorkspace({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a',
+      queryStatus: async providerRequestId => {
+        queried.push(providerRequestId)
+        return { state: 'processing', providerRequestId, evidence: { observedAt: '2026-08-31T00:00:00.000Z', source: 'provider_status' } }
+      },
+      fetcher: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [
+          { job_id: 'reserved', event_id: 'event_reserved', intent_hash: 'a'.repeat(64), execution_attempt: 1, execution_state: 'provider_reserved' },
+          { job_id: 'dispatching', event_id: 'event_dispatching', intent_hash: 'b'.repeat(64), execution_attempt: 1, execution_state: 'provider_dispatching', provider_request_id: 'not-authoritative-yet' },
+          { job_id: 'started-without-request', event_id: 'event_started_missing', intent_hash: 'c'.repeat(64), execution_attempt: 1, execution_state: 'provider_started' },
+          { job_id: 'unknown', event_id: 'event_unknown', intent_hash: 'd'.repeat(64), execution_attempt: 1, execution_state: 'outcome_unknown', provider_request_id: 'provider_unknown' },
+          { job_id: 'future', event_id: 'event_future', intent_hash: 'e'.repeat(64), execution_attempt: 1, execution_state: 'provider_finished', provider_request_id: 'provider_future' },
+        ], next_cursor: null }), { status: 200 })
+        evidence.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+        return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
+      },
+    })
+    expect(queried).toEqual(['provider_unknown'])
+    expect(evidence).toHaveLength(1)
+    expect(evidence[0]).toMatchObject({ job_id: 'unknown', provider_request_id: 'provider_unknown', provider_state: 'processing' })
+    expect(result.results).toHaveLength(1)
+    expect((result.results[0] as { queried: number }).queried).toBe(1)
+  })
+
   it('does not collapse distinct event bindings that reuse a provider request id', async () => {
     const queried: string[] = []
     const evidence: string[] = []
@@ -643,8 +672,8 @@ describe('worker production entry', () => {
       fetcher: async (input, init) => {
         const url = String(input)
         if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [
-          { job_id: 'job_1', event_id: 'event_1', intent_hash: 'a'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_1' },
-          { job_id: 'job_1', event_id: 'event_2', intent_hash: 'b'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_1' },
+          { job_id: 'job_1', event_id: 'event_1', intent_hash: 'a'.repeat(64), execution_attempt: 1, execution_state: 'provider_started', provider_request_id: 'provider_1' },
+          { job_id: 'job_1', event_id: 'event_2', intent_hash: 'b'.repeat(64), execution_attempt: 1, execution_state: 'provider_started', provider_request_id: 'provider_1' },
         ], next_cursor: null }), { status: 200 })
         evidence.push(JSON.parse(String(init?.body)).event_id)
         return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
@@ -684,7 +713,7 @@ describe('worker production entry', () => {
       queryStatus: async (_providerRequestId, options) => await new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('timed out', 'AbortError')), { once: true })),
       fetcher: async (input, init) => {
         const url = String(input)
-        if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_2', event_id: 'event_2', intent_hash: 'b'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_2' }] }), { status: 200 })
+        if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_2', event_id: 'event_2', intent_hash: 'b'.repeat(64), execution_attempt: 1, execution_state: 'outcome_unknown', provider_request_id: 'provider_2' }] }), { status: 200 })
         requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
         return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
       },
@@ -700,7 +729,7 @@ describe('worker production entry', () => {
       queryStatus: async () => await new Promise(() => undefined),
       fetcher: async (input, init) => {
         const url = String(input)
-        if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_3', event_id: 'event_3', intent_hash: 'c'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_3' }] }), { status: 200 })
+        if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_3', event_id: 'event_3', intent_hash: 'c'.repeat(64), execution_attempt: 1, execution_state: 'outcome_unknown', provider_request_id: 'provider_3' }] }), { status: 200 })
         requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
         return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
       },
@@ -712,7 +741,7 @@ describe('worker production entry', () => {
   it('rejects status evidence before network I/O when request ids do not match', async () => {
     let called = false
     await expect(postImageGenerationReconciliationStatus({
-      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a', candidate: { jobId: 'job_1', eventId: 'event_1', intentHash: 'a'.repeat(64), executionAttempt: 1, providerRequestId: 'provider_1' },
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a', candidate: { jobId: 'job_1', eventId: 'event_1', intentHash: 'a'.repeat(64), executionAttempt: 1, providerRequestId: 'provider_1', executionState: 'provider_started' },
       status: { state: 'succeeded', providerRequestId: 'provider_2', images: ['https://cdn.example/image.png'], evidence: { observedAt: '2026-08-31T00:00:00.000Z', source: 'provider_status' } },
       fetcher: async () => { called = true; return new Response('{}', { status: 200 }) },
     })).rejects.toThrow('provider request id mismatch')
