@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildCampaignLifecycleParams, campaignActionAvailability, campaignDialogDescriptionIds, campaignDialogFocusEdge, parseCampaignSnapshot } from './CampaignLifecyclePanel.js'
+import { readFileSync } from 'node:fs'
+import { buildCampaignLifecycleParams, campaignActionAvailability, campaignDialogDescriptionIds, campaignDialogFocusEdge, campaignReasonDescriptionIds, parseCampaignSnapshot } from './CampaignLifecyclePanel.js'
 
 const campaign = parseCampaignSnapshot({ id: 'campaign-1', state: 'running', revision: 7, items: [{ id: 'item-1', productId: 'product-1', platform: 'jd', accountId: 'store-1', state: 'failed' }] })
 
@@ -19,6 +20,14 @@ describe('merchant campaign lifecycle controls', () => {
   it('connects the modal to its instructions and assertive action error', () => {
     expect(campaignDialogDescriptionIds(false)).toBe('campaign-action-description')
     expect(campaignDialogDescriptionIds(true)).toBe('campaign-action-description campaign-action-error')
+  })
+  it('links the reason field to its hint and recoverable submit error', () => {
+    expect(campaignReasonDescriptionIds(false)).toBe('campaign-action-reason-hint')
+    expect(campaignReasonDescriptionIds(true)).toBe('campaign-action-reason-hint campaign-action-error')
+    const source = readFileSync(new URL('./CampaignLifecyclePanel.tsx', import.meta.url), 'utf8')
+    expect(source).toContain('aria-invalid={Boolean(error)}')
+    expect(source).toContain('aria-live="assertive" aria-atomic="true"')
+    expect(source).toContain('type="button"')
   })
   it('fail-closes every mutating control while the result is unknown or reconciling', () => {
     expect(campaignActionAvailability('unknown')).toEqual({ canPause: false, canResume: false, canRetryFailed: false })
