@@ -4613,9 +4613,22 @@ export function authorizationGrantFailureDetails(decision: AuthorizationDecision
   }
 }
 
+export function authorizationPolicyUnavailableDetails(input: {
+  transport: 'mcp' | 'http'
+  method?: string
+  operation?: string
+}) {
+  return {
+    policy_version: AUTHZ_POLICY_VERSION,
+    transport: input.transport,
+    ...(input.method ? { method: input.method } : {}),
+    ...(input.operation ? { operation: input.operation } : {}),
+  }
+}
+
 async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId: string, method: string, params: Record<string, unknown>) {
   const policy = getMcpMethodPolicy(method)
-  if (!policy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前方法缺少服务端授权策略，已拒绝执行', 503)
+  if (!policy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前方法缺少服务端授权策略，已拒绝执行', 503, authorizationPolicyUnavailableDetails({ transport: 'mcp', method }))
   if (!requiresStrictAuth()) return policy
   const runtime = mcpAuthorizationRuntimeConfig()
   // A signed OIDC principal is intentionally allowed to create its first
@@ -4670,7 +4683,7 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
   const httpPolicy = getHttpOperationPolicy(req.method, url.pathname)
   if (!httpPolicy || httpPolicy.authentication !== 'identity' || !httpPolicy.mcpMethod) return httpPolicy
   const mcpPolicy = getMcpMethodPolicy(httpPolicy.mcpMethod)
-  if (!mcpPolicy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前 HTTP 操作引用的 MCP 授权策略不存在，已拒绝执行', 503, { operation: httpPolicy.operation })
+  if (!mcpPolicy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前 HTTP 操作引用的 MCP 授权策略不存在，已拒绝执行', 503, authorizationPolicyUnavailableDetails({ transport: 'http', method: httpPolicy.mcpMethod, operation: httpPolicy.operation }))
   if (mcpPolicy.scope !== 'platform' && workspaceId === 'unknown') throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, '当前 HTTP 操作需要明确工作区', 400, { operation: httpPolicy.operation })
   const params: Record<string, unknown> = Object.fromEntries(url.searchParams.entries())
   const hasJsonAuthorizationParams = httpPolicy.pathTemplate !== '/v1/assets/upload'

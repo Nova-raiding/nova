@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
@@ -88,6 +88,15 @@ describe('authorization denial error details', () => {
     })
     expect(JSON.stringify(details)).not.toContain('secret-resource-id')
     expect(JSON.stringify(details)).not.toContain('secret-workspace-id')
+  })
+
+  it('describes missing policy catalog entries consistently across MCP and HTTP', () => {
+    expect(authorizationPolicyUnavailableDetails({ transport: 'mcp', method: 'unknown.method' })).toEqual({
+      policy_version: '2026-08-31.v2', transport: 'mcp', method: 'unknown.method',
+    })
+    expect(authorizationPolicyUnavailableDetails({ transport: 'http', method: 'ops.unknown', operation: 'GET /v1/unknown' })).toEqual({
+      policy_version: '2026-08-31.v2', transport: 'http', method: 'ops.unknown', operation: 'GET /v1/unknown',
+    })
   })
 })
 
