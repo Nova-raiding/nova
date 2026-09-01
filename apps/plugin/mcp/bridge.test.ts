@@ -800,6 +800,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'content.approve').inputSchema.properties.expected_version).toBeDefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.health').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'task.understand').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false })
       for (const name of ['merchant.start', 'workspace.health', 'asset.upload', 'automation.scan']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
       }
@@ -1899,6 +1900,38 @@ describe('Codex stdio MCP bridge', () => {
         question: '你想先连接哪个平台？',
       })
       expect(attempts).toBe(2)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('retries merchant.start with a stable idempotency key after a transient gateway failure', async () => {
+    let attempts = 0
+    const keys: string[] = []
+    const server = createServer(async (req, res) => {
+      attempts += 1
+      keys.push(String(req.headers['idempotency-key'] ?? ''))
+      if (attempts === 1) {
+        res.writeHead(503, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { code: 'API_UNAVAILABLE', message: 'retry safely' } }))
+        return
+      }
+      res.end(JSON.stringify({ data: { result: { status: 'ok' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: 'audit catalog' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(attempts).toBe(2)
+      expect(keys[0]).toMatch(/^merchant-start-/u)
+      expect(keys[1]).toBe(keys[0])
     } finally {
       child.kill()
       await close(server)

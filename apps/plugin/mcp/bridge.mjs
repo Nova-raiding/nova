@@ -56,7 +56,6 @@ let sessionArtifactFiles = 0
 let interactiveWriteUntil = 0
 let bootstrappedWorkspaceId = ''
 const READ_ONLY_METHODS = new Set([
-  'merchant.start',
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
@@ -104,6 +103,7 @@ const reasonProperty = boundedString(1000, 3, '当前交互写操作的可审计
 // approvals, and publish confirmation remain behind the interactive-write gate.
 const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
+  'merchant.start',
   'content.export', 'catalog.image.review', 'catalog.image.select', 'workspace.bootstrap',
   'workspace.interactive.confirm',
   'platform.store.list', 'platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start',
@@ -118,7 +118,7 @@ const DESTRUCTIVE_WRITE_METHODS = new Set([
 ])
 const METHODS = {
   'merchant.start': {
-    description: '开始使用大麦；返回当前步骤、店铺/商品摘要和下一句可以直接照着说的话。只读。',
+    description: '开始使用大麦；返回当前步骤、店铺/商品摘要和下一句可以直接照着说的话。会幂等记当前意图。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1567,6 +1567,7 @@ function toolUiMetadata(name) {
 
 function toolAnnotations(name) {
   if (READ_ONLY_METHODS.has(name)) return { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+  if (name === 'merchant.start') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (name === 'catalog.image.select' || name === 'catalog.image.retry') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (name === 'content.visual.select') return { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   if (name === 'content.export') return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
@@ -1932,7 +1933,7 @@ async function callRemote(method, params) {
   }
   const ruleApprovalToken = process.env.MERCHANT_RULE_APPROVAL_TOKEN?.trim()
   if ((method === 'rule.publish' || method === 'rule.status') && ruleApprovalToken && !/^\$\{[^}]+\}$/u.test(ruleApprovalToken)) headers['x-rule-approval-token'] = ruleApprovalToken
-  if (method === 'publish.confirm' || method === 'content.generate' || method === 'content.visual.select' || method === 'catalog.image.select' || method === 'platform.media.spec.create' || method === 'platform.media.spec.update' || method === 'platform.media.spec.approve' || method === 'platform.media.spec.expire' || method === 'campaign.batch.pause' || method === 'campaign.batch.resume' || method === 'campaign.batch.retry_failed') {
+  if (method === 'merchant.start' || method === 'publish.confirm' || method === 'content.generate' || method === 'content.visual.select' || method === 'catalog.image.select' || method === 'platform.media.spec.create' || method === 'platform.media.spec.update' || method === 'platform.media.spec.approve' || method === 'platform.media.spec.expire' || method === 'campaign.batch.pause' || method === 'campaign.batch.resume' || method === 'campaign.batch.retry_failed') {
     headers['idempotency-key'] = typeof params.idempotency_key === 'string' && params.idempotency_key.trim()
       ? params.idempotency_key.trim()
       : idempotencyKey(method, params)
