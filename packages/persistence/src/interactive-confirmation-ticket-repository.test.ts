@@ -117,6 +117,18 @@ describe('PostgresInteractiveConfirmationTicketRepository', () => {
     expect(replay.calls.some(call => call.text.startsWith('SELECT 1'))).toBe(true)
   })
 
+  it('finalizes on the caller transaction without opening or committing another transaction', async () => {
+    const client = new RecordingClient([1])
+    const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
+    await expect(repository.finalizeInTransaction(client, finalizeLease)).resolves.toBe(true)
+    expect(client.calls.map(call => call.text)).not.toContain('BEGIN')
+    expect(client.calls.map(call => call.text)).not.toContain('COMMIT')
+    const update = client.calls[0]!
+    expect(update.text).toContain('reservation_token=$7')
+    expect(update.text).toContain('reservation_revision=$8')
+    expect(update.text).toContain('consumed_operation_id=$9')
+  })
+
   it('releases only the matching unconsumed reservation', async () => {
     const client = new RecordingClient([1])
     const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)

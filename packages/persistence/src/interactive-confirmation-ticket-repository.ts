@@ -1,4 +1,4 @@
-import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from './repository.js'
+import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
 export interface InteractiveConfirmationTicket {
   workspaceId: string
@@ -42,6 +42,11 @@ export interface ReservableInteractiveConfirmationTicketRepository extends Inter
   reserve(input: ReserveInteractiveConfirmationTicketInput): Promise<InteractiveConfirmationTicketReservation | undefined>
   finalize(input: FinalizeInteractiveConfirmationTicketInput): Promise<boolean>
   release(input: ReleaseInteractiveConfirmationTicketInput): Promise<boolean>
+}
+
+export interface TransactionalInteractiveConfirmationTicketRepository extends ReservableInteractiveConfirmationTicketRepository {
+  /** Caller owns the transaction and has established the matching workspace RLS scope. */
+  finalizeInTransaction(client: SqlClient, input: FinalizeInteractiveConfirmationTicketInput): Promise<boolean>
 }
 
 const MAX_TICKET_TTL_MS = 15 * 60 * 1_000
@@ -176,7 +181,7 @@ export class MemoryInteractiveConfirmationTicketRepository implements Reservable
   }
 }
 
-export class PostgresInteractiveConfirmationTicketRepository implements ReservableInteractiveConfirmationTicketRepository {
+export class PostgresInteractiveConfirmationTicketRepository implements TransactionalInteractiveConfirmationTicketRepository {
   constructor(private readonly pool: SqlPool, private readonly clock: () => Date = () => new Date()) {}
 
   async issue(input: InteractiveConfirmationTicket) {
@@ -254,8 +259,17 @@ export class PostgresInteractiveConfirmationTicketRepository implements Reservab
   async finalize(input: FinalizeInteractiveConfirmationTicketInput) {
     const ticket = fencedReservation(input)
     const consumedOperationId = identifier(input.consumedOperationId, 'INTERACTIVE_CONFIRMATION_CONSUMED_OPERATION_ID_INVALID', 255)
-    return withWorkspaceTransaction(this.pool, ticket.workspaceId, async client => {
-      const result = await client.query(
+    return withWorkspaceTransaction(this.pool, ticket.workspaceId, client => this.finalizeBound(client, ticket, consumedOperationId))
+  }
+
+  async finalizeInTransaction(client: SqlClient, input: FinalizeInteractiveConfirmationTicketInput) {
+    const ticket = fencedReservation(input)
+    const consumedOperationId = identifier(input.consumedOperationId, 'INTERACTIVE_CONFIRMATION_CONSUMED_OPERATION_ID_INVALID', 255)
+    return this.finalizeBound(client, ticket, consumedOperationId)
+  }
+
+  private async finalizeBound(client: SqlClient, ticket: ReturnType<typeof fencedReservation>, consumedOperationId: string) {
+    const result = await client.query(
         `UPDATE interactive_confirmation_tickets
             SET consumed_at=now(), consumed_operation_id=$9
           WHERE workspace_id=$1
@@ -271,8 +285,8 @@ export class PostgresInteractiveConfirmationTicketRepository implements Reservab
             AND consumed_at IS NULL`,
         [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId, ticket.reservationToken, ticket.reservationRevision, consumedOperationId, ticket.legacyNonceHash ?? ticket.nonceHash],
       )
-      if (result.rowCount === 1) return true
-      const replay = await client.query(
+    if (result.rowCount === 1) return true
+    const replay = await client.query(
         `SELECT 1
            FROM interactive_confirmation_tickets
           WHERE workspace_id=$1
@@ -287,8 +301,7 @@ export class PostgresInteractiveConfirmationTicketRepository implements Reservab
             AND consumed_at IS NOT NULL`,
         [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId, ticket.reservationToken, ticket.reservationRevision, consumedOperationId, ticket.legacyNonceHash ?? ticket.nonceHash],
       )
-      return replay.rowCount === 1
-    })
+    return replay.rowCount === 1
   }
 
   async release(input: ReleaseInteractiveConfirmationTicketInput) {
