@@ -31,6 +31,8 @@ export interface DurableOutboxStore<E extends DurableOutboxEvent = DurableOutbox
 export interface QueueMessage<T> {
   id: string
   value: T
+  /** Local transports can retain a retry until this epoch. */
+  notBefore?: number
 }
 
 export interface QueuePort<T> {
@@ -100,13 +102,16 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
 export class InMemoryQueue<T> implements QueuePort<T> {
   private readonly messages: QueueMessage<T>[] = []
   async enqueue(message: QueueMessage<T>): Promise<void> {
-    if (!this.messages.some(candidate => candidate.id === message.id)) this.messages.push(message)
+    if (!this.messages.some(candidate => candidate.id === message.id)) this.messages.push({ ...message })
   }
-  async dequeue(): Promise<QueueMessage<T> | undefined> { return this.messages.shift() }
+  async dequeue(): Promise<QueueMessage<T> | undefined> {
+    const index = this.messages.findIndex(message => (message.notBefore ?? 0) <= Date.now())
+    if (index < 0) return undefined
+    return this.messages.splice(index, 1)[0]
+  }
   async ack(_message: QueueMessage<T>): Promise<void> {}
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
-    if (delayMs > 0) await new Promise<void>(resolve => setTimeout(resolve, delayMs))
-    await this.enqueue(message)
+    await this.enqueue({ ...message, ...(delayMs > 0 ? { notBefore: Date.now() + delayMs } : {}) })
   }
   async contains(id: string): Promise<boolean> { return this.messages.some(message => message.id === id) }
   get size(): number { return this.messages.length }
@@ -230,7 +235,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         await this.queue.ack(message)
         return { state: 'dead_letter', event }
       }
-      await this.queue.nack(message, this.baseDelayMs)
+      await this.queue.nack(message, retryAfterLeaseMs(event, this.now(), this.baseDelayMs))
       throw persistenceError
     }
   }
@@ -240,7 +245,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
       await this.queue.ack(message)
       return { state: 'dead_letter', event }
     }
-    await this.queue.nack(message, this.baseDelayMs)
+    await this.queue.nack(message, retryAfterLeaseMs(event, this.now(), this.baseDelayMs))
     throw leaseError
   }
 
@@ -271,7 +276,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
         await this.queue.ack(message)
         return { state: 'dead_letter', event }
       }
-      await this.queue.nack(message, this.baseDelayMs)
+      await this.queue.nack(message, retryAfterLeaseMs(event, this.now(), this.baseDelayMs))
       throw persistenceError
     }
   }
@@ -285,6 +290,19 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     }
     return results
   }
+}
+
+/**
+ * A queue retry must not outrun the database lease. If persistence failed
+ * after the handler ran, replaying while the old lease is still valid can
+ * repeat an external image/provider side effect. Keep the old short backoff
+ * when no lease deadline is available (for example, a transport-only test),
+ * but otherwise wait until the authoritative lease can be reclaimed.
+ */
+function retryAfterLeaseMs(event: DurableOutboxEvent, now: number, baseDelayMs: number): number {
+  const leaseUntil = event.leaseUntil ? Date.parse(event.leaseUntil) : NaN
+  if (!Number.isFinite(leaseUntil)) return baseDelayMs
+  return Math.max(baseDelayMs, leaseUntil - now + 1)
 }
 
 function isStaleOutboxError(error: unknown): boolean {

@@ -114,6 +114,16 @@ describe('durable outbox dispatcher', () => {
     expect(queue.size).toBe(1)
   })
 
+  it('does not replay a side effect before the failed lease expires', async () => {
+    const store = new Store(event()); const queue = new InMemoryQueue<DurableOutboxEvent>()
+    vi.spyOn(store, 'ack').mockRejectedValueOnce(new Error('database unavailable'))
+    const nack = vi.spyOn(queue, 'nack')
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }), { now: () => 1_000, leaseMs: 500, baseDelayMs: 17 })
+    await dispatcher.restore('ws_1')
+    await expect(dispatcher.dispatchOnce()).rejects.toThrow('database unavailable')
+    expect(nack).toHaveBeenCalledWith(expect.objectContaining({ id: 'evt_1' }), 501)
+  })
+
   it('backs off when persistence cannot record a handler failure', async () => {
     const store = new Store(event({ id: 'evt_backoff' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const nack = vi.spyOn(queue, 'nack')
@@ -121,7 +131,8 @@ describe('durable outbox dispatcher', () => {
     const dispatcher = new DurableOutboxDispatcher(store, queue, async () => { throw new Error('temporary handler failure') }, { baseDelayMs: 17 })
     await dispatcher.restore('ws_1')
     await expect(dispatcher.dispatchOnce()).rejects.toThrow('database unavailable')
-    expect(nack).toHaveBeenCalledWith(expect.objectContaining({ id: 'evt_backoff' }), 17)
+    expect(nack).toHaveBeenCalledWith(expect.objectContaining({ id: 'evt_backoff' }), expect.any(Number))
+    expect(nack.mock.calls[0]?.[1]).toBeGreaterThanOrEqual(17)
   })
 
   it('does not execute a stale handler when its database lease is gone', async () => {
