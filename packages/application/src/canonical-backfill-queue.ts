@@ -1,0 +1,16 @@
+export interface CanonicalBackfillConflictQueueFailure {
+  code: 'CANONICAL_BACKFILL_CONFLICT_COUNT_INVALID' | 'CANONICAL_BACKFILL_CONFLICT_REPOSITORY_UNAVAILABLE'
+  status: 503
+  details?: { conflict_count: number }
+}
+
+/**
+ * Conflicts are actionable only when a durable repair queue is available.
+ * Returning a stable failure contract keeps the API boundary fail-closed and
+ * lets the rule be tested without importing the server's runtime state.
+ */
+export function canonicalBackfillConflictQueueFailure(input: { conflictCount: number; configured: boolean }): CanonicalBackfillConflictQueueFailure | undefined {
+  if (!Number.isSafeInteger(input.conflictCount) || input.conflictCount < 0) return { code: 'CANONICAL_BACKFILL_CONFLICT_COUNT_INVALID', status: 503 }
+  if (input.conflictCount > 0 && !input.configured) return { code: 'CANONICAL_BACKFILL_CONFLICT_REPOSITORY_UNAVAILABLE', status: 503, details: { conflict_count: input.conflictCount } }
+  return undefined
+}

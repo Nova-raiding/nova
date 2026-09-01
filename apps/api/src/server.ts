@@ -6,6 +6,7 @@ import { Pool } from 'pg'
 import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
+import { canonicalBackfillConflictQueueFailure } from '../../../packages/application/src/canonical-backfill-queue.js'
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
@@ -10013,7 +10014,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const claimed = current.status === 'running' ? current : await repository.update({ id: current.id, workspaceId, expectedRevision: optionalNumberValue(params, 'expectedRevision', 'expected_revision') ?? 0, status: 'running' })
         try {
           const batch = await executor({ workspaceId, dryRun: claimed.dryRun, ...(claimed.cursorProductId ? { afterProductId: claimed.cursorProductId } : {}), ...(claimed.batchLimit ? { limit: claimed.batchLimit } : {}) })
-          if (batch.conflicts.length && conflictRepository) await conflictRepository.enqueue({ workspaceId, runId: claimed.id, conflicts: batch.conflicts })
+          const conflictQueueFailure = canonicalBackfillConflictQueueFailure({ conflictCount: batch.conflicts.length, configured: Boolean(conflictRepository) })
+          if (conflictQueueFailure) throw new DomainError(conflictQueueFailure.code, conflictQueueFailure.code === 'CANONICAL_BACKFILL_CONFLICT_REPOSITORY_UNAVAILABLE' ? 'canonical backfill 发现冲突但人工队列未配置，已阻断批次执行' : 'canonical backfill 冲突数量无效，已阻断批次执行', conflictQueueFailure.status, conflictQueueFailure.details)
+          if (batch.conflicts.length) await conflictRepository!.enqueue({ workspaceId, runId: claimed.id, conflicts: batch.conflicts })
           const terminal = batch.conflicts.length > 0 ? 'failed' : batch.nextProductId ? 'running' : 'completed'
           const updated = await repository.update({ id: claimed.id, workspaceId, expectedRevision: claimed.revision, status: terminal, ...(batch.nextProductId ? { cursorProductId: batch.nextProductId } : {}), lastResult: { dryRun: batch.dryRun, creates: batch.creates.length, unchanged: batch.unchanged.length, conflicts: batch.conflicts, insertedIds: batch.insertedIds } })
           await recordOperationAudit({ workspaceId, actorId, action: `canonical.backfill.${terminal}`, resourceType: 'canonical_backfill_run', resourceId: updated.id, before: claimed as unknown as Record<string, unknown>, after: updated as unknown as Record<string, unknown>, reason: terminal === 'failed' ? '批次发现需人工处理的 canonical 冲突' : '执行一个有界 canonical backfill 批次' })
