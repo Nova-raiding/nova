@@ -722,12 +722,22 @@ function statusEvidenceFromError(error: unknown): ImageGenerationReconciliationE
 async function queryImageProviderStatus(input: { queryStatus: (providerRequestId: string, options?: { signal?: AbortSignal }) => Promise<ImageGenerationStatus>; providerRequestId: string; signal?: AbortSignal; timeoutMs?: number }) {
   if (input.timeoutMs !== undefined && (!Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1 || input.timeoutMs > 5 * 60 * 1000)) throw new RangeError('image provider status query timeout must be between 1 and 300000 milliseconds')
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 30_000)
-  const abort = () => controller.abort()
+  const timeout = setTimeout(() => controller.abort(new DOMException('image provider status query timed out', 'AbortError')), input.timeoutMs ?? 30_000)
+  const abort = () => controller.abort(input.signal?.reason)
   if (input.signal?.aborted) controller.abort()
   else input.signal?.addEventListener('abort', abort, { once: true })
-  try { return await input.queryStatus(input.providerRequestId, { signal: controller.signal }) }
-  finally { clearTimeout(timeout); input.signal?.removeEventListener('abort', abort) }
+  let rejectAbort: (() => void) | undefined
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = () => reject(controller.signal.reason instanceof Error ? controller.signal.reason : new DOMException('image provider status query aborted', 'AbortError'))
+    if (controller.signal.aborted) rejectAbort()
+    else controller.signal.addEventListener('abort', rejectAbort, { once: true })
+  })
+  try { return await Promise.race([input.queryStatus(input.providerRequestId, { signal: controller.signal }), aborted]) }
+  finally {
+    clearTimeout(timeout)
+    if (rejectAbort) controller.signal.removeEventListener('abort', rejectAbort)
+    input.signal?.removeEventListener('abort', abort)
+  }
 }
 
 export async function reconcileImageGenerationWorkspace(input: Parameters<typeof postImageGenerationReconciliation>[0] & { maxPages?: number; queryStatus?: (providerRequestId: string, options?: { signal?: AbortSignal }) => Promise<ImageGenerationStatus>; queryTimeoutMs?: number }) {

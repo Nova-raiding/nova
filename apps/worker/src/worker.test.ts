@@ -693,6 +693,22 @@ describe('worker production entry', () => {
     expect(requests[0]).toMatchObject({ provider_state: 'unknown', provider_request_id: 'provider_2', provider_status: 'timeout', error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' })
   })
 
+  it('enforces the status query timeout when the provider ignores abort signals', async () => {
+    const requests: Record<string, unknown>[] = []
+    await reconcileImageGenerationWorkspace({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a', queryTimeoutMs: 1,
+      queryStatus: async () => await new Promise(() => undefined),
+      fetcher: async (input, init) => {
+        const url = String(input)
+        if (url.endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_3', event_id: 'event_3', intent_hash: 'c'.repeat(64), execution_attempt: 1, provider_request_id: 'provider_3' }] }), { status: 200 })
+        requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+        return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
+      },
+    })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({ provider_state: 'unknown', provider_request_id: 'provider_3', provider_status: 'timeout', error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' })
+  })
+
   it('rejects status evidence before network I/O when request ids do not match', async () => {
     let called = false
     await expect(postImageGenerationReconciliationStatus({
