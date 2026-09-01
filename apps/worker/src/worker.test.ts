@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -137,6 +137,18 @@ describe('worker production entry', () => {
       return new Response(JSON.stringify({ data: { workspaceId: 'ws_a', checked: 25 } }), { status: 200 })
     }) as unknown as typeof fetch
     await expect(postSupportSlaScan({ apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', signingSecret: 'reconcile-signing-secret', workspaceId: 'ws_a', limit: 25, fetcher })).resolves.toMatchObject({ data: { checked: 25 } })
+    expect(requestHeaders?.get('x-worker-role')).toBe('reconcile')
+  })
+
+  it('signs the image reconciliation listing as the reconcile worker', async () => {
+    let requestHeaders: Headers | undefined
+    await postImageGenerationReconciliation({
+      apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', signingSecret: 'reconcile-signing-secret', workspaceId: 'ws_a',
+      fetcher: async (_url, init) => {
+        requestHeaders = new Headers(init?.headers)
+        return new Response(JSON.stringify({ data: { attention: [], next_cursor: null } }), { status: 200 })
+      },
+    })
     expect(requestHeaders?.get('x-worker-role')).toBe('reconcile')
   })
 

@@ -260,6 +260,7 @@ function workerAuthIntent(signingSecret: string): Record<string, string> {
 function workerRoleForRequest(method: string, requestTarget: string, body?: string | Uint8Array): WorkerRequestRole {
   const path = new URL(requestTarget, 'http://worker.internal').pathname
   if (/^\/v1\/sync-jobs\//u.test(path)) return 'sync'
+  if (path === '/v1/internal/image-generation-jobs/reconciliation') return 'reconcile'
   if (/^\/v1\/(?:generation-jobs|internal\/image-generation-jobs|internal\/image-generation-continuations)\//u.test(path)) return 'generation'
   if (/^\/v1\/publish-jobs\/[^/]+\/observation$/u.test(path)) {
     try { return JSON.parse(typeof body === 'string' ? body : Buffer.from(body ?? []).toString('utf8')).source === 'reconcile' ? 'reconcile' : 'publish' } catch { return 'publish' }
