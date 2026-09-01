@@ -775,14 +775,17 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **策略集合精确覆盖。** `6ab248a`；`packages/contracts/src/authz.test.ts` 定向测试通过，覆盖 policy key 精确匹配与未知方法 fail-closed。对应完整验收项为 P1-GATE-001/P1-GATE-002；仍需最终提交动态重跑。
 - [x] **撤销/过期授权拒绝。** `acab8ae`；Authz 定向测试 18/18 通过，覆盖 revoked、expired、非法时间、空/控制字符 scope 和 wildcard scope 拒绝。该证据仅关闭本地 grant 校验子项，不关闭 P1-BE-007 的持久 JIT、生产并发和真实 OIDC 要求。
 - [x] **Ops session/grant 契约。** `3c80ff4`；API 定向测试 4/4 通过，覆盖 workbench/workspace 裁剪、grant issue/revoke、expiry projection 和 403 decision evidence。该证据不等于真实 OIDC 或跨副本生命周期验收。
+- [x] **Grant lifecycle 本地 fail-closed 契约。** `acab8ae`、`3c80ff4`；Authz 定向测试 18/18、Ops session/grant 定向测试 4/4 通过，覆盖 revoked/expired grant 拒绝、非法 scope/时间拒绝、签发/撤销、到期投影清理和 decision evidence。该证据不等于真实 OIDC、持久化审批、跨副本撤销竞态或生产生命周期验收。
 - [x] **用户治理 capability 投影。** `962cbbd`；Users 页面定向测试 10/10 通过，覆盖服务端 capability projection、无权限 fail-closed、只读说明和键盘可达恢复。该证据不关闭完整角色矩阵、生产 RLS 或全桌面浏览器验收。
 - [x] **Ops RBAC API 接口契约。** `e5832d4`；API 定向测试 3/3 通过，覆盖 MCP 方法授权矩阵、平台权限边界、双工作台 session 裁剪和 403 decision/request evidence。该证据不等于逐路由生产 parity。
+- [x] **MCP/HTTP parity 本地契约。** `be29b31`；`mcp-http-parity-contract.test.ts` 27/27 通过，验证 registry/contract/policy/OpenAPI 方法集合精确一致、每个 MCP 方法具备完整 contract/policy、HTTP identity 操作引用已注册 MCP policy。该证据不等于全量生产逐路由 allow/deny、OIDC、RLS、审计或真实运行矩阵。
+- [x] **Worker execution-check 本地契约。** `59c0df1`；Worker 定向测试 13/13、workers build 通过，验证 queued 后 grant revoke、scope mismatch、revision mismatch 均拒绝执行且 provider 外呼为 0。该证据不等于全部 critical worker 的生产授权快照、跨副本竞态或完整运行矩阵。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
 - [ ] 真实 OIDC 签名、issuer/audience/nonce、受控主体和 gateway/membership 一致性。
 - [ ] 生产-like PostgreSQL 双 role、RLS 攻击矩阵、连接池隔离和迁移后真实数据门禁。
-- [ ] 持久 JIT 的真实审批、撤销竞态、nonce/max-use 并发及跨副本一致性。
+- [ ] 持久 JIT 的真实审批、撤销竞态、nonce/max-use 并发及跨副本一致性；上述本地 grant lifecycle 契约不能替代该项。
 - [ ] 不可变 audit sink 的真实写入、失败阻断、查询重建和保留策略。
 - [ ] 全量 HTTP/MCP/Worker enforcement 与逐方法 allow/deny/scope/obligation parity。
 - [ ] 1280/1440/1920 桌面角色矩阵、JIT 到期/撤销和跨租户 IDOR 的完整浏览器证据。
