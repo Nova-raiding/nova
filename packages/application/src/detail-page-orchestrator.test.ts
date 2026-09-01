@@ -81,6 +81,7 @@ describe('orchestrateDetailPageModules', () => {
   it('retains required missing evidence as blocked', () => {
     const result = orchestrateDetailPageModules([module('hero', { status: 'missing' })], '服饰')
     expect(result.modules.map(item => item.key)).toEqual(['hero'])
+    expect(result.blockedModules.map(item => item.key)).toEqual(['hero'])
     expect(result.decisions[0]).toMatchObject({ action: 'retain', readiness: 'blocked', evidenceStatus: 'missing' })
   })
 
@@ -99,6 +100,7 @@ describe('orchestrateDetailPageModules', () => {
     const result = orchestrateDetailPageModules([module('evidence', { optional: true, status })], '锅具')
     expect(result.modules.map(item => item.key)).toEqual(['evidence'])
     expect(result.omittedModules).toEqual([])
+    expect(result.blockedModules.map(item => item.key)).toEqual(['evidence'])
     expect(result.decisions[0]).toMatchObject({ action: 'retain', readiness: 'blocked', evidenceStatus: status })
   })
 

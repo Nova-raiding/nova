@@ -26,6 +26,8 @@ export interface DetailPageOrchestrationResult {
   /** Alias that makes the ordering guarantee explicit to callers. */
   orderedModules: ContentModule[]
   omittedModules: ContentModule[]
+  /** Retained for review, but unsafe to treat as verified or publishable. */
+  blockedModules: ContentModule[]
   decisions: DetailPageModuleDecision[]
   explanations: string[]
   hasBlockingEvidence: boolean
@@ -167,6 +169,7 @@ export function orchestrateDetailPageModules(
     modules: orderedModules,
     orderedModules,
     omittedModules: omitted.map(decision => decision.module),
+    blockedModules: retained.filter(decision => decision.readiness === 'blocked').map(decision => decision.module),
     decisions: [...retained, ...omitted],
     explanations: [...retained, ...omitted].map(decision => decision.reason),
     hasBlockingEvidence: allDecisions.some(decision => decision.readiness === 'blocked'),
