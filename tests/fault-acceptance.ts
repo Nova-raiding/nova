@@ -14,6 +14,7 @@ export type LocalFaultEvidence = {
   status: 'pass' | 'fail'
   generated_at: string
   ended_at: string
+  runtime_services: Array<{ service: string; state: string; health: string }>
   scenarios: Array<{
     name: string
     status: 'pass' | 'fail'
@@ -25,6 +26,11 @@ export type LocalFaultEvidence = {
     trace_id: string
   }>
 }
+
+export const LOCAL_DOCKER_REQUIRED_SERVICES = [
+  'api', 'api-replica', 'clamav', 'ops-ui', 'postgres', 'redis', 'ui',
+  'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync',
+] as const
 
 const isUtcInstant = (value: unknown): value is string => typeof value === 'string'
   && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(value)
@@ -49,6 +55,22 @@ export function validateLocalFaultEvidence(value: unknown): string[] {
   if (!isUtcInstant(evidence.generated_at)) errors.push('generated_at must be a UTC ISO instant')
   if (!isUtcInstant(evidence.ended_at)) errors.push('ended_at must be a UTC ISO instant')
   if (isUtcInstant(evidence.generated_at) && isUtcInstant(evidence.ended_at) && Date.parse(evidence.ended_at) < Date.parse(evidence.generated_at)) errors.push('ended_at must not be before generated_at')
+  if (!Array.isArray(evidence.runtime_services)) {
+    errors.push('runtime_services must contain the local Docker service snapshot')
+  } else {
+    const names = evidence.runtime_services.map(service => service && typeof service === 'object' && typeof service.service === 'string' ? service.service : '')
+    for (const required of LOCAL_DOCKER_REQUIRED_SERVICES) {
+      const index = names.indexOf(required)
+      if (index < 0) {
+        errors.push(`runtime_services is missing ${required}`)
+        continue
+      }
+      const service = evidence.runtime_services[index]!
+      if (service.state !== 'running') errors.push(`runtime_services.${required}.state must be running`)
+      if (service.health !== 'healthy') errors.push(`runtime_services.${required}.health must be healthy`)
+    }
+    if (new Set(names.filter(Boolean)).size !== names.filter(Boolean).length) errors.push('runtime service names must be unique')
+  }
   if (!Array.isArray(evidence.scenarios) || evidence.scenarios.length === 0) {
     errors.push('scenarios must contain at least one result')
   } else {

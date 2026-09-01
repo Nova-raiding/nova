@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { validateLocalFaultEvidence } from './fault-acceptance.js'
+import { LOCAL_DOCKER_REQUIRED_SERVICES, validateLocalFaultEvidence } from './fault-acceptance.js'
 
 const compose = ['compose', '-p', 'local', '--env-file', '.env', '-f', 'infra/local/docker-compose.yml']
 const redisService = 'redis'
@@ -13,12 +13,36 @@ type HealthEnvelope = {
   data?: { status?: string; redis?: { ready?: boolean } }
 }
 
+type RuntimeService = { service: string; state: string; health: string }
+type ComposeContainer = { Service?: string; State?: string; Health?: string }
+
 function docker(args: string[]) {
   return execFileSync('docker', [...compose, ...args], {
     cwd: process.cwd(),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim()
+}
+
+function runtimeSnapshot(): RuntimeService[] {
+  const rows = docker(['ps', '--format', 'json'])
+    .split('\n').filter(Boolean).map(line => JSON.parse(line) as ComposeContainer)
+  const byService = new Map(rows.map(row => [row.Service, row]))
+  return LOCAL_DOCKER_REQUIRED_SERVICES.map(service => ({
+    service,
+    state: byService.get(service)?.State ?? 'missing',
+    health: byService.get(service)?.Health ?? 'missing',
+  }))
+}
+
+async function waitForHealthyRuntime(timeoutMs = 15_000): Promise<RuntimeService[]> {
+  const deadline = Date.now() + timeoutMs
+  let snapshot = runtimeSnapshot()
+  while (Date.now() < deadline && snapshot.some(service => service.state !== 'running' || service.health !== 'healthy')) {
+    await new Promise(resolve => setTimeout(resolve, 250))
+    snapshot = runtimeSnapshot()
+  }
+  return snapshot
 }
 
 async function health(): Promise<{ status: number; body: HealthEnvelope }> {
@@ -71,6 +95,7 @@ describe('local Docker fault acceptance', () => {
         status: 'pass' as const,
         generated_at: new Date().toISOString(),
         ended_at: new Date().toISOString(),
+        runtime_services: await waitForHealthyRuntime(),
         scenarios: [{
           name: 'redis_restart', status: 'pass' as const,
           degraded_status: degraded.status,

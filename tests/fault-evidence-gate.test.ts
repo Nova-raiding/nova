@@ -4,6 +4,7 @@ import { validateLocalFaultEvidence, type LocalFaultEvidence } from './fault-acc
 const base: LocalFaultEvidence = {
   schema_version: '1', release_id: 'local-test-release', software_version: 'local-api@workspace', config_version: 'compose-test-v1', data_version: 'migration-128', environment: 'test', cloud_gate: false, status: 'pass',
   generated_at: '2026-09-01T00:00:00.000Z', ended_at: '2026-09-01T00:00:03.000Z',
+  runtime_services: ['api', 'api-replica', 'clamav', 'ops-ui', 'postgres', 'redis', 'ui', 'worker-automation', 'worker-generation', 'worker-publish', 'worker-reconcile', 'worker-scan', 'worker-sync'].map(service => ({ service, state: 'running', health: 'healthy' })),
   scenarios: [{ name: 'redis_restart', status: 'pass', degraded_status: 503, degraded_code: 'REDIS_UNAVAILABLE', recovered_status: 200, recovered_ready: true, request_id: 'req-local-fault', trace_id: 'trace-local-fault' }],
 }
 
@@ -36,6 +37,11 @@ describe('local fault evidence gate', () => {
 
   it('rejects a failed report that contains only successful scenarios', () => {
     expect(validateLocalFaultEvidence({ ...base, status: 'fail' })).toContain('fail evidence must contain a failed scenario')
+  })
+
+  it('rejects evidence without a complete healthy Docker runtime snapshot', () => {
+    expect(validateLocalFaultEvidence({ ...base, runtime_services: base.runtime_services.filter(service => service.service !== 'worker-scan') })).toContain('runtime_services is missing worker-scan')
+    expect(validateLocalFaultEvidence({ ...base, runtime_services: base.runtime_services.map(service => service.service === 'redis' ? { ...service, health: 'starting' } : service) })).toContain('runtime_services.redis.health must be healthy')
   })
 
   it('rejects duplicate scenario names instead of collapsing evidence', () => {
