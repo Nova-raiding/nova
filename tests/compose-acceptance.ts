@@ -136,7 +136,7 @@ export async function runComposeAcceptance() {
     await request('/v1/products/import', 'ws_demo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ platform: 'taobao', account_id: accountId, remote_id: 'TB-COMPOSE-1', title: 'Compose 验收商品', sku_count: 1, stock: 10 }) })
     await request('/v1/products/prod_taobao_TB-COMPOSE-1/confirm', 'ws_demo', { method: 'POST' })
     const task = await request('/v1/tasks', 'ws_demo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ product_id: 'prod_taobao_TB-COMPOSE-1', platform: 'taobao', account_id: accountId }) }) as { id: string }
-    const feedback = await request(`/v1/tasks/${task.id}/feedback`, 'ws_demo', { method: 'POST', headers: { 'content-type': 'application/json', 'x-actor-id': 'compose_actor' }, body: JSON.stringify({ rating: 'liked', reason: 'compose feedback' }) }) as { id: string; taskId: string; rating: string }
+    const feedback = await request(`/v1/tasks/${task.id}/feedback`, 'ws_demo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rating: 'liked', reason: 'compose feedback' }) }) as { id: string; taskId: string; rating: string }
     assert.equal(feedback.taskId, task.id)
     assert.equal(feedback.rating, 'liked')
     const currentApiContainer = docker(['ps', '-q', 'api'])
