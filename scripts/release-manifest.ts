@@ -71,7 +71,9 @@ export function buildReleaseManifest(input: {
   const bridgeStart = bridge.indexOf('const METHODS = {')
   const bridgeEnd = bridge.indexOf('\n}\n\n', bridgeStart)
   const methodDefinitions = bridgeStart >= 0 && bridgeEnd > bridgeStart ? bridge.slice(bridgeStart, bridgeEnd) : ''
-  const bridgeToolCount = [...methodDefinitions.matchAll(/^  '([^']+)'\s*:/gmu)].map(match => match[1]!).filter(name => !name.startsWith('ops.') && !merchantHiddenMethods.has(name)).length
+  const disabledBlock = bridge.match(/const COMMERCIAL_DISABLED_METHODS = new Set\(\[(.*?)\]\)/su)?.[1] ?? ''
+  const commercialDisabledMethods = new Set([...disabledBlock.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
+  const bridgeToolCount = [...methodDefinitions.matchAll(/^  '([^']+)'\s*:/gmu)].map(match => match[1]!).filter(name => !name.startsWith('ops.') && !merchantHiddenMethods.has(name) && !commercialDisabledMethods.has(name)).length
   if (releaseMetadata.merchantBridgeToolCount !== bridgeToolCount) throw new Error('release metadata merchant bridge tool count does not match the current bridge surface')
   const opsNavigation = readFileSync(resolve(root, 'apps/ops-console/src/navigation/opsNavigation.ts'), 'utf8')
   const opsDomainCount = [...(opsNavigation.match(/export const opsDomains = \[(.*?)\] as const/su)?.[1] ?? '').matchAll(/"[a-z0-9-]+"/gu)].length
