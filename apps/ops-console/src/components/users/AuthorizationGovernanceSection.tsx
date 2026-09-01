@@ -16,6 +16,15 @@ export function parseGrantCapabilities(value: unknown): string[] {
   return String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+export function validateJitExpiry(value: unknown, accessMode: "read" | "write", now = Date.now()): string | undefined {
+  const parsed = Date.parse(String(value ?? "").trim());
+  if (!Number.isFinite(parsed)) return "请输入有效的 ISO 到期时间";
+  if (parsed <= now) return "到期时间必须晚于当前时间";
+  const maxTtl = accessMode === "write" ? 5 : 15;
+  if (parsed > now + maxTtl * 60_000) return `${accessMode === "write" ? "写入" : "只读"} JIT 最长 ${maxTtl} 分钟`;
+  return undefined;
+}
+
 export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleModel }) {
   const { message } = App.useApp();
   const canReadRoles = model.authorization.can("authorization.role.read");
@@ -160,7 +169,10 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             <Col span={4}><Form.Item name="max_uses" label="最大使用次数" initialValue={1} rules={[{ required: true }]}><InputNumber min={1} max={100} className="full-width" /></Form.Item></Col>
             <Col span={4}><Form.Item name="approved_by" label="审批人" rules={[{ required: true }]}><Input /></Form.Item></Col>
             <Col span={8}><Form.Item name="approved_at" label="审批时间（ISO UTC）" rules={[{ required: true }]}><Input /></Form.Item></Col>
-            <Col span={8}><Form.Item name="expires_at" label="到期时间（读≤15m / 写≤5m）" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Col span={8}><Form.Item name="expires_at" label="到期时间（读≤15m / 写≤5m）" extra="使用 ISO 时间；提交前会校验有效期与权限模式" rules={[{ required: true }, ({ getFieldValue }) => ({ validator: async (_rule, value) => {
+              const error = validateJitExpiry(value, getFieldValue("access_mode") ?? "read");
+              if (error) throw new Error(error);
+            } })]}><Input aria-describedby="jit-expiry-help" /><span id="jit-expiry-help" className="sr-only">只读权限最多 15 分钟，写入权限最多 5 分钟</span></Form.Item></Col>
             <Col span={8}><Form.Item name="reason" label="授权原因" rules={[{ required: true, min: 3 }]}><Input /></Form.Item></Col>
           </Row>
           <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>
