@@ -53,15 +53,16 @@ export function mapPinduoduoProducts(payload: unknown): RawProduct[] {
 
 export function mapPinduoduoWriteReceipt(payload: unknown, input: PlatformWriteDraft, operation: 'create' | 'update'): WriteReceipt {
   const root = record(payload)
-  return { platform: 'pinduoduo', operation, remoteId: stringValue(root?.goods_sign) ?? stringValue(root?.goods_id) ?? input.remoteId ?? '', requestId: stringValue(root?.request_id) ?? stringValue(root?.task_id) ?? `pdd-${Date.now()}`, status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
+  return { platform: 'pinduoduo', operation, remoteId: stringValue(root?.goods_sign) ?? stringValue(root?.goods_id) ?? input.remoteId ?? '', requestId: stringValue(root?.request_id) ?? stringValue(root?.task_id) ?? '', status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
 }
 
-export function mapPinduoduoWriteStatus(payload: unknown, request: WriteIdentity): WriteStatus {
+export function mapPinduoduoWriteStatus(payload: unknown, _request: WriteIdentity): WriteStatus {
   const root = record(payload)
   const remoteId = stringValue(root?.goods_sign) ?? stringValue(root?.goods_id)
   const state = ['submitted', 'published', 'rejected', 'unknown'].includes(String(root?.state)) ? String(root?.state) as WriteStatus['state'] : root?.success === true ? 'submitted' : 'unknown'
   const rejection = state === 'rejected' ? mapPlatformRejection(payload) : undefined
-  return { found: root?.found === true || Boolean(remoteId) || state === 'rejected', state, ...(remoteId ? { remoteId } : {}), requestId: stringValue(root?.request_id) ?? request.idempotencyKey, simulated: false, ...(rejection ? { rejection } : {}) }
+  const requestId = stringValue(root?.request_id) ?? stringValue(root?.task_id)
+  return { found: root?.found === true || Boolean(remoteId) || state === 'rejected', state, ...(remoteId ? { remoteId } : {}), ...(requestId ? { requestId } : {}), simulated: false, ...(rejection ? { rejection } : {}) }
 }
 
 function record(value: unknown): Record<string, any> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : undefined }

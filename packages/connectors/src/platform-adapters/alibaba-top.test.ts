@@ -29,6 +29,10 @@ describe('Alibaba TOP signer', () => {
     expect(mapAlibabaTopWriteStatus({ success: true, num_iid: 1122 }, { idempotencyKey: 'req-1' }, 'taobao')).toMatchObject({ found: true, state: 'submitted', remoteId: '1122' })
   })
 
+  it.each(['taobao', 'tmall'] as const)('does not use the local idempotency key as provider request evidence for %s', platform => {
+    expect(mapAlibabaTopWriteStatus({ success: true, num_iid: 1122 }, { idempotencyKey: 'local-only' }, platform)).not.toHaveProperty('requestId')
+  })
+
   it.each(['taobao', 'tmall'] as const)('maps %s rejection evidence independently', platform => {
     expect(mapAlibabaTopWriteStatus({ found: true, state: 'rejected', error_response: { code: 27, sub_msg: '类目属性缺失', errors: [{ property: 'cid', sub_code: 'MISSING', msg: '请选择类目' }] } }, { idempotencyKey: `${platform}-rejected` }, platform)).toMatchObject({
       state: 'rejected', rejection: { rawCode: '27', message: '类目属性缺失', fields: [{ path: 'cid', rawCode: 'MISSING', message: '请选择类目' }] },

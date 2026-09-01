@@ -79,14 +79,15 @@ export function mapAlibabaTopProducts(payload: unknown, platform: 'taobao' | 'tm
 
 export function mapAlibabaTopWriteReceipt(payload: unknown, input: PlatformWriteDraft, operation: 'create' | 'update', platform: 'taobao' | 'tmall'): WriteReceipt {
   const record = asRecord(payload)
-  return { platform, operation, remoteId: stringValue(record?.num_iid) ?? stringValue(record?.item_id) ?? input.remoteId ?? '', requestId: stringValue(record?.request_id) ?? stringValue(record?.task_id) ?? `top-${Date.now()}`, status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
+  return { platform, operation, remoteId: stringValue(record?.num_iid) ?? stringValue(record?.item_id) ?? input.remoteId ?? '', requestId: stringValue(record?.request_id) ?? stringValue(record?.task_id) ?? '', status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
 }
 
-export function mapAlibabaTopWriteStatus(payload: unknown, request: WriteIdentity, platform: 'taobao' | 'tmall'): WriteStatus {
+export function mapAlibabaTopWriteStatus(payload: unknown, _request: WriteIdentity, platform: 'taobao' | 'tmall'): WriteStatus {
   const record = asRecord(payload)
   const state = ['submitted', 'published', 'rejected', 'unknown'].includes(String(record?.state)) ? String(record?.state) as WriteStatus['state'] : record?.success === true ? 'submitted' : 'unknown'
   const rejection = state === 'rejected' ? mapPlatformRejection(payload) : undefined
-  return { found: record?.found === true || Boolean(stringValue(record?.num_iid) ?? stringValue(record?.item_id)) || state === 'rejected', state, ...(stringValue(record?.num_iid) ?? stringValue(record?.item_id) ? { remoteId: stringValue(record?.num_iid) ?? stringValue(record?.item_id) } : {}), ...(stringValue(record?.request_id) ? { requestId: stringValue(record?.request_id) } : { requestId: request.idempotencyKey }), simulated: false, ...(rejection ? { rejection } : {}) }
+  const requestId = stringValue(record?.request_id) ?? stringValue(record?.task_id)
+  return { found: record?.found === true || Boolean(stringValue(record?.num_iid) ?? stringValue(record?.item_id)) || state === 'rejected', state, ...(stringValue(record?.num_iid) ?? stringValue(record?.item_id) ? { remoteId: stringValue(record?.num_iid) ?? stringValue(record?.item_id) } : {}), ...(requestId ? { requestId } : {}), simulated: false, ...(rejection ? { rejection } : {}) }
 }
 
 function asRecord(value: unknown): Record<string, any> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : undefined }

@@ -19,6 +19,10 @@ describe('Pinduoduo adapter', () => {
     expect(mapPinduoduoWriteStatus({ success: true, goods_sign: 'gs-1' }, { idempotencyKey: 'pdd-1' })).toMatchObject({ found: true, state: 'submitted', remoteId: 'gs-1' })
   })
 
+  it('does not use the local idempotency key as provider request evidence', () => {
+    expect(mapPinduoduoWriteStatus({ success: true, goods_sign: 'gs-1' }, { idempotencyKey: 'local-only' })).not.toHaveProperty('requestId')
+  })
+
   it('maps a rejected status even when no remote product id was assigned', () => {
     expect(mapPinduoduoWriteStatus({ state: 'rejected', rejection: { raw_code: 'PDD-SKU-101', message: 'SKU 信息错误', fields: [{ path: 'sku.price', raw_code: 'PRICE_RANGE', message: '价格超出范围' }] } }, { idempotencyKey: 'pdd-rejected' })).toMatchObject({
       found: true, state: 'rejected', rejection: { rawCode: 'PDD-SKU-101', fields: [{ path: 'sku.price', rawCode: 'PRICE_RANGE' }] },

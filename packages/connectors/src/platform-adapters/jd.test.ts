@@ -19,6 +19,10 @@ describe('JD Open Platform adapter', () => {
     expect(mapJdWriteStatus({ success: true, ware_id: 100 }, { idempotencyKey: 'jd-1' })).toMatchObject({ found: true, state: 'submitted', remoteId: '100' })
   })
 
+  it('does not invent provider identity when status omits request evidence', () => {
+    expect(mapJdWriteStatus({ success: true, ware_id: 100 }, { idempotencyKey: 'local-only' })).not.toHaveProperty('requestId')
+  })
+
   it('keeps safe field-level rejection evidence', () => {
     expect(mapJdWriteStatus({ found: true, state: 'rejected', error_code: 'JD-ATTR-400', message: '属性不符合类目规则', field_errors: [{ field: 'title', code: 'TITLE-LONG', message: '标题过长' }] }, { idempotencyKey: 'jd-rejected' })).toMatchObject({
       found: true,
