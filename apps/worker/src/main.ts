@@ -721,11 +721,21 @@ export async function postImageGenerationReconciliationStatus(input: {
   return parseWorkerApiJson(response)
 }
 
+function validateImageReconciliationPageRequest(input: { workspaceId: string; limit?: number; cursor?: string }) {
+  const workspaceId = input.workspaceId.trim()
+  if (!workspaceId || /[\u0000-\u001f\u007f]/u.test(workspaceId)) throw new Error('image reconciliation requires a valid workspaceId')
+  const limit = input.limit ?? 100
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('image reconciliation limit must be 1..1000')
+  if (input.cursor !== undefined && (!input.cursor.trim() || /[\u0000-\u001f\u007f]/u.test(input.cursor))) throw new Error('image reconciliation cursor must be a non-empty safe string')
+  return { workspaceId, limit, ...(input.cursor !== undefined ? { cursor: input.cursor.trim() } : {}) }
+}
+
 export async function postImageGenerationReconciliation(input: { apiBaseUrl: string; apiToken: string; workspaceId: string; limit?: number; cursor?: string; fetcher?: typeof fetch; signingSecret?: string; signal?: AbortSignal }) {
+  const request = validateImageReconciliationPageRequest(input)
   const path = '/v1/internal/image-generation-jobs/reconciliation'
   const response = await fetchWorkerApi(input.fetcher ?? fetch, `${input.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
-    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': input.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
-    body: JSON.stringify({ workspace_id: input.workspaceId, limit: input.limit ?? 100, query_only: true, ...(input.cursor ? { cursor: input.cursor } : {}) }), redirect: 'error', signal: input.signal,
+    method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${input.apiToken}`, 'x-workspace-id': request.workspaceId, ...(input.signingSecret ? workerAuthIntent(input.signingSecret) : {}) },
+    body: JSON.stringify({ workspace_id: request.workspaceId, limit: request.limit, query_only: true, ...('cursor' in request ? { cursor: request.cursor } : {}) }), redirect: 'error', signal: input.signal,
   })
   if (!response.ok) throw new Error(`image generation reconciliation API returned ${response.status}`)
   return parseWorkerApiJson(response)

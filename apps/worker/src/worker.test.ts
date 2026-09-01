@@ -158,6 +158,16 @@ describe('worker production entry', () => {
     expect(requestHeaders?.get('x-worker-role')).toBe('reconcile')
   })
 
+  it('rejects unsafe reconciliation page inputs before network I/O', async () => {
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch
+    await expect(postImageGenerationReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', workspaceId: ' ', fetcher })).rejects.toThrow('workspaceId')
+    await expect(postImageGenerationReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', workspaceId: 'ws_a\u0000', fetcher })).rejects.toThrow('workspaceId')
+    await expect(postImageGenerationReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', workspaceId: 'ws_a', limit: 0, fetcher })).rejects.toThrow('limit')
+    await expect(postImageGenerationReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', workspaceId: 'ws_a', limit: 1001, fetcher })).rejects.toThrow('limit')
+    await expect(postImageGenerationReconciliation({ apiBaseUrl: 'http://api:8787', apiToken: 'worker-token', workspaceId: 'ws_a', cursor: ' ', fetcher })).rejects.toThrow('cursor')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it('requires explicit tenant scope and deduplicates configured workspaces', () => {
     expect(readWorkerConfig(baseEnv)).toMatchObject({ workspaces: ['ws_a', 'ws_b'], batchSize: 100, workspaceBatchSize: 10, leaseMs: 180_000, storageReconciliationIntervalMs: 900_000, modelUsageReconciliationIntervalMs: 300_000, dependencyCheckIntervalMs: 10_000 })
     expect(() => readWorkerConfig({ DATABASE_URL: baseEnv.DATABASE_URL })).toThrow('WORKER_WORKSPACES')
