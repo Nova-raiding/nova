@@ -7,7 +7,7 @@ describe('payment provider adapter', () => {
     const input = { channel: 'alipay' as const, orderId: 'fixture-order-1', idempotencyKey: 'fixture-key-1', workspaceId: 'ws-fixture', amountFen: 1000, callbackUrl: 'fixture://callback', description: 'local test' }
     await expect(provider.createCheckout(input)).resolves.toMatchObject({ paymentUrl: 'fixture://alipay/ws-fixture/1000?order_id=fixture-order-1', providerOrderId: 'fixture-order-1' })
     await expect(provider.queryStatus({ channel: input.channel, orderId: input.orderId, workspaceId: input.workspaceId })).resolves.toMatchObject({ state: 'pending', amountFen: 1000 })
-    provider.confirm({ orderId: input.orderId })
+    provider.confirm({ workspaceId: input.workspaceId, channel: input.channel, orderId: input.orderId })
     await expect(provider.queryStatus({ channel: input.channel, orderId: input.orderId, workspaceId: input.workspaceId })).resolves.toMatchObject({ state: 'paid', providerTradeId: 'fixture-trade-fixture-order-1', amountFen: 1000 })
     await expect(provider.refund({ channel: input.channel, orderId: input.orderId, providerTradeId: 'fixture-trade-fixture-order-1', workspaceId: input.workspaceId, amountFen: 1000, reason: 'test' })).resolves.toMatchObject({ providerRefundId: 'fixture-refund-fixture-order-1', state: 'accepted' })
     await expect(provider.queryStatus({ channel: input.channel, orderId: input.orderId, workspaceId: input.workspaceId })).resolves.toMatchObject({ state: 'closed' })
@@ -19,6 +19,18 @@ describe('payment provider adapter', () => {
     await provider.createCheckout(input)
     await expect(provider.createCheckout(input)).resolves.toMatchObject({ providerOrderId: input.orderId })
     await expect(provider.createCheckout({ ...input, amountFen: 3000 })).rejects.toThrow('amount conflict')
+  })
+
+  it('isolates identical order ids across workspaces and payment channels', async () => {
+    const provider = new FixturePaymentProvider()
+    const orderId = 'shared-order-id'
+    await provider.createCheckout({ channel: 'alipay', orderId, idempotencyKey: 'key-a', workspaceId: 'ws-a', amountFen: 1000, callbackUrl: 'fixture://callback', description: 'local test' })
+    await provider.createCheckout({ channel: 'wechat', orderId, idempotencyKey: 'key-b', workspaceId: 'ws-b', amountFen: 2000, callbackUrl: 'fixture://callback', description: 'local test' })
+    provider.confirm({ workspaceId: 'ws-a', channel: 'alipay', orderId })
+
+    await expect(provider.queryStatus({ channel: 'alipay', orderId, workspaceId: 'ws-a' })).resolves.toMatchObject({ state: 'paid', amountFen: 1000 })
+    await expect(provider.queryStatus({ channel: 'wechat', orderId, workspaceId: 'ws-b' })).resolves.toMatchObject({ state: 'pending', amountFen: 2000 })
+    await expect(provider.queryStatus({ channel: 'alipay', orderId, workspaceId: 'ws-b' })).resolves.toMatchObject({ state: 'failed' })
   })
 
   it('creates a checkout through the server-side provider and accepts only HTTPS payment URLs', async () => {

@@ -56,28 +56,32 @@ export interface PaymentProvider {
 export class FixturePaymentProvider implements PaymentProvider {
   private readonly orders = new Map<string, { amountFen: number; state: PaymentStatusResult['state']; tradeId?: string }>()
 
+  private orderKey(input: Pick<PaymentCheckoutInput, 'workspaceId' | 'channel' | 'orderId'>): string {
+    return `${input.workspaceId}\u0000${input.channel}\u0000${input.orderId}`
+  }
+
   async createCheckout(input: PaymentCheckoutInput): Promise<PaymentCheckoutResult> {
-    const existing = this.orders.get(input.orderId)
+    const existing = this.orders.get(this.orderKey(input))
     if (existing && existing.amountFen !== input.amountFen) throw new Error('fixture payment order amount conflict')
-    if (!existing) this.orders.set(input.orderId, { amountFen: input.amountFen, state: 'pending' })
+    if (!existing) this.orders.set(this.orderKey(input), { amountFen: input.amountFen, state: 'pending' })
     return { paymentUrl: `fixture://${input.channel}/${input.workspaceId}/${input.amountFen}?order_id=${encodeURIComponent(input.orderId)}`, providerOrderId: input.orderId }
   }
 
   async queryStatus(input: PaymentStatusInput): Promise<PaymentStatusResult> {
-    const order = this.orders.get(input.orderId)
+    const order = this.orders.get(this.orderKey(input))
     return order ? { state: order.state, ...(order.tradeId ? { providerTradeId: order.tradeId } : {}), amountFen: order.amountFen } : { state: 'failed' }
   }
 
   async refund(input: PaymentRefundInput): Promise<PaymentRefundResult> {
-    const order = this.orders.get(input.orderId)
+    const order = this.orders.get(this.orderKey(input))
     if (!order || order.amountFen !== input.amountFen || order.state !== 'paid') throw new Error('fixture payment order is not refundable')
     order.state = 'closed'
     return { providerRefundId: `fixture-refund-${input.orderId}`, state: 'accepted' }
   }
 
   /** Test/local checkout confirmation; never exposed through production configuration. */
-  confirm(input: { orderId: string; providerTradeId?: string }) {
-    const order = this.orders.get(input.orderId)
+  confirm(input: { workspaceId: string; channel: PaymentChannel; orderId: string; providerTradeId?: string }) {
+    const order = this.orders.get(this.orderKey(input))
     if (!order) throw new Error('fixture payment order not found')
     order.state = 'paid'
     order.tradeId = input.providerTradeId ?? `fixture-trade-${input.orderId}`
