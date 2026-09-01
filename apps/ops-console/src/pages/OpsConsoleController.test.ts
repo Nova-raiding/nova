@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, accessDeniedReasonCode, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, accessDeniedReasonCode, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
 import { openBrandStore } from "./StoresPage.js";
 
 describe("selectStoreScope", () => {
@@ -54,6 +54,22 @@ describe("managed session gate", () => {
     expect(opsSessionGateState(true, false)).toBe("loading");
     expect(opsSessionGateState(true, true, "stale error")).toBe("ready");
     expect(opsSessionGateState(false, false, "local connection error")).toBe("blocked");
+  });
+});
+
+describe("desktop loading feedback", () => {
+  it("announces the highest-priority main content transition", () => {
+    expect(opsContentLoadingMessage("ready", true, true)).toContain("旧工作台数据已清除");
+    expect(opsContentLoadingMessage("loading", false, true)).toBe("正在验证运营权限");
+    expect(opsContentLoadingMessage("ready", false, true)).toBe("正在刷新运营数据");
+    expect(opsContentLoadingMessage("ready", false, false)).toBe("");
+  });
+
+  it("marks the desktop main region busy and exposes a polite live status", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(new URL("./OpsConsoleController.tsx", import.meta.url), "utf8");
+    expect(source).toContain('aria-busy={Boolean(loadingMessage)}');
+    expect(source).toContain('role="status" aria-live="polite" aria-atomic="true"');
   });
 });
 

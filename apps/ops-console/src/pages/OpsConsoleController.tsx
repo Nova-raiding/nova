@@ -52,6 +52,17 @@ export function opsSessionGateState(
   return "loading";
 }
 
+export function opsContentLoadingMessage(
+  sessionGate: ReturnType<typeof opsSessionGateState>,
+  switchingWorkbench: boolean,
+  loading: boolean,
+) {
+  if (switchingWorkbench) return "正在切换运营工作台，旧工作台数据已清除";
+  if (sessionGate === "loading") return "正在验证运营权限";
+  if (loading) return "正在刷新运营数据";
+  return "";
+}
+
 export function accessDeniedReasonCode(
   evidence: { code?: string; details?: Readonly<Record<string, unknown>> } | undefined,
 ): string | undefined {
@@ -89,6 +100,7 @@ function Dashboard({
     : undefined;
   const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
   const sessionGate = opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError);
+  const loadingMessage = opsContentLoadingMessage(sessionGate, switchingWorkbench, model.loading);
   const sessionReady = sessionGate === "ready";
   const visibleDomains = visibleOpsDomains(model.authorization);
   const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization);
@@ -164,7 +176,10 @@ function Dashboard({
               void model.loadUsers();
           }}
         />
-        <Content id="ops-main-content" className="ops-content" tabIndex={-1}>
+        <Content id="ops-main-content" className="ops-content" tabIndex={-1} aria-busy={Boolean(loadingMessage)}>
+          <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {loadingMessage}
+          </span>
           {model.error && sessionGate !== "blocked" ? (
             <Alert
               className="ops-global-load-warning"
