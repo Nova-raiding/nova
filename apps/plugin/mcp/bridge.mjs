@@ -1239,7 +1239,7 @@ function safeErrorDetails(details) {
     if (value && typeof value === 'object') {
       const nested = {}
       for (const [key, item] of Object.entries(value)) {
-        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version'].includes(key)) {
+        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version'].includes(key)) {
           const sanitized = sanitize(item, depth + 1)
           if (sanitized !== undefined) nested[key] = sanitized
         }
@@ -1248,7 +1248,7 @@ function safeErrorDetails(details) {
     }
     return undefined
   }
-  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
+  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
     const value = authorizationEvidenceKeys.includes(key) || correlationEvidenceKeys.includes(key)
       ? key === 'explicit_deny'
         ? evidenceBoolean(details[key])
