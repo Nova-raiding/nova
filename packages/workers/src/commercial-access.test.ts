@@ -42,12 +42,12 @@ describe('worker commercial execution gate', () => {
     expect(recheck).not.toHaveBeenCalled()
   })
 
-  it('rejects stale or future enqueue snapshots before authoritative recheck', async () => {
-    const recheck = vi.fn()
+  it('accepts an old durable snapshot for authoritative recheck but rejects future evidence', async () => {
+    const recheck = vi.fn(async ({ snapshot }: { snapshot: WorkerCommercialAccessSnapshot }) => live(snapshot))
     const guard = createCommercialAccessGuard(recheck, { now: () => now, maxEvidenceAgeMs: 30_000 })
-    await expect(guard.assertCommercialAccess(event({ decided_at: '2026-09-01T09:59:00.000Z' }), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', retryable: false })
+    await expect(guard.assertCommercialAccess(event({ decided_at: '2026-09-01T09:00:00.000Z' }), 'generation.execute')).resolves.toMatchObject({ allowed: true, ready: true })
     await expect(guard.assertCommercialAccess(event({ decided_at: '2026-09-01T10:00:06.000Z' }), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', retryable: false })
-    expect(recheck).not.toHaveBeenCalled()
+    expect(recheck).toHaveBeenCalledOnce()
   })
 
   it('rejects invalid snapshot freshness configuration', () => {

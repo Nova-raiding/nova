@@ -84,7 +84,7 @@ export function createCommercialAccessGuard(
     async assertCommercialAccess(event, operation, signal) {
       signal?.throwIfAborted()
       const snapshot = parseWorkerCommercialAccessSnapshot(event, operation)
-      validateSnapshotFreshness(snapshot, now(), maxEvidenceAgeMs)
+      validateSnapshotTimestamp(snapshot, now())
       let current: WorkerCommercialAccessRecheck
       try {
         current = await recheck({ event, operation, snapshot, ...(signal ? { signal } : {}) })
@@ -158,9 +158,13 @@ function validateCommercialRecheck(current: WorkerCommercialAccessRecheck, snaps
   }
 }
 
-function validateSnapshotFreshness(snapshot: WorkerCommercialAccessSnapshot, now: number, maxAgeMs: number): void {
+function validateSnapshotTimestamp(snapshot: WorkerCommercialAccessSnapshot, now: number): void {
   const decidedAt = Date.parse(snapshot.decidedAt)
-  if (decidedAt > now + 5_000 || now - decidedAt > maxAgeMs) throw snapshotError('commercial access snapshot evidence is stale')
+  // Durable work may legitimately wait longer than the live recheck freshness
+  // window. The immutable enqueue snapshot remains the binding baseline; the
+  // authoritative recheck below detects any revision, entitlement, rate, or
+  // reservation drift immediately before provider I/O.
+  if (decidedAt > now + 5_000) throw snapshotError('commercial access snapshot evidence is from the future')
 }
 
 function snapshotError(message: string): WorkerCommercialAccessError { return new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', message, false) }
