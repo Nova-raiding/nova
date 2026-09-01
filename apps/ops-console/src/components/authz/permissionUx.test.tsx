@@ -5,7 +5,7 @@ import { AuthorizationProvider } from "../../authz/AuthorizationProvider.js";
 import type { OpsSession } from "../../types/ops.js";
 import { AccessDeniedResult } from "./AccessDeniedResult.js";
 import { PermissionGate } from "./PermissionGate.js";
-import { OpsWorkbenchSwitcher } from "./OpsWorkbenchSwitcher.js";
+import { focusActiveWorkbenchControl, OpsWorkbenchSwitcher } from "./OpsWorkbenchSwitcher.js";
 import { activeJitGrantForNow, formatJitRemaining, RoleScopeBar, workbenchBoundaryMessage } from "./RoleScopeBar.js";
 
 const session: OpsSession = {
@@ -16,6 +16,14 @@ const session: OpsSession = {
 };
 
 describe("desktop permission UX", () => {
+  it("restores keyboard focus to the active workbench control", () => {
+    let focused = false;
+    const active = { focus: (options?: FocusOptions) => { focused = options?.preventScroll === true; } };
+    const root = { querySelector: () => active } as unknown as Pick<HTMLElement, "querySelector">;
+    expect(focusActiveWorkbenchControl(root)).toBe(true);
+    expect(focused).toBe(true);
+    expect(focusActiveWorkbenchControl(null)).toBe(false);
+  });
   it("states the platform and merchant workbench boundary explicitly", () => {
     expect(workbenchBoundaryMessage("platform")).toContain("商家操作需切换到商家工作区");
     expect(workbenchBoundaryMessage("workspace")).toContain("不包含平台运营能力");
