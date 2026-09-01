@@ -303,7 +303,11 @@ export class PostgresAuthorizationRepository implements AuthorizationRepository 
     if (input.grantId === undefined && input.expectedGrantRevision !== undefined) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
     const at = input.at ?? this.clock().toISOString()
     return this.transaction(async client => {
-      const loadExisting = () => client.query<AuthorizationExecutionReservationRow>(`SELECT ${authorizationExecutionReservationProjection} FROM authorization_execution_reservations WHERE reservation_id=$1 OR event_id=$2 FOR UPDATE`, [input.reservationId, input.eventId])
+      // Reservations are immutable after insertion. The unique reservation
+      // and event constraints on INSERT are the concurrency fence; reading
+      // an existing row must remain plain SELECT because the control-plane
+      // role intentionally has no UPDATE privilege on this append-only table.
+      const loadExisting = () => client.query<AuthorizationExecutionReservationRow>(`SELECT ${authorizationExecutionReservationProjection} FROM authorization_execution_reservations WHERE reservation_id=$1 OR event_id=$2`, [input.reservationId, input.eventId])
       const assertSameReservation = (existing: AuthorizationExecutionReservationRow) => {
         const same = existing.reservationId === input.reservationId && existing.eventId === input.eventId && existing.subjectIdentityId === input.subjectIdentityId && existing.workspaceId === input.workspaceId && existing.capability === input.capability && existing.resourceId === input.resourceId && existing.scopeHash === input.scopeHash && (existing.grantId ?? undefined) === input.grantId && Number(existing.authorizationRevision) === input.expectedAuthorizationRevision && (existing.grantRevision == null ? undefined : Number(existing.grantRevision)) === input.expectedGrantRevision
         if (!same) throw new AuthorizationRepositoryError('AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT')
