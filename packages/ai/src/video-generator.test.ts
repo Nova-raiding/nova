@@ -10,10 +10,10 @@ describe('video generator relay', () => {
   it('uses the platform relay and accepts a completed HTTPS artifact', async () => {
     const calls: Array<{ url: string; body: string }> = []
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
       fetch: (async (url, init) => {
         calls.push({ url: String(url), body: String(init?.body) })
-        return new Response(JSON.stringify({ data: { id: 'vid_1', video_url: 'https://cdn.example/video.mp4' } }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'vid_1', video_url: 'https://cdn.example/video.mp4' } }), { status: 200 })
       }) as typeof fetch,
     })
     await expect(generator.generate({ prompt: '生成春季上新短视频', output: 'rendering', context: { product: { id: 'p1' } } })).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4', providerJobId: 'vid_1' })
@@ -23,14 +23,14 @@ describe('video generator relay', () => {
 
   it('accepts an opaque queued provider job but rejects non-HTTPS artifacts', async () => {
     const queued = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
-      fetch: (async () => new Response(JSON.stringify({ task_id: 'job_1', status: 'queued' }), { status: 200 })) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
+      fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, task_id: 'job_1', status: 'queued' }), { status: 200 })) as typeof fetch,
     })
     await expect(queued.generate({ prompt: '生成视频', output: 'rendering', context: {} })).resolves.toEqual({ status: 'queued', providerJobId: 'job_1' })
 
     const invalid = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
-      fetch: (async () => new Response(JSON.stringify({ url: 'http://cdn.example/video.mp4' }), { status: 200 })) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
+      fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, url: 'http://cdn.example/video.mp4' }), { status: 200 })) as typeof fetch,
     })
     await expect(invalid.generate({ prompt: '生成视频', output: 'rendering', context: {} })).rejects.toThrow('neither an HTTPS artifact URL nor a provider job id')
   })
@@ -39,8 +39,8 @@ describe('video generator relay', () => {
     let method = ''
     let url = ''
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
-      fetch: (async (input, init) => { url = String(input); method = init?.method ?? ''; return new Response(JSON.stringify({ data: { task_id: 'job_1', status: 'completed', output_url: 'https://cdn.example/video.mp4' } }), { status: 200 }) }) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
+      fetch: (async (input, init) => { url = String(input); method = init?.method ?? ''; return new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { task_id: 'job_1', status: 'completed', output_url: 'https://cdn.example/video.mp4' } }), { status: 200 }) }) as typeof fetch,
     })
     await expect(generator.getStatus('job_1')).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/video.mp4', providerJobId: 'job_1' })
     expect(method).toBe('GET')
@@ -49,28 +49,28 @@ describe('video generator relay', () => {
 
   it('accepts the relay nested SUCCESS schema only when it contains an HTTPS artifact', async () => {
     const nested = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
-      fetch: (async () => new Response(JSON.stringify({ code: 0, message: 'ok', data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'https://cdn.example/result.mp4', quota: 123, data: { output: { url: 'https://cdn.example/output.mp4' }, request_id: 'request_nested', usage: { duration_seconds: 5 } } } }), { status: 200 })) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
+      fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, code: 0, message: 'ok', data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'https://cdn.example/result.mp4', quota: 123, data: { output: { url: 'https://cdn.example/output.mp4' }, request_id: 'request_nested', usage: { duration_seconds: 5 } } } }), { status: 200 })) as typeof fetch,
     })
     await expect(nested.getStatus('job_nested')).resolves.toEqual({ status: 'completed', videoUrl: 'https://cdn.example/result.mp4', providerJobId: 'job_nested' })
 
     const unsafe = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
-      fetch: (async () => new Response(JSON.stringify({ data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'http://cdn.example/result.mp4', data: { output: 'javascript:alert(1)' } } }), { status: 200 })) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
+      fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'http://cdn.example/result.mp4', data: { output: 'javascript:alert(1)' } } }), { status: 200 })) as typeof fetch,
     })
     await expect(unsafe.getStatus('job_nested')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' })
 
     const rejected = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
-      fetch: (async () => new Response(JSON.stringify({ code: 5001, message: 'failed', data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'https://cdn.example/stale.mp4' } }), { status: 200 })) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
+      fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, code: 5001, message: 'failed', data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'https://cdn.example/stale.mp4' } }), { status: 200 })) as typeof fetch,
     })
     await expect(rejected.getStatus('job_nested')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed' })
   })
 
   it('does not trust a completed status without an HTTPS artifact', async () => {
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1',
-      fetch: (async () => new Response(JSON.stringify({ data: { id: 'job_1', status: 'completed' } }), { status: 200 })) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => undefined,
+      fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'job_1', status: 'completed' } }), { status: 200 })) as typeof fetch,
     })
     await expect(generator.getStatus('job_1')).rejects.toThrow('completed without an HTTPS artifact URL')
   })
@@ -85,10 +85,10 @@ describe('video generator relay', () => {
   it('passes a bounded configurable duration required by per-duration relay billing', async () => {
     let body: Record<string, unknown> = {}
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1', durationSeconds: 12,
+      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1', usageSink: () => undefined, durationSeconds: 12,
       fetch: (async (_url, init) => {
         body = JSON.parse(String(init?.body)) as Record<string, unknown>
-        return new Response(JSON.stringify({ task_id: 'job_1', status: 'queued' }), { status: 200 })
+        return new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, task_id: 'job_1', status: 'queued' }), { status: 200 })
       }) as typeof fetch,
     })
     await generator.generate({ prompt: '生成视频', output: 'rendering', context: {} })
@@ -103,7 +103,7 @@ describe('video generator relay', () => {
   it('reuses a stable provider key and exposes timeout ambiguity to the server', async () => {
     const keys: string[] = []
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1',
+      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1', usageSink: () => undefined,
       fetch: (async (_url, init) => {
         keys.push(new Headers(init?.headers).get('idempotency-key') ?? '')
         throw new DOMException('timed out', 'AbortError')
@@ -122,7 +122,7 @@ describe('video generator relay', () => {
 
   it('keeps an explicit non-timeout provider response distinguishable from unknown outcome', async () => {
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1',
+      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1', usageSink: () => undefined,
       fetch: (async () => new Response('invalid request', { status: 422 })) as typeof fetch,
     })
     const error = await generator.generate({ prompt: '生成视频', output: 'rendering', context: {}, usageContext: { actionId: 'video:request_2' } }).catch(reason => reason as Record<string, unknown>)
@@ -146,8 +146,8 @@ describe('video generator relay', () => {
 
   it('classifies an accepted provider job with an explicit failed status as failed, not unknown', async () => {
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1',
-      fetch: (async () => new Response(JSON.stringify({ task_id: 'job_failed', status: 'failed' }), { status: 200 })) as typeof fetch,
+      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1', usageSink: () => undefined,
+      fetch: (async () => new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, task_id: 'job_failed', status: 'failed' }), { status: 200 })) as typeof fetch,
     })
     const error = await generator.generate({ prompt: '生成视频', output: 'rendering', context: {}, usageContext: { actionId: 'video:request_failed' } }).catch(reason => reason as Record<string, unknown>)
     expect(error).toMatchObject({
@@ -163,7 +163,7 @@ describe('video generator relay', () => {
 
   it('treats an explicit gateway timeout as an unknown provider outcome', async () => {
     const generator = new OpenAICompatibleVideoGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1',
+      baseUrl: 'https://relay.example', apiKey: 'relay', model: 'v1', usageSink: () => undefined,
       fetch: (async () => new Response('gateway timeout', { status: 504 })) as typeof fetch,
     })
     const error = await generator.generate({ prompt: '生成视频', output: 'rendering', context: {}, usageContext: { actionId: 'video:request_timeout' } }).catch(reason => reason as Record<string, unknown>)
