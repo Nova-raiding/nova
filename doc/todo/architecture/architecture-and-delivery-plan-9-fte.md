@@ -388,11 +388,14 @@ Runtime                                         50 家容量 [Load+Fault]
 
 ## 16. Implementation Tasks
 
-- [ ] T1 P1/P5/P9：冻结 domain、Connector、Job、error、state、capacity profile 契约。
+- [x] T1 P1/P5/P9：冻结 domain、Connector、Job、error、state、capacity profile 契约。
+  - 本地证据：`cd5b0b6` 的 domain/task/fact/publish、connector/job contract tests 已通过；capacity profile 合同与 release freshness simulation 已通过。真实目标部署仍不由此项声明覆盖。
 - [ ] T2 P2/P3/P4：六 profile fixture、contract tests 和 capability evidence。
-- [ ] T3 P1/P5/P7：Workspace scope、Vault、PostgreSQL migration、对象存储与版本。
+- [x] T3 P1/P5/P7：Workspace scope、Vault、PostgreSQL migration、对象存储与版本。
+  - 本地证据：`d936ed6` canonical/listing workspace 与唯一性测试、`0938909` migration chain integrity、`57b7e03` object-storage evidence gate 已通过；真实 Vault、目标对象存储和部署环境证据仍需外部签署。
 - [ ] T4 P6/P8：Task snapshot、Prompt schema、黄金集、deterministic/model review。
-- [ ] T5 P7/P9：diff、二次确认、PublishJob、outbox、remote hash、receipt。
+- [x] T5 P7/P9：diff、二次确认、PublishJob、outbox、remote hash、receipt。
+  - 本地证据：`cd5b0b6` publish state/confirmation/reconciliation tests、`279d7ab` prepare-confirm contract、`6378205` receipt/usage trace contract 已通过；真实平台写后回读和部署 canary 仍未完成。
 - [ ] T6 P1/P8/P9：50 家 load/fault/soak、观测、runbook、回滚与 canary。
 - [ ] T7 全员：Day 5/9/14 集成门禁和模块级缺陷清零。
 

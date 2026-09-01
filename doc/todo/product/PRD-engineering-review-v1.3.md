@@ -184,6 +184,17 @@ Synthesized from this review's findings. Run with Codex; checkbox as you ship.
   - Files: `tests/load/`, `tests/fault/`, `evidence/capacity/`
   - Verify: PRD 15.1 全部阈值通过，报告绑定 RC 软件、配置、环境和数据版本。
 
+### Local evidence reconciliation (2026-09-01)
+
+以下是已由本地代码/测试证实的合同级证据，不等同于目标部署放行：
+
+- Domain、connector、job、task、fact、publish 状态和重放合同：`cd5b0b6`，定向测试通过。
+- Capacity evidence schema、duration/tenant/fault/steady-state 一致性：`01744fe`，定向测试 11/11 通过。
+- Durable storage/备份证据字段及 artifact checksum：`57b7e03`，定向测试 5/5 通过。
+- Worker migration/source manifest freshness：`eb815ea`，定向测试 2/2 通过。
+
+仍未勾选 T6：50 家真实负载/故障/soak、真实连续 6 小时运行、噪声租户指标、目标部署报告、真实平台 canary、模型/支付/外部 OAuth 证据均未由本地测试替代。
+
 ## Completion Summary
 
 - Step 0：保留模块化单体和 9 人/15 日，运行形态升级，不引入微服务。
