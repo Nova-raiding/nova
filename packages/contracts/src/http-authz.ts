@@ -144,8 +144,25 @@ function pathMatcher(pathTemplate: string) {
 const compiledHttpPolicies = HTTP_OPERATION_POLICIES.map(policy => ({ policy, matcher: pathMatcher(policy.pathTemplate) }))
 
 export function getHttpOperationPolicy(method: string | undefined, path: string): HttpOperationPolicy | undefined {
+  // Route matching must happen on the same path grammar as the HTTP router.
+  // Encoded separators can otherwise be accepted as an opaque resource ID by
+  // this registry and decoded into a different route/resource by a downstream
+  // handler. Keep the policy lookup fail-closed for malformed or ambiguous
+  // paths; callers can return the normal unknown-route error envelope.
+  if (!isSafeHttpPolicyPath(path)) return undefined
   const normalizedMethod = method?.toUpperCase()
   return compiledHttpPolicies.find(candidate => candidate.policy.method === normalizedMethod && candidate.matcher.test(path))?.policy
+}
+
+function isSafeHttpPolicyPath(path: string): boolean {
+  if (!path.startsWith('/') || /[\\\u0000-\u001f\u007f]/u.test(path)) return false
+  if (/%(?:2f|5c)/iu.test(path)) return false
+  try {
+    const decoded = decodeURIComponent(path)
+    return !/[\\\u0000-\u001f\u007f]/u.test(decoded)
+  } catch {
+    return false
+  }
 }
 
 export function assertHttpOperationPolicyCoverage() {

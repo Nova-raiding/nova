@@ -50,6 +50,14 @@ describe('HTTP authorization policy registry', () => {
     expect(getHttpOperationPolicy('POST', '/v1/tasks/task-1/approve/extra')).toBeUndefined()
   })
 
+  it('fails closed for encoded route separators and malformed paths', () => {
+    expect(getHttpOperationPolicy('GET', '/v1/tasks/task%2F1')).toBeUndefined()
+    expect(getHttpOperationPolicy('GET', '/v1/tasks/task%5C1')).toBeUndefined()
+    expect(getHttpOperationPolicy('GET', '/v1/tasks/task%ZZ')).toBeUndefined()
+    expect(getHttpOperationPolicy('GET', '/v1/tasks/task\u00001')).toBeUndefined()
+    expect(getHttpOperationPolicy('GET', 'v1/tasks/task-1')).toBeUndefined()
+  })
+
   it('covers every documented OpenAPI operation exactly once while retaining internal runtime policies', () => {
     const source = readFileSync(new URL('../../../apps/api/openapi.yaml', import.meta.url), 'utf8')
     const operations: string[] = []
