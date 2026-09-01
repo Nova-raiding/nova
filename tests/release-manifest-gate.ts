@@ -102,7 +102,14 @@ export function validateReleaseManifest(document: unknown, options: { root?: str
   if (value.mcp?.methodListSha256 !== sha256(JSON.stringify(MCP_METHODS))) errors.push('mcp.methodListSha256 does not match the current MCP contract')
   const currentBridgeHash = (() => { try { return sha256(readFileSync(resolve(root, 'apps/plugin/mcp/bridge.mjs'))) } catch { return '' } })()
   if (value.mcp?.bridgeSha256 !== currentBridgeHash) errors.push('mcp.bridgeSha256 does not match the current source bridge')
-  const artifacts = new Map((value.artifacts ?? []).map(item => [item.path, item]))
+  const artifactEntries = value.artifacts ?? []
+  const artifactPaths = new Set<string>()
+  for (const item of artifactEntries) {
+    if (typeof item.path !== 'string') continue
+    if (artifactPaths.has(item.path)) errors.push(`artifact path is duplicated: ${item.path}`)
+    artifactPaths.add(item.path)
+  }
+  const artifacts = new Map(artifactEntries.map(item => [item.path, item]))
   for (const path of requiredArtifacts) {
     const item = artifacts.get(path); if (!item) { errors.push(`artifact is missing: ${path}`); continue }
     try { const stat = lstatSync(resolve(root, path)); if (!stat.isFile() || stat.isSymbolicLink()) errors.push(`current artifact is not a regular file: ${path}`); else { const bytes = readFileSync(resolve(root, path)); if (item.sha256 !== sha256(bytes)) errors.push(`artifact SHA-256 does not match current source: ${path}`); if (item.bytes !== bytes.byteLength) errors.push(`artifact byte count does not match current source: ${path}`) } } catch { errors.push(`current artifact cannot be read: ${path}`) }

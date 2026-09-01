@@ -50,6 +50,13 @@ describe('release manifest production gate', () => {
     expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual(expect.arrayContaining(['mcp.bridgeSha256 does not match the current source bridge', 'artifact is missing: .codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs']))
   })
 
+  it('rejects duplicate artifact paths instead of silently overwriting one entry', () => {
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    const artifact = manifest.artifacts.find(item => item.path === 'VERSION')!
+    manifest.artifacts.push({ ...artifact, sha256: 'f'.repeat(64) })
+    expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toContain('artifact path is duplicated: VERSION')
+  })
+
   it('binds the exact evidence bytes, freshness and existing production signatures without creating a production key', () => {
     const fixture = boundManifestFixture()
     expect(validateReleaseManifest(fixture.manifest, fixture.options)).toEqual([])
