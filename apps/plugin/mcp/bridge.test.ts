@@ -2022,7 +2022,14 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'API_UNAVAILABLE',
+          details: { operation_status: 'unknown', retryable: false },
+        },
+      })
+      expect(response.result.content[0].text).toBe('服务连接中断，尚未确认操作是否完成。请先查看任务状态，再决定是否重试。')
       expect(attempts).toBe(1)
     } finally {
       child.kill()

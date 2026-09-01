@@ -1131,7 +1131,7 @@ function userFacingErrorText(code, details) {
   if (code === 'MCP_GATEWAY_ERROR' && typeof details?.safe_message === 'string') return details.safe_message
   if (code === 'MCP_GATEWAY_ERROR' && typeof details?.config_message === 'string') return details.config_message
   if (code === 'MCP_GATEWAY_ERROR' && details?.export_signature_invalid === true) return '导出文件校验失败，未返回文件。请重新生成导出。'
-  if (code === 'MCP_GATEWAY_ERROR' && details?.operation_status === 'unknown') {
+  if ((code === 'API_UNAVAILABLE' || code === 'MCP_GATEWAY_ERROR') && details?.operation_status === 'unknown') {
     return '服务连接中断，尚未确认操作是否完成。请先查看任务状态，再决定是否重试。'
   }
   if (code === 'BRAND_VISUAL_RULES_BLOCKED') {
@@ -2017,7 +2017,15 @@ async function callRemote(method, params) {
         return result
       } catch (error) {
         const retryableNetworkError = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
-        if (!retrySafe || !retryableNetworkError || attempt === maxAttempts || Date.now() >= deadline) throw error
+        if (!retrySafe || !retryableNetworkError || attempt === maxAttempts || Date.now() >= deadline) {
+          if (retryableNetworkError && !retrySafe) {
+            throw Object.assign(new Error('MCP gateway connection failed before the operation outcome was confirmed'), {
+              code: 'API_UNAVAILABLE',
+              details: { operation_status: 'unknown', retryable: false },
+            })
+          }
+          throw error
+        }
         await wait(Math.min(retryDelayMs * (2 ** (attempt - 1)), Math.max(50, deadline - Date.now())))
       } finally {
         clearTimeout(timer)
