@@ -64,6 +64,8 @@ describe('PostgresBrandUnitRepository', () => {
     const client = new Client()
     client.enqueue() // BEGIN
     client.enqueue() // set_config
+    client.enqueue() // advisory lock
+    client.enqueue() // duplicate identity lookup
     client.enqueue({ id: 'listing_1', workspaceId: 'ws_1', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_1', state: 'draft' })
     client.enqueue() // COMMIT
 
@@ -74,6 +76,23 @@ describe('PostgresBrandUnitRepository', () => {
     const insert = client.calls.find(call => call.includes('INSERT INTO product_listings'))
     expect(insert).toContain('SELECT $1,$2,$3,$4,$5,$6,$7 FROM canonical_products canonical')
     expect(insert).toContain('canonical.workspace_id=$2 AND canonical.brand_id=$3 AND canonical.id=$4')
+  })
+
+  it('rejects a duplicate canonical listing five-tuple before insert', async () => {
+    const client = new Client()
+    client.enqueue() // BEGIN
+    client.enqueue() // set_config
+    client.enqueue() // advisory lock
+    client.enqueue({ id: 'listing_existing' }) // duplicate identity lookup
+    client.enqueue() // ROLLBACK
+
+    await expect(new PostgresBrandUnitRepository({ connect: async () => client } satisfies SqlPool).createListing({
+      workspaceId: 'ws_1', id: 'listing_duplicate', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_1',
+    })).rejects.toThrow('PRODUCT_LISTING_IDENTITY_CONFLICT')
+    expect(client.calls.some(call => call.includes('pg_advisory_xact_lock'))).toBe(true)
+    expect(client.calls.some(call => call.includes('canonical_product_id=$3') && call.includes('platform_account_id=$5'))).toBe(true)
+    expect(client.calls.some(call => call.includes('INSERT INTO product_listings'))).toBe(false)
+    expect(client.calls.at(-1)).toBe('ROLLBACK')
   })
 
   it('updates a canonical title with a facts revision CAS', async () => {
@@ -120,6 +139,15 @@ describe('PostgresBrandUnitRepository', () => {
       workspaceId: 'ws_1', id: 'listing_cross_brand', brandId: 'brand_2', canonicalProductId: 'canonical_brand_1', platform: 'taobao', accountId: 'acct_2',
     })).rejects.toThrow('PRODUCT_LISTING_CANONICAL_NOT_FOUND')
     expect(client.calls.at(-1)).toBe('ROLLBACK')
+  })
+
+  it('rejects duplicate canonical listing five-tuples in memory while allowing another account', async () => {
+    const repository = new MemoryBrandUnitRepository()
+    await repository.createCanonicalProduct({ workspaceId: 'ws_1', id: 'canonical_1', brandId: 'brand_1', title: '商品' })
+    await repository.createListing({ workspaceId: 'ws_1', id: 'listing_1', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_1' })
+    await expect(repository.createListing({ workspaceId: 'ws_1', id: 'listing_2', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_1' })).rejects.toThrow('PRODUCT_LISTING_IDENTITY_CONFLICT')
+    await expect(repository.createListing({ workspaceId: 'ws_1', id: 'listing_3', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_2' })).resolves.toMatchObject({ id: 'listing_3' })
+    await expect(repository.createListing({ workspaceId: 'ws_2', id: 'listing_4', brandId: 'brand_1', canonicalProductId: 'canonical_1', platform: 'taobao', accountId: 'acct_1' })).rejects.toThrow('PRODUCT_LISTING_CANONICAL_NOT_FOUND')
   })
 
   it('loads all consistency rows in one workspace-scoped read transaction', async () => {

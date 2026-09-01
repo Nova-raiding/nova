@@ -211,7 +211,17 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
     this.canonicalProducts.set(key, row)
     return row
   }
-  async createListing(input: { workspaceId: string; id: string; brandId: string; canonicalProductId: string; platform: BrandUnitPlatform; accountId: string; remoteProductId?: string }) { const product = this.canonicalProducts.get(`${input.workspaceId}:${input.canonicalProductId}`); if (!product || product.brandId !== input.brandId) throw new Error('PRODUCT_LISTING_CANONICAL_NOT_FOUND'); if (this.listings.has(`${input.workspaceId}:${input.id}`)) throw new Error('LISTING_CONFLICT'); const timestamp = now(); const row = { ...input, state: 'draft' as const, createdAt: timestamp, updatedAt: timestamp }; this.listings.set(`${input.workspaceId}:${input.id}`, row); return row }
+  async createListing(input: { workspaceId: string; id: string; brandId: string; canonicalProductId: string; platform: BrandUnitPlatform; accountId: string; remoteProductId?: string }) {
+    const product = this.canonicalProducts.get(`${input.workspaceId}:${input.canonicalProductId}`)
+    if (!product || product.workspaceId !== input.workspaceId || product.brandId !== input.brandId) throw new Error('PRODUCT_LISTING_CANONICAL_NOT_FOUND')
+    if (this.listings.has(`${input.workspaceId}:${input.id}`)) throw new Error('LISTING_CONFLICT')
+    const duplicate = [...this.listings.values()].find(listing => listing.workspaceId === input.workspaceId && listing.brandId === input.brandId && listing.canonicalProductId === input.canonicalProductId && listing.platform === input.platform && listing.accountId === input.accountId)
+    if (duplicate) throw new Error('PRODUCT_LISTING_IDENTITY_CONFLICT')
+    const timestamp = now()
+    const row = { ...input, state: 'draft' as const, createdAt: timestamp, updatedAt: timestamp }
+    this.listings.set(`${input.workspaceId}:${input.id}`, row)
+    return row
+  }
   async listListings(input: { workspaceId: string; brandId?: string; canonicalProductId?: string; listingId?: string; platform?: BrandUnitPlatform; accountId?: string }) { return [...this.listings.values()].filter(row => row.workspaceId === input.workspaceId && (!input.brandId || row.brandId === input.brandId) && (!input.canonicalProductId || row.canonicalProductId === input.canonicalProductId) && (!input.listingId || row.id === input.listingId) && (!input.platform || row.platform === input.platform) && (!input.accountId || row.accountId === input.accountId)) }
   async listCanonicalChainConsistencyRows(input: { workspaceId: string }): Promise<CanonicalChainConsistencyRows> {
     requireWorkspaceScope(input.workspaceId)
@@ -429,6 +439,9 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
   async createListing(input: { workspaceId: string; id: string; brandId: string; canonicalProductId: string; platform: BrandUnitPlatform; accountId: string; remoteProductId?: string }) {
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`${input.workspaceId}\u0000${input.brandId}\u0000${input.canonicalProductId}\u0000${input.platform}\u0000${input.accountId}`])
+      const duplicate = await client.query<{ id: string }>(`SELECT id FROM product_listings WHERE workspace_id=$1 AND brand_id=$2 AND canonical_product_id=$3 AND platform=$4 AND platform_account_id=$5 LIMIT 1`, [input.workspaceId, input.brandId, input.canonicalProductId, input.platform, input.accountId])
+      if (duplicate.rows[0]) throw new Error('PRODUCT_LISTING_IDENTITY_CONFLICT')
       const result = await client.query<ProductListingRow>(`INSERT INTO product_listings (id, workspace_id, brand_id, canonical_product_id, platform, platform_account_id, remote_product_id) SELECT $1,$2,$3,$4,$5,$6,$7 FROM canonical_products canonical WHERE canonical.workspace_id=$2 AND canonical.brand_id=$3 AND canonical.id=$4 RETURNING id, workspace_id AS "workspaceId", brand_id AS "brandId", canonical_product_id AS "canonicalProductId", platform, platform_account_id AS "accountId", remote_product_id AS "remoteProductId", state, created_at AS "createdAt", updated_at AS "updatedAt"`, [input.id, input.workspaceId, input.brandId, input.canonicalProductId, input.platform, input.accountId, input.remoteProductId ?? null])
       const row = result.rows[0]
       if (!row) throw new Error('PRODUCT_LISTING_CANONICAL_NOT_FOUND')
