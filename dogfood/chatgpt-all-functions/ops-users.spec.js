@@ -21,11 +21,12 @@ async function filterUserDirectory(page, keyword = 'support_demo') {
 }
 
 async function waitForBackgroundHydration(page) {
-  await expect(page.getByRole('button', { name: /刷新数据/u })).toBeEnabled({ timeout: 70_000 })
+  const refreshButton = page.getByRole('button', { name: /(?:保存并刷新|刷新数据)/u })
+  await expect(refreshButton).toBeEnabled({ timeout: 70_000 })
   const loadError = page.getByRole('alert').filter({ hasText: '无法加载运营数据' })
   if (await loadError.isVisible()) {
     await loadError.getByRole('button', { name: /重\s*试/u }).click()
-    await expect(page.getByRole('button', { name: /刷新数据/u })).toBeEnabled({ timeout: 70_000 })
+    await expect(refreshButton).toBeEnabled({ timeout: 70_000 })
   }
 }
 
