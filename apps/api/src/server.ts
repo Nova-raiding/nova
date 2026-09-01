@@ -12,6 +12,7 @@ import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
 import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
+import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
 import { MemoryReconciliationStatusRepository, PostgresReconciliationStatusRepository, type ReconciliationStatusRepository } from '../../../packages/persistence/src/reconciliation-status-repository.js'
 import { MemoryCanonicalBackfillRunRepository, PostgresCanonicalBackfillRunRepository, type CanonicalBackfillRunRepository } from '../../../packages/persistence/src/canonical-backfill-run-repository.js'
@@ -30,6 +31,7 @@ import { verifyScannerRequestProof } from '../../../packages/security/src/scanne
 import { verifyWorkerRequestProof, WORKER_ROLES, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { ConnectorFailure, createVaultCredentialProviderFromEnv, isProductionCanaryReady, validatePlatformCapabilityEvidence } from '../../../packages/connectors/src/index.js'
 import { platformWriteAllowed } from '../../../packages/connectors/src/write-boundary.js'
+import { runFencedSinglePublish, PublishCommitStatusUnknownError } from './publish-fenced-orchestrator.js'
 import { createContentGeneratorFromEnv, validateContentSchema, type ContentModule, type StaticBrief } from '../../../packages/ai/src/generator.js'
 import { createImageGeneratorFromEnv } from '../../../packages/ai/src/image-generator.js'
 import { createImageEditGeneratorFromEnv } from '../../../packages/ai/src/image-editor.js'
@@ -91,7 +93,7 @@ import { MemoryUnifiedLinkAuditRepository, PostgresUnifiedLinkAuditRepository, t
 import { AssetScanReceiptConflictError, MemoryAssetScanReceiptRepository, PostgresAssetScanReceiptRepository, type AppendAssetScanReceiptInput, type AssetScanReceiptRepository } from '../../../packages/persistence/src/asset-scan-repository.js'
 import { MemoryPlatformMediaSpecRepository, PlatformMediaSpecRepositoryError, PostgresPlatformMediaSpecRepository, PLATFORM_MEDIA_SPEC_PLATFORMS, type PlatformMediaSpecDevice, type PlatformMediaSpecPlatform, type PlatformMediaSpecRepository, type PlatformMediaSpecStatus, type StoredPlatformMediaSpec } from '../../../packages/persistence/src/platform-media-spec-repository.js'
 import { MappingPreflightApprovalRepositoryError, MemoryMappingPreflightApprovalRepository, PostgresMappingPreflightApprovalRepository, type MappingPreflightApprovalRepository, type StoredMappingPreflightApproval } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
-import { MemoryInteractiveConfirmationTicketRepository, PostgresInteractiveConfirmationTicketRepository, type InteractiveConfirmationTicketRepository } from '../../../packages/persistence/src/interactive-confirmation-ticket-repository.js'
+import { MemoryInteractiveConfirmationTicketRepository, PostgresInteractiveConfirmationTicketRepository, type InteractiveConfirmationTicketRepository, type TransactionalInteractiveConfirmationTicketRepository } from '../../../packages/persistence/src/interactive-confirmation-ticket-repository.js'
 import { AssetParseExecutionError, executeAssetParse } from './asset-parse-runtime.js'
 import { checkpointFromKnowledgeSnapshot, isKnowledgeEventAfterCheckpoint, isKnowledgeHydrationCheckpointCurrent, mergeKnowledgeHydrationEvents, type KnowledgeHydrationCheckpoint } from './knowledge-hydration-checkpoint.js'
 import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type PlatformFieldMappingGateResult } from '../../../packages/application/src/platform-field-mapping-gate.js'
@@ -974,6 +976,7 @@ export interface ApiPersistence {
   interactiveConfirmationTickets?: InteractiveConfirmationTicketRepository
   persistSnapshotAndEvent?: (input: { workspaceId: string; entityType: BusinessEntityType; entityId: string; entityVersion: number; payload: Record<string, unknown>; eventType: string; eventPayload: Record<string, unknown> }) => Promise<void>
   persistSnapshotsAndEvent?: (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown> }) => Promise<void>
+  persistPublishTransaction?: (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown>; finalizeTicketInTransaction: (client: SqlClient) => Promise<void> }) => Promise<void>
   persistTrustedScanPromotion?: (input: TrustedScanPromotionPersistenceInput) => Promise<AssetPromotionCleanupTask>
   ensureWorkspace?: (workspaceId: string) => Promise<void>
   listWorkspaceIds?: () => Promise<string[]>
@@ -2602,6 +2605,23 @@ async function initializePersistence(): Promise<ApiPersistence> {
         await outbox.appendInTransaction(client, { workspaceId: input.workspaceId, aggregateId: input.aggregateId, eventType: input.eventType, sequence: input.sequence, payload: input.eventPayload })
       })
     }
+    const persistPublishTransaction = async (input: { workspaceId: string; snapshots: SnapshotInput[]; aggregateId: string; eventType: string; sequence: number; eventPayload: Record<string, unknown>; finalizeTicketInTransaction: (client: SqlClient) => Promise<void> }) => {
+      await ensureWorkspace(input.workspaceId)
+      await withWorkspaceTransaction(sqlPool, input.workspaceId, async client => {
+        for (const snapshot of input.snapshots) {
+          let saved
+          try {
+            saved = await business.saveInTransaction(client, { workspaceId: input.workspaceId, ...snapshot })
+          } catch (error) {
+            if (error instanceof BusinessSnapshotVersionConflictError) throw new DomainError(error.code, '业务状态已被其他实例以相同版本更新，请刷新后重试', 409, { entity_type: error.entityType, entity_id: error.entityId, expected_version: error.entityVersion })
+            throw error
+          }
+          if (saved.entityVersion !== snapshot.entityVersion) throw new DomainError('BUSINESS_SNAPSHOT_VERSION_CONFLICT', '业务状态已被其他实例更新，请刷新后重试', 409, { entity_type: snapshot.entityType, entity_id: snapshot.entityId, expected_version: snapshot.entityVersion })
+        }
+        await outbox.appendInTransaction(client, { workspaceId: input.workspaceId, aggregateId: input.aggregateId, eventType: input.eventType, sequence: input.sequence, payload: input.eventPayload })
+        await input.finalizeTicketInTransaction(client)
+      })
+    }
     const persistTrustedScanPromotion = async (input: TrustedScanPromotionPersistenceInput) => {
       await ensureWorkspace(input.workspaceId)
       return withWorkspaceTransaction(sqlPool, input.workspaceId, async client => {
@@ -2656,7 +2676,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -8053,6 +8073,30 @@ async function consumePublishConfirmationTicket(req: IncomingMessage, workspaceI
   const consumed = await (persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets).consume({ workspaceId, actorId, sessionId, intentHash, nonceHash: storedNonceHash, legacyNonceHash: rawNonce })
   if (!consumed) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_INVALID', '交互确认票据不存在、已过期或已被消费', 409)
   return true
+}
+
+async function reservePublishConfirmationTicket(req: IncomingMessage, workspaceId: string, input: { workspaceId: string; taskId: string; contentVersionId: string; confirmationHash: string; remoteSnapshotHash: string; params: Record<string, unknown> }) {
+  const rawNonce = typeof input.params.confirmation_ticket_nonce_hash === 'string' ? input.params.confirmation_ticket_nonce_hash.trim() : ''
+  const intentHash = typeof input.params.confirmation_ticket_intent_hash === 'string' ? input.params.confirmation_ticket_intent_hash.trim() : ''
+  const repository = persistence.interactiveConfirmationTickets
+  const durable = persistence.mode === 'postgres' && repository && 'reserve' in repository && 'finalizeInTransaction' in repository
+  if (!rawNonce && !intentHash) {
+    if (isProduction() && durable) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_REQUIRED', '生产发布必须携带未过期的一次性交互确认票据', 400)
+    return undefined
+  }
+  if (!durable) return undefined
+  if (!/^[a-f0-9]{64}$/u.test(rawNonce) || !/^[a-f0-9]{64}$/u.test(intentHash)) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_INVALID', '交互确认票据格式无效', 400)
+  const { actorId, sessionId } = interactiveTicketScope(req)
+  const expectedIntent = publishConfirmationIntentHash(input)
+  const sessionIntent = interactiveSessionIntentHash(workspaceId, actorId, sessionId)
+  if (intentHash !== expectedIntent && intentHash !== sessionIntent) throw new DomainError('INTERACTIVE_CONFIRMATION_INTENT_MISMATCH', '交互确认票据与当前发布意图不一致', 409)
+  const reservationId = `publish:${randomUUID()}`
+  const reservationToken = randomUUID()
+  const storedNonceHash = createHash('sha256').update(rawNonce).digest('hex')
+  const ticket = { workspaceId, actorId, sessionId, intentHash, nonceHash: storedNonceHash, legacyNonceHash: rawNonce, reservationId, reservationToken, reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() }
+  const reservation = await (repository as TransactionalInteractiveConfirmationTicketRepository).reserve(ticket)
+  if (!reservation) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_INVALID', '交互确认票据不存在、已过期或已被消费', 409)
+  return { ticket, reservation }
 }
 
 function paramsOf(input: JsonObject): JsonObject {
@@ -16593,7 +16637,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
     }
     const authorizationSnapshot = existing ? undefined : requirePublishAuthorizationSnapshot(publishAuthorizationSnapshot(req, workspaceId, task))
-    if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: input })
+    const publishInput = { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params: input }
+    const fencedTicket = existing ? undefined : await reservePublishConfirmationTicket(req, workspaceId, publishInput)
+    if (!existing && !fencedTicket) await consumePublishConfirmationTicket(req, workspaceId, publishInput)
     const reservationId = `publish:${key}`
     let reserved = false
     let walletDebited = false
@@ -16602,23 +16648,46 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
         const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot: publishAuthorizationSnapshot(req, workspaceId, task) })
         return send(res, 202, workspaceId, jobWithQueueMetadata(job, workspaceId, 'publish'), null, req)
       }
-      if (!existing) {
-        await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' })
-        walletDebited = true
-      }
-      reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
       const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot, deferCommit: true })
       const currentTask = { ...service.getTask(taskId), state: 'publishing' as const, version: service.getTask(taskId).version + 1 }
-      await persistSnapshotsAndEvent({ workspaceId, snapshots: [
-        { entityType: 'task', entityId: currentTask.id, entityVersion: currentTask.version, payload: currentTask as unknown as Record<string, unknown> },
-        { entityType: 'publish_job', entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown> },
-      ], aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job) })
+      const snapshots = [
+        { entityType: 'task' as const, entityId: currentTask.id, entityVersion: currentTask.version, payload: currentTask as unknown as Record<string, unknown> },
+        { entityType: 'publish_job' as const, entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown> },
+      ]
+      if (fencedTicket && persistence.persistPublishTransaction) {
+        await runFencedSinglePublish({
+          ticketRepository: persistence.interactiveConfirmationTickets as TransactionalInteractiveConfirmationTicketRepository,
+          ticket: fencedTicket.ticket,
+          consumedOperationId: job.id,
+          wallet: {
+            debit: async () => { await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' }); walletDebited = true },
+            refund: async () => { await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '发布任务创建失败' }); walletDebited = false },
+          },
+          slot: {
+            reserve: async () => { reserved = await reserveDistributedJobSlot(workspaceId, reservationId) },
+            release: async () => { if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId); reserved = false },
+          },
+          persist: async ({ reservation, finalizeInTransaction }) => {
+            await persistence.persistPublishTransaction!({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job), finalizeTicketInTransaction: finalizeInTransaction })
+            return { status: 'committed' as const, value: job }
+          },
+        })
+      } else {
+        if (!existing) {
+          await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' })
+          walletDebited = true
+        }
+        reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
+        await persistSnapshotsAndEvent({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job) })
+      }
       service.commitPublishConfirmation(job)
       scheduleFixturePublishObservation(job)
       return send(res, 202, workspaceId, jobWithQueueMetadata(job, workspaceId, 'publish'), null, req)
     } catch (error) {
-      if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
-      if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '发布任务创建失败' })
+      if (!(error instanceof PublishCommitStatusUnknownError)) {
+        if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
+        if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '发布任务创建失败' })
+      }
       throw error
     }
   }
