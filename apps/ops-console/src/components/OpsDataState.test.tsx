@@ -17,8 +17,10 @@ describe("shared operations data states", () => {
     expect(empty).toContain("当前筛选条件下没有记录");
     expect(error).toContain('data-state="error"');
     expect(error).toContain('role="alert"');
+    expect(error).toContain('aria-atomic="true"');
     expect(error).toContain('aria-label="重试审计记录"');
-    expect(error).toContain('style="min-height:44px"');
+    expect(error).toMatch(/class="[^"]*ops-error-retry[^"]*"/);
+    expect(error).toContain('type="button"');
     expect(error).toContain('tabindex="-1"');
     expect(error).toContain('data-focus-target="error-summary"');
     expect(error).toContain("aria-labelledby=");

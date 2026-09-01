@@ -104,7 +104,8 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .ops-data-state[data-state="error"] { border-color: #fecaca; background: #fff7f7; }
 .ops-data-state[data-state="error"]:focus { outline: none; }
 .ops-data-state[data-state="error"]:focus-visible { outline: 3px solid #b91c1c; outline-offset: 3px; }
-.ops-data-state[data-state="error"] .ant-btn { min-height: 44px; }
+.ops-data-state[data-state="error"] .ops-error-retry { min-height: 44px; min-width: 96px; }
+.ops-error-retry:focus-visible { outline: var(--ops-focus-width) solid var(--ops-focus-color); outline-offset: var(--ops-focus-offset); }
 .ops-shell .ant-layout-content,
 .ops-content,
 .content-stack,
