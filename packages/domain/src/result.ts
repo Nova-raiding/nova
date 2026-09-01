@@ -19,6 +19,7 @@ export type DomainErrorCode =
   | 'ONBOARDING_DATE_INVALID'
   | 'ONBOARDING_WINDOW_INVALID'
   | 'CANONICAL_IDENTITY_INVALID'
+  | 'SERVICE_CAPACITY_INVALID'
 
 export interface DomainError {
   readonly code: DomainErrorCode
