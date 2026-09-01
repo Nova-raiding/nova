@@ -26,7 +26,7 @@ BEGIN
     EXECUTE 'REVOKE ALL ON TABLE ops_workspace_summaries FROM merchant_app';
   END IF;
   IF to_regclass('public.authorization_revisions') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON authorization_revisions, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app';
+    EXECUTE 'REVOKE ALL ON authorization_revisions, authorization_execution_reservations, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app';
   END IF;
 END
 $$;
@@ -158,7 +158,7 @@ $$;
 DO $$
 BEGIN
   IF to_regclass('public.authorization_revisions') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON authorization_revisions, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app';
+    EXECUTE 'REVOKE ALL ON authorization_revisions, authorization_execution_reservations, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app';
   END IF;
 END
 $$;

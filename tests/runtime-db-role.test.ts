@@ -53,7 +53,7 @@ describe('runtime database role verification', () => {
 
     expect(bootstrap).toContain("to_regclass('public.authorization_revisions')")
     expect(bootstrap).toContain(
-      'REVOKE ALL ON authorization_revisions, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app',
+      'REVOKE ALL ON authorization_revisions, authorization_execution_reservations, platform_role_assignments, platform_role_assignment_events, ops_access_grants, ops_access_grant_events FROM merchant_app',
     )
   })
 
