@@ -325,7 +325,9 @@ describe('API application wiring', () => {
     expect(listEnd).toBeGreaterThan(listStart)
     const list = source.slice(listStart, listEnd)
     expect(list).toContain('publicImageJobExecutionProjection(workspaceId, job.id)')
+    expect(list).toContain('...await publicImageJobExecutionProjection(workspaceId, job.id)')
     expect(source).toContain('executionState: execution?.state ?? null')
+    expect(source).toContain('reconciliationRequired: execution?.state === \'provider_reserved\'')
     expect(source).toContain("states: ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown']")
 
     const queueStart = source.indexOf("case 'ops.marketing.queue':")
