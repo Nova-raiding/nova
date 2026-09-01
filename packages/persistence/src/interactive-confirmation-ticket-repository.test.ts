@@ -98,6 +98,40 @@ describe('PostgresInteractiveConfirmationTicketRepository', () => {
     expect(replay.calls.some(call => call.text.startsWith('SELECT 1'))).toBe(true)
   })
 
+  it('finalizes on a caller-owned transaction without beginning or committing it', async () => {
+    const client = new RecordingClient([1])
+    const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
+    const input = { ...ticket, reservationId: 'publish:job-1', legacyNonceHash: 'c'.repeat(64) }
+
+    await expect(repository.finalizeInTransaction(client, input)).resolves.toBe(true)
+
+    expect(client.calls.map(call => call.text)).toHaveLength(1)
+    expect(client.calls[0]!.text).toContain('reservation_id=$6')
+    expect(client.calls[0]!.text).toContain('reservation_expires_at>now()')
+    expect(client.calls[0]!.values).toEqual([ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, 'publish:job-1'])
+    expect(client.calls.some(call => ['BEGIN', 'COMMIT', 'ROLLBACK'].includes(call.text))).toBe(false)
+  })
+
+  it('recognizes a finalized replay on a caller-owned transaction', async () => {
+    const client = new RecordingClient([0, 1])
+    const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
+
+    await expect(repository.finalizeInTransaction(client, { ...ticket, reservationId: 'publish:job-1' })).resolves.toBe(true)
+
+    expect(client.calls).toHaveLength(2)
+    expect(client.calls[1]!.text).toContain('consumed_at IS NOT NULL')
+    expect(client.calls.some(call => ['BEGIN', 'COMMIT', 'ROLLBACK'].includes(call.text))).toBe(false)
+  })
+
+  it('validates transaction finalization input before issuing SQL', async () => {
+    const client = new RecordingClient([])
+    const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
+
+    await expect(repository.finalizeInTransaction(client, { ...ticket, reservationId: ' publish:job-1' })).rejects.toThrow('INTERACTIVE_CONFIRMATION_RESERVATION_ID_INVALID')
+    await expect(repository.finalizeInTransaction(client, { ...ticket, nonceHash: 'B'.repeat(64), reservationId: 'publish:job-1' })).rejects.toThrow('INTERACTIVE_CONFIRMATION_NONCE_HASH_INVALID')
+    expect(client.calls).toEqual([])
+  })
+
   it('releases only the matching unconsumed reservation', async () => {
     const client = new RecordingClient([1])
     const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)

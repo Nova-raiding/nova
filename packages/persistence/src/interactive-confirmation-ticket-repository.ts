@@ -1,4 +1,4 @@
-import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from './repository.js'
+import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
 
 export interface InteractiveConfirmationTicket {
   workspaceId: string
@@ -30,6 +30,11 @@ export interface ReservableInteractiveConfirmationTicketRepository extends Inter
   reserve(input: ReserveInteractiveConfirmationTicketInput): Promise<boolean>
   finalize(input: FinalizeInteractiveConfirmationTicketInput): Promise<boolean>
   release(input: FinalizeInteractiveConfirmationTicketInput): Promise<boolean>
+}
+
+export interface TransactionalInteractiveConfirmationTicketRepository extends ReservableInteractiveConfirmationTicketRepository {
+  /** The caller owns the transaction and must establish the matching workspace RLS scope. */
+  finalizeInTransaction(client: SqlClient, input: FinalizeInteractiveConfirmationTicketInput): Promise<boolean>
 }
 
 const MAX_TICKET_TTL_MS = 15 * 60 * 1_000
@@ -146,7 +151,7 @@ export class MemoryInteractiveConfirmationTicketRepository implements Reservable
   }
 }
 
-export class PostgresInteractiveConfirmationTicketRepository implements ReservableInteractiveConfirmationTicketRepository {
+export class PostgresInteractiveConfirmationTicketRepository implements TransactionalInteractiveConfirmationTicketRepository {
   constructor(private readonly pool: SqlPool, private readonly clock: () => Date = () => new Date()) {}
 
   async issue(input: InteractiveConfirmationTicket) {
@@ -214,36 +219,11 @@ export class PostgresInteractiveConfirmationTicketRepository implements Reservab
 
   async finalize(input: FinalizeInteractiveConfirmationTicketInput) {
     const ticket = reservation(input)
-    return withWorkspaceTransaction(this.pool, ticket.workspaceId, async client => {
-      const result = await client.query(
-        `UPDATE interactive_confirmation_tickets
-            SET consumed_at=now()
-          WHERE workspace_id=$1
-            AND actor_id=$2
-            AND session_id=$3
-            AND intent_hash=$4
-            AND nonce_hash=$5
-            AND reservation_id=$6
-            AND reservation_expires_at>now()
-            AND expires_at>now()
-            AND consumed_at IS NULL`,
-        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId],
-      )
-      if (result.rowCount === 1) return true
-      const replay = await client.query(
-        `SELECT 1
-           FROM interactive_confirmation_tickets
-          WHERE workspace_id=$1
-            AND actor_id=$2
-            AND session_id=$3
-            AND intent_hash=$4
-            AND nonce_hash=$5
-            AND reservation_id=$6
-            AND consumed_at IS NOT NULL`,
-        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId],
-      )
-      return replay.rowCount === 1
-    })
+    return withWorkspaceTransaction(this.pool, ticket.workspaceId, client => this.finalizeBound(client, ticket))
+  }
+
+  async finalizeInTransaction(client: SqlClient, input: FinalizeInteractiveConfirmationTicketInput) {
+    return this.finalizeBound(client, reservation(input))
   }
 
   async release(input: FinalizeInteractiveConfirmationTicketInput) {
@@ -265,5 +245,37 @@ export class PostgresInteractiveConfirmationTicketRepository implements Reservab
       )
       return result.rowCount === 1
     })
+  }
+
+  private async finalizeBound(client: SqlClient, ticket: ReturnType<typeof reservation>) {
+    const values = [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.reservationId] as const
+    const result = await client.query(
+      `UPDATE interactive_confirmation_tickets
+          SET consumed_at=now()
+        WHERE workspace_id=$1
+          AND actor_id=$2
+          AND session_id=$3
+          AND intent_hash=$4
+          AND nonce_hash=$5
+          AND reservation_id=$6
+          AND reservation_expires_at>now()
+          AND expires_at>now()
+          AND consumed_at IS NULL`,
+      values,
+    )
+    if (result.rowCount === 1) return true
+    const replay = await client.query(
+      `SELECT 1
+         FROM interactive_confirmation_tickets
+        WHERE workspace_id=$1
+          AND actor_id=$2
+          AND session_id=$3
+          AND intent_hash=$4
+          AND nonce_hash=$5
+          AND reservation_id=$6
+          AND consumed_at IS NOT NULL`,
+      values,
+    )
+    return replay.rowCount === 1
   }
 }
