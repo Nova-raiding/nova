@@ -38,6 +38,12 @@ model_budget_delete_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 
   "SELECT CASE WHEN has_table_privilege(current_user, 'public.model_cost_budget_reservations', 'DELETE,TRUNCATE') THEN 'model_cost_budget_reservations' ELSE '' END")
 [ -z "$model_budget_delete_exposure" ] || { echo 'tenant runtime role must not delete or truncate model cost budget reservations' >&2; exit 1; }
 
+ticket_delete_exposure=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+  "SELECT CASE WHEN to_regclass('public.interactive_confirmation_tickets') IS NOT NULL
+                    AND has_table_privilege(current_user, 'public.interactive_confirmation_tickets', 'DELETE,TRUNCATE')
+              THEN 'interactive_confirmation_tickets' ELSE '' END")
+[ -z "$ticket_delete_exposure" ] || { echo 'tenant runtime role must not delete or truncate interactive confirmation tickets' >&2; exit 1; }
+
 # Catalog checks are non-vacuous even on a newly restored empty database. Every
 # ordinary tenant table must force RLS and expose only workspace-scoped policies.
 # workspaces and workspace_members have intentionally different command-specific

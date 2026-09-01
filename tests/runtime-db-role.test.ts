@@ -65,6 +65,12 @@ describe('runtime database role verification', () => {
     expect(source).toContain('tenant runtime role must not delete or truncate model cost budget reservations')
   })
 
+  it('fails closed when the runtime role can delete confirmation tickets', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+    expect(source).toContain("has_table_privilege(current_user, 'public.interactive_confirmation_tickets', 'DELETE,TRUNCATE')")
+    expect(source).toContain('tenant runtime role must not delete or truncate interactive confirmation tickets')
+  })
+
   it('re-applies the interactive confirmation ticket ACL guard after local compatibility grants', () => {
     const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
     expect(bootstrap).toContain('REVOKE UPDATE, DELETE, TRUNCATE ON TABLE interactive_confirmation_tickets FROM merchant_app')
