@@ -1041,6 +1041,8 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 7.022, 'content.versions', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.023, 'content.diff', { content_version_id: 'content_protected_brand' })).error).toBeNull()
     expect((await mcp(editorHeaders, 7.024, 'content.diff', { content_version_id: 'content_hidden_brand' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 7.025, 'content.review', { content_version_id: 'content_protected_brand' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 7.026, 'content.review', { content_version_id: 'content_hidden_brand' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.03, 'task.answer', { task_id: protectedTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 7.04, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(ownerHeaders, 7.05, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toBeNull()
