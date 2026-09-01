@@ -33,7 +33,9 @@ export class AuditCenterService {
     return found
   }
   async exportCsv(principal: AuditCenterPrincipal, rawQuery: unknown): Promise<AuditCenterExport> {
-    const parsed = parseAuditCenterQuery(rawQuery); this.authorize(principal, parsed.workspaceId, 'export')
+    const parsed = parseAuditCenterQuery(rawQuery)
+    if (parsed.cursor) throw new AuditCenterServiceError('AUDIT_CENTER_INVALID_REQUEST', 'audit export does not support cursor pagination')
+    this.authorize(principal, parsed.workspaceId, 'export')
     const { cursor: _cursor, limit: _limit, ...query } = parsed; const exported = await this.repository.exportRows(query, 5_000)
     const header = ['source', 'workspace_id', 'event_id', 'actor_id', 'action', 'resource_type', 'resource_id', 'reason', 'occurred_at']
     const rows = exported.records.map(record => [record.source, record.workspaceId, record.id, record.actorId, record.action, record.resourceType, record.resourceId, record.reason, record.occurredAt].map(cell).join(','))

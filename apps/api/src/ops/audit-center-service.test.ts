@@ -15,4 +15,11 @@ describe('audit center service', () => {
   })
   it('returns only redacted detail evidence', async () => { const detail = await new AuditCenterService(new MemoryAuditCenterRepository([event])).detail(ops, { workspaceId: 'ws_1', source: 'operation', id: 'event_1' }); expect(detail.evidence.fields).toEqual({ safe: 'visible' }); expect(JSON.stringify(detail)).not.toContain('secret') })
   it('bounds exports and neutralizes spreadsheet formulas', async () => { const result = await new AuditCenterService(new MemoryAuditCenterRepository([event]), () => new Date('2026-08-29T01:00:00Z')).exportCsv(ops, { workspaceId: 'ws_1', limit: 50 }); expect(result.rowCount).toBe(1); expect(result.csv).toContain("\"'=cmd\""); expect(result.csv).toContain("\"'+formula\""); expect(result.csv).toContain("\"'@target\"") })
+  it('rejects cursor pagination instead of silently exporting a different slice', async () => {
+    const service = new AuditCenterService(new MemoryAuditCenterRepository([event]))
+    await expect(service.exportCsv(ops, { workspaceId: 'ws_1', cursor: 'opaque-cursor', limit: 50 })).rejects.toMatchObject({
+      code: 'AUDIT_CENTER_INVALID_REQUEST',
+      message: 'audit export does not support cursor pagination',
+    })
+  })
 })
