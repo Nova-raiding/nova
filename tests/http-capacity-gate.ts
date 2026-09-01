@@ -80,6 +80,27 @@ const serverForLocalFake = async (): Promise<{ server: Server; baseUrl: string }
 
 const closeServer = (server: Server) => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
 
+async function bootstrapComposeWorkspaces(baseUrl: string) {
+  const token = process.env.CAPACITY_GATE_TOKEN ?? 'workspace-local-token'
+  return Promise.all(Array.from({ length: workspaces }, async (_, index) => {
+    const response = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'x-ops-workbench': 'workspace',
+        'x-workspace-bootstrap': 'true',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'workspace.bootstrap', params: { display_name: `Capacity gate ${index}` } }),
+    })
+    const body = await response.json() as { data?: { result?: { workspaceId?: string } }; error?: { code?: string; message?: string } | null }
+    assert.equal(response.status, 200, `workspace.bootstrap returned ${response.status}: ${body.error?.code ?? body.error?.message ?? 'unknown error'}`)
+    const workspaceId = body.data?.result?.workspaceId
+    assert.ok(workspaceId, 'workspace.bootstrap must return a workspace id')
+    return workspaceId
+  }))
+}
+
 async function run(): Promise<CapacityGateSummary> {
   let localServer: Server | undefined
   let baseUrl = process.env.CAPACITY_GATE_URL ?? ''
@@ -90,6 +111,9 @@ async function run(): Promise<CapacityGateSummary> {
   }
   assert.ok(baseUrl, 'CAPACITY_GATE_URL is required for compose and real_cloud')
   validateTarget(baseUrl)
+  const workspaceIds = mode === 'compose'
+    ? await bootstrapComposeWorkspaces(baseUrl)
+    : Array.from({ length: workspaces }, (_, index) => `ws_capacity_${index}`)
 
   const timings: number[] = []
   const statusCounts: Record<string, number> = {}
@@ -100,10 +124,10 @@ async function run(): Promise<CapacityGateSummary> {
     while (true) {
       const index = cursor++
       if (index >= total) return
-      const workspaceId = `ws_capacity_${index % workspaces}`
+      const workspaceId = workspaceIds[index % workspaces]!
       const started = performance.now()
       try {
-        const response = await fetch(`${baseUrl}/v1/products`, { headers: { 'x-workspace-id': workspaceId, authorization: `Bearer ${process.env.CAPACITY_GATE_TOKEN ?? 'pilot-local-token'}` } })
+        const response = await fetch(`${baseUrl}/v1/products`, { headers: { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace', authorization: `Bearer ${process.env.CAPACITY_GATE_TOKEN ?? 'workspace-local-token'}` } })
         const elapsed = performance.now() - started
         timings.push(elapsed)
         statusCounts[String(response.status)] = (statusCounts[String(response.status)] ?? 0) + 1

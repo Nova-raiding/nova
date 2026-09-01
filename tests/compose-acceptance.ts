@@ -60,7 +60,8 @@ async function assertIndependentOpsUi() {
 async function request(path: string, workspaceId: string, init?: RequestInit) {
   const headers = new Headers(init?.headers)
   headers.set('x-workspace-id', workspaceId)
-  headers.set('authorization', `Bearer ${process.env.COMPOSE_API_TOKEN ?? 'pilot-local-token'}`)
+  headers.set('x-ops-workbench', 'workspace')
+  headers.set('authorization', `Bearer ${process.env.COMPOSE_API_TOKEN ?? 'workspace-local-token'}`)
   const response = await fetch(`${apiBase}${path}`, { ...init, headers })
   const body = await response.json() as { workspace_id: string; data: unknown; error: unknown }
   assert.ok([200, 201, 202].includes(response.status), `${path} returned ${response.status}`)
@@ -72,7 +73,7 @@ async function request(path: string, workspaceId: string, init?: RequestInit) {
 async function bootstrapWorkspace(index: number) {
   const response = await fetch(`${apiBase}/mcp`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${process.env.COMPOSE_API_TOKEN ?? 'pilot-local-token'}`, 'content-type': 'application/json', 'x-workspace-bootstrap': 'true' },
+    headers: { authorization: `Bearer ${process.env.COMPOSE_API_TOKEN ?? 'workspace-local-token'}`, 'content-type': 'application/json', 'x-ops-workbench': 'workspace', 'x-workspace-bootstrap': 'true' },
     body: JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'workspace.bootstrap', params: { display_name: `Compose smoke ${index}` } }),
   })
   const body = await response.json() as { data?: { result?: { workspaceId?: string } }; error?: { code?: string; message?: string } | null }
