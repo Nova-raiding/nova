@@ -14125,28 +14125,53 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         existing = [...service.publishJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === key)
       }
       const authorizationSnapshot = existing ? undefined : requirePublishAuthorizationSnapshot(publishAuthorizationSnapshot(req, workspaceId, task))
-      if (!existing) await consumePublishConfirmationTicket(req, workspaceId, { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params })
+      const publishInput = { workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, params }
+      const fencedTicket = existing ? undefined : await reservePublishConfirmationTicket(req, workspaceId, publishInput)
+      if (!existing && !fencedTicket) await consumePublishConfirmationTicket(req, workspaceId, publishInput)
       const reservationId = `publish:${key}`
       let reserved = false
       let walletDebited = false
       try {
-        if (!existing) {
-          await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' })
-          walletDebited = true
-        }
-        reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
         const job = service.confirmPublish({ workspaceId, taskId, contentVersionId, confirmationHash, remoteSnapshotHash, idempotencyKey: key, ...(publishAccountId ? { accountId: publishAccountId } : {}), mediaAdapterReady: connectorRuntime.mediaUploadReady(task.platform), authorizationSnapshot, deferCommit: true })
         const currentTask = existing ? service.getTask(taskId) : { ...task, state: 'publishing' as const, version: task.version + 1 }
-        await persistSnapshotsAndEvent({ workspaceId, snapshots: [
-          { entityType: 'task', entityId: currentTask.id, entityVersion: currentTask.version, payload: currentTask as unknown as Record<string, unknown> },
-          { entityType: 'publish_job', entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown> },
-        ], aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job) })
+        const snapshots: Array<{ entityType: 'task' | 'publish_job'; entityId: string; entityVersion: number; payload: Record<string, unknown> }> = [
+          { entityType: 'task' as const, entityId: currentTask.id, entityVersion: currentTask.version, payload: currentTask as unknown as Record<string, unknown> },
+          { entityType: 'publish_job' as const, entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown> },
+        ]
+        if (fencedTicket && persistence.persistPublishTransaction) {
+          await runFencedSinglePublish({
+            ticketRepository: persistence.interactiveConfirmationTickets as TransactionalInteractiveConfirmationTicketRepository,
+            ticket: fencedTicket.ticket,
+            consumedOperationId: job.id,
+            wallet: {
+              debit: async () => { await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' }); walletDebited = true },
+              refund: async () => { await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '商品发布任务创建失败' }); walletDebited = false },
+            },
+            slot: {
+              reserve: async () => { reserved = await reserveDistributedJobSlot(workspaceId, reservationId) },
+              release: async () => { if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId); reserved = false },
+            },
+            persist: async ({ finalizeInTransaction }) => {
+              await persistence.persistPublishTransaction!({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job), finalizeTicketInTransaction: finalizeInTransaction })
+              return { status: 'committed' as const, value: job }
+            },
+          })
+        } else {
+          if (!existing) {
+            await debitPluginWallet({ workspaceId, idempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', description: '商品发布调用' })
+            walletDebited = true
+          }
+          reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
+          await persistSnapshotsAndEvent({ workspaceId, snapshots, aggregateId: job.id, eventType: 'publish.requested', sequence: 1, eventPayload: publishEventPayload(job) })
+        }
         service.commitPublishConfirmation(job)
         scheduleFixturePublishObservation(job)
         return result(jobWithQueueMetadata(job, workspaceId, 'publish'))
       } catch (error) {
-        if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
-        if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '商品发布任务创建失败' })
+        if (!(error instanceof PublishCommitStatusUnknownError)) {
+          if (reserved) await releaseDistributedJobSlot(workspaceId, reservationId)
+          if (walletDebited) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: reservationId, actorId: requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant', reason: '商品发布任务创建失败' })
+        }
         throw error
       }
     }
