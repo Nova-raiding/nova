@@ -97,4 +97,58 @@ describe("local Docker runtime contract", () => {
     })
   }, 15_000)
 
+  it("refreshes scanner callback evidence through a real local scan", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const body = Buffer.from(`\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRlocal-callback-${suffix}`, "binary")
+    const upload = await fetch("http://127.0.0.1:8787/v1/assets/upload", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer workspace-local-token",
+        "content-type": "image/png",
+        "x-workspace-id": "ws_demo",
+        "x-asset-name": `scanner-callback-${suffix}.png`,
+      },
+      body,
+    })
+    const uploaded = await upload.json() as { data?: { id?: string; scanStatus?: string }; error?: { code?: string } }
+    expect(upload.status, JSON.stringify(uploaded)).toBe(201)
+    expect(uploaded.error).toBeNull()
+    expect(uploaded.data).toMatchObject({ id: expect.any(String), scanStatus: "quarantined" })
+
+    const assetId = uploaded.data!.id!
+    const deadline = Date.now() + 30_000
+    let callback: { callback_status: string; callback_accepted_at: string | null } | undefined
+    while (Date.now() < deadline) {
+      const rows = docker([
+        ...project,
+        "exec",
+        "-T",
+        "postgres",
+        "psql",
+        "-U",
+        "merchant",
+        "-d",
+        "merchant",
+        "-At",
+        "-F",
+        "\t",
+        "-c",
+        `SELECT callback_status, COALESCE(callback_accepted_at::text, '') FROM asset_scan_attempts WHERE workspace_id='ws_demo' AND outbox_event_id IN (SELECT id FROM outbox_events WHERE workspace_id='ws_demo' AND aggregate_id='${assetId}') ORDER BY created_at DESC LIMIT 1`,
+      ])
+      const [status, acceptedAt] = rows.split("\t")
+      if (status) {
+        callback = { callback_status: status, callback_accepted_at: acceptedAt || null }
+        if (status === "accepted") break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+    }
+
+    expect(callback, `scanner callback was not recorded for ${assetId}`).toMatchObject({ callback_status: "accepted" })
+    expect(Date.parse(callback!.callback_accepted_at!)).toBeGreaterThan(Date.now() - 30_000)
+
+    const scanner = composeContainers().find((container) => container.Service === "worker-scan")
+    expect(scanner?.State).toBe("running")
+    expect(scanner?.Health).toBe("healthy")
+  }, 45_000)
+
 })
