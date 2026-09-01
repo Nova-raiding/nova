@@ -67,6 +67,14 @@ describe("desktop permission UX", () => {
     expect(html).toContain("平台运营视图");
   });
 
+  it("provides a keyboard-operable disclosure for every server-projected role", () => {
+    const multiRoleSession = { ...session, canonical_roles: ["ops_admin", "auditor", "workspace_owner"] };
+    const html = renderToStaticMarkup(<RoleScopeBar session={multiRoleSession} authorization={createAuthorizationProjection(multiRoleSession, true)} />);
+    expect(html).toContain("+2 个角色");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-controls=');
+  });
+
   it("announces whether the server authorization projection is verified", () => {
     const verified = renderToStaticMarkup(<RoleScopeBar session={session} authorization={createAuthorizationProjection(session, true)} />);
     expect(verified).toContain("授权状态：已由服务端验证");

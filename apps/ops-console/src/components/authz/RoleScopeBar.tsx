@@ -1,6 +1,6 @@
 import { ClockCircleOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import { Button, Space, Tag, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { AuthorizationProjection } from "../../authz/authorization.js";
 import type { OpsSession } from "../../types/ops.js";
 import type { OpsWorkbench } from "../../types/ops.js";
@@ -58,6 +58,8 @@ export function RoleScopeBar({
 }) {
   const roles = authorization.roles;
   const primaryRole = roles[0] ? roleLabels[roles[0]] ?? roles[0] : "权限未验证";
+  const [rolesOpen, setRolesOpen] = useState(false);
+  const rolesPanelId = useId();
   const [now, setNow] = useState(() => Date.now());
   const candidateGrant = activeJitGrantForNow(session?.temporary_grants, Date.now());
   // Use the rendered clock for visibility as well as the callback. This closes
@@ -101,7 +103,28 @@ export function RoleScopeBar({
           {authorizationVerified ? "授权状态：已由服务端验证" : "授权状态：未验证，正在等待服务端授权"}
         </Typography.Text>
         <Typography.Text type="secondary">身份 {session?.actor_id ?? "未验证"}</Typography.Text>
-        {roles.length > 1 ? <Tag>+{roles.length - 1} 个角色</Tag> : null}
+        {roles.length > 1 ? (
+          <span className="ops-role-summary">
+            <Button
+              type="link"
+              size="small"
+              className="ops-role-summary-trigger"
+              aria-expanded={rolesOpen}
+              aria-controls={rolesPanelId}
+              onClick={() => setRolesOpen((open) => !open)}
+            >
+              +{roles.length - 1} 个角色
+            </Button>
+            {rolesOpen ? (
+              <span id={rolesPanelId} className="ops-role-list" role="region" aria-label="已验证角色列表">
+                <Typography.Text type="secondary">服务端返回的有效角色</Typography.Text>
+                <ul>
+                  {roles.map((role) => <li key={role}>{roleLabels[role] ?? role}</li>)}
+                </ul>
+              </span>
+            ) : null}
+          </span>
+        ) : null}
         <OpsWorkbenchSwitcher value={workbench} available={availableWorkbenches} switching={switching} onChange={onWorkbenchChange} />
         <Typography.Text>{scopeLabel(authorization)}</Typography.Text>
         <Typography.Text type="secondary">策略 {authorization.policyVersion ?? "未返回"}</Typography.Text>
