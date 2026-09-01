@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { ConnectorFailure } from './fake-connector.js'
 import { jdProfile } from './profiles/jd.js'
 import { taobaoProfile } from './profiles/taobao.js'
@@ -34,6 +34,13 @@ const ERROR_CODES = new Set(['NOT_CONFIGURED', 'UNAUTHORIZED', 'RATE_LIMITED', '
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined }
+/** Provider correlation IDs are evidence, not arbitrary display text. Keep
+ * them bounded and printable before they cross audit/log boundaries. */
+function readRequestId(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 256) return undefined
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value)) return undefined
+  return value
+}
 function readFiniteNumber(value: unknown): number | undefined {
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
   if (typeof value === 'string' && value.trim()) {
@@ -93,7 +100,7 @@ function pkceChallenge(verifier: string): string {
 function normalizeWriteStatus(value: WriteStatus, request: WriteIdentity): WriteStatus {
   const state = ['submitted', 'published', 'rejected', 'unknown'].includes(value.state) ? value.state : 'unknown'
   const remoteId = readString(value.remoteId)
-  const requestId = readString(value.requestId)
+  const requestId = readRequestId(value.requestId)
   const found = value.found === true
   // A status response is only attributable to the write we asked about when
   // its remote identity agrees with the identity captured by the write
@@ -116,7 +123,10 @@ function normalizeWriteStatus(value: WriteStatus, request: WriteIdentity): Write
   // A platform adapter may only promote a write to published when the remote
   // query found the write and returned an attributable remote identifier. An
   // HTTP response or an unqualified mapper result is not publish evidence.
-  const publishEvidence = found && Boolean(remoteId || requestId)
+  // A remote object ID alone is not an attributable write receipt: it can be
+  // reused or returned by a broad status endpoint. Require the provider's
+  // request correlation ID before allowing a published outcome.
+  const publishEvidence = found && Boolean(remoteId && requestId)
   return {
     found,
     state: state === 'published' && !publishEvidence ? 'unknown' : state,
@@ -308,7 +318,7 @@ export class HttpPlatformConnector implements PlatformConnector {
   async queryWrite(ctx: ConnectorContext, request: WriteIdentity): Promise<WriteStatus> {
     const config = this.requireConfig()
     const payload = await this.request('POST', joinUrl(config.api.baseUrl, config.api.queryPath), await this.resolveCredential(ctx), request, 'json', false, ctx.signal)
-    const mapped = config.mapWriteStatus?.(payload, request, this.platform) ?? { found: isRecord(payload) && payload.found === true, state: isRecord(payload) && ['submitted', 'published', 'rejected', 'unknown'].includes(String(payload.state)) ? payload.state as WriteStatus['state'] : 'unknown', remoteId: isRecord(payload) ? readString(payload.remoteId) : undefined, requestId: isRecord(payload) ? readString(payload.requestId) : undefined, ...(this.parseRejection(payload) ? { rejection: this.parseRejection(payload) } : {}), simulated: false }
+    const mapped = config.mapWriteStatus?.(payload, request, this.platform) ?? { found: isRecord(payload) && payload.found === true, state: isRecord(payload) && ['submitted', 'published', 'rejected', 'unknown'].includes(String(payload.state)) ? payload.state as WriteStatus['state'] : 'unknown', remoteId: isRecord(payload) ? readString(payload.remoteId) : undefined, requestId: isRecord(payload) ? readRequestId(payload.requestId) : undefined, ...(this.parseRejection(payload) ? { rejection: this.parseRejection(payload) } : {}), simulated: false }
     const result = normalizeWriteStatus(mapped, request)
     this.writes.set(request.idempotencyKey, result)
     return result
@@ -363,11 +373,15 @@ export class HttpPlatformConnector implements PlatformConnector {
     if (existing?.requestId) return { platform: this.platform, operation, remoteId: existing.remoteId ?? input.remoteId ?? '', requestId: existing.requestId, status: existing.state === 'published' ? 'published' : 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
     const path = operation === 'create' ? config.api.createPath : config.api.updatePath
     const payload = await this.request('POST', joinUrl(config.api.baseUrl, path), await this.resolveCredential(ctx), { ...input.fields, ...(input.remoteId ? { remoteId: input.remoteId } : {}), idempotencyKey: input.idempotencyKey }, 'json', false, ctx.signal)
-    const mapped = config.mapWriteReceipt?.(payload, input, operation, this.platform) ?? { platform: this.platform, operation, remoteId: isRecord(payload) ? readString(payload.remoteId) ?? input.remoteId ?? '' : input.remoteId ?? '', requestId: isRecord(payload) ? readString(payload.requestId) ?? `http_req_${randomUUID()}` : `http_req_${randomUUID()}`, status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
+    const mapped = config.mapWriteReceipt?.(payload, input, operation, this.platform) ?? { platform: this.platform, operation, remoteId: isRecord(payload) ? readString(payload.remoteId) ?? input.remoteId ?? '' : input.remoteId ?? '', requestId: isRecord(payload) ? readRequestId(payload.requestId) : undefined, status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
+    const requestId = readRequestId(mapped.requestId)
+    if (!requestId) {
+      throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: 'platform write response did not provide a valid request ID' }))
+    }
     // A successful write response means the platform accepted the request.
     // It is never proof that the remote product is published; only queryWrite
     // with platform status evidence may transition to `published`.
-    const receipt = { ...mapped, status: 'submitted' as const }
+    const receipt = { ...mapped, requestId, status: 'submitted' as const }
     this.writes.set(input.idempotencyKey, { found: true, state: 'submitted', remoteId: receipt.remoteId, requestId: receipt.requestId, simulated: false })
     return receipt
   }
@@ -453,7 +467,7 @@ export class HttpPlatformConnector implements PlatformConnector {
           details: isRecord(errorPayload)
             ? {
                 ...(readString(errorPayload.code) ? { platformCode: readString(errorPayload.code) } : {}),
-                ...(readString(errorPayload.requestId) ? { requestId: readString(errorPayload.requestId) } : {}),
+                ...(readRequestId(errorPayload.requestId) ? { requestId: readRequestId(errorPayload.requestId) } : {}),
                 ...(rejection ? { rejection } : {}),
               }
             : undefined,

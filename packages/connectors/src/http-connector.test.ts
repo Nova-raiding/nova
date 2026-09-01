@@ -113,6 +113,32 @@ describe('HttpPlatformConnector', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('fails closed when a provider write omits or corrupts its request ID', async () => {
+    for (const requestId of [undefined, 'bad request', 'x'.repeat(257)]) {
+      const connector = createConfiguredConnector('jd', {
+        config: { ...readyConfig, mapWriteReceipt: undefined, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+        credentials: credentials(),
+        fetch: async () => response({ remoteId: 'remote-1', ...(requestId === undefined ? {} : { requestId }) }),
+        allowTestCredentials: true,
+        allowTestAdapters: true,
+      })
+      await expect(connector.createProduct({ workspaceId: 'ws', accountId: 'acct' }, { fields: { title: 'Product', category: 'cat', price: 10, stock: 1 }, idempotencyKey: `missing-request-${requestId ?? 'none'}` }))
+        .rejects.toMatchObject({ normalized: { code: 'VALIDATION_FAILED', retryable: false } })
+    }
+  })
+
+  it('does not treat malformed query request IDs as publish evidence', async () => {
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, mapWriteStatus: undefined, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: credentials(),
+      fetch: async () => response({ found: true, state: 'published', remoteId: 'remote-1', requestId: 'unsafe request id' }),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+    await expect(connector.queryWrite({ workspaceId: 'ws', accountId: 'acct' }, { idempotencyKey: 'query-evidence-1', remoteId: 'remote-1' }))
+      .resolves.toMatchObject({ found: true, state: 'unknown', simulated: false })
+  })
+
   it('cancels in-flight platform HTTP when the durable lease signal aborts', async () => {
     const controller = new AbortController()
     let platformSignal: AbortSignal | undefined
