@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emitRelayUsage, ModelUsageSettlementPendingError, parseRelayUsage, relayUsageReceiptKey } from './relay-usage.js'
+import { emitRelayUsage, ModelUsageEvidenceMissingError, ModelUsageSettlementPendingError, parseRelayUsage, relayUsageReceiptKey } from './relay-usage.js'
 
 describe('relay usage normalization', () => {
   it('normalizes OpenAI-compatible token usage and provider request id', () => {
@@ -67,7 +67,7 @@ describe('relay usage normalization', () => {
     expect(JSON.stringify(caught)).not.toContain(providerSecret)
   })
 
-  it('fails closed when the production sink rejects a response without actual cost', async () => {
+  it('fails closed before settlement when a response has no actual cost', async () => {
     const sinkError = Object.assign(new Error('cost missing'), { code: 'MODEL_USAGE_COST_MISSING' })
     const rejection = emitRelayUsage(
       async () => { throw sinkError },
@@ -75,7 +75,29 @@ describe('relay usage normalization', () => {
       new Headers(),
       { modality: 'text', model: 'relay-text', context: { workspaceId: 'ws_cost', actionId: 'task_cost', providerAttemptId: 'attempt_cost' } },
     )
-    await expect(rejection).rejects.toBe(sinkError)
+    await expect(rejection).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
+  })
+
+  it.each([
+    ['usage', undefined, { cost_cny: 0.01 }],
+    ['cost', { total_tokens: 3 }, undefined],
+  ] as const)('fails closed when production %s evidence is missing', async (missing, usage, cost) => {
+    const payload = { id: `req_missing_${missing}`, usage: { ...usage, ...(cost ? cost : {}) } }
+    await expect(emitRelayUsage(
+      async () => {},
+      missing === 'usage' ? { id: payload.id } : payload,
+      new Headers(),
+      { modality: 'text', model: 'relay-text', context: { providerAttemptId: `attempt_${missing}` } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing })
+  })
+
+  it('fails closed when production settlement sink is missing', async () => {
+    await expect(emitRelayUsage(
+      undefined,
+      { id: 'req_missing_sink', usage: { total_tokens: 3, cost_cny: 0.01 } },
+      new Headers(),
+      { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_missing_sink' } },
+    )).rejects.toBeInstanceOf(ModelUsageEvidenceMissingError)
   })
 
   it('preserves a committed actual-cost overrun at the provider boundary', async () => {

@@ -57,6 +57,16 @@ export class ModelUsageReceiptIdentityError extends Error {
   }
 }
 
+export class ModelUsageEvidenceMissingError extends Error {
+  readonly code = 'MODEL_USAGE_EVIDENCE_MISSING'
+  readonly providerSucceeded = true
+
+  constructor(readonly missing: 'usage' | 'cost' | 'sink') {
+    super(`model usage ${missing} evidence is missing`)
+    this.name = 'ModelUsageEvidenceMissingError'
+  }
+}
+
 type RecordLike = Record<string, unknown>
 
 function record(value: unknown): value is RecordLike {
@@ -154,14 +164,15 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
 
 export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: unknown, headers: Headers, defaults: { modality: RelayUsageModality; model: string; context?: RelayUsageContext }) {
   const usage = parseRelayUsage(payload, headers, defaults)
-  if (usage && sink) {
-    try {
-      await sink(usage)
-    } catch (error) {
-      if (['MODEL_USAGE_COST_MISSING', 'MODEL_TASK_COST_ACTUAL_EXCEEDED', 'MODEL_DAILY_COST_ACTUAL_EXCEEDED'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
-      throw new ModelUsageSettlementPendingError(relayUsageReceiptKey(usage))
-    }
-    usage.metadata = { ...(usage.metadata ?? {}), settlement: 'recorded' satisfies RelayUsageSettlement }
+  if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
+  if (usage.costCny === undefined) throw new ModelUsageEvidenceMissingError('cost')
+  if (!sink) throw new ModelUsageEvidenceMissingError('sink')
+  try {
+    await sink(usage)
+  } catch (error) {
+    if (['MODEL_USAGE_COST_MISSING', 'MODEL_TASK_COST_ACTUAL_EXCEEDED', 'MODEL_DAILY_COST_ACTUAL_EXCEEDED'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
+    throw new ModelUsageSettlementPendingError(relayUsageReceiptKey(usage))
   }
+  usage.metadata = { ...(usage.metadata ?? {}), settlement: 'recorded' satisfies RelayUsageSettlement }
   return usage
 }
