@@ -51,6 +51,22 @@ describe('storage reconciliation runner', () => {
     await expect(status.get('ws_unknown')).resolves.toMatchObject({ error: { retryable: false, nextActions: ['manual_review'] } })
   })
 
+  it('redacts provider credentials and query material from persisted retry evidence', async () => {
+    const status = new MemoryReconciliationStatusStore()
+    await runReconciliationCycle({
+      workspaces: ['ws_sensitive'],
+      inventory: { list: async () => { throw new Error('request failed https://provider.example/reconcile?access_token=secret-token&workspace=ws_sensitive Bearer super-secret-api-key api_key=another-secret') } },
+      references: { list: async () => refs },
+      status,
+    })
+
+    const report = await status.get('ws_sensitive')
+    expect(report?.error?.message).toBe('request failed https://provider.example/reconcile?[REDACTED] Bearer [REDACTED] api_key=[REDACTED]')
+    expect(report?.error?.message).not.toContain('secret-token')
+    expect(report?.error?.message).not.toContain('super-secret-api-key')
+    expect(report?.error?.message).not.toContain('another-secret')
+  })
+
   it('coalesces overlapping timer ticks and can be stopped', async () => {
     const callbacks: Array<() => void> = []
     const cleared: unknown[] = []

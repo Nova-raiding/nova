@@ -53,8 +53,21 @@ function validateWorkspaces(workspaces: readonly string[]): void {
   }
 }
 
+function safeReconciliationErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'reconciliation provider failed'
+  let message = error.message.replace(/[\u0000-\u001f\u007f]/gu, ' ')
+  // Provider errors are persisted for retry/manual review. Keep the useful
+  // failure class while removing credentials and opaque request material.
+  message = message
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [REDACTED]')
+    .replace(/([?&](?:access_token|api[_-]?key|token|secret|signature|password|authorization|code)=)[^&\s]+/giu, '$1[REDACTED]')
+    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization)\s*[:=]\s*[^,;\s]+/giu, '$1=[REDACTED]')
+    .replace(/https?:\/\/[^\s]+/giu, value => value.replace(/([?&]).*$/u, '$1[REDACTED]'))
+  return message.trim().slice(0, 1_000) || 'reconciliation provider failed'
+}
+
 function reconciliationErrorEvidence(error: unknown): ReconciliationErrorEvidence {
-  const message = error instanceof Error ? error.message.replace(/[\u0000-\u001f\u007f]/gu, ' ').slice(0, 1_000) : 'reconciliation provider failed'
+  const message = safeReconciliationErrorMessage(error)
   const retryable = error instanceof Error && /(?:temporarily|timeout|unavailable|rate limit|too many requests|network)/iu.test(message)
   return {
     code: 'RECONCILIATION_PROVIDER_FAILED',
