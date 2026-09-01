@@ -1034,6 +1034,10 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 6.52, 'catalog.product.update', { product_id: hiddenSource.id, title: '不应写入的隐藏品牌标题' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect(service.products.get(source.id)).toEqual(protectedProductBeforeDeniedUpdates)
     expect(service.products.get(hiddenSource.id)).toEqual(hiddenProductBeforeDeniedUpdates)
+    const imageJobsBeforeDeniedReviews = structuredClone([...service.imageGenerationJobs.entries()])
+    expect((await mcp(editorHeaders, 6.53, 'catalog.image.review', { product_id: source.id, visual_refs_json: '{invalid-json' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 6.54, 'catalog.image.review', { product_id: hiddenSource.id, images: 'https://assets.example/hidden-review.jpg' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect([...service.imageGenerationJobs.entries()]).toEqual(imageJobsBeforeDeniedReviews)
     const generatedJob = service.enqueueImageGeneration({ workspaceId, productId: source.id, idempotencyKey: `brand-image-${workspaceId}`, count: 1 })
     const generatedJobBeforeDeniedSelection = structuredClone(generatedJob)
     const generatedVisualRef = `dvis_${'B'.repeat(24)}`
