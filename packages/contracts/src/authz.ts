@@ -241,7 +241,6 @@ const memberRoleAliases: Readonly<Record<string, CanonicalRole>> = {
   merchant_operator: 'operator',
   support: 'workspace_support',
   finance: 'finance',
-  platform_ops: 'ops_admin',
 }
 
 export function canonicalizeRole(role: string, source: 'gateway' | 'membership' = 'gateway'): CanonicalRole | undefined {
