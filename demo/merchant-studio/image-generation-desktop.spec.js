@@ -208,6 +208,20 @@ test('recovers an image candidate failure without losing gate state', async () =
   }
 })
 
+test('moves focus to the recoverable task-read error when the API is unavailable', async () => {
+  const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail: null })
+  try {
+    const error = page.locator('#image-job-read-error')
+    await expect(error).toBeVisible()
+    await expect(error).toContainText('任务状态读取失败')
+    await expect(error).toHaveAttribute('role', 'alert')
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe('image-job-read-error')
+    await expect(page.getByRole('button', { name: '刷新任务状态' })).toBeEnabled()
+  } finally {
+    await context.close(); await browser.close()
+  }
+})
+
 test('supports keyboard candidate selection and submits the reasoned choice', async () => {
   const detail = baseJob({ outputs: [output()], images: ['https://assets.example.test/candidate-1.webp'] })
   const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail })

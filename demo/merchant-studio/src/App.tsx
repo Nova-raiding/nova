@@ -5974,6 +5974,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const [selectionMessage, setSelectionMessage] = useState('')
   const [selectionNotice, setSelectionNotice] = useState('')
   const selectionErrorRef = useRef<HTMLDivElement>(null)
+  const imageJobReadErrorRef = useRef<HTMLDivElement>(null)
   const [retrying, setRetrying] = useState(false)
   const pollDelayRef = useRef(IMAGE_JOB_INITIAL_POLL_DELAY_MS)
   // A safe retry creates a new durable job. Keep polling that returned job
@@ -6013,6 +6014,11 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     return () => { active = false; if (timer !== undefined) window.clearTimeout(timer) }
   }, [baseUrl, currentJobId, reload, job?.state])
   useEffect(() => { setCandidatePage(1) }, [currentJobId])
+  useEffect(() => {
+    if (error && !job && !loading) {
+      window.requestAnimationFrame(() => imageJobReadErrorRef.current?.focus())
+    }
+  }, [error, job, loading])
   const labels: Record<string, string> = { queued: '排队中', leased: '已分配执行权', running: '处理中', succeeded: '生成完成，等待候选审查', failed: '生成失败', provider_reserved: imageGenerationExecutionLabel('provider_reserved'), provider_dispatching: imageGenerationExecutionLabel('provider_dispatching'), provider_started: imageGenerationExecutionLabel('provider_started'), outcome_unknown: imageGenerationExecutionLabel('outcome_unknown') }
   const archiveLabels: Record<string, string> = { pending: '归档中', partial: '部分归档', archived: '已归档', external_unarchived: '外部归档未确认' }
   const gateLabels: Record<string, string> = { pending: '待归档', archived: '已归档', partial: '部分归档', external_unarchived: '归档未确认', quarantined: '扫描隔离', clean: '扫描通过', blocked: '扫描阻断', approved: '权益已确认', rejected: '权益拒绝', unreviewed: '待人工审核', passed: '人工审核通过', not_checked: '真实性未检查', unverified: '真实性未确认' }
@@ -6062,7 +6068,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   return <section className="panel image-generation-job-panel" aria-labelledby="image-job-title" aria-busy={loading}>
     <div className="detail-section-head"><div><span className="section-kicker">IMAGE JOB</span><h3 id="image-job-title">图片生成任务</h3></div><StatusChip tone={displayStateTone}>{loading && !job ? '读取中…' : displayStateLabels[displayState] ?? '状态待确认'}</StatusChip></div>
     <div className="info-notice" role="status" aria-live="polite" aria-atomic="true">{job ? `任务 ${job.jobId} · 商品 ${job.productId} · 最后更新 ${new Date(job.updatedAt).toLocaleString('zh-CN', { hour12: false })}` : '正在读取任务状态…'}</div>
-    {error && <div className="error-notice image-job-read-error" role="alert" aria-atomic="true"><span>任务状态读取失败：{error}。已保留上次可信状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
+    {error && <div ref={imageJobReadErrorRef} id="image-job-read-error" className="error-notice image-job-read-error" role="alert" tabIndex={-1} aria-atomic="true"><span>任务状态读取失败：{error}。已保留上次可信状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
     {job && <dl className="image-job-evidence" aria-label="图片执行证据"><div><dt>执行状态</dt><dd>{labels[job.executionState ?? ''] ?? job.executionState ?? '未记录'}</dd></div><div><dt>归档状态</dt><dd>{archiveLabels[job.archiveState] ?? '状态未知'}</dd></div><div><dt>执行尝试</dt><dd>{job.executionAttempt ?? '未记录'}</dd></div><div><dt>Provider 请求</dt><dd>{job.providerRequestId ?? '尚未确认'}</dd></div><div><dt>任务版本</dt><dd>{job.revision}</dd></div></dl>}
     {job?.errorMessage && <div id="image-job-error" className="error-notice" role="alert" tabIndex={-1}><AlertCircle size={16} /><span>{job.errorCode ?? 'IMAGE_GENERATION_FAILED'}：{job.errorMessage}</span></div>}
     {job?.availabilityWarning && <div className="info-notice"><ShieldCheck size={16} /><span>{job.availabilityWarning}</span></div>}
