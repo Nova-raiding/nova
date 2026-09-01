@@ -1872,7 +1872,7 @@ describe('MerchantService', () => {
     expect(markdown.body).toContain('静态素材 Brief')
   })
 
-  it('uses the cookware rhythm for fixture modules and re-orchestrates a local module regeneration', () => {
+  it('uses the cookware rhythm without retaining unsupported visual or outcome evidence', () => {
     const service = new MerchantService({ fixtureMode: true })
     const product = service.products.get('prod_fixture_1')!
     product.category = '厨房锅具'
@@ -1881,21 +1881,21 @@ describe('MerchantService', () => {
     service.selectDirection(task.id, 'A')
     const draft = service.createDraft(task.id)
 
-    expect(draft.body.modules?.slice(0, 7).map(module => module.key)).toEqual([
-      'hero', 'details_craft', 'selling_points', 'solution', 'specifications', 'size_guide', 'sku',
-    ])
+    expect(draft.body.modules?.slice(0, 5).map(module => module.key)).toEqual(['hero', 'selling_points', 'specifications', 'size_guide', 'sku'])
+    expect(draft.body.modules?.map(module => module.key)).not.toContain('details_craft')
+    expect(draft.body.modules?.map(module => module.key)).not.toContain('solution')
     const sourceModules = draft.body.modules!
-    const details = sourceModules.find(module => module.key === 'details_craft')!
+    const specifications = sourceModules.find(module => module.key === 'specifications')!
     const hero = sourceModules.find(module => module.key === 'hero')!
-    draft.body.modules = [details, hero]
+    draft.body.modules = [specifications, hero]
 
     const regenerated = service.regenerateContentModule({
       workspaceId: 'ws_demo',
       sourceVersionId: draft.id,
-      moduleKey: 'details_craft',
+      moduleKey: 'specifications',
       reason: '验证局部重生成沿用动态编排',
     })
-    expect(regenerated.version.body.modules?.map(module => module.key)).toEqual(['hero', 'details_craft'])
+    expect(regenerated.version.body.modules?.map(module => module.key)).toEqual(['hero', 'specifications'])
   })
 
   it('does not upgrade or mutate historical versions during a read', () => {
@@ -2051,7 +2051,30 @@ describe('MerchantService', () => {
       code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', severity: 'warning', priority: 'P1',
       repairSuggestion: expect.stringContaining('重新批准前'),
     }))
-    expect(service.approveContent(task.id, draft.id).version.state).toBe('approved')
+    expect(() => service.approveContent(task.id, draft.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+    expect(() => service.exportContent('ws_demo', draft.id, 'json')).toThrowError(expect.objectContaining({ code: 'CONTENT_EXPORT_BLOCKED' }))
+
+    draft.state = 'approved'
+    task.contentVersionId = draft.id
+    task.state = 'approved'
+    expect(() => service.preparePublish(task.id)).toThrowError(expect.objectContaining({ code: 'DETAIL_DECISION_CONTRACT_BLOCKED' }))
+  })
+
+  it('fails closed when optional missing evidence survives restore or modify', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const source = service.createDraft(task.id)
+    service.approveContent(task.id, source.id)
+    const restored = service.restoreContentVersion('ws_demo', source.id).version
+
+    expect(restored.body.modules).toContainEqual(expect.objectContaining({ decisionContract: expect.objectContaining({ optional: true, evidence: expect.objectContaining({ status: 'missing' }) }) }))
+    expect(() => service.approveContent(task.id, restored.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+    expect(() => service.exportContent('ws_demo', restored.id, 'json')).toThrowError(expect.objectContaining({ code: 'CONTENT_EXPORT_BLOCKED' }))
+
+    const modified = service.modifyContentVersion({ workspaceId: 'ws_demo', sourceVersionId: restored.id, changes: { title: '历史修正版标题' }, reason: '历史内容修订' }).version
+    expect(() => service.approveContent(task.id, modified.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
+    expect(() => service.exportContent('ws_demo', modified.id, 'json')).toThrowError(expect.objectContaining({ code: 'CONTENT_EXPORT_BLOCKED' }))
   })
 
   it('persists P1/P2 review decisions but never allows a P0 blocker to be bypassed', () => {
@@ -2209,7 +2232,7 @@ describe('MerchantService', () => {
     const draft = service.createDraft(task.id)
     draft.body.modules = [...(draft.body.modules ?? []), { key: 'sku-invalid', title: 'SKU', purpose: 'test', body: 'unknown', factSourceIds: ['product:prod_fixture_1:v1'], referencedSkuIds: ['SKU-NOT-FOUND'] }]
     expect(service.reviewContent('ws_demo', draft.id).some(finding => finding.code === 'SKU_MISMATCH')).toBe(true)
-    expect(() => service.approveContent(task.id, draft.id)).toThrow('内容存在未解决的阻断检查项')
+    expect(() => service.approveContent(task.id, draft.id)).toThrowError(expect.objectContaining({ code: 'REVIEW_BLOCKED' }))
   })
 
   it('preserves brand conflicts until the user explicitly resolves the candidate', () => {

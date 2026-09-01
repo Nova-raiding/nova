@@ -3263,6 +3263,22 @@ export class MerchantService {
     return findings
   }
 
+  private detailDecisionDeliveryBlockers(version: ContentVersion) {
+    const modules = version.body.modules as unknown as ReadonlyArray<Record<string, unknown>> | undefined
+    if (!modules?.length) return [{ code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', field: 'modules', message: '历史内容缺少详情页模块决策契约，必须创建完整新版本后才能批准、导出或发布。' }]
+    const versionReason = version.versionVector?.reason
+    const enforceOptionalMissing = !versionReason || versionReason.startsWith('restore:') || versionReason.startsWith('content_modify:')
+    return modules.flatMap((module, index) => {
+      const key = typeof module.key === 'string' && module.key.trim() ? module.key.trim() : `legacy_${index + 1}`
+      const contract = module.decisionContract
+      if (!contract || typeof contract !== 'object' || Array.isArray(contract)) return [{ code: 'DETAIL_MODULE_DECISION_CONTRACT_LEGACY', field: `modules.${key}.decisionContract`, message: `详情页模块 “${key}” 缺少完整决策契约。` }]
+      const decision = contract as Record<string, unknown>
+      const evidence = decision.evidence && typeof decision.evidence === 'object' && !Array.isArray(decision.evidence) ? decision.evidence as Record<string, unknown> : undefined
+      if (enforceOptionalMissing && decision.optional === true && evidence?.status === 'missing') return [{ code: 'DETAIL_MODULE_OPTIONAL_EVIDENCE_MISSING', field: `modules.${key}.decisionContract.evidence`, message: `详情页模块 “${key}” 仍缺少可选证据，必须省略或补证后创建新版本。` }]
+      return []
+    })
+  }
+
   reviewContent(workspaceId: string, contentVersionId: string, rules?: { availableRuleVersionIds: string[]; forbiddenTerms: string[]; ruleHits?: RuleHit[] }): ReviewFinding[] {
     const version = this.getContentVersion(workspaceId, contentVersionId)
     const task = this.mustTask(version.taskId)
@@ -3463,7 +3479,7 @@ export class MerchantService {
       throw new DomainError('CONTENT_SCHEMA_INVALID', error instanceof Error ? error.message : '修改后内容结构不合法', 400)
     }
     const body = validatedBody
-    const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, createdBy: 'user', reason: input.reason, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
+    const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, createdBy: 'user', reason: `content_modify:${input.reason}`, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id
     task.state = 'review_required'
@@ -3516,6 +3532,8 @@ export class MerchantService {
   exportContent(workspaceId: string, contentVersionId: string, format: ContentExportFormat = 'bundle'): ContentExport {
     const version = this.getContentVersion(workspaceId, contentVersionId)
     const task = this.mustTask(version.taskId)
+    const decisionBlockers = this.detailDecisionDeliveryBlockers(version)
+    if (decisionBlockers.length) throw new DomainError('CONTENT_EXPORT_BLOCKED', '详情页决策证据不完整，禁止导出', 409, { findings: decisionBlockers })
     const liveFindings = this.reviewContent(workspaceId, contentVersionId)
     const expiredFinding = liveFindings.find(finding => finding.code === 'PROMOTION_EXPIRED')
     if (expiredFinding && version.deliveryStatus !== 'expired') {
@@ -4255,6 +4273,8 @@ export class MerchantService {
     const version = this.contentVersions.get(contentVersionId)
     if (!version || version.taskId !== taskId) throw new DomainError('CONTENT_VERSION_NOT_FOUND', '内容版本不存在', 404)
     this.assertTaskState(task, ['review_required'])
+    const decisionBlockers = this.detailDecisionDeliveryBlockers(version)
+    if (decisionBlockers.length) throw new DomainError('REVIEW_BLOCKED', '详情页决策证据不完整，不能批准', 409, { findings: decisionBlockers })
     const findings = this.reviewContent(task.workspaceId, contentVersionId, rules)
     if (isReviewBlocking(findings)) throw new DomainError('REVIEW_BLOCKED', '内容存在未解决的阻断检查项')
     const product = this.products.get(task.productId)
@@ -4277,6 +4297,8 @@ export class MerchantService {
     if (!['approved', 'publish_prepared'].includes(task.state) || !task.contentVersionId) throw new DomainError('CONTENT_NOT_APPROVED', '内容未批准，不能准备发布')
     const version = this.contentVersions.get(task.contentVersionId)
     if (!version || version.state !== 'approved') throw new DomainError('CONTENT_VERSION_NOT_FOUND', '已批准内容版本不存在', 404)
+    const decisionBlockers = this.detailDecisionDeliveryBlockers(version)
+    if (decisionBlockers.length) throw new DomainError('DETAIL_DECISION_CONTRACT_BLOCKED', '详情页决策证据不完整，禁止准备发布', 409, { findings: decisionBlockers })
     const product = this.products.get(task.productId)
     if (!product || product.workspaceId !== task.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品快照不存在或不属于当前工作区', 404)
     let canonicalBinding: CanonicalExecutionBinding
