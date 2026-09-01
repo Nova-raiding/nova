@@ -54,6 +54,7 @@ import { parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type Wo
 import { createImageEditCandidate, createOneSentenceGenerationRequest, createVideoGenerationRequest, createVideoRenderingRequest, type GenerationContext } from '../../../packages/multimodal/src/index.js'
 import { generateSeoGeoSuggestions } from '../../../packages/seo/src/index.js'
 import { createPaymentProviderFromEnv, FixturePaymentProvider, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
+import { paymentFixturePolicy } from '../../../packages/application/src/payment-fixture-guard.js'
 import { platformRuleSyncStatus } from '../../../packages/review/src/platform-rule-sync.js'
 import { verifyAndParsePlatformRuleManifest } from '../../../packages/review/src/platform-rule-manifest.js'
 import { assertOutboundUrl } from '../../../packages/connectors/src/outbound-security.js'
@@ -401,7 +402,9 @@ let paymentProvider = createPaymentProviderFromEnv()
 const fixturePaymentProvider = new FixturePaymentProvider()
 
 type PaymentChannel = 'alipay' | 'wechat'
-export function fixturePaymentAllowed(source: NodeJS.ProcessEnv = process.env) { return source.ALLOW_LOCAL_PAYMENT_FIXTURE === 'true' }
+export function fixturePaymentAllowed(source: NodeJS.ProcessEnv = process.env) {
+  return paymentFixturePolicy(source).fixtureAllowed
+}
 function paymentChannel(params: Record<string, unknown>): PaymentChannel {
   if (params.channel !== 'alipay' && params.channel !== 'wechat') throw new DomainError('BILLING_CHANNEL_INVALID', '订阅支付渠道必须是支付宝或微信', 400)
   return params.channel

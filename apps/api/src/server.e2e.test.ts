@@ -279,6 +279,7 @@ describe('API HTTP vertical slice', () => {
     expect(fixturePaymentAllowed({})).toBe(false)
     expect(fixturePaymentAllowed({ ALLOW_LOCAL_PAYMENT_FIXTURE: 'true' })).toBe(true)
     expect(fixturePaymentAllowed({ ALLOW_LOCAL_PAYMENT_FIXTURE: 'false' })).toBe(false)
+    expect(fixturePaymentAllowed({ NODE_ENV: 'production', ALLOW_LOCAL_PAYMENT_FIXTURE: 'true' })).toBe(false)
   })
 
   it('neutralizes formula-like audit fields in ops.audit.export CSV', async () => {
