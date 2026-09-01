@@ -31,6 +31,7 @@ describe('authorization/RLS local PostgreSQL probe', () => {
     let database: Pool | undefined
     let app: Pool | undefined
     let ops: Pool | undefined
+    let pooledOps: Pool | undefined
     try {
       await admin.query(`CREATE DATABASE "${databaseName}"`)
       database = new Pool({ connectionString: connection(base, databaseName) })
@@ -82,9 +83,20 @@ describe('authorization/RLS local PostgreSQL probe', () => {
       expect(scoped.rows).toEqual([{ subject_identity_id: identityId, revision: 1 }])
       await ops.query('COMMIT')
       await expect(ops.query("INSERT INTO authorization_revisions (subject_identity_id,revision,updated_by,update_reason) VALUES ($1,2,'probe','scope must be transaction local')", [identityId])).rejects.toMatchObject({ code: '42501' })
+
+      // A reused application connection must not retain a previous request's
+      // platform scope after the transaction ends. This catches pool/session
+      // configuration that accidentally uses SET instead of SET LOCAL.
+      pooledOps = new Pool({ connectionString: connection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only'), max: 1 })
+      await pooledOps.query('BEGIN')
+      await pooledOps.query("SELECT set_config('app.platform_scope','platform_ops',true)")
+      expect((await pooledOps.query('SELECT count(*)::int AS count FROM authorization_revisions')).rows).toEqual([{ count: 1 }])
+      await pooledOps.query('COMMIT')
+      expect((await pooledOps.query('SELECT count(*)::int AS count FROM authorization_revisions')).rows).toEqual([{ count: 0 }])
     } finally {
       await app?.end()
       await ops?.end()
+      await pooledOps?.end()
       await database?.end()
       await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
