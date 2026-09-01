@@ -118,6 +118,10 @@ export function validateLocalCapacityEvidence(document: unknown): string[] {
   if (value.cloud_gate !== false) errors.push('cloud_gate must be false for local capacity evidence')
   if (value.platform_mock_ratio !== 1) errors.push('platform_mock_ratio must be 1 for local capacity evidence')
   if (value.model_mock_ratio !== 1) errors.push('model_mock_ratio must be 1 for local capacity evidence')
+  const metrics = value.metrics as Record<string, unknown> | undefined
+  if (!metrics || typeof metrics !== 'object' || typeof metrics.observed_request_count !== 'number' || !Number.isSafeInteger(metrics.observed_request_count) || metrics.observed_request_count < 1) {
+    errors.push('metrics.observed_request_count must be a positive integer for local capacity evidence')
+  }
   try {
     const target = new URL(String(value.target_url ?? ''))
     if (target.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1'].includes(target.hostname)) errors.push('target_url must be a local HTTP endpoint for local capacity evidence')
@@ -269,6 +273,7 @@ export function buildCapacityEvidenceDocument(
       async_jobs_per_minute: config.asyncJobsPerMinute, p95_ms: Math.round(p95Ms * 100) / 100, p99_ms: Math.round(p99Ms * 100) / 100,
       error_count: errors, rate_limited_count: rateLimited, lost_jobs: 0, duplicate_writes: 0,
       fairness_p95_degradation_percent: Math.round(fairness * 100) / 100, stability_hours: stabilityHours,
+      observed_request_count: timings.length,
     },
     accepted_jobs: input.acceptedJobs,
     coverage: 'api_http_and_job_admission',

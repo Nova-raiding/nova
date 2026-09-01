@@ -85,4 +85,14 @@ describe('capacity workload contract', () => {
     expect(report.metrics.error_count).toBe(1)
     expect(validateCapacityEvidence(report)).toContain('metrics.error_count must be 0')
   })
+
+  it('rejects local evidence when the workload emitted no observations', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_MODE: 'compose' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0, timings: [],
+    })
+
+    expect(report.status).toBe('pass')
+    expect(validateLocalCapacityEvidence(report)).toContain('metrics.observed_request_count must be a positive integer for local capacity evidence')
+  })
 })
