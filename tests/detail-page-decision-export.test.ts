@@ -33,11 +33,31 @@ function requireFile(files: ReadonlyMap<string, string>, path: string): string {
 }
 
 describe('详情页决策证据导出契约', () => {
-  it('在草稿导出中保留 decisionContract，且不把未通过证据误报为 verified', () => {
+  it('保留已验证 decisionContract，并拒绝导出未通过证据', () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
     service.selectDirection(task.id, 'A')
     const version = service.createDraft(task.id)
+    const verifiedJsonExport = JSON.parse(service.exportContent('ws_demo', version.id, 'json').body) as {
+      body: { modules: Array<{ decisionContract?: { optional: boolean; evidence: { status: EvidenceStatus } } }> }
+    }
+    const verifiedMarkdownExport = service.exportContent('ws_demo', version.id, 'markdown').body
+    const verifiedBundle = service.exportContent('ws_demo', version.id, 'bundle')
+    const verifiedFiles = readStoredZip(verifiedBundle.binaryBody ?? new Uint8Array())
+    const verifiedContentJson = JSON.parse(requireFile(verifiedFiles, 'content.json')) as typeof verifiedJsonExport
+
+    const exportedContracts = verifiedJsonExport.body.modules.flatMap(module => module.decisionContract ? [module.decisionContract] : [])
+    const bundledContracts = verifiedContentJson.body.modules.flatMap(module => module.decisionContract ? [module.decisionContract] : [])
+    expect(exportedContracts.length).toBeGreaterThan(0)
+    expect(bundledContracts.length).toBe(exportedContracts.length)
+    expect(exportedContracts.every(contract => contract.evidence.status === 'verified'
+      || (contract.optional && contract.evidence.status === 'missing'))).toBe(true)
+    expect(bundledContracts.every(contract => contract.evidence.status === 'verified'
+      || (contract.optional && contract.evidence.status === 'missing'))).toBe(true)
+    expect(verifiedMarkdownExport).toContain('证据状态：verified')
+    expect(verifiedMarkdownExport).toContain('不代表平台已发布')
+    expect(verifiedBundle.deliveryManifest?.publishReceipt).toBeUndefined()
+
     const statuses: readonly EvidenceStatus[] = ['missing', 'conflict', 'expired']
     const modules = (version.body.modules ?? []).map((module, index) => {
       const status = statuses[index]
@@ -62,40 +82,9 @@ describe('详情页决策证据导出契约', () => {
     })
     service.contentVersions.set(version.id, { ...version, body: { ...version.body, modules } })
 
-    const jsonExport = JSON.parse(service.exportContent('ws_demo', version.id, 'json').body) as {
-      body: { modules: Array<{ decisionContract?: { evidence: { status: EvidenceStatus } } }> }
+    for (const format of ['json', 'markdown', 'bundle'] as const) {
+      expect(() => service.exportContent('ws_demo', version.id, format))
+        .toThrow('内容在导出前重新审核发现阻断项')
     }
-    const markdownExport = service.exportContent('ws_demo', version.id, 'markdown').body
-    const bundle = service.exportContent('ws_demo', version.id, 'bundle')
-    const files = readStoredZip(bundle.binaryBody ?? new Uint8Array())
-    const contentJson = JSON.parse(requireFile(files, 'content.json')) as typeof jsonExport
-    const contentMarkdown = requireFile(files, 'content.md')
-    const sourceMap = JSON.parse(requireFile(files, 'source-map.json')) as {
-      entries: Array<{ outputPath: string; field: string; factSourceIds: string[] }>
-    }
-    const compatibilitySourceMap = JSON.parse(requireFile(files, 'legacy-source-map.json')) as {
-      modules: Record<string, { evidence_status?: EvidenceStatus }>
-    }
-
-    const exportedStatuses = jsonExport.body.modules.slice(0, 3).map(module => module.decisionContract?.evidence.status)
-    expect(exportedStatuses).toEqual(statuses)
-    expect(contentJson.body.modules.slice(0, 3).map(module => module.decisionContract?.evidence.status)).toEqual(statuses)
-    for (const status of statuses) {
-      expect(markdownExport).toContain(`证据状态：${status}`)
-      expect(contentMarkdown).toContain(`证据状态：${status}`)
-    }
-
-    expect(sourceMap.entries).toEqual(expect.arrayContaining([
-      expect.objectContaining({ outputPath: 'content.json', field: 'body', factSourceIds: expect.any(Array) }),
-      expect.objectContaining({ outputPath: 'content.md', field: 'content', factSourceIds: expect.any(Array) }),
-    ]))
-    expect(Object.values(compatibilitySourceMap.modules).slice(0, 3).map(module => module.evidence_status)).toEqual(statuses)
-
-    const unverifiedExports = JSON.stringify({ jsonExport, contentJson, sourceMap, compatibilitySourceMap })
-    expect(unverifiedExports).toContain('仅验证导出契约，不代表生产发布成功')
-    expect(JSON.stringify(sourceMap)).not.toContain('"evidence_status":"verified"')
-    expect(Object.values(compatibilitySourceMap.modules).slice(0, 3)).not.toContainEqual(expect.objectContaining({ evidence_status: 'verified' }))
-    expect(markdownExport).toContain('不代表平台已发布')
-    expect(bundle.deliveryManifest?.publishReceipt).toBeUndefined()
   })
 })
