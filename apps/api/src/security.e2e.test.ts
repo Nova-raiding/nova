@@ -470,7 +470,7 @@ describe('security and access-control acceptance gates', () => {
     const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['catalog.sync.execute'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'approved catalog repair', ticketRef: `WORKER-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
     const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: identityId, workspaceId, capability: 'catalog.sync.execute', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'support-operator', reason: 'enqueue approved catalog repair' })
     expect(consumed).toBeDefined()
-    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-worker-grant', actorId: 'support-operator', workspaceId, contextId: `workspace:${workspaceId}`, contextVersion: 'authz-v1', policyVersion: 'authz-v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, scopeHash: grant.scopeHash, capability: 'catalog.sync.execute' as const, resourceId: 'sync-job-1', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
+    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-worker-grant', actorId: 'support-operator', identityId, workspaceId, workbench: 'workspace' as const, contextId: `workspace:${workspaceId}`, contextVersion: 'authz-v1', policyVersion: 'authz-v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, grantIds: [] as string[], scopeHash: grant.scopeHash, capability: 'catalog.sync.execute' as const, resourceId: 'sync-job-1', resourceRevision: '1', requestId: 'req_worker_grant', traceId: 'req_worker_grant', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
 
     await expect(recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, 'sync-job-1')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
     await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot, grantRevision: `grant:forged:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}` }, workspaceId, 'sync-job-1')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
@@ -485,7 +485,7 @@ describe('security and access-control acceptance gates', () => {
     setAuthorizationRepositoryForTests(new MemoryAuthorizationRepository())
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'operator', status: 'active', invitedBy: 'security-test' })
     await workspaceMembers.bindIdentity({ workspaceId, externalSubject: actorId, identityId })
-    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-publish-source', actorId, workspaceId, contextId: `workspace:${workspaceId}`, contextVersion: '2026-08-31.v1', policyVersion: '2026-08-31.v1', grantRevision: `membership:${identityId}:0`, scopeHash: 'a'.repeat(64), capability: 'publish.execute' as const, resourceId: 'publish-job-1', authorized: true as const, decidedAt: new Date().toISOString() }
+    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-publish-source', actorId, identityId, workspaceId, workbench: 'workspace' as const, contextId: `workspace:${workspaceId}`, contextVersion: '2026-08-31.v1', policyVersion: '2026-08-31.v1', grantRevision: `membership:${identityId}:0`, grantIds: [] as string[], scopeHash: 'a'.repeat(64), capability: 'publish.execute' as const, resourceId: 'publish-job-1', resourceRevision: '1', requestId: 'req_worker_continuation', traceId: 'req_worker_continuation', authorized: true as const, decidedAt: new Date().toISOString() }
 
     await expect(deriveWorkerContinuationAuthorizationSnapshot(snapshot, workspaceId, 'publish-job-1', 'publish.reconcile', { event: 'publish.reconcile_requested' })).resolves.toMatchObject({
       capability: 'publish.reconcile',
@@ -506,7 +506,7 @@ describe('security and access-control acceptance gates', () => {
     setAuthorizationRepositoryForTests(repository)
     const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['customer.publish.execute'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'one publish only', ticketRef: `PUBLISH-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
     const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: identityId, workspaceId, capability: 'customer.publish.execute', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'temporary-publisher', reason: 'enqueue one publish' })
-    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-publish-grant-source', actorId: 'temporary-publisher', workspaceId, contextId: `workspace:${workspaceId}`, contextVersion: '2026-08-31.v1', policyVersion: '2026-08-31.v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, scopeHash: grant.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish-job-grant-1', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
+    const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-publish-grant-source', actorId: 'temporary-publisher', identityId, workspaceId, workbench: 'workspace' as const, contextId: `workspace:${workspaceId}`, contextVersion: '2026-08-31.v1', policyVersion: '2026-08-31.v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, grantIds: [grant.id], scopeHash: grant.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish-job-grant-1', resourceRevision: '1', requestId: 'req_worker_continuation_grant', traceId: 'req_worker_continuation_grant', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
 
     await expect(deriveWorkerContinuationAuthorizationSnapshot(snapshot, workspaceId, 'publish-job-grant-1', 'publish.reconcile', { event: 'publish.reconcile_requested' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
   })
@@ -992,15 +992,18 @@ describe('security and access-control acceptance gates', () => {
     await configureBearerMembers([
       { token: 'brand-owner-token', workspaceId, actorId: 'brand-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
       { token: 'brand-editor-token', workspaceId, actorId: 'brand-editor', role: 'operator', gatewayRoles: ['operator'] },
+      { token: 'brand-publisher-token', workspaceId, actorId: 'brand-publisher', role: 'operator', gatewayRoles: ['operator'] },
     ])
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `brand-store-${workspaceId}`, credentialRef: 'vault://brand-access' })
     const source = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-access-source', title: '品权限商品', stock: 3 })
     const hiddenSource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-hidden-source', title: '不可见商品', stock: 2 })
+    const publishSource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-publish-source', title: '发布权限商品', stock: 4 })
     const legacyBrandOnlySource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'legacy-brand-only-source', title: '仅旧字段商品', stock: 1 }) as typeof source & { brandId?: string }
     legacyBrandOnlySource.brandId = 'brand_access'
     const base = await start()
     const ownerHeaders = { authorization: 'Bearer brand-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const editorHeaders = { authorization: 'Bearer brand-editor-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    const publisherHeaders = { authorization: 'Bearer brand-publisher-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const mcp = (headers: Record<string, string>, id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
     expect((await mcp(ownerHeaders, 1, 'brand-unit.create', { brand_id: 'brand_access', name: '权限品' })).error).toBeNull()
@@ -1008,8 +1011,12 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(ownerHeaders, 2, 'brand-unit.bind-store', { brand_id: 'brand_access', platform: 'taobao', account_id: account.id })).error).toBeNull()
     expect((await mcp(ownerHeaders, 2.05, 'catalog.facts.confirm', { product_id: source.id })).error).toBeNull()
     expect((await mcp(ownerHeaders, 2.06, 'catalog.facts.confirm', { product_id: hiddenSource.id })).error).toBeNull()
+    expect((await mcp(ownerHeaders, 2.07, 'catalog.facts.confirm', { product_id: publishSource.id })).error).toBeNull()
     expect((await mcp(ownerHeaders, 2.1, 'brand-unit.product.create', { brand_id: 'brand_access', title: '初始品牌商品', source_product_id: source.id })).error).toBeNull()
     expect((await mcp(ownerHeaders, 2.11, 'brand-unit.product.create', { brand_id: 'brand_hidden', title: '不可见商品', source_product_id: hiddenSource.id })).error).toBeNull()
+    const publishCanonical = await mcp(ownerHeaders, 2.12, 'brand-unit.product.create', { brand_id: 'brand_access', title: '发布权限商品', source_product_id: publishSource.id })
+    expect(publishCanonical.error).toBeNull()
+    expect((await mcp(ownerHeaders, 2.13, 'brand-unit.listing.create', { brand_id: 'brand_access', canonical_product_id: publishCanonical.data?.result.id, platform: 'taobao', account_id: account.id })).error).toBeNull()
     expect((await mcp(editorHeaders, 3, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 0 })
     expect((await mcp(editorHeaders, 3.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation).toMatchObject({ presentation: 'tree', hierarchy: ['brand', 'platform', 'store'], items: [] })
     expect((await mcp(editorHeaders, 4, 'brand-unit.list', { brand_id: 'brand_access' })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
@@ -1129,11 +1136,33 @@ describe('security and access-control acceptance gates', () => {
     const publisherProbeDraftBeforeDeniedApproval = structuredClone(publisherProbeDraft)
     expect((await mcp(editorHeaders, 8.01, 'content.approve', { task_id: publisherProbeTask.id, content_version_id: publisherProbeDraft.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect(service.contentVersions.get(publisherProbeDraft.id)).toEqual(publisherProbeDraftBeforeDeniedApproval)
+    const publisherProbeTaskBeforeDeniedPrepare = structuredClone(publisherProbeTask)
+    const publishJobsBeforeDeniedPrepare = structuredClone([...service.publishJobs.entries()])
+    expect((await mcp(editorHeaders, 8.02, 'publish.prepare', { task_id: publisherProbeTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect(service.tasks.get(publisherProbeTask.id)).toEqual(publisherProbeTaskBeforeDeniedPrepare)
+    const deniedHttpPrepare = await fetch(`${base}/v1/tasks/${publisherProbeTask.id}/publish-preview`, { method: 'POST', headers: editorHeaders, body: '{}' }).then(response => response.json() as Promise<Envelope>)
+    expect(deniedHttpPrepare.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect(service.tasks.get(publisherProbeTask.id)).toEqual(publisherProbeTaskBeforeDeniedPrepare)
+    expect([...service.publishJobs.entries()]).toEqual(publishJobsBeforeDeniedPrepare)
     expect((await mcp(editorHeaders, 8.1, 'catalog.image.select', { job_id: generatedJob.id, visual_ref: generatedVisualRef, expected_revision: String(generatedJob.revision), idempotency_key: `brand-select-${workspaceId}`, reason: '品牌候选图选择', confirmation_ticket_nonce_hash: 'a'.repeat(64), confirmation_ticket_intent_hash: selectionIntentHash })).error?.code).toBe('INTERACTIVE_CONFIRMATION_TICKET_INVALID')
     expect((await mcp(editorHeaders, 9, 'brand-unit.product.create', { brand_id: 'brand_access', title: '可编辑商品', source_product_id: source.id })).error).toBeNull()
     expect((await mcp(editorHeaders, 9.1, 'task.resume', { task_id: protectedTask.id })).error).toBeNull()
 
     service.confirmProductFacts(workspaceId, source.id)
+    expect((await mcp(ownerHeaders, 9.11, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-publisher', role: 'publisher' })).error).toBeNull()
+    const publisherMcpTask = service.createTask({ workspaceId, productId: publishSource.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
+    service.selectDirection(publisherMcpTask.id, 'A')
+    const publisherMcpDraft = service.createDraft(publisherMcpTask.id)
+    service.approveContent(publisherMcpTask.id, publisherMcpDraft.id)
+    expect((await mcp(publisherHeaders, 9.12, 'publish.prepare', { task_id: publisherMcpTask.id })).error).toBeNull()
+    expect(service.tasks.get(publisherMcpTask.id)?.state).toBe('publish_prepared')
+    const publisherHttpTask = service.createTask({ workspaceId, productId: publishSource.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
+    service.selectDirection(publisherHttpTask.id, 'A')
+    const publisherHttpDraft = service.createDraft(publisherHttpTask.id)
+    service.approveContent(publisherHttpTask.id, publisherHttpDraft.id)
+    const publisherHttpPrepare = await fetch(`${base}/v1/tasks/${publisherHttpTask.id}/publish-preview`, { method: 'POST', headers: publisherHeaders, body: '{}' }).then(response => response.json() as Promise<Envelope<{ task: { state: string } }>>)
+    expect(publisherHttpPrepare.error).toBeNull()
+    expect(publisherHttpPrepare.data?.task.state).toBe('publish_prepared')
     const protectedPublishTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_access' })
     const hiddenPublishTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
     for (const task of [protectedPublishTask, hiddenPublishTask]) {
