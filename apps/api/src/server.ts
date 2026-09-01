@@ -49,7 +49,7 @@ import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOper
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
-import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, MCP_METHODS, MCP_METHOD_POLICIES, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, ERROR_CODES, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
 import { planSupportSlaScan } from '../../../packages/workers/src/support-sla-scan.js'
@@ -5006,16 +5006,6 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
     && req.method !== 'GET'
     && (header(req, 'content-type') ?? '').toLowerCase().includes('application/json')
   if (hasJsonAuthorizationParams) Object.assign(params, await body(req))
-  // Preserve the publish API's domain error ordering: an account switch on a
-  // task already scoped to this workspace is a business conflict (409), not
-  // an authorization denial (403). Cross-workspace tasks deliberately skip
-  // this check so tenant isolation remains the first boundary.
-  if (req.method === 'POST' && url.pathname === '/v1/publish-jobs') {
-    const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
-    const requestedAccountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
-    const task = taskId ? service.tasks.get(taskId) : undefined
-    if (task?.workspaceId === workspaceId) resolveTaskPublishAccount(task, requestedAccountId)
-  }
   const pathParams = httpAuthorizationPathParams(httpPolicy.pathTemplate, url.pathname, httpPolicy.mcpMethod)
   for (const [name, value] of Object.entries(pathParams)) {
     if (typeof params[name] === 'string' && params[name]!.trim() && params[name]!.trim() !== value) {
@@ -9237,64 +9227,7 @@ async function persistCanonicalLinkAudit(report: ReturnType<typeof canonicalCons
   return { persisted: true, count: findings.length + orphanFindings.length }
 }
 
-const nativeMcpRequests = new WeakSet<IncomingMessage>()
-const nativeMcpRequestIds = new WeakMap<IncomingMessage, string | number | null>()
-const MCP_PROTOCOL_VERSION = '2025-06-18'
-
-function isNativeMcpMethod(method: unknown): method is 'initialize' | 'tools/list' | 'tools/call' {
-  return method === 'initialize' || method === 'tools/list' || method === 'tools/call'
-}
-
-function nativeMcpTools() {
-  return MCP_METHOD_CONTRACTS
-    .filter(contract => !contract.method.startsWith('ops.'))
-    .map(contract => ({
-      name: contract.method,
-      description: contract.description,
-      inputSchema: contract.params,
-    }))
-}
-
-function nativeMcpErrorCode(error: unknown) {
-  if (error instanceof DomainError) {
-    if (error.code === ERROR_CODES.MCP_METHOD_NOT_FOUND) return -32601
-    if (error.code === ERROR_CODES.INVALID_REQUEST) return -32602
-    if (error.code === ERROR_CODES.UNAUTHENTICATED || error.status === 401) return -32001
-  }
-  return -32603
-}
-
-async function routeNativeMcp(req: IncomingMessage, res: ServerResponse, input: JsonObject) {
-  const id = Object.prototype.hasOwnProperty.call(input, 'id') && (typeof input.id === 'string' || typeof input.id === 'number' || input.id === null)
-    ? input.id as string | number | null
-    : null
-  nativeMcpRequests.add(req)
-  nativeMcpRequestIds.set(req, id)
-  if (input.jsonrpc !== '2.0' || !Object.prototype.hasOwnProperty.call(input, 'id') || !isNativeMcpMethod(input.method)) {
-    throw new DomainError(ERROR_CODES.INVALID_REQUEST, '原生 MCP JSON-RPC 请求无效', 400)
-  }
-  if (input.method === 'initialize') {
-    return send(res, 200, 'unknown', { jsonrpc: '2.0', id, result: {
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: { tools: {} },
-      serverInfo: { name: 'merchant-marketing', version: process.env.MCP_VERSION?.trim() || 'development' },
-    } }, null, req)
-  }
-  if (input.method === 'tools/list') {
-    return send(res, 200, 'unknown', { jsonrpc: '2.0', id, result: { tools: nativeMcpTools() } }, null, req)
-  }
-  const params = input.params
-  if (!params || typeof params !== 'object' || Array.isArray(params)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call params 必须是 JSON 对象', 400)
-  const name = (params as Record<string, unknown>).name
-  if (typeof name !== 'string' || !name.trim() || name.startsWith('ops.') || !MCP_METHOD_CONTRACTS.some(contract => contract.method === name)) {
-    throw new DomainError(ERROR_CODES.MCP_METHOD_NOT_FOUND, '原生 MCP 工具不存在或不属于 ChatGPT 商家插件', 404)
-  }
-  const args = (params as Record<string, unknown>).arguments
-  if (args !== undefined && (!args || typeof args !== 'object' || Array.isArray(args))) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'tools/call arguments 必须是 JSON 对象', 400)
-  return routeMcp(req, res, { jsonrpc: '2.0', id, method: name, params: (args ?? {}) as JsonObject }, 'native')
-}
-
-async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonObject, transport: 'legacy' | 'native' = 'legacy') {
+async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonObject) {
   // Some methods use API-local parameter schemas while their shared contract
   // catches up. They must still pass the JSON-RPC envelope boundary before
   // authorization, tenant lookup, or handler dispatch.
@@ -9316,10 +9249,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   })
   if (isPlatformWideUserGovernance && typeof params.workspace_id === 'string' && params.workspace_id.trim()) knownWorkspaces.add(params.workspace_id.trim())
   const id = request.id ?? null
-  const result = (value: unknown) => send(res, 200, workspaceId, { jsonrpc: '2.0', id, result: transport === 'native' ? {
-    content: [{ type: 'text', text: JSON.stringify(value) }],
-    structuredContent: value,
-  } : value }, null, req)
+  const result = (value: unknown) => send(res, 200, workspaceId, { jsonrpc: '2.0', id, result: value }, null, req)
 
   // merchant.first_value is kept server-compatible while the shared contract
   // is being extended. Once the contract contains it, this naturally falls
@@ -16979,10 +16909,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     await enforceTaskBrandAccess(req, service.getTask(job.taskId), 'viewer')
     return send(res, 200, workspaceId, { ...jobWithQueueMetadata(job, workspaceId, 'publish'), workflow: projectPublishWorkflow(workspaceId, job) }, null, req)
   }
-  if (req.method === 'POST' && path === '/mcp') {
-    const input = mcpInputForHydration ?? await body(req, MCP_BODY_LIMIT)
-    return isNativeMcpMethod(input.method) ? routeNativeMcp(req, res, input) : routeMcp(req, res, input)
-  }
+  if (req.method === 'POST' && path === '/mcp') return routeMcp(req, res, mcpInputForHydration ?? await body(req, MCP_BODY_LIMIT))
   throw new DomainError(ERROR_CODES.NOT_FOUND, '路由不存在', 404)
 }
 
@@ -17054,13 +16981,6 @@ const server = createServer((req, res) => {
     enrichRequestObservation(req, { workspaceId, actorId: trustedRequestObservationActor(req) })
     failRequestObservation(req, observedFailure.status, observedFailure.code)
     if (isClientDisconnect(error) && (res.destroyed || res.writableEnded)) return
-    if (nativeMcpRequests.has(req) && !res.writableEnded) {
-      const id = nativeMcpRequestIds.get(req) ?? null
-      const code = nativeMcpErrorCode(error)
-      const message = error instanceof Error ? error.message : 'MCP 请求处理失败'
-      const status = error instanceof DomainError && error.status === 401 ? 401 : 200
-      return send(res, status, workspaceId, { jsonrpc: '2.0', id, error: { code, message } }, null, req)
-    }
     if (wantsOAuthHtml(req)) {
       const fallback = { status: 500, code: ERROR_CODES.INTERNAL_ERROR, message: '授权回调失败' }
       const mapped = error instanceof OAuthStateError
