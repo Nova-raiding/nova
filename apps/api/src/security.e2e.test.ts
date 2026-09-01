@@ -108,6 +108,9 @@ describe('security and access-control acceptance gates', () => {
     expect(shadowReport.enforcement_ratio).toBeLessThan(1)
     expect(shadowReport.shadow_method_count).toBe(MCP_METHODS.length - shadowReport.enforced_method_count)
     expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, false, false)).toContain('catalog.image.select')
+    // Destructive workspace deletion must never execute under a shadow-only
+    // policy rollout: a recorded shadow deny is not a safety boundary.
+    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, false, false)).toContain('workspace.data.delete.request')
     const enforceReport = mcpAuthorizationCoverageReport({ MCP_AUTHZ_MODE: 'enforce' }, false, false)
     expect(enforceReport).toMatchObject({ method_total: MCP_METHODS.length, enforced_method_count: MCP_METHODS.length, shadow_method_count: 0, enforcement_ratio: 1, shadow_domains: [] })
     expect(enforceReport.enforced_domains).toHaveLength(enforceReport.domain_total)

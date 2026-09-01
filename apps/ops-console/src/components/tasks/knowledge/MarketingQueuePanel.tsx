@@ -148,6 +148,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
     visual: OpsConsoleModel["marketingQueue"]["visuals"][number];
     status: "passed" | "blocked";
   }>();
+  const [visualEvidenceTarget, setVisualEvidenceTarget] = useState<OpsConsoleModel["marketingQueue"]["visuals"][number]>();
   const [visualReviewReason, setVisualReviewReason] = useState("");
   const [visualReviewSubmitting, setVisualReviewSubmitting] = useState(false);
   const revisionErrorRef = useRef<HTMLDivElement>(null);
@@ -360,7 +361,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       detail: `${job.assignedOperatorId ? `负责人：${job.assignedOperatorId}；` : "未分配负责人；"}${job.rejection?.rawCode || job.rejection?.message || "等待平台回执"}`,
       updatedAt: job.createdAt,
       action: (
-        <Space>
+        <Space wrap>
           <Button
             type="link"
             onClick={() =>
@@ -394,7 +395,14 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       detail: `人工画面状态：${visual.reviewStatus}；真实性证据未返回。SKU：${visual.skuIds.join(", ") || "全 SKU"}；候选 ${visual.ordinal}；${visual.assignedOperatorId ? `负责人：${visual.assignedOperatorId}` : "未分配负责人"}`,
       updatedAt: visual.updatedAt,
       action: (
-        <Space>
+        <Space wrap>
+          <Button
+            type="link"
+            aria-label={`查看视觉候选 ${visual.ordinal} 的证据详情`}
+            onClick={() => setVisualEvidenceTarget(visual)}
+          >
+            查看候选详情
+          </Button>
           <Button
             type="link"
             onClick={() => openVisualReview(visual, "passed")}
@@ -463,6 +471,34 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
         { title: "操作", dataIndex: "action" },
       ]}
       />
+      <Modal
+        open={Boolean(visualEvidenceTarget)}
+        title="视觉候选证据详情"
+        footer={null}
+        onCancel={() => setVisualEvidenceTarget(undefined)}
+        destroyOnHidden
+      >
+        {visualEvidenceTarget && <>
+          <Alert
+            type="warning"
+            showIcon
+            role="status"
+            aria-live="polite"
+            title="人工画面审查不等于安全或真实性通过"
+            description="候选仍须满足归档、恶意内容扫描、权益和真实性证据门禁；未满足前不得选择主图、下载或发布。"
+          />
+          <Descriptions column={1} size="small" bordered style={{ marginTop: 16 }}>
+            <Descriptions.Item label="候选序号">{visualEvidenceTarget.ordinal}</Descriptions.Item>
+            <Descriptions.Item label="候选引用">{visualEvidenceTarget.visualRef}</Descriptions.Item>
+            <Descriptions.Item label="商品 / 任务">{visualEvidenceTarget.productId} / {visualEvidenceTarget.taskId ?? "未绑定任务"}</Descriptions.Item>
+            <Descriptions.Item label="内容版本">{visualEvidenceTarget.contentVersionId ?? "未返回"}</Descriptions.Item>
+            <Descriptions.Item label="SKU 范围">{visualEvidenceTarget.skuIds.join(", ") || "全 SKU"}</Descriptions.Item>
+            <Descriptions.Item label="人工画面状态"><Tag color={stateColor(visualEvidenceTarget.reviewStatus)} aria-label={`人工画面状态：${visualEvidenceTarget.reviewStatus}`}>{visualEvidenceTarget.reviewStatus}</Tag></Descriptions.Item>
+            <Descriptions.Item label="真实性证据">未返回，保持不可选择</Descriptions.Item>
+            <Descriptions.Item label="更新时间">{new Date(visualEvidenceTarget.updatedAt).toLocaleString()}</Descriptions.Item>
+          </Descriptions>
+        </>}
+      </Modal>
       <Modal open={Boolean(imageEvidenceTarget)} title="图片执行证据" footer={imageEvidenceTarget ? <Button loading={imageEvidenceExporting} onClick={() => void exportImageEvidence()}>导出脱敏证据包</Button> : null} onCancel={() => setImageEvidenceTarget(undefined)} destroyOnHidden>
         {imageEvidenceTarget && <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="Job ID">{imageEvidenceTarget.jobId}</Descriptions.Item>

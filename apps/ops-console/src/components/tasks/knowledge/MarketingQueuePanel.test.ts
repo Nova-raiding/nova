@@ -73,6 +73,14 @@ describe('marketing queue delivery evidence', () => {
     expect(panelSource).toContain('visualReviewTarget.visual.revision')
   })
 
+  it('exposes visual candidate evidence without implying publish readiness', () => {
+    expect(panelSource).toContain('查看视觉候选 ${visual.ordinal} 的证据详情')
+    expect(panelSource).toContain('人工画面审查不等于安全或真实性通过')
+    expect(panelSource).toContain('真实性证据">未返回，保持不可选择')
+    expect(panelSource).toContain('不得选择主图、下载或发布')
+    expect(panelSource).toContain('destroyOnHidden')
+  })
+
   it('renders durable asset scan failure fields and never treats missing evidence as retryable', () => {
     expect(panelSource).toContain('扫描死信 event_id')
     expect(panelSource).toContain('retryable ${recovery.retryable === true ? "true"')
