@@ -1258,6 +1258,11 @@ describe('Codex stdio MCP bridge', () => {
           expect(html).toContain('ackInput.checked=false')
           expect(html).toContain('ackInput.focus()')
           expect(html).toContain("publishIdempotencyKey=publishIdempotencyKey||'publish-card-'")
+          expect(html).toContain("primary.dataset.recovery='status'")
+          expect(html).toContain("primary.textContent='查询发布状态'")
+          expect(html).toContain('提交结果尚未确认，请先查询发布状态，不要重复提交。')
+          expect(html).toContain("primary.dataset.recovery==='status'")
+          expect(html).toContain("window.openai.sendFollowUpMessage({prompt:prompt})")
         }
       }
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'store', platform: 'taobao', account_id: 'acct_1' } } })}\n`)
