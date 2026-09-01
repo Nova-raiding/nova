@@ -18,6 +18,17 @@ describe('relay usage normalization', () => {
     expect(usage?.providerAttemptId).toBe('attempt_1')
   })
 
+  it('rejects unsafe provider request identifiers before settlement', async () => {
+    const sinkRecords: unknown[] = []
+    await expect(emitRelayUsage(
+      record => { sinkRecords.push(record) },
+      { usage: { total_tokens: 3, cost_cny: 0.01 }, provider_request_id: 'provider-\u0001-injected' },
+      new Headers(),
+      { modality: 'text', model: 'relay-text' },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'identity' })
+    expect(sinkRecords).toHaveLength(0)
+  })
+
   it('normalizes relay-specific nested request and usage evidence without pricing raw quota as CNY', () => {
     const usage = parseRelayUsage({ data: { task_id: 'job_1', quota: 999, data: { request_id: 'request_nested', usage: { input_tokens: 4, output_tokens: 6, total_tokens: 10 } } } }, new Headers(), { modality: 'video', model: 'video-v1', context: { providerAttemptId: 'attempt_nested' } })
     expect(usage).toMatchObject({ providerRequestId: 'request_nested', providerAttemptId: 'attempt_nested', inputTokens: 4, outputTokens: 6, totalTokens: 10 })

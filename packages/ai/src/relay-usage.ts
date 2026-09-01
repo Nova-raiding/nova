@@ -79,6 +79,16 @@ function record(value: unknown): value is RecordLike {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+// These identifiers cross into billing, audit and reconciliation evidence.
+// Bound and sanitize them before accepting provider-controlled values so a
+// response cannot inject control characters or create unbounded evidence rows.
+function evidenceIdentity(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  if (!normalized || normalized.length > 256 || /[\u0000-\u001f\u007f]/u.test(normalized)) return undefined
+  return normalized
+}
+
 function finiteNonNegative(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined
   return value
@@ -138,18 +148,18 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // Raw quota is deliberately excluded: without a versioned unit, exchange
   // rate and pricing formula it is not currency evidence.
   const costCny = firstNumber(usage?.cost_cny, usage?.costCny, root.cost_cny, root.costCny, data?.cost_cny, data?.costCny, nestedData?.cost_cny, nestedData?.costCny)
-  const providerRequestId = headers.get('x-oneapi-request-id')?.trim()
-    || headers.get('x-request-id')?.trim()
-    || headers.get('x-provider-request-id')?.trim()
-    || headers.get('request-id')?.trim()
-    || (typeof root.provider_request_id === 'string' && root.provider_request_id.trim() ? root.provider_request_id.trim() : undefined)
-    || (typeof root.request_id === 'string' && root.request_id.trim() ? root.request_id.trim() : undefined)
-    || (typeof data?.provider_request_id === 'string' && data.provider_request_id.trim() ? data.provider_request_id.trim() : undefined)
-    || (typeof data?.request_id === 'string' && data.request_id.trim() ? data.request_id.trim() : undefined)
-    || (typeof nestedData?.provider_request_id === 'string' && nestedData.provider_request_id.trim() ? nestedData.provider_request_id.trim() : undefined)
-    || (typeof nestedData?.request_id === 'string' && nestedData.request_id.trim() ? nestedData.request_id.trim() : undefined)
-    || (typeof result?.provider_request_id === 'string' && result.provider_request_id.trim() ? result.provider_request_id.trim() : undefined)
-    || (typeof result?.request_id === 'string' && result.request_id.trim() ? result.request_id.trim() : undefined)
+  const providerRequestId = evidenceIdentity(headers.get('x-oneapi-request-id'))
+    || evidenceIdentity(headers.get('x-request-id'))
+    || evidenceIdentity(headers.get('x-provider-request-id'))
+    || evidenceIdentity(headers.get('request-id'))
+    || evidenceIdentity(root.provider_request_id)
+    || evidenceIdentity(root.request_id)
+    || evidenceIdentity(data?.provider_request_id)
+    || evidenceIdentity(data?.request_id)
+    || evidenceIdentity(nestedData?.provider_request_id)
+    || evidenceIdentity(nestedData?.request_id)
+    || evidenceIdentity(result?.provider_request_id)
+    || evidenceIdentity(result?.request_id)
   // Cost is not usage. A relay that reports only a price has not provided
   // enough metering evidence to settle a model call safely.
   const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined
