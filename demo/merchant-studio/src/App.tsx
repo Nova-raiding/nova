@@ -4326,6 +4326,9 @@ function ProductAssetRelationDialog({
 
 function Products({
   baseUrl,
+  modelStatus,
+  modelStatusRead,
+  onRefreshModelStatus,
   initialQuery = '',
   initialEntry = 'products',
   onSelectTarget,
@@ -4333,6 +4336,9 @@ function Products({
   onConnectStores,
 }: {
   baseUrl?: string
+  modelStatus: PlatformModelStatus | null
+  modelStatusRead: boolean
+  onRefreshModelStatus: () => void
   initialQuery?: string
   initialEntry?: MerchantEntryPoint
   onSelectTarget: (target: Target) => void
@@ -4392,8 +4398,25 @@ function Products({
   const [imageGenerationError, setImageGenerationError] = useState('')
   const [imageGenerationErrorField, setImageGenerationErrorField] = useState<'direction' | 'count' | null>(null)
   const imageGenerationErrorRef = useRef<HTMLDivElement>(null)
+  const imageGenerationConfigRef = useRef<HTMLDivElement>(null)
   const [relationProductId, setRelationProductId] = useState('')
   const productListRef = useRef<HTMLElement>(null)
+  const imageModelReady = modelStatusRead && modelStatus?.state === 'ready' && modelStatus.capabilities?.image_generation !== false
+  const imageModelBlocker = !baseUrl
+    ? '尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。'
+    : !modelStatusRead
+      ? '正在检查模型中转配置；配置确认前不会生成或扣费。'
+      : !modelStatus
+        ? '模型中转状态读取失败，系统不会生成或扣费。请联系管理员完成测试环境配置后，再重新检查。'
+        : modelStatus.state !== 'ready'
+          ? `模型中转尚未就绪，系统不会生成或扣费。${modelStatus.next_actions?.[0] ? ` ${userFacingModelAction(modelStatus.next_actions[0])}` : '请联系管理员完成测试环境配置后，再重新检查。'}`
+          : modelStatus.capabilities?.image_generation === false
+            ? '当前模型中转未开放图片生成能力，系统不会生成或扣费。请联系管理员启用图片生成后，再重新检查。'
+            : ''
+  useEffect(() => {
+    if (!imageGenerationTarget || !imageModelBlocker) return
+    window.requestAnimationFrame(() => imageGenerationConfigRef.current?.focus({ preventScroll: true }))
+  }, [imageGenerationTarget, imageModelBlocker])
   const loadProducts = (resetSelection = false) => {
     if (!baseUrl) return
     const requestId = ++productsRequestId.current
@@ -5542,9 +5565,29 @@ function Products({
           title={`为「${imageGenerationTarget.title}」生成图片`}
           onClose={() => setImageGenerationTarget(null)}
           busy={imageGenerationBusy}
-          actions={<><button className="secondary" onClick={() => setImageGenerationTarget(null)} disabled={imageGenerationBusy}>取消</button><button className="primary" onClick={() => void submitImageGeneration()} disabled={imageGenerationBusy}>{imageGenerationBusy ? '提交中…' : '确认生成'}</button></>}
+          actions={<><button className="secondary" onClick={() => setImageGenerationTarget(null)} disabled={imageGenerationBusy}>取消</button><button className="primary" onClick={() => void submitImageGeneration()} disabled={imageGenerationBusy || !imageModelReady}>{imageGenerationBusy ? '提交中…' : '确认生成'}</button></>}
         >
           <div className="dialog-form">
+            {imageGenerationTarget && imageModelBlocker && (
+              <div
+                ref={imageGenerationConfigRef}
+                className="error-notice image-generation-config-blocker"
+                role="alert"
+                tabIndex={-1}
+                aria-live="assertive"
+                aria-atomic="true"
+                aria-labelledby="image-generation-config-title"
+                aria-describedby="image-generation-config-description"
+              >
+                <strong id="image-generation-config-title">图片生成暂不可用</strong>
+                <span id="image-generation-config-description">{imageModelBlocker}</span>
+                {baseUrl && modelStatusRead && (
+                  <button className="secondary-button" type="button" onClick={onRefreshModelStatus} disabled={imageGenerationBusy}>
+                    重新检查模型中转
+                  </button>
+                )}
+              </div>
+            )}
             <div className="info-notice" role="status">将进入真实图片任务队列；生成完成后仍需安全扫描、人工审核和候选选择，不会直接发布。</div>
             <label htmlFor="image-generation-direction">生成方向<textarea id="image-generation-direction" aria-invalid={imageGenerationErrorField === 'direction'} aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} data-dialog-initial-focus value={imageGenerationDirection} onChange={event => { setImageGenerationDirection(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} maxLength={500} rows={4} /></label>
             <label htmlFor="image-generation-count">候选数量<input id="image-generation-count" inputMode="numeric" aria-invalid={imageGenerationErrorField === 'count'} aria-describedby={imageGenerationError ? 'image-generation-error' : undefined} value={imageGenerationCount} onChange={event => { setImageGenerationCount(event.target.value); setImageGenerationError(''); setImageGenerationErrorField(null) }} /></label>
@@ -10359,6 +10402,9 @@ export default function App() {
                 {page === 'products' && (
                   <Products
                     baseUrl={apiBaseUrl}
+                    modelStatus={modelStatus}
+                    modelStatusRead={modelStatusRead}
+                    onRefreshModelStatus={refreshModelStatus}
                     initialQuery={globalSearch}
                     initialEntry={activeEntry}
                     onSelectTarget={(next) =>
