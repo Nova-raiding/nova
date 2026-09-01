@@ -1,5 +1,14 @@
 export type PlatformModelKind = 'text' | 'image' | 'image_edit' | 'ocr' | 'video'
 export type ModelEnvironment = Record<string, string | undefined>
+
+/** Configuration examples must never make a provider appear ready. Keep this
+ * local to the AI boundary so readiness and provider factories share the same
+ * fail-closed interpretation without importing runtime configuration state. */
+export function isPlaceholderModelConfiguration(value: string | undefined): boolean {
+  if (!value?.trim()) return true
+  const normalized = value.trim().toLowerCase()
+  return /(?:replace[_-]?with|your[_-]?|change[_-]?me|dummy|example\.com|test-secret|<secret>|<value>|\$\{[^}]+\}|由.+注入|你的)/u.test(normalized)
+}
 import { inspectOutboundUrl, isSecureEnvironment } from '../../connectors/src/outbound-security.js'
 
 export interface PlatformModelGateResult {
@@ -107,7 +116,9 @@ export function evaluatePlatformModelGate(source: ModelEnvironment, kind: Platfo
     } catch { reasons.push('endpoint_invalid') }
   }
   if (!apiKey) reasons.push('api_key_missing')
+  else if (isPlaceholderModelConfiguration(apiKey)) reasons.push('api_key_placeholder')
   if (!model) reasons.push('model_missing')
+  else if (isPlaceholderModelConfiguration(model)) reasons.push('model_placeholder')
   return { ready: reasons.length === 0, https, ...(endpointHost ? { endpointHost } : {}), reasons }
 }
 

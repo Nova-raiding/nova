@@ -2,6 +2,7 @@ import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './r
 import { relaySecurityFromEnv, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageGenerationInput {
   productTitle: string
@@ -223,7 +224,7 @@ export function createImageGeneratorFromEnv(source: Record<string, string | unde
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
   const model = source.IMAGE_MODEL?.trim() || source.AI_IMAGE_MODEL?.trim()
-  if (!relayUrl || !apiKey || !model) return undefined
+  if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
   const responseFormat = source.IMAGE_RESPONSE_FORMAT === 'url' ? 'url' : 'b64_json'

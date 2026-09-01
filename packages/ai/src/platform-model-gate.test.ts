@@ -57,4 +57,13 @@ describe('platform-owned model gate', () => {
     expect(evaluatePlatformModelGate({ ...relay, OCR_MODEL: '  ', AI_VISION_MODEL: 'ocr-v1' }, 'ocr')).toMatchObject({ ready: true })
     expect(evaluatePlatformModelGate({ ...relay, VIDEO_MODEL: '  ', AI_VIDEO_MODEL: 'video-v1' }, 'video')).toMatchObject({ ready: true })
   })
+
+  it('fails closed when image relay credentials or model ids are placeholders', () => {
+    const result = evaluatePlatformModelGate({
+      MODEL_RELAY_BASE_URL: 'https://relay.example',
+      MODEL_RELAY_API_KEY: '${MODEL_RELAY_API_KEY}',
+      IMAGE_MODEL: 'REPLACE_WITH_IMAGE_MODEL',
+    }, 'image')
+    expect(result).toMatchObject({ ready: false, reasons: expect.arrayContaining(['api_key_placeholder', 'model_placeholder']) })
+  })
 })

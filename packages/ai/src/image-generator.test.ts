@@ -78,6 +78,11 @@ describe('image generator', () => {
     expect(createImageGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'key', IMAGE_MODEL: 'model' })).toBeDefined()
   })
 
+  it('does not assemble an image provider from placeholder relay configuration', () => {
+    expect(createImageGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: '${MODEL_RELAY_API_KEY}', IMAGE_MODEL: 'REPLACE_WITH_IMAGE_MODEL' })).toBeUndefined()
+    expect(createImageGeneratorFromEnv({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'real-relay-key', IMAGE_MODEL: 'your-image-model' })).toBeUndefined()
+  })
+
   it('allows a provider-specific image path while rejecting absolute paths', async () => {
     let endpoint = ''
     const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined, path: '/v1/image/generate', fetch: async url => { endpoint = String(url); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
