@@ -404,6 +404,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const blockPlatformRoleInWorkspaceMembers = await readFile(new URL('./migrations/124_block_platform_role_in_workspace_members.sql', import.meta.url), 'utf8')
   const authorizationEventsAppendOnly = await readFile(new URL('./migrations/125_authorization_events_append_only.sql', import.meta.url), 'utf8')
   const contextSnapshotCanonicalScopeIntegrity = await readFile(new URL('./migrations/126_context_snapshot_canonical_scope_integrity.sql', import.meta.url), 'utf8')
+  const validatePlatformRoleBoundary = await readFile(new URL('./migrations/127_validate_platform_role_boundary.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -531,6 +532,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 124, name: 'block_platform_role_in_workspace_members', sql: blockPlatformRoleInWorkspaceMembers },
     { version: 125, name: 'authorization_events_append_only', sql: authorizationEventsAppendOnly },
     { version: 126, name: 'context_snapshot_canonical_scope_integrity', sql: contextSnapshotCanonicalScopeIntegrity },
+    { version: 127, name: 'validate_platform_role_boundary', sql: validatePlatformRoleBoundary },
   ]
 }
 
