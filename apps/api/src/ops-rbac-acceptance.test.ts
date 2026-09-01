@@ -254,6 +254,48 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     expect(deniedBody.trace_id).toBe(deniedBody.request_id)
   })
 
+  it('enforces HTTP platform-sync capability before connector handling', async () => {
+    const workspaceId = `ws_ops_http_sync_${Date.now()}`
+    const allowedActorId = `ops-http-sync-allowed-${Date.now()}`
+    const deniedActorId = `ops-http-sync-denied-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: allowedActorId, displayName: 'HTTP sync operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: deniedActorId, displayName: 'HTTP sync denied operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'ops-http-sync-allowed-token': { workspaces: [workspaceId], actor_id: allowedActorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+      'ops-http-sync-denied-token': { workspaces: [workspaceId], actor_id: deniedActorId, roles: ['merchant_admin'], denied_capabilities: ['customer.content.update'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' }
+
+    const allowed = await fetch(`${base}/v1/platform-accounts/taobao/sync`, {
+      method: 'POST',
+      headers: { ...headers, authorization: 'Bearer ops-http-sync-allowed-token' },
+      body: JSON.stringify({ account_id: 'missing-local-account' }),
+    })
+    const allowedBody = await allowed.json() as RpcBody
+    // The local workspace is intentionally not onboarded. Reaching this
+    // business-level precondition proves the registered HTTP policy allowed
+    // the request before connector handling.
+    expect(allowed.status).toBe(428)
+    expect(allowedBody.data).toBeNull()
+    expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+
+    const denied = await fetch(`${base}/v1/platform-accounts/taobao/sync`, {
+      method: 'POST',
+      headers: { ...headers, authorization: 'Bearer ops-http-sync-denied-token' },
+      body: JSON.stringify({ account_id: 'must-not-reach-connector' }),
+    })
+    const deniedBody = await denied.json() as RpcBody
+    expect(denied.status).toBe(403)
+    expect(deniedBody.data).toBeNull()
+    expect(deniedBody.error).toMatchObject({
+      code: 'FORBIDDEN',
+      details: { reason_code: 'AUTHZ_EXPLICIT_DENY', decision_id: expect.any(String), policy_version: AUTHZ_POLICY_VERSION },
+    })
+    expect(deniedBody.request_id).toMatch(/^req_/)
+    expect(deniedBody.trace_id).toBe(deniedBody.request_id)
+  })
+
   it('projects one selected workbench in session and keeps rejection evidence stable', async () => {
     const workspaceId = `ws_ops_session_contract_${Date.now()}`
     const actorId = `ops-session-actor-${Date.now()}`
