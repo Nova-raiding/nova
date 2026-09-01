@@ -58,7 +58,7 @@ describe('local model relay contract', () => {
       async () => {},
       { id: 'provider-request-1', usage: { total_tokens: 3 } },
       new Headers(),
-      { modality: 'text', model: 'text-v1' },
+      { modality: 'text', model: 'text-v1', context: { providerAttemptId: 'attempt-cost' } },
     )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
 
     await expect(emitRelayUsage(
