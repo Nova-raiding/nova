@@ -34,7 +34,7 @@ describe('operations console API surface', () => {
     const { MCP_METHOD_POLICIES, assertMcpMethodPolicyCoverage } = await import('../packages/contracts/src/authz.js')
     const contract = [...MCP_METHODS].sort()
     const policies = Object.keys(MCP_METHOD_POLICIES).sort()
-    const routes = routeMethods().filter(method => (MCP_METHODS as readonly string[]).includes(method)).sort()
+    const routes = routeMethods().sort()
     expect(assertMcpMethodPolicyCoverage().registered).toBe(MCP_METHODS.length)
     expect(policies).toEqual(contract)
     expect(routes).toEqual(contract)
