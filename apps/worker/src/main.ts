@@ -15,7 +15,7 @@ import { buildPublishObservationRequest, PublishObservationReportError } from '.
 import { createContentGeneratorFromEnv, type ContentGenerationInput, type GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { createImageGeneratorFromEnv, type ImageGenerationInput, type ImageGenerationStatus } from '../../../packages/ai/src/image-generator.js'
 import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
-import { FixedWindowQuotaAdmission } from '../../../packages/quotas/src/admission.js'
+import { FixedWindowQuotaAdmission, type QuotaAdmissionInput } from '../../../packages/quotas/src/admission.js'
 import { DistributedLockBusyError } from '../../../packages/quotas/src/lock.js'
 import { createQuotaCounterStore } from './quota-transport.js'
 import { createPersistentWorkerMappingPreflightAdapter, createPostgresWorkerMappingScopeLoader, WorkerMappingExecutionContext } from './mapping-preflight-adapter.js'
@@ -63,6 +63,15 @@ export type WorkerRole = 'all' | 'sync' | 'generation' | 'publish' | 'reconcile'
 
 export function workerQueueKey(role: WorkerRole, workspaceId: string): string {
   return `merchant:outbox:${role}:${workspaceId}`
+}
+
+export function quotaAdmissionForEvent(
+  event: Pick<DurableOutboxEvent, 'workspaceId'>,
+  namespace: QuotaAdmissionInput['namespace'],
+  key: string,
+  limitPerWindow: number,
+): QuotaAdmissionInput {
+  return { tenantId: event.workspaceId, namespace, key, limitPerWindow }
 }
 
 export function publishIdempotencyKey(event: DurableOutboxEvent): string {
@@ -1171,7 +1180,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
       throw new Error('publish event is missing platform, account_id or fields')
     }
     requirePublishExecutionConfig(config)
-    await quotaAdmission.admit({ namespace: 'platform', key: `${String(platform)}:${accountId}`, limitPerWindow: config.platformQuotaPerMinute })
+    await quotaAdmission.admit(quotaAdmissionForEvent(event, 'platform', `${String(platform)}:${accountId}`, config.platformQuotaPerMinute))
     const execution = config.apiBaseUrl && config.apiToken ? await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), production: config.environment === 'production', signal }) : undefined
     if (execution && payload.payload_hash !== execution.payloadHash) throw new Error('publish event payload hash does not match the frozen publish job')
     const media = execution?.mediaRequired && config.apiBaseUrl && config.apiToken ? await fetchPublishMedia({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }) : undefined
@@ -1209,7 +1218,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'].includes(String(platform)) || typeof accountId !== 'string' || !accountId) throw new Error('reconcile event is missing platform or account_id')
     if (typeof payload.payload_hash !== 'string' || !/^[a-f0-9]{64}$/u.test(payload.payload_hash)) throw new Error('reconcile event is missing a valid payload hash')
     requirePublishExecutionConfig(config)
-    await quotaAdmission.admit({ namespace: 'platform', key: `${String(platform)}:${accountId}:reconcile`, limitPerWindow: config.platformQuotaPerMinute })
+    await quotaAdmission.admit(quotaAdmissionForEvent(event, 'platform', `${String(platform)}:${accountId}:reconcile`, config.platformQuotaPerMinute))
     const execution = config.apiBaseUrl && config.apiToken ? await assertPublishExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), production: config.environment === 'production', signal }) : undefined
     if (execution && payload.payload_hash !== execution.payloadHash) throw new Error('publish event payload hash does not match the frozen publish job')
     // A publish-job id is an internal tenant-scoped identifier, not a platform
@@ -1247,7 +1256,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const taskId = event.payload.task_id
     if (typeof taskId !== 'string' || !taskId) throw new Error('generation event is missing task_id')
     const modelKey = process.env.AI_MODEL?.trim() ?? process.env.MODEL_ID?.trim() ?? 'configured-model'
-    await quotaAdmission.admit({ namespace: 'model', key: modelKey, limitPerWindow: config.modelQuotaPerMinute })
+    await quotaAdmission.admit(quotaAdmissionForEvent(event, 'model', modelKey, config.modelQuotaPerMinute))
     generationUsageContexts.set(actionId, { runKey, contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), signal })
     try { return await contentGenerator.generate(input as unknown as ContentGenerationInput, { signal }) }
     finally { generationUsageContexts.delete(actionId) }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
+import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -97,6 +97,16 @@ describe('worker production entry', () => {
     expect(workerQueueKey('sync', 'ws_a')).toBe('merchant:outbox:sync:ws_a')
     expect(workerQueueKey('generation', 'ws_a')).toBe('merchant:outbox:generation:ws_a')
     expect(workerQueueKey('sync', 'ws_b')).toBe('merchant:outbox:sync:ws_b')
+  })
+
+  it('scopes every external-side-effect quota admission to the event workspace', () => {
+    const event = { workspaceId: 'ws_tenant_a' }
+    expect(quotaAdmissionForEvent(event, 'model', 'relay-model', 60)).toEqual({
+      tenantId: 'ws_tenant_a', namespace: 'model', key: 'relay-model', limitPerWindow: 60,
+    })
+    expect(quotaAdmissionForEvent(event, 'platform', 'taobao:account_1', 120)).toEqual({
+      tenantId: 'ws_tenant_a', namespace: 'platform', key: 'taobao:account_1', limitPerWindow: 120,
+    })
   })
 
   it('posts the SLA scan through the reconcile API boundary', async () => {
