@@ -8,6 +8,49 @@ const apiBase = process.env.COMPOSE_API_URL ?? 'http://127.0.0.1:8787'
 const opsUiBase = process.env.COMPOSE_OPS_UI_URL ?? 'http://127.0.0.1:18082'
 const workspaceCount = Number(process.env.COMPOSE_WORKSPACES ?? 50)
 
+export type LocalComposeAcceptanceEvidence = {
+  schema_version: '1'
+  profile: 'pilot_50_compose_postgres'
+  release_id: string
+  software_version: string
+  config_version: string
+  data_version: string
+  environment: 'test'
+  cloud_gate: false
+  status: 'pass'
+  transport: 'real_http'
+  persistence: 'real_compose_postgres'
+  workspaces: number
+  migration_restart: 'passed'
+  outbox_replay: 'passed'
+}
+
+export function buildLocalComposeAcceptanceEvidence(input: {
+  workspaces: number
+  releaseId?: string
+  softwareVersion?: string
+  configVersion?: string
+  dataVersion?: string
+}): LocalComposeAcceptanceEvidence {
+  const binding = (explicit: string | undefined, envName: string, fallback: string) => {
+    if (explicit !== undefined) return explicit.trim()
+    const fromEnv = process.env[envName]
+    return fromEnv === undefined ? fallback : fromEnv.trim()
+  }
+  const releaseId = binding(input.releaseId, 'RELEASE_ID', 'local-compose')
+  const softwareVersion = binding(input.softwareVersion, 'RELEASE_SOFTWARE_VERSION', 'local-working-tree')
+  const configVersion = binding(input.configVersion, 'RELEASE_CONFIG_VERSION', 'local-compose-config')
+  const dataVersion = binding(input.dataVersion, 'RELEASE_DATA_VERSION', 'local-compose-fixture')
+  if (!releaseId || !softwareVersion || !configVersion || !dataVersion) throw new Error('local Compose evidence requires release, software, config and data version bindings')
+  return {
+    schema_version: '1', profile: 'pilot_50_compose_postgres', release_id: releaseId,
+    software_version: softwareVersion, config_version: configVersion, data_version: dataVersion,
+    environment: 'test', cloud_gate: false, status: 'pass', transport: 'real_http',
+    persistence: 'real_compose_postgres', workspaces: input.workspaces,
+    migration_restart: 'passed', outbox_replay: 'passed',
+  }
+}
+
 function docker(args: string[]) {
   return execFileSync('docker', [...compose, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
@@ -188,7 +231,12 @@ export async function runComposeAcceptance() {
     await pool.end()
   }
 
-  return { profile: 'pilot_50_compose_postgres', transport: 'real_http', persistence: 'real_compose_postgres', workspaces: workspaceCount, migrationRestart: 'passed', outboxReplay: 'passed', cloudGate: false }
+  return {
+    ...buildLocalComposeAcceptanceEvidence({ workspaces: workspaceCount }),
+    // Keep the original camel-case fields for existing local smoke consumers.
+    profile: 'pilot_50_compose_postgres', transport: 'real_http', persistence: 'real_compose_postgres',
+    migrationRestart: 'passed', outboxReplay: 'passed', cloudGate: false,
+  }
 }
 
 if (process.argv[1]?.endsWith('/compose-acceptance.ts')) console.log(JSON.stringify(await runComposeAcceptance()))
