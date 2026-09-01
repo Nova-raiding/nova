@@ -126,5 +126,9 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
       add('media_upload', receipt.platform === input.connector.platform && receipt.mediaId.trim().length > 0 && !receipt.simulated, receipt.simulated)
     } catch (error) { add('media_upload', false, false, error instanceof Error ? error.message : String(error)) }
   }
-  return { platform: input.connector.platform, passed: checks.every(item => item.passed && !item.simulated), checks, evidence: evidenceItems }
+  const passed = checks.every(item => item.passed && !item.simulated)
+  const finalEvidence = passed
+    ? evidenceItems
+    : evidenceItems.map(item => item.state === 'production_canary' ? { ...item, state: 'test_e2e' as const } : item)
+  return { platform: input.connector.platform, passed, checks, evidence: finalEvidence }
 }

@@ -80,7 +80,7 @@ describe('platform canary runner', () => {
     expect(fetch).toHaveBeenCalled()
   })
 
-  it('only promotes a non-simulated run when production promotion is explicit', async () => {
+  it('only promotes a fully successful non-simulated run to production_canary', async () => {
     const { connector } = localSandboxConnector()
     const result = await runPlatformCanary({
       connector,
@@ -90,8 +90,8 @@ describe('platform canary runner', () => {
       allowWrite: false, allowRevoke: false,
       promoteToProductionCanary: true,
     })
-    expect(result.evidence.find(item => item.capability === 'authorize')?.state).toBe('production_canary')
-    expect(result.evidence.filter(item => item.capability === 'authorize').every(item => item.state === 'production_canary')).toBe(true)
+    expect(result.evidence.find(item => item.capability === 'authorize')?.state).toBe('test_e2e')
+    expect(result.evidence.some(item => item.state === 'production_canary')).toBe(false)
   })
 
   it('does not promote a fixture or disabled write/revoke run to production_canary', async () => {
