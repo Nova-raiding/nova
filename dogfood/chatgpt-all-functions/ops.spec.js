@@ -101,8 +101,8 @@ test('renders the real workspace brand tree with revision and store navigation',
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   await context.addInitScript(() => {
     localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'workspace_admin_demo')
-    localStorage.setItem('ops_api_token', 'workspace-local-token')
+    localStorage.setItem('ops_actor_id', 'codex-app-user')
+    localStorage.setItem('ops_api_token', 'local-dev-token')
     localStorage.setItem('ops_workbench', 'workspace')
   })
   const page = await context.newPage()
