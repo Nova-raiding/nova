@@ -273,6 +273,53 @@ export interface CanonicalChainOrphanFinding {
   nextAction?: CanonicalNextAction
 }
 
+export type CanonicalWorkspaceCutoverBlockCode =
+  | 'CANONICAL_WORKSPACE_ID_REQUIRED'
+  | 'CANONICAL_REPORT_UNAVAILABLE'
+  | 'CANONICAL_REPORT_STALE'
+  | 'CANONICAL_REPORT_EVIDENCE_REQUIRED'
+  | 'CANONICAL_WORKSPACE_EMPTY'
+  | 'CANONICAL_WORKSPACE_NOT_VERIFIED'
+
+export interface CanonicalWorkspaceCutoverMetrics {
+  workspaceId: string
+  generatedAt: string | null
+  revision: string | number | null
+  counts: Record<CanonicalChainStatus, number>
+  findingCount: number
+  orphanFindingCount: number
+}
+
+export type CanonicalWorkspaceCutoverDecision =
+  | { eligible: true; metrics: CanonicalWorkspaceCutoverMetrics }
+  | { eligible: false; code: CanonicalWorkspaceCutoverBlockCode; reason: string; metrics: CanonicalWorkspaceCutoverMetrics }
+
+/**
+ * Evaluate the workspace-level safety gate before canonical read cutover.
+ * This is deliberately stricter than the compatibility `status` field: a
+ * clean-looking empty, stale, unavailable, or evidence-free report must not
+ * be treated as permission to switch a workspace to canonical reads.
+ */
+export function evaluateCanonicalWorkspaceCutoverGate(report: CanonicalChainConsistencyReport): CanonicalWorkspaceCutoverDecision {
+  const metrics: CanonicalWorkspaceCutoverMetrics = {
+    workspaceId: report.workspaceId,
+    generatedAt: report.generatedAt || null,
+    revision: report.revision ?? null,
+    counts: { ...report.counts },
+    findingCount: report.findings.length,
+    orphanFindingCount: report.orphanFindings.length,
+  }
+  if (!report.workspaceId.trim()) return { eligible: false, code: 'CANONICAL_WORKSPACE_ID_REQUIRED', reason: 'workspace_id 不能为空。', metrics }
+  if (report.availability !== 'available' || report.contractStatus === 'unavailable') return { eligible: false, code: 'CANONICAL_REPORT_UNAVAILABLE', reason: '一致性报告不可用，不能切换 canonical read。', metrics }
+  if (report.freshness !== 'fresh') return { eligible: false, code: 'CANONICAL_REPORT_STALE', reason: '一致性报告不是 fresh，必须重新检查。', metrics }
+  if (!report.generatedAt || report.revision === null || report.revision === undefined) return { eligible: false, code: 'CANONICAL_REPORT_EVIDENCE_REQUIRED', reason: '一致性报告缺少生成时间或 revision 证据。', metrics }
+  if (report.counts.verified === 0) return { eligible: false, code: 'CANONICAL_WORKSPACE_EMPTY', reason: 'workspace 没有可切读的 verified 商品链。', metrics }
+  if (report.status !== 'clean' || report.contractStatus !== 'clean' || report.counts.legacy_only > 0 || report.counts.conflict > 0 || report.counts.blocked > 0 || report.findings.length !== report.counts.verified) {
+    return { eligible: false, code: 'CANONICAL_WORKSPACE_NOT_VERIFIED', reason: 'workspace 仍有未验证商品链或孤儿关系。', metrics }
+  }
+  return { eligible: true, metrics }
+}
+
 const statusRank: Record<CanonicalChainStatus, number> = { conflict: 0, blocked: 1, legacy_only: 2, verified: 3 }
 const sorted = (values: Iterable<string>) => [...new Set(values)].sort((left, right) => left.localeCompare(right))
 

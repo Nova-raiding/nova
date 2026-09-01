@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag, resolveCanonicalProductReadScope } from './canonical-product-consistency.js'
+import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag, evaluateCanonicalWorkspaceCutoverGate, resolveCanonicalProductReadScope } from './canonical-product-consistency.js'
 
 const base = {
   workspaceId: 'ws_1',
@@ -14,6 +14,33 @@ const base = {
 } as const
 
 describe('canonical product consistency report', () => {
+  it('requires fresh, evidenced, fully verified workspace metrics before cutover', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      evaluation: { generatedAt: '2026-09-01T00:00:00.000Z', revision: 'rev-1', freshness: 'fresh', availability: 'available' },
+    })
+    expect(evaluateCanonicalWorkspaceCutoverGate(report)).toMatchObject({ eligible: false, code: 'CANONICAL_WORKSPACE_NOT_VERIFIED', metrics: { counts: { verified: 1, legacy_only: 1 } } })
+
+    const clean = buildCanonicalChainConsistencyReport({
+      ...base,
+      legacyProducts: [base.legacyProducts[0]!],
+      evaluation: { generatedAt: '2026-09-01T00:00:00.000Z', revision: 'rev-2', freshness: 'fresh', availability: 'available' },
+    })
+    expect(evaluateCanonicalWorkspaceCutoverGate(clean)).toEqual({
+      eligible: true,
+      metrics: expect.objectContaining({ workspaceId: 'ws_1', revision: 'rev-2', findingCount: 1, orphanFindingCount: 0 }),
+    })
+  })
+
+  it('blocks empty, stale, and evidence-free reports with stable codes', () => {
+    const empty = buildCanonicalChainConsistencyReport({ workspaceId: 'ws_empty', legacyProducts: [], canonicalProducts: [], listings: [], campaignItems: [], tasks: [], evaluation: { generatedAt: '2026-09-01T00:00:00.000Z', revision: 'empty', freshness: 'fresh', availability: 'available' } })
+    expect(evaluateCanonicalWorkspaceCutoverGate(empty)).toMatchObject({ eligible: false, code: 'CANONICAL_WORKSPACE_EMPTY' })
+    const stale = buildCanonicalChainConsistencyReport({ ...base, evaluation: { generatedAt: '2026-09-01T00:00:00.000Z', revision: 'stale', freshness: 'stale', availability: 'available' } })
+    expect(evaluateCanonicalWorkspaceCutoverGate(stale)).toMatchObject({ eligible: false, code: 'CANONICAL_REPORT_STALE' })
+    const noEvidence = buildCanonicalChainConsistencyReport({ ...base, evaluation: { freshness: 'fresh', availability: 'available' } })
+    expect(evaluateCanonicalWorkspaceCutoverGate(noEvidence)).toMatchObject({ eligible: false, code: 'CANONICAL_REPORT_EVIDENCE_REQUIRED' })
+  })
+
   it('fails closed when a scoped canonical read has incomplete identity projection', () => {
     expect(resolveCanonicalProductReadScope({
       mode: 'canonical_read', workspaceId: 'ws_1', platform: 'taobao', accountId: 'store_1',
