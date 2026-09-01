@@ -64,6 +64,45 @@ describe.each(platforms)('%s HTTP connector FR-15 contract', (platform) => {
     expect(calls.some(call => call.includes('POST https://' + platform + '.test/oauth/revoke'))).toBe(true)
   })
 
+  it('writes and re-reads the same remote identity for create and update', async () => {
+    const store = makeStore()
+    const requests: Array<{ method: string; url: string; body?: string }> = []
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const target = String(url)
+      const body = typeof init?.body === 'string' ? init.body : undefined
+      requests.push({ method: init?.method ?? 'GET', url: target, ...(body ? { body } : {}) })
+      if (target.endsWith('/oauth/token')) return json({ access_token: 'fixture-access-token', account_id: `${platform}-shop-1` })
+      if (target.endsWith('/products/create')) return json({ remoteId: `${platform}-created-1`, requestId: `${platform}-create-request` })
+      if (target.endsWith('/products/update')) return json({ remoteId: `${platform}-updated-1`, requestId: `${platform}-update-request` })
+      if (target.endsWith('/publish/status')) {
+        const parsed = JSON.parse(body ?? '{}') as { idempotencyKey?: string; remoteId?: string }
+        return json({ found: true, state: 'published', requestId: `${platform}-${parsed.idempotencyKey}-status`, remoteId: parsed.remoteId })
+      }
+      return json({ ok: true })
+    })
+    const connector = createConfiguredConnector(platform, { config: { ...makeConfig(platform), mapWriteReceipt: undefined, mapWriteStatus: undefined }, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
+    const ref = await connector.exchangeCode({ code: `${platform}-code`, state: `${platform}-state` })
+    const context = { workspaceId: 'ws', accountId: ref.accountId, credentialRef: ref.credentialRef }
+
+    const createInput = { fields: { title: 'created', category: 'cat', price: 1, stock: 1 }, idempotencyKey: `${platform}-create` }
+    const createReceipt = await connector.createProduct(context, createInput)
+    await expect(connector.queryWrite(context, { idempotencyKey: createInput.idempotencyKey, remoteId: createReceipt.remoteId }))
+      .resolves.toMatchObject({ found: true, state: 'published', remoteId: `${platform}-created-1` })
+
+    const updateInput = { remoteId: `${platform}-created-1`, fields: { title: 'updated', category: 'cat', price: 2, stock: 2 }, idempotencyKey: `${platform}-update` }
+    const updateReceipt = await connector.updateProduct(context, updateInput)
+    await expect(connector.queryWrite(context, { idempotencyKey: updateInput.idempotencyKey, remoteId: updateReceipt.remoteId }))
+      .resolves.toMatchObject({ found: true, state: 'published', remoteId: `${platform}-updated-1` })
+
+    const statusRequests = requests.filter(request => request.url.endsWith('/publish/status'))
+    expect(statusRequests).toHaveLength(2)
+    expect(statusRequests.map(request => JSON.parse(request.body ?? '{}'))).toEqual([
+      { idempotencyKey: `${platform}-create`, remoteId: `${platform}-created-1` },
+      { idempotencyKey: `${platform}-update`, remoteId: `${platform}-updated-1` },
+    ])
+    expect(statusRequests.every(request => request.method === 'POST')).toBe(true)
+  })
+
   it('normalizes OAuth authorization failure without leaking platform credentials', async () => {
     const store = makeStore()
     const fetchMock = vi.fn(async () => json({ error: 'invalid_grant', access_token: 'must-not-leak' }, 401))
