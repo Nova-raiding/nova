@@ -22,6 +22,12 @@ const scopeLabel = (authorization: AuthorizationProjection) => {
   return `${prefix} · ${scope.id ?? "未识别"}`;
 };
 
+export function workbenchBoundaryMessage(workbench: OpsWorkbench) {
+  return workbench === "platform"
+    ? "平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。"
+    : "商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。";
+}
+
 export function formatJitRemaining(milliseconds: number) {
   const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
   return `${Math.floor(totalSeconds / 60).toString().padStart(2, "0")}:${(totalSeconds % 60).toString().padStart(2, "0")}`;
@@ -101,6 +107,9 @@ export function RoleScopeBar({
           </span>
         ) : null}
       </Space>
+      <Typography.Text className="ops-workbench-boundary" type="secondary" role="status">
+        {workbenchBoundaryMessage(workbench)}
+      </Typography.Text>
     </section>
   );
 }

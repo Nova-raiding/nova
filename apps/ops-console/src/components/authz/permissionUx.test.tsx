@@ -6,7 +6,7 @@ import type { OpsSession } from "../../types/ops.js";
 import { AccessDeniedResult } from "./AccessDeniedResult.js";
 import { PermissionGate } from "./PermissionGate.js";
 import { OpsWorkbenchSwitcher } from "./OpsWorkbenchSwitcher.js";
-import { activeJitGrantForNow, formatJitRemaining, RoleScopeBar } from "./RoleScopeBar.js";
+import { activeJitGrantForNow, formatJitRemaining, RoleScopeBar, workbenchBoundaryMessage } from "./RoleScopeBar.js";
 
 const session: OpsSession = {
   actor_id: "actor_1", workspace_id: "ws_1", roles: ["platform_ops"], canonical_roles: ["ops_admin"],
@@ -16,6 +16,10 @@ const session: OpsSession = {
 };
 
 describe("desktop permission UX", () => {
+  it("states the platform and merchant workbench boundary explicitly", () => {
+    expect(workbenchBoundaryMessage("platform")).toContain("商家操作需切换到商家工作区");
+    expect(workbenchBoundaryMessage("workspace")).toContain("不包含平台运营能力");
+  });
   it("formats a live JIT countdown without exposing a token", () => {
     expect(formatJitRemaining(15 * 60 * 1000 + 1200)).toBe("15:02");
     expect(formatJitRemaining(-1)).toBe("00:00");
@@ -52,6 +56,7 @@ describe("desktop permission UX", () => {
     expect(html).toContain("平台全局");
     expect(html).toContain("2026-08-31.v1");
     expect(html).toContain("商家工作区");
+    expect(html).toContain("平台运营视图");
   });
 
   it("keeps a single server-projected workbench static", () => {
@@ -60,6 +65,7 @@ describe("desktop permission UX", () => {
     expect(html).toContain("商家工作区");
     expect(html).not.toContain("平台控制台");
     expect(html).not.toContain("当前运营工作台");
+    expect(html).toContain("商家自运营视图");
   });
 
   it("keeps server candidates switchable when the active projection is deny-all", () => {
