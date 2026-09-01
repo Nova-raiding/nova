@@ -3769,7 +3769,7 @@ function publishAuthorizationSnapshot(req: IncomingMessage, workspaceId: string,
   return workerAuthorizationSnapshot(req, workspaceId, `pub-intent:${task.id}`, 'publish.execute', { method: 'publish.confirm', task_id: task.id, resource_revision: task.version })
 }
 
-export function requirePublishAuthorizationSnapshot(snapshot: ReturnType<typeof publishAuthorizationSnapshot>, required = isProduction()) {
+export function requirePublishAuthorizationSnapshot(snapshot: ReturnType<typeof publishAuthorizationSnapshot>, required = requiresStrictAuth()) {
   if (!snapshot && required) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '发布确认缺少持久身份授权快照，已拒绝扣款、占槽和入队', 503)
   return snapshot
 }

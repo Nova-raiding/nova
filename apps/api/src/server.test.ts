@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { requirePublishAuthorizationSnapshot } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
@@ -39,6 +40,16 @@ describe('worker publish authorization scope', () => {
     const brandDecision = { authorized: true, capability: 'customer.publish.execute', workbench: 'workspace', scope: { required: 'brand', resource_id: 'brand-1' } } as Parameters<typeof workerAuthorizationDecisionMatches>[0]
     expect(workerAuthorizationDecisionMatches(brandDecision, 'ws-1', 'customer.publish.execute')).toBe(true)
     expect(workerAuthorizationDecisionMatches(brandDecision, 'ws-1', 'customer.content.update')).toBe(false)
+  })
+})
+
+describe('publish authorization snapshot gate', () => {
+  it('fails closed in strict staging before a publish worker event can be queued', () => {
+    vi.stubEnv('NODE_ENV', 'staging')
+    expect(() => requirePublishAuthorizationSnapshot(undefined)).toThrowError(expect.objectContaining({
+      code: 'AUTHZ_EXECUTION_SNAPSHOT_REQUIRED',
+      status: 503,
+    }))
   })
 })
 
