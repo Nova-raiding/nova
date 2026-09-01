@@ -20,6 +20,7 @@ export class ProviderOutcomeUnknownError extends Error {
     message: string,
     readonly cause?: unknown,
     readonly status?: number,
+    readonly providerRequestId?: string,
   ) {
     super(message)
     this.name = 'ProviderOutcomeUnknownError'
@@ -29,6 +30,7 @@ export class ProviderOutcomeUnknownError extends Error {
       reconciliation_required: true,
       provider_idempotency_key: providerIdempotencyKey,
       ...(status !== undefined ? { provider_status: status } : {}),
+      ...(providerRequestId ? { provider_request_id: providerRequestId } : {}),
     })
   }
 }
@@ -45,6 +47,7 @@ export class ProviderRequestFailedError extends Error {
     readonly providerIdempotencyKey: string,
     readonly status: number,
     message: string,
+    readonly providerRequestId?: string,
   ) {
     super(message)
     this.name = 'ProviderRequestFailedError'
@@ -54,6 +57,7 @@ export class ProviderRequestFailedError extends Error {
       reconciliation_required: false,
       provider_idempotency_key: providerIdempotencyKey,
       provider_status: status,
+      ...(providerRequestId ? { provider_request_id: providerRequestId } : {}),
     })
   }
 }
@@ -109,8 +113,14 @@ export function throwProviderOutcomeUnknown(providerKey: string, label: string, 
 
 export function assertProviderResponseAccepted(response: Response, providerKey: string, label: string): void {
   if (response.ok) return
+  const providerRequestId = [
+    response.headers.get('x-oneapi-request-id'),
+    response.headers.get('x-request-id'),
+    response.headers.get('x-provider-request-id'),
+    response.headers.get('request-id'),
+  ].find(value => typeof value === 'string' && value.trim() && value.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(value))?.trim()
   if (response.status === 408 || response.status >= 500) {
-    throw new ProviderOutcomeUnknownError(providerKey, `${label} returned ambiguous HTTP ${response.status}; outcome requires reconciliation`, undefined, response.status)
+    throw new ProviderOutcomeUnknownError(providerKey, `${label} returned ambiguous HTTP ${response.status}; outcome requires reconciliation`, undefined, response.status, providerRequestId)
   }
-  throw new ProviderRequestFailedError(providerKey, response.status, `${label} returned HTTP ${response.status}`)
+  throw new ProviderRequestFailedError(providerKey, response.status, `${label} returned HTTP ${response.status}`, providerRequestId)
 }

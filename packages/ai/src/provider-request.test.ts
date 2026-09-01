@@ -26,4 +26,28 @@ describe('provider request outcome evidence', () => {
     expect(() => assertProviderResponseAccepted(new Response('', { status: 401 }), 'model_provider_test', 'model relay'))
       .toThrowError(ProviderRequestFailedError)
   })
+
+  it('preserves a bounded relay request id in failure evidence for reconciliation', () => {
+    try {
+      assertProviderResponseAccepted(new Response('', { status: 503, headers: { 'x-oneapi-request-id': 'relay-failure-123' } }), 'model_provider_test', 'model relay')
+    } catch (error) {
+      expect(error).toMatchObject({
+        providerRequestId: 'relay-failure-123',
+        details: { provider_request_id: 'relay-failure-123' },
+      })
+      return
+    }
+    throw new Error('expected provider outcome to be blocked')
+  })
+
+  it('does not copy unsafe relay request ids into failure evidence', () => {
+    try {
+      assertProviderResponseAccepted(new Response('', { status: 401, headers: { 'x-request-id': 'relay-\u0001-injected' } }), 'model_provider_test', 'model relay')
+    } catch (error) {
+      expect(error).toMatchObject({ providerRequestId: undefined, details: { provider_idempotency_key: 'model_provider_test' } })
+      expect(error).not.toMatchObject({ details: { provider_request_id: expect.anything() } })
+      return
+    }
+    throw new Error('expected provider request to be rejected')
+  })
 })
