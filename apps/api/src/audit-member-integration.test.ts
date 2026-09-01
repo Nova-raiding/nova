@@ -68,7 +68,7 @@ describe('Audit Center and member concurrency API integration', () => {
     const base = await start()
     const call = <T>(method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-role': 'platform_ops', 'x-actor-id': 'member-admin' },
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-role': 'merchant_admin', 'x-actor-id': 'member-admin' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { workspace_id: workspaceId, ...params } }),
     }).then(response => response.json() as Promise<RpcEnvelope<T>>)
 
