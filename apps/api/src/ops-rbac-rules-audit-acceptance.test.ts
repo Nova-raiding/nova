@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { server, setRuleRepositoryForTests, workspaceMembers, type RuleRepositoryPort } from './server.js'
+import { operationAudits, server, setRuleRepositoryForTests, workspaceMembers, type RuleRepositoryPort } from './server.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 import type { PersistedRuleAudit } from '../../../packages/persistence/src/index.js'
 
@@ -46,6 +46,25 @@ async function start() {
 }
 
 async function read<T>(response: Response) { return await response.json() as Envelope<T> }
+
+async function callMcp<T>(base: string, token: string, workspaceId: string, packId?: string) {
+  const response = await fetch(`${base}/mcp`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      'x-workspace-id': workspaceId,
+      'x-ops-workbench': 'workspace',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: `rules-audit-parity-${Date.now()}`,
+      method: 'ops.rules.workspace.audit',
+      params: packId ? { pack_id: packId } : {},
+    }),
+  })
+  return { response, body: await response.json() as Envelope<T> }
+}
 
 describe('ops RBAC rules audit HTTP acceptance', () => {
   beforeEach(() => {
@@ -129,5 +148,78 @@ describe('ops RBAC rules audit HTTP acceptance', () => {
     expect(crossWorkspace.request_id).toMatch(/^req_/)
     expect(crossWorkspace.trace_id).toBe(crossWorkspace.request_id)
     expect(queried).toEqual([])
+  })
+
+  it('keeps HTTP and MCP audit reads decision-parity with allow, deny, and audit evidence', async () => {
+    const workspaceId = `ws_rules_audit_parity_${Date.now()}`
+    const allowedActorId = `rules-audit-parity-allow-${Date.now()}`
+    const deniedActorId = `rules-audit-parity-deny-${Date.now()}`
+    const packId = 'parity-pack'
+    const audits = [audit(workspaceId, packId), audit('ws_other_rules_audit_parity', packId)]
+    setRuleRepositoryForTests(repositoryFor(audits))
+    await workspaceMembers.upsert({ workspaceId, externalSubject: allowedActorId, displayName: 'Rules parity allow', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: deniedActorId, displayName: 'Rules parity deny', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'rules-audit-parity-allow-token': { workspaces: [workspaceId], actor_id: allowedActorId, roles: ['rules_admin'], workbenches: ['workspace'] },
+      'rules-audit-parity-deny-token': { workspaces: [workspaceId], actor_id: deniedActorId, roles: ['rules_admin'], denied_capabilities: ['rule.read'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const httpHeaders = { authorization: 'Bearer rules-audit-parity-allow-token', 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' }
+
+    const allowedHttp = await fetch(`${base}/v1/rules/audit?pack_id=${packId}`, { headers: httpHeaders })
+    const allowedHttpBody = await read<PersistedRuleAudit[]>(allowedHttp)
+    const allowedMcp = await callMcp<PersistedRuleAudit[]>(base, 'rules-audit-parity-allow-token', workspaceId, packId)
+    const allowedMcpResult = allowedMcp.body.data && 'result' in allowedMcp.body.data ? allowedMcp.body.data.result : null
+
+    expect(allowedHttp.status).toBe(200)
+    expect(allowedMcp.response.status).toBe(200)
+    expect(allowedHttpBody.error).toBeNull()
+    expect(allowedMcp.body.error).toBeNull()
+    expect(allowedHttpBody.data).toEqual(allowedMcpResult)
+    expect(allowedHttpBody.data).toEqual([expect.objectContaining({ workspaceId, rulePackId: packId })])
+
+    const deniedHttp = await fetch(`${base}/v1/rules/audit?pack_id=${packId}`, {
+      headers: { ...httpHeaders, authorization: 'Bearer rules-audit-parity-deny-token' },
+    })
+    const deniedHttpBody = await read(deniedHttp)
+    const deniedMcp = await callMcp(base, 'rules-audit-parity-deny-token', workspaceId, packId)
+
+    for (const result of [
+      { response: deniedHttp, body: deniedHttpBody },
+      deniedMcp,
+    ]) {
+      expect(result.response.status).toBe(403)
+      expect(result.body.data).toBeNull()
+      expect(result.body.error).toMatchObject({
+        code: 'FORBIDDEN',
+        details: {
+          capability: 'rule.read',
+          reason_code: 'AUTHZ_EXPLICIT_DENY',
+          decision_id: expect.any(String),
+          policy_version: AUTHZ_POLICY_VERSION,
+          workbench: 'workspace',
+        },
+      })
+      expect(result.body.error?.details).not.toHaveProperty('workspace_id')
+      expect(result.body.error?.details).not.toHaveProperty('pack_id')
+      expect(result.body.request_id).toMatch(/^req_/)
+      expect(result.body.trace_id).toBe(result.body.request_id)
+    }
+
+    const denialAudits = (await operationAudits.list(workspaceId)).filter(item => item.action === 'authz.decision' && item.actorId === deniedActorId)
+    expect(denialAudits).toHaveLength(2)
+    for (const denialAudit of denialAudits) {
+      expect(denialAudit.after).toMatchObject({
+        capability: 'rule.read',
+        result: 'deny',
+        reason_code: 'AUTHZ_EXPLICIT_DENY',
+        policy_version: AUTHZ_POLICY_VERSION,
+        decision_id: expect.any(String),
+        request_id: expect.stringMatching(/^req_/),
+        trace_id: expect.stringMatching(/^req_/),
+      })
+      expect(denialAudit.after).not.toHaveProperty('workspace_id')
+      expect(denialAudit.after).not.toHaveProperty('pack_id')
+    }
   })
 })
