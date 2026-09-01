@@ -1799,11 +1799,28 @@ function workspaceBindingPath() {
   return join(codexHome, 'merchant-marketing', 'workspace-binding.json')
 }
 
+function workspaceBindingScope() {
+  const endpoint = configuredEnv('MERCHANT_MCP_BASE_URL')
+  let apiOrigin = ''
+  try { apiOrigin = endpoint ? new URL(endpoint).origin : '' } catch { /* invalid endpoint is rejected at transport validation */ }
+  const token = configuredEnv('MERCHANT_MCP_TOKEN')
+  return {
+    api_origin: apiOrigin,
+    actor_id: configuredEnv('MERCHANT_ACTOR_ID'),
+    token_sha256: token ? createHash('sha256').update(token).digest('hex') : '',
+    environment: deploymentEnvironment(),
+  }
+}
+
 function loadWorkspaceBinding() {
   if (bootstrappedWorkspaceId) return bootstrappedWorkspaceId
   try {
     const binding = JSON.parse(readFileSync(workspaceBindingPath(), 'utf8'))
-    if (typeof binding.workspace_id === 'string' && /^ws_[a-z0-9_]+$/u.test(binding.workspace_id)) bootstrappedWorkspaceId = binding.workspace_id
+    const expectedScope = workspaceBindingScope()
+    const scopeMatches = binding.schema_version === '2'
+      && binding.scope && typeof binding.scope === 'object' && !Array.isArray(binding.scope)
+      && Object.entries(expectedScope).every(([key, value]) => binding.scope[key] === value)
+    if (scopeMatches && typeof binding.workspace_id === 'string' && /^ws_[a-z0-9_]+$/u.test(binding.workspace_id)) bootstrappedWorkspaceId = binding.workspace_id
   } catch { /* first run or unreadable binding: bootstrap will explain the next step */ }
   return bootstrappedWorkspaceId
 }
@@ -1812,7 +1829,7 @@ function saveWorkspaceBinding(workspaceIdValue) {
   try {
     const path = workspaceBindingPath()
     mkdirSync(join(path, '..'), { recursive: true, mode: 0o700 })
-    writeFileSync(path, JSON.stringify({ schema_version: '1', workspace_id: workspaceIdValue, saved_at: new Date().toISOString() }) + '\n', { mode: 0o600 })
+    writeFileSync(path, JSON.stringify({ schema_version: '2', workspace_id: workspaceIdValue, scope: workspaceBindingScope(), saved_at: new Date().toISOString() }) + '\n', { mode: 0o600 })
     chmodSync(path, 0o600)
   } catch { /* durable binding is best effort; API still returns the binding for recovery */ }
 }

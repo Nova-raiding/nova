@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -2153,6 +2153,8 @@ describe('Codex stdio MCP bridge', () => {
 
   it('automatically bootstraps before the merchant-facing start entry when no workspace is bound', async () => {
     const codexHome = await mkdtemp(join(tmpdir(), 'merchant-codex-home-'))
+    await mkdir(join(codexHome, 'merchant-marketing'), { recursive: true })
+    await writeFile(join(codexHome, 'merchant-marketing', 'workspace-binding.json'), JSON.stringify({ schema_version: '2', workspace_id: 'ws_wrong_environment', scope: { api_origin: 'https://old.example.test', actor_id: '', token_sha256: '', environment: 'development' } }))
     const requests: string[] = []
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = []
@@ -2180,6 +2182,8 @@ describe('Codex stdio MCP bridge', () => {
         expected_input: { kind: 'task_goal', accepts: ['natural_language'] },
       })
       expect(requests).toEqual(['workspace.bootstrap', 'merchant.start'])
+      const savedBinding = JSON.parse(await readFile(join(codexHome, 'merchant-marketing', 'workspace-binding.json'), 'utf8'))
+      expect(savedBinding).toMatchObject({ schema_version: '2', workspace_id: 'ws_auto_start_1', scope: { api_origin: `http://127.0.0.1:${address.port}`, actor_id: '', token_sha256: '' } })
     } finally {
       child.kill()
       await close(server)
