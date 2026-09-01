@@ -5,7 +5,9 @@ import {
   urlForDomain,
 } from "./opsNavigation.js";
 
-export function useOpsNavigation(): {
+export function useOpsNavigation(options: {
+  onPopstate?: (domain: OpsDomain, commit: () => void) => boolean;
+} = {}): {
   activeDomain: OpsDomain;
   navigate: (domain: OpsDomain) => void;
 } {
@@ -14,14 +16,18 @@ export function useOpsNavigation(): {
   );
 
   useEffect(() => {
-    const restore = () => setActiveDomain(domainFromLocation(window.location));
+    const restore = () => {
+      const domain = domainFromLocation(window.location);
+      const commit = () => setActiveDomain(domain);
+      if (!options.onPopstate?.(domain, commit)) commit();
+    };
     window.addEventListener("hashchange", restore);
     window.addEventListener("popstate", restore);
     return () => {
       window.removeEventListener("hashchange", restore);
       window.removeEventListener("popstate", restore);
     };
-  }, []);
+  }, [options.onPopstate]);
 
   const navigate = (domain: OpsDomain) => {
     const target = urlForDomain(window.location, domain);

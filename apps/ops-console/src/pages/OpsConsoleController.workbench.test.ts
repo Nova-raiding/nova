@@ -18,6 +18,19 @@ describe("ops workbench transition", () => {
     expect(events).toEqual(["abort", "persist:platform", `push:${target}`]);
   });
 
+  it("runs cleanup only after the switch is accepted", () => {
+    const events: string[] = [];
+    commitOpsWorkbenchTransition("platform", true, {
+      abort: () => events.push("abort"),
+      persist: (workbench) => events.push(`persist:${workbench}`),
+      location: { pathname: "/ops/overview", search: "", hash: "" },
+      push: () => events.push("push"),
+      replace: () => events.push("replace"),
+    }, () => events.push("clear-old-data"));
+
+    expect(events).toEqual(["abort", "clear-old-data", "persist:platform", "push"]);
+  });
+
   it("requires explicit confirmation only when a switch would discard dirty forms", () => {
     expect(shouldConfirmWorkbenchTransition("workspace", "platform", ["事故创建表单"])).toBe(true);
     expect(shouldConfirmWorkbenchTransition("workspace", "platform", [])).toBe(false);

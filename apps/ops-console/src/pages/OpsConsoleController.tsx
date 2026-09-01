@@ -8,7 +8,7 @@ import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
 import { platformLabels } from "../types/ops";
 import { abortOpsRequests, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
 import { OpsPageBoundary } from "../components/OpsPageBoundary";
-import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, visibleOpsDomains } from "../navigation/opsNavigation.js";
+import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains } from "../navigation/opsNavigation.js";
 import { AuthorizationProvider } from "../authz/AuthorizationProvider.js";
 import { AccessDeniedResult } from "../components/authz/AccessDeniedResult.js";
 import { domainReadCapabilities } from "../authz/authorization.js";
@@ -35,8 +35,10 @@ export function commitOpsWorkbenchTransition(
     push: (url) => window.history.pushState(null, "", url),
     replace: (url) => window.history.replaceState(null, "", url),
   },
+  prepare?: () => unknown,
 ) {
   dependencies.abort();
+  prepare?.();
   dependencies.persist(next);
   const target = urlForWorkbench(dependencies.location, next);
   (pushHistory ? dependencies.push : dependencies.replace)(target);
@@ -113,11 +115,25 @@ function Dashboard({
   model: OpsConsoleModel;
   activeWorkbench: OpsWorkbench;
   switchingWorkbench: boolean;
-  onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean) => void;
+  onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean, prepare?: () => unknown, cancel?: () => unknown) => void;
   availableWorkbenches: readonly OpsWorkbench[];
   onAvailableWorkbenches: (workbenches: readonly OpsWorkbench[]) => void;
 }) {
-  const { activeDomain, navigate: navigateToRoute } = useOpsNavigation();
+  const deferredPopstate = (domain: Parameters<typeof requiredWorkbenchForDomain>[0], commit: () => void) => {
+    const targetWorkbench = workbenchIntentFromLocation(window.location) ?? requiredWorkbenchForDomain(domain);
+    if (!targetWorkbench || targetWorkbench === activeWorkbench) return false;
+    const targetUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const currentDomainUrl = urlForDomain(window.location, activeDomain);
+    const currentLocation = new URL(currentDomainUrl, window.location.origin);
+    const currentUrl = urlForWorkbench(currentLocation, activeWorkbench);
+    window.history.replaceState(null, "", currentUrl);
+    onWorkbenchChange(targetWorkbench, false, () => {
+      window.history.replaceState(null, "", targetUrl);
+      commit();
+    }, () => window.history.replaceState(null, "", currentUrl));
+    return true;
+  };
+  const { activeDomain, navigate: navigateToRoute } = useOpsNavigation({ onPopstate: deferredPopstate });
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const sessionError = !model.opsSession
     ? model.dataSetError("ops.session")
@@ -132,7 +148,10 @@ function Dashboard({
   const ActivePage = opsPageRegistry[activeDomain];
   const navigateToDomain = (domain: Parameters<typeof navigateToRoute>[0]) => {
     const requiredWorkbench = requiredWorkbenchForDomain(domain);
-    if (requiredWorkbench && requiredWorkbench !== activeWorkbench) onWorkbenchChange(requiredWorkbench, false);
+    if (requiredWorkbench && requiredWorkbench !== activeWorkbench) {
+      onWorkbenchChange(requiredWorkbench, false, () => navigateToRoute(domain));
+      return;
+    }
     navigateToRoute(domain);
   };
 
@@ -264,39 +283,30 @@ function OpsConsoleControllerContent() {
   const [contextReady, setContextReady] = useState(false);
   const [switchingWorkbench, setSwitchingWorkbench] = useState(false);
   const [availableWorkbenches, setAvailableWorkbenches] = useState<readonly OpsWorkbench[]>([activeWorkbench]);
-  const [pendingWorkbench, setPendingWorkbench] = useState<{ next: OpsWorkbench; pushHistory: boolean }>();
+  const [pendingWorkbench, setPendingWorkbench] = useState<{ next: OpsWorkbench; pushHistory: boolean; prepare?: () => unknown; cancel?: () => unknown }>();
   const { clearAll: clearUnsavedChanges, labels: unsavedLabels } = useUnsavedChangesState();
 
-  const commitWorkbench = (next: OpsWorkbench, pushHistory: boolean) => {
+  const commitWorkbench = (next: OpsWorkbench, pushHistory: boolean, prepare?: () => unknown) => {
     if (next === activeWorkbench && contextReady) return;
     clearUnsavedChanges();
     setSwitchingWorkbench(true);
-    commitOpsWorkbenchTransition(next, pushHistory);
+    commitOpsWorkbenchTransition(next, pushHistory, undefined, prepare);
     setActiveWorkbench(next);
     setContextReady(true);
     window.requestAnimationFrame(() => setSwitchingWorkbench(false));
   };
-  const activateWorkbench = (next: OpsWorkbench, pushHistory: boolean) => {
+  const activateWorkbench = (next: OpsWorkbench, pushHistory: boolean, prepare?: () => unknown, cancel?: () => unknown) => {
     if (shouldConfirmWorkbenchTransition(activeWorkbench, next, unsavedLabels)) {
-      setPendingWorkbench({ next, pushHistory });
+      setPendingWorkbench({ next, pushHistory, prepare, cancel });
       return;
     }
-    commitWorkbench(next, pushHistory);
+    commitWorkbench(next, pushHistory, prepare);
   };
 
   useEffect(() => {
     setOpsWorkbenchContext(activeWorkbench);
     setContextReady(true);
   }, []);
-  useEffect(() => {
-    const restore = () => {
-      const intent = workbenchIntentFromLocation(window.location);
-      if (intent && intent !== activeWorkbench) activateWorkbench(intent, false);
-    };
-    window.addEventListener("popstate", restore);
-    return () => window.removeEventListener("popstate", restore);
-  }, [activeWorkbench, contextReady]);
-
   return (
     <OpsAntAppBoundary>
       {contextReady ? (
@@ -306,7 +316,7 @@ function OpsConsoleControllerContent() {
           switchingWorkbench={switchingWorkbench}
           availableWorkbenches={availableWorkbenches}
           onAvailableWorkbenches={setAvailableWorkbenches}
-          onWorkbenchChange={(next, pushHistory = true) => activateWorkbench(next, pushHistory)}
+          onWorkbenchChange={(next, pushHistory = true, prepare, cancel) => activateWorkbench(next, pushHistory, prepare, cancel)}
         />
       ) : <Skeleton active paragraph={{ rows: 8 }} aria-label="正在初始化运营工作台" />}
       <Modal
@@ -315,12 +325,15 @@ function OpsConsoleControllerContent() {
         okText="放弃并切换"
         cancelText="继续编辑"
         okButtonProps={{ danger: true }}
-        onCancel={() => setPendingWorkbench(undefined)}
+        onCancel={() => {
+          pendingWorkbench?.cancel?.();
+          setPendingWorkbench(undefined);
+        }}
         onOk={() => {
           if (!pendingWorkbench) return;
           const target = pendingWorkbench;
           setPendingWorkbench(undefined);
-          commitWorkbench(target.next, target.pushHistory);
+          commitWorkbench(target.next, target.pushHistory, target.prepare);
         }}
       >
         当前未保存：{unsavedLabels.join("、")}。切换后这些内容会被清除且无法恢复。
@@ -342,16 +355,19 @@ function OpsConsoleRuntime({
 }: {
   activeWorkbench: OpsWorkbench;
   switchingWorkbench: boolean;
-  onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean) => void;
+  onWorkbenchChange: (workbench: OpsWorkbench, pushHistory?: boolean, prepare?: () => unknown, cancel?: () => unknown) => void;
   availableWorkbenches: readonly OpsWorkbench[];
   onAvailableWorkbenches: (workbenches: readonly OpsWorkbench[]) => void;
 }) {
   const model = useOpsConsoleModel();
-  const switchWorkbench = (next: OpsWorkbench, pushHistory = true) => {
-    // Make the boundary explicit instead of relying only on the keyed remount:
-    // no old tenant/platform data remains visible while the new session loads.
-    model.clearAuthorizationScopedData();
-    onWorkbenchChange(next, pushHistory);
+  const switchWorkbench = (next: OpsWorkbench, pushHistory = true, prepare?: () => unknown, cancel?: () => unknown) => {
+    // Delay cleanup until the controller accepts the switch. If the dirty
+    // guard opens and the operator chooses “继续编辑”, clearing here would
+    // destroy the draft before the confirmation decision is made.
+    onWorkbenchChange(next, pushHistory, () => {
+      model.clearAuthorizationScopedData();
+      prepare?.();
+    }, cancel);
   };
   return (
     <AuthorizationProvider authorization={model.authorization}>
