@@ -791,6 +791,7 @@ HTTP identity route 的实现已复核为先通过 `getHttpOperationPolicy` 找�
 - [x] **品牌店铺绑定 exact account scope（本地切片）。** `f27f6c3`；`brand-unit.bind-store` 迁移为 account policy。本租户 account 先通过统一 evaluator，再由既有品牌 editor 权限与服务端店铺归属校验；另一租户 account 在进入品牌 handler 前以 `AUTHZ_SCOPE_MISMATCH` 拒绝，避免对象存在性探测。定向测试 166/166、全项目 TypeScript 通过。brand scope 投影、listing 等资源加载后复核仍未完成，P1-BE-003 保持 TODO。
 - [x] **Listing 创建 exact account scope（本地切片）。** `bdeed3f`；`brand-unit.listing.create` 迁移为 account policy，并保留品牌 editor、品牌—店铺绑定、canonical product 归属三层服务端校验。显式 enforce 测试证明本租户店铺可创建 listing，另一租户 account 在 handler 前以 `AUTHZ_SCOPE_MISMATCH` 拒绝。定向测试 142/142、全项目 TypeScript 通过。其他 account/brand 方法及加载后 task/product scope resolver 仍待迁移，P1-BE-003 保持 TODO。
 - [x] **持久品牌权限 exact atom（本地切片）。** `554fc67`；`brand-unit.product.create` 迁移为 brand policy。服务端只在主体原本拥有对应 workspace capability，且 workspace-wide owner/admin 或持久品牌仓储满足 write→editor/read→viewer 最低角色时，派生单一 brand ID 的 `resource_grant` atom；品牌 grant 不会反向新增 capability。显式 enforce 测试证明 viewer grant 的品牌写操作在 evaluator 阶段以最小化 `AUTHZ_SCOPE_MISMATCH` 拒绝，owner 正常创建。定向测试 166/166、全项目 TypeScript 通过。其他品牌方法及 task/product 加载后 resolver 仍待迁移，P1-BE-003 保持 TODO。
+- [x] **品牌权限授予 exact brand scope（本地切片）。** `7d6ab84`；`brand-unit.access.grant` 迁移为 brand policy。统一 evaluator 先要求服务端派生的 exact brand write atom，handler 再要求品牌 admin 并校验目标 active member；只有 viewer grant 的成员尝试自提权时在 handler 前以 `AUTHZ_SCOPE_MISMATCH` 拒绝。定向测试 142/142、全项目 TypeScript 通过。完整品牌方法与加载后资源 resolver 仍待迁移，P1-BE-003 保持 TODO。
 
 以下项目有代码或本地测试片段，但当前没有足够证据勾选完整验收项：
 
