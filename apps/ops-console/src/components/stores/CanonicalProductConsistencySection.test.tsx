@@ -75,6 +75,15 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain("brand-1 / taobao / store-1");
   });
 
+  it("makes blocked detail evidence focusable and announced", () => {
+    const source = readFileSync(fileURLToPath(new URL("./CanonicalProductConsistencySection.tsx", import.meta.url)), "utf8");
+    expect(source).toContain('id="canonical-detail-error-summary"');
+    expect(source).toContain('aria-labelledby="canonical-detail-error-summary-label"');
+    expect(source).toContain("detailErrorSummaryRef.current?.focus({ preventScroll: true })");
+    expect(source).toContain('id="canonical-orphan-detail-error-summary"');
+    expect(source).toContain('aria-live="assertive"');
+  });
+
   it("exposes a keyboard focus target and recovery guidance for report errors", () => {
     const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, findings: [], orphanFindings: [], error: { code: "CONSISTENCY_READ_FAILED", message: "读取失败" }, contractStatus: "unavailable", availability: "unavailable" }} onRefresh={vi.fn()} />);
     expect(markup).toContain('id="canonical-consistency-error-summary"');

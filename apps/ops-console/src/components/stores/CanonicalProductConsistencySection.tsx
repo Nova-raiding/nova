@@ -110,6 +110,8 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
   const selectedTriggerRef = useRef<HTMLButtonElement>(null);
   const selectedOrphanTriggerRef = useRef<HTMLButtonElement>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const detailErrorSummaryRef = useRef<HTMLDivElement>(null);
+  const orphanDetailErrorSummaryRef = useRef<HTMLDivElement>(null);
   const previousErrorSignature = useRef<string | undefined>(undefined);
   const findings = useMemo(() => report?.findings.filter(row => filter === "all" || row.status === filter) ?? [], [filter, report]);
   const orphanFindings = useMemo(() => report?.orphanFindings.filter(row => filter === "all" || row.status === filter) ?? [], [filter, report]);
@@ -121,6 +123,14 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     }
     previousErrorSignature.current = errorSignature;
   }, [errorSignature]);
+  useEffect(() => {
+    if (selected && (selected.status !== "verified" || selected.codes.length > 0 || selected.blocking)) {
+      window.requestAnimationFrame(() => detailErrorSummaryRef.current?.focus({ preventScroll: true }));
+    }
+    if (selectedOrphan) {
+      window.requestAnimationFrame(() => orphanDetailErrorSummaryRef.current?.focus({ preventScroll: true }));
+    }
+  }, [selected, selectedOrphan]);
   const closeSelected = () => {
     setSelected(undefined);
     window.requestAnimationFrame(() => selectedTriggerRef.current?.focus({ preventScroll: true }));
@@ -191,6 +201,21 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     </Card>
     <Drawer title="一致性详情" open={Boolean(selected)} onClose={closeSelected} size={480} destroyOnClose>
       {selected && <Space orientation="vertical" style={{ width: "100%" }} size={16}>
+        {(selected.status !== "verified" || selected.codes.length > 0 || selected.blocking) && <div
+          ref={detailErrorSummaryRef}
+          id="canonical-detail-error-summary"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          tabIndex={-1}
+          aria-labelledby="canonical-detail-error-summary-label"
+        >
+          <Typography.Text strong id="canonical-detail-error-summary-label">该商品关系需要处理</Typography.Text>
+          <Typography.Text>
+            {selected.blocking?.message ?? (selected.codes.length > 0 ? selected.codes.map(codeMessage).join("、") : "关系链尚未验证")}
+          </Typography.Text>
+          <Typography.Text type="secondary">请依据下方关系证据处理；当前状态不会自动放行后续操作。</Typography.Text>
+        </div>}
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="旧商品 ID">{selected.legacyProductId}</Descriptions.Item>
           <Descriptions.Item label="商品对象 ID">{selected.productId ?? selected.legacyProductId}</Descriptions.Item>
@@ -209,6 +234,19 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
     </Drawer>
     <Drawer title="未挂接关系详情" open={Boolean(selectedOrphan)} onClose={closeSelectedOrphan} size={480} destroyOnClose>
       {selectedOrphan && <Space orientation="vertical" style={{ width: "100%" }} size={16}>
+        <div
+          ref={orphanDetailErrorSummaryRef}
+          id="canonical-orphan-detail-error-summary"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          tabIndex={-1}
+          aria-labelledby="canonical-orphan-detail-error-summary-label"
+        >
+          <Typography.Text strong id="canonical-orphan-detail-error-summary-label">该关系对象未挂接</Typography.Text>
+          <Typography.Text>当前对象不属于任何可验证商品链，不能据此继续发布。</Typography.Text>
+          <Typography.Text type="secondary">请依据下方错误码联系具备服务端授权的运营人员处理。</Typography.Text>
+        </div>
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="对象类型">{orphanEntityMeta[selectedOrphan.entityType]}</Descriptions.Item>
           <Descriptions.Item label="对象 ID">{selectedOrphan.entityId}</Descriptions.Item>
