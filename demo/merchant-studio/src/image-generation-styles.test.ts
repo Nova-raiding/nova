@@ -65,4 +65,11 @@ describe('image candidate selection accessibility styles', () => {
     expect(styles).toContain('.image-candidate-skeleton-media{width:100%;aspect-ratio:4/3')
     expect(styles).toContain('@media (prefers-reduced-motion:no-preference){.image-candidate-skeleton-media')
   })
+
+  it('uses one cancellable semantic transition for candidate selection', () => {
+    expect(styles).toContain('.image-generation-job-panel{--image-state-transition:180ms ease-out}')
+    expect(styles).toContain('transition:border-color var(--image-state-transition),box-shadow var(--image-state-transition),background-color var(--image-state-transition)')
+    expect(styles).toContain('.image-candidate-grid figure.candidate-selected')
+    expect(styles).toContain('@media (prefers-reduced-motion:reduce){.image-generation-job-panel{--image-state-transition:.01ms linear}')
+  })
 })

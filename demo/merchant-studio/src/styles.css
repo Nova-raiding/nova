@@ -297,3 +297,12 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 @media (min-width:1280px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (min-width:1440px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (min-width:1920px){.image-candidate-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* Candidate selection is a semantic state transition. The shared token keeps
+   feedback consistent, while CSS transitions naturally cancel and replace
+   an in-flight transition when the user changes selection quickly. No
+   correctness depends on transitionend; the checkbox state is React-owned. */
+.image-generation-job-panel{--image-state-transition:180ms ease-out}
+.image-candidate-grid figure{transition:border-color var(--image-state-transition),box-shadow var(--image-state-transition),background-color var(--image-state-transition)}
+.image-candidate-grid figure.candidate-selected{border-color:#176b4d;background:#f5fbf7;box-shadow:0 0 0 2px rgba(23,107,77,.2)}
+@media (prefers-reduced-motion:reduce){.image-generation-job-panel{--image-state-transition:.01ms linear}.image-generation-job-panel .candidate-selected{box-shadow:none}}

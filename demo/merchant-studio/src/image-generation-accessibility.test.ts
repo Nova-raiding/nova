@@ -36,4 +36,9 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('这张候选图尚未满足归档、安全扫描、权益、真实性或人工审核门禁，暂不能选择。')
     expect(app).toContain('{selectionNotice ? `。${selectionNotice}` : \'\'}')
   })
+
+  it('derives the visual selection state from the controlled selection model', () => {
+    expect(app).toContain("const selected = selectedVisualRefs.includes(visualRef)")
+    expect(app).toContain("' candidate-selected' : ''")
+  })
 })
