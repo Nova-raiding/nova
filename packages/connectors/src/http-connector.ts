@@ -9,6 +9,7 @@ import { douyinProfile } from './profiles/douyin.js'
 import { validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConnectorReadiness } from './readiness.js'
 import { assertOutboundUrl, inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
 import { deduplicateSyncProducts, SyncContractError, validateNextSyncCursor, validateSyncCursor, validateSyncWindow } from './sync-safety.js'
+import { platformEnvelope } from './platform-adapters/rejection.js'
 import type {
   AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, CredentialProvider, CredentialRef, Cursor,
   HttpConnectorConfig, HttpRequestBodyEncoding, HttpRequestDescriptor, MappingVersion, NormalizedPlatformError, Platform, PlatformConnector,
@@ -217,7 +218,7 @@ export class HttpPlatformConnector implements PlatformConnector {
     const credential = this.parseCredential(payload)
     // The credential exists only for this call. A production provider must
     // persist it in Vault/KMS and return an opaque reference.
-    const tokenPayload = isRecord(payload) ? payload : {}
+    const tokenPayload = platformEnvelope(payload) ?? {}
     const remoteAccountId = readString(tokenPayload.account_id) ?? readString(tokenPayload.seller_id) ?? readString(tokenPayload.user_id) ?? readString(tokenPayload.uid)
     if (!remoteAccountId) throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: 'OAuth token response did not identify a remote merchant account' }))
     try {
@@ -413,8 +414,8 @@ export class HttpPlatformConnector implements PlatformConnector {
   }
 
   private parseCredential(payload: unknown, previous?: AccessCredential): AccessCredential {
-    const tokenPayload = isRecord(payload) ? payload : {}
-    const accessToken = readString(tokenPayload.access_token)
+    const tokenPayload = platformEnvelope(payload) ?? {}
+    const accessToken = readString(tokenPayload.access_token) ?? readString(tokenPayload.accessToken)
     if (!accessToken) throw new ConnectorFailure(this.normalizeError({ code: 'REMOTE_ERROR', message: 'token response did not contain an access token' }))
     const expiresIn = typeof tokenPayload.expires_in === 'number' ? tokenPayload.expires_in : undefined
     return { accessToken, tokenType: readString(tokenPayload.token_type) ?? previous?.tokenType, refreshToken: readString(tokenPayload.refresh_token) ?? previous?.refreshToken, scope: readString(tokenPayload.scope) ?? previous?.scope, expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : previous?.expiresAt }

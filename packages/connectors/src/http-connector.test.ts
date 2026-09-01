@@ -84,6 +84,31 @@ describe('HttpPlatformConnector', () => {
     expect(calls[0]?.body).not.toContain('access-token')
   })
 
+  it('reads nested OAuth credentials and provider account identity without inventing local identity', async () => {
+    const store = credentials()
+    const connector = createConfiguredConnector('jd', {
+      config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+      credentials: store,
+      fetch: async () => response({
+        data: {
+          result: {
+            access_token: 'nested-access-token',
+            refresh_token: 'nested-refresh-token',
+            expires_in: 60,
+            account_id: 'provider-account-42',
+          },
+        },
+      }),
+      allowTestCredentials: true,
+      allowTestAdapters: true,
+    })
+
+    await expect(connector.exchangeCode({ code: 'nested-code', state: 'nested-state', workspaceId: 'workspace-42' }))
+      .resolves.toMatchObject({ accountId: 'provider-account-42', credentialRef: 'vault://provider-account-42', workspaceId: 'workspace-42' })
+    expect(store.saved).toHaveLength(1)
+    expect(store.saved[0]).toMatchObject({ accessToken: 'nested-access-token', refreshToken: 'nested-refresh-token' })
+  })
+
   it('fails closed when OAuth does not identify the remote merchant account', async () => {
     const connector = createConfiguredConnector('jd', { config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) }, credentials: credentials(), fetch: async () => response({ access_token: 'token-without-merchant-id' }), allowTestCredentials: true, allowTestAdapters: true })
     await expect(connector.exchangeCode({ code: 'code-1', state: 'state-1' })).rejects.toThrow(/identify a remote merchant account/)
