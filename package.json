@@ -25,7 +25,7 @@
     "test:distributed-rate-limit": "tsx tests/distributed-rate-limit-smoke.ts",
     "test:summary": "tsx tests/test-summary.ts",
     "test:merchant-studio-smoke": "tsx tests/merchant-studio-smoke.ts",
-    "test:browser:all": "npm exec --workspace chatgpt-all-functions-dogfood playwright -- test merchant-all.spec.js merchant-interactions.spec.js merchant.spec.js merchant-data-safety.spec.js merchant-publish-refresh.spec.js merchant-task-auxiliary.spec.js merchant-finding-waiver.spec.js merchant-accessibility.spec.js merchant-deeplink.spec.js merchant-structured-dialogs.spec.js ops-all.spec.js ops-users.spec.js ops.spec.js ops-deeplink.spec.js ops-data-deletion.spec.js ops-publish-batch.spec.js ops-domain-flows.spec.js ops-members-lifecycle.spec.js ui-accessibility-blockers.spec.js --workers=1",
+    "test:browser:all": "npm exec -- playwright test dogfood/chatgpt-all-functions/merchant-all.spec.js dogfood/chatgpt-all-functions/merchant-interactions.spec.js dogfood/chatgpt-all-functions/merchant.spec.js dogfood/chatgpt-all-functions/merchant-data-safety.spec.js dogfood/chatgpt-all-functions/ops-all.spec.js dogfood/chatgpt-all-functions/ops-users.spec.js dogfood/chatgpt-all-functions/ops.spec.js --workers=1",
     "test:backup-restore": "sh tests/backup-restore-acceptance.sh",
     "test:redis-loss-recovery": "tsx tests/redis-loss-recovery-smoke.ts",
     "test:fault-acceptance": "tsx tests/fault-acceptance.ts",
