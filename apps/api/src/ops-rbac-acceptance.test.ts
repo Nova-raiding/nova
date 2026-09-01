@@ -296,6 +296,47 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     expect(deniedBody.trace_id).toBe(deniedBody.request_id)
   })
 
+  it('enforces HTTP catalog-category policy and redacts denied resource context', async () => {
+    const workspaceId = `ws_ops_http_categories_${Date.now()}`
+    const allowedActorId = `ops-http-categories-allowed-${Date.now()}`
+    const deniedActorId = `ops-http-categories-denied-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: allowedActorId, displayName: 'HTTP category operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    await workspaceMembers.upsert({ workspaceId, externalSubject: deniedActorId, displayName: 'HTTP category denied operator', role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'ops-http-categories-allowed-token': { workspaces: [workspaceId], actor_id: allowedActorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+      'ops-http-categories-denied-token': { workspaces: [workspaceId], actor_id: deniedActorId, roles: ['merchant_admin'], denied_capabilities: ['customer.content.read'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const headers = { 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' }
+
+    const allowed = await fetch(`${base}/v1/catalog/categories?query=${encodeURIComponent('防晒')}`, {
+      headers: { ...headers, authorization: 'Bearer ops-http-categories-allowed-token' },
+    })
+    const allowedBody = await allowed.json() as RpcBody<unknown[]>
+    // Authorization is evaluated before the merchant onboarding prerequisite;
+    // this business-level response proves the registered HTTP policy allowed
+    // the request without exposing category data from an unready workspace.
+    expect(allowed.status).toBe(428)
+    expect(allowedBody.data).toBeNull()
+    expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+
+    const denied = await fetch(`${base}/v1/catalog/categories?query=${encodeURIComponent('must-not-leak')}`, {
+      headers: { ...headers, authorization: 'Bearer ops-http-categories-denied-token' },
+    })
+    const deniedBody = await denied.json() as RpcBody
+    expect(denied.status).toBe(403)
+    expect(deniedBody.data).toBeNull()
+    expect(deniedBody.error).toMatchObject({
+      code: 'FORBIDDEN',
+      details: { reason_code: 'AUTHZ_EXPLICIT_DENY', decision_id: expect.any(String), policy_version: AUTHZ_POLICY_VERSION },
+    })
+    expect(deniedBody.request_id).toMatch(/^req_/)
+    expect(deniedBody.trace_id).toBe(deniedBody.request_id)
+    expect(deniedBody.error?.details).not.toHaveProperty('workspace_id')
+    expect(deniedBody.error?.details).not.toHaveProperty('product_id')
+    expect(JSON.stringify(deniedBody.error)).not.toContain(workspaceId)
+  })
+
   it('projects one selected workbench in session and keeps rejection evidence stable', async () => {
     const workspaceId = `ws_ops_session_contract_${Date.now()}`
     const actorId = `ops-session-actor-${Date.now()}`
