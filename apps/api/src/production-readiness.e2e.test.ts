@@ -183,6 +183,20 @@ describe('production readiness fail-closed', () => {
     expect(result.gates.authorization).toMatchObject({ ready: false })
   })
 
+  it.each([
+    '',
+    'release/unsafe',
+    'release with spaces',
+    `${'r'.repeat(129)}`,
+  ])('rejects unsafe production release identity %j', (releaseId) => {
+    const environment = productionEnvironment()
+    environment.RELEASE_ID = releaseId
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(false)
+    expect(result.gates.release_metadata).toMatchObject({ ready: false })
+    expect(result.gates.release_metadata?.reasons ?? []).toContain(releaseId.trim() ? 'release_id_invalid' : 'release_id_missing')
+  })
+
   it('does not let a production fixture profile bypass control-plane gates', () => {
     expect(productionReadinessDiagnostics({ NODE_ENV: 'test', CONNECTOR_FIXTURE_MODE: 'true' })).toEqual({ required: false, ready: true, gates: {} })
     expect(productionReadinessDiagnostics({ NODE_ENV: 'production', CONNECTOR_FIXTURE_MODE: 'true' })).toMatchObject({ required: true, ready: false })
