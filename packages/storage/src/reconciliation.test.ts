@@ -36,4 +36,29 @@ describe('object inventory reconciliation', () => {
     expect(report.findings.map(finding => finding.code)).toEqual(['CROSS_WORKSPACE_OBJECT', 'OBJECT_METADATA_MISMATCH', 'QUOTA_EXCEEDED'])
     expect(report.quota).toMatchObject({ usedBytes: 9, projectedBytes: 11, availableBytes: 0 })
   })
+
+  it('rejects invalid metadata instead of allowing integrity or quota bypasses', () => {
+    const report = reconcileObjectInventory({
+      workspaceId: 'ws_a',
+      references: [{ ...ref('clean/ws_a/asset_invalid/source.png'), sha256: 'not-a-digest', sizeBytes: -1 }],
+      inventory: [{ ...object('clean/ws_a/asset_invalid/source.png'), sha256: 'also-invalid', sizeBytes: -50 }],
+      quota: { limitBytes: 1 },
+    })
+    expect(report.status).toBe('attention_required')
+    expect(report.findings.map(finding => finding.code)).toEqual(['INVALID_OBJECT_METADATA', 'INVALID_OBJECT_METADATA'])
+    expect(report.counts).toMatchObject({ references: 0, inventoryObjects: 0, invalidMetadata: 2, matched: 0 })
+    expect(report.quota).toMatchObject({ usedBytes: 0, projectedBytes: 0 })
+  })
+
+  it('does not silently overwrite duplicate durable references', () => {
+    const storageKey = 'clean/ws_a/asset_duplicate/source.png'
+    const report = reconcileObjectInventory({
+      workspaceId: 'ws_a',
+      references: [ref(storageKey), { ...ref(storageKey), assetId: 'different_asset' }],
+      inventory: [object(storageKey)],
+    })
+    expect(report.status).toBe('attention_required')
+    expect(report.findings.map(finding => finding.code)).toEqual(['DUPLICATE_REFERENCE'])
+    expect(report.counts).toMatchObject({ references: 1, matched: 1 })
+  })
 })

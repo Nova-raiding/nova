@@ -5,6 +5,8 @@ export type ReconciliationFindingCode =
   | 'CROSS_WORKSPACE_REFERENCE'
   | 'CROSS_WORKSPACE_OBJECT'
   | 'DUPLICATE_OBJECT'
+  | 'DUPLICATE_REFERENCE'
+  | 'INVALID_OBJECT_METADATA'
   | 'QUOTA_EXCEEDED'
 
 export interface DurableObjectReference {
@@ -54,6 +56,7 @@ export interface ReconciliationReport {
     orphans: number
     crossWorkspace: number
     duplicates: number
+    invalidMetadata: number
   }
   findings: ReconciliationFinding[]
 }
@@ -74,6 +77,12 @@ function isWorkspaceScopedKey(storageKey: string, workspaceId: string) {
   return (parts[0] === 'quarantine' || parts[0] === 'clean') && parts[1] === workspaceId && parts.length >= 4 && parts.every(part => part.length > 0 && part !== '.' && part !== '..')
 }
 
+const SHA256 = /^[a-f0-9]{64}$/iu
+
+function hasValidObjectMetadata(value: { sha256: string; sizeBytes: number }): boolean {
+  return SHA256.test(value.sha256) && Number.isSafeInteger(value.sizeBytes) && value.sizeBytes >= 0
+}
+
 /**
  * Compares the database's durable asset references with a provider inventory.
  * This is deliberately side-effect free so the same contract can be used by
@@ -87,6 +96,14 @@ export function reconcileObjectInventory(input: ReconciliationInput): Reconcilia
       findings.push({ code: 'CROSS_WORKSPACE_REFERENCE', workspaceId: input.workspaceId, storageKey: reference.storageKey, assetId: reference.assetId, detail: `reference belongs to ${reference.workspaceId}` })
       continue
     }
+    if (!hasValidObjectMetadata(reference)) {
+      findings.push({ code: 'INVALID_OBJECT_METADATA', workspaceId: input.workspaceId, storageKey: reference.storageKey, assetId: reference.assetId, detail: 'reference sha256 or sizeBytes is invalid' })
+      continue
+    }
+    if (references.has(reference.storageKey)) {
+      findings.push({ code: 'DUPLICATE_REFERENCE', workspaceId: input.workspaceId, storageKey: reference.storageKey, assetId: reference.assetId })
+      continue
+    }
     references.set(reference.storageKey, reference)
   }
 
@@ -94,6 +111,10 @@ export function reconcileObjectInventory(input: ReconciliationInput): Reconcilia
   for (const object of input.inventory) {
     if (object.workspaceId !== input.workspaceId || !isWorkspaceScopedKey(object.storageKey, input.workspaceId)) {
       findings.push({ code: 'CROSS_WORKSPACE_OBJECT', workspaceId: input.workspaceId, storageKey: object.storageKey, detail: `object belongs to ${object.workspaceId}` })
+      continue
+    }
+    if (!hasValidObjectMetadata(object)) {
+      findings.push({ code: 'INVALID_OBJECT_METADATA', workspaceId: input.workspaceId, storageKey: object.storageKey, detail: 'inventory sha256 or sizeBytes is invalid' })
       continue
     }
     if (inventory.has(object.storageKey)) {
@@ -134,11 +155,12 @@ export function reconcileObjectInventory(input: ReconciliationInput): Reconcilia
   findings.sort(findingOrder)
   const crossWorkspace = findings.filter(finding => finding.code === 'CROSS_WORKSPACE_REFERENCE' || finding.code === 'CROSS_WORKSPACE_OBJECT').length
   const duplicates = findings.filter(finding => finding.code === 'DUPLICATE_OBJECT').length
+  const invalidMetadata = findings.filter(finding => finding.code === 'INVALID_OBJECT_METADATA').length
   return {
     workspaceId: input.workspaceId,
     status: findings.length ? 'attention_required' : 'clean',
     quota: { ...(input.quota ? { limitBytes: input.quota.limitBytes } : {}), reservedBytes, usedBytes, projectedBytes, ...(input.quota ? { availableBytes: Math.max(0, input.quota.limitBytes - projectedBytes) } : {}) },
-    counts: { references: references.size, inventoryObjects: inventory.size, matched, missing, metadataMismatches, orphans, crossWorkspace, duplicates },
+    counts: { references: references.size, inventoryObjects: inventory.size, matched, missing, metadataMismatches, orphans, crossWorkspace, duplicates, invalidMetadata },
     findings,
   }
 }

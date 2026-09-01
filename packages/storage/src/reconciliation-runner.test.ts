@@ -21,7 +21,7 @@ describe('storage reconciliation runner', () => {
 
   it('isolates provider failures per workspace and preserves the last good snapshot', async () => {
     const status = new MemoryReconciliationStatusStore()
-    await status.put({ workspaceId: 'ws_a', status: 'clean', quota: { reservedBytes: 0, usedBytes: 4, projectedBytes: 4 }, counts: { references: 1, inventoryObjects: 1, matched: 1, missing: 0, metadataMismatches: 0, orphans: 0, crossWorkspace: 0, duplicates: 0 }, findings: [] })
+    await status.put({ workspaceId: 'ws_a', status: 'clean', quota: { reservedBytes: 0, usedBytes: 4, projectedBytes: 4 }, counts: { references: 1, inventoryObjects: 1, matched: 1, missing: 0, metadataMismatches: 0, orphans: 0, crossWorkspace: 0, duplicates: 0, invalidMetadata: 0 }, findings: [] })
     const errors: string[] = []
     const result = await runReconciliationCycle({ workspaces: ['ws_a', 'ws_b'], inventory: { list: async workspaceId => { if (workspaceId === 'ws_b') throw new Error('provider unavailable'); return inventory } }, references: { list: async () => refs }, status, onError: (workspaceId) => errors.push(workspaceId) })
     expect(result).toMatchObject({ completed: 1, failed: 1 })

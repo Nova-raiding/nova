@@ -65,7 +65,7 @@ export async function runReconciliationCycle(input: ReconciliationCycleInput): P
         runStatus: 'failed' as const,
         lastRunAt: new Date().toISOString(),
         quota: { reservedBytes: 0, usedBytes: 0, projectedBytes: 0 },
-        counts: { references: 0, inventoryObjects: 0, matched: 0, missing: 0, metadataMismatches: 0, orphans: 0, crossWorkspace: 0, duplicates: 0 },
+        counts: { references: 0, inventoryObjects: 0, matched: 0, missing: 0, metadataMismatches: 0, orphans: 0, crossWorkspace: 0, duplicates: 0, invalidMetadata: 0 },
         findings: [],
         error: { code: 'RECONCILIATION_PROVIDER_FAILED', message: error instanceof Error ? error.message.slice(0, 1_000) : 'reconciliation provider failed' },
       }
