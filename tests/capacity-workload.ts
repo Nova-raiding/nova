@@ -238,9 +238,13 @@ export function buildCapacityEvidenceDocument(
   const baselineP95 = Number(process.env.CAPACITY_WORKLOAD_BASELINE_P95_MS ?? p95Ms)
   const fairness = baselineP95 > 0 ? Math.max(0, ((percentile(nonNoise, 0.95) - baselineP95) / baselineP95) * 100) : 0
   const stabilityHours = process.env.CAPACITY_WORKLOAD_SKIP_STABILITY === 'true' ? 0 : config.stabilityHours
-  return {
+  const report = {
     schema_version: '1',
-    status: errors === 0 ? 'pass' : 'fail',
+    // The report producer must fail closed as well as the downstream gate.
+    // Otherwise an empty or unhealthy Compose run can be serialized as a
+    // passing report and only rejected if a later consumer happens to run
+    // validateLocalCapacityEvidence.
+    status: errors === 0 ? 'pass' : 'fail' as 'pass' | 'fail',
     release_id: process.env.CAPACITY_WORKLOAD_RELEASE_ID?.trim() || `local-${config.profile}`,
     software_version: process.env.CAPACITY_WORKLOAD_SOFTWARE_VERSION?.trim() || process.env.npm_package_version || 'local-working-tree',
     config_version: process.env.CAPACITY_WORKLOAD_CONFIG_VERSION?.trim() || 'local-capacity-config',
@@ -280,6 +284,11 @@ export function buildCapacityEvidenceDocument(
     platform_traffic_exercised: false,
     ...(config.mode === 'compose' ? { runtime_services: input.runtimeServices ? [...input.runtimeServices] : [] } : {}),
   }
+
+  if (config.mode === 'compose' && validateLocalCapacityEvidence(report).length > 0) {
+    report.status = 'fail'
+  }
+  return report
 }
 
 export async function runCapacityWorkload(config = readCapacityWorkloadConfig()) {

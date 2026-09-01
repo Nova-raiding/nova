@@ -58,6 +58,7 @@ describe('capacity workload contract', () => {
     expect(validateLocalCapacityEvidence(report)).toEqual(expect.arrayContaining([
       'runtime_services is missing worker-scan',
     ]))
+    expect(report.status).toBe('fail')
   })
 
   it('rejects a report that tries to use local evidence as a cloud attestation', () => {
@@ -92,7 +93,7 @@ describe('capacity workload contract', () => {
       startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0, timings: [],
     })
 
-    expect(report.status).toBe('pass')
+    expect(report.status).toBe('fail')
     expect(validateLocalCapacityEvidence(report)).toContain('metrics.observed_request_count must be a positive integer for local capacity evidence')
   })
 })
