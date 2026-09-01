@@ -179,6 +179,15 @@ describe('PostgresBrandUnitRepository', () => {
     await expect(repository.createCampaign({ ...base, id: 'campaign_2', productIds: ['product_2'] })).rejects.toMatchObject({ code: 'CAMPAIGN_IDEMPOTENCY_CONFLICT' })
   })
 
+  it('fails closed when a canonical campaign target has no listing identity', async () => {
+    const repository = new MemoryBrandUnitRepository()
+    await expect(repository.createCampaign({
+      id: 'campaign_incomplete_scope', workspaceId: 'ws_scope', brandId: 'brand_scope', platform: 'taobao', accountId: 'acct_scope',
+      productIds: ['legacy_product'], state: 'draft',
+      targets: [{ productId: 'legacy_product', canonicalProductId: 'canonical_scope', platform: 'taobao', accountId: 'acct_scope' }],
+    })).rejects.toThrow('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
+  })
+
   it('persists per-item task assignments so campaign generation can resume without a process map', async () => {
     const repository = new MemoryBrandUnitRepository()
     const created = await repository.createCampaign({ id: 'campaign_resume', workspaceId: 'ws_resume', brandId: 'brand_resume', platform: 'taobao', accountId: 'acct_resume', productIds: ['product_a', 'product_b'], state: 'draft' })

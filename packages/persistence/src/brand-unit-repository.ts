@@ -94,6 +94,14 @@ export class CampaignLifecycleError extends Error {
   constructor(readonly code: 'CAMPAIGN_BATCH_NOT_FOUND' | 'CAMPAIGN_REVISION_CONFLICT' | 'CAMPAIGN_LIFECYCLE_INVALID' | 'CAMPAIGN_LIFECYCLE_IDEMPOTENCY_CONFLICT' | 'CAMPAIGN_RETRY_ITEM_INVALID') { super(code); this.name = 'CampaignLifecycleError' }
 }
 
+function validateCampaignTargets(targets: readonly CampaignTargetRow[] | undefined) {
+  for (const target of targets ?? []) {
+    const hasCanonical = Boolean(target.canonicalProductId?.trim())
+    const hasListing = Boolean(target.listingId?.trim())
+    if (hasCanonical !== hasListing) throw new Error('CAMPAIGN_TARGET_SCOPE_INCOMPLETE')
+  }
+}
+
 const now = () => new Date().toISOString()
 
 function campaignIntent(input: { brandId: string; platform: BrandUnitPlatform; accountId: string; productIds: string[]; targets?: CampaignTargetRow[] }) {
@@ -160,7 +168,7 @@ export class MemoryBrandUnitRepository implements BrandUnitRepository {
     row.updatedAt = now()
     return row
   }
-  async createCampaign(input: Omit<CampaignBatchRow, 'createdAt' | 'updatedAt'>) { const key = input.idempotencyKey ? `${input.workspaceId}:${input.idempotencyKey}` : undefined; const existingId = key ? this.campaignIdempotency.get(key) : undefined; if (existingId) { const existing = this.campaigns.get(`${input.workspaceId}:${existingId}`); if (existing) { if (campaignIntent(existing) !== campaignIntent(input)) throw new CampaignIdempotencyConflictError(); return { campaign: existing, replayed: true } } } const timestamp = now(); const row = { ...input, revision: input.revision ?? 1, ...(input.targets ? { targets: input.targets.map(target => ({ ...target })) } : {}), items: campaignItems(input), manifestHash: campaignManifestHash(input), createdAt: timestamp, updatedAt: timestamp }; this.campaigns.set(`${input.workspaceId}:${input.id}`, row); if (key) this.campaignIdempotency.set(key, input.id); return { campaign: row, replayed: false } }
+  async createCampaign(input: Omit<CampaignBatchRow, 'createdAt' | 'updatedAt'>) { validateCampaignTargets(input.targets); const key = input.idempotencyKey ? `${input.workspaceId}:${input.idempotencyKey}` : undefined; const existingId = key ? this.campaignIdempotency.get(key) : undefined; if (existingId) { const existing = this.campaigns.get(`${input.workspaceId}:${existingId}`); if (existing) { if (campaignIntent(existing) !== campaignIntent(input)) throw new CampaignIdempotencyConflictError(); return { campaign: existing, replayed: true } } } const timestamp = now(); const row = { ...input, revision: input.revision ?? 1, ...(input.targets ? { targets: input.targets.map(target => ({ ...target })) } : {}), items: campaignItems(input), manifestHash: campaignManifestHash(input), createdAt: timestamp, updatedAt: timestamp }; this.campaigns.set(`${input.workspaceId}:${input.id}`, row); if (key) this.campaignIdempotency.set(key, input.id); return { campaign: row, replayed: false } }
   async listCampaigns(input: { workspaceId: string; platform?: BrandUnitPlatform; accountId?: string; limit?: number }) { const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100); return [...this.campaigns.values()].filter(row => row.workspaceId === input.workspaceId && (!input.platform || row.platform === input.platform) && (!input.accountId || row.accountId === input.accountId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, limit).map(row => structuredClone(row)) }
   async getCampaign(input: { workspaceId: string; id: string }) { const row = this.campaigns.get(`${input.workspaceId}:${input.id}`); return row ? { ...row, ...(row.taskIds ? { taskIds: [...row.taskIds] } : {}) } : undefined }
   async updateCampaignTasks(input: { workspaceId: string; id: string; taskIds: string[]; state: CampaignBatchRow['state'] }) { const row = this.campaigns.get(`${input.workspaceId}:${input.id}`); if (!row) throw new Error('CAMPAIGN_BATCH_NOT_FOUND'); const items = row.items?.map((item, index) => ({ ...item, ...(input.taskIds[index] ? { taskId: input.taskIds[index] } : {}), state: input.taskIds[index] ? 'generating' as const : item.state })); const updated = { ...row, ...(items ? { items } : {}), taskIds: [...input.taskIds], state: input.state, revision: (row.revision ?? 1) + 1, updatedAt: now() }; this.campaigns.set(`${input.workspaceId}:${input.id}`, updated); return updated }
@@ -297,6 +305,7 @@ export class PostgresBrandUnitRepository implements BrandUnitRepository {
     })
   }
   async createCampaign(input: Omit<CampaignBatchRow, 'createdAt' | 'updatedAt'>) {
+    validateCampaignTargets(input.targets)
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
       const timestamp = new Date().toISOString()
