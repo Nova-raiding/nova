@@ -11,6 +11,23 @@ describe('in-memory worker runner', () => {
     expect(worker.jobs.size).toBe(1)
   })
 
+  it('rejects an idempotency replay whose payload intent changed', () => {
+    const worker = createSyncWorker(async () => ({ value: 'ok' }))
+    worker.enqueue({ workspaceId: 'ws', idempotencyKey: 'same-intent', payload: { accountId: 'a' } })
+    expect(() => worker.enqueue({ workspaceId: 'ws', idempotencyKey: 'same-intent', payload: { accountId: 'b' } })).toThrow('WORKER_IDEMPOTENCY_CONFLICT')
+    expect(worker.jobs.size).toBe(1)
+  })
+
+  it('converges concurrent duplicate enqueues with stable object key ordering', async () => {
+    const worker = createSyncWorker(async () => ({ value: 'ok' }))
+    const jobs = await Promise.all([
+      Promise.resolve(worker.enqueue({ workspaceId: 'ws', idempotencyKey: 'concurrent', payload: { accountId: 'same', cursor: 'stable' } })),
+      Promise.resolve(worker.enqueue({ workspaceId: 'ws', idempotencyKey: 'concurrent', payload: { cursor: 'stable', accountId: 'same' } })),
+    ])
+    expect(jobs[1]?.id).toBe(jobs[0]?.id)
+    expect(worker.jobs.size).toBe(1)
+  })
+
   it('scopes idempotency by workspace', () => {
     const worker = createSyncWorker(async () => ({ value: 'ok' }))
     const first = worker.enqueue({ workspaceId: 'ws-one', idempotencyKey: 'same', payload: { accountId: 'a' } })

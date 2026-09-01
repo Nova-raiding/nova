@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { HandlerResult, RunnerOptions, WorkerError, WorkerHandler, WorkerJob, WorkerKind } from './types.js'
 
 export class WorkerFailure extends Error {
@@ -17,6 +17,7 @@ function isSafeWorkerIdentity(value: unknown): value is string {
 export class InMemoryJobRunner<T, R> {
   readonly jobs = new Map<string, WorkerJob<T>>()
   private readonly idempotency = new Map<string, string>()
+  private readonly idempotencyPayloadHashes = new Map<string, string>()
   private readonly baseDelayMs: number
   private readonly maxDelayMs: number
   private readonly clock: () => number
@@ -41,11 +42,16 @@ export class InMemoryJobRunner<T, R> {
     // Idempotency is tenant-scoped. A merchant-supplied key may legitimately
     // be reused in another workspace and must never return that workspace's job.
     const scopedKey = `${input.workspaceId.length}:${input.workspaceId}:${input.idempotencyKey}`
+    const payloadHash = hashWorkerPayload(input.payload)
     const existingId = this.idempotency.get(scopedKey)
-    if (existingId) return this.jobs.get(existingId)!
+    if (existingId) {
+      if (this.idempotencyPayloadHashes.get(scopedKey) !== payloadHash) throw new Error('WORKER_IDEMPOTENCY_CONFLICT')
+      return this.jobs.get(existingId)!
+    }
     const job: WorkerJob<T> = { id: `job_${this.idFactory()}`, kind: this.kind, workspaceId: input.workspaceId, idempotencyKey: input.idempotencyKey, payload: input.payload, attempt: 0, maxAttempts: input.maxAttempts ?? 5, state: 'queued', notBefore: this.clock(), createdAt: this.clock() }
     this.jobs.set(job.id, job)
     this.idempotency.set(scopedKey, job.id)
+    this.idempotencyPayloadHashes.set(scopedKey, payloadHash)
     return job
   }
 
@@ -95,6 +101,25 @@ export class InMemoryJobRunner<T, R> {
   }
 
   private must(id: string) { const job = this.jobs.get(id); if (!job) throw new Error(`Job ${id} not found`); return job }
+}
+
+function hashWorkerPayload(payload: unknown): string {
+  return createHash('sha256').update(stableWorkerSerialization(payload)).digest('hex')
+}
+
+function stableWorkerSerialization(value: unknown): string {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value)
+  if (typeof value === 'bigint') return `bigint:${value.toString()}`
+  if (typeof value === 'function' || typeof value === 'symbol') throw new Error('WORKER_PAYLOAD_UNSUPPORTED')
+  if (Array.isArray(value)) return `[${value.map(stableWorkerSerialization).join(',')}]`
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableWorkerSerialization(entry)}`).join(',')}}`
+  }
+  throw new Error('WORKER_PAYLOAD_UNSUPPORTED')
 }
 
 export function normalizeWorkerError(cause: unknown): WorkerError {
