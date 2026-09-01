@@ -43,4 +43,13 @@ describe('audit export security boundary', () => {
     expect(store.size()).toBe(0)
     rejectsWithCode(() => store.resolve(link.token, scope), 'AUDIT_EXPORT_LINK_NOT_FOUND')
   })
+
+  it('fails closed for malformed runtime tokens and scopes', () => {
+    const store = new AuditExportLinkStore({ secret: 'local-test-secret' })
+    const link = store.issue({ exportId: 'export_1', scope })
+    rejectsWithCode(() => store.resolve(null as unknown as string, scope), 'AUDIT_EXPORT_LINK_NOT_FOUND')
+    rejectsWithCode(() => store.resolve(`${link.token.slice(0, -43)}${'!'.repeat(43)}`, scope), 'AUDIT_EXPORT_LINK_NOT_FOUND')
+    rejectsWithCode(() => store.resolve(link.token, { ...scope, workspaceId: null as unknown as string }), 'AUDIT_EXPORT_SCOPE_INVALID')
+    rejectsWithCode(() => store.resolve(link.token, { ...scope, platformId: '\n' }), 'AUDIT_EXPORT_SCOPE_INVALID')
+  })
 })

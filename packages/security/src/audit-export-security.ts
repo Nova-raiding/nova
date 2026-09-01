@@ -35,6 +35,7 @@ export interface AuthorizedAuditExportScope {
 
 const WILDCARD = /[*?]/u
 const CONTROL = /[\u0000-\u001f\u007f]/u
+const MAX_LINK_TOKEN_LENGTH = 4096
 
 function exactIdentifier(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 256 || CONTROL.test(value) || WILDCARD.test(value)) {
@@ -105,6 +106,12 @@ export class AuditExportLinkStore {
   }
 
   resolve(token: string, expectedScope: AuditExportScope): AuditExportLinkRecord {
+    if (typeof token !== 'string' || token.length === 0 || token.length > MAX_LINK_TOKEN_LENGTH || CONTROL.test(token)) {
+      throw new AuditExportSecurityError('AUDIT_EXPORT_LINK_NOT_FOUND', 'audit export link is invalid')
+    }
+    const expectedTenantId = exactIdentifier(expectedScope?.tenantId, 'tenantId')
+    const expectedWorkspaceId = exactIdentifier(expectedScope?.workspaceId, 'workspaceId')
+    const expectedPlatformId = expectedScope?.platformId === undefined ? undefined : exactIdentifier(expectedScope.platformId, 'platformId')
     this.cleanupExpired()
     const record = this.records.get(token)
     if (!record) throw new AuditExportSecurityError('AUDIT_EXPORT_LINK_NOT_FOUND', 'audit export link was not found')
@@ -116,8 +123,8 @@ export class AuditExportLinkStore {
     if (dot <= 0) throw new AuditExportSecurityError('AUDIT_EXPORT_LINK_NOT_FOUND', 'audit export link is invalid')
     const expected = createHmac('sha256', this.secret).update(token.slice(0, dot)).digest('base64url')
     const actual = token.slice(dot + 1)
-    if (expected.length !== actual.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) throw new AuditExportSecurityError('AUDIT_EXPORT_LINK_NOT_FOUND', 'audit export link is invalid')
-    if (record.scope.tenantId !== expectedScope.tenantId || record.scope.workspaceId !== expectedScope.workspaceId || record.scope.platformId !== expectedScope.platformId) throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_MISMATCH', 'audit export link is outside the requested scope')
+    if (!/^[A-Za-z0-9_-]{43}$/u.test(actual) || expected.length !== actual.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) throw new AuditExportSecurityError('AUDIT_EXPORT_LINK_NOT_FOUND', 'audit export link is invalid')
+    if (record.scope.tenantId !== expectedTenantId || record.scope.workspaceId !== expectedWorkspaceId || record.scope.platformId !== expectedPlatformId) throw new AuditExportSecurityError('AUDIT_EXPORT_SCOPE_MISMATCH', 'audit export link is outside the requested scope')
     return { ...record }
   }
 
