@@ -1,12 +1,28 @@
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap');
 
-:root { font-family: 'Fira Sans', sans-serif; color: #172554; background: #f8fafc; font-synthesis: none; }
+:root {
+  --ops-focus-color: #1d4ed8;
+  --ops-focus-offset: 3px;
+  --ops-focus-width: 3px;
+  --ops-motion-fast: 120ms;
+  font-family: 'Fira Sans', sans-serif;
+  color: #172554;
+  background: #f8fafc;
+  font-synthesis: none;
+}
 * { box-sizing: border-box; }
 html { scroll-padding-top: 16px; }
+/* Keep keyboard focus visible for AntD controls as well as custom desktop controls. */
+:where(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select-selector, .ant-picker, .ant-tabs-tab, .ant-menu-item, .ant-drawer-close, .ant-modal-close):focus-visible {
+  outline: var(--ops-focus-width) solid var(--ops-focus-color);
+  outline-offset: var(--ops-focus-offset);
+}
+/* Focused content must not disappear below the persistent desktop header. */
+:where(button, input, textarea, select, a, [tabindex]):focus-visible { scroll-margin-block: 24px; }
 body { margin: 0; min-width: 320px; background: #f8fafc; }
 .ops-shell { min-height: 100vh; background: #f8fafc; }
 .ops-sider { background: #12234f !important; padding: 22px 14px; }
-.ops-skip-link { position: absolute; z-index: 1200; top: 8px; left: 8px; transform: translateY(-160%); padding: 10px 14px; border-radius: 6px; background: #172554; color: #fff; font-size: 14px; font-weight: 700; text-decoration: none; box-shadow: 0 2px 8px rgb(15 23 42 / 24%); transition: transform 120ms ease-in-out; }
+.ops-skip-link { position: absolute; z-index: 1200; top: 8px; left: 8px; transform: translateY(-160%); padding: 10px 14px; border-radius: 6px; background: #172554; color: #fff; font-size: 14px; font-weight: 700; text-decoration: none; box-shadow: 0 2px 8px rgb(15 23 42 / 24%); transition: transform var(--ops-motion-fast) ease-in-out; }
 .ops-skip-link:focus-visible { transform: translateY(0); outline: 3px solid #fbbf24; outline-offset: 2px; }
 .mobile-menu-trigger, .ops-nav-backdrop { display: none; }
 .brand-mark { display: flex; gap: 12px; align-items: center; color: #fff; padding: 6px 10px 24px; }
@@ -94,7 +110,7 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .brand-tree-store-link:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 .ops-page { width: 100%; }
 .ops-page:focus { outline: none; }
-.ops-page:focus-visible { outline: 2px solid #2563eb; outline-offset: 4px; }
+.ops-page:focus-visible { outline: var(--ops-focus-width) solid var(--ops-focus-color); outline-offset: 4px; }
 .ops-page-heading { margin-bottom: 20px; }
 .ops-page-heading h3 { margin: 4px 0 !important; color: #172554 !important; }
 .ops-page-heading .ant-typography { margin-bottom: 0; }
