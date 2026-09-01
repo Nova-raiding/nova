@@ -172,7 +172,7 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('为什么问：{question.why}')
     expect(app).toContain('不回答：{question.ifSkipped}')
     expect(app).toContain('完整详情模块')
-    expect(app).toContain('待补资料')
+    expect(app).toContain('个可审阅模块')
   })
 
   it('renders brand-review evidence with merchant-facing labels instead of raw fields', () => {
