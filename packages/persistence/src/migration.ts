@@ -379,6 +379,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const enforceModelUsageBudgetRunLinkage = await readFile(new URL('./migrations/118_enforce_model_usage_budget_run_linkage.sql', import.meta.url), 'utf8')
   const authorizationExecutionReservations = await readFile(new URL('./migrations/120_authorization_execution_reservations.sql', import.meta.url), 'utf8')
   const authorizationExecutionReservationsAcl = await readFile(new URL('./migrations/121_authorization_execution_reservations_acl.sql', import.meta.url), 'utf8')
+  const campaignItemLegacyCanonicalIntegrity = await readFile(new URL('./migrations/122_campaign_item_legacy_canonical_integrity.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -501,6 +502,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 119, name: 'image_generation_execution_dispatch_fence', sql: imageGenerationExecutionDispatchFence },
     { version: 120, name: 'authorization_execution_reservations', sql: authorizationExecutionReservations },
     { version: 121, name: 'authorization_execution_reservations_acl', sql: authorizationExecutionReservationsAcl },
+    { version: 122, name: 'campaign_item_legacy_canonical_integrity', sql: campaignItemLegacyCanonicalIntegrity },
   ]
 }
 
