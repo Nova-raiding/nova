@@ -46,6 +46,16 @@ describe('authorization RLS/ACL boundary PostgreSQL probe', () => {
       }
 
       ops = new Pool({ connectionString: connection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only') })
+      const summaries = await ops.query('SELECT workspace_id, status, plan_name, used_tasks, included_tasks, subscription_status, member_count, created_at FROM ops_workspace_summaries ORDER BY workspace_id')
+      expect(summaries.rows).toHaveLength(1)
+      expect(summaries.rows[0]).toMatchObject({ workspace_id: 'boundary_ws', status: 'active' })
+      expect(Object.keys(summaries.rows[0]!).sort()).toEqual([
+        'created_at', 'included_tasks', 'member_count', 'plan_name', 'status',
+        'subscription_status', 'used_tasks', 'workspace_id',
+      ])
+      for (const table of ['workspace_operation_audit', 'products', 'content_versions']) {
+        await expect(ops.query(`SELECT * FROM ${table}`)).rejects.toMatchObject({ code: '42501' })
+      }
       expect((await ops.query('SELECT * FROM ops_access_grants')).rows).toEqual([])
       await ops.query('BEGIN')
       await ops.query("SELECT set_config('app.platform_scope','not-platform',true)")
