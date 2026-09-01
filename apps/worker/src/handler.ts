@@ -4,7 +4,7 @@ import type { PublishHandlerResult } from '../../../packages/workers/src/publish
 import { buildPublishObservationRequest, PublishObservationReportError } from '../../../packages/workers/src/publish-observation.js'
 import type { GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
-import { createUnavailableExecutionAuthorizationGuard, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
+import { createUnavailableExecutionAuthorizationGuard, parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
 
 export interface WorkerProjection {
   snapshots: Map<string, { sequence: number; payload: Record<string, unknown> }>
@@ -46,7 +46,26 @@ export function createWorkerProjection(): WorkerProjection {
 export function createOutboxHandler(options: WorkerHandlerOptions = {}): DurableOutboxHandler<DurableOutboxEvent, unknown> {
   const projection = options.projection ?? createWorkerProjection()
   const executionAuthorization = options.executionAuthorization ?? createUnavailableExecutionAuthorizationGuard()
-  const authorize = (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => executionAuthorization.assertAuthorized(event, operation, signal)
+  const authorize = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
+    try {
+      return await executionAuthorization.assertAuthorized(event, operation, signal)
+    } catch (error) {
+      // Preserve the enqueue decision even when the live recheck is denied or
+      // unavailable. The durable runner stores WorkerFailure.error verbatim,
+      // so this keeps dead-letter/retry evidence tied to the exact event.
+      const snapshot = (() => {
+        try { return parseWorkerAuthorizationSnapshot(event, operation) } catch { return undefined }
+      })()
+      const candidate = error as { code?: unknown; message?: unknown; retryable?: unknown; unknown?: unknown }
+      throw new WorkerFailure({
+        code: typeof candidate.code === 'string' ? candidate.code : 'AUTHZ_EXECUTION_RECHECK_UNAVAILABLE',
+        message: error instanceof Error ? error.message : 'worker execution authorization failed',
+        retryable: candidate.retryable === true,
+        unknown: candidate.unknown === true,
+        ...(snapshot ? { decisionId: snapshot.decisionId, eventId: event.id, workspaceId: event.workspaceId, ...(snapshot.traceId ? { traceId: snapshot.traceId } : {}) } : { eventId: event.id, workspaceId: event.workspaceId }),
+      })
+    }
+  }
   return async ({ event, signal }) => {
     throwIfLeaseLost(signal)
     if (!isObject(event.payload)) {

@@ -22,6 +22,11 @@ export interface WorkerError {
   message: string
   retryable: boolean
   unknown?: boolean
+  /** Correlation retained when an authorization gate blocks queued work. */
+  decisionId?: string
+  eventId?: string
+  workspaceId?: string
+  traceId?: string
 }
 
 export interface HandlerResult<T = unknown> {
