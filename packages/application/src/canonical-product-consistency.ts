@@ -74,11 +74,12 @@ export function resolveCanonicalProductReadScope(input: {
   // identity match.  Missing values are only compatible with the unscoped
   // pure helper form; once a caller supplies a scope, every corresponding
   // identity field is required before the candidate can become verified.
+  const scopedRead = input.workspaceId !== undefined || input.platform !== undefined || input.accountId !== undefined
   const identityMatches = [
     input.workspaceId === undefined ? true : canonical.workspaceId === input.workspaceId,
     input.workspaceId === undefined ? true : listing.workspaceId === input.workspaceId,
-    listing.brandId !== undefined && listing.brandId === canonical.brandId,
-    listing.canonicalProductId !== undefined && listing.canonicalProductId === canonical.id,
+    listing.brandId === undefined ? !scopedRead : listing.brandId === canonical.brandId,
+    listing.canonicalProductId === undefined ? !scopedRead : listing.canonicalProductId === canonical.id,
     input.platform === undefined ? true : listing.platform === input.platform,
     input.accountId === undefined ? true : listing.accountId === input.accountId,
   ].every(Boolean)
