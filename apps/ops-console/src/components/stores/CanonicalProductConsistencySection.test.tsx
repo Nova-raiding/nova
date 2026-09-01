@@ -61,6 +61,8 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain("CONSISTENCY_READ_FAILED");
     expect(markup).toContain("错误状态不会自动放行后续操作");
+    expect(markup).toContain('aria-label="重试一致性报告"');
+    expect(markup).toContain('aria-label="重新检查一致性数据"');
   });
 
   it("renders orphan relation objects instead of hiding them in the blocked count", () => {
@@ -102,5 +104,10 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain("当前没有关系问题");
     expect(markup).toContain("这不是客户端未加载");
     expect(markup).not.toContain("当前筛选没有商品");
+  });
+
+  it("gives report recovery controls a specific accessible name", () => {
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection onRefresh={vi.fn()} />);
+    expect(markup).toContain('aria-label="重新检查一致性报告"');
   });
 });
