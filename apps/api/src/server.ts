@@ -53,7 +53,7 @@ import { aggregateScannerHeartbeats, SCANNER_HEARTBEAT_INDEX_KEY, SCANNER_HEARTB
 import { parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
 import { createImageEditCandidate, createOneSentenceGenerationRequest, createVideoGenerationRequest, createVideoRenderingRequest, type GenerationContext } from '../../../packages/multimodal/src/index.js'
 import { generateSeoGeoSuggestions } from '../../../packages/seo/src/index.js'
-import { createPaymentProviderFromEnv, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
+import { createPaymentProviderFromEnv, FixturePaymentProvider, type PaymentProvider } from '../../../packages/billing/src/payment-provider.js'
 import { platformRuleSyncStatus } from '../../../packages/review/src/platform-rule-sync.js'
 import { verifyAndParsePlatformRuleManifest } from '../../../packages/review/src/platform-rule-manifest.js'
 import { assertOutboundUrl } from '../../../packages/connectors/src/outbound-security.js'
@@ -168,7 +168,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
   }
   const entitlementFunded = durableAuthorization?.settlement === 'entitlement'
   const customerChargeCny = usage.costCny === undefined ? undefined : entitlementFunded ? 0 : Number((usage.costCny * effectiveMultiplier).toFixed(6))
-  const usageInput = { receiptKey, workspaceId, ...(usage.actionId ? { actionId: usage.actionId } : {}), ...(usage.contextLinkId && usage.contextHash ? { contextLinkId: usage.contextLinkId, contextHash: usage.contextHash } : {}), modality: usage.modality, model: usage.model, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}), ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {}), ...(usage.metadata ? { metadata: usage.metadata } : {}) }
+  const usageInput = { receiptKey, workspaceId, ...(usage.actionId ? { actionId: usage.actionId } : {}), ...(usage.contextLinkId && usage.contextHash ? { contextLinkId: usage.contextLinkId, contextHash: usage.contextHash } : {}), modality: usage.modality, model: usage.model, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}), ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}), ...(usage.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {}), ...(usage.metadata || usage.runKey ? { metadata: { ...(usage.metadata ?? {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {}) }
   let recordedUsage
   if (isProduction() && usage.actionId && usage.costCny !== undefined) {
     try {
@@ -378,6 +378,7 @@ const imageFactsExtractor = rawImageFactsExtractor ? { extract: (input: Paramete
 const imageEditGenerator = rawImageEditGenerator ? { generate: (input: Parameters<typeof rawImageEditGenerator.generate>[0]) => withDailyModelBudget('image_edit', input.usageContext, () => rawImageEditGenerator.generate(input)) } : undefined
 const videoGenerator = rawVideoGenerator ? { generate: (input: Parameters<typeof rawVideoGenerator.generate>[0]) => withDailyModelBudget('video', input.usageContext, () => rawVideoGenerator.generate(input)), getStatus: rawVideoGenerator.getStatus.bind(rawVideoGenerator) } : undefined
 let paymentProvider = createPaymentProviderFromEnv()
+const fixturePaymentProvider = new FixturePaymentProvider()
 
 type PaymentChannel = 'alipay' | 'wechat'
 export function fixturePaymentAllowed(source: NodeJS.ProcessEnv = process.env) { return source.ALLOW_LOCAL_PAYMENT_FIXTURE === 'true' }
@@ -388,7 +389,7 @@ function paymentChannel(params: Record<string, unknown>): PaymentChannel {
 
 async function createSubscriptionCheckout(input: { channel: PaymentChannel; orderId: string; idempotencyKey: string; workspaceId: string; amountFen: number; kind: 'subscriptions' }) {
   const providerMode = process.env.PAYMENT_MODE === 'provider'
-  if (!providerMode) return { paymentUrl: `fixture://${input.channel}/${input.workspaceId}/${input.amountFen}?order_id=${encodeURIComponent(input.orderId)}` }
+  if (!providerMode) return fixturePaymentProvider.createCheckout(input)
   if (!paymentProvider) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付 provider adapter 未装配', 503)
   const callbackBase = process.env.PAYMENT_CALLBACK_BASE_URL?.trim().replace(/\/$/u, '')
   if (!callbackBase) throw new DomainError('PAYMENT_NOT_CONFIGURED', '支付回调地址未配置', 503)
@@ -11302,7 +11303,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         } catch (error) {
           throw new DomainError('PAYMENT_PROVIDER_CHECKOUT_FAILED', error instanceof Error ? error.message : '支付服务商下单失败', 503)
         }
-      } else paymentUrl = `fixture://${channel}/${workspaceId}/${amountFen}?order_id=${encodeURIComponent(orderId)}`
+      } else paymentUrl = (await fixturePaymentProvider.createCheckout({ channel, orderId, idempotencyKey, workspaceId, amountFen, callbackUrl: `fixture://${workspaceId}/callback`, description: `merchant-marketing 插件钱包充值 ${amountFen} 分` })).paymentUrl
       const order: RechargeOrder = { id: orderId, workspaceId, channel, amountFen, state: 'pending', paymentMode: providerMode ? 'provider' : 'fixture', paymentUrl, createdByActorId: actorId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
       if (persistence.billing) {
         const durable = await persistence.billing.createOrder({ ...order, idempotencyKey })

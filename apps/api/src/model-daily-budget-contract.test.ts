@@ -20,6 +20,7 @@ describe('daily model budget provider boundary', () => {
 
   it('settles provider actuals and only releases failures that did not succeed upstream', () => {
     expect(source).toContain('recordUsageAndSettleBudget({ ...usageInput, budgetReservationKey: usage.actionId, budgetRunKey: usage.runKey!, costCny: usage.costCny')
+    expect(source).toContain("...(usage.metadata || usage.runKey ? { metadata: { ...(usage.metadata ?? {}), ...(usage.runKey ? { run_key: usage.runKey } : {}) } } : {})")
     expect(source).not.toContain('const actionActualCostCny =')
     expect(source).toContain("if (!providerSucceededButSettlementPending(error)) await releaseDailyModelBudget(workspaceId, actionId)")
     expect(source).toContain("alertKey: `model-budget-overrun:${usage.actionId}`")
