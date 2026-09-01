@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PostgresInteractiveConfirmationTicketRepository, type InteractiveConfirmationTicket } from './interactive-confirmation-ticket-repository.js'
+import { MemoryInteractiveConfirmationTicketRepository, PostgresInteractiveConfirmationTicketRepository, type InteractiveConfirmationTicket } from './interactive-confirmation-ticket-repository.js'
 import type { SqlClient, SqlPool } from './repository.js'
 
 class RecordingClient implements SqlClient {
@@ -52,7 +52,18 @@ describe('PostgresInteractiveConfirmationTicketRepository', () => {
     expect(updates[0]!.text).toContain('actor_id=$2')
     expect(updates[0]!.text).toContain('session_id=$3')
     expect(updates[0]!.text).toContain('intent_hash=$4')
-    expect(updates[0]!.values).toEqual([ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash])
+    expect(updates[0]!.text).toContain('(nonce_digest_version=2 AND nonce_hash=$5)')
+    expect(updates[0]!.text).toContain('(nonce_digest_version=1 AND nonce_hash IN ($5,$6))')
+    expect(updates[0]!.values).toEqual([ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.nonceHash])
+  })
+
+  it('uses the raw bearer only for legacy rows while consuming new rows by digest', async () => {
+    const client = new RecordingClient([1])
+    const repository = new PostgresInteractiveConfirmationTicketRepository(new RecordingPool(client), () => now)
+    const rawBearer = 'c'.repeat(64)
+    await expect(repository.consume({ ...ticket, legacyNonceHash: rawBearer })).resolves.toBe(true)
+    const update = client.calls.find(call => call.text.startsWith('UPDATE interactive_confirmation_tickets'))
+    expect(update?.values).toEqual([ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, rawBearer])
   })
 
   it('rejects expired, overlong, malformed, or normalized-away ticket fields before SQL', async () => {
@@ -64,5 +75,14 @@ describe('PostgresInteractiveConfirmationTicketRepository', () => {
     await expect(repository.issue({ ...ticket, intentHash: 'A'.repeat(64) })).rejects.toThrow('INTERACTIVE_CONFIRMATION_INTENT_HASH_INVALID')
     await expect(repository.consume({ ...ticket, sessionId: 'session\u0000' })).rejects.toThrow('INTERACTIVE_CONFIRMATION_SESSION_ID_INVALID')
     expect(client.calls).toEqual([])
+  })
+})
+
+describe('MemoryInteractiveConfirmationTicketRepository', () => {
+  it('does not accept the stored digest as a bearer', async () => {
+    const repository = new MemoryInteractiveConfirmationTicketRepository(() => now)
+    await repository.issue(ticket)
+    await expect(repository.consume({ ...ticket, nonceHash: 'd'.repeat(64), legacyNonceHash: ticket.nonceHash })).resolves.toBe(false)
+    await expect(repository.consume(ticket)).resolves.toBe(true)
   })
 })

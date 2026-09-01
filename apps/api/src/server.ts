@@ -7997,27 +7997,28 @@ async function consumeImageSelectionTicket(input: { req: IncomingMessage; worksp
   }
   const { actorId, sessionId } = interactiveTicketScope(input.req)
   const storedNonceHash = createHash('sha256').update(rawNonce).digest('hex')
-  const consumed = await repository.consume({ workspaceId: input.workspaceId, actorId, sessionId, intentHash: suppliedIntentHash, nonceHash: storedNonceHash })
+  const consumed = await repository.consume({ workspaceId: input.workspaceId, actorId, sessionId, intentHash: suppliedIntentHash, nonceHash: storedNonceHash, legacyNonceHash: rawNonce })
   if (!consumed) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_INVALID', '图片选择票据不存在、已过期、已消费或不属于当前会话', 409)
   return { replay: false as const }
 }
 
 async function consumePublishConfirmationTicket(req: IncomingMessage, workspaceId: string, input: { workspaceId: string; taskId: string; contentVersionId: string; confirmationHash: string; remoteSnapshotHash: string; params: Record<string, unknown> }) {
-  const nonceHash = typeof input.params.confirmation_ticket_nonce_hash === 'string' ? input.params.confirmation_ticket_nonce_hash.trim() : ''
+  const rawNonce = typeof input.params.confirmation_ticket_nonce_hash === 'string' ? input.params.confirmation_ticket_nonce_hash.trim() : ''
   const intentHash = typeof input.params.confirmation_ticket_intent_hash === 'string' ? input.params.confirmation_ticket_intent_hash.trim() : ''
   const durable = persistence.mode === 'postgres' && Boolean(persistence.interactiveConfirmationTickets)
-  if (!nonceHash && !intentHash) {
+  if (!rawNonce && !intentHash) {
     if (isProduction() && durable) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_REQUIRED', '生产发布必须携带未过期的一次性交互确认票据', 400)
     return false
   }
-  if (!/^[a-f0-9]{64}$/u.test(nonceHash) || !/^[a-f0-9]{64}$/u.test(intentHash)) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_INVALID', '交互确认票据格式无效', 400)
+  if (!/^[a-f0-9]{64}$/u.test(rawNonce) || !/^[a-f0-9]{64}$/u.test(intentHash)) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_INVALID', '交互确认票据格式无效', 400)
   const principal = requestPrincipals.get(req)
   const actorId = principal?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant'
   const sessionId = principal?.sessionId ?? principal?.sessionSubject ?? `api-token:${actorId}`
   const expectedIntent = publishConfirmationIntentHash(input)
   const sessionIntent = interactiveSessionIntentHash(workspaceId, actorId, sessionId)
   if (intentHash !== expectedIntent && intentHash !== sessionIntent) throw new DomainError('INTERACTIVE_CONFIRMATION_INTENT_MISMATCH', '交互确认票据与当前发布意图不一致', 409)
-  const consumed = await (persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets).consume({ workspaceId, actorId, sessionId, intentHash, nonceHash })
+  const storedNonceHash = createHash('sha256').update(rawNonce).digest('hex')
+  const consumed = await (persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets).consume({ workspaceId, actorId, sessionId, intentHash, nonceHash: storedNonceHash, legacyNonceHash: rawNonce })
   if (!consumed) throw new DomainError('INTERACTIVE_CONFIRMATION_TICKET_INVALID', '交互确认票据不存在、已过期或已被消费', 409)
   return true
 }
@@ -9532,10 +9533,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const suppliedIntentHash = typeof params.intent_hash === 'string' ? params.intent_hash.trim() : ''
         if (suppliedIntentHash && !/^[a-f0-9]{64}$/u.test(suppliedIntentHash)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'intent_hash 必须是 64 位小写 SHA-256', 400)
         const intentHash = suppliedIntentHash || createHash('sha256').update(`interactive-session:${workspaceId}:${actorId}:${sessionId}`).digest('hex')
-        const nonceHash = createHash('sha256').update(randomBytes(32)).digest('hex')
+        const rawNonce = randomBytes(32).toString('hex')
+        const storedNonceHash = createHash('sha256').update(rawNonce).digest('hex')
         const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString()
-        const ticket = await (persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets).issue({ workspaceId, actorId, sessionId, intentHash, nonceHash, expiresAt })
-        return result({ enabled: true, scope: 'current_interactive_session', expires_in_seconds: 900, automation: 'read_only', ticket: { nonce_hash: ticket.nonceHash, intent_hash: ticket.intentHash, expires_at: ticket.expiresAt }, message: '仅当前交互会话开放写操作；钱包、事实、审核、平台能力和发布确认门禁仍然生效' })
+        const ticket = await (persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets).issue({ workspaceId, actorId, sessionId, intentHash, nonceHash: storedNonceHash, expiresAt })
+        return result({ enabled: true, scope: 'current_interactive_session', expires_in_seconds: 900, automation: 'read_only', ticket: { nonce_hash: rawNonce, intent_hash: ticket.intentHash, expires_at: ticket.expiresAt }, message: '仅当前交互会话开放写操作；钱包、事实、审核、平台能力和发布确认门禁仍然生效' })
       }
     case 'merchant.start': {
       const requestedPlatform = typeof params.requested_platform === 'string' ? params.requested_platform : undefined
