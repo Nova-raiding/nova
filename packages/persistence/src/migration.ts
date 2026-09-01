@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 )`
 const MIGRATION_ADVISORY_LOCK = 731942851
 
-export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN'
+export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION'
 
 export class MigrationIntegrityError extends Error {
   constructor(
@@ -52,6 +52,20 @@ export function verifyAppliedMigrations(
   applied: readonly AppliedMigration[],
   expected: readonly Migration[],
 ): void {
+  const expectedVersions = new Set<number>()
+  for (const migration of expected) {
+    if (expectedVersions.has(migration.version)) {
+      throw new MigrationIntegrityError('MIGRATION_DUPLICATE_VERSION', migration.version, `release contains duplicate migration version ${migration.version}`)
+    }
+    expectedVersions.add(migration.version)
+  }
+  const appliedVersions = new Set<number>()
+  for (const row of applied) {
+    if (appliedVersions.has(row.version)) {
+      throw new MigrationIntegrityError('MIGRATION_DUPLICATE_VERSION', row.version, `migration history contains duplicate version ${row.version}`)
+    }
+    appliedVersions.add(row.version)
+  }
   const expectedByVersion = new Map(expected.map(migration => [migration.version, migration]))
   const orderedVersions = [...expectedByVersion.keys()].sort((left, right) => left - right)
   const completeChain = orderedVersions[0] === 1 && orderedVersions.every((version, index) => version === index + 1)
@@ -82,7 +96,6 @@ export function verifyAppliedMigrations(
     }
   }
   if (completeChain) {
-    const appliedVersions = new Set(applied.map(row => row.version))
     const highestApplied = Math.max(0, ...appliedVersions)
     for (let version = 1; version <= highestApplied; version += 1) {
       if (!appliedVersions.has(version)) throw new MigrationIntegrityError('MIGRATION_VERSION_UNKNOWN', version, `migration history is missing version ${version}`)
