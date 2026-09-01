@@ -103,6 +103,10 @@ export function validateReleaseMetadata(snapshot: ReleaseMetadataSnapshot): stri
   const parsed = snapshot.migrationFiles.map(file => ({ file, match: /^(\d{3})_[a-z0-9][a-z0-9_]*\.sql$/u.exec(file) }))
   for (const item of parsed) if (!item.match) errors.push(`migration filename is invalid: ${item.file}`)
   const versions = parsed.flatMap(item => item.match ? [Number(item.match[1])] : []).sort((left, right) => left - right)
+  const duplicateVersions = versions.filter((version, index) => index > 0 && version === versions[index - 1])
+  for (const version of [...new Set(duplicateVersions)]) {
+    errors.push(`migration chain contains duplicate version ${String(version).padStart(3, '0')}`)
+  }
   for (let index = 0; index < versions.length; index += 1) {
     const expected = index + 1
     if (versions[index] !== expected) { errors.push(`migration chain must be contiguous at ${String(expected).padStart(3, '0')}`); break }

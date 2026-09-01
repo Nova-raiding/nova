@@ -15,4 +15,14 @@ describe('repository release metadata gate', () => {
     expect(validateReleaseMetadata({ ...snapshot, actualOpsDomainCount: snapshot.actualOpsDomainCount + 1 })).toContain('release-metadata opsDomainCount must match the Ops navigation surface')
     expect(validateReleaseMetadata({ ...snapshot, migrationFiles: snapshot.migrationFiles.filter(file => !file.startsWith('063_')) })).toContain('migration chain must be contiguous at 063')
   })
+
+  it('rejects duplicate migration versions explicitly', () => {
+    const snapshot = collectReleaseMetadata()
+    const migration = snapshot.migrationFiles.find(file => file.startsWith('001_'))
+    expect(migration).toBeDefined()
+    expect(validateReleaseMetadata({
+      ...snapshot,
+      migrationFiles: [...snapshot.migrationFiles, migration!],
+    })).toContain('migration chain contains duplicate version 001')
+  })
 })
