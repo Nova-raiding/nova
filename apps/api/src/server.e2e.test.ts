@@ -1114,6 +1114,12 @@ describe('API HTTP vertical slice', () => {
     expect(missingBatchId.error).toMatchObject({ code: 'INVALID_REQUEST' })
     const first = preparedResult.items[0]!
     const second = preparedResult.items[1]!
+    const duplicate = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1.75, method: 'publish.batch.confirm', params: { workspace_id: workspaceId, batch_id: preparedResult.batchId, confirmations_json: JSON.stringify([
+      { task_id: first.task.id, content_version_id: first.version.id, confirmation_hash: first.confirmationHash, remote_snapshot_hash: first.remoteSnapshotHash, idempotency_key: 'batch-life-duplicate-a' },
+      { task_id: first.task.id, content_version_id: first.version.id, confirmation_hash: first.confirmationHash, remote_snapshot_hash: first.remoteSnapshotHash, idempotency_key: 'batch-life-duplicate-b' },
+    ]) } }) }).then(json)
+    expect(duplicate.error).toMatchObject({ code: 'PUBLISH_BATCH_DUPLICATE_TASK' })
+    expect([...service.publishJobs.values()].filter(job => job.workspaceId === workspaceId)).toHaveLength(0)
     const confirmed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'publish.batch.confirm', params: { workspace_id: workspaceId, batch_id: preparedResult.batchId, confirmations_json: JSON.stringify([
       { task_id: first.task.id, content_version_id: first.version.id, confirmation_hash: first.confirmationHash, remote_snapshot_hash: first.remoteSnapshotHash, idempotency_key: 'batch-life-first' },
       { task_id: second.task.id, content_version_id: second.version.id, confirmation_hash: second.confirmationHash, remote_snapshot_hash: second.remoteSnapshotHash, idempotency_key: 'batch-life-second-failed', confirmation_ticket_nonce_hash: 'a'.repeat(63), confirmation_ticket_intent_hash: 'b'.repeat(64) },
