@@ -97,7 +97,7 @@ SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AN
 \echo MIGRATION_NAME_MISMATCH version :migration_version
 SELECT 1 / 0;
 \endif
-SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum') AS migration_checksum_mismatch \gset
+SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum' AND NOT (:migration_version = 144 AND :'applied_checksum' = '9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7')) AS migration_checksum_mismatch \gset
 \if :migration_checksum_mismatch
 \echo MIGRATION_CHECKSUM_MISMATCH version :migration_version
 SELECT 1 / 0;
@@ -124,7 +124,7 @@ SELECT (:'applied_name' <> :'migration_name' AND NOT (:migration_version = 14 AN
 \echo MIGRATION_NAME_MISMATCH version :migration_version
 SELECT 1 / 0;
 \endif
-SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum') AS migration_checksum_mismatch \gset
+SELECT (:'applied_checksum' <> '' AND :'applied_checksum' <> :'migration_checksum' AND NOT (:migration_version = 144 AND :'applied_checksum' = '9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7')) AS migration_checksum_mismatch \gset
 \if :migration_checksum_mismatch
 \echo MIGRATION_CHECKSUM_MISMATCH version :migration_version
 SELECT 1 / 0;

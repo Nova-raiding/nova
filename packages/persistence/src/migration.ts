@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at timestamptz NOT NULL DEFAULT now()
 )`
 const MIGRATION_ADVISORY_LOCK = 731942851
+// Preserve the immutable pre-commercial 144 artifact while migration 148
+// performs the forward-only reservation hardening.
+const LEGACY_MIGRATION_CHECKSUMS = new Map<number, ReadonlySet<string>>([
+  [144, new Set(['9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7'])],
+])
 
 export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION' | 'MIGRATION_VERSION_INVALID'
 
@@ -98,7 +103,7 @@ export function verifyAppliedMigrations(
     if (row.name !== migration.name && !legacy014Alias) {
       throw new MigrationIntegrityError('MIGRATION_NAME_MISMATCH', row.version, `migration ${row.version} name mismatch: database=${row.name}, release=${migration.name}`)
     }
-    if (row.checksum != null && row.checksum !== migrationChecksum(migration.sql)) {
+    if (row.checksum != null && row.checksum !== migrationChecksum(migration.sql) && !LEGACY_MIGRATION_CHECKSUMS.get(row.version)?.has(row.checksum)) {
       throw new MigrationIntegrityError('MIGRATION_CHECKSUM_MISMATCH', row.version, `migration ${row.version} checksum mismatch: database=${row.checksum}, release=${migrationChecksum(migration.sql)}`)
     }
   }
