@@ -75,7 +75,7 @@ describe('orchestrateDetailPageModules', () => {
       action: 'omit', readiness: 'blocked', evidenceStatus: 'missing',
     })
     expect(result.explanations.join('\n')).toContain('省略不代表证据已验证')
-    expect(result.hasBlockingEvidence).toBe(true)
+    expect(result.hasBlockingEvidence).toBe(false)
   })
 
   it('retains required missing evidence as blocked', () => {
@@ -83,6 +83,7 @@ describe('orchestrateDetailPageModules', () => {
     expect(result.modules.map(item => item.key)).toEqual(['hero'])
     expect(result.blockedModules.map(item => item.key)).toEqual(['hero'])
     expect(result.decisions[0]).toMatchObject({ action: 'retain', readiness: 'blocked', evidenceStatus: 'missing' })
+    expect(result.hasBlockingEvidence).toBe(true)
   })
 
   it('can retain optional missing modules without presenting them as ready', () => {

@@ -172,7 +172,7 @@ export function orchestrateDetailPageModules(
     blockedModules: retained.filter(decision => decision.readiness === 'blocked').map(decision => decision.module),
     decisions: [...retained, ...omitted],
     explanations: [...retained, ...omitted].map(decision => decision.reason),
-    hasBlockingEvidence: allDecisions.some(decision => decision.readiness === 'blocked'),
+    hasBlockingEvidence: retained.some(decision => decision.readiness === 'blocked'),
     rhythm: cookware ? 'cookware_default_8_step' : 'dynamic_priority',
   }
 }
