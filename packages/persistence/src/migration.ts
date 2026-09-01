@@ -414,6 +414,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const parallelMigrationMergeBarrier = await readFile(new URL('./migrations/133_parallel_migration_merge_barrier.sql', import.meta.url), 'utf8')
   const authorizationEventsTruncateGuard = await readFile(new URL('./migrations/134_authorization_events_truncate_guard.sql', import.meta.url), 'utf8')
   const authorizationEventScopeIntegrity = await readFile(new URL('./migrations/135_authorization_event_scope_integrity.sql', import.meta.url), 'utf8')
+  const taskCanonicalListingIdentity = await readFile(new URL('./migrations/137_task_canonical_listing_identity.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -551,6 +552,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 134, name: 'authorization_events_truncate_guard', sql: authorizationEventsTruncateGuard },
     { version: 135, name: 'authorization_event_scope_integrity', sql: authorizationEventScopeIntegrity },
     { version: 136, name: 'workspace_operation_audit_truncate_guard', sql: workspaceOperationAuditTruncateGuard },
+    { version: 137, name: 'task_canonical_listing_identity', sql: taskCanonicalListingIdentity },
   ]
 }
 
