@@ -1963,7 +1963,14 @@ async function callRemote(method, params) {
         const retrySafe = READ_ONLY_METHODS.has(method) || headers['idempotency-key'] !== undefined
         const transient = response.status === 429 || ((response.status === 502 || response.status === 503 || response.status === 504) && retrySafe)
         if ((!response.ok || !payload || payload.error) && (!transient || attempt === maxAttempts)) {
-          const error = payload?.error ?? { code: `HTTP_${response.status}`, message: `MCP gateway returned HTTP ${response.status}` }
+          const error = payload?.error ?? {
+            code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
+            message: response.status === 401
+              ? 'MCP gateway authentication failed'
+              : response.status === 403
+                ? 'MCP gateway authorization denied'
+                : `MCP gateway returned HTTP ${response.status}`,
+          }
           throw Object.assign(new Error(error.message ?? 'MCP gateway error'), { code: error.code, details: error.details })
         }
         if (!response.ok || !payload || payload.error) {
