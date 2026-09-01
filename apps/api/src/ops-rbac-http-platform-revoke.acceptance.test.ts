@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { operationAudits, server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import { creativePointsForTests, operationAudits, server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 
 type Envelope = {
@@ -43,15 +43,15 @@ describe('Ops RBAC real HTTP platform revoke route', () => {
       'ops-http-revoke-allowed-token': { workspaces: [workspaceId], actor_id: allowedActorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
       'ops-http-revoke-denied-token': { workspaces: [workspaceId], actor_id: deniedActorId, roles: ['merchant_admin'], denied_capabilities: ['store.connection.update'], workbenches: ['workspace'] },
     }))
+    await creativePointsForTests.grant({ workspaceId, idempotencyKey: `ops-http-revoke-${workspaceId}`, sourceType: 'test_fixture', sourceId: `ops-http-revoke-${workspaceId}`, points: 100 })
     const base = await start()
     const path = `${base}/v1/platform-accounts/taobao`
     const headers = { authorization: 'Bearer ops-http-revoke-allowed-token', 'x-workspace-id': workspaceId, 'x-ops-workbench': 'workspace' }
 
     const allowed = await fetch(path, { method: 'DELETE', headers: { ...headers, 'x-account-id': 'missing-local-account' } })
     const allowedBody = await allowed.json() as Envelope
-    // Authorization is evaluated before account lookup. In production mode
-    // this fresh workspace first reaches the onboarding gate, which proves
-    // the request passed the HTTP policy and entered the route.
+    // Authorization and the commercial gate run before account lookup; with
+    // a funded fixture this proves the request passed the HTTP policy.
     expect(allowed.status).toBe(428)
     expect(allowedBody.data).toBeNull()
     expect(allowedBody.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
