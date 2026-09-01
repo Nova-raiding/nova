@@ -209,7 +209,7 @@ export function evaluatePermissionAtoms(input: {
     // Every permission atom must remain attributable to a persisted assignment
     // or grant. An empty or control-character source ID cannot be correlated
     // with audit evidence, so it is never authorization material.
-    if (atom.sourceId.length === 0 || /[\u0000-\u001f\u007f]/.test(atom.sourceId)) return false
+    if (!isSafeAuthorizationIdentifier(atom.sourceId)) return false
     if (atom.revokedAt !== undefined) return false
     if (atom.expiresAt !== undefined) {
       const expiresAt = Date.parse(atom.expiresAt)

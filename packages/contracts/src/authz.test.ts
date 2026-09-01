@@ -198,6 +198,7 @@ describe('authorization policy registry', () => {
       { ...base, scope: { type: 'workspace' as const, ids: ['*'] } },
       { ...base, scope: { type: 'workspace' as const, ids: [] } },
       { ...base, sourceId: '' },
+      { ...base, sourceId: '   ' },
       { ...base, sourceId: 'grant_\u0000corrupt' },
     ]) {
       expect(evaluate(atom)).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_CAPABILITY_MISSING' })
