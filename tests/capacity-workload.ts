@@ -82,6 +82,30 @@ export function readCapacityWorkloadConfig(env: Record<string, string | undefine
 export interface CapacityWorkloadTiming { workspace: string; phase: string; elapsedMs: number; ok: boolean; status: number }
 interface AcceptedJob { workspace: string; taskId: string; jobId: string; idempotencyKey: string }
 
+/**
+ * Validates the boundary of a local Compose report. This is deliberately
+ * stricter than the generic schema gate: a local report must never be
+ * mistaken for a cloud capacity attestation, even when its metrics happen to
+ * satisfy a profile threshold.
+ */
+export function validateLocalCapacityEvidence(document: unknown): string[] {
+  const errors: string[] = []
+  if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
+  const value = document as Record<string, unknown>
+  if (value.mode !== 'compose') errors.push('mode must be compose for local capacity evidence')
+  if (value.environment !== 'test') errors.push('environment must be test for local capacity evidence')
+  if (value.cloud_gate !== false) errors.push('cloud_gate must be false for local capacity evidence')
+  if (value.platform_mock_ratio !== 1) errors.push('platform_mock_ratio must be 1 for local capacity evidence')
+  if (value.model_mock_ratio !== 1) errors.push('model_mock_ratio must be 1 for local capacity evidence')
+  try {
+    const target = new URL(String(value.target_url ?? ''))
+    if (target.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1'].includes(target.hostname)) errors.push('target_url must be a local HTTP endpoint for local capacity evidence')
+  } catch {
+    errors.push('target_url must be a local HTTP endpoint for local capacity evidence')
+  }
+  return errors
+}
+
 function workspaceId(index: number) { return `ws_capacity_${index}` }
 function headers(config: CapacityWorkloadConfig, workspace: string, extra: Record<string, string> = {}) {
   return { authorization: `Bearer ${config.token || 'pilot-local-token'}`, 'x-workspace-id': workspace, ...extra }

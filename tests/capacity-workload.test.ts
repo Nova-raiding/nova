@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CAPACITY_WORKLOAD_READ_PATH, buildCapacityEvidenceDocument, isExpectedCapacityStatus, readCapacityWorkloadConfig, selectCapacityAccount } from './capacity-workload.js'
+import { CAPACITY_WORKLOAD_READ_PATH, buildCapacityEvidenceDocument, isExpectedCapacityStatus, readCapacityWorkloadConfig, selectCapacityAccount, validateLocalCapacityEvidence } from './capacity-workload.js'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 describe('capacity workload contract', () => {
@@ -43,6 +43,21 @@ describe('capacity workload contract', () => {
 
     expect(validateCapacityEvidence(report, { requireEvidenceBinding: true })).toEqual([])
     expect(report).toMatchObject({ environment: 'test', cloud_gate: false, platform_mock_ratio: 1, model_mock_ratio: 1, status: 'pass', software_version: '0.1.1', data_version: 'local-fixture-v1' })
+    expect(validateLocalCapacityEvidence(report)).toEqual([])
+  })
+
+  it('rejects a report that tries to use local evidence as a cloud attestation', () => {
+    const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_MODE: 'compose' })
+    const report = buildCapacityEvidenceDocument(config, {
+      startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0,
+      timings: [{ workspace: 'ws_capacity_0', phase: 'sustained', elapsedMs: 12, ok: true, status: 200 }],
+    })
+
+    expect(validateLocalCapacityEvidence({ ...report, environment: 'production', cloud_gate: true, target_url: 'https://capacity.example.com' })).toEqual(expect.arrayContaining([
+      'environment must be test for local capacity evidence',
+      'cloud_gate must be false for local capacity evidence',
+      'target_url must be a local HTTP endpoint for local capacity evidence',
+    ]))
   })
 
   it('keeps an HTTP failure visible in local evidence instead of claiming pass', () => {
