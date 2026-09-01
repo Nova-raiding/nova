@@ -36,6 +36,24 @@ function evidence(kind: ProductionEvidenceKind) {
 describe('production payment and restore evidence gates', () => {
   for (const kind of ['payment', 'restore'] as const) it(`accepts independently signed ${kind} evidence bound to release, image, manifest and commit`, () => expect(validateProductionEvidence(evidence(kind), options(kind))).toEqual([]))
 
+  it('fails closed for a malformed evidence schema without throwing', () => {
+    const errors = validateProductionEvidence({ checks: null, generated_at: 'not-a-date' }, options('payment'))
+    expect(errors).toEqual(expect.arrayContaining([
+      'schema_version must match 2',
+      'kind must match payment',
+      'environment must match production',
+      'status must match pass',
+      'evidence_id is required',
+      'deployment_nonce is required',
+      'verified_by is required',
+      'signature_base64 is required',
+      'simulated must be false',
+      'generated_at must be a strict UTC ISO timestamp',
+      'checks.checkout.status must be pass',
+      'checks.checkout.evidence_ref must be an immutable production artifact with SHA-256 fragment',
+    ]))
+  })
+
   it('rejects a caller-selected key and tampered evidence', () => {
     const value = evidence('payment'); value.amount_cny = 999
     expect(validateProductionEvidence(value, { ...options('payment'), publicKeyPem: otherPublicKey })).toContain('signature_base64 is invalid')
@@ -52,6 +70,19 @@ describe('production payment and restore evidence gates', () => {
   it('rejects a valid signature bound to a different deployment nonce', () => {
     const value = evidence('payment'); value.deployment_nonce = 'different_deployment_nonce_1234'; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
     expect(validateProductionEvidence(value, options('payment'))).toContain('deployment_nonce must match the deployment orchestrator nonce')
+  })
+
+  it('rejects evidence at the expiry boundary and malformed expiry timestamps', () => {
+    const expired = evidence('payment'); expired.expires_at = now.toISOString(); expired.signature_base64 = signProductionEvidence(expired, privateKeyPem)
+    expect(validateProductionEvidence(expired, options('payment'))).toContain('evidence has expired')
+
+    const malformed = evidence('payment'); malformed.expires_at = '2026-08-29'; malformed.signature_base64 = signProductionEvidence(malformed, privateKeyPem)
+    expect(validateProductionEvidence(malformed, options('payment'))).toContain('expires_at must be a strict UTC ISO timestamp')
+  })
+
+  it('rejects evidence signed by an unbound source trust anchor', () => {
+    const value = evidence('payment'); value.key_id = 'unapproved-source-2026'; value.signature_base64 = signProductionEvidence(value, privateKeyPem)
+    expect(validateProductionEvidence(value, options('payment'))).toContain('key_id must match release-security-2026')
   })
 
   it('rejects legacy or tampered image bindings even when independently signed', () => {
