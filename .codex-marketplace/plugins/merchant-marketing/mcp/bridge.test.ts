@@ -2142,6 +2142,34 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each([
+    [401, 'MCP_AUTH_REQUIRED', '当前服务配置尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'],
+    [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
+  ])('maps a bare HTTP %s gateway response to the stable plugin error contract', async (status, code, message) => {
+    const server = createServer((_req, res) => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end('{}')
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: { code, message },
+        content: [{ type: 'text', text: message }],
+      })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('blocks production generation results that omit relay evidence', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
