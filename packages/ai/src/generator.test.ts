@@ -36,7 +36,7 @@ describe('content generator', () => {
   it('emits relay usage with the workspace action context', async () => {
     const usage: unknown[] = []
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined, usageSink: value => { usage.push(value) },
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: value => { usage.push(value) },
       fetch: async () => new Response(JSON.stringify({ id: 'req_usage', usage: { prompt_tokens: 4, completion_tokens: 6, total_tokens: 10, cost_cny: 0.02 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200, headers: { 'x-request-id': 'header_usage' } }),
     })
     await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_usage', actionId: 'task_usage' } })
@@ -47,7 +47,7 @@ describe('content generator', () => {
     const usage: unknown[] = []
     let requestBody = ''
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined, usageSink: value => { usage.push(value) },
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: value => { usage.push(value) },
       fetch: async (_url, init = {}) => { requestBody = String(init.body); return new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 }) },
     })
     await generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_private', actionId: 'action_private' } })
@@ -58,7 +58,7 @@ describe('content generator', () => {
 
   it('does not deliver provider output when usage settlement fails', async () => {
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
       usageSink: async () => { throw new Error('ledger unavailable') },
       fetch: async () => new Response(JSON.stringify({ id: 'test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify({ title: '标题', detail: '详情', sellingPoints: ['事实'] }) } }] }), { status: 200 }),
     })
@@ -87,7 +87,7 @@ describe('content generator', () => {
       { title: '标题', detail: '详情', sellingPoints: ['事实'] },
     ]
     const generator = new OpenAICompatibleContentGenerator({
-      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined,
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model',
       usageSink: value => { usage.push(structuredClone(value)) },
       fetch: async () => new Response(JSON.stringify({ usage: { input_tokens: 2, output_tokens: 3, cost_cny: 0.01 }, choices: [{ message: { content: JSON.stringify(replies.shift()) } }] }), { status: 200 }),
     })
