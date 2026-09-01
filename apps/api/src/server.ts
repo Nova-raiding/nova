@@ -4817,7 +4817,9 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const capabilityDomain = policy.capability.split('.')[0]!
   const enforce = runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(capabilityDomain)
   const principal = requestPrincipals.get(req)
-  const resourceScope = await resolveLoadedAuthorizationResourceScope(policy, workspaceId, params, principal)
+  const resourceScope = params.__http_authorization_scope_conflict === true
+    ? { type: policy.scope, id: '__http_path_scope_conflict__' }
+    : await resolveLoadedAuthorizationResourceScope(policy, workspaceId, params, principal)
   const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projection.atoms)
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,
@@ -4907,6 +4909,7 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
   if (!mcpPolicy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前 HTTP 操作引用的 MCP 授权策略不存在，已拒绝执行', 503, authorizationPolicyUnavailableDetails({ transport: 'http', method: httpPolicy.mcpMethod, operation: httpPolicy.operation }))
   if (mcpPolicy.scope !== 'platform' && workspaceId === 'unknown') throw new DomainError(ERROR_CODES.WORKSPACE_SCOPE_REQUIRED, '当前 HTTP 操作需要明确工作区', 400, { operation: httpPolicy.operation })
   const params: Record<string, unknown> = Object.fromEntries(url.searchParams.entries())
+  let pathScopeConflict = false
   const hasJsonAuthorizationParams = httpPolicy.pathTemplate !== '/v1/assets/upload'
     && req.method !== 'GET'
     && (header(req, 'content-type') ?? '').toLowerCase().includes('application/json')
@@ -4914,7 +4917,10 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
   const pathParams = httpAuthorizationPathParams(httpPolicy.pathTemplate, url.pathname, httpPolicy.mcpMethod)
   for (const [name, value] of Object.entries(pathParams)) {
     if (typeof params[name] === 'string' && params[name]!.trim() && params[name]!.trim() !== value) {
-      throw new DomainError('FORBIDDEN', '请求路径资源与授权参数不一致', 403, { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: mcpPolicy.scope })
+      // Keep the path authoritative, but let the shared authorization engine
+      // produce the denial so HTTP and MCP have the same decision/audit
+      // evidence. The marker is internal and never reaches a route handler.
+      pathScopeConflict = true
     }
     params[name] = value
   }
@@ -4922,6 +4928,7 @@ async function enforceRegisteredHttpCapability(req: IncomingMessage, url: URL, w
   // already-resolved request scope before evaluating the shared policy so a
   // missing body/query field cannot silently widen or bypass tenant scope.
   params.workspace_id = workspaceId
+  if (pathScopeConflict) params.__http_authorization_scope_conflict = true
   await enforceRegisteredMcpCapability(req, workspaceId, httpPolicy.mcpMethod, params)
   return httpPolicy
 }
