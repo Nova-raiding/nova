@@ -3,8 +3,9 @@ import { validateCodexAppHostEvidence } from './codex-app-host-evidence-gate.js'
 
 const artifact = (name: string) => `artifact://production/codex-host/${name}#${'a'.repeat(64)}`
 const evidence = {
-  schema_version: '1', release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
+  schema_version: '2', release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-29T01:00:00Z',
   host: 'codex-app-macos-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
+  mcp_base_url: 'https://merchant.example.com', bridge_sha256: 'b'.repeat(64),
   scenarios: [
     'plugin_discovery',
     'merchant_start',
@@ -24,7 +25,18 @@ const evidence = {
 
 describe('Codex App host evidence gate', () => {
   it('accepts only release-bound external host evidence', () => {
-    expect(validateCodexAppHostEvidence(evidence, { expectedReleaseId: 'release-1' })).toEqual([])
+    expect(validateCodexAppHostEvidence(evidence, { expectedReleaseId: 'release-1', expectedMcpBaseUrl: 'https://merchant.example.com', expectedBridgeSha256: 'b'.repeat(64) })).toEqual([])
+  })
+
+  it('rejects evidence captured against another MCP origin or bridge', () => {
+    expect(validateCodexAppHostEvidence(evidence, { expectedMcpBaseUrl: 'https://other.example.com', expectedBridgeSha256: 'c'.repeat(64) })).toEqual(expect.arrayContaining([
+      'mcp_base_url must match the deployment configuration',
+      'bridge_sha256 must match the deployed plugin bridge',
+    ]))
+  })
+
+  it.each(['http://merchant.example.com', 'https://user@merchant.example.com', 'https://merchant.example.com/mcp', 'https://merchant.example.com?token=secret', 'https://localhost', 'https://10.0.0.1', 'https://192.168.1.5'])('rejects unsafe MCP origin %s', mcp_base_url => {
+    expect(validateCodexAppHostEvidence({ ...evidence, mcp_base_url })).toContain('mcp_base_url must be a canonical public HTTPS root origin')
   })
 
   it('rejects local/fixture evidence and non-clean scenarios', () => {

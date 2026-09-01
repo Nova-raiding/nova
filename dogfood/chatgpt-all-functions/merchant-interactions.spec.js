@@ -1,4 +1,4 @@
-import { test, chromium } from '@playwright/test'
+import { expect, test, chromium } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
@@ -29,8 +29,9 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     try { body = (await response.text()).slice(0, 3_000) } catch {}
     badResponses.push({ method: response.request().method(), url: response.url(), status: response.status(), body })
   })
-  await page.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded' })
+  const response = await page.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2_000)
+  expect(await page.getByText('演示发布状态', { exact: true }).count(), 'Real API overview must not show fixture activity').toBe(0)
   const steps = []
   const shots = resolve('screenshots', 'merchant-interactions')
   await mkdir(shots, { recursive: true })
@@ -38,16 +39,26 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
   const health = page.getByRole('button', { name: /系统健康/ }).first()
   await health.click(); await page.waitForTimeout(500)
   steps.push(await state(page, '系统健康面板'))
-  await page.screenshot({ path: resolve(shots, '1-health.png') })
   const healthDialog = page.getByRole('dialog')
+  expect((await healthDialog.innerText()), 'Merchant-facing health copy should not expose internal relay error codes').not.toContain('api_key_missing')
+  const refreshRelay = healthDialog.getByRole('button', { name: '重新检查模型中转' })
+  await expect(refreshRelay).toBeVisible()
+  await refreshRelay.click()
+  await expect(refreshRelay).toBeEnabled()
+  await page.screenshot({ path: resolve(shots, '1-health.png') })
   if (await healthDialog.count()) await healthDialog.getByRole('button', { name: /关闭|知道了/ }).first().click()
 
-  const recharge = page.getByRole('button', { name: '充值并解锁', exact: true })
-  await recharge.click(); await page.waitForTimeout(500)
-  steps.push(await state(page, '充值门禁'))
-  await page.screenshot({ path: resolve(shots, '2-wallet-gate.png') })
-  const rechargeDialog = page.getByRole('dialog')
-  if (await rechargeDialog.count()) await rechargeDialog.getByRole('button', { name: /关闭|取消/ }).first().click()
+  const recharge = page.getByRole('button', { name: /充值并解锁|创建充值订单/u, exact: true })
+  if (await recharge.count()) {
+    await recharge.click(); await page.waitForTimeout(500)
+    steps.push(await state(page, '充值门禁'))
+    await page.screenshot({ path: resolve(shots, '2-wallet-gate.png') })
+    const rechargeDialog = page.getByRole('dialog')
+    if (await rechargeDialog.count()) await rechargeDialog.getByRole('button', { name: /关闭|取消/ }).first().click()
+  } else {
+    await expect(page.getByText(/钱包与能力状态/)).toBeVisible()
+    steps.push(await state(page, '钱包已解锁'))
+  }
 
   await page.getByRole('button', { name: '商品与资产', exact: true }).first().click(); await page.waitForTimeout(1_200)
   const productSearch = page.getByPlaceholder('搜索商品或平台')
@@ -56,6 +67,14 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
   await page.getByRole('button', { name: /待确认/ }).first().click(); await page.waitForTimeout(300)
   steps.push(await state(page, '待确认筛选'))
   await page.screenshot({ path: resolve(shots, '3-product-filter.png') })
+
+  const firstCreateTask = page.getByRole('button', { name: /创建任务/ }).first()
+  if (await firstCreateTask.count() && await firstCreateTask.isEnabled()) {
+    await firstCreateTask.click(); await page.waitForTimeout(1_200)
+    await expect(page.locator('.conversation-heading [role="status"]')).toHaveText('待分析需求')
+    await expect(page.getByRole('textbox', { name: '描述你的营销任务' })).toBeFocused()
+    steps.push(await state(page, '商品上下文进入对话'))
+  }
 
   const preference = page.getByRole('button', { name: '评价素材', exact: true }).first()
   if (await preference.count()) {
@@ -84,10 +103,17 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
   steps.push(await state(page, '帮助面板'))
   const helpDialog = page.getByRole('dialog')
   if (await helpDialog.count()) await helpDialog.getByRole('button', { name: /知道了|关闭/ }).first().click()
-  await page.getByRole('button', { name: '工作区设置', exact: true }).click(); await page.waitForTimeout(300)
-  steps.push(await state(page, '工作区设置面板'))
+  await page.getByRole('button', { name: '工作区信息', exact: true }).click(); await page.waitForTimeout(300)
+  steps.push(await state(page, '工作区信息面板'))
 
   await writeFile('merchant-interactions.json', JSON.stringify({ steps, badResponses, requestFailures, consoleErrors }, null, 2))
-  await context.close()
-  await browser.close()
+  try {
+    expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
+    expect(badResponses, 'Merchant Studio interactions should not observe HTTP error responses').toEqual([])
+    expect(requestFailures, 'Merchant Studio interactions should not observe failed network requests').toEqual([])
+    expect(consoleErrors, 'Merchant Studio interactions should not observe console or page errors').toEqual([])
+  } finally {
+    await context.close()
+    await browser.close()
+  }
 })

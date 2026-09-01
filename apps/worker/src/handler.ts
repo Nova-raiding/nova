@@ -26,6 +26,8 @@ export interface WorkerHandlerOptions {
   onPublishObservation?: (event: DurableOutboxEvent, observation: PublishHandlerResult, projection: WorkerProjection, signal?: AbortSignal) => Promise<void> | void
   syncRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
   scanRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
+  /** Runs a tenant-scoped SLA scan through the API/persistence boundary. */
+  slaScanRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
   imageContinuationRequested?: (event: DurableOutboxEvent, projection: WorkerProjection, signal?: AbortSignal) => Promise<unknown>
   /** Required at the production side-effect boundary. The default denies all
    * critical execution until an authoritative live recheck port is wired. */
@@ -148,6 +150,18 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         throwIfLeaseLost(signal)
         const candidate = error as { code?: unknown; retryable?: unknown }
         throw new WorkerFailure({ code: typeof candidate.code === 'string' ? candidate.code : 'ASSET_SCAN_EXECUTION_FAILED', message: error instanceof Error ? error.message : 'asset scan failed', retryable: candidate.retryable !== false, unknown: false })
+      }
+    }
+
+    if (event.eventType === 'support.sla.scan_requested' && options.slaScanRequested) {
+      try {
+        const result = await options.slaScanRequested(event, projection, signal)
+        throwIfLeaseLost(signal)
+        return { value: result }
+      } catch (error) {
+        throwIfLeaseLost(signal)
+        const candidate = error as { code?: unknown; retryable?: unknown; unknown?: unknown }
+        throw new WorkerFailure({ code: typeof candidate.code === 'string' ? candidate.code : 'SUPPORT_SLA_SCAN_FAILED', message: error instanceof Error ? error.message : 'support SLA scan failed', retryable: candidate.retryable !== false, unknown: candidate.unknown === true })
       }
     }
 

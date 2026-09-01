@@ -37,7 +37,7 @@ WORKLOAD_SECRET_KEYS = {
       DATABASE_URL OPS_DATABASE_URL REDIS_URL API_AUTH_TOKENS
       OIDC_PROXY_SIGNING_SECRET SESSION_ID_HASH_SECRET
       WORKER_API_CREDENTIALS
-      ASSET_STORAGE_KMS_KEY_ID ASSET_DISPLAY_URL_SIGNING_SECRET VAULT_TOKEN RULE_APPROVAL_TOKENS
+      ASSET_STORAGE_KMS_KEY_ID ASSET_DISPLAY_URL_SIGNING_SECRET ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON VAULT_TOKEN RULE_APPROVAL_TOKENS
       PLATFORM_RULE_SYNC_SIGNING_SECRET MODEL_RELAY_API_KEY
       PAYMENT_PROVIDER_API_KEY PAYMENT_CALLBACK_SECRET
       OPS_CUSTOMER_ACCESS_SIGNING_SECRET
@@ -78,10 +78,20 @@ SCANNER_CONFIG = {
   'CLAMAV_PORT' => '3310',
   'CLAMAV_MAX_FILE_BYTES' => '52428800',
 }.freeze
+AUTHORIZATION_CONFIG = {
+  'MCP_AUTHZ_MODE' => 'enforce',
+  'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED' => 'true',
+}.freeze
 SCANNER_API_SECRET_ENV = {
   'ASSET_SCANNER_API_TOKEN' => ['merchant-scanner-secrets', 'ASSET_SCANNER_API_TOKEN'],
   'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET' => ['merchant-scanner-secrets', 'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'],
   'ASSET_SCAN_TRUSTED_PUBLIC_KEYS' => ['merchant-scanner-secrets', 'ASSET_SCAN_TRUSTED_PUBLIC_KEYS'],
+}.freeze
+CRITICAL_API_SECRET_ENV = {
+  'MODEL_RELAY_API_KEY' => ['merchant-runtime-secrets', 'MODEL_RELAY_API_KEY'],
+  'PLATFORM_RULE_SYNC_SIGNING_SECRET' => ['merchant-runtime-secrets', 'PLATFORM_RULE_SYNC_SIGNING_SECRET'],
+  'PAYMENT_PROVIDER_API_KEY' => ['merchant-runtime-secrets', 'PAYMENT_PROVIDER_API_KEY'],
+  'PAYMENT_CALLBACK_SECRET' => ['merchant-runtime-secrets', 'PAYMENT_CALLBACK_SECRET'],
 }.freeze
 SCANNER_WORKER_SECRET_ENV = {
   'WORKER_API_TOKEN' => ['merchant-scanner-secrets', 'ASSET_SCANNER_API_TOKEN'],
@@ -188,6 +198,9 @@ def validate_container_environment(container, workload_name, config_maps, config
   raise ReleaseManifestError, "#{context}.env must be an array" unless entries.is_a?(Array)
   entries.each_with_index do |entry, index|
     raise ReleaseManifestError, "#{context}.env[#{index}] must be a mapping" unless entry.is_a?(Hash)
+    if AUTHORIZATION_CONFIG.key?(entry['name'])
+      raise ReleaseManifestError, "#{context}.env[#{index}] must not override #{entry['name']}; production authorization settings must come only from ConfigMap/merchant-runtime"
+    end
     next unless entry.key?('valueFrom')
     raise ReleaseManifestError, "#{context}.env[#{index}].valueFrom must be a mapping" unless entry['valueFrom'].is_a?(Hash)
     value_from = entry['valueFrom']
@@ -195,6 +208,41 @@ def validate_container_environment(container, workload_name, config_maps, config
     validate_secret_key_reference(value_from['secretKeyRef'], workload_name, "#{entry_context}.secretKeyRef") if value_from.key?('secretKeyRef')
     validate_config_map_reference(value_from['configMapKeyRef'], config_maps, config_map_refs, "#{entry_context}.configMapKeyRef") if value_from.key?('configMapKeyRef')
   end
+end
+
+def validate_authorization_contract(documents, config_maps)
+  runtime = config_maps['merchant-runtime']
+  raise ReleaseManifestError, 'production authorization requires the merchant-runtime ConfigMap in the rendered manifest' unless runtime
+  data = runtime['data']
+  raise ReleaseManifestError, 'merchant-runtime.data must be a mapping' unless data.is_a?(Hash)
+  AUTHORIZATION_CONFIG.each do |key, expected|
+    raise ReleaseManifestError, "merchant-runtime must set #{key}=#{expected}" unless data[key] == expected
+  end
+  runtime_binary = runtime['binaryData'] || {}
+  raise ReleaseManifestError, 'merchant-runtime.binaryData must be a mapping' unless runtime_binary.is_a?(Hash)
+  duplicated_binary_key = AUTHORIZATION_CONFIG.keys.find { |key| runtime_binary.key?(key) }
+  raise ReleaseManifestError, "merchant-runtime must not define #{duplicated_binary_key} in binaryData" if duplicated_binary_key
+
+  config_maps.each do |name, config_map|
+    next if name == 'merchant-runtime'
+    %w[data binaryData].each do |section|
+      values = config_map[section] || {}
+      next unless values.is_a?(Hash)
+      duplicate = AUTHORIZATION_CONFIG.keys.find { |key| values.key?(key) }
+      raise ReleaseManifestError, "ConfigMap/#{name} must not define production authorization setting #{duplicate}" if duplicate
+    end
+  end
+
+  resources = flattened_resources(documents)
+  api = named_resource(resources, 'Deployment', 'merchant-api')
+  raise ReleaseManifestError, 'production authorization requires Deployment/merchant-api' unless api
+  api_container = named_container(api, 'api')
+  sources = api_container['envFrom']
+  bound = sources.is_a?(Array) && sources.any? do |source|
+    reference = source.is_a?(Hash) ? source['configMapRef'] : nil
+    reference.is_a?(Hash) && reference['name'] == 'merchant-runtime' && !optional_reference?(reference)
+  end
+  raise ReleaseManifestError, 'merchant-api/api must import production authorization settings from ConfigMap/merchant-runtime' unless bound
 end
 
 def validate_secret_volume_reference(reference, workload_name, context)
@@ -449,6 +497,7 @@ def validate_asset_scanner_contract(documents, config_maps)
   raise ReleaseManifestError, 'production manifest must contain Deployment/merchant-api' unless api
   api_container = named_container(api, 'api')
   require_secret_environment(api_container, SCANNER_API_SECRET_ENV)
+  require_secret_environment(api_container, CRITICAL_API_SECRET_ENV)
   if environment_entry(api_container, 'ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM')
     raise ReleaseManifestError, 'merchant-api must never receive ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM'
   end
@@ -520,7 +569,10 @@ begin
 
   observed_images = {}
   config_maps = collect_config_maps(documents)
-  validate_asset_scanner_contract(documents, config_maps) if !rollback_mode && !expected_digests.key?('*')
+  if !rollback_mode && !expected_digests.key?('*')
+    validate_authorization_contract(documents, config_maps)
+    validate_asset_scanner_contract(documents, config_maps)
+  end
   image_count = documents.each_with_index.sum { |document, index| validate_resource(document, expected_digests, observed_images, config_maps, "document[#{index}]", rollback_mode) }
   raise ReleaseManifestError, 'rendered Kubernetes manifest contains no supported workload container image' if image_count.zero?
   if expected_digests.key?('*')

@@ -1,11 +1,11 @@
-import { test, chromium } from '@playwright/test'
+import { expect, test, chromium } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 test.setTimeout(180_000)
 const root = resolve('.')
 const screenshots = resolve(root, 'screenshots', 'merchant-pages')
-const sections = ['运营概览', '商品与资产', '营销任务', '发布中心', '规则与检查', '帮助与诊断', '工作区设置']
+const sections = ['运营概览', '商品与资产', '营销任务', '发布中心', '规则与检查', '帮助与诊断', '工作区信息']
 const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${['overview', 'catalog', 'tasks', 'publish', 'rules', 'help', 'settings'][index]}`]))
 
 const snapshot = async page => page.evaluate(() => ({
@@ -30,7 +30,11 @@ test('walk every Merchant Studio section through the real browser UI', async () 
   let activeSection = '启动'
   page.on('console', message => consoleMessages.push({ section: activeSection, type: message.type(), text: message.text() }))
   page.on('pageerror', error => consoleMessages.push({ section: activeSection, type: 'pageerror', text: error.message }))
-  page.on('requestfailed', request => requestFailures.push({ section: activeSection, method: request.method(), url: request.url(), error: request.failure()?.errorText }))
+  page.on('requestfailed', request => {
+    const error = request.failure()?.errorText
+    if (error === 'net::ERR_ABORTED') return
+    requestFailures.push({ section: activeSection, method: request.method(), url: request.url(), error })
+  })
   page.on('response', async response => {
     if (response.status() < 400) return
     let body = ''
@@ -38,7 +42,7 @@ test('walk every Merchant Studio section through the real browser UI', async () 
     badResponses.push({ section: activeSection, method: response.request().method(), url: response.url(), status: response.status(), requestBody: response.request().postData(), body })
   })
 
-  await page.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded' })
+  const response = await page.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2_500)
   const pages = []
   for (const section of sections) {
@@ -77,7 +81,15 @@ test('walk every Merchant Studio section through the real browser UI', async () 
 
   const result = { generatedAt: new Date().toISOString(), pages, mobile: mobileState, consoleMessages, requestFailures, badResponses }
   await writeFile(resolve(root, 'merchant-all-inventory.json'), JSON.stringify(result, null, 2))
-  await mobile.close()
-  await context.close()
-  await browser.close()
+  try {
+    const consoleErrors = consoleMessages.filter(message => message.type === 'error' || message.type === 'pageerror')
+    expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
+    expect(badResponses, 'Merchant Studio page walk should not observe HTTP error responses').toEqual([])
+    expect(requestFailures, 'Merchant Studio page walk should not observe failed network requests').toEqual([])
+    expect(consoleErrors, 'Merchant Studio page walk should not observe console or page errors').toEqual([])
+  } finally {
+    await mobile.close()
+    await context.close()
+    await browser.close()
+  }
 })

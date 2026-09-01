@@ -42,6 +42,9 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain("product-legacy");
     expect(markup).toContain("查看 product-legacy 一致性详情");
     expect(markup).toContain("补齐规范商品映射（需要 platform_ops 权限）");
+    expect(markup).toContain("证据时间");
+    expect(markup).toContain("2026-08-31T00:00:00.000Z");
+    expect(markup).toContain("未找到规范商品映射");
   });
 
   it("renders orphan relation objects instead of hiding them in the blocked count", () => {

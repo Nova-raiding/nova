@@ -198,6 +198,8 @@ export interface AssetMetadata {
   preview?: AssetPreviewSnapshot
   /** Distinct upload names that resolve to these same bytes in this workspace. */
   references: AssetReference[]
+  /** Workspace identities that supplied these exact bytes. */
+  uploadedByActorIds?: string[]
   revision: number
   createdAt: string
 }
@@ -2261,7 +2263,7 @@ export class MerchantService {
     if (!readiness.ready) throw new DomainError('BRAND_VISUAL_RULES_BLOCKED', '品牌视觉强规则未满足，已阻止生成；请先修正 Logo/字体素材与授权状态', 409, { issues: readiness.issues, next_step: '在素材库的品牌视觉强规则中修正配置，并完成对应素材的扫描与权益确认' })
     return readiness
   }
-  registerAsset(input: { workspaceId: string; name: string; mimeType: string; sizeBytes: number; sha256: string; storageKey: string; sourceProviderJobId?: string; rightsStatus?: AssetMetadata['rightsStatus']; rightsScope?: AssetMetadata['rightsScope']; applicablePlatforms?: Platform[]; applicableRegions?: string[]; usageScopes?: string[]; validFrom?: string; validTo?: string; aiModificationAllowed?: boolean }): AssetRegistrationResult {
+  registerAsset(input: { workspaceId: string; name: string; mimeType: string; sizeBytes: number; sha256: string; storageKey: string; sourceProviderJobId?: string; rightsStatus?: AssetMetadata['rightsStatus']; rightsScope?: AssetMetadata['rightsScope']; applicablePlatforms?: Platform[]; applicableRegions?: string[]; usageScopes?: string[]; validFrom?: string; validTo?: string; aiModificationAllowed?: boolean; uploadedByActorId?: string }): AssetRegistrationResult {
     const sha256 = input.sha256.trim().toLowerCase()
     if (!input.name.trim() || !input.mimeType.trim() || !Number.isInteger(input.sizeBytes) || input.sizeBytes < 0 || input.sizeBytes > 50 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(sha256) || !input.storageKey.trim() || input.storageKey.includes('..') || !input.storageKey.startsWith('quarantine/')) throw new DomainError('ASSET_METADATA_INVALID', '素材元数据无效或超过 50MB 限制', 400)
     const normalizeList = (values: string[] | undefined, code: string, label: string) => {
@@ -2281,10 +2283,17 @@ export class MerchantService {
       // clean/approved asset or accidentally grant rights to an untrusted one.
       existing.references ??= [{ name: existing.name, mimeType: existing.mimeType, firstSeenAt: existing.createdAt }]
       const referenceExists = existing.references.some(reference => reference.name.toLocaleLowerCase() === input.name.trim().toLocaleLowerCase() && reference.mimeType.toLocaleLowerCase() === input.mimeType.trim().toLocaleLowerCase())
+      let changed = false
       if (!referenceExists) {
         existing.references.push({ name: input.name.trim(), mimeType: input.mimeType.trim(), firstSeenAt: now() })
-        existing.revision += 1
+        changed = true
       }
+      const uploader = input.uploadedByActorId?.trim()
+      if (uploader && !(existing.uploadedByActorIds ?? []).includes(uploader)) {
+        existing.uploadedByActorIds = [...(existing.uploadedByActorIds ?? []), uploader]
+        changed = true
+      }
+      if (changed) existing.revision += 1
       const result = existing as AssetRegistrationResult
       result.deduplication = {
         mode: 'deduplicated',
@@ -2296,7 +2305,8 @@ export class MerchantService {
       return result
     }
     const createdAt = now()
-    const asset: AssetRegistrationResult = { id: id('asset'), workspaceId: input.workspaceId, name: input.name.trim(), mimeType: input.mimeType.trim(), sizeBytes: input.sizeBytes, sha256, sourceRevision: 1, storageKey: input.storageKey.trim(), ...(input.sourceProviderJobId ? { sourceProviderJobId: input.sourceProviderJobId.trim() } : {}), rightsStatus: input.rightsStatus ?? 'pending', ...(input.rightsScope ? { rightsScope: input.rightsScope } : {}), ...(input.applicablePlatforms?.length ? { applicablePlatforms: [...input.applicablePlatforms] } : {}), ...(applicableRegions?.length ? { applicableRegions } : {}), ...(usageScopes?.length ? { usageScopes } : {}), ...(input.validFrom ? { validFrom: new Date(input.validFrom).toISOString() } : {}), ...(input.validTo ? { validTo: new Date(input.validTo).toISOString() } : {}), ...(input.aiModificationAllowed !== undefined ? { aiModificationAllowed: input.aiModificationAllowed } : {}), scanStatus: 'quarantined', parseStatus: 'pending', contentTrust: untrustedAssetContent(), references: [{ name: input.name.trim(), mimeType: input.mimeType.trim(), firstSeenAt: createdAt }], revision: 1, createdAt, deduplication: { mode: 'created', rightsAndScanStatePreserved: false, referenceAdded: true } }
+    const uploader = input.uploadedByActorId?.trim()
+    const asset: AssetRegistrationResult = { id: id('asset'), workspaceId: input.workspaceId, name: input.name.trim(), mimeType: input.mimeType.trim(), sizeBytes: input.sizeBytes, sha256, sourceRevision: 1, storageKey: input.storageKey.trim(), ...(input.sourceProviderJobId ? { sourceProviderJobId: input.sourceProviderJobId.trim() } : {}), rightsStatus: input.rightsStatus ?? 'pending', ...(input.rightsScope ? { rightsScope: input.rightsScope } : {}), ...(input.applicablePlatforms?.length ? { applicablePlatforms: [...input.applicablePlatforms] } : {}), ...(applicableRegions?.length ? { applicableRegions } : {}), ...(usageScopes?.length ? { usageScopes } : {}), ...(input.validFrom ? { validFrom: new Date(input.validFrom).toISOString() } : {}), ...(input.validTo ? { validTo: new Date(input.validTo).toISOString() } : {}), ...(input.aiModificationAllowed !== undefined ? { aiModificationAllowed: input.aiModificationAllowed } : {}), scanStatus: 'quarantined', parseStatus: 'pending', contentTrust: untrustedAssetContent(), references: [{ name: input.name.trim(), mimeType: input.mimeType.trim(), firstSeenAt: createdAt }], ...(uploader ? { uploadedByActorIds: [uploader] } : {}), revision: 1, createdAt, deduplication: { mode: 'created', rightsAndScanStatePreserved: false, referenceAdded: true } }
     this.assets.set(asset.id, asset)
     return asset
   }
@@ -2569,7 +2579,7 @@ export class MerchantService {
     this.imageIdempotency.set(`${input.workspaceId}:${input.idempotencyKey}`, job.id)
     return job
   }
-  async completeImageGeneration(input: { workspaceId: string; jobId: string }) {
+  async completeImageGeneration(input: { workspaceId: string; jobId: string; runKey?: string }) {
     const job = this.getImageGenerationJob(input.workspaceId, input.jobId)
     if (job.state === 'succeeded') return { job, images: [...(job.images ?? [])], product: this.products.get(job.productId)! }
     const flightKey = `${input.workspaceId}\u0000${job.id}\u0000${job.idempotencyKey}`
@@ -2589,8 +2599,10 @@ export class MerchantService {
       try {
         current.providerAttemptState = 'started'
         current.revision += 1; current.updatedAt = now()
+        const actionId = `image:${current.idempotencyKey}`
+        const runKey = input.runKey?.trim() || actionId
         images = this.options.imageGenerator
-          ? await this.options.imageGenerator.generate({ productTitle: product.title, ...(product.category ? { category: product.category } : {}), direction: current.direction, visualBrief: current.visualBrief, mode: current.imageMode, count: current.count, ...(current.sourceAssetIds?.length ? { sourceAssetRefs: current.sourceAssetIds } : {}), usageContext: { workspaceId: input.workspaceId, actionId: `image:${current.idempotencyKey}` } })
+          ? await this.options.imageGenerator.generate({ productTitle: product.title, ...(product.category ? { category: product.category } : {}), direction: current.direction, visualBrief: current.visualBrief, mode: current.imageMode, count: current.count, ...(current.sourceAssetIds?.length ? { sourceAssetRefs: current.sourceAssetIds } : {}), usageContext: { workspaceId: input.workspaceId, actionId, runKey } })
           : Array.from({ length: current.count }, (_, index) => generatedMainImage(product, current.id, index, current.direction))
       } catch (error) {
         if ((current.state as ImageGenerationJob['state']) === 'succeeded') return { job: current, images: [...(current.images ?? [])], product }
@@ -2621,6 +2633,19 @@ export class MerchantService {
   }
   archiveImageGenerationOutputs(workspaceId: string, jobId: string, outputs: VisualGenerationOutput[], archiveState: ImageGenerationJob['archiveState']) {
     const job = this.getImageGenerationJob(workspaceId, jobId)
+    if (!outputs.length && archiveState === 'archived') throw new DomainError('GENERATED_IMAGE_ARCHIVE_EMPTY', '完整归档必须至少包含一个图片候选', 409)
+    const visualRefs = new Set<string>()
+    const ordinals = new Set<number>()
+    for (const output of outputs) {
+      if (!output.visualRef || visualRefs.has(output.visualRef)) throw new DomainError('GENERATED_IMAGE_OUTPUT_DUPLICATE', '图片归档包含重复的候选引用', 409, { visual_ref: output.visualRef })
+      if (!Number.isSafeInteger(output.ordinal) || output.ordinal < 1 || ordinals.has(output.ordinal)) throw new DomainError('GENERATED_IMAGE_OUTPUT_ORDINAL_INVALID', '图片归档包含重复或无效的候选序号', 409, { ordinal: output.ordinal })
+      visualRefs.add(output.visualRef)
+      ordinals.add(output.ordinal)
+      if (output.assetId) {
+        const asset = this.assets.get(output.assetId)
+        if (asset && asset.workspaceId !== workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '图片归档引用了其他工作区素材', 403, { asset_id: output.assetId })
+      }
+    }
     job.outputs = outputs.map(output => {
       const archived = clone(output)
       archived.reviewStatus = 'unreviewed'
@@ -3991,7 +4016,7 @@ export class MerchantService {
       ...(snapshot.assets.length ? { referenceAssets: snapshot.assets.map(asset => ({ id: asset.id, revision: asset.revision, ...(asset.preference ? { preference: asset.preference } : {}) })) } : {}),
       ...(snapshot.promotions.length ? { promotions: snapshot.promotions.map(promotion => ({ ...promotion })) } : {}),
       ...(snapshot.knowledgeContext ? { knowledgeContext: snapshot.knowledgeContext } : {}),
-      usageContext: { workspaceId: task.workspaceId, actionId: usageActionId ?? task.id },
+      usageContext: { workspaceId: task.workspaceId, actionId: usageActionId ?? task.id, runKey: task.id },
     }
     let maxInputTokens: number
     let input: ContentGenerationInput
@@ -4030,6 +4055,9 @@ export class MerchantService {
       generated = await this.options.contentGenerator.generate(boundedInput)
     } catch (error) {
       const code = (error as { code?: unknown })?.code
+      if (code === 'MODEL_TASK_COST_ACTUAL_EXCEEDED' || code === 'MODEL_DAILY_COST_ACTUAL_EXCEEDED') {
+        throw new DomainError(String(code), '模型供应商已完成调用，但实际成本超过安全上限；结果已进入费用核对，不会自动退款或重试', 409, { provider_succeeded: true, reconciliation_required: true })
+      }
       if (code === 'MODEL_USAGE_SETTLEMENT_PENDING' || code === 'MODEL_USAGE_COST_MISSING') {
         throw new DomainError(String(code), '模型供应商已完成调用，但本地用量结算尚未完成；为避免重复计费，当前结果已阻断且不会自动退款', 503, { provider_succeeded: true, ...((error as { receiptKey?: unknown }).receiptKey ? { receipt_key: String((error as { receiptKey: unknown }).receiptKey) } : {}) })
       }
@@ -4065,10 +4093,13 @@ export class MerchantService {
         platform: product.platform,
         directionId: input.prompt,
         product: { title: product.title, ...(product.category ? { category: product.category } : {}), ...(typeof product.price === 'number' ? { price: product.price } : {}), stock: product.stock, skuCount: product.skuCount, ...(product.attributes ? { attributes: product.attributes } : {}) },
-        usageContext: { workspaceId: input.workspaceId, actionId: input.actionId },
+        usageContext: { workspaceId: input.workspaceId, actionId: input.actionId, runKey: input.actionId },
       })
     } catch (error) {
       const code = (error as { code?: unknown })?.code
+      if (code === 'MODEL_TASK_COST_ACTUAL_EXCEEDED' || code === 'MODEL_DAILY_COST_ACTUAL_EXCEEDED') {
+        throw new DomainError(String(code), '模型供应商已完成调用，但实际成本超过安全上限；结果已进入费用核对，不会自动退款或重试', 409, { provider_succeeded: true, reconciliation_required: true })
+      }
       if (code === 'MODEL_USAGE_SETTLEMENT_PENDING' || code === 'MODEL_USAGE_COST_MISSING') {
         throw new DomainError(String(code), '模型供应商已完成调用，但本地用量结算尚未完成；为避免重复计费，当前结果已阻断且不会自动退款', 503, { provider_succeeded: true, ...((error as { receiptKey?: unknown }).receiptKey ? { receipt_key: String((error as { receiptKey: unknown }).receiptKey) } : {}) })
       }

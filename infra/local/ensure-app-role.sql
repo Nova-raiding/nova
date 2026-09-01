@@ -51,6 +51,9 @@ BEGIN
   IF to_regclass('public.model_usage_ledger') IS NOT NULL THEN
     EXECUTE 'REVOKE DELETE, TRUNCATE ON TABLE model_usage_ledger FROM merchant_app';
   END IF;
+  IF to_regclass('public.model_cost_budget_reservations') IS NOT NULL THEN
+    EXECUTE 'REVOKE DELETE, TRUNCATE ON TABLE model_cost_budget_reservations FROM merchant_app';
+  END IF;
   IF to_regclass('public.workspace_operation_audit') IS NOT NULL THEN
     EXECUTE 'REVOKE DELETE, TRUNCATE ON TABLE workspace_operation_audit FROM merchant_app';
   END IF;

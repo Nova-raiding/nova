@@ -69,7 +69,7 @@ describe('MCP surface coverage', () => {
       || method.startsWith('ops.feature-flag')
       || method.startsWith('ops.finance.'),
     )
-    expect(opsDomainMethods).toHaveLength(23)
+    expect(opsDomainMethods).toHaveLength(26)
     expect(MCP_METHODS.filter(method => method.startsWith('ops.audit.'))).toEqual([
       'ops.audit.list', 'ops.audit.platform.list', 'ops.audit.detail', 'ops.audit.export',
     ])

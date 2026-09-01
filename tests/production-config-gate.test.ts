@@ -18,6 +18,9 @@ const socialFlags = [
 function config(overrides: Record<string, boolean> = {}) {
   return [
     'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com',
+    'app_base_url: https://merchant.example.com',
+    'ops_base_url: https://ops.merchant.example.com',
+    'mcp_base_url: https://merchant.example.com',
     'OPS_AUTH_MODE: oidc',
     'auth_enforcement: strict',
     'mcp_authorization_mode: enforce',
@@ -114,12 +117,25 @@ describe('production config gate', () => {
   })
 
   it('accepts the nested production-config OIDC spelling used by the release document', () => {
-    const nested = config().replace('OPS_AUTH_MODE: oidc', 'auth_mode: "oidc_gateway_hmac"')
+    const nested = config()
+      .replace('OPS_AUTH_MODE: oidc', 'auth_mode: "oidc_gateway_hmac"')
+      .replace('app_base_url: https://merchant.example.com\nops_base_url: https://ops.merchant.example.com\nmcp_base_url: https://merchant.example.com', 'public_endpoints:\n  app_base_url: https://merchant.example.com\n  ops_base_url: https://ops.merchant.example.com\ncodex:\n  mcp:\n    base_url: https://merchant.example.com')
     expect(run(nested)()).toContain('production config gate passed')
+  })
+
+  it('rejects ambiguous or unsafe public origin contracts', () => {
+    expect(() => run(`${config()}\npublic_endpoints:\n  app_base_url: https://merchant.example.com`)()).toThrow(/ambiguous/)
+    expect(() => run(config().replace('ops_base_url: https://ops.merchant.example.com', 'ops_base_url: https://merchant.example.com'))()).toThrow(/distinct/)
+    expect(() => run(config().replace('mcp_base_url: https://merchant.example.com', 'mcp_base_url: https://merchant.example.com/mcp'))()).toThrow(/canonical HTTPS origin/)
   })
 
   it('rejects unresolved Secret Manager placeholders', () => {
     expect(() => run(`${config()}\ndatabase_url: \"\${SECRET:DATABASE_URL}\"`)()).toThrow()
+  })
+
+  it('requires a positive per-task model cost cap', () => {
+    expect(() => run(config().replace('maximum_task_cost_cny: "0.50"', 'maximum_task_cost_cny: "0.00"'))()).toThrow(/positive CNY amount/)
+    expect(() => run(config().replace('maximum_task_cost_cny: "0.50"', 'maximum_task_cost_cny: "0.001"'))()).toThrow(/positive CNY amount/)
   })
 
   it('does not treat full-line comments as rendered production settings', () => {

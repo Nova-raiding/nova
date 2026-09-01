@@ -1044,6 +1044,22 @@ function userFacingErrorText(code, details) {
   return retryable.has(code) || code === 'MCP_AUTH_REQUIRED' ? '服务暂时不可用，未确认操作是否完成。请稍后重试；如仍失败，再检查工作区连接。' : '这一步没有完成，当前任务和已有产物已保留。请根据提示修正后再继续。'
 }
 
+function toolErrorPresentation(method, args, code, details) {
+  if (method === 'platform.connect' && code === 'NOT_CONFIGURED') {
+    const platform = merchantPlatformLabel(args?.platform) || '当前平台'
+    return {
+      text: `当前${platform}官方连接尚未启用，暂时无法读取店铺。你的商品图片和确认信息已保留；连接启用后回复“继续”，我会从当前步骤接着处理。`,
+      recovery: {
+        state: 'service_unavailable',
+        user_action_required: false,
+        preserved: ['uploaded_assets', 'confirmed_facts', 'rights_confirmation'],
+        resume_message: '继续',
+      },
+    }
+  }
+  return { text: userFacingErrorText(code, details) }
+}
+
 function safeErrorDetails(details) {
   if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
   const safe = {}
@@ -1741,7 +1757,8 @@ function baseUrl() {
   const parsed = new URL(value)
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('MERCHANT_MCP_BASE_URL must use http or https')
   if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') throw new Error('MERCHANT_MCP_BASE_URL must use https in production')
-  return `${value.replace(/\/+$/, '')}/mcp`
+  if (parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname !== '' && parsed.pathname !== '/')) throw new Error('MERCHANT_MCP_BASE_URL must be a root origin without credentials, path, query, or fragment')
+  return `${parsed.origin}/mcp`
 }
 
 function workspaceId() {
@@ -1843,6 +1860,7 @@ async function callRemote(method, params) {
       try {
         const response = await fetch(baseUrl(), {
           method: 'POST',
+          redirect: 'error',
           headers,
           body: JSON.stringify({ jsonrpc: '2.0', id: `${Date.now()}-${Math.random()}`, method, params: { ...params, ...(scopedWorkspaceId ? { workspace_id: scopedWorkspaceId } : {}) } }),
           signal: controller.signal,
@@ -2164,8 +2182,17 @@ function assetScanResult(uploadResult, asset, assetAction, timedOut = false) {
         ? '这张图片暂时不能继续使用，未用于生成或发布。重新提交后平台会自动复检，无需人工处理。'
         : '图片已收到，正在自动进行安全检查。通过后会等待你的确认再继续生成。',
   }
+  // The upload response can contain a pre-scan continuation snapshot. Once a
+  // later asset.list poll proves the scan reached a terminal state, keeping
+  // that old `waiting_scan` value would send the model back to an already
+  // completed step. Only retain it while the scan is genuinely still pending.
+  const { generationContinuation: initialGenerationContinuation, ...stableUploadResult } = uploadResult && typeof uploadResult === 'object' ? uploadResult : {}
+  const generationContinuation = scanStatus === 'quarantined' && initialGenerationContinuation && typeof initialGenerationContinuation === 'object'
+    ? { generationContinuation: initialGenerationContinuation }
+    : {}
   return {
-    ...uploadResult,
+    ...stableUploadResult,
+    ...generationContinuation,
     ...(asset && typeof asset === 'object' ? { asset } : {}),
     scanStatus,
     scan_status: scanStatus,
@@ -2303,8 +2330,13 @@ async function handle(request) {
     } catch (error) {
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'
       const details = safeErrorDetails(error && typeof error === 'object' ? error.details : undefined)
+      const presentation = toolErrorPresentation(name, args, code, details)
       const rechargeRequired = code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE'
-      const parseRecovery = name === 'asset.parse' && ['ASSET_PARSE_TIMEOUT', 'ASSET_PARSE_FAILED', 'ASSET_PARSE_EMPTY', 'ASSET_PARSE_ATTEMPTS_EXHAUSTED'].includes(code) && typeof args.asset_id === 'string'
+      const parseRecovery = name === 'asset.parse'
+        && ['ASSET_PARSE_TIMEOUT', 'ASSET_PARSE_FAILED', 'ASSET_PARSE_EMPTY', 'ASSET_PARSE_ATTEMPTS_EXHAUSTED'].includes(code)
+        && typeof args.asset_id === 'string'
+        && details?.asset_persisted === true
+        && details?.asset_id === args.asset_id
         ? {
             asset_id: args.asset_id,
             asset_persisted: true,
@@ -2322,8 +2354,8 @@ async function handle(request) {
             },
           }
         : {}
-      const structuredContent = { code, message: safeStructuredErrorMessage(error, code, details), ...(details ? { details } : {}), ...parseRecovery, ...(rechargeRequired ? { show_recharge: true, recharge_reason: '余额或套餐额度不足', recommended_amounts_cny: ['50.00', '100.00', '300.00'], recharge_channels: ['alipay', 'wechat'] } : {}) }
-      return jsonRpc(id, { content: [{ type: 'text', text: userFacingErrorText(code, details) }], structuredContent, ...(toolResultUiMetadata(name) ? { _meta: toolResultUiMetadata(name) } : {}), isError: true })
+      const structuredContent = { code, message: presentation.recovery ? presentation.text : safeStructuredErrorMessage(error, code, details), ...(details ? { details } : {}), ...(presentation.recovery ? { recovery: presentation.recovery } : {}), ...parseRecovery, ...(rechargeRequired ? { show_recharge: true, recharge_reason: '余额或套餐额度不足', recommended_amounts_cny: ['50.00', '100.00', '300.00'], recharge_channels: ['alipay', 'wechat'] } : {}) }
+      return jsonRpc(id, { content: [{ type: 'text', text: presentation.text }], structuredContent, ...(toolResultUiMetadata(name) ? { _meta: toolResultUiMetadata(name) } : {}), isError: true })
     }
   }
   return jsonRpcError(id, -32601, `Method not found: ${String(request.method)}`)

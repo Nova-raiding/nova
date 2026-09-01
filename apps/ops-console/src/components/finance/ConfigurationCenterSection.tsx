@@ -43,7 +43,7 @@ export function ConfigurationCenterSection({
       title="配置中心"
       extra={<Tag color="blue">Revision {settings?.revision ?? "-"}</Tag>}
     >
-      {configurationError ? <Alert type="error" showIcon message="配置中心读取失败" description={configurationError} /> : null}
+      {configurationError ? <Alert type="error" showIcon title="配置中心读取失败" description={configurationError} /> : null}
       <Tabs
         items={[
           {

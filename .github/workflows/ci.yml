@@ -31,6 +31,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Install checksum-pinned kustomize
+        env:
+          KUSTOMIZE_VERSION: v5.8.1
+          KUSTOMIZE_LINUX_AMD64_SHA256: 029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d
+        run: |
+          archive="kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "/tmp/${archive}" "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/${archive}"
+          echo "${KUSTOMIZE_LINUX_AMD64_SHA256}  /tmp/${archive}" | sha256sum --check --strict
+          sudo tar -xzf "/tmp/${archive}" -C /usr/local/bin kustomize
+          kustomize version
       - run: npm run check
       - name: Run explicit repository release gates
         run: npm run test:release-gates
@@ -102,6 +112,7 @@ jobs:
           packages/persistence/src/migration-108.test.ts
           packages/persistence/src/campaign-lifecycle.postgres.test.ts
           packages/persistence/src/model-daily-budget.postgres.test.ts
+          packages/persistence/src/migration-118-release.postgres.test.ts
           packages/persistence/src/storage-quota-repository.postgres.test.ts
           packages/persistence/src/platform-media-spec-repository.test.ts
           packages/persistence/src/mapping-preflight-approval-repository.test.ts

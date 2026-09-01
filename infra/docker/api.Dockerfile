@@ -32,6 +32,17 @@ COPY --from=build /app/dist ./dist
 COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations
 COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
+# The runtime install happens before workspace sources are copied, so npm
+# cannot create links for private @merchant-marketing packages. Compiled code
+# may legitimately import their public exports; wire those package roots after
+# the build artifacts are present.
+RUN mkdir -p node_modules/@merchant-marketing \
+  && for package_dir in packages/*; do \
+       package_name="$(node -p "require('./$package_dir/package.json').name" 2>/dev/null || true)"; \
+       case "$package_name" in \
+         @merchant-marketing/*) ln -sfn "../../$package_dir" "node_modules/$package_name" ;; \
+       esac; \
+     done
 COPY --from=build /app/.release-source/api.manifest /app/.release-source/api.manifest
 COPY --from=build /app/.release-source/api.manifest.sha256 /app/.release-source/api.manifest.sha256
 USER 10001:10001

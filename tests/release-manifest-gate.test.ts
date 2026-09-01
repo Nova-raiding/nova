@@ -20,7 +20,7 @@ function boundManifestFixture() {
   const refs = {} as Record<string, string>
   for (const field of evidenceFields) {
     const document: Record<string, unknown> = { schema_version: '2', release_id: 'release-1', generated_at: '2026-08-29T00:00:00Z', expires_at: '2026-09-02T00:00:00Z', key_id: 'release-security-test', environment: 'production', status: 'pass' }
-    if (field === 'capability' || field === 'payment' || field === 'restore') document.signature_base64 = signProductionEvidence(document, privateKeyPem)
+    if (field === 'capability' || field === 'payment' || field === 'restore' || field === 'codexAppHost') document.signature_base64 = signProductionEvidence(document, privateKeyPem)
     const contents = JSON.stringify(document)
     const path = join(artifactRoot, `${field}.json`)
     writeFileSync(path, contents)
@@ -78,5 +78,13 @@ describe('release manifest production gate', () => {
     writeFileSync(unsigned.evidenceFiles.capability, unsignedContents)
     unsigned.manifest.productionEvidence.capability = `artifact://production/capability.json#${digest(unsignedContents)}`
     expect(validateReleaseManifest(unsigned.manifest, unsigned.options)).toContain('productionEvidence.capability signature_base64 must be a canonical Ed25519 signature')
+
+    const unsignedHost = boundManifestFixture()
+    const host = JSON.parse(readFileSync(unsignedHost.evidenceFiles.codexAppHost, 'utf8')) as Record<string, unknown>
+    delete host.signature_base64
+    const unsignedHostContents = JSON.stringify(host)
+    writeFileSync(unsignedHost.evidenceFiles.codexAppHost, unsignedHostContents)
+    unsignedHost.manifest.productionEvidence.codexAppHost = `artifact://production/codexAppHost.json#${digest(unsignedHostContents)}`
+    expect(validateReleaseManifest(unsignedHost.manifest, unsignedHost.options)).toContain('productionEvidence.codexAppHost signature_base64 must be a canonical Ed25519 signature')
   })
 })

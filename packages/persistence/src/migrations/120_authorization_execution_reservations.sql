@@ -13,13 +13,24 @@ CREATE TABLE IF NOT EXISTS authorization_execution_reservations (
   resource_id TEXT NOT NULL
     CHECK (resource_id = btrim(resource_id) AND length(resource_id) BETWEEN 1 AND 255 AND resource_id !~ '[[:cntrl:]]'),
   scope_hash TEXT NOT NULL CHECK (scope_hash ~ '^[0-9a-f]{64}$'),
-  grant_id UUID REFERENCES ops_access_grants(id),
+  grant_id UUID,
   authorization_revision BIGINT NOT NULL CHECK (authorization_revision >= 0),
   grant_revision INTEGER,
   reserved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK ((grant_id IS NULL AND grant_revision IS NULL)
     OR (grant_id IS NOT NULL AND grant_revision IS NOT NULL AND grant_revision > 0))
 );
+
+-- A grant is tenant-scoped.  The workspace must participate in the
+-- reference, otherwise a valid grant from another workspace can be attached
+-- to this reservation by bypassing the application repository.
+CREATE UNIQUE INDEX IF NOT EXISTS ops_access_grants_workspace_id_key
+  ON ops_access_grants (workspace_id, id);
+
+ALTER TABLE authorization_execution_reservations
+  ADD CONSTRAINT authorization_execution_reservations_grant_workspace_fk
+  FOREIGN KEY (workspace_id, grant_id)
+  REFERENCES ops_access_grants (workspace_id, id);
 
 CREATE INDEX IF NOT EXISTS authorization_execution_reservations_subject_idx
   ON authorization_execution_reservations (subject_identity_id, workspace_id, reserved_at DESC);

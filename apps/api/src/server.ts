@@ -3306,7 +3306,7 @@ async function requestCatalogSync(workspaceId: string, req: IncomingMessage, par
   const platformAccount = isProduction() || fixtureMode ? requireActivePlatformAccount(workspaceId, accountId, platform) : undefined
   await ensureFixtureAccount(workspaceId, platform, accountId)
   const job = service.createSyncJob({ workspaceId, platform, accountId, mode: params.mode === 'full' ? 'full' : 'incremental', ...(typeof params.cursor === 'string' && params.cursor.trim() ? { cursor: params.cursor } : {}) })
-  const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, job.id, 'catalog.sync.execute', { method: 'catalog.sync.start', platform, account_id: accountId, mode: job.mode, ...(job.resumeCursor ? { cursor: job.resumeCursor } : {}) })
+  const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, job.id, 'catalog.sync.execute', { method: 'catalog.sync.start', platform, account_id: accountId, mode: job.mode, resource_revision: job.revision, ...(job.resumeCursor ? { cursor: job.resumeCursor } : {}) })
   if (requiresStrictAuth() && !authorizationSnapshot) {
     service.removeSyncJob(workspaceId, job.id)
     throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '商品同步缺少持久身份授权快照，已拒绝入队', 503)
@@ -14186,15 +14186,6 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     && !requestMemberChecks.has(req) && !exactConsumedGrantForRequest(req, requestWorkspace)) {
     await enforceActiveWorkspaceMember(req, requestWorkspace)
   }
-  // MCP capability evaluation needs the workspace membership projection too.
-  // HTTP routes load it above, but MCP requests intentionally have no HTTP
-  // operation policy. Without this read-through, a strict-auth member's role
-  // is absent while the decision is evaluated; a later member check cannot
-  // repair the already-denied worker authorization snapshot.
-  if (path === '/mcp' && requestWorkspace !== 'unknown' && requestWorkspace && mcpMethodForHydration !== 'workspace.bootstrap'
-    && requestPrincipals.get(req)?.workbench === 'workspace' && !exactConsumedGrantForRequest(req, requestWorkspace)) {
-    await resolveActiveWorkspaceMember(req, requestWorkspace, false)
-  }
   const normalizedPagedCollection = req.method === 'GET'
     && (path === '/v1/products' || path === '/v1/tasks')
     && Boolean(persistence.business)
@@ -15463,7 +15454,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     await ensureFixtureAccount(workspaceId, platform, accountId)
     const job = service.createSyncJob({ workspaceId, platform, accountId, mode: input.mode === 'full' ? 'full' : 'incremental', ...(typeof input.cursor === 'string' && input.cursor.trim() ? { cursor: input.cursor } : {}) })
     const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, job.id, 'catalog.sync.execute', { route: 'POST /v1/sync-jobs', platform, account_id: accountId, mode: job.mode, ...(job.resumeCursor ? { cursor: job.resumeCursor } : {}) })
-    if (requiresStrictAuth() && !authorizationSnapshot) {
+  if (requiresStrictAuth() && !authorizationSnapshot) {
       service.removeSyncJob(workspaceId, job.id)
       throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', 'HTTP 商品同步入口尚未建立等价的持久授权决策，已拒绝入队', 503)
     }

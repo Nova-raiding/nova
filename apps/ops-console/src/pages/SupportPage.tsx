@@ -3,6 +3,7 @@ import { OpsPage } from "../components/OpsPage.js";
 import { SupportCrmExportSection } from "../components/support/SupportCrmExportSection.js";
 import { SupportQueueSection } from "../components/support/SupportQueueSection.js";
 import { SupportTicketDetailSection } from "../components/support/SupportTicketDetailSection.js";
+import { SupportSlaReportSection } from "../components/support/SupportSlaReportSection.js";
 import type { SupportDomainModel } from "../hooks/useSupportDomain.js";
 
 export function SupportPage({ model }: { model: SupportDomainModel }) {
@@ -15,6 +16,7 @@ export function SupportPage({ model }: { model: SupportDomainModel }) {
     >
       {model.error && <Alert role="alert" type="error" showIcon title="客服操作失败" description={model.error} action={<Button style={{ minHeight: 44 }} onClick={() => void model.reload()}>重试</Button>} />}
       <SupportQueueSection model={model} />
+      {!initialLoadFailed ? <SupportSlaReportSection model={model} /> : null}
       {!initialLoadFailed ? <SupportTicketDetailSection model={model} /> : null}
       {!initialLoadFailed ? <SupportCrmExportSection onExport={model.exportCrm} /> : null}
     </OpsPage>

@@ -9,7 +9,7 @@ const sha256 = (value: Buffer | string) => createHash('sha256').update(value).di
 const requiredArtifacts = ['VERSION', 'CHANGELOG.md', 'release-metadata.json', 'apps/plugin/.codex-plugin/plugin.json', 'apps/plugin/package.json', 'apps/plugin/skills/merchant-marketing/SKILL.md', 'apps/plugin/mcp/bridge.mjs', '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs', 'apps/api/openapi.yaml', 'packages/contracts/src/mcp.ts']
 const evidenceFields = ['capability', 'capacity', 'modelRelay', 'payment', 'restore', 'objectStorage', 'codexAppHost', 'canonicalCutover'] as const
 type EvidenceField = typeof evidenceFields[number]
-const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore'])
+const signedEvidenceFields = new Set<EvidenceField>(['capability', 'payment', 'restore', 'codexAppHost'])
 const immutableProductionArtifact = /^artifact:\/\/production\/([A-Za-z0-9._/-]+)#([a-f0-9]{64})$/u
 const compare = ([left]: [string, unknown], [right]: [string, unknown]) => left < right ? -1 : left > right ? 1 : 0
 const canonical = (value: unknown): string => Array.isArray(value)

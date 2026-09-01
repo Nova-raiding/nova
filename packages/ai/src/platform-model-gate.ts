@@ -24,6 +24,23 @@ export interface PlatformModelRequestCostResult {
   reasons: string[]
 }
 
+export function evaluatePlatformModelTaskCostLimit(source: ModelEnvironment): PlatformModelRequestCostResult {
+  const limitCny = Number(source.MODEL_MAX_TASK_COST_CNY ?? 0)
+  const dailyCnyLimit = Number(source.MODEL_DAILY_CNY_LIMIT ?? 0)
+  const reasons: string[] = []
+  if (!Number.isFinite(limitCny) || limitCny <= 0) reasons.push('task_cny_limit_missing_or_invalid')
+  if (Number.isFinite(limitCny) && limitCny > 0 && Number.isFinite(dailyCnyLimit) && dailyCnyLimit > 0 && limitCny > dailyCnyLimit) reasons.push('task_cny_limit_exceeds_daily_limit')
+  return { ready: reasons.length === 0, costCny: 0, limitCny: Number.isFinite(limitCny) && limitCny > 0 ? limitCny : 0, reasons }
+}
+
+export function evaluatePlatformModelTaskRequestCost(costCny: number, source: ModelEnvironment): PlatformModelRequestCostResult {
+  const limit = evaluatePlatformModelTaskCostLimit(source)
+  const reasons = [...limit.reasons]
+  if (!Number.isFinite(costCny) || costCny < 0) reasons.push('request_cost_missing_or_invalid')
+  if (reasons.length === 0 && costCny > limit.limitCny) reasons.push('request_cost_exceeds_task_limit')
+  return { ready: reasons.length === 0, costCny: Number.isFinite(costCny) && costCny >= 0 ? costCny : 0, limitCny: limit.limitCny, reasons }
+}
+
 export interface PlatformModelBudgetEstimate {
   ready: boolean
   amountCny: number
@@ -66,14 +83,14 @@ export function evaluatePlatformModelGate(source: ModelEnvironment, kind: Platfo
     ? source.VIDEO_MODEL_RELAY_API_KEY?.trim() || source.MODEL_RELAY_API_KEY?.trim()
     : source.MODEL_RELAY_API_KEY?.trim()
   const model = kind === 'text'
-    ? source.AI_MODEL?.trim() ?? source.MODEL_ID?.trim()
+    ? source.AI_MODEL?.trim() || source.MODEL_ID?.trim()
     : kind === 'image'
-      ? source.IMAGE_MODEL?.trim() ?? source.AI_IMAGE_MODEL?.trim()
+      ? source.IMAGE_MODEL?.trim() || source.AI_IMAGE_MODEL?.trim()
       : kind === 'image_edit'
-        ? source.IMAGE_EDIT_MODEL?.trim() ?? source.IMAGE_MODEL?.trim() ?? source.AI_IMAGE_MODEL?.trim()
+        ? source.IMAGE_EDIT_MODEL?.trim() || source.IMAGE_MODEL?.trim() || source.AI_IMAGE_MODEL?.trim()
       : kind === 'ocr'
-        ? source.OCR_MODEL?.trim() ?? source.AI_VISION_MODEL?.trim()
-        : source.VIDEO_MODEL?.trim() ?? source.AI_VIDEO_MODEL?.trim()
+        ? source.OCR_MODEL?.trim() || source.AI_VISION_MODEL?.trim()
+        : source.VIDEO_MODEL?.trim() || source.AI_VIDEO_MODEL?.trim()
   const reasons: string[] = []
   let https = false
   let endpointHost: string | undefined

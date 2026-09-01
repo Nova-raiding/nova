@@ -1,5 +1,5 @@
 import { ClockCircleOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { Space, Tag, Typography } from "antd";
+import { Button, Space, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import type { AuthorizationProjection } from "../../authz/authorization.js";
 import type { OpsSession } from "../../types/ops.js";
@@ -27,6 +27,10 @@ export function formatJitRemaining(milliseconds: number) {
   return `${Math.floor(totalSeconds / 60).toString().padStart(2, "0")}:${(totalSeconds % 60).toString().padStart(2, "0")}`;
 }
 
+export function activeJitGrantForNow<T extends { expires_at?: string }>(grants: readonly T[] | undefined, now: number) {
+  return grants?.find((grant) => !grant.expires_at || Date.parse(grant.expires_at) > now);
+}
+
 export function RoleScopeBar({
   session,
   authorization,
@@ -35,6 +39,7 @@ export function RoleScopeBar({
   switching,
   onWorkbenchChange,
   onJitExpired,
+  onJitExit,
 }: {
   session?: OpsSession;
   authorization: AuthorizationProjection;
@@ -43,15 +48,18 @@ export function RoleScopeBar({
   switching?: boolean;
   onWorkbenchChange?: (workbench: OpsWorkbench) => void;
   onJitExpired?: () => void;
+  onJitExit?: () => void;
 }) {
   const roles = authorization.roles;
   const primaryRole = roles[0] ? roleLabels[roles[0]] ?? roles[0] : "权限未验证";
-  const activeGrant = session?.temporary_grants?.find(
-    (grant) => !grant.expires_at || Date.parse(grant.expires_at) > Date.now(),
-  );
   const [now, setNow] = useState(() => Date.now());
+  const candidateGrant = activeJitGrantForNow(session?.temporary_grants, Date.now());
+  // Use the rendered clock for visibility as well as the callback. This closes
+  // the small async gap between expiry and the replacement session response:
+  // an expired grant must disappear immediately, even if reload is in flight.
+  const activeGrant = activeJitGrantForNow(candidateGrant ? [candidateGrant] : undefined, now);
   useEffect(() => {
-    const expiresAt = activeGrant?.expires_at ? Date.parse(activeGrant.expires_at) : NaN;
+    const expiresAt = candidateGrant?.expires_at ? Date.parse(candidateGrant.expires_at) : NaN;
     if (!Number.isFinite(expiresAt)) return undefined;
     let expiredNotified = false;
     const tick = () => {
@@ -65,7 +73,7 @@ export function RoleScopeBar({
     tick();
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
-  }, [activeGrant?.id, activeGrant?.expires_at, onJitExpired]);
+  }, [candidateGrant?.id, candidateGrant?.expires_at, onJitExpired]);
   const workbench = activeWorkbench ?? session?.workbench ?? (authorization.scope.kind === "platform" ? "platform" : "workspace");
   // Candidate workbenches come only from the server projection. Raw roles are
   // never used to manufacture a switch target.
@@ -89,6 +97,7 @@ export function RoleScopeBar({
               范围 {activeGrant.resource_scope?.type ?? "workspace"}:{activeGrant.resource_scope?.ids?.join(", ") ?? activeGrant.workspace_id ?? "未返回"}
               {activeGrant.max_uses !== undefined ? ` · 使用 ${activeGrant.use_count ?? 0}/${activeGrant.max_uses}` : ""}
             </Typography.Text>
+            {onJitExit ? <Button size="small" onClick={onJitExit} aria-label="退出当前临时授权">退出临时授权</Button> : null}
           </span>
         ) : null}
       </Space>

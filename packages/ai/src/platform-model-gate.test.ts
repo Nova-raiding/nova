@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelRequestCost } from './platform-model-gate.js'
+import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelRequestCost, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost } from './platform-model-gate.js'
 
 describe('platform-owned model gate', () => {
   it('requires an explicit versioned conservative estimate for every modality', () => {
@@ -9,6 +9,14 @@ describe('platform-owned model gate', () => {
       expect.objectContaining({ ready: true, amountCny: 0.25, version: 'pricing-2026-08-29' }),
       expect.objectContaining({ ready: true, amountCny: 1.5 }), expect.objectContaining({ ready: true, amountCny: 1.75 }), expect.objectContaining({ ready: true, amountCny: 0.4 }), expect.objectContaining({ ready: true, amountCny: 600 }),
     ])
+  })
+
+  it('keeps the per-task cap distinct from the workspace daily budget', () => {
+    const source = { MODEL_MAX_TASK_COST_CNY: '0.50', MODEL_DAILY_CNY_LIMIT: '100' }
+    expect(evaluatePlatformModelTaskCostLimit(source)).toMatchObject({ ready: true, limitCny: 0.5 })
+    expect(evaluatePlatformModelTaskRequestCost(0.5, source)).toMatchObject({ ready: true })
+    expect(evaluatePlatformModelTaskRequestCost(0.500001, source)).toMatchObject({ ready: false, reasons: ['request_cost_exceeds_task_limit'] })
+    expect(evaluatePlatformModelTaskCostLimit({ MODEL_MAX_TASK_COST_CNY: '101', MODEL_DAILY_CNY_LIMIT: '100' })).toMatchObject({ ready: false, reasons: ['task_cny_limit_exceeds_daily_limit'] })
   })
   it('requires HTTPS, platform credential and pinned model', () => {
     expect(evaluatePlatformModelGate({ AI_BASE_URL: 'https://model.example', AI_API_KEY: 'platform-secret', AI_MODEL: 'text-v1' }, 'text')).toMatchObject({ ready: false, reasons: ['endpoint_missing', 'api_key_missing'] })
@@ -39,5 +47,14 @@ describe('platform-owned model gate', () => {
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay-key' }, 'video')).toMatchObject({ ready: false, reasons: ['model_missing'] })
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'https://relay.example', VIDEO_MODEL_RELAY_API_KEY: 'video-key', VIDEO_MODEL: 'video-v1' }, 'video')).toMatchObject({ ready: true, endpointHost: 'relay.example' })
     expect(evaluatePlatformModelGate({ MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay-key', IMAGE_MODEL: 'image-v1' }, 'image_edit')).toMatchObject({ ready: true, endpointHost: 'relay.example' })
+  })
+
+  it('treats whitespace-only primary model variables as missing for every modality', () => {
+    const relay = { MODEL_RELAY_BASE_URL: 'https://relay.example', MODEL_RELAY_API_KEY: 'relay-key' }
+    expect(evaluatePlatformModelGate({ ...relay, AI_MODEL: '  ', MODEL_ID: 'text-v1' }, 'text')).toMatchObject({ ready: true })
+    expect(evaluatePlatformModelGate({ ...relay, IMAGE_MODEL: '  ', AI_IMAGE_MODEL: 'image-v1' }, 'image')).toMatchObject({ ready: true })
+    expect(evaluatePlatformModelGate({ ...relay, IMAGE_EDIT_MODEL: '  ', IMAGE_MODEL: '  ', AI_IMAGE_MODEL: 'image-v1' }, 'image_edit')).toMatchObject({ ready: true })
+    expect(evaluatePlatformModelGate({ ...relay, OCR_MODEL: '  ', AI_VISION_MODEL: 'ocr-v1' }, 'ocr')).toMatchObject({ ready: true })
+    expect(evaluatePlatformModelGate({ ...relay, VIDEO_MODEL: '  ', AI_VIDEO_MODEL: 'video-v1' }, 'video')).toMatchObject({ ready: true })
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedModelUsageSettlementDecisions, MemoryModelUsageRepository, ModelCostBudgetActualExceededError, ModelCostBudgetExceededError, PostgresModelUsageRepository } from './model-usage-repository.js'
+import { allowedModelUsageSettlementDecisions, MemoryModelUsageRepository, ModelCostBudgetActualExceededError, ModelCostBudgetExceededError, ModelRunCostBudgetActualExceededError, ModelRunCostBudgetExceededError, PostgresModelUsageRepository } from './model-usage-repository.js'
 import type { SqlClient, SqlPool } from './repository.js'
 
 type Row = Record<string, unknown>
@@ -57,6 +57,91 @@ describe('MemoryModelUsageRepository', () => {
     expect(first).toMatchObject(context)
     await expect(repository.record({ workspaceId: 'ws_context', actionId: 'action_1', contextLinkId: 'context_link_1', modality: 'text', model: 'relay-text', providerRequestId: 'req_partial', costCny: 0.01 })).rejects.toThrow('MODEL_USAGE_CONTEXT_PAIR_REQUIRED')
     await expect(repository.record({ workspaceId: 'ws_context', actionId: 'action_1', contextLinkId: 'context_link_2', contextHash: context.contextHash, modality: 'text', model: 'relay-text', providerRequestId: 'req_context', costCny: 0.01 })).rejects.toThrow('MODEL_USAGE_CONTEXT_CONFLICT')
+  })
+
+  it('binds usage to an existing budget reservation and rejects linkage drift', async () => {
+    const repository = new MemoryModelUsageRepository()
+    await repository.reserveDailyBudget({ workspaceId: 'ws_budget_link', reservationKey: 'reservation_1', runKey: 'run_1', modality: 'text', model: 'relay-text', estimateCny: 0.1, estimateVersion: 'pricing-v1', dailyLimitCny: 1, runLimitCny: 0.5 })
+    const linked = await repository.record({ workspaceId: 'ws_budget_link', actionId: 'action_1', budgetReservationKey: 'reservation_1', budgetRunKey: 'run_1', modality: 'text', model: 'relay-text', providerRequestId: 'provider_linked', costCny: 0.08 })
+    expect(linked).toMatchObject({ budgetReservationKey: 'reservation_1', budgetRunKey: 'run_1' })
+    await expect(repository.record({ workspaceId: 'ws_budget_link', actionId: 'action_1', budgetReservationKey: 'reservation_1', budgetRunKey: 'wrong_run', modality: 'text', model: 'relay-text', providerRequestId: 'provider_linked', costCny: 0.08 })).rejects.toThrow('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+    await expect(repository.record({ workspaceId: 'ws_budget_link', actionId: 'action_2', budgetReservationKey: 'missing', budgetRunKey: 'run_1', modality: 'text', model: 'relay-text', providerRequestId: 'provider_missing', costCny: 0.01 })).rejects.toThrow('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+  })
+
+  it('records and settles one exact provider receipt atomically without advancing either revision on replay', async () => {
+    const repository = new MemoryModelUsageRepository()
+    await repository.reserveDailyBudget({ workspaceId: 'ws_atomic_replay', reservationKey: 'reservation_1', runKey: 'run_1', modality: 'text', model: 'relay-text', estimateCny: 0.4, estimateVersion: 'pricing-v4', dailyLimitCny: 5, runLimitCny: 1, at: '2026-08-29T01:00:00.000Z' })
+    const receipt = { workspaceId: 'ws_atomic_replay', actionId: 'action_1', budgetReservationKey: 'reservation_1', budgetRunKey: 'run_1', modality: 'text' as const, model: 'relay-text', providerRequestId: 'provider_exact', inputTokens: 10, outputTokens: 5, totalTokens: 15, costCny: 0.3, settlementStatus: 'pending_wallet' as const, observedAt: '2026-08-29T01:01:00.000Z' }
+
+    const first = await repository.recordUsageAndSettleBudget(receipt)
+    const replay = await repository.recordUsageAndSettleBudget(receipt)
+
+    expect(first).toMatchObject({ usage: { providerRequestId: 'provider_exact', costCny: 0.3, budgetReservationKey: 'reservation_1' }, reservation: { status: 'settled', actualCostCny: 0.3 }, snapshot: { requestCny: 0.3 }, runSnapshot: { requestCny: 0.3 } })
+    expect(replay.usage.id).toBe(first.usage.id)
+    expect(replay.usage.revision).toBe(first.usage.revision)
+    expect(replay.reservation.revision).toBe(first.reservation.revision)
+    expect(await repository.list('ws_atomic_replay')).toHaveLength(1)
+  })
+
+  it('rejects cost or budget-link drift for the same atomic receipt', async () => {
+    const repository = new MemoryModelUsageRepository()
+    const budget = { workspaceId: 'ws_atomic_conflict', runKey: 'run_1', modality: 'text' as const, model: 'relay-text', estimateCny: 0.4, estimateVersion: 'pricing-v4', dailyLimitCny: 5, runLimitCny: 2, at: '2026-08-29T01:00:00.000Z' }
+    await repository.reserveDailyBudget({ ...budget, reservationKey: 'reservation_1' })
+    await repository.reserveDailyBudget({ ...budget, reservationKey: 'reservation_2' })
+    const receipt = { workspaceId: budget.workspaceId, actionId: 'action_1', budgetReservationKey: 'reservation_1', budgetRunKey: budget.runKey, modality: budget.modality, model: budget.model, providerRequestId: 'provider_conflict', totalTokens: 10, costCny: 0.2, settlementStatus: 'pending_wallet' as const, observedAt: '2026-08-29T01:01:00.000Z' }
+    await repository.recordUsageAndSettleBudget(receipt)
+
+    await expect(repository.recordUsageAndSettleBudget({ ...receipt, costCny: 0.21 })).rejects.toThrow('MODEL_USAGE_COST_CONFLICT')
+    await expect(repository.recordUsageAndSettleBudget({ ...receipt, budgetReservationKey: 'reservation_2' })).rejects.toThrow('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+    expect(await repository.list(budget.workspaceId)).toHaveLength(1)
+  })
+
+  it('sums multiple immutable receipts linked to one reservation', async () => {
+    const repository = new MemoryModelUsageRepository()
+    const workspaceId = 'ws_atomic_cumulative'
+    await repository.reserveDailyBudget({ workspaceId, reservationKey: 'reservation_1', runKey: 'run_1', modality: 'image', model: 'relay-image', estimateCny: 0.8, estimateVersion: 'pricing-v4', dailyLimitCny: 5, runLimitCny: 2, at: '2026-08-29T01:00:00.000Z' })
+    const common = { workspaceId, actionId: 'action_1', budgetReservationKey: 'reservation_1', budgetRunKey: 'run_1', modality: 'image' as const, model: 'relay-image', settlementStatus: 'pending_wallet' as const }
+    const first = await repository.recordUsageAndSettleBudget({ ...common, providerRequestId: 'provider_part_1', costCny: 0.25, observedAt: '2026-08-29T01:01:00.000Z' })
+    const firstReservationRevision = first.reservation.revision
+    const firstActualCostCny = first.reservation.actualCostCny
+    const second = await repository.recordUsageAndSettleBudget({ ...common, providerRequestId: 'provider_part_2', costCny: 0.35, observedAt: '2026-08-29T01:02:00.000Z' })
+
+    expect(firstActualCostCny).toBe(0.25)
+    expect(second.reservation).toMatchObject({ actualCostCny: 0.6, status: 'settled' })
+    expect(second.reservation.revision).toBe(firstReservationRevision + 1)
+    expect(await repository.list(workspaceId)).toHaveLength(2)
+  })
+
+  it('keeps an atomic actual overrun and its receipt durable after throwing', async () => {
+    const repository = new MemoryModelUsageRepository()
+    const reservation = { workspaceId: 'ws_atomic_overrun', reservationKey: 'reservation_1', runKey: 'run_1', modality: 'video' as const, model: 'relay-video', estimateCny: 0.5, estimateVersion: 'pricing-v4', dailyLimitCny: 10, runLimitCny: 1, at: '2026-08-29T01:00:00.000Z' }
+    await repository.reserveDailyBudget(reservation)
+
+    await expect(repository.recordUsageAndSettleBudget({ workspaceId: reservation.workspaceId, actionId: 'action_1', budgetReservationKey: reservation.reservationKey, budgetRunKey: reservation.runKey, modality: reservation.modality, model: reservation.model, providerRequestId: 'provider_overrun', costCny: 1.2, settlementStatus: 'pending_wallet', observedAt: '2026-08-29T01:01:00.000Z' })).rejects.toBeInstanceOf(ModelRunCostBudgetActualExceededError)
+
+    expect(await repository.list(reservation.workspaceId)).toEqual([expect.objectContaining({ providerRequestId: 'provider_overrun', costCny: 1.2 })])
+    await expect(repository.reserveDailyBudget(reservation)).resolves.toMatchObject({ reused: true, reservation: { status: 'over_budget', overBudgetReason: 'run', actualCostCny: 1.2 } })
+  })
+
+  it('does not release an active reservation after a linked provider receipt is durable', async () => {
+    const repository = new MemoryModelUsageRepository()
+    const workspaceId = 'ws_atomic_release_guard'
+    await repository.reserveDailyBudget({ workspaceId, reservationKey: 'reservation_1', runKey: 'run_1', modality: 'ocr', model: 'relay-ocr', estimateCny: 0.2, estimateVersion: 'pricing-v4', dailyLimitCny: 5, runLimitCny: 1 })
+    await repository.record({ workspaceId, actionId: 'action_1', budgetReservationKey: 'reservation_1', budgetRunKey: 'run_1', modality: 'ocr', model: 'relay-ocr', providerRequestId: 'provider_recorded_before_crash', costCny: 0.1, settlementStatus: 'pending_wallet' })
+
+    await expect(repository.releaseDailyBudget({ workspaceId, reservationKey: 'reservation_1' })).resolves.toMatchObject({ status: 'active' })
+    await expect(repository.recordUsageAndSettleBudget({ workspaceId, actionId: 'action_1', budgetReservationKey: 'reservation_1', budgetRunKey: 'run_1', modality: 'ocr', model: 'relay-ocr', providerRequestId: 'provider_recorded_before_crash', costCny: 0.1, settlementStatus: 'pending_wallet' })).resolves.toMatchObject({ reservation: { status: 'settled', actualCostCny: 0.1 } })
+  })
+
+  it('keeps one shared run cap across UTC days when daily and run limits are equal during atomic settlement', async () => {
+    const repository = new MemoryModelUsageRepository()
+    const base = { workspaceId: 'ws_atomic_cross_day', runKey: 'run_cross_day', modality: 'video' as const, model: 'relay-video', estimateVersion: 'pricing-v4', dailyLimitCny: 1, runLimitCny: 1 }
+    await repository.reserveDailyBudget({ ...base, reservationKey: 'day_one', estimateCny: 0.4, at: '2026-08-29T23:59:00.000Z' })
+    await repository.recordUsageAndSettleBudget({ workspaceId: base.workspaceId, actionId: 'action_day_one', budgetReservationKey: 'day_one', budgetRunKey: base.runKey, modality: base.modality, model: base.model, providerRequestId: 'provider_day_one_atomic', costCny: 0.4, settlementStatus: 'pending_wallet', observedAt: '2026-08-29T23:59:30.000Z' })
+    await repository.reserveDailyBudget({ ...base, reservationKey: 'day_two', estimateCny: 0.5, at: '2026-08-30T00:01:00.000Z' })
+    await repository.recordUsageAndSettleBudget({ workspaceId: base.workspaceId, actionId: 'action_day_two', budgetReservationKey: 'day_two', budgetRunKey: base.runKey, modality: base.modality, model: base.model, providerRequestId: 'provider_day_two_atomic', costCny: 0.5, settlementStatus: 'pending_wallet', observedAt: '2026-08-30T00:01:30.000Z' })
+
+    await expect(repository.reserveDailyBudget({ ...base, reservationKey: 'day_two_blocked', estimateCny: 0.2, at: '2026-08-30T00:02:00.000Z' })).rejects.toBeInstanceOf(ModelRunCostBudgetExceededError)
   })
 
   it('scans every receipt for an action without the workspace list limit', async () => {
@@ -145,6 +230,23 @@ describe('MemoryModelUsageRepository', () => {
     const results = await Promise.allSettled([reserve('a'), reserve('b')])
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
     expect(results.filter(result => result.status === 'rejected')).toHaveLength(1)
+  })
+
+  it('enforces a shared per-run cap independently from the daily workspace cap', async () => {
+    const repository = new MemoryModelUsageRepository()
+    const base = { workspaceId: 'ws_run_budget', runKey: 'run_1', modality: 'image' as const, model: 'relay-image', estimateVersion: 'pricing-v2', dailyLimitCny: 10, runLimitCny: 1, at: '2026-08-29T01:00:00.000Z' }
+    await repository.reserveDailyBudget({ ...base, reservationKey: 'request_a', estimateCny: 0.6 })
+    await expect(repository.reserveDailyBudget({ ...base, reservationKey: 'request_b', estimateCny: 0.5 })).rejects.toBeInstanceOf(ModelRunCostBudgetExceededError)
+    await repository.settleDailyBudget({ workspaceId: base.workspaceId, reservationKey: 'request_a', actualCostCny: 0.6, providerRequestId: 'provider_a' })
+    await expect(repository.reserveDailyBudget({ ...base, reservationKey: 'request_c', estimateCny: 0.5 })).rejects.toBeInstanceOf(ModelRunCostBudgetExceededError)
+  })
+
+  it('enforces a shared run across UTC days when the run and daily limits are equal', async () => {
+    const repository = new MemoryModelUsageRepository()
+    const base = { workspaceId: 'ws_cross_day_run', runKey: 'run_cross_day', modality: 'video' as const, model: 'relay-video', estimateVersion: 'pricing-v3', dailyLimitCny: 1, runLimitCny: 1 }
+    await repository.reserveDailyBudget({ ...base, reservationKey: 'day_one', estimateCny: 0.6, at: '2026-08-29T23:59:00.000Z' })
+    await repository.settleDailyBudget({ workspaceId: base.workspaceId, reservationKey: 'day_one', actualCostCny: 0.6, providerRequestId: 'provider_day_one' })
+    await expect(repository.reserveDailyBudget({ ...base, reservationKey: 'day_two', estimateCny: 0.5, at: '2026-08-30T00:01:00.000Z' })).rejects.toBeInstanceOf(ModelRunCostBudgetExceededError)
   })
 })
 

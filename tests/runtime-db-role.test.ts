@@ -56,6 +56,15 @@ describe('runtime database role verification', () => {
     )
   })
 
+  it('keeps model cost budget reservations non-destructive after local compatibility grants', () => {
+    const bootstrap = readFileSync('infra/local/ensure-app-role.sql', 'utf8')
+    const source = readFileSync(scriptPath, 'utf8')
+
+    expect(bootstrap).toContain('REVOKE DELETE, TRUNCATE ON TABLE model_cost_budget_reservations FROM merchant_app')
+    expect(source).toContain("has_table_privilege(current_user, 'public.model_cost_budget_reservations', 'DELETE,TRUNCATE')")
+    expect(source).toContain('tenant runtime role must not delete or truncate model cost budget reservations')
+  })
+
   it('remains valid POSIX shell', () => {
     expect(execFileSync('sh', ['-n', scriptPath], { encoding: 'utf8' })).toBe('')
   })

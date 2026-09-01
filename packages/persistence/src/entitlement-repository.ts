@@ -36,16 +36,24 @@ export class EntitlementConsumptionIdempotencyConflictError extends Error {
   constructor() { super('entitlement consumption idempotency key was reused with a different intent'); this.name = 'EntitlementConsumptionIdempotencyConflictError' }
 }
 
+export class EntitlementGrantIdempotencyConflictError extends Error {
+  readonly code = 'ENTITLEMENT_GRANT_IDEMPOTENCY_CONFLICT'
+  constructor() { super('entitlement grant idempotency key was reused with a different intent'); this.name = 'EntitlementGrantIdempotencyConflictError' }
+}
+
 const projection = 'id, workspace_id AS "workspaceId", order_no AS "orderNo", addon_code AS "addonCode", kind, granted_units AS "grantedUnits", used_units AS "usedUnits", granted_units-used_units AS "remainingUnits", created_at AS "createdAt"'
 
 export class MemoryEntitlementRepository implements EntitlementRepository {
   private readonly items = new Map<string, SubscriptionEntitlement>()
   private readonly consumptions = new Map<string, EntitlementConsumption>()
   async grant(input: { workspaceId: string; orderNo: string; addonCode: string; kind: EntitlementKind; units: number }) {
+    if (!Number.isInteger(input.units) || input.units <= 0) throw new Error('ENTITLEMENT_UNITS_INVALID')
     const key = `${input.workspaceId}:${input.orderNo}:${input.addonCode}`
     const existing = this.items.get(key)
-    if (existing) return existing
-    if (!Number.isInteger(input.units) || input.units <= 0) throw new Error('ENTITLEMENT_UNITS_INVALID')
+    if (existing) {
+      if (existing.kind !== input.kind || existing.grantedUnits !== input.units) throw new EntitlementGrantIdempotencyConflictError()
+      return existing
+    }
     const item = { id: `ent_${randomUUID()}`, ...input, grantedUnits: input.units, usedUnits: 0, remainingUnits: input.units, createdAt: new Date().toISOString() }
     this.items.set(key, item)
     return item
@@ -75,10 +83,16 @@ export class MemoryEntitlementRepository implements EntitlementRepository {
 export class PostgresEntitlementRepository implements EntitlementRepository {
   constructor(private readonly pool: SqlPool) {}
   async grant(input: { workspaceId: string; orderNo: string; addonCode: string; kind: EntitlementKind; units: number }) {
+    if (!Number.isInteger(input.units) || input.units <= 0) throw new Error('ENTITLEMENT_UNITS_INVALID')
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
-      const result = await client.query<SubscriptionEntitlement>(`INSERT INTO subscription_entitlements (id, workspace_id, order_no, addon_code, kind, granted_units) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id, order_no, addon_code) DO UPDATE SET addon_code=EXCLUDED.addon_code RETURNING ${projection}`, [randomUUID(), input.workspaceId, input.orderNo, input.addonCode, input.kind, input.units])
-      return result.rows[0]!
+      const inserted = await client.query<SubscriptionEntitlement>(`INSERT INTO subscription_entitlements (id, workspace_id, order_no, addon_code, kind, granted_units) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id, order_no, addon_code) DO NOTHING RETURNING ${projection}`, [randomUUID(), input.workspaceId, input.orderNo, input.addonCode, input.kind, input.units])
+      if (inserted.rows[0]) return inserted.rows[0]
+      const existing = await client.query<SubscriptionEntitlement>(`SELECT ${projection} FROM subscription_entitlements WHERE workspace_id=$1 AND order_no=$2 AND addon_code=$3 FOR UPDATE`, [input.workspaceId, input.orderNo, input.addonCode])
+      const entitlement = existing.rows[0]
+      if (!entitlement) throw new Error('ENTITLEMENT_GRANT_IDEMPOTENCY_RECORD_MISSING')
+      if (entitlement.kind !== input.kind || entitlement.grantedUnits !== input.units) throw new EntitlementGrantIdempotencyConflictError()
+      return entitlement
     })
   }
   async list(workspaceId: string) {

@@ -6,6 +6,7 @@ import { createWorkerRequestProof } from '../../../packages/security/src/worker-
 const harness = vi.hoisted(() => ({
   modelUsage: null as null | {
     record(input: Record<string, unknown>): Promise<Record<string, unknown> & { id: string; revision: number }>
+    recordUsageAndSettleBudget(input: Record<string, unknown>): Promise<unknown>
     list(workspaceId: string, limit?: number): Promise<Array<Record<string, unknown>>>
     reserveDailyBudget(input: Record<string, unknown>): Promise<unknown>
     settleDailyBudget(input: Record<string, unknown>): Promise<unknown>
@@ -36,6 +37,11 @@ vi.mock('../../../packages/persistence/src/index.js', async importOriginal => {
     override async settleDailyBudget(input: Parameters<ModelUsageRepository['settleDailyBudget']>[0]) {
       harness.budgetSettlements.push({ ...input })
       return super.settleDailyBudget(input)
+    }
+
+    override async recordUsageAndSettleBudget(input: Parameters<ModelUsageRepository['recordUsageAndSettleBudget']>[0]) {
+      harness.budgetSettlements.push({ workspaceId: input.workspaceId, reservationKey: input.budgetReservationKey, actualCostCny: input.costCny, providerRequestId: input.providerRequestId })
+      return super.recordUsageAndSettleBudget(input)
     }
 
     override async releaseDailyBudget(input: Parameters<ModelUsageRepository['releaseDailyBudget']>[0]) {
@@ -151,7 +157,7 @@ async function generate(workspaceId: string, actionId: string) {
   return api.service.generateOneSentenceText({ workspaceId, productId: owned.id, prompt: '生成一句事实安全文案', actionId })
 }
 
-async function authorizeAction(workspaceId: string, actionId: string, settlement: 'wallet' | 'included_quota') {
+async function authorizeAction(workspaceId: string, actionId: string, settlement: 'wallet' | 'included_quota' | 'entitlement', runKey = actionId) {
   await harness.actionLedger!.record({
     workspaceId,
     actionKey: actionId,
@@ -159,14 +165,14 @@ async function authorizeAction(workspaceId: string, actionId: string, settlement
     settlement,
     state: 'settled',
     units: 1,
-    amountFen: 1,
+    amountFen: settlement === 'entitlement' ? 0 : 1,
     actorId: 'settlement-test',
     description: '模型生成调用',
-    reservedAmountFen: 1,
+    reservedAmountFen: settlement === 'entitlement' ? 0 : 1,
     multiplier: 1,
-    settlementStatus: settlement === 'wallet' ? 'authorized' : 'settled',
+    settlementStatus: settlement === 'wallet' || settlement === 'entitlement' ? 'authorized' : 'settled',
   })
-  await harness.modelUsage!.reserveDailyBudget({ workspaceId, reservationKey: actionId, modality: 'text', model: 'relay-text-test', estimateCny: 1, estimateVersion: 'test-v1', dailyLimitCny: 100 })
+  await harness.modelUsage!.reserveDailyBudget({ workspaceId, reservationKey: actionId, runKey, modality: 'text', model: 'relay-text-test', estimateCny: 1, estimateVersion: 'test-v1', dailyLimitCny: 100, runLimitCny: 10 })
 }
 
 beforeAll(async () => {
@@ -181,6 +187,7 @@ beforeAll(async () => {
   vi.stubEnv('MODEL_RPM_LIMIT', '60')
   vi.stubEnv('MODEL_TPM_LIMIT', '120000')
   vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '100')
+  vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '10')
   vi.stubEnv('MODEL_TEXT_MAX_REQUEST_CNY', '1')
   vi.stubEnv('MODEL_COST_ESTIMATE_VERSION', 'test-v1')
   vi.stubEnv('MODEL_RELAY_TEXT_COST_EVIDENCE', 'true')
@@ -226,6 +233,18 @@ describe('API model usage settlement invariants', () => {
     }
   })
 
+  it('rejects a provider usage receipt without a run key before settlement', async () => {
+    const workspaceId = `ws_worker_usage_missing_run_${Date.now()}`
+    const base = await startApi()
+    try {
+      const response = await postWorkerUsage(base, workspaceId, { workspaceId, actionId: `model:missing-run-${Date.now()}`, modality: 'text', model: 'relay-text', providerRequestId: `missing-run-${Date.now()}`, inputTokens: 1, outputTokens: 1, totalTokens: 2, costCny: 0.01 })
+      expect(response).toMatchObject({ status: 400, body: { error: { code: 'INVALID_REQUEST' } } })
+      expect(await harness.modelUsage!.list(workspaceId, 10)).toHaveLength(0)
+    } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+    }
+  })
+
   it('rejects a provider usage receipt whose action authorization does not exist', async () => {
     const workspaceId = `ws_worker_usage_unknown_action_${Date.now()}`
     const base = await startApi()
@@ -233,6 +252,7 @@ describe('API model usage settlement invariants', () => {
       const response = await postWorkerUsage(base, workspaceId, {
         workspaceId,
         actionId: `model:unknown-${Date.now()}`,
+        runKey: `run:unknown-${Date.now()}`,
         modality: 'text',
         model: 'relay-text',
         providerRequestId: `unknown-action-${Date.now()}`,
@@ -251,18 +271,19 @@ describe('API model usage settlement invariants', () => {
   it('accepts an idempotent worker relay receipt through the internal settlement boundary', async () => {
     const workspaceId = `ws_worker_usage_${Date.now()}`
     const actionId = `model:generation:worker-${Date.now()}`
+    const runKey = `task:worker-${Date.now()}`
     const providerRequestId = `worker-relay-${Date.now()}`
-    await authorizeAction(workspaceId, actionId, 'included_quota')
+    await authorizeAction(workspaceId, actionId, 'included_quota', runKey)
     const base = await startApi()
     try {
-      const payload = { workspaceId, actionId, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), modality: 'text', model: 'relay-text', providerRequestId, inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z' }
+      const payload = { workspaceId, actionId, runKey, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), modality: 'text', model: 'relay-text', providerRequestId, inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z' }
       const first = await postWorkerUsage(base, workspaceId, payload)
       const replay = await postWorkerUsage(base, workspaceId, payload)
       expect(first).toMatchObject({ status: 200, body: { error: null } })
       expect(replay).toMatchObject({ status: 200, body: { error: null } })
       const rows = await harness.modelUsage!.list(workspaceId, 10)
       expect(rows).toHaveLength(1)
-      expect(rows[0]).toMatchObject({ receiptKey: providerRequestId, actionId, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), totalTokens: 28, costCny: 0.04, settlementStatus: 'settled' })
+      expect(rows[0]).toMatchObject({ receiptKey: providerRequestId, actionId, budgetRunKey: runKey, contextLinkId: 'context_link_worker', contextHash: 'a'.repeat(64), totalTokens: 28, costCny: 0.04, settlementStatus: 'settled' })
     } finally {
       await new Promise<void>(resolve => api.server.close(() => resolve()))
     }
@@ -298,7 +319,7 @@ describe('API model usage settlement invariants', () => {
     vi.stubEnv('NODE_ENV', 'test')
     const base = await startApi()
     try {
-      const common = { workspaceId, actionId, modality: 'text', model: 'relay-text', inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z' }
+      const common = { workspaceId, actionId, runKey: actionId, modality: 'text', model: 'relay-text', inputTokens: 20, outputTokens: 8, totalTokens: 28, costCny: 0.04, observedAt: '2026-08-28T00:00:00.000Z' }
       expect(await postWorkerUsage(base, workspaceId, { ...common, providerRequestId: firstReceipt })).toMatchObject({ status: 200, body: { error: null } })
       expect(await postWorkerUsage(base, workspaceId, { ...common, providerRequestId: repairReceipt })).toMatchObject({ status: 200, body: { error: null } })
     } finally {
@@ -332,6 +353,97 @@ describe('API model usage settlement invariants', () => {
     expect(harness.budgetSettlements).toContainEqual(expect.objectContaining({ workspaceId, reservationKey: actionId, actualCostCny: 0.02, providerRequestId: harness.providerRequestId }))
   })
 
+  it('settles entitlement-funded usage without creating a wallet charge', async () => {
+    const workspaceId = `ws_entitlement_settled_${Date.now()}`
+    const actionId = `image:entitlement-${Date.now()}`
+    harness.costCny = 0.02
+    await authorizeAction(workspaceId, actionId, 'entitlement')
+
+    await expect(generate(workspaceId, actionId)).resolves.toMatchObject({ title: '结算测试标题' })
+
+    const rows = await harness.modelUsage!.list(workspaceId, 10)
+    expect(rows[0]).toMatchObject({ actionId, costCny: 0.02, customerChargeCny: 0, settlementStatus: 'settled' })
+    expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlement: 'entitlement', amountFen: 0, settlementStatus: 'settled', providerRequestId: harness.providerRequestId })
+    expect(harness.walletSettlementCalls).toBe(1)
+    expect(harness.refundCalls).toBe(0)
+  })
+
+  it('supports image-addon action ids during model usage reconciliation with historical image settlement records', async () => {
+    const workspaceId = `ws_image_addon_compat_${Date.now()}`
+    const actionId = `image-addon:legacy-${Date.now()}`
+    const fallbackActionId = `image:${actionId.slice('image-addon:'.length)}`
+    const runKey = `task:${actionId}`
+    const providerRequestId = `addon-receipt-${Date.now()}`
+    await harness.modelUsage!.reserveDailyBudget({ workspaceId, reservationKey: actionId, runKey, modality: 'image', model: 'relay-image-test', estimateCny: 1, estimateVersion: 'test-v1', dailyLimitCny: 100, runLimitCny: 10 })
+    await harness.actionLedger!.record({
+      workspaceId,
+      actionKey: fallbackActionId,
+      actionKind: 'model_image',
+      settlement: 'entitlement',
+      state: 'settled',
+      units: 1,
+      amountFen: 0,
+      actorId: 'settlement-test',
+      description: '历史动作迁移兼容',
+      reservedAmountFen: 0,
+      multiplier: 1,
+      settlementStatus: 'authorized',
+    })
+    const pending = await harness.modelUsage!.record({
+      workspaceId,
+      actionId,
+      budgetReservationKey: actionId,
+      budgetRunKey: runKey,
+      modality: 'image',
+      model: 'relay-image-test',
+      providerRequestId,
+      costCny: 0.02,
+      markupMultiplier: 1,
+      customerChargeCny: 0,
+      pricingPolicyRevision: 1,
+      settlementStatus: 'pending_wallet',
+    })
+
+    const base = await startApi()
+    try {
+      vi.stubEnv('NODE_ENV', 'test')
+      const response = await callMcp(base, workspaceId, 'billing.model-usage.resolve', { usage_id: pending.id, revision: String(pending.revision), decision: 'retry', reason: '历史 key 兼容核验', evidence_ref: 'ledger://compat/1' })
+      vi.stubEnv('NODE_ENV', 'production')
+      expect(response.error).toBeNull()
+      expect(response.data?.result).toMatchObject({ settlement_status: 'settled' })
+      const rows = await harness.modelUsage!.list(workspaceId, 10)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ actionId, settlementStatus: 'settled', costCny: 0.02, customerChargeCny: 0 })
+      expect(await harness.actionLedger!.get(workspaceId, fallbackActionId)).toMatchObject({ settlementStatus: 'settled', settlement: 'entitlement', providerRequestId })
+      expect(await harness.actionLedger!.get(workspaceId, actionId)).toBeUndefined()
+      expect(harness.walletSettlementCalls).toBe(1)
+      expect(harness.refundCalls).toBe(0)
+    } finally {
+      vi.stubEnv('NODE_ENV', 'production')
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+    }
+  })
+
+  it('reconciles a pending entitlement receipt without falling back to wallet settlement', async () => {
+    const workspaceId = `ws_entitlement_reconcile_${Date.now()}`
+    const actionId = `image:entitlement-reconcile-${Date.now()}`
+    const providerRequestId = `entitlement-provider-${Date.now()}`
+    await authorizeAction(workspaceId, actionId, 'entitlement')
+    const pending = await harness.modelUsage!.record({ workspaceId, actionId, budgetReservationKey: actionId, budgetRunKey: actionId, modality: 'text', model: 'relay-text-test', providerRequestId, costCny: 0.02, customerChargeCny: 0, markupMultiplier: 1, pricingPolicyRevision: 1, settlementStatus: 'pending_wallet' })
+
+    vi.stubEnv('NODE_ENV', 'test')
+    const base = await startApi()
+    try {
+      const result = await callMcp(base, workspaceId, 'billing.model-usage.resolve', { usage_id: pending.id, revision: String(pending.revision), decision: 'retry', reason: '权益授权与成本预算已核对', evidence_ref: 'ledger://entitlement-check/1' })
+      expect(result.error).toBeNull()
+      expect(result.data?.result).toMatchObject({ settlement_status: 'settled' })
+    } finally {
+      await new Promise<void>(resolve => api.server.close(() => resolve()))
+      vi.stubEnv('NODE_ENV', 'production')
+    }
+    expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlement: 'entitlement', amountFen: 0, settlementStatus: 'settled', providerRequestId })
+  })
+
   it('releases an active reservation when the provider invocation fails', async () => {
     const workspaceId = `ws_provider_failure_${Date.now()}`
     const actionId = `model:provider-failure-${Date.now()}`
@@ -346,9 +458,9 @@ describe('API model usage settlement invariants', () => {
     const actionId = `model:actual-overrun-${Date.now()}`
     harness.costCny = 101
     await authorizeAction(workspaceId, actionId, 'included_quota')
-    await expect(generate(workspaceId, actionId)).rejects.toMatchObject({ code: 'MODEL_USAGE_SETTLEMENT_PENDING', details: expect.objectContaining({ provider_succeeded: true }) })
+    await expect(generate(workspaceId, actionId)).rejects.toMatchObject({ code: 'MODEL_TASK_COST_ACTUAL_EXCEEDED', details: expect.objectContaining({ provider_succeeded: true, reconciliation_required: true }) })
     expect(harness.budgetReleases).toHaveLength(0)
-    await expect(harness.modelUsage!.settleDailyBudget({ workspaceId, reservationKey: actionId, actualCostCny: 101, providerRequestId: harness.providerRequestId })).rejects.toMatchObject({ code: 'MODEL_DAILY_COST_ACTUAL_EXCEEDED' })
+    await expect(harness.modelUsage!.settleDailyBudget({ workspaceId, reservationKey: actionId, actualCostCny: 101, providerRequestId: harness.providerRequestId })).rejects.toMatchObject({ code: 'MODEL_TASK_COST_ACTUAL_EXCEEDED' })
   })
 
   it('keeps a costed receipt pending_wallet and does not refund when wallet settlement fails', async () => {

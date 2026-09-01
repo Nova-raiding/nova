@@ -9,7 +9,7 @@ export function BrandGovernanceSummary({ summary }: { summary?: PlatformBrandUni
     <Row gutter={[16, 16]}>
       <Col xs={12} md={6}><Statistic title="品牌数" value={summary.brandCount} /></Col>
       <Col xs={12} md={6}><Statistic title="已绑定店铺" value={summary.boundStoreCount} /></Col>
-      <Col xs={12} md={6}><Statistic title="未绑定品牌" value={summary.unboundBrandCount} valueStyle={{ color: summary.unboundBrandCount ? "#d97706" : undefined }} /></Col>
+      <Col xs={12} md={6}><Statistic title="未绑定品牌" value={summary.unboundBrandCount} styles={{ content: { color: summary.unboundBrandCount ? "#d97706" : undefined } }} /></Col>
       <Col xs={12} md={6}><Statistic title="刊登映射" value={summary.listingCount} /></Col>
     </Row>
   </Card>;

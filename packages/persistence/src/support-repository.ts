@@ -5,10 +5,11 @@ import {
   type SqlPool,
   withWorkspaceTransaction,
 } from './repository.js'
+import { createSupportSlaProjection, deriveSupportSlaState, projectSupportSlaFromEvents, type SupportSlaProjection } from '@merchant-marketing/contracts'
 
 export type SupportTicketStatus = 'open' | 'in_progress' | 'waiting_customer' | 'resolved' | 'closed'
 export type SupportTicketPriority = 'low' | 'normal' | 'high' | 'urgent'
-export type SupportTicketEventType = 'created' | 'assigned' | 'status_changed' | 'commented'
+export type SupportTicketEventType = 'created' | 'assigned' | 'status_changed' | 'commented' | 'sla_at_risk' | 'sla_breached'
 
 export interface SupportTicket {
   id: string
@@ -29,6 +30,7 @@ export interface SupportTicket {
   createdBy: string
   createdAt: string
   updatedAt: string
+  sla: SupportSlaProjection
 }
 
 export interface SupportTicketEvent {
@@ -97,6 +99,11 @@ export interface SupportTicketMutationResult {
   replayed: boolean
 }
 
+export interface SupportSlaActionInput extends SupportTicketMutationInput {
+  state: 'at_risk' | 'breached'
+  dueAt: string
+}
+
 export interface SupportRepository {
   create(input: CreateSupportTicketInput): Promise<SupportTicketMutationResult>
   list(input: SupportTicketListInput): Promise<SupportTicketPage>
@@ -105,6 +112,7 @@ export interface SupportRepository {
   assign(input: SupportTicketMutationInput & { assigneeId: string }): Promise<SupportTicketMutationResult>
   transition(input: SupportTicketMutationInput & { status: SupportTicketStatus; reason: string }): Promise<SupportTicketMutationResult>
   comment(input: SupportTicketMutationInput & { body: string; visibility: 'internal' | 'customer' }): Promise<SupportTicketMutationResult>
+  recordSlaAction(input: SupportSlaActionInput): Promise<SupportTicketMutationResult>
   listCrmProjection(workspaceId: string, limit?: number): Promise<SupportCrmProjection[]>
 }
 
@@ -152,6 +160,10 @@ function createIdentity(input: CreateSupportTicketInput) {
   })
 }
 
+function projectTicketSla(ticket: SupportTicket, events: readonly SupportTicketEvent[], now = new Date()): SupportTicket {
+  return { ...ticket, sla: projectSupportSlaFromEvents(ticket.sla, events, now) }
+}
+
 export class MemorySupportRepository implements SupportRepository {
   private readonly tickets = new Map<string, SupportTicket & { createIdempotencyKey: string; createIdentity: string }>()
   private readonly events = new Map<string, SupportTicketEvent>()
@@ -185,6 +197,7 @@ export class MemorySupportRepository implements SupportRepository {
       createdBy: input.actorId,
       createdAt: timestamp,
       updatedAt: timestamp,
+      sla: createSupportSlaProjection(input.priority, new Date(timestamp)),
       createIdempotencyKey: input.idempotencyKey,
       createIdentity: createIdentity(input),
     }
@@ -194,7 +207,7 @@ export class MemorySupportRepository implements SupportRepository {
     }
     this.tickets.set(`${workspaceId}:${id}`, ticket)
     this.events.set(eventKey, event)
-    return { ticket: cloneTicket(ticket), event: cloneEvent(event), replayed: false }
+    return { ticket: cloneTicket(projectTicketSla(ticket, [event])), event: cloneEvent(event), replayed: false }
   }
 
   async list(input: SupportTicketListInput): Promise<SupportTicketPage> {
@@ -213,14 +226,14 @@ export class MemorySupportRepository implements SupportRepository {
     const page = rows.slice(0, limit)
     const last = page.at(-1)
     return {
-      items: page.map(cloneTicket),
+      items: page.map(ticket => cloneTicket(projectTicketSla(ticket, [...this.events.values()].filter(event => event.ticketId === ticket.id)))),
       ...(rows.length > limit && last ? { nextCursor: { createdAt: last.createdAt, id: last.id } } : {}),
     }
   }
 
   async get(workspaceId: string, ticketId: string) {
     const row = this.tickets.get(`${requireWorkspaceScope(workspaceId)}:${ticketId}`)
-    return row ? cloneTicket(row) : undefined
+    return row ? cloneTicket(projectTicketSla(row, [...this.events.values()].filter(event => event.ticketId === row.id))) : undefined
   }
 
   async listEvents(workspaceId: string, ticketId: string) {
@@ -247,6 +260,12 @@ export class MemorySupportRepository implements SupportRepository {
       () => ({ payload: { body: input.body, visibility: input.visibility } }))
   }
 
+  async recordSlaAction(input: SupportSlaActionInput) {
+    return this.mutate(input, input.state === 'at_risk' ? 'sla_at_risk' : 'sla_breached',
+      event => event.payload.dueAt === input.dueAt,
+      () => ({ payload: { state: input.state, dueAt: input.dueAt } }))
+  }
+
   private async mutate(
     input: SupportTicketMutationInput,
     eventType: Exclude<SupportTicketEventType, 'created'>,
@@ -260,7 +279,7 @@ export class MemorySupportRepository implements SupportRepository {
       if (replay.actorId !== input.actorId || replay.ticketId !== input.ticketId || replay.eventType !== eventType || !replayMatches(replay)) throw new SupportTicketIdempotencyConflictError()
       const ticket = this.tickets.get(`${workspaceId}:${input.ticketId}`)
       if (!ticket) throw new SupportTicketNotFoundError()
-      return { ticket: cloneTicket(ticket), event: cloneEvent(replay), replayed: true }
+      return { ticket: cloneTicket(projectTicketSla(ticket, [...this.events.values()].filter(event => event.ticketId === ticket.id))), event: cloneEvent(replay), replayed: true }
     }
     const ticket = this.tickets.get(`${workspaceId}:${input.ticketId}`)
     if (!ticket) throw new SupportTicketNotFoundError()
@@ -276,7 +295,7 @@ export class MemorySupportRepository implements SupportRepository {
       actorId: input.actorId, idempotencyKey: input.idempotencyKey, payload: delta.payload, createdAt: timestamp,
     }
     this.events.set(idempotencyKey, event)
-    return { ticket: cloneTicket(ticket), event: cloneEvent(event), replayed: false }
+    return { ticket: cloneTicket(projectTicketSla(ticket, [...this.events.values()].filter(item => item.ticketId === ticket.id))), event: cloneEvent(event), replayed: false }
   }
 
   async listCrmProjection(workspaceId: string, limit = 1000): Promise<SupportCrmProjection[]> {
@@ -309,6 +328,7 @@ type TicketRow = {
   status: SupportTicketStatus; priority: SupportTicketPriority; customer_id: string; customer_name: string
   customer_email: string | null; assigned_to: string | null; related_order_id: string | null; related_task_id: string | null
   tags: string[]; revision: number; created_by: string; created_at: string | Date; updated_at: string | Date
+  sla_snapshot_json: SupportSlaProjection | null
 }
 type EventRow = {
   id: string; workspace_id: string; ticket_id: string; sequence: number; event_type: SupportTicketEventType
@@ -323,6 +343,7 @@ const mapTicket = (row: TicketRow): SupportTicket => ({
   ...(row.related_order_id ? { relatedOrderId: row.related_order_id } : {}),
   ...(row.related_task_id ? { relatedTaskId: row.related_task_id } : {}), tags: row.tags ?? [],
   revision: row.revision, createdBy: row.created_by, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
+  sla: row.sla_snapshot_json ? { ...row.sla_snapshot_json, policy: { ...row.sla_snapshot_json.policy }, pausedMinutes: row.sla_snapshot_json.pausedMinutes ?? 0, state: deriveSupportSlaState(row.sla_snapshot_json) } : createSupportSlaProjection(row.priority, new Date(iso(row.created_at))),
 })
 const mapEvent = (row: EventRow): SupportTicketEvent => ({
   id: row.id, workspaceId: row.workspace_id, ticketId: row.ticket_id, sequence: row.sequence,
@@ -330,7 +351,7 @@ const mapEvent = (row: EventRow): SupportTicketEvent => ({
   payload: row.payload_json, createdAt: iso(row.created_at),
 })
 const ticketColumns = `id, workspace_id, ticket_number, subject, description, status, priority, customer_id,
-  customer_name, customer_email, assigned_to, related_order_id, related_task_id, tags, revision, created_by, created_at, updated_at`
+  customer_name, customer_email, assigned_to, related_order_id, related_task_id, tags, revision, created_by, created_at, updated_at, sla_snapshot_json`
 const eventColumns = 'id, workspace_id, ticket_id, sequence, event_type, actor_id, idempotency_key, payload_json, created_at'
 
 export class PostgresSupportRepository implements SupportRepository {
@@ -348,17 +369,19 @@ export class PostgresSupportRepository implements SupportRepository {
         return { ticket, event: replay, replayed: true }
       }
       const id = randomUUID()
-      const ticketNumber = `SUP-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${id.slice(0, 8).toUpperCase()}`
+      const createdAt = new Date()
+      const ticketNumber = `SUP-${createdAt.toISOString().slice(0, 10).replaceAll('-', '')}-${id.slice(0, 8).toUpperCase()}`
+      const sla = createSupportSlaProjection(input.priority, createdAt)
       const inserted = await client.query<TicketRow>(`INSERT INTO workspace_support_tickets
         (id, workspace_id, ticket_number, subject, description, status, priority, customer_id, customer_name,
-         customer_email, related_order_id, related_task_id, tags, revision, create_idempotency_key, created_by)
-        VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$12,1,$13,$14)
+         customer_email, related_order_id, related_task_id, tags, revision, create_idempotency_key, created_by, created_at, updated_at, sla_snapshot_json)
+        VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$12,1,$13,$14,$15,$15,$16::jsonb)
         RETURNING ${ticketColumns}`,
       [id, workspaceId, ticketNumber, input.subject, input.description, input.priority, input.customerId, input.customerName,
-        input.customerEmail ?? null, input.relatedOrderId ?? null, input.relatedTaskId ?? null, normalizedTags(input.tags), input.idempotencyKey, input.actorId])
+        input.customerEmail ?? null, input.relatedOrderId ?? null, input.relatedTaskId ?? null, normalizedTags(input.tags), input.idempotencyKey, input.actorId, createdAt.toISOString(), JSON.stringify(sla)])
       const ticket = mapTicket(inserted.rows[0]!)
       const event = await this.insertEvent(client, ticket, 'created', input.actorId, input.idempotencyKey, { status: 'open', priority: input.priority })
-      return { ticket, event, replayed: false }
+      return { ticket: projectTicketSla(ticket, await this.listEventsInTransaction(client, workspaceId, ticket.id)), event, replayed: false }
     })
   }
 
@@ -377,7 +400,7 @@ export class PostgresSupportRepository implements SupportRepository {
         ORDER BY created_at DESC, id DESC LIMIT $9`, [workspaceId, input.status ?? null, input.priority ?? null,
         input.assigneeId ?? null, input.customerId ?? null, input.query?.trim() || null, input.cursor?.createdAt ?? null,
         input.cursor?.id ?? null, limit + 1])
-      const rows = result.rows.map(mapTicket)
+      const rows = await Promise.all(result.rows.map(async row => projectTicketSla(mapTicket(row), await this.listEventsInTransaction(client, workspaceId, row.id))))
       const items = rows.slice(0, limit)
       const last = items.at(-1)
       return { items, ...(rows.length > limit && last ? { nextCursor: { createdAt: last.createdAt, id: last.id } } : {}) }
@@ -415,6 +438,12 @@ export class PostgresSupportRepository implements SupportRepository {
       () => ({ body: input.body, visibility: input.visibility }))
   }
 
+  async recordSlaAction(input: SupportSlaActionInput) {
+    return this.mutate(input, input.state === 'at_risk' ? 'sla_at_risk' : 'sla_breached', {},
+      event => event.payload.dueAt === input.dueAt,
+      () => ({ state: input.state, dueAt: input.dueAt }))
+  }
+
   private async mutate(
     input: SupportTicketMutationInput,
     eventType: Exclude<SupportTicketEventType, 'created'>,
@@ -430,7 +459,7 @@ export class PostgresSupportRepository implements SupportRepository {
         if (replay.actorId !== input.actorId || replay.ticketId !== input.ticketId || replay.eventType !== eventType || !replayMatches(replay)) throw new SupportTicketIdempotencyConflictError()
         const ticket = await this.getInTransaction(client, workspaceId, input.ticketId)
         if (!ticket) throw new SupportTicketNotFoundError()
-        return { ticket, event: replay, replayed: true }
+        return { ticket: projectTicketSla(ticket, await this.listEventsInTransaction(client, workspaceId, ticket.id)), event: replay, replayed: true }
       }
       const current = await this.getInTransaction(client, workspaceId, input.ticketId, true)
       if (!current) throw new SupportTicketNotFoundError()
@@ -442,13 +471,18 @@ export class PostgresSupportRepository implements SupportRepository {
       if (!result.rows[0]) throw new SupportTicketRevisionConflictError()
       const ticket = mapTicket(result.rows[0])
       const event = await this.insertEvent(client, ticket, eventType, input.actorId, input.idempotencyKey, payload(current))
-      return { ticket, event, replayed: false }
+      return { ticket: projectTicketSla(ticket, await this.listEventsInTransaction(client, workspaceId, ticket.id)), event, replayed: false }
     })
   }
 
   private async getInTransaction(client: SqlClient, workspaceId: string, ticketId: string, lock = false) {
     const result = await client.query<TicketRow>(`SELECT ${ticketColumns} FROM workspace_support_tickets WHERE workspace_id=$1 AND id=$2${lock ? ' FOR UPDATE' : ''}`, [workspaceId, ticketId])
-    return result.rows[0] ? mapTicket(result.rows[0]) : undefined
+    return result.rows[0] ? projectTicketSla(mapTicket(result.rows[0]), await this.listEventsInTransaction(client, workspaceId, ticketId)) : undefined
+  }
+
+  private async listEventsInTransaction(client: SqlClient, workspaceId: string, ticketId: string) {
+    const result = await client.query<EventRow>(`SELECT ${eventColumns} FROM workspace_support_ticket_events WHERE workspace_id=$1 AND ticket_id=$2 ORDER BY sequence ASC`, [workspaceId, ticketId])
+    return result.rows.map(mapEvent)
   }
 
   private async findEventByIdempotency(client: SqlClient, workspaceId: string, idempotencyKey: string) {

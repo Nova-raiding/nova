@@ -1,6 +1,57 @@
 import { describe, expect, it } from 'vitest'
 import { resolveStoreSyncTargets } from '../../demo/merchant-studio/src/store-sync'
 import { storeIdentityLabel, validateProductStoreIdentity, validateTargetStoreIdentity, validateTaskStoreIdentity } from '../../demo/merchant-studio/src/store-identity'
+import { resolveLibraryData } from '../../demo/merchant-studio/src/library-data'
+import { resolveTaskDirections, resolveTaskWorkflow } from '../../demo/merchant-studio/src/task-evidence'
+
+describe('Merchant Studio server-owned task evidence', () => {
+  const serverDirection = { id: 'KITCHEN-TRUTH', name: '收纳动线说明', coreIdea: '只描述收纳用途', structure: '问题到方案', copyDirection: '事实说明', visualDirection: '真实商品图', sellingPoints: ['分区收纳'], fitReason: '商品事实', risk: '避免扩展材质功效' }
+
+  it('uses only server directions in API mode and keeps missing states explicit', () => {
+    expect(resolveTaskDirections({ baseUrl: '/api', remote: [serverDirection], error: '' })).toEqual({ mode: 'api_ready', items: [serverDirection] })
+    expect(resolveTaskDirections({ baseUrl: '/api', remote: [], error: '' })).toEqual({ mode: 'api_empty', items: [] })
+    expect(resolveTaskDirections({ baseUrl: '/api', remote: null, error: '方向服务不可用' })).toEqual({ mode: 'api_error', items: [] })
+  })
+
+  it('keeps demo directions explicit and offline-only', () => {
+    const result = resolveTaskDirections({ baseUrl: undefined, remote: null, error: '' })
+    expect(result.mode).toBe('offline_demo')
+    expect(result.items.every(item => item.id.startsWith('DEMO-') && item.name.startsWith('演示 ·'))).toBe(true)
+  })
+
+  it('derives workflow progress from the server task state', () => {
+    expect(resolveTaskWorkflow('draft')).toEqual([
+      { label: '事实确认', status: 'current' },
+      { label: '方向选择', status: 'pending' },
+      { label: '内容审核', status: 'pending' },
+      { label: '确认发布', status: 'pending' },
+    ])
+    expect(resolveTaskWorkflow('delivered').every(step => step.status === 'complete')).toBe(true)
+    expect(resolveTaskWorkflow('future_server_state').every(step => step.status === 'pending')).toBe(true)
+  })
+})
+
+describe('Merchant Studio rule and category data isolation', () => {
+  const fixtures = [{ id: 'demo' }]
+  const remote = [{ id: 'api' }]
+
+  it('uses fixtures only when no API base URL is configured', () => {
+    expect(resolveLibraryData({ baseUrl: undefined, remote: null, error: '', fixtures })).toEqual({
+      mode: 'offline_demo',
+      items: fixtures,
+    })
+  })
+
+  it('does not expose fixtures while an API request is loading or failed', () => {
+    expect(resolveLibraryData({ baseUrl: '/api', remote: null, error: '', fixtures })).toEqual({ mode: 'loading', items: [] })
+    expect(resolveLibraryData({ baseUrl: '/api', remote: null, error: '服务不可用', fixtures })).toEqual({ mode: 'api_error', items: [] })
+  })
+
+  it('keeps a successful API empty response distinct and accepts only API data when present', () => {
+    expect(resolveLibraryData({ baseUrl: '/api', remote: [], error: '', fixtures })).toEqual({ mode: 'api_empty', items: [] })
+    expect(resolveLibraryData({ baseUrl: '/api', remote, error: '', fixtures })).toEqual({ mode: 'api_ready', items: remote })
+  })
+})
 
 describe('Merchant Studio store sync target resolution', () => {
   it('returns every readable store instead of selecting the first store on a platform', () => {

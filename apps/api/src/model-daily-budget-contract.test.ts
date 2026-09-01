@@ -13,12 +13,14 @@ describe('daily model budget provider boundary', () => {
       ['video', 'rawVideoGenerator.generate'],
     ] as const) expect(source).toContain(`withDailyModelBudget('${kind}', input.usageContext, () => ${provider}(`)
     expect(source).toContain('direction: appendProtectedProductConstraints(input.direction)')
-    expect(source.indexOf('await reserveDailyModelBudget(workspaceId, actionId, kind)')).toBeLessThan(source.indexOf('try { return await invoke() }'))
+    expect(source).toContain('await reserveDailyModelBudget(workspaceId, actionId, runKey, kind)')
+    expect(source.indexOf('await reserveDailyModelBudget(workspaceId, actionId, runKey, kind)')).toBeLessThan(source.indexOf('try { return await invoke() }'))
+    expect(source).toContain("if (!workspaceId || !actionId || !runKey) throw new DomainError('MODEL_COST_BUDGET_CONTEXT_REQUIRED'")
   })
 
   it('settles provider actuals and only releases failures that did not succeed upstream', () => {
-    expect(source).toContain('reservationKey: usage.actionId, actualCostCny: actionActualCostCny')
-    expect(source).toContain('providerRequestId: usage.providerRequestId')
+    expect(source).toContain('recordUsageAndSettleBudget({ ...usageInput, budgetReservationKey: usage.actionId, budgetRunKey: usage.runKey!, costCny: usage.costCny')
+    expect(source).not.toContain('const actionActualCostCny =')
     expect(source).toContain("if (!providerSucceededButSettlementPending(error)) await releaseDailyModelBudget(workspaceId, actionId)")
     expect(source).toContain("alertKey: `model-budget-overrun:${usage.actionId}`")
   })
@@ -31,5 +33,23 @@ describe('daily model budget provider boundary', () => {
       expect(region.indexOf('await reserveDailyModelBudget(')).toBeLessThan(region.indexOf('const prepared = await service.prepareGenerationContext'))
     }
     expect(source).toContain('await releaseDailyModelBudget(workspaceId, `model:generation:${completed.job.idempotencyKey}`)')
+  })
+
+  it('keeps synchronous multimodal, video plans, and image retries on their reserved run identity', () => {
+    expect(source).toContain("const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'")
+    expect(source).toContain("const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey")
+    expect(source).toContain('service.completeImageGeneration({ workspaceId, jobId: retried.job.id, runKey: imageRunKey })')
+    expect(source).toContain('service.completeImageGeneration({ workspaceId, jobId: imageJob.id, runKey: modelRunKey })')
+    expect(source).toContain('usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey }')
+  })
+
+  it('authorizes entitlement-funded image calls on the provider action without a zero-value wallet debit', () => {
+    expect(source).not.toContain('image-addon:')
+    expect(source.match(/consumeEntitlement\(\{ workspaceId, kind: 'image_generation', actionKey: walletDebitKey, actionKind: 'model_image', modelRunKey:/gu)).toHaveLength(3)
+    expect(source).toContain("settlement: 'entitlement', amountFen: 0, reservedAmountFen: 0")
+    expect(source).toContain("const durableEntitlementAuthorization = durableAuthorization?.settlement === 'entitlement'")
+    expect(source).toContain('settleProviderUsage({ workspaceId: input.workspaceId, actionKey, actualAmountFen: 0')
+    expect(source).toContain('await releaseDailyModelBudget(input.workspaceId, input.actionKey)')
+    expect(source).not.toContain('amountFen: 0, idempotencyKey: walletDebitKey')
   })
 })

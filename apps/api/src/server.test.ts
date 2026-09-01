@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, executionContract, featureFlagRequestsCanonicalRead, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceStoreDirectory } from './server.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
@@ -13,6 +13,16 @@ describe('canonical read rollout safety', () => {
     expect(featureFlagRequestsCanonicalRead({ key: 'canonical.product.read_mode', defaultValue: { value: 'legacy_shadow' }, targets: [{ override: { value: 'canonical_read' } }] })).toBe(true)
     expect(featureFlagRequestsCanonicalRead({ key: 'canonical.product.read_mode', defaultValue: { value: 'dual_verify' } })).toBe(false)
     expect(featureFlagRequestsCanonicalRead({ key: 'canonical.product.read_mode', defaultValue: { value: 'legacy_shadow' }, targets: 'not-an-array' as unknown as Array<{ override?: { value?: unknown } }> })).toBe(false)
+  })
+})
+
+describe('provider usage reconciliation', () => {
+  it('does not collapse duplicate local requests and compares tokens per request', () => {
+    const result = compareProviderUsageRecords(
+      [{ providerRequestId: 'r1', inputTokens: 1, outputTokens: 2, totalTokens: 3 }, { providerRequestId: 'r1', inputTokens: 9, outputTokens: 9, totalTokens: 18 }, { providerRequestId: 'r2', inputTokens: 4, outputTokens: 1, totalTokens: 5 }],
+      [{ providerRecordId: 'r1', inputTokens: 1, outputTokens: 2, totalTokens: 3 }, { providerRecordId: 'r2', inputTokens: 5, outputTokens: 1, totalTokens: 6 }],
+    )
+    expect(result).toMatchObject({ unmatchedLocal: 0, unmatchedProvider: 0, duplicateLocalCount: 1, tokenMismatchCount: 1, matchedRecordCount: 2 })
   })
 })
 
@@ -32,6 +42,7 @@ describe('worker authorization snapshot eligibility', () => {
     expect(workerAuthorizationDecisionMatches(decision({ scope: { required: 'workspace', resource_id: 'ws_b', resolved: [{ type: 'workspace', ids: ['ws_b'] }] } }), 'ws_a', 'customer.content.update')).toBe(false)
     expect(workerAuthorizationDecisionMatches(decision({ workbench: 'platform' }), 'ws_a', 'customer.content.update')).toBe(false)
   })
+
 })
 
 describe('CSV export safety', () => {
@@ -207,6 +218,19 @@ describe('API application wiring', () => {
     expect(source).toContain('requireWorkerAuthorization(req)')
   })
 
+  it('projects SLA scan actions into durable operational alerts without coupling webhook latency', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const start = source.indexOf('async function runSupportSlaScan(')
+    const end = source.indexOf("if (req.method === 'POST' && path === '/v1/internal/support/sla-scan')", start)
+    const scan = source.slice(start, end)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    expect(scan).toContain('repository.recordSlaAction')
+    expect(scan).toContain("alertKey: `support-sla:${action.ticketId}:${action.state}:${action.dueAt}`")
+    expect(scan).toContain("code: action.state === 'breached' ? 'SUPPORT_SLA_BREACHED' : 'SUPPORT_SLA_AT_RISK'")
+    expect(scan).toContain('void persistOperationalAlertNotification(alert)')
+  })
+
   it('keeps durable image admission explicit and emits one frozen request event', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("process.env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase() === 'durable'")
@@ -220,7 +244,7 @@ describe('API application wiring', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("/^\\/v1\\/internal\\/image-generation-jobs\\/[^/]+\\/result$/")
     expect(source).toContain("/^\\/v1\\/internal\\/image-generation-jobs\\/[^/]+\\/execution$/")
-    expect(source).toContain("if (!eventId || !/^[a-f0-9]{64}$/u.test(intentHash))")
+    expect(source).toContain('validateImageGenerationCallbackResult(input, { allowEventId: true })')
     expect(source).toContain("if (!requested) throw new DomainError('IMAGE_GENERATION_EVENT_INVALID'")
     expect(source).toContain("if (requested.payload.intent_hash !== intentHash)")
     expect(source).toContain('async function persistImageGenerationCompletion')
@@ -232,6 +256,9 @@ describe('API application wiring', () => {
     expect(receiptStart).toBeGreaterThanOrEqual(0)
     expect(eventBinding).toBeGreaterThan(receiptStart)
     expect(archiveCall).toBeGreaterThan(eventBinding)
+    expect(source).toContain('const workerNeedsWorkspaceHydration = workerRoute')
+    expect(source).toContain("path === '/v1/internal/image-generation-jobs/reconciliation'")
+    expect(source).toContain('(!workerRoute || workerNeedsWorkspaceHydration)')
   })
 
   it('keeps image Provider reconciliation tenant-bound, idempotent, and fail-closed', () => {

@@ -2,7 +2,7 @@
 
 这是可安装的 Codex Plugin 源目录，包含：
 
-- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260831191109`。
+- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260831225927`。
 - `skills/merchant-marketing/SKILL.md`：唯一入口 Skill。
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
@@ -25,7 +25,7 @@ codex plugin add merchant-marketing@<marketplace-name>
 安装环境示例（在启动 Codex 的环境中设置）：
 
 ```bash
-export MERCHANT_MCP_BASE_URL=https://mcp.example.com
+export MERCHANT_MCP_BASE_URL=https://merchant.example.com
 export MERCHANT_WORKSPACE_ID=<workspace-id>
 # 可选：由网关校验的 Bearer token；插件不会保存平台账号密码或 access token
 export MERCHANT_MCP_TOKEN=<mcp-token>
@@ -33,14 +33,13 @@ export MERCHANT_MCP_TOKEN=<mcp-token>
 # export MERCHANT_ALLOW_FIXTURE_FALLBACK=true
 # 仅已明确确认的交互会话按需开启；Automation 禁止设置
 # export MERCHANT_MCP_WRITE_ENABLED=true
-# 仅规则维护者按需配置；普通商家不要设置
-export MERCHANT_MCP_ROLE=rules_admin
-export MERCHANT_ACTOR_ID=<actor-id>
 # 生产激活规则时由审批系统注入，不要写入仓库
 export MERCHANT_RULE_APPROVAL_TOKEN=<rule-approval-token>
 ```
 
-`MERCHANT_MCP_BASE_URL` 必须是服务根地址，bridge 会请求 `${MERCHANT_MCP_BASE_URL}/mcp`；必须使用 HTTPS（本地开发可用 HTTP）。首次运行可不设置 `MERCHANT_WORKSPACE_ID`，先调用 `workspace.bootstrap` 创建工作区；bridge 会将脱敏的 workspace binding 保存到用户级 `CODEX_HOME/merchant-marketing/workspace-binding.json`，新会话自动恢复，也可按需改用环境变量覆盖。后续 `MERCHANT_WORKSPACE_ID` 是租户边界，不是平台授权凭证。生产网关必须校验 Codex/用户身份后再允许该工作区访问，不能仅相信客户端传入的工作区字符串。
+商家身份与角色由服务端 Bearer/OIDC 授权映射决定。安装包不会静态声明 `MERCHANT_ACTOR_ID` 或 `MERCHANT_MCP_ROLE`，也不会用客户端角色覆盖服务端成员权限；本地非严格鉴权测试需要模拟身份时，应在独立测试进程中显式注入，不能写进正式插件清单。
+
+`MERCHANT_MCP_BASE_URL` 必须是商家服务的根 origin（例如 `https://merchant.example.com`），不能包含 `/mcp`；bridge 会自行请求 `${MERCHANT_MCP_BASE_URL}/mcp`。生产环境必须使用 HTTPS（本地开发可用 HTTP），并与已通过发布门禁的商家 Ingress 域名一致，不能指向独立示例网关或 Ops 域名。首次运行可不设置 `MERCHANT_WORKSPACE_ID`，先调用 `workspace.bootstrap` 创建工作区；bridge 会将脱敏的 workspace binding 保存到用户级 `CODEX_HOME/merchant-marketing/workspace-binding.json`，新会话自动恢复，也可按需改用环境变量覆盖。后续 `MERCHANT_WORKSPACE_ID` 是租户边界，不是平台授权凭证。生产网关必须校验 Codex/用户身份后再允许该工作区访问，不能仅相信客户端传入的工作区字符串。
 
 bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPACE_ID}` 默认失败关闭，避免 Codex App 或 Automation 静默分析错误工作区。只有本地 fixture 开发可以显式设置 `MERCHANT_ALLOW_FIXTURE_FALLBACK=true`，此时才回退到 `http://127.0.0.1:8790` 和 `ws_demo`；Automation 与生产环境禁止开启该选项。
 

@@ -1,9 +1,11 @@
 import { expect, test, chromium } from '@playwright/test'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-test.setTimeout(120_000)
-const sections = ['总览', '用户与租户', '任务与内容', '店铺管理', '账务与退款']
+test.setTimeout(240_000)
+const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
+const sections = ['总览', '用户与租户', '成员与权限', '客服与 CRM', '事故中心', '任务与内容', '平台连接', '平台规则', '模型服务', '功能开关', '存储与对账', '账务与退款', '审计中心']
+const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服与 CRM': '客服与客户关系', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '账务与商业配置' }
 
 const snapshot = async (page, section) => ({
   section,
@@ -21,6 +23,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
     localStorage.setItem('ops_workspace_id', 'ws_demo')
     localStorage.setItem('ops_actor_id', 'actor_demo')
     localStorage.setItem('ops_api_token', 'pilot-local-token')
+    localStorage.setItem('ops_workbench', 'platform')
   })
   const page = await context.newPage()
   const badResponses = []
@@ -29,7 +32,13 @@ test('walk every Ops Console section through the real browser UI', async () => {
   const consoleErrors = []
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()) })
   page.on('pageerror', error => consoleErrors.push(error.message))
-  page.on('requestfailed', request => requestFailures.push({ method: request.method(), url: request.url(), error: request.failure()?.errorText }))
+  page.on('requestfailed', request => {
+    // Route changes intentionally abort stale queries owned by the page that
+    // just unmounted. Keep recording real transport failures without treating
+    // browser cancellation as an API outage.
+    if (request.failure()?.errorText === 'net::ERR_ABORTED') return
+    requestFailures.push({ method: request.method(), url: request.url(), error: request.failure()?.errorText, requestBody: request.postData() })
+  })
   page.on('response', async response => {
     let body = ''
     try { body = (await response.text()).slice(0, 4_000) } catch {}
@@ -42,23 +51,32 @@ test('walk every Ops Console section through the real browser UI', async () => {
       } catch {}
     }
   })
-  await page.goto('http://127.0.0.1:18082/', { waitUntil: 'domcontentloaded' })
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(5_000)
   const pages = []
   const shots = resolve('screenshots', 'ops-pages')
   await mkdir(shots, { recursive: true })
   for (const [index, section] of sections.entries()) {
     await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()
-    const expectedHeading = section === '总览' ? '运营总览' : section === '账务与退款' ? '账务与商业配置' : section
+    const expectedHeading = headings[section] ?? section
     await page.locator('h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForTimeout(5_000)
     if (section === '用户与租户') {
-      await expect(page.getByText('用户目录')).toBeVisible()
+      await expect(page.getByRole('tab', { name: '用户目录', exact: true })).toBeVisible()
+      await expect(page.getByText('当前租户成员')).toHaveCount(0)
+    }
+    if (section === '成员与权限') {
       await expect(page.getByText('当前租户成员')).toBeVisible()
+      await expect(page.getByRole('form', { name: '邀请工作区成员' })).toBeVisible()
     }
     if (section === '账务与退款') {
       await expect(page.getByText('当前租户成员')).toHaveCount(0)
       await expect(page.getByText('成员角色调整')).toHaveCount(0)
+      const commercialDownload = page.waitForEvent('download')
+      await page.getByRole('button', { name: '导出商业配置' }).click()
+      const downloaded = await commercialDownload
+      expect(downloaded.suggestedFilename()).toMatch(/^ops-commercial-\d{4}-\d{2}-\d{2}\.csv$/u)
+      expect(await readFile(await downloaded.path(), 'utf8')).toContain('kind,id,code')
     }
     pages.push(await snapshot(page, section))
     await page.screenshot({ path: resolve(shots, `${index + 1}-${section}.png`) })
@@ -68,6 +86,11 @@ test('walk every Ops Console section through the real browser UI', async () => {
   expect(rpcErrors).toEqual([])
   expect(requestFailures).toEqual([])
   expect(consoleErrors).toEqual([])
+  // Stop page-owned polling/request work before tearing down the context.
+  // Waiting on context.close() directly can hang after the full domain walk
+  // when a page still has an in-flight background query, turning a clean
+  // browser run into a misleading test timeout.
+  await page.close()
   await context.close()
   await browser.close()
 })
@@ -79,8 +102,9 @@ test('does not report model configuration success when model status fails', asyn
     localStorage.setItem('ops_workspace_id', 'ws_demo')
     localStorage.setItem('ops_actor_id', 'actor_demo')
     localStorage.setItem('ops_api_token', 'pilot-local-token')
+    localStorage.setItem('ops_workbench', 'platform')
   })
-  await context.route('**/mcp', async route => {
+  await context.route('**/api/mcp', async route => {
     const body = route.request().postDataJSON()
     if (body?.method === 'platform.model.status') {
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'MODEL_STATUS_UNAVAILABLE', message: '模型状态暂不可用' } }) })
@@ -89,8 +113,8 @@ test('does not report model configuration success when model status fails', asyn
     await route.continue()
   })
   const page = await context.newPage()
-  await page.goto('http://127.0.0.1:18082/', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByText('平台模型状态不可用')).toBeVisible({ timeout: 20_000 })
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await expect(page.getByText('状态不可用').first()).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('平台模型配置完整')).toHaveCount(0)
   await context.close()
   await browser.close()

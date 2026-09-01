@@ -197,7 +197,7 @@ function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerati
 export function createVideoGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink): VideoGenerator | undefined {
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.VIDEO_MODEL_RELAY_API_KEY?.trim() || source.MODEL_RELAY_API_KEY?.trim()
-  const model = source.VIDEO_MODEL?.trim() ?? source.AI_VIDEO_MODEL?.trim()
+  const model = source.VIDEO_MODEL?.trim() || source.AI_VIDEO_MODEL?.trim()
   if (!relayUrl || !apiKey || !model) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined

@@ -5,7 +5,9 @@
       "headings": [
         "运营概览",
         "把商品事实变成可放心发布的内容",
-        "插件钱包与能力解锁",
+        "从你已有的内容开始",
+        "优先处理的问题",
+        "钱包与能力状态",
         "平台连接",
         "最近动态",
         "同步任务与失败项",
@@ -13,19 +15,22 @@
         "系统健康"
       ],
       "dialogs": [
-        "SYSTEM HEALTH系统健康已成功读取 API 健康检查。下面的状态只代表当前页面到 API 的连通性。API 连通：正常API 地址：/api外部平台、模型和支付 provider 仍需在部署环境单独验收知道了"
+        "SYSTEM HEALTH系统健康已成功读取 API 健康检查。下面的状态只代表当前页面到 API 的连通性。API 连通：正常模型中转：已就绪API 地址：/api重新检查模型中转知道了"
       ],
       "statuses": [
+        "已连接真实 API商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。查看健康状态",
         ""
       ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n今日工作流正常\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n创建营销任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\n已连接店铺\n5\n1 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n37\n其中 37 项高风险\nPLUGIN WALLET\n插件钱包与能力解锁\n已解锁\n¥160.00\n\n当前套餐剩余 30 次模型行动额度，优先消耗套餐额度\n\n充值后开放内容、图片、视频生成及发布确认；店铺和商品查看不受影响。\n充值并解锁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺 等 2 个店铺名\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺\n已连接\n需授权\n撤销\n天\n天猫\ntmall 店铺\n已连接\n需授权\n撤销\n拼\n拼多多\npinduoduo 店铺\n已连接\n需授权\n撤销\n小\n小红书\n尚未绑定店铺\n未配置\n需授权\n连接\n抖\n抖音\n尚未绑定店铺\n未配置\n需授权\n连接\nRECENT\n最近动态\n查看全部\n演示发布状态\n轻云防晒外套 · 淘宝\n演示数据\n演示规则检查\n山系多袋冲锋衣 · 发现 3 项\n演示数据\n演示商品同步\n京东 · 更新 24 件商品\n演示数据\n演示版本状态\n轻云防晒外套 · 内容 v4\n演示数据\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\nSYSTEM HEALTH\n系统健康\n\n已成功读取 API 健康检查。下面的状态只代表当前页面到 API 的连通性。\n\nAPI 连通：正常\nAPI 地址：/api\n外部平台、模型和支付 provider 仍需在部署环境单独验收\n知道了"
+      "visibleText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\n工作区数据已读取\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n选择商品开始任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\nNEW SESSION\n从你已有的内容开始\n\n按“知识库 → 商品 → 图片/素材”的顺序准备内容；每个入口都会保留到地址栏。\n\n1\n知识库\n品牌资料与规则依据\n进入知识库\n2\n商品\n选择平台商品开始任务\n进入商品\n3\n图片\n主图、副图与视觉检查\n进入图片\n4\n素材\n上传并确认权益与事实\n进入素材\n已连接店铺\n5\n2 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n59\n其中 50 项高风险\nACTION QUEUE\n优先处理的问题\n查看商品与问题\n1\n店铺授权需重新连接\n小红书 · 小红书未验证 Fixture · refresh_required\n在交互会话中重新发起官方授权\n查看并处理\n2\n任务 task_5898f03b-3480-45e0-a849-0ab43075d5f2 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n3\n任务 task_128bbaea-94fb-48f6-8b54-1bf9e581a5f8 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n还有 56 项问题，已按优先级排序。\nPLUGIN WALLET\n钱包与能力状态\n余额可用\n¥159.53\n\n当前套餐剩余 29 次模型行动额度，优先消耗套餐额度\n\n余额、套餐额度、生成和平台发布分别判断；支付订单只有回调确认后才会到账。\n余额\n余额可用\n充值已到账，可用于钱包结算\n套餐剩余次数\n套餐额度可用\n优先消耗套餐内模型行动额度\n生成能力\n生成能力可用\n仍需素材事实、权益和人工确认门禁\n平台发布能力\n已授权店铺尚未通过平台写入门禁\n已授权店铺尚未通过平台写入门禁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n仅有账号记录\n需重新授权\n重新授权\n淘\n淘宝\ntaobao 店铺 等 3 个店铺名\n仅有账号记录\n需重新授权\n重新授权\n淘\n淘宝\ntaobao 店铺\n仅有账号记录\n需重新授权\n重新授权\n天\n天猫\ntmall 店铺\n仅有账号记录\n需重新授权\n重新授权\n拼\n拼多多\npinduoduo 店铺\n仅有账号记录\n需重新授权\n重新授权\n小\n小红书\n小红书未验证 Fixture\n连接状态待确认\n暂不可读取\n抖\n抖音\n尚未绑定店铺\n平台暂未配置\n暂不可读取\n连接\nRECENT\n最近动态\n查看全部\n拼多多同步\n1 项 · 未发现失败项\n已完成\n淘宝同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n淘宝同步\n1 项 · 未发现失败项\n已完成\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\nSYSTEM HEALTH\n系统健康\n\n已成功读取 API 健康检查。下面的状态只代表当前页面到 API 的连通性。\n\nAPI 连通：正常\n模型中转：已就绪\nAPI 地址：/api\n重新检查模型中转\n知道了"
     },
     {
-      "name": "充值门禁",
+      "name": "钱包已解锁",
       "headings": [
         "运营概览",
         "把商品事实变成可放心发布的内容",
-        "插件钱包与能力解锁",
+        "从你已有的内容开始",
+        "优先处理的问题",
+        "钱包与能力状态",
         "平台连接",
         "最近动态",
         "同步任务与失败项",
@@ -33,67 +38,45 @@
       ],
       "dialogs": [],
       "statuses": [
+        "已连接真实 API商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。查看健康状态",
         ""
       ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n今日工作流正常\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n创建营销任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\n已连接店铺\n5\n1 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n37\n其中 37 项高风险\nPLUGIN WALLET\n插件钱包与能力解锁\n已解锁\n¥160.00\n\n当前套餐剩余 30 次模型行动额度，优先消耗套餐额度\n\n充值后开放内容、图片、视频生成及发布确认；店铺和商品查看不受影响。\n充值并解锁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺 等 2 个店铺名\n已连接\n需授权\n撤销\n淘\n淘宝\ntaobao 店铺\n已连接\n需授权\n撤销\n天\n天猫\ntmall 店铺\n已连接\n需授权\n撤销\n拼\n拼多多\npinduoduo 店铺\n已连接\n需授权\n撤销\n小\n小红书\n尚未绑定店铺\n未配置\n需授权\n连接\n抖\n抖音\n尚未绑定店铺\n未配置\n需授权\n连接\nRECENT\n最近动态\n查看全部\n演示发布状态\n轻云防晒外套 · 淘宝\n演示数据\n演示规则检查\n山系多袋冲锋衣 · 发现 3 项\n演示数据\n演示商品同步\n京东 · 更新 24 件商品\n演示数据\n演示版本状态\n轻云防晒外套 · 内容 v4\n演示数据\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证"
+      "visibleText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。\n查看健康状态\n工作区数据已读取\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n选择商品开始任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\nNEW SESSION\n从你已有的内容开始\n\n按“知识库 → 商品 → 图片/素材”的顺序准备内容；每个入口都会保留到地址栏。\n\n1\n知识库\n品牌资料与规则依据\n进入知识库\n2\n商品\n选择平台商品开始任务\n进入商品\n3\n图片\n主图、副图与视觉检查\n进入图片\n4\n素材\n上传并确认权益与事实\n进入素材\n已连接店铺\n5\n2 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n59\n其中 50 项高风险\nACTION QUEUE\n优先处理的问题\n查看商品与问题\n1\n店铺授权需重新连接\n小红书 · 小红书未验证 Fixture · refresh_required\n在交互会话中重新发起官方授权\n查看并处理\n2\n任务 task_5898f03b-3480-45e0-a849-0ab43075d5f2 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n3\n任务 task_128bbaea-94fb-48f6-8b54-1bf9e581a5f8 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n还有 56 项问题，已按优先级排序。\nPLUGIN WALLET\n钱包与能力状态\n余额可用\n¥159.53\n\n当前套餐剩余 29 次模型行动额度，优先消耗套餐额度\n\n余额、套餐额度、生成和平台发布分别判断；支付订单只有回调确认后才会到账。\n余额\n余额可用\n充值已到账，可用于钱包结算\n套餐剩余次数\n套餐额度可用\n优先消耗套餐内模型行动额度\n生成能力\n生成能力可用\n仍需素材事实、权益和人工确认门禁\n平台发布能力\n已授权店铺尚未通过平台写入门禁\n已授权店铺尚未通过平台写入门禁\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n仅有账号记录\n需重新授权\n重新授权\n淘\n淘宝\ntaobao 店铺 等 3 个店铺名\n仅有账号记录\n需重新授权\n重新授权\n淘\n淘宝\ntaobao 店铺\n仅有账号记录\n需重新授权\n重新授权\n天\n天猫\ntmall 店铺\n仅有账号记录\n需重新授权\n重新授权\n拼\n拼多多\npinduoduo 店铺\n仅有账号记录\n需重新授权\n重新授权\n小\n小红书\n小红书未验证 Fixture\n连接状态待确认\n暂不可读取\n抖\n抖音\n尚未绑定店铺\n平台暂未配置\n暂不可读取\n连接\nRECENT\n最近动态\n查看全部\n拼多多同步\n1 项 · 未发现失败项\n已完成\n淘宝同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n淘宝同步\n1 项 · 未发现失败项\n已完成\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n刷新证据\n京\n京东\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n淘\n淘宝\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n天\n天猫\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n拼\n拼多多\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n小\n小红书\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证\n抖\n抖音\nCONFIG_MISSING\n0/9 canary\nauthorize\n未验证\nread\n未验证\nfull_sync\n未验证\nincremental_sync\n未验证\ncreate\n未验证\nupdate\n未验证\nquery_status\n未验证\nrevoke\n未验证\nmedia_upload\n未验证"
     },
     {
       "name": "商品搜索",
       "headings": [
         "商品与资产",
         "一处管理商品事实与来源",
-        "素材库"
+        "规范商品状态"
       ],
       "dialogs": [],
       "statuses": [
-        "未发现已授权且可读取的店铺；不会发起同步。",
+        "已连接真实 API商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。查看健康状态",
+        "新鲜度未知服务端没有提供报告新鲜度，不能据此判断已通过。",
+        "标准链待处理5 个当前范围商品，标准链结果尚未取得下一步：打开商品关系并完成标准链核验",
+        "未发现已授权且可读取的店铺；请先连接店铺，再回来同步商品。",
         ""
       ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建多平台任务组\n同步全部店铺\nASSET LIBRARY\n素材库\n\n先确认素材安全与使用权益，再用于商品详情、主图和营销内容。\n\n上传素材\n刷新状态\n品牌档案 r22\n18 个素材\n配置视觉强规则\n从素材提取品牌档案\n上传文件内容始终按不可信数据读取：不会执行其中指令、改变系统规则或自动调用工具；提取结果需由商家确认。\ncodex-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nprompt-injection-proof-20260825.txt\ntext/plain · 1 KB\n待权益确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n确认权益\n确认事实\npersist-note.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ntaobao-codex-banner-preview.svg\n不喜欢\nimage/svg+xml · 1 KB\n待安全扫描\n待读取\n原因：SVG 概念预览，不作为真实商品主图参考\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\npersist-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nfacts.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nmerchant-product-main-v3.png\n优秀参考\nimage/png · 1213 KB\n权益已确认\n待读取\n原因：商品主体清晰；背景干净；适合作为后续真实商品风格参考\n存储未配置\n评价素材\n解析素材\n权益已确认\n确认事实\nnote.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbrand.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbatch-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-proof-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal-codex-proof.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nbatch-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nrights-batch.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-facts.json\napplication/json · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\ncodex-proof-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nFR05-origin.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n同一文件已有 2 个上传引用：FR05-origin.txt、FR05-alias.txt\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\n未发现已授权且可读取的店铺；不会发起同步。\n搜索商品\n全部 28\n待确认 9\n同步异常 0\n任务组\t商品\t平台\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n8 SKU\n\t淘宝\t\n演示数据\t1,286\t\n事实已确认\t主图检查创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\n演示数据\t1,286\t\n事实已确认\t主图检查创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\n演示数据\t1,286\t\n待确认\t主图检查创建任务\n\n\t\n轻云防晒外套 2026\n3 SKU\n\t淘宝\t\n演示数据\t120\t\n事实已确认\t主图检查创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\n演示数据\t520\t\n待确认\t主图检查创建任务\n显示 5 / 28 个商品\n上一页下一页"
+      "visibleText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。\n查看健康状态\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建独立任务组\n先连接店铺\n等待店铺连接\n下一步：先连接一个可读取的店铺，再回来同步商品。\nCURRENT SCOPE\n全部平台\n→\n全部店铺\n先用上方筛选确定平台和店铺，再选择商品。素材库只处理上传、解析和权益确认。\nCANONICAL STATUS\n规范商品状态\n\n只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。\n\n重新检查\n新鲜度未知\n服务端没有提供报告新鲜度，不能据此判断已通过。\n标准链待处理\n5 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n当前工作区待处理：6 项\n标准链状态尚未确认\n平台 / 店铺\n待处理\n3 / 5 个商品身份已核对\n下一步：确认平台和店铺身份\n商品\n待处理\n5 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n批量任务\n待处理\n已选择 0 个目标\n下一步：至少选择 2 个商品 / 平台 / 店铺\n素材关系\n待处理\n当前未确认素材绑定\n下一步：打开商品关系逐个确认\n规则预检\n待真实流程\n需在任务内容生成后由服务端检查\n下一步：进入任务并等待规则检查结果\n发布状态\n待真实流程\n未有已批准内容，不可判断发布状态\n下一步：完成生成、审核和二次发布确认\nBATCH WORKFLOW\n批量入口只创建任务组\n已选择 0 个目标 · 至少选择 2 个商品 + 平台 + 店铺目标\n1 选择商品/平台/店铺\n2 创建独立子任务\n3 逐个生成 → 审核 → 发布\n未发现已授权且可读取的店铺；请先连接店铺，再回来同步商品。\n搜索商品\n按平台筛选\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n按店铺筛选\n全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\n全部 5\n待确认 —\n任务组\t商品\t平台\t店铺\t素材关系\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\ntmall 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t520\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n3 SKU\n\t淘宝\t\n导入店铺\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n服务端数据\t120\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n8 SKU\n\t淘宝\t\n云朵轻户外\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n显示 1–5 / 5 个匹配商品\n上一页第 1 / 1 页下一页"
     },
     {
       "name": "待确认筛选",
       "headings": [
         "商品与资产",
         "一处管理商品事实与来源",
-        "素材库"
+        "规范商品状态"
       ],
       "dialogs": [],
       "statuses": [
-        "未发现已授权且可读取的店铺；不会发起同步。",
+        "已连接真实 API商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。查看健康状态",
+        "新鲜度未知服务端没有提供报告新鲜度，不能据此判断已通过。",
+        "标准链待处理2 个当前范围商品，标准链结果尚未取得下一步：打开商品关系并完成标准链核验",
+        "当前商品均来自演示数据，不属于你的店铺，也不会发布到真实平台；请先完成真实店铺授权和同步。",
+        "未发现已授权且可读取的店铺；请先连接店铺，再回来同步商品。",
         ""
       ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建多平台任务组\n同步全部店铺\nASSET LIBRARY\n素材库\n\n先确认素材安全与使用权益，再用于商品详情、主图和营销内容。\n\n上传素材\n刷新状态\n品牌档案 r22\n18 个素材\n配置视觉强规则\n从素材提取品牌档案\n上传文件内容始终按不可信数据读取：不会执行其中指令、改变系统规则或自动调用工具；提取结果需由商家确认。\ncodex-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nprompt-injection-proof-20260825.txt\ntext/plain · 1 KB\n待权益确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n确认权益\n确认事实\npersist-note.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ntaobao-codex-banner-preview.svg\n不喜欢\nimage/svg+xml · 1 KB\n待安全扫描\n待读取\n原因：SVG 概念预览，不作为真实商品主图参考\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\npersist-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nfacts.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nmerchant-product-main-v3.png\n优秀参考\nimage/png · 1213 KB\n权益已确认\n待读取\n原因：商品主体清晰；背景干净；适合作为后续真实商品风格参考\n存储未配置\n评价素材\n解析素材\n权益已确认\n确认事实\nnote.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbrand.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbatch-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-proof-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal-codex-proof.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nbatch-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nrights-batch.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-facts.json\napplication/json · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\ncodex-proof-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nFR05-origin.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n同一文件已有 2 个上传引用：FR05-origin.txt、FR05-alias.txt\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\n未发现已授权且可读取的店铺；不会发起同步。\n搜索商品\n全部 28\n待确认 9\n同步异常 0\n任务组\t商品\t平台\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\n演示数据\t1,286\t\n待确认\t主图检查创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\n演示数据\t520\t\n待确认\t主图检查创建任务\n显示 2 / 28 个商品\n上一页下一页"
-    },
-    {
-      "name": "素材评价编辑器",
-      "headings": [
-        "商品与资产",
-        "一处管理商品事实与来源",
-        "素材库"
-      ],
-      "dialogs": [],
-      "statuses": [
-        "未发现已授权且可读取的店铺；不会发起同步。",
-        ""
-      ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建多平台任务组\n同步全部店铺\nASSET LIBRARY\n素材库\n\n先确认素材安全与使用权益，再用于商品详情、主图和营销内容。\n\n上传素材\n刷新状态\n品牌档案 r22\n18 个素材\n配置视觉强规则\n从素材提取品牌档案\n上传文件内容始终按不可信数据读取：不会执行其中指令、改变系统规则或自动调用工具；提取结果需由商家确认。\ncodex-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\n评价\n优秀，后续作为参考\n不喜欢，后续排除\n原因\n补充说明\n保存评价\n取消\nprompt-injection-proof-20260825.txt\ntext/plain · 1 KB\n待权益确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n确认权益\n确认事实\npersist-note.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ntaobao-codex-banner-preview.svg\n不喜欢\nimage/svg+xml · 1 KB\n待安全扫描\n待读取\n原因：SVG 概念预览，不作为真实商品主图参考\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\npersist-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nfacts.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nmerchant-product-main-v3.png\n优秀参考\nimage/png · 1213 KB\n权益已确认\n待读取\n原因：商品主体清晰；背景干净；适合作为后续真实商品风格参考\n存储未配置\n评价素材\n解析素材\n权益已确认\n确认事实\nnote.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbrand.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbatch-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-proof-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal-codex-proof.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nbatch-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nrights-batch.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-facts.json\napplication/json · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\ncodex-proof-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nFR05-origin.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n同一文件已有 2 个上传引用：FR05-origin.txt、FR05-alias.txt\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\n未发现已授权且可读取的店铺；不会发起同步。\n搜索商品\n全部 28\n待确认 9\n同步异常 0\n任务组\t商品\t平台\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\n演示数据\t1,286\t\n待确认\t主图检查创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\n演示数据\t520\t\n待确认\t主图检查创建任务\n显示 2 / 28 个商品\n上一页下一页"
-    },
-    {
-      "name": "视觉强规则面板",
-      "headings": [
-        "商品与资产",
-        "一处管理商品事实与来源",
-        "素材库",
-        "Logo、品牌色与字体强规则",
-        "禁用内容、人物、代言人与 IP"
-      ],
-      "dialogs": [],
-      "statuses": [
-        "未发现已授权且可读取的店铺；不会发起同步。",
-        ""
-      ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建多平台任务组\n同步全部店铺\nASSET LIBRARY\n素材库\n\n先确认素材安全与使用权益，再用于商品详情、主图和营销内容。\n\n上传素材\n刷新状态\n品牌档案 r22\n18 个素材\n收起视觉规则\n从素材提取品牌档案\n上传文件内容始终按不可信数据读取：不会执行其中指令、改变系统规则或自动调用工具；提取结果需由商家确认。\nHARD CONSTRAINTS\nLogo、品牌色与字体强规则\n\n这些不是参考建议：任一素材或字体授权不满足时，内容、主图和创意生成都会被阻止。\n\n校验并保存强规则\nLogo 素材\ntaobao-codex-banner-preview.svg\n待安全扫描\nmerchant-product-main-v3.png\n权益已确认\n允许改色\n允许变形\n允许重绘\n默认全部禁止。开启任一项时，Logo 素材还必须明确允许 AI 修改。\n品牌色（#RRGGBB，逗号分隔）\n主色\n辅助色\n禁用色\n字体与风格\n字体名称\n字体授权\n已批准\n受限\n待确认\n风格关键词\n字体规则可进入生成前检查\nPROHIBITED SUBJECTS\n禁用内容、人物、代言人与 IP\n\n生成提示和确定性文案审核都会使用这些强规则；图片中的人物/IP 像素识别仍需外部视觉服务复核。\n\n禁用人物与代言人\n人物\n代言人\n禁用 IP 与内容\nIP / 角色\n内容\n填写后请点击上方“校验并保存强规则”。\ncodex-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nprompt-injection-proof-20260825.txt\ntext/plain · 1 KB\n待权益确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n确认权益\n确认事实\npersist-note.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ntaobao-codex-banner-preview.svg\n不喜欢\nimage/svg+xml · 1 KB\n待安全扫描\n待读取\n原因：SVG 概念预览，不作为真实商品主图参考\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\npersist-final.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nfacts.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nmerchant-product-main-v3.png\n优秀参考\nimage/png · 1213 KB\n权益已确认\n待读取\n原因：商品主体清晰；背景干净；适合作为后续真实商品风格参考\n存储未配置\n评价素材\n解析素材\n权益已确认\n确认事实\nnote.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbrand.txt\ntext/plain · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\nbatch-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-proof-b.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nfinal-codex-proof.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nbatch-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nrights-batch.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\ncodex-facts.json\napplication/json · 1 KB\n权益已确认\n已读取内容\n存储未配置\n评价素材\n已完成解析\n权益已确认\n确认事实\ncodex-proof-a.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\nFR05-origin.txt\ntext/plain · 1 KB\n待安全扫描\n待读取\n同一文件已有 2 个上传引用：FR05-origin.txt、FR05-alias.txt\n存储未配置\n评价素材\n等待扫描\n等待扫描\n等待扫描\n未发现已授权且可读取的店铺；不会发起同步。\n搜索商品\n全部 28\n待确认 9\n同步异常 0\n任务组\t商品\t平台\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\n演示数据\t1,286\t\n待确认\t主图检查创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\n演示数据\t520\t\n待确认\t主图检查创建任务\n显示 2 / 28 个商品\n上一页下一页"
+      "visibleText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。\n查看健康状态\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建独立任务组\n先连接店铺\n等待店铺连接\n下一步：先连接一个可读取的店铺，再回来同步商品。\nCURRENT SCOPE\n全部平台\n→\n全部店铺\n先用上方筛选确定平台和店铺，再选择商品。素材库只处理上传、解析和权益确认。\nCANONICAL STATUS\n规范商品状态\n\n只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。\n\n重新检查\n新鲜度未知\n服务端没有提供报告新鲜度，不能据此判断已通过。\n标准链待处理\n2 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n当前工作区待处理：5 项\n标准链状态尚未确认\n平台 / 店铺\n已验证\n2 / 2 个商品身份已核对\n下一步：确认平台和店铺身份\n商品\n待处理\n2 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n批量任务\n待处理\n已选择 0 个目标\n下一步：至少选择 2 个商品 / 平台 / 店铺\n素材关系\n待处理\n当前未确认素材绑定\n下一步：打开商品关系逐个确认\n规则预检\n待真实流程\n需在任务内容生成后由服务端检查\n下一步：进入任务并等待规则检查结果\n发布状态\n待真实流程\n未有已批准内容，不可判断发布状态\n下一步：完成生成、审核和二次发布确认\nBATCH WORKFLOW\n批量入口只创建任务组\n已选择 0 个目标 · 至少选择 2 个商品 + 平台 + 店铺目标\n1 选择商品/平台/店铺\n2 创建独立子任务\n3 逐个生成 → 审核 → 发布\n当前商品均来自演示数据，不属于你的店铺，也不会发布到真实平台；请先完成真实店铺授权和同步。\n未发现已授权且可读取的店铺；请先连接店铺，再回来同步商品。\n搜索商品\n按平台筛选\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n按店铺筛选\n全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\n全部 —\n待确认 2\n任务组\t商品\t平台\t店铺\t素材关系\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\ntmall 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t520\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n显示 1–2 / 2 个匹配商品\n上一页第 1 / 1 页下一页"
     },
     {
       "name": "品类与规则筛选",
@@ -104,11 +87,12 @@
       ],
       "dialogs": [],
       "statuses": [
+        "已连接真实 API商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。查看健康状态",
         "规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。",
-        "已连接 API · 管理员发布数据。类目状态仅代表本地目录状态，提交平台前仍需做字段校验。",
+        "已连接 API · 管理员发布数据。类目状态仅代表当前数据源状态，提交平台前仍需做字段校验。",
         ""
       ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n1\n跨平台可追溯\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n1\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\n已连接 API · 管理员发布数据。类目状态仅代表本地目录状态，提交平台前仍需做字段校验。\nCATALOG 1312\n服装 / 防晒外套\n已生效\n平台范围\n京东 · 淘宝 · 天猫 · 拼多多 · 小红书 · 抖音\n属性模板\n材质、成分、重量、尺码、颜色、功能依据\n最近更新：今天\n查看字段映射"
+      "visibleText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。\n查看健康状态\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n1\n已连接 API · 管理员发布数据 · 当前作用域：淘宝\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n1\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\n已连接 API · 管理员发布数据。类目状态仅代表当前数据源状态，提交平台前仍需做字段校验。\nCATALOG 1312\n服装 / 防晒外套\n已生效\n平台范围\n京东 · 淘宝 · 天猫 · 拼多多 · 小红书 · 抖音\n属性模板\n材质、成分、重量、尺码、颜色、功能依据\n最近更新：今天\n查看字段映射"
     },
     {
       "name": "帮助面板",
@@ -122,29 +106,31 @@
         "HELP & DIAGNOSTICS如何使用 Merchant Studio先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。商品与资产：绑定平台店铺、同步商品和管理素材营销任务：确认事实、生成文案、查看规则和版本记录发布中心：只展示已审核任务，并在提交前再次确认知道了"
       ],
       "statuses": [
+        "已连接真实 API商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。查看健康状态",
         "规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。",
-        "已连接 API · 管理员发布数据。类目状态仅代表本地目录状态，提交平台前仍需做字段校验。",
+        "已连接 API · 管理员发布数据。类目状态仅代表当前数据源状态，提交平台前仍需做字段校验。",
         ""
       ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n1\n跨平台可追溯\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n1\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\n已连接 API · 管理员发布数据。类目状态仅代表本地目录状态，提交平台前仍需做字段校验。\nCATALOG 1312\n服装 / 防晒外套\n已生效\n平台范围\n京东 · 淘宝 · 天猫 · 拼多多 · 小红书 · 抖音\n属性模板\n材质、成分、重量、尺码、颜色、功能依据\n最近更新：今天\n查看字段映射\nHELP & DIAGNOSTICS\n如何使用 Merchant Studio\n\n先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。\n\n商品与资产：绑定平台店铺、同步商品和管理素材\n营销任务：确认事实、生成文案、查看规则和版本记录\n发布中心：只展示已审核任务，并在提交前再次确认\n知道了"
+      "visibleText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。\n查看健康状态\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n1\n已连接 API · 管理员发布数据 · 当前作用域：淘宝\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n1\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\n已连接 API · 管理员发布数据。类目状态仅代表当前数据源状态，提交平台前仍需做字段校验。\nCATALOG 1312\n服装 / 防晒外套\n已生效\n平台范围\n京东 · 淘宝 · 天猫 · 拼多多 · 小红书 · 抖音\n属性模板\n材质、成分、重量、尺码、颜色、功能依据\n最近更新：今天\n查看字段映射\nHELP & DIAGNOSTICS\n如何使用 Merchant Studio\n\n先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。\n\n商品与资产：绑定平台店铺、同步商品和管理素材\n营销任务：确认事实、生成文案、查看规则和版本记录\n发布中心：只展示已审核任务，并在提交前再次确认\n知道了"
     },
     {
-      "name": "工作区设置面板",
+      "name": "工作区信息面板",
       "headings": [
         "规则与检查",
         "规则库与品类库",
         "服装 / 防晒外套",
-        "工作区设置"
+        "工作区信息"
       ],
       "dialogs": [
-        "WORKSPACE SETTINGS工作区设置当前页面展示本地工作区的连接信息；真实凭证、模型中转站和生产权限由服务端配置管理。工作区：ws_demoAPI 地址：/api数据范围：当前工作区隔离；不会跨店铺复用商品事实知道了"
+        "WORKSPACE INFORMATION工作区信息这里是只读运行信息，不会在浏览器中修改真实凭证、模型中转站或生产权限；这些配置由服务端安全管理。工作区：ws_demoAPI 地址：/api数据范围：当前工作区隔离；不会跨店铺复用商品事实知道了"
       ],
       "statuses": [
+        "已连接真实 API商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。查看健康状态",
         "规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。",
-        "已连接 API · 管理员发布数据。类目状态仅代表本地目录状态，提交平台前仍需做字段校验。",
+        "已连接 API · 管理员发布数据。类目状态仅代表当前数据源状态，提交平台前仍需做字段校验。",
         ""
       ],
-      "visibleText": "Merchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n帮助与诊断\n工作区设置\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 生产工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n1\n跨平台可追溯\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n1\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\n已连接 API · 管理员发布数据。类目状态仅代表本地目录状态，提交平台前仍需做字段校验。\nCATALOG 1312\n服装 / 防晒外套\n已生效\n平台范围\n京东 · 淘宝 · 天猫 · 拼多多 · 小红书 · 抖音\n属性模板\n材质、成分、重量、尺码、颜色、功能依据\n最近更新：今天\n查看字段映射\nWORKSPACE SETTINGS\n工作区设置\n\n当前页面展示本地工作区的连接信息；真实凭证、模型中转站和生产权限由服务端配置管理。\n\n工作区：ws_demo\nAPI 地址：/api\n数据范围：当前工作区隔离；不会跨店铺复用商品事实\n知道了"
+      "visibleText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n规则与检查\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转未就绪，生成、图片、OCR 和视频能力会按服务端门禁阻止。\n查看健康状态\nPOLICY & TAXONOMY\n规则库与品类库\n\n先选对品类，再按平台规则生成内容；每条规则都能追溯版本、适用范围和阻断原因。\n\n只读证据中心\n规则库负责表达、事实和发布前检查；品类库负责属性模板、平台字段映射和必填项。当前商家端只读，版本由管理员统一发布。\n生效规则包\n1\n已连接 API · 管理员发布数据 · 当前作用域：淘宝\n已覆盖品类\n3\n已连接 API · 管理员发布数据\n属性模板字段\n13\n来自当前类目目录\n字段映射\n实时读取\n不伪造校验比例\n规则库\n1\n品类库\n3\n规则平台\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n搜索规则或品类\n已连接 API · 管理员发布数据。类目状态仅代表当前数据源状态，提交平台前仍需做字段校验。\nCATALOG 1312\n服装 / 防晒外套\n已生效\n平台范围\n京东 · 淘宝 · 天猫 · 拼多多 · 小红书 · 抖音\n属性模板\n材质、成分、重量、尺码、颜色、功能依据\n最近更新：今天\n查看字段映射\nWORKSPACE INFORMATION\n工作区信息\n\n这里是只读运行信息，不会在浏览器中修改真实凭证、模型中转站或生产权限；这些配置由服务端安全管理。\n\n工作区：ws_demo\nAPI 地址：/api\n数据范围：当前工作区隔离；不会跨店铺复用商品事实\n知道了"
     }
   ],
   "badResponses": [],

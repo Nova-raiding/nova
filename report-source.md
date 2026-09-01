@@ -78,7 +78,7 @@ StoreClaw 提供永久免费层和 Pro/Max/Ultra 月付层，主要按积分与�
 
 ### 3.1 已实现且有自动化证据
 
-当前 MCP bridge 运行态 `tools/list` 实际暴露 149 个工具；`docs/implementation-status.md` 中若干“59 个工具”的旧描述属于历史记录。工具覆盖：
+当前 MCP bridge 运行态 `tools/list` 实际暴露 149 个工具；`doc/todo/quality/implementation-status.md` 中若干“59 个工具”的旧描述属于历史记录。工具覆盖：
 
 - 四平台授权入口、撤权、商品同步、失败重试和能力证据。
 - 商品/SKU/价格/库存/图片事实确认、品类、商品停用/恢复。
@@ -89,7 +89,7 @@ StoreClaw 提供永久免费层和 Pro/Max/Ultra 月付层，主要按积分与�
 - 发布字段 diff、一次性确认、幂等提交、受理/审核/发布/驳回/未知状态和对账。
 - 规则版本、审计、工作区指标，以及支付宝/微信充值 API。
 
-本次执行 `npm run check`：TypeScript 类型检查通过，63 个测试文件、338 项测试全部通过。实现证据见 `apps/plugin/mcp/bridge.mjs`、`apps/api/src/server.ts`、`packages/` 与 `docs/implementation-status.md`。
+本次执行 `npm run check`：TypeScript 类型检查通过，63 个测试文件、338 项测试全部通过。实现证据见 `apps/plugin/mcp/bridge.mjs`、`apps/api/src/server.ts`、`packages/` 与 `doc/todo/quality/implementation-status.md`。
 
 ### 3.2 当前真正的产品护城河
 
@@ -230,4 +230,4 @@ StoreClaw 最大领先点来自数据，不是模型。建议新增统一但不�
 | [敏感操作审批](https://www.storeclaw.ai/zh/help-center/review-and-approve-sensitive-operations/) | StoreClaw Help Center | 2026-08-25 可访问 | 一次/请求/任务级授权和拒绝 |
 | [资产库](https://www.storeclaw.ai/zh/help-center/file-generation-guide/) | StoreClaw Help Center | 2026-08-25 可访问 | 按任务归档、搜索、版本、分享和下载 |
 | [第三方技能](https://www.storeclaw.ai/zh/help-center/installing-third-party-skills/) | StoreClaw Help Center | 2026-08-25 可访问 | 本地、GitHub、ClawHub Skill 接入和安全说明 |
-| `README.md`、`docs/implementation-status.md`、`apps/plugin/mcp/bridge.mjs`、`apps/api/src/server.ts` | codexSkills 工作区 | 2026-08-25 本地审阅 | 当前实现、工具清单、生产边界和代码证据 |
+| `README.md`、`doc/todo/quality/implementation-status.md`、`apps/plugin/mcp/bridge.mjs`、`apps/api/src/server.ts` | codexSkills 工作区 | 2026-08-25 本地审阅 | 当前实现、工具清单、生产边界和代码证据 |

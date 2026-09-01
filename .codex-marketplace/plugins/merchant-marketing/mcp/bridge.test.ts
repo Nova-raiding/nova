@@ -657,7 +657,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260831191109' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260831225927' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -1356,7 +1356,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.isError).toBe(false)
       expect(response.result._meta).toBeUndefined()
       expect(response.result.structuredContent).toMatchObject({ scanStatus: 'clean', scanAutomation: { state: 'completed', userActionRequired: false }, scan_wait: { state: 'completed', user_action_required: false }, next_step: '确认素材商用权益' })
-      expect(response.result.structuredContent.generation_continuation).toEqual({ state: 'waiting_scan' })
+      expect(response.result.structuredContent.generation_continuation).toBeUndefined()
       for (const forbidden of ['workspaceId', 'workspace_id', 'storageKey', 'storage_key', 'sha256', 'scanReceiptId', 'scanReceiptDigest', 'revision', 'jobId']) {
         expect(JSON.stringify(response.result.structuredContent)).not.toContain(forbidden)
       }
@@ -1450,6 +1450,38 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('keeps an unavailable official OAuth connection merchant-safe and resumable', async () => {
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) { /* consume request */ }
+      res.statusCode = 503
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ error: { code: 'NOT_CONFIGURED', message: 'jd official OAuth client secret missing' } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'platform.connect', arguments: { platform: 'jd' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'NOT_CONFIGURED',
+          recovery: { state: 'service_unavailable', user_action_required: false, resume_message: '继续' },
+        },
+      })
+      expect(response.result.content[0].text).toContain('当前京东官方连接尚未启用')
+      expect(response.result.content[0].text).toContain('商品图片和确认信息已保留')
+      expect(JSON.stringify(response.result)).not.toMatch(/管理员|运营后台|client secret|OAuth 密钥/u)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('keeps the uploaded asset pending when status polling is temporarily unavailable', async () => {
     const methods: string[] = []
     const server = createServer(async (req, res) => {
@@ -1519,6 +1551,35 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content[0].text).toContain('继续使用当前图片记录你的确认')
       expect(response.result.content[0].text).toContain('无需重新连接工作区或重复上传')
       expect(JSON.stringify(response.result)).not.toContain('internal parser detail')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not claim parse persistence when the API did not bind the same asset', async () => {
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) { /* consume request */ }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ error: {
+        code: 'ASSET_PARSE_FAILED',
+        message: 'parser failed',
+        details: { asset_id: 'asset_other', asset_persisted: true, retryable: true },
+      } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.parse', arguments: { asset_id: 'asset_requested' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(true)
+      expect(response.result.structuredContent.asset_persisted).toBeUndefined()
+      expect(response.result.structuredContent.conversation_state).toBeUndefined()
+      expect(response.result.structuredContent.next_action).toBeUndefined()
     } finally {
       child.kill()
       await close(server)
@@ -1827,6 +1888,28 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
       expect(response.result.structuredContent.message).toMatch(/MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u)
       expect(response.result.structuredContent.message).toContain('refusing to use the local fixture fallback')
+    } finally {
+      child.kill()
+    }
+  })
+
+  it.each([
+    'https://merchant.example.test/mcp',
+    'https://user:secret@merchant.example.test',
+    'https://merchant.example.test?tenant=ops',
+    'https://merchant.example.test#fragment',
+  ])('rejects a non-origin MERCHANT_MCP_BASE_URL before sending traffic: %s', async endpoint => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: endpoint, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
+      expect(response.result.structuredContent.message).toContain('服务暂时不可用')
+      expect(response.result.structuredContent.message).not.toContain(endpoint)
     } finally {
       child.kill()
     }

@@ -25,6 +25,7 @@ import {
   parseFinanceExport,
   parseFinanceSearchPage,
   parseSupportPage,
+  parseSupportSlaReport,
   supportClient,
 } from "./opsDomainClients.js";
 
@@ -65,6 +66,7 @@ describe("Ops domain protocol clients", () => {
     if (method === "ops.support.ticket.get") return { ticket, events: [ticketEvent] };
     if (method.startsWith("ops.support.ticket.")) return { ticket, event: ticketEvent, replayed: false };
     if (method === "ops.support.crm.export") return { generatedAt: ticket.createdAt, workspaceId: "ws-ops", columns: ["customer_id", "customer_name", "customer_email", "total_tickets", "open_tickets", "urgent_tickets", "last_ticket_at", "last_ticket_status"], rows: [] };
+    if (method === "ops.support.sla.report") return { reportId: "run-1", workspaceId: "ws-ops", periodStart: "2026-08-01T00:00:00.000Z", periodEnd: "2026-09-01T00:00:00.000Z", cutoffAt: "2026-09-03T00:00:00.000Z", policyVersions: [1], calendarVersions: ["business_weekday_utc"], denominator: 1, met: 1, failed: 0, excluded: 0, lateOrUnresolved: 0, checksum: "a".repeat(64), ticketResults: [] };
     if (method === "ops.finance.search") return { records: [financeRecord], summary: { totalRecords: 1, rechargeOrderCny: 1, subscriptionOrderCny: 0, walletCreditCny: 0, walletDebitCny: 0, walletNetCny: 0, providerCostCny: 0, customerChargeCny: 0, usageUnits: 0, byKind: { recharge_order: 1, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } }, snapshotAt: "2026-08-29T00:00:00.000Z", scope: { role: "platform_ops", workspaceCount: 1 } };
     if (method === "ops.finance.detail") return { ...financeRecord, attributes: { provider: "wechat" } };
     if (method === "ops.finance.export") return { exportId: "export-1", fileName: "finance.csv", contentType: "text/csv; charset=utf-8", csv: "id\nrecord-1", rowCount: 1, truncated: false, snapshotAt: "2026-08-29T00:00:00.000Z" };
@@ -126,6 +128,7 @@ describe("Ops domain protocol clients", () => {
     await auditCenterClient.list(auditQuery);
     await auditCenterClient.detail({ workspaceId: "ws-ops", source: "operation", id: "audit-1" });
     await auditCenterClient.exportCsv(auditQuery);
+    await supportClient.report({ workspaceId: "ws-ops", periodStart: "2026-08-01T00:00:00.000Z", periodEnd: "2026-09-01T00:00:00.000Z", cutoffAt: "2026-09-03T00:00:00.000Z" });
 
     const expectedMethods = [
       "ops.feature-flags.list",
@@ -154,6 +157,7 @@ describe("Ops domain protocol clients", () => {
       "ops.audit.list",
       "ops.audit.detail",
       "ops.audit.export",
+      "ops.support.sla.report",
     ];
     expect(calls().map(call => call.method)).toEqual(expectedMethods);
 

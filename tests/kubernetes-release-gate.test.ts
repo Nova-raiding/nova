@@ -77,15 +77,17 @@ function productionWorkerCredentialManifest(sharedPublishToken = false) {
 
 function productionScannerManifest(mutate?: (manifest: Record<string, any>) => void) {
   const runtimeData = {
+    MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
     ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30',
     ASSET_SCANNER_SERVICE_ID: 'merchant-asset-scanner-production', ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: 'merchant-asset-scanner-production', ASSET_SCAN_MIN_DEFINITIONS_VERSION: '28000',
     CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440',
   }
   const secret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-scanner-secrets', key } } })
+  const runtimeSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-runtime-secrets', key } } })
   const annotation = { 'merchant.example.com/config-sha256': configDigest('merchant-runtime', runtimeData) }
   const manifest: Record<string, any> = { apiVersion: 'v1', kind: 'List', items: [
     { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: runtimeData },
-    { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: annotation }, spec: { containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [secret('ASSET_SCANNER_API_TOKEN'), secret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS')] }] } } } },
+    { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: annotation }, spec: { containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [secret('ASSET_SCANNER_API_TOKEN'), secret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS'), runtimeSecret('MODEL_RELAY_API_KEY'), runtimeSecret('PLATFORM_RULE_SYNC_SIGNING_SECRET'), runtimeSecret('PAYMENT_PROVIDER_API_KEY'), runtimeSecret('PAYMENT_CALLBACK_SECRET')] }] } } } },
     { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-worker-scan' }, spec: { replicas: 2, template: { metadata: { annotations: annotation }, spec: { nodeSelector: { 'kubernetes.io/arch': 'amd64' }, containers: [
       { name: 'worker', image: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [
         { name: 'WORKER_ROLE', value: 'scan' }, { name: 'ASSET_SCANNER_SERVICE_ID', valueFrom: { configMapKeyRef: { name: 'merchant-runtime', key: 'ASSET_SCANNER_SERVICE_ID' } } }, { name: 'SCANNER_MINIMUM_READY_INSTANCES', value: '2' }, secret('WORKER_API_TOKEN', 'ASSET_SCANNER_API_TOKEN'), secret('WORKER_API_SIGNING_SECRET', 'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCANNER_API_TOKEN'), secret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), secret('ASSET_SCAN_RECEIPT_KEY_ID'), secret('ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM'),
@@ -110,6 +112,43 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
 }
 
 describe('structured Kubernetes release image gate', () => {
+  it('renders every production scale overlay with effective immutable image replacements and passes the release validator', () => {
+    const overlayImageDigests = { ...imageDigests, clamav: 'sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada' }
+    const replacements: Record<string, string> = {
+      'REPLACE_ME/merchant-api@SET_API_IMAGE_DIGEST': `registry.example.com/merchant-api@${imageDigests['merchant-api']}`,
+      'REPLACE_ME/merchant-worker@SET_WORKER_IMAGE_DIGEST': `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`,
+      'REPLACE_ME/merchant-ui@SET_UI_IMAGE_DIGEST': `registry.example.com/merchant-ui@${imageDigests['merchant-ui']}`,
+      'REPLACE_ME/merchant-ops-ui@SET_OPS_UI_IMAGE_DIGEST': `registry.example.com/merchant-ops-ui@${imageDigests['merchant-ops-ui']}`,
+    }
+    for (const overlay of ['pilot-50', 'wave-100', 'wave-250', 'target-500']) {
+      const raw = execFileSync('kustomize', ['build', `infra/kubernetes/overlays/${overlay}`], { encoding: 'utf8', stdio: 'pipe' })
+      expect(raw).not.toContain('ghcr.io/example/merchant-')
+      for (const placeholder of Object.keys(replacements)) expect(raw).toContain(placeholder)
+      const rendered = Object.entries(replacements).reduce((document, [placeholder, replacement]) => document.replaceAll(placeholder, replacement), raw)
+      expect(rendered).not.toMatch(/REPLACE_ME|SET_[A-Z_]+_DIGEST/u)
+      const observedImages = [...rendered.matchAll(/^\s*image:\s*(\S+)$/gmu)].map(match => match[1]!)
+      expect(observedImages.every(image => image.includes('@sha256:'))).toBe(true)
+      expect(runManifest(rendered, JSON.stringify(overlayImageDigests))()).toContain('Kubernetes release manifest gate passed')
+    }
+  })
+
+  it('binds every base API and worker pod template to the canonical merchant-runtime digest', () => {
+    const ruby = [
+      'require "psych"',
+      'require "digest"',
+      'config = Psych.safe_load(File.read(ARGV.fetch(0)), aliases: false)',
+      'name = config.dig("metadata", "name")',
+      'data = config["data"] || {}',
+      'canonical = name + "\\n" + data.sort.map { |key, value| "data.#{key}=#{value}\\n" }.join',
+      'print "sha256:#{Digest::SHA256.hexdigest(canonical)}"',
+    ].join('; ')
+    const expected = execFileSync('ruby', ['-e', ruby, 'infra/kubernetes/base/configmap.yaml'], { encoding: 'utf8' })
+    const manifests = `${readFileSync('infra/kubernetes/base/api.yaml', 'utf8')}\n${readFileSync('infra/kubernetes/base/workers.yaml', 'utf8')}`
+    const observed = [...manifests.matchAll(/merchant\.example\.com\/config-sha256:\s*"?(sha256:[a-f0-9]{64})"?/gu)].map(match => match[1])
+    expect(observed).toHaveLength(7)
+    expect(new Set(observed)).toEqual(new Set([expected]))
+  })
+
   it('requires a complete role-scoped worker credential deployment set and rejects shared Secret keys', () => {
     expect(runManifest(productionWorkerCredentialManifest())()).toContain('images=6')
     expect(runManifest(productionWorkerCredentialManifest(true))).toThrow(/not allowed|must bind|must not share/)
@@ -144,6 +183,8 @@ describe('structured Kubernetes release image gate', () => {
     expect(workers).toContain('memory: 3Gi')
     expect(workers).toContain('memory: 4Gi')
     expect(config).toMatch(/ALLOW_LOCAL_ASSET_SCAN_FIXTURE:\s*"false"/)
+    expect(config).toContain('MCP_AUTHZ_MODE: enforce')
+    expect(config).toContain('AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: "true"')
     expect(config).toContain('ASSET_SCANNER_MODE: clamav_worker')
     expect(config).toContain('ASSET_SCANNER_SERVICE_ID: merchant-asset-scanner-production')
     expect(config).toContain('ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: merchant-asset-scanner-production')
@@ -168,6 +209,8 @@ describe('structured Kubernetes release image gate', () => {
     expect(networkPolicies).toContain('app.kubernetes.io/name: merchant-api')
     expect(secretContract).toContain('name: merchant-scanner-secrets')
     expect(secretContract).toContain('receiptSigningAlgorithm: Ed25519')
+    expect(api).toMatch(/name: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON[\s\S]*?key: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON/)
+    expect(api).not.toMatch(/key: ASSET_DISPLAY_URL_PREVIOUS_KEYS_JSON, optional: true/)
     expect(secretContract).toContain('receiptPrivateKeyDelivery: read-only-projected-file')
     expect(secretContract).toContain('neverMountReceiptPrivateKeyIntoApi')
     expect(api).toContain('key: WORKER_API_CREDENTIALS')
@@ -211,6 +254,36 @@ describe('structured Kubernetes release image gate', () => {
     expect(first).toBe(second)
   })
 
+  it('rejects weakened or overridden production authorization configuration even with a recomputed config digest', () => {
+    for (const [key, value] of [
+      ['MCP_AUTHZ_MODE', 'shadow'],
+      ['AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', 'false'],
+    ] as const) {
+      const weakened = productionScannerManifest(manifest => { manifest.items[0].data[key] = value })
+      expect(runManifest(weakened, JSON.stringify(imageDigests))).toThrow(new RegExp(`${key}=`, 'u'))
+    }
+
+    for (const key of ['MCP_AUTHZ_MODE', 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED'] as const) {
+      const missing = productionScannerManifest(manifest => { delete manifest.items[0].data[key] })
+      expect(runManifest(missing, JSON.stringify(imageDigests))).toThrow(new RegExp(`${key}=`, 'u'))
+    }
+
+    const literalOverride = productionScannerManifest(manifest => {
+      manifest.items[1].spec.template.spec.containers[0].env.push({ name: 'MCP_AUTHZ_MODE', value: 'enforce' })
+    })
+    expect(runManifest(literalOverride, JSON.stringify(imageDigests))).toThrow(/must not override MCP_AUTHZ_MODE/)
+
+    const referenceOverride = productionScannerManifest(manifest => {
+      manifest.items[1].spec.template.spec.containers[0].env.push({ name: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', valueFrom: { configMapKeyRef: { name: 'merchant-runtime', key: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED' } } })
+    })
+    expect(runManifest(referenceOverride, JSON.stringify(imageDigests))).toThrow(/must not override AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED/)
+
+    const duplicateConfig = productionScannerManifest(manifest => {
+      manifest.items.push({ apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'authz-override' }, data: { MCP_AUTHZ_MODE: 'enforce' } })
+    })
+    expect(runManifest(duplicateConfig, JSON.stringify(imageDigests))).toThrow(/ConfigMap\/authz-override must not define/)
+  })
+
   it('rejects production manifests that weaken scanner policy, omit isolated secrets, or bypass ClamAV freshness', () => {
     const unsafeFixture = productionScannerManifest(value => { value.items[0].data.ALLOW_LOCAL_ASSET_SCAN_FIXTURE = 'true' })
     expect(runManifest(unsafeFixture, JSON.stringify(imageDigests))).toThrow(/ALLOW_LOCAL_ASSET_SCAN_FIXTURE/)
@@ -220,6 +293,13 @@ describe('structured Kubernetes release image gate', () => {
     expect(runManifest(staleSignaturesAllowed, JSON.stringify(imageDigests))).toThrow(/SIGNATURE_MAX_AGE/)
     const noFreshnessProbe = productionScannerManifest(value => { value.items[2].spec.template.spec.containers[1].readinessProbe.exec.command = ['sh', '-c', 'clamdscan --ping 1'] })
     expect(runManifest(noFreshnessProbe, JSON.stringify(imageDigests))).toThrow(/readinessProbe/)
+  })
+
+  it.each(['MODEL_RELAY_API_KEY', 'PLATFORM_RULE_SYNC_SIGNING_SECRET', 'PAYMENT_PROVIDER_API_KEY', 'PAYMENT_CALLBACK_SECRET'])('requires the API critical Secret binding %s', secretName => {
+    const missing = productionScannerManifest(value => {
+      value.items[1].spec.template.spec.containers[0].env = value.items[1].spec.template.spec.containers[0].env.filter((entry: any) => entry.name !== secretName)
+    })
+    expect(runManifest(missing, JSON.stringify(imageDigests))).toThrow(new RegExp(secretName, 'u'))
   })
 
   it('fails closed when scanner identity, definitions floor, replica quorum, or bootstrap Service routing drift', () => {

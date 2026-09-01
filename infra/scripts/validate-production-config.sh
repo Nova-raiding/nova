@@ -191,7 +191,7 @@ if grep -Eq '(^|[[:space:]])(text_endpoint|image_endpoint|text_api_key_ref|image
 fi
 grep -Eq 'approved_requests_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_requests_per_minute must be a positive approved limit' >&2; exit 1; }
 grep -Eq 'approved_tokens_per_minute:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'approved_tokens_per_minute must be a positive approved limit' >&2; exit 1; }
-grep -Eq 'maximum_task_cost_cny:[[:space:]]*"?[0-9]+(\.[0-9]{1,2})?\"?$' "$config_path" || { echo 'maximum_task_cost_cny must be a non-negative CNY amount' >&2; exit 1; }
+grep -Eq 'maximum_task_cost_cny:[[:space:]]*"?([1-9][0-9]*(\.[0-9]{1,2})?|0\.(0[1-9]|[1-9][0-9]?))\"?$' "$config_path" || { echo 'maximum_task_cost_cny must be a positive CNY amount with at most two decimals' >&2; exit 1; }
 grep -Eq 'platform_rule_sync_manifest_url:[[:space:]]*"?https://' "$config_path" || { echo 'platform rule sync manifest URL must be HTTPS' >&2; exit 1; }
 grep -Eq "platform_rule_sync_signing_secret_ref:[[:space:]]*[^\"' ]+" "$config_path" || { echo 'platform rule sync signing secret ref must be configured' >&2; exit 1; }
 grep -Eq 'platform_rule_sync_interval_hours:[[:space:]]*"?[1-9][0-9]*\"?$' "$config_path" || { echo 'platform rule sync interval must be a positive number of hours' >&2; exit 1; }

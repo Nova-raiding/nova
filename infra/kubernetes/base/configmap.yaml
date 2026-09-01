@@ -14,6 +14,11 @@ data:
   # The merchant host uses the bearer boundary; ops.merchant.example.com
   # remains OIDC-gateway-only. The API compares this exact host value.
   MERCHANT_BEARER_HOSTNAME: merchant.example.com
+  # ChatGPT/Codex receives the service origin and appends /mcp itself. Keep the
+  # ops origin separate so bearer-authenticated plugin traffic cannot drift
+  # onto the OIDC-only operations workbench.
+  PUBLIC_APP_BASE_URL: https://merchant.example.com
+  PUBLIC_OPS_BASE_URL: https://ops.merchant.example.com
   PORT: "8787"
   # Target profile: 12 API replicas x 12 + 40 Worker replicas x 3 = 264;
   # leaves headroom below the 300 backend connection budget.
@@ -120,9 +125,23 @@ data:
   MODEL_RPM_LIMIT: "0"
   MODEL_TPM_LIMIT: "0"
   MODEL_DAILY_CNY_LIMIT: "0.00"
+  MODEL_MAX_TASK_COST_CNY: "0.00"
+  # Provider payment configuration is non-secret runtime state. Credentials
+  # remain explicit Secret key references on the API Deployment.
+  PAYMENT_MODE: provider
+  PAYMENT_PROVIDER_ADAPTERS: alipay,wechat
+  PAYMENT_CHECKOUT_BASE_URL: https://payments.example.com/checkout
+  PAYMENT_PROVIDER_CHECKOUT_API_URL: https://payments.example.com/v1/checkout
+  PAYMENT_PROVIDER_QUERY_API_URL: https://payments.example.com/v1/query
+  PAYMENT_PROVIDER_REFUND_API_URL: https://payments.example.com/v1/refund
+  PAYMENT_PROVIDER_MERCHANT_ID: merchant-example
+  PAYMENT_CALLBACK_BASE_URL: https://merchant.example.com/v1
+  PAYMENT_RECONCILIATION_ENABLED: "true"
+  PAYMENT_REFUND_ENABLED: "true"
   VAULT_KV_MOUNT: secret
   VAULT_CREDENTIAL_PATH_PREFIX: merchant-marketing
   PLUGIN_WRITE_ENABLED: "false"
+  PLATFORM_RULE_SYNC_MANIFEST_URL: https://rules.example.com/platform-rules/v1/manifest.json
   PLATFORM_RULE_SYNC_INTERVAL_HOURS: "24"
   PUBLIC_OAUTH_REDIRECT_URI: "https://merchant.example.com/v1/oauth/callback/{platform}"
   OTEL_SERVICE_NAME: merchant-api

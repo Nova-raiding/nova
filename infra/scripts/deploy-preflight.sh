@@ -76,6 +76,7 @@ for flag in \
 done
 image_set_digest=$(sh "$(dirname "$0")/validate-kubernetes-release.sh" "$RENDERED_MANIFEST_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 printf '%s\n' "$image_set_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo 'canonical image set digest is invalid' >&2; exit 1; }
+ruby "$(dirname "$0")/validate-rendered-production-config.rb" "$config_path" "$RENDERED_MANIFEST_PATH"
 manifest_sha256=$(shasum -a 256 "$RENDERED_MANIFEST_PATH" | awk '{print $1}')
 repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd -P)
 release_git_sha=$(git -C "$repo_root" rev-parse HEAD)
@@ -90,7 +91,10 @@ npx --no-install tsx "$(dirname "$0")/../../tests/capacity-evidence-gate.ts" --f
 model_relay_url=$(awk '/^[[:space:]]*model_relay_base_url:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 [ -n "$model_relay_url" ] || { echo "model_relay_base_url is required for relay evidence binding" >&2; exit 1; }
 npx --no-install tsx "$(dirname "$0")/../../tests/model-relay-evidence-gate.ts" --file "$MODEL_RELAY_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-relay "$model_relay_url" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-production --require-artifacts
-npx --no-install tsx "$(dirname "$0")/../../tests/codex-app-host-evidence-gate.ts" --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
+mcp_base_url=$(ruby "$(dirname "$0")/validate-production-config-yaml.rb" "$config_path" --print-mcp-base-url)
+[ -n "$mcp_base_url" ] || { echo "mcp_base_url is required for Codex host evidence binding" >&2; exit 1; }
+bridge_sha256=$(shasum -a 256 "$repo_root/apps/plugin/mcp/bridge.mjs" | awk '{print $1}')
+npx --no-install tsx "$(dirname "$0")/../../tests/codex-app-host-evidence-gate.ts" --file "$CODEX_APP_HOST_EVIDENCE_PATH" --release-id "$RELEASE_ID" --expected-mcp-base-url "$mcp_base_url" --expected-bridge-sha256 "$bridge_sha256" --artifact-root "$PRODUCTION_EVIDENCE_ARTIFACT_ROOT" --require-artifacts
 storage_bucket=$(awk '/^[[:space:]]*object_storage_bucket:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 storage_endpoint=$(awk '/^[[:space:]]*object_storage_endpoint:[[:space:]]*/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit }' "$filtered_config_path")
 [ -n "$storage_bucket" ] || { echo "object_storage_bucket is required for storage evidence binding" >&2; exit 1; }

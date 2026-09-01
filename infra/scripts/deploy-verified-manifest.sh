@@ -3,23 +3,36 @@ set -eu
 
 root=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 : "${RENDERED_MANIFEST_PATH:?RENDERED_MANIFEST_PATH is required}"
+: "${PRODUCTION_CONFIG_PATH:?PRODUCTION_CONFIG_PATH is required}"
 : "${DEPLOYMENT_NONCE:?DEPLOYMENT_NONCE is required}"
 [ -f "$RENDERED_MANIFEST_PATH" ] || { echo "rendered manifest not found: $RENDERED_MANIFEST_PATH" >&2; exit 1; }
+[ -f "$PRODUCTION_CONFIG_PATH" ] || { echo "production config not found: $PRODUCTION_CONFIG_PATH" >&2; exit 1; }
 
 source_manifest=$RENDERED_MANIFEST_PATH
+source_config=$PRODUCTION_CONFIG_PATH
 verified_manifest=$(mktemp "${TMPDIR:-/tmp}/merchant-verified-manifest.XXXXXX")
-trap 'rm -f -- "$verified_manifest"' EXIT
+verified_config=$(mktemp "${TMPDIR:-/tmp}/merchant-verified-config.XXXXXX")
+trap 'rm -f -- "$verified_manifest" "$verified_config"' EXIT
 source_before=$(shasum -a 256 "$source_manifest" | awk '{print $1}')
+config_source_before=$(shasum -a 256 "$source_config" | awk '{print $1}')
 cp "$source_manifest" "$verified_manifest"
+cp "$source_config" "$verified_config"
 source_after=$(shasum -a 256 "$source_manifest" | awk '{print $1}')
+config_source_after=$(shasum -a 256 "$source_config" | awk '{print $1}')
 before=$(shasum -a 256 "$verified_manifest" | awk '{print $1}')
+config_before=$(shasum -a 256 "$verified_config" | awk '{print $1}')
 [ "$source_before" = "$source_after" ] && [ "$source_before" = "$before" ] || { echo 'rendered manifest changed while creating the verified deployment copy' >&2; exit 1; }
+[ "$config_source_before" = "$config_source_after" ] && [ "$config_source_before" = "$config_before" ] || { echo 'production config changed while creating the verified deployment copy' >&2; exit 1; }
 RENDERED_MANIFEST_PATH=$verified_manifest
+PRODUCTION_CONFIG_PATH=$verified_config
 export RENDERED_MANIFEST_PATH
-sh "$root/infra/scripts/deploy-preflight.sh" "${PRODUCTION_CONFIG_PATH:?PRODUCTION_CONFIG_PATH is required}"
+export PRODUCTION_CONFIG_PATH
+sh "$root/infra/scripts/deploy-preflight.sh" "$PRODUCTION_CONFIG_PATH"
 image_set_digest=$(sh "$root/infra/scripts/validate-kubernetes-release.sh" "$RENDERED_MANIFEST_PATH" "${IMAGE_DIGESTS_JSON:?IMAGE_DIGESTS_JSON is required}" --print-image-set-digest)
 after=$(shasum -a 256 "$RENDERED_MANIFEST_PATH" | awk '{print $1}')
+config_after=$(shasum -a 256 "$PRODUCTION_CONFIG_PATH" | awk '{print $1}')
 [ "$before" = "$after" ] || { echo 'rendered manifest changed after verification; deployment refused' >&2; exit 1; }
+[ "$config_before" = "$config_after" ] || { echo 'production config changed after verification; deployment refused' >&2; exit 1; }
 
 release_git_sha=$(git -C "$root" rev-parse HEAD)
 IMAGE_DIGEST="$image_set_digest" PRODUCTION_EVIDENCE_MANIFEST_SHA256="$after" RELEASE_GIT_SHA="$release_git_sha" PRODUCTION_EVIDENCE_REPO_ROOT="$root" \

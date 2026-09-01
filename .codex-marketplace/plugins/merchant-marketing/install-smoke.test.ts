@@ -62,17 +62,11 @@ describe('Codex plugin installation package', () => {
       command: 'sh',
       args: ['./mcp/bridge.sh'],
       cwd: '.',
-      env: {
-        MERCHANT_MCP_ROLE: 'viewer',
-        MERCHANT_ACTOR_ID: 'codex-app-user',
-      },
     })
+    expect(server).not.toHaveProperty('env')
     expect(server.env_vars).toEqual(inheritedRuntimeEnv)
-    expect(server.env).not.toHaveProperty('MERCHANT_RULE_APPROVAL_TOKEN')
-    expect(server.env).not.toHaveProperty('MERCHANT_ARTIFACT_DIR')
-    for (const inherited of ['MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID', 'MERCHANT_MCP_TOKEN', 'MERCHANT_ALLOW_FIXTURE_FALLBACK', 'MERCHANT_MCP_WRITE_ENABLED']) {
-      expect(server.env).not.toHaveProperty(inherited)
-    }
+    expect(server.env_vars).not.toContain('MERCHANT_MCP_ROLE')
+    expect(server.env_vars).not.toContain('MERCHANT_ACTOR_ID')
     expect(existsSync(resolve(root, 'mcp/bridge.mjs'))).toBe(true)
     expect(existsSync(resolve(root, 'mcp/bridge.sh'))).toBe(true)
     expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 180000')

@@ -1,7 +1,7 @@
 {
   "id": "merchant-marketing",
   "name": "merchant-marketing",
-  "version": "0.1.0+codex.20260831191109",
+  "version": "0.1.0+codex.20260831225927",
   "description": "\u5546\u5bb6\u8425\u9500\u5185\u5bb9\u52a9\u624b\uff1a\u540c\u6b65\u5546\u54c1\u4e8b\u5b9e\u3001\u751f\u6210\u53ef\u5ba1\u9605\u5185\u5bb9\uff0c\u5e76\u5728\u660e\u786e\u786e\u8ba4\u540e\u63d0\u4ea4\u53d1\u5e03\u3002",
   "author": {
     "name": "Merchant Marketing Team"

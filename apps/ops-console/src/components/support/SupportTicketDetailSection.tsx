@@ -8,8 +8,10 @@ const transitionOptions: Array<{ value: SupportTicketStatus; label: string }> = 
   { value: "waiting_customer", label: "等待客户" }, { value: "resolved", label: "已解决" }, { value: "closed", label: "已关闭" },
 ];
 const eventLabels: Record<SupportTicketEventContract["eventType"], string> = {
-  created: "创建工单", assigned: "分配负责人", status_changed: "变更状态", commented: "添加备注",
+  created: "创建工单", assigned: "分配负责人", status_changed: "变更状态", commented: "添加备注", sla_at_risk: "SLA 临期提醒", sla_breached: "SLA 违约提醒",
 };
+const slaStateLabels = { on_track: "SLA 正常", at_risk: "SLA 临近", breached: "SLA 已超时", met: "SLA 已达成" } as const;
+const slaStateColors = { on_track: "green", at_risk: "orange", breached: "red", met: "blue" } as const;
 
 export function SupportTicketDetailSection({ model }: { model: SupportDomainModel }) {
   const [assignOpen, setAssignOpen] = useState(false);
@@ -24,6 +26,7 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
   if (model.detailLoading) return <Card title="工单详情"><Spin description="正在加载工单详情"><div style={{ minHeight: 160 }} /></Spin></Card>;
   if (!model.selected) return <Card title="工单详情"><Empty description="从工单队列中选择一项查看完整事件历史" /></Card>;
   const { ticket, events } = model.selected;
+  const sla = ticket.sla;
 
   return (
     <Card
@@ -32,9 +35,18 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
     >
       <Space wrap style={{ marginBottom: 16 }}>
         <Tag>{ticket.status}</Tag><Tag color={ticket.priority === "urgent" ? "red" : "blue"}>{ticket.priority}</Tag>
+        {sla ? <Tag color={slaStateColors[sla.state]}>{slaStateLabels[sla.state]}</Tag> : <Tag>旧工单待回填 SLA</Tag>}
         <Typography.Text>版本 {ticket.revision}</Typography.Text>
         <Typography.Text>负责人：{ticket.assignedTo ?? "未分配"}</Typography.Text>
       </Space>
+      {sla ? <Alert
+        type={sla.state === "breached" ? "error" : sla.state === "at_risk" ? "warning" : "info"}
+        showIcon
+        role="status"
+        title="SLA 履约时钟"
+        description={`首响截止：${new Date(sla.firstResponseDueAt).toLocaleString()}；解决截止：${new Date(sla.resolutionDueAt).toLocaleString()}；已暂停 ${sla.pausedMinutes ?? 0} 分钟${sla.pauseStartedAt ? "（当前暂停）" : ""}；${sla.firstResponseAt ? `首响于 ${new Date(sla.firstResponseAt).toLocaleString()}` : "尚未记录首响"}；策略版本 ${sla.policy.version}`}
+        style={{ marginBottom: 16 }}
+      /> : <Alert type="warning" showIcon role="status" title="SLA 履约时钟待回填" description="该历史工单尚未携带 SLA 快照；系统不会推测截止时间，请由运营完成回填后再判断是否超时。" style={{ marginBottom: 16 }} />}
       <Typography.Paragraph>{ticket.description}</Typography.Paragraph>
       <Space wrap style={{ marginBottom: 24 }}>
         <Button disabled={model.mutating} onClick={() => setAssignOpen(true)}>分配负责人</Button>

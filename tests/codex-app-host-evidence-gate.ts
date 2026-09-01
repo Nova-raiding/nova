@@ -19,11 +19,24 @@ const REQUIRED_SCENARIOS = [
 ] as const
 type ScenarioId = typeof REQUIRED_SCENARIOS[number]
 type Scenario = { id?: ScenarioId; state?: string; evidence_ref?: string; console_errors?: number; network_errors?: number }
-type HostEvidence = { schema_version?: string; release_id?: string; environment?: string; generated_at?: string; host?: string; app_version?: string; plugin_version?: string; simulated?: boolean; scenarios?: Scenario[] }
+type HostEvidence = { schema_version?: string; release_id?: string; environment?: string; generated_at?: string; host?: string; app_version?: string; plugin_version?: string; mcp_base_url?: string; bridge_sha256?: string; simulated?: boolean; scenarios?: Scenario[] }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const forbidden = /(?:fixture|mock|local|localhost|127\.0\.0\.1|test_e2e)/iu
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#[a-f0-9]{64}$/u
+const sha256 = /^[a-f0-9]{64}$/u
+
+function canonicalPublicOrigin(value: unknown): string | undefined {
+  if (!nonEmpty(value)) return undefined
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash || (parsed.pathname !== '/' && parsed.pathname !== '')) return undefined
+    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/gu, '')
+    const privateLiteral = hostname === '::1' || /^10\./u.test(hostname) || /^169\.254\./u.test(hostname) || /^192\.168\./u.test(hostname) || /^172\.(?:1[6-9]|2\d|3[01])\./u.test(hostname) || /^(?:fc|fd)[0-9a-f]{2}:/u.test(hostname) || /^fe[89ab][0-9a-f]:/u.test(hostname)
+    if (parsed.hostname !== parsed.hostname.toLowerCase() || forbidden.test(parsed.hostname) || privateLiteral) return undefined
+    return parsed.origin
+  } catch { return undefined }
+}
 
 function validateArtifact(reference: string | undefined, root: string, label: string): string[] {
   const match = immutableArtifact.exec(reference ?? '')
@@ -45,11 +58,11 @@ function validateArtifact(reference: string | undefined, root: string, label: st
   return []
 }
 
-export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; artifactRoot?: string } = {}): string[] {
+export function validateCodexAppHostEvidence(document: unknown, options: { expectedReleaseId?: string; expectedMcpBaseUrl?: string; expectedBridgeSha256?: string; artifactRoot?: string } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as HostEvidence
-  if (value.schema_version !== '1') errors.push('schema_version must be 1')
+  if (value.schema_version !== '2') errors.push('schema_version must be 2')
   if (!nonEmpty(value.release_id)) errors.push('release_id is required')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (value.environment !== 'preproduction' && value.environment !== 'production') errors.push('environment must be preproduction or production')
@@ -59,6 +72,12 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
     else if (forbidden.test(value[field]!)) errors.push(`${label} must identify a real Codex App host, not fixture/local evidence`)
   }
   if (value.simulated !== false) errors.push('simulated must be false')
+  const mcpOrigin = canonicalPublicOrigin(value.mcp_base_url)
+  if (!mcpOrigin || value.mcp_base_url !== mcpOrigin) errors.push('mcp_base_url must be a canonical public HTTPS root origin')
+  const expectedMcpOrigin = canonicalPublicOrigin(options.expectedMcpBaseUrl)
+  if (options.expectedMcpBaseUrl && (!expectedMcpOrigin || mcpOrigin !== expectedMcpOrigin)) errors.push('mcp_base_url must match the deployment configuration')
+  if (!sha256.test(value.bridge_sha256 ?? '')) errors.push('bridge_sha256 must be a SHA-256 digest')
+  if (options.expectedBridgeSha256 && value.bridge_sha256 !== options.expectedBridgeSha256) errors.push('bridge_sha256 must match the deployed plugin bridge')
   if (!Array.isArray(value.scenarios)) return [...errors, 'scenarios is required']
   const seen = new Set<string>()
   for (const scenario of value.scenarios) {
@@ -83,11 +102,16 @@ function main() {
   const expectedReleaseId = releaseIndex >= 0 ? args[releaseIndex + 1] : undefined
   const artifactIndex = args.indexOf('--artifact-root')
   const artifactRoot = artifactIndex >= 0 ? args[artifactIndex + 1] : undefined
+  const mcpIndex = args.indexOf('--expected-mcp-base-url')
+  const expectedMcpBaseUrl = mcpIndex >= 0 ? args[mcpIndex + 1] : undefined
+  const bridgeIndex = args.indexOf('--expected-bridge-sha256')
+  const expectedBridgeSha256 = bridgeIndex >= 0 ? args[bridgeIndex + 1] : undefined
   if (!path) { console.error('--file is required'); process.exit(2) }
   if (args.includes('--require-artifacts') && !artifactRoot) { console.error('--artifact-root is required for independent host evidence validation'); process.exit(2) }
+  if (args.includes('--require-artifacts') && (!expectedMcpBaseUrl || !expectedBridgeSha256)) { console.error('--expected-mcp-base-url and --expected-bridge-sha256 are required for production host evidence validation'); process.exit(2) }
   let document: unknown
   try { document = JSON.parse(readFileSync(path, 'utf8')) } catch (error) { console.error(`unable to read Codex App host evidence: ${error instanceof Error ? error.message : String(error)}`); process.exit(1) }
-  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, artifactRoot })
+  const errors = validateCodexAppHostEvidence(document, { expectedReleaseId, expectedMcpBaseUrl, expectedBridgeSha256, artifactRoot })
   if (errors.length) { console.error(errors.map(error => `- ${error}`).join('\n')); process.exit(1) }
   console.log(`Codex App host evidence gate passed: ${path} (external host evidence; not stdio or browser fixture evidence)`)
 }

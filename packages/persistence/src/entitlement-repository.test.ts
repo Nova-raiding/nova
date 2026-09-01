@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EntitlementConsumptionIdempotencyConflictError, MemoryEntitlementRepository } from './entitlement-repository.js'
+import { EntitlementConsumptionIdempotencyConflictError, EntitlementGrantIdempotencyConflictError, MemoryEntitlementRepository } from './entitlement-repository.js'
 
 describe('MemoryEntitlementRepository', () => {
   it('grants each paid addon once and exposes remaining units', async () => {
@@ -9,6 +9,16 @@ describe('MemoryEntitlementRepository', () => {
     const replay = await repository.grant(input)
     expect(replay).toEqual(first)
     expect(await repository.list(input.workspaceId)).toMatchObject([{ addonCode: 'image_pack', grantedUnits: 100, usedUnits: 0, remainingUnits: 100 }])
+  })
+
+  it('rejects a grant replay when its intent changes', async () => {
+    const repository = new MemoryEntitlementRepository()
+    const input = { workspaceId: 'ws_grant_conflict', orderNo: 'SO4', addonCode: 'image_pack', kind: 'image_generation' as const, units: 3 }
+    await repository.grant(input)
+
+    await expect(repository.grant({ ...input, units: 4 })).rejects.toBeInstanceOf(EntitlementGrantIdempotencyConflictError)
+    await expect(repository.grant({ ...input, kind: 'bulk_sync' })).rejects.toBeInstanceOf(EntitlementGrantIdempotencyConflictError)
+    expect((await repository.list(input.workspaceId))[0]).toMatchObject({ kind: 'image_generation', grantedUnits: 3 })
   })
 
   it('consumes idempotently and restores units after a failed action', async () => {

@@ -30,12 +30,12 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
   return (
     <>
     <Card title="对象存储容量与对账" extra={<Tag color={statusColor}>{statusLabel}</Tag>}>
-      {loading ? <Alert type="info" showIcon message="正在加载对账结果" description="正在读取平台范围的脱敏容量和一致性摘要。" /> : null}
-      {error ? <Alert type="error" showIcon message="对账结果加载失败" description={error} /> : null}
-      {unavailable ? <Alert type="info" showIcon message="暂无可验证的对象清单对账结果" description={summary?.message ?? "该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。"} /> : null}
-      {attention ? <Alert type="warning" showIcon message="发现存储一致性问题" description="请由存储负责人查看受控对账证据；此页面不展示客户对象详情。" /> : null}
-      {failed ? <Alert type="error" showIcon message="最近一次对账失败" description="对账没有产出可验证结果；请检查对象清单、数据库和定时任务后重试。" /> : null}
-      {expired ? <Alert type="warning" showIcon message="对账结果已过期" description="当前汇总不能代表最新对象状态；请先恢复对账任务，再据此处理容量或一致性问题。" /> : null}
+      {loading ? <Alert type="info" showIcon title="正在加载对账结果" description="正在读取平台范围的脱敏容量和一致性摘要。" /> : null}
+      {error ? <Alert type="error" showIcon title="对账结果加载失败" description={error} /> : null}
+      {unavailable ? <Alert type="info" showIcon title="暂无可验证的对象清单对账结果" description={summary?.message ?? "该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。"} /> : null}
+      {attention ? <Alert type="warning" showIcon title="发现存储一致性问题" description="请由存储负责人查看受控对账证据；此页面不展示客户对象详情。" /> : null}
+      {failed ? <Alert type="error" showIcon title="最近一次对账失败" description="对账没有产出可验证结果；请检查对象清单、数据库和定时任务后重试。" /> : null}
+      {expired ? <Alert type="warning" showIcon title="对账结果已过期" description="当前汇总不能代表最新对象状态；请先恢复对账任务，再据此处理容量或一致性问题。" /> : null}
       <Row gutter={[16, 16]}>
         <Col xs={12} md={6}><Statistic title="已使用" value={bytes(summary?.quota?.usedBytes)} /></Col>
         <Col xs={12} md={6}><Statistic title="配额上限" value={bytes(summary?.quota?.limitBytes)} /></Col>

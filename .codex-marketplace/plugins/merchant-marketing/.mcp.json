@@ -22,11 +22,7 @@
         "MERCHANT_MCP_RETRY_ATTEMPTS",
         "MERCHANT_MCP_RETRY_DELAY_MS",
         "MERCHANT_ASSET_RESOURCE_DOMAINS"
-      ],
-      "env": {
-        "MERCHANT_MCP_ROLE": "viewer",
-        "MERCHANT_ACTOR_ID": "codex-app-user"
-      }
+      ]
     }
   }
 }

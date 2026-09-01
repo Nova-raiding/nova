@@ -7,7 +7,7 @@ export const supportTicketStatuses = [
 ] as const
 
 export const supportTicketPriorities = ['low', 'normal', 'high', 'urgent'] as const
-export const supportTicketEventTypes = ['created', 'assigned', 'status_changed', 'commented'] as const
+export const supportTicketEventTypes = ['created', 'assigned', 'status_changed', 'commented', 'sla_at_risk', 'sla_breached'] as const
 export const supportRoles = ['support', 'platform_ops'] as const
 export const supportPermissions = [
   'support.ticket.read',
@@ -23,6 +23,8 @@ export type SupportTicketPriority = typeof supportTicketPriorities[number]
 export type SupportTicketEventType = typeof supportTicketEventTypes[number]
 export type SupportRole = typeof supportRoles[number]
 export type SupportPermission = typeof supportPermissions[number]
+export type { SupportSlaProjection, SupportSlaPolicySnapshot, SupportSlaState } from './support-sla.js'
+import type { SupportSlaProjection } from './support-sla.js'
 
 export const supportRolePermissions = {
   support: [
@@ -54,6 +56,7 @@ export interface SupportTicketContract {
   createdBy: string
   createdAt: string
   updatedAt: string
+  sla: SupportSlaProjection
   /** Present only on platform-scope redacted aggregate rows; never a customer ticket. */
   aggregate?: boolean
   count?: number

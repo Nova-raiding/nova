@@ -325,6 +325,17 @@ describe('MerchantService', () => {
     expect(() => restarted.resolveImageGenerationByVisualRef('ws_other', `dvis_${'A'.repeat(24)}`)).toThrowError(expect.objectContaining({ code: 'VISUAL_NOT_FOUND' }))
   })
 
+  it('rejects duplicate candidate references and cross-workspace archive assets atomically', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'archive-validation', count: 2 })
+    const output = { visualRef: 'dvis_duplicate', ordinal: 1, storageKey: 'quarantine/ws_demo/candidate.webp', mimeType: 'image/webp', sizeBytes: 9, sha256: 'a'.repeat(64), createdAt: '2026-08-31T00:00:00.000Z', reviewStatus: 'unreviewed' as const }
+    expect(() => service.archiveImageGenerationOutputs('ws_demo', job.id, [output, { ...output, ordinal: 2 }], 'archived')).toThrowError(expect.objectContaining({ code: 'GENERATED_IMAGE_OUTPUT_DUPLICATE' }))
+    expect(job.outputs).toBeUndefined()
+    const foreign = service.registerAsset({ workspaceId: 'ws_other', name: 'foreign.webp', mimeType: 'image/webp', sizeBytes: 9, sha256: 'b'.repeat(64), storageKey: 'quarantine/ws_other/foreign.webp' })
+    expect(() => service.archiveImageGenerationOutputs('ws_demo', job.id, [{ ...output, visualRef: 'dvis_foreign', assetId: foreign.id }], 'archived')).toThrowError(expect.objectContaining({ code: 'TENANT_SCOPE_DENIED' }))
+    expect(job.outputs).toBeUndefined()
+  })
+
   it('single-flights concurrent image generation replays for the same job and idempotency key', async () => {
     let releaseProvider!: (images: string[]) => void
     const providerResult = new Promise<string[]>(resolve => { releaseProvider = resolve })
@@ -342,6 +353,22 @@ describe('MerchantService', () => {
       expect.objectContaining({ job: expect.objectContaining({ id: job.id, state: 'succeeded' }) }),
     ])
     expect(generate).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the image provider action stable while allowing an explicit shared budget run', async () => {
+    const generate = vi.fn(async () => ['data:image/png;base64,aW1hZ2U='])
+    const service = new MerchantService({ fixtureMode: true, imageGenerator: { generate } })
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'image-retry-action', count: 1 })
+
+    await service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id, runKey: 'image:original-action' })
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      usageContext: {
+        workspaceId: 'ws_demo',
+        actionId: 'image:image-retry-action',
+        runKey: 'image:original-action',
+      },
+    }))
   })
 
   it('does not let a late provider timeout overwrite a succeeded image generation terminal state', async () => {
@@ -798,6 +825,7 @@ describe('MerchantService', () => {
       workspaceId: 'ws_assets', name: 'original.png', mimeType: 'image/png', sizeBytes: 12,
       sha256, storageKey: 'quarantine/ws_assets/asset-1/original.png',
       rightsStatus: 'pending', rightsScope: 'limited_use', aiModificationAllowed: false,
+      uploadedByActorId: 'merchant-a',
     })
     markTrustedClean(first)
     first.rightsStatus = 'approved'
@@ -807,6 +835,7 @@ describe('MerchantService', () => {
       workspaceId: 'ws_assets', name: 'renamed-copy.png', mimeType: 'image/png', sizeBytes: 12,
       sha256: sha256.toLowerCase(), storageKey: 'quarantine/ws_assets/asset-2/renamed-copy.png',
       rightsStatus: 'rejected', rightsScope: 'unusable', aiModificationAllowed: true,
+      uploadedByActorId: 'merchant-b',
     })
 
     expect(duplicate.id).toBe(first.id)
@@ -814,6 +843,7 @@ describe('MerchantService', () => {
     expect(duplicate.deduplication).toEqual({ mode: 'deduplicated', reusedAssetId: first.id, reusedStorageKey: first.storageKey, rightsAndScanStatePreserved: true, referenceAdded: true })
     expect(duplicate).toMatchObject({ name: 'original.png', scanStatus: 'clean', rightsStatus: 'approved', rightsScope: 'limited_use', aiModificationAllowed: false, revision: 4 })
     expect(duplicate.references.map(reference => reference.name)).toEqual(['original.png', 'renamed-copy.png'])
+    expect(duplicate.uploadedByActorIds).toEqual(['merchant-a', 'merchant-b'])
     const retry = service.registerAsset({ workspaceId: 'ws_assets', name: 'RENAMED-COPY.PNG', mimeType: 'IMAGE/PNG', sizeBytes: 12, sha256, storageKey: 'quarantine/ws_assets/retry.png' })
     expect(retry.deduplication.referenceAdded).toBe(false)
     expect(retry.revision).toBe(4)

@@ -222,7 +222,7 @@ function parseImageGenerationStatus(payload: unknown, providerRequestId: string)
 export function createImageGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink): ImageGenerator | undefined {
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
-  const model = source.IMAGE_MODEL?.trim() ?? source.AI_IMAGE_MODEL?.trim()
+  const model = source.IMAGE_MODEL?.trim() || source.AI_IMAGE_MODEL?.trim()
   if (!relayUrl || !apiKey || !model) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined

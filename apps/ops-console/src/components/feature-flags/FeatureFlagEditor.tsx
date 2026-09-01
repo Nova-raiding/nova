@@ -60,7 +60,7 @@ export function FeatureFlagEditor({ open, flag, saving, defaultEnvironment = "pr
 
   return <Modal open={open} title={flag ? `编辑 ${flag.key}` : "新建功能开关"} onCancel={onCancel} footer={null} destroyOnHidden width={720} aria-labelledby="feature-flag-editor-title">
     <Typography.Paragraph id="feature-flag-editor-title" type="secondary">仅支持布尔、字符串、数字和 16KiB 内 JSON；不执行脚本或表达式。新开关默认关闭。</Typography.Paragraph>
-    {canonicalWarning && <Alert role="alert" type="warning" showIcon message="Canonical 商品链切读前置条件" description={canonicalWarning} style={{ marginBottom: 16 }} />}
+    {canonicalWarning && <Alert role="alert" type="warning" showIcon title="Canonical 商品链切读前置条件" description={canonicalWarning} style={{ marginBottom: 16 }} />}
     <Form form={form} layout="vertical" initialValues={initialValues} scrollToFirstError={{ focus: true }} onFinish={async values => {
       const defaultValue = { type: values.valueType, value: parseFeatureFlagValue(values.valueType, values.valueText) };
       const targets = (values.targets ?? []).map(target => ({ type: target.type, value: target.value.trim(), enabled: target.enabled, ...(target.overrideText?.trim() ? { override: { type: values.valueType, value: parseFeatureFlagValue(values.valueType, target.overrideText) } } : {}) }));

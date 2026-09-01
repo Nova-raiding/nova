@@ -10,8 +10,10 @@ type Envelope = {
 const productionEnvironment = (): NodeJS.ProcessEnv => ({
   NODE_ENV: 'production',
   CONNECTOR_FIXTURE_MODE: 'false',
-    MODEL_RELAY_BASE_URL: 'https://relay.example.test/v1',
-    MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.test',
+  MCP_AUTHZ_MODE: 'enforce',
+  AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
+  MODEL_RELAY_BASE_URL: 'https://relay.example.test/v1',
+  MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.test',
   MODEL_RELAY_API_KEY: 'relay-key',
   AI_MODEL: 'text-model',
   IMAGE_MODEL: 'image-model',
@@ -21,6 +23,7 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   MODEL_RPM_LIMIT: '120',
   MODEL_TPM_LIMIT: '120000',
   MODEL_DAILY_CNY_LIMIT: '100',
+  MODEL_MAX_TASK_COST_CNY: '10',
   MODEL_RELAY_TEXT_COST_EVIDENCE: 'true',
   MODEL_RELAY_IMAGE_COST_EVIDENCE: 'true',
   MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: 'true',
@@ -47,6 +50,21 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS: 'scanner-production',
   ASSET_SCAN_MIN_DEFINITIONS_VERSION: '28000',
   ASSET_SCAN_TRUSTED_PUBLIC_KEYS: JSON.stringify({ scanner: '-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----' }),
+  PAYMENT_MODE: 'provider',
+  PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat',
+  PAYMENT_CHECKOUT_BASE_URL: 'https://payments.example.test/checkout',
+  PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example.test/v1/checkout',
+  PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.test/v1/query',
+  PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.test/v1/refund',
+  PAYMENT_PROVIDER_API_KEY: 'payment-provider-key',
+  PAYMENT_PROVIDER_MERCHANT_ID: 'merchant-production',
+  PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.test/v1',
+  PAYMENT_CALLBACK_SECRET: 'payment-callback-secret',
+  PAYMENT_RECONCILIATION_ENABLED: 'true',
+  PAYMENT_REFUND_ENABLED: 'true',
+  PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.example.test/platform-rules/v1/manifest.json',
+  PLATFORM_RULE_SYNC_SIGNING_SECRET: 'rule-sync-signing-secret',
+  PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
   OBJECT_STORAGE_VERSIONING: 'true',
   DATA_RETENTION_DAYS: '90',
   ASSET_QUARANTINE_RETENTION_DAYS: '7',
@@ -92,8 +110,11 @@ describe('production readiness fail-closed', () => {
       ready: true,
       gates: {
         relay: { ready: true },
+        authorization: { ready: true },
         identity: { ready: true },
         object_storage: { ready: true },
+        payment: { ready: true },
+        rule_sync: { ready: true },
         cost: { ready: true },
         release_metadata: { ready: true },
       },
@@ -101,12 +122,20 @@ describe('production readiness fail-closed', () => {
 
     const cases: Array<{ gate: string; key: string }> = [
       { gate: 'relay', key: 'MODEL_RELAY_API_KEY' },
+      { gate: 'authorization', key: 'MCP_AUTHZ_MODE' },
+      { gate: 'authorization', key: 'AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED' },
       { gate: 'identity', key: 'OIDC_PROXY_SIGNING_SECRET' },
       { gate: 'object_storage', key: 'ASSET_STORAGE_KMS_KEY_ID' },
       { gate: 'object_storage', key: 'ASSET_DISPLAY_URL_SIGNING_SECRET' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_APPROVED_SCANNER_SERVICE_IDS' },
       { gate: 'asset_scanner', key: 'ASSET_SCAN_MIN_DEFINITIONS_VERSION' },
+      { gate: 'payment', key: 'PAYMENT_PROVIDER_API_KEY' },
+      { gate: 'payment', key: 'PAYMENT_CALLBACK_SECRET' },
+      { gate: 'payment', key: 'PAYMENT_RECONCILIATION_ENABLED' },
+      { gate: 'rule_sync', key: 'PLATFORM_RULE_SYNC_MANIFEST_URL' },
+      { gate: 'rule_sync', key: 'PLATFORM_RULE_SYNC_SIGNING_SECRET' },
       { gate: 'cost', key: 'MODEL_DAILY_CNY_LIMIT' },
+      { gate: 'cost', key: 'MODEL_MAX_TASK_COST_CNY' },
       { gate: 'release_metadata', key: 'RELEASE_MANIFEST_SHA256' },
     ]
     for (const { gate, key } of cases) {
@@ -118,7 +147,40 @@ describe('production readiness fail-closed', () => {
       expect(JSON.stringify(result)).not.toContain('relay-key')
       expect(JSON.stringify(result)).not.toContain('oidc-signing-secret')
       expect(JSON.stringify(result)).not.toContain('merchant-token')
+      expect(JSON.stringify(result)).not.toContain('payment-provider-key')
+      expect(JSON.stringify(result)).not.toContain('rule-sync-signing-secret')
     }
+  })
+
+  it.each([
+    ['payment', 'PAYMENT_MODE', 'fixture'],
+    ['payment', 'PAYMENT_PROVIDER_ADAPTERS', 'alipay'],
+    ['payment', 'PAYMENT_PROVIDER_QUERY_API_URL', 'http://payments.example.test/query'],
+    ['payment', 'PAYMENT_REFUND_ENABLED', 'false'],
+    ['rule_sync', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://127.0.0.1/manifest.json'],
+    ['rule_sync', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://rules.example.test/manifest.json?token=secret'],
+    ['rule_sync', 'PLATFORM_RULE_SYNC_INTERVAL_HOURS', '0'],
+  ])('rejects unsafe %s readiness configuration %s', (gate, key, value) => {
+    const environment = productionEnvironment()
+    environment[key] = value
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(false)
+    expect(result.gates[gate]).toMatchObject({ ready: false })
+  })
+
+  it.each([
+    ['MCP_AUTHZ_MODE', 'shadow'],
+    ['MCP_AUTHZ_MODE', 'staged'],
+    ['MCP_AUTHZ_MODE', ' enforce '],
+    ['AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', 'false'],
+    ['AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED', ' true '],
+    ['MCP_AUTHZ_ENFORCE_DOMAINS', 'support'],
+  ])('rejects non-canonical production authorization setting %s=%s', (key, value) => {
+    const environment = productionEnvironment()
+    environment[key] = value
+    const result = productionReadinessDiagnostics(environment)
+    expect(result.ready).toBe(false)
+    expect(result.gates.authorization).toMatchObject({ ready: false })
   })
 
   it('does not let a production fixture profile bypass control-plane gates', () => {
@@ -141,6 +203,7 @@ describe('production readiness fail-closed', () => {
     expect(readiness.error?.details).toMatchObject({
       gates: {
         relay: { ready: false },
+        authorization: { ready: false },
         identity: { ready: false },
         object_storage: { ready: false },
         cost: { ready: false },

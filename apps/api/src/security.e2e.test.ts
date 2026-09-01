@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
@@ -59,19 +59,25 @@ afterEach(async () => {
 })
 
 describe('security and access-control acceptance gates', () => {
-  it('fails closed on missing or unknown production authorization modes and accepts explicit staged domains', () => {
-    expect(() => mcpAuthorizationRuntimeConfig({}, true, false)).toThrow('生产环境必须显式配置 MCP_AUTHZ_MODE')
-    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'allow-all' }, true, false)).toThrow('MCP_AUTHZ_MODE 仅支持 shadow、staged 或 enforce')
-    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged' }, true, false)).toThrow('staged 模式必须显式声明至少一个 capability 域')
-    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'unknown' }, true, false)).toThrow('未知 capability 域')
-    const staged = mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, true, false)
+  it('requires full enforcement and durable role authority in production while retaining staged non-production policy tests', () => {
+    expect(productionAuthorizationReadiness({ NODE_ENV: 'production', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' })).toEqual({ ready: true, reasons: [] })
+    expect(productionAuthorizationReadiness({ NODE_ENV: 'production', MCP_AUTHZ_MODE: 'shadow', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' })).toMatchObject({ ready: false, reasons: ['mcp_authz_mode_not_enforce'] })
+    expect(() => mcpAuthorizationRuntimeConfig({}, true, false)).toThrowError(expect.objectContaining({ code: 'AUTHORIZATION_RUNTIME_NOT_READY', status: 503 }))
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' }, true, false)).toThrowError(expect.objectContaining({ code: 'AUTHORIZATION_RUNTIME_NOT_READY', status: 503 }))
+    const production = mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true' }, true, false)
+    expect(production.mode).toBe('enforce')
+
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'allow-all' }, false, false)).toThrow('MCP_AUTHZ_MODE 仅支持 shadow、staged 或 enforce')
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged' }, false, false)).toThrow('staged 模式必须显式声明至少一个 capability 域')
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'unknown' }, false, false)).toThrow('未知 capability 域')
+    const staged = mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, false, false)
     expect(staged.mode).toBe('staged')
     expect([...staged.enforceDomains]).toEqual(['support', 'incident'])
-    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, true, false)).toHaveLength(17)
-    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, true, false)).toContain('catalog.image.select')
-    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'enforce' }, true, false)).toHaveLength(MCP_METHODS.length)
-    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: 'support' }, true, false)).toThrow('enforce 模式已经覆盖全部 capability 域')
-    const stagedMethods = mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, true, false)
+    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, false, false)).toHaveLength(17)
+    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'shadow' }, false, false)).toContain('catalog.image.select')
+    expect(mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'enforce' }, false, false)).toHaveLength(MCP_METHODS.length)
+    expect(() => mcpAuthorizationRuntimeConfig({ MCP_AUTHZ_MODE: 'enforce', MCP_AUTHZ_ENFORCE_DOMAINS: 'support' }, false, false)).toThrow('enforce 模式已经覆盖全部 capability 域')
+    const stagedMethods = mcpAuthorizationEnforcedMethods({ MCP_AUTHZ_MODE: 'staged', MCP_AUTHZ_ENFORCE_DOMAINS: 'support,incident' }, false, false)
     expect(stagedMethods.length).toBeGreaterThan(17)
     expect(stagedMethods).toEqual(expect.arrayContaining(['ops.support.tickets.list', 'ops.support.ticket.comment', 'ops.incidents.list', 'ops.incident.transition']))
   })
@@ -167,7 +173,7 @@ describe('security and access-control acceptance gates', () => {
     })
     expect(denied.error).toMatchObject({ code: 'FORBIDDEN', details: { capability: 'feature_flag.administer', policy_version: '2026-08-31.v2' } })
     expect(await operationAudits.list(workspaceId)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ actorId: 'authz-ops', action: 'authz.decision', resourceType: 'mcp_method', resourceId: 'ops.feature-flag.emergency.set', after: expect.objectContaining({ decision_id: denied.error?.details?.decision_id, result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' }) }),
+      expect.objectContaining({ actorId: 'authz-ops', action: 'authz.decision', resourceType: 'mcp_method', resourceId: 'ops.feature-flag.emergency.set', after: expect.objectContaining({ decision_id: denied.error?.details?.decision_id, request_id: expect.any(String), trace_id: expect.any(String), result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' }) }),
     ]))
   })
 
@@ -967,6 +973,12 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 3, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 0 })
     expect((await mcp(editorHeaders, 3.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation).toMatchObject({ presentation: 'tree', hierarchy: ['brand', 'platform', 'store'], items: [] })
     expect((await mcp(editorHeaders, 4, 'brand-unit.list', { brand_id: 'brand_access' })).error?.code).toBe('BRAND_ACCESS_REQUIRED')
+
+    const ownUpload = await mcp(editorHeaders, 4.1, 'asset.upload', { name: 'editor-own.txt', mime_type: 'text/plain', content_base64: Buffer.from(`restricted-upload-${workspaceId}`).toString('base64') })
+    expect(ownUpload.error).toBeNull()
+    const ownAssetId = ownUpload.data?.result.id as string
+    expect((await mcp(editorHeaders, 4.2, 'asset.list', {})).data?.result.assets).toEqual(expect.arrayContaining([expect.objectContaining({ id: ownAssetId })]))
+    expect((await mcp(editorHeaders, 4.3, 'asset.preference.update', { asset_id: ownAssetId, verdict: 'unrated' })).error).toBeNull()
 
     expect((await mcp(ownerHeaders, 5, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'viewer' })).error).toBeNull()
     expect((await mcp(editorHeaders, 6, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 1 })

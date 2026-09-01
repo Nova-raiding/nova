@@ -99,4 +99,50 @@ describe("ReconciliationSection finance actions", () => {
     expect(html).toContain('aria-describedby="reconciliation-model-disabled-reason"');
     expect(html).toContain("当前账号没有模型结算权限");
   });
+
+  it("distinguishes task run keys from call action ids in unsettled usage", () => {
+    const reconciliation = {
+      ...reconciliationFixture,
+      model_usage: {
+        ...reconciliationFixture.model_usage,
+        unsettled_records: 2,
+        unsettled: [
+          {
+            id: "usage-linked",
+            run_key: "task-run-42",
+            action_id: "provider-call-7",
+            modality: "text",
+            model: "relay-text",
+            provider_request_id: "provider-1",
+            observed_at: "2026-08-31T08:00:00.000Z",
+            settlement_status: "pending_wallet",
+            settlement_reason: "wallet settlement failed",
+            last_error: { code: "MODEL_WALLET_SETTLEMENT_FAILED" },
+          },
+          {
+            id: "usage-unlinked",
+            run_key: null,
+            action_id: "provider-call-8",
+            modality: "image",
+            model: "relay-image",
+            provider_request_id: null,
+            observed_at: "2026-08-31T08:01:00.000Z",
+            settlement_status: "manual_attention",
+            settlement_reason: "budget linkage missing",
+          },
+        ],
+      },
+    };
+
+    const html = renderSection({ reconciliation: reconciliation as never });
+
+    expect(html).toContain('aria-label="模型用量待结算记录"');
+    expect(html).toContain("任务 Run Key");
+    expect(html).toContain("调用 Action ID");
+    expect(html).toContain("task-run-42");
+    expect(html).toContain("provider-call-7");
+    expect(html).toContain("缺失（已阻断）");
+    expect(html).toContain("错误码：");
+    expect(html).toContain("MODEL_WALLET_SETTLEMENT_FAILED");
+  });
 });

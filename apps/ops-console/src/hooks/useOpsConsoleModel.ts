@@ -573,8 +573,10 @@ export function useOpsConsoleModel() {
       // matrix. Otherwise the first render can briefly issue workspace-scoped
       // requests before the canonical capability projection arrives from the gateway.
       let resolvedSession = opsSessionRef.current;
+      let sessionAttempted = Boolean(resolvedSession);
       if (!resolvedSession) {
         const value = await optional("ops.session");
+        sessionAttempted = true;
         if (value && typeof value === "object" && !Array.isArray(value)) {
           resolvedSession = value as unknown as OpsSession;
           loadCoordinatorRef.current.commit(loadRequest, () => { opsSessionRef.current = resolvedSession; setOpsSession(resolvedSession!); });
@@ -631,7 +633,7 @@ export function useOpsConsoleModel() {
         // incident and workspace permissions; otherwise local mode silently
         // falls back to an empty workspace and renders every mutation form
         // disabled.
-        resolvedSession ? Promise.resolve(resolvedSession) : optional("ops.session"),
+        sessionAttempted ? Promise.resolve(resolvedSession) : optional("ops.session"),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.commercial.get"),
         platformOperator ? authorizedOptional("ops.audit.platform.list", { limit: "50" }) : authorizedOptional("ops.audit.list", {
           ...(localStorage.getItem("ops_workspace_id")?.trim() ? { workspace_id: localStorage.getItem("ops_workspace_id")!.trim() } : {}),

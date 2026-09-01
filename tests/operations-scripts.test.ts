@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -170,7 +171,7 @@ describe('deployment operation scripts', () => {
       clamav: 'sha256:' + 'f'.repeat(64),
     }
     writeFileSync(config, [
-      'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'OPS_AUTH_MODE: oidc',
+      'plugin_enabled: true', 'merchant_bearer_hostname: merchant.example.com', 'app_base_url: https://merchant.example.com', 'ops_base_url: https://ops.merchant.example.com', 'mcp_base_url: https://merchant.example.com', 'oauth_callback_base_url: https://merchant.example.com/v1/oauth/callback', 'OPS_AUTH_MODE: oidc',
       'auth_enforcement: strict', 'mcp_authorization_mode: enforce', 'durable_platform_assignments_required: true', 'session_id_hash_secret_ref: vault://merchant-identity/session-id-hash-secret',
       'jd_auth_enabled: true', 'jd_read_enabled: true', 'jd_write_enabled: true',
       'taobao_tmall_auth_enabled: true', 'taobao_tmall_read_enabled: true', 'taobao_tmall_write_enabled: true',
@@ -193,9 +194,10 @@ describe('deployment operation scripts', () => {
       results: ['text', 'image', 'image_edit', 'ocr', 'video'].map(modality => ({ modality, state: 'ready', endpoint: '/probe', model: `merchant-${modality}-v1`, providerRequestId: `req-${modality}`, usageObserved: true, costObserved: true, costCny: 0.01 })),
     }))
     writeFileSync(hostEvidence, JSON.stringify({
-      schema_version: '1', release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-23T06:00:00Z',
+      schema_version: '2', release_id: 'release-1', environment: 'preproduction', generated_at: '2026-08-23T06:00:00Z',
       host: 'codex-app-ci-arm64', app_version: '0.150.1', plugin_version: '0.1.0', simulated: false,
-      scenarios: ['plugin_discovery', 'merchant_start', 'wallet_recharge_entry', 'platform_oauth_entry', 'asset_attachment', 'error_recovery'].map(id => ({ id, state: 'passed', evidence_ref: `artifact://production/codex-host/${id}#${'a'.repeat(64)}`, console_errors: 0, network_errors: 0 })),
+      mcp_base_url: 'https://merchant.example.com', bridge_sha256: createHash('sha256').update(readFileSync('apps/plugin/mcp/bridge.mjs')).digest('hex'),
+      scenarios: ['plugin_discovery', 'merchant_start', 'wallet_recharge_entry', 'platform_oauth_entry', 'asset_attachment', 'error_recovery', 'image_generation', 'automatic_scan', 'candidate_images_rendered', 'candidate_primary_cta', 'candidate_selection_persisted', 'selection_not_reviewed', 'selection_not_published'].map(id => ({ id, state: 'passed', evidence_ref: `artifact://production/codex-host/${id}#${'a'.repeat(64)}`, console_errors: 0, network_errors: 0 })),
     }))
     writeFileSync(storageEvidence, JSON.stringify({
       schema_version: '1', release_id: 'release-1', environment: 'production', generated_at: '2026-08-23T06:00:00Z', expires_at: '2026-09-23T06:00:00Z', provider: 's3-compatible', bucket: 'merchant-assets', endpoint: 'https://s3.example.com', versioning: true, public_access_blocked: true, kms_encryption: true, lifecycle_policy_id: 'asset-lifecycle-v1', simulated: false, attestation_ref: `artifact://production/storage/attestation#${'a'.repeat(64)}`,
@@ -208,12 +210,31 @@ describe('deployment operation scripts', () => {
     writeFileSync(paymentEvidence, JSON.stringify(paymentDocument))
     const restoreDocument: Record<string, unknown> = { ...commonEvidence, kind: 'restore', recovery_target_isolated: true, backup_sha256: 'c'.repeat(64), source_backup_created_at: new Date(Date.now() - 3_600_000).toISOString(), recovery_point_at: new Date(Date.now() - 1_800_000).toISOString(), checks: Object.fromEntries(['backup_checksum', 'isolated_restore', 'migrations', 'data_integrity', 'application_smoke'].map(name => [name, { status: 'pass', evidence_ref: `artifact://production/restore/${name}` }])) }
     writeFileSync(restoreEvidence, JSON.stringify(restoreDocument))
-    const scannerRuntime = { ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440' }
+    const scannerRuntime = {
+      MERCHANT_BEARER_HOSTNAME: 'merchant.example.com', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
+      MODEL_RELAY_BASE_URL: 'https://relay.example.com', MODEL_RELAY_ALLOWED_HOSTS: 'relay.example.com', AI_MODEL: 'merchant-text-v1', IMAGE_MODEL: 'merchant-image-v1', IMAGE_EDIT_MODEL: 'merchant-image-edit-v1', OCR_MODEL: 'merchant-ocr-v1', VIDEO_MODEL: 'merchant-video-v1', MODEL_RPM_LIMIT: '100', MODEL_TPM_LIMIT: '100000', MODEL_MAX_TASK_COST_CNY: '0.50',
+      ASSET_STORAGE_BUCKET: 'merchant-assets', ASSET_STORAGE_REGION: 'cn', ASSET_STORAGE_ENDPOINT: 'https://s3.example.com', OBJECT_STORAGE_VERSIONING: 'true', PUBLIC_ASSET_BASE_URL: 'https://merchant.example.com', PUBLIC_OAUTH_REDIRECT_URI: 'https://merchant.example.com/v1/oauth/callback/{platform}',
+      ASSET_QUARANTINE_RETENTION_DAYS: '7', ASSET_CLEAN_RETENTION_DAYS: '90', DELETION_REQUEST_GRACE_DAYS: '7', BACKUP_RETENTION_DAYS: '30', LIFECYCLE_POLICY_REF: 'vault://asset-lifecycle-policy',
+      ALLOW_LOCAL_ASSET_SCAN_FIXTURE: 'false', ASSET_SCANNER_MODE: 'clamav_worker', ASSET_SCAN_POLICY_VERSION: 'scan-policy-2026-08-30', CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: '3310', CLAMAV_MAX_FILE_BYTES: '52428800', CLAMAV_SIGNATURE_MAX_AGE_MINUTES: '1440', PLATFORM_RULE_SYNC_INTERVAL_HOURS: '24',
+      PAYMENT_MODE: 'provider', PAYMENT_PROVIDER_ADAPTERS: 'alipay,wechat', PAYMENT_CHECKOUT_BASE_URL: 'https://payments.example.com/checkout', PAYMENT_PROVIDER_CHECKOUT_API_URL: 'https://payments.example.com/v1/checkout', PAYMENT_PROVIDER_QUERY_API_URL: 'https://payments.example.com/v1/query', PAYMENT_PROVIDER_REFUND_API_URL: 'https://payments.example.com/v1/refund', PAYMENT_PROVIDER_MERCHANT_ID: 'merchant-example', PAYMENT_CALLBACK_BASE_URL: 'https://merchant.example.com/v1', PAYMENT_RECONCILIATION_ENABLED: 'true', PAYMENT_REFUND_ENABLED: 'true', PLATFORM_RULE_SYNC_MANIFEST_URL: 'https://rules.example.com/platform-rules/v1/manifest.json',
+    }
     const scannerSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-scanner-secrets', key } } })
-    const scannerConfigAnnotation = { 'merchant.example.com/config-sha256': 'sha256:514f4897cdbf78bd0b9e5f80722a42557b116ba72e8afcb194c9ee15ccfd5da6' }
+    const runtimeSecret = (name: string, key = name) => ({ name, valueFrom: { secretKeyRef: { name: 'merchant-runtime-secrets', key } } })
+    const scannerConfigCanonical = `merchant-runtime\n${Object.entries(scannerRuntime).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, value]) => `data.${key}=${value}\n`).join('')}`
+    const scannerConfigAnnotation = { 'merchant.example.com/config-sha256': `sha256:${createHash('sha256').update(scannerConfigCanonical).digest('hex')}` }
     writeFileSync(manifest, JSON.stringify({ apiVersion: 'v1', kind: 'List', items: [
       { apiVersion: 'v1', kind: 'ConfigMap', metadata: { name: 'merchant-runtime' }, data: scannerRuntime },
-      { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS')] }] } } } },
+      { apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', metadata: { name: 'merchant' }, spec: { tls: [{ hosts: ['merchant.example.com', 'ops.merchant.example.com'], secretName: 'merchant-tls' }], rules: [
+        { host: 'merchant.example.com', http: { paths: [
+          { path: '/mcp', pathType: 'Exact', backend: { service: { name: 'merchant-api', port: { name: 'http' } } } },
+          { path: '/v1', pathType: 'Prefix', backend: { service: { name: 'merchant-api', port: { name: 'http' } } } },
+          { path: '/', pathType: 'Prefix', backend: { service: { name: 'merchant-ui', port: { name: 'http' } } } },
+        ] } },
+        { host: 'ops.merchant.example.com', http: { paths: [
+          { path: '/', pathType: 'Prefix', backend: { service: { name: 'merchant-ops-ui', port: { name: 'http' } } } },
+        ] } },
+      ] } },
+      { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-api' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { containers: [{ name: 'api', image: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_TRUSTED_PUBLIC_KEYS'), runtimeSecret('MODEL_RELAY_API_KEY'), runtimeSecret('PLATFORM_RULE_SYNC_SIGNING_SECRET'), runtimeSecret('PAYMENT_PROVIDER_API_KEY'), runtimeSecret('PAYMENT_CALLBACK_SECRET')] }] } } } },
       { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'merchant-worker-scan' }, spec: { template: { metadata: { annotations: scannerConfigAnnotation }, spec: { nodeSelector: { 'kubernetes.io/arch': 'amd64' }, containers: [
         { name: 'worker', image: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, envFrom: [{ configMapRef: { name: 'merchant-runtime' } }], env: [{ name: 'WORKER_ROLE', value: 'scan' }, scannerSecret('WORKER_API_TOKEN', 'ASSET_SCANNER_API_TOKEN'), scannerSecret('WORKER_API_SIGNING_SECRET', 'ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCANNER_API_TOKEN'), scannerSecret('ASSET_SCANNER_WORKSPACE_SIGNING_SECRET'), scannerSecret('ASSET_SCAN_RECEIPT_KEY_ID'), scannerSecret('ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM')] },
         { name: 'clamav', image: `registry.example.com/clamav@${imageDigests.clamav}`, startupProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } }, readinessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1 && find /var/lib/clamav -mmin -1440'] } }, livenessProbe: { exec: { command: ['sh', '-c', 'clamdscan --ping 1'] } } },
@@ -224,6 +245,18 @@ describe('deployment operation scripts', () => {
     const script = 'infra/scripts/deploy-preflight.sh'
     const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, CODEX_APP_HOST_EVIDENCE_PATH: hostEvidence, OBJECT_STORAGE_EVIDENCE_PATH: storageEvidence, CANONICAL_CUTOVER_EVIDENCE_PATH: canonicalCutoverEvidence, PRODUCTION_EVIDENCE_ARTIFACT_ROOT: directory, EXPECTED_MIGRATION_VERSION: '078', RELEASE_MANIFEST_PATH: releaseManifest, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGESTS_JSON: JSON.stringify(imageDigests), API_IMAGE_REF: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, WORKER_IMAGE_REF: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', OPS_DATABASE_URL: 'postgresql://ops-db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
     expect(() => run(script, [config], base)).toThrow(/trust anchor is not provisioned/)
+    const matchingManifest = readFileSync(manifest, 'utf8')
+    const driftedManifest = JSON.parse(matchingManifest)
+    driftedManifest.items[0].data.MODEL_RELAY_BASE_URL = 'https://different-relay.example.com'
+    const driftedRuntimeCanonical = `merchant-runtime\n${Object.entries(driftedManifest.items[0].data as Record<string, string>).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, value]) => `data.${key}=${value}\n`).join('')}`
+    const driftedAnnotation = `sha256:${createHash('sha256').update(driftedRuntimeCanonical).digest('hex')}`
+    for (const item of driftedManifest.items) {
+      const containers = item.spec?.template?.spec?.containers
+      if (containers?.some((container: any) => container.envFrom?.some((source: any) => source.configMapRef?.name === 'merchant-runtime'))) item.spec.template.metadata.annotations['merchant.example.com/config-sha256'] = driftedAnnotation
+    }
+    writeFileSync(manifest, JSON.stringify(driftedManifest))
+    expect(() => run(script, [config], base)).toThrow(/production config and rendered manifest mismatch: model_relay_base_url/)
+    writeFileSync(manifest, matchingManifest)
     writeFileSync(config, readFileSync(config, 'utf8').replace('xiaohongshu_write_enabled: true', '# xiaohongshu_write_enabled: true'))
     expect(() => run(script, [config], base)).toThrow(/xiaohongshu/)
     writeFileSync(config, readFileSync(config, 'utf8').replace('# xiaohongshu_write_enabled: true', 'xiaohongshu_write_enabled: true'))
@@ -253,7 +286,11 @@ describe('deployment operation scripts', () => {
     expect(deployPreflight).toContain('codex-app-host-evidence-gate.ts')
     expect(deployPreflight.match(/model-relay-evidence-gate\.ts[^\n]*/g)?.every(line => line.includes('--require-artifacts'))).toBe(true)
     expect(deployPreflight.match(/codex-app-host-evidence-gate\.ts[^\n]*/g)?.every(line => line.includes('--require-artifacts'))).toBe(true)
+    expect(deployPreflight).toContain('--expected-mcp-base-url')
+    expect(deployPreflight).toContain('--expected-bridge-sha256')
     expect(deployPreflight).toContain('release-manifest-gate.ts')
+    expect(deployPreflight).toContain('validate-rendered-production-config.rb')
+    expect(deployPreflight.indexOf('validate-rendered-production-config.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
     for (const binding of ['--artifact-root', '--public-key', '--key-id', '--capability-evidence', '--capacity-evidence', '--model-relay-evidence', '--payment-evidence', '--restore-evidence', '--object-storage-evidence', '--codex-app-host-evidence', '--canonical-cutover-evidence']) expect(deployPreflight).toContain(binding)
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found' })).toThrow()
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found', SKIP_LOCAL_OPS_GATE: 'true', NODE_ENV: 'production' })).toThrow(/SKIP_LOCAL_OPS_GATE/)
@@ -264,6 +301,10 @@ describe('deployment operation scripts', () => {
     expect(script).toContain('kubectl apply -f "$RENDERED_MANIFEST_PATH"')
     expect(script).not.toContain('kubectl apply -k')
     expect(script).toContain('[ "$before" = "$after" ]')
+    expect(script).toContain('verified_config=$(mktemp')
+    expect(script).toContain('[ "$config_source_before" = "$config_source_after" ]')
+    expect(script).toContain('[ "$config_before" = "$config_after" ]')
+    expect(script).toContain('PRODUCTION_CONFIG_PATH=$verified_config')
     expect(script).toContain('merchant.example.com/deployment-phase=migration')
     expect(script).toContain('kubectl wait --for=condition=complete job/merchant-schema-migration')
     expect(script).toContain('kubectl rollout status')
@@ -413,10 +454,17 @@ describe('deployment operation scripts', () => {
 
   it('keeps the API image build context complete for the TypeScript project references', () => {
     const dockerfile = readFileSync('infra/docker/api.Dockerfile', 'utf8')
+    const workerDockerfile = readFileSync('infra/docker/worker.Dockerfile', 'utf8')
     expect(dockerfile).toContain('COPY scripts ./scripts')
     expect(readFileSync('package-lock.json', 'utf8')).toContain('packages/knowledge')
     expect(readFileSync('package-lock.json', 'utf8')).toContain('packages/multimodal')
-    expect(readFileSync('infra/docker/worker.Dockerfile', 'utf8')).toContain('COPY scripts ./scripts')
+    expect(workerDockerfile).toContain('COPY scripts ./scripts')
+    for (const runtimeDockerfile of [dockerfile, workerDockerfile]) {
+      expect(runtimeDockerfile).toContain('COPY --from=build /app/packages ./packages')
+      expect(runtimeDockerfile).toContain('mkdir -p node_modules/@merchant-marketing')
+      expect(runtimeDockerfile).toContain('ln -sfn "../../$package_dir" "node_modules/$package_name"')
+      expect(runtimeDockerfile.indexOf('COPY --from=build /app/packages ./packages')).toBeLessThan(runtimeDockerfile.indexOf('mkdir -p node_modules/@merchant-marketing'))
+    }
   })
 
   it('rebuilds every exported package alongside the root build', () => {

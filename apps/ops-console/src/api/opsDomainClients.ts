@@ -6,6 +6,7 @@ import type { FinanceSearchClient } from "../hooks/useFinanceSearch.js";
 import type { IncidentsClient } from "../hooks/useIncidents.js";
 import type { AuditCenterClient, AuditCenterFilters } from "../hooks/useAuditCenter.js";
 import { supportTicketEventTypes, supportTicketPriorities, supportTicketStatuses, type SupportCrmExportContract, type SupportTicketContract, type SupportTicketEventContract, type SupportTicketPageContract } from "../../../../packages/contracts/src/ops/support.js";
+import type { SupportSlaCorrectionApprovalProgress, SupportSlaCorrectionDecision, SupportSlaCorrectionRun, SupportSlaMonthlyReport } from "../../../../packages/contracts/src/ops/support-sla-report.js";
 import { incidentSeverities, incidentStatuses } from "../../../../packages/contracts/src/ops/incidents.js";
 import { auditSources, type AuditCenterExport, type AuditCenterPage, type AuditCenterDetail, type AuditCenterQuery } from "../../../../packages/contracts/src/ops/audit-center.js";
 import { MAX_OPS_EXPORT_RESPONSE_BYTES, OPS_EXPORT_TIMEOUT_MS, rpc, rpcForWorkspace } from "./opsClient.js";
@@ -107,6 +108,31 @@ export const parseSupportMutation = (value: unknown) => {
 export const parseSupportCrmExport = (value: unknown): SupportCrmExportContract => {
   if (!object(value) || !text(value.generatedAt) || !text(value.workspaceId) || !Array.isArray(value.columns) || !Array.isArray(value.rows)) fail("客服 CRM 导出", "export");
   return value as unknown as SupportCrmExportContract;
+};
+const supportSlaReport = (value: unknown): value is SupportSlaMonthlyReport => object(value)
+  && ["reportId", "workspaceId", "periodStart", "periodEnd", "cutoffAt", "checksum"].every(key => text(value[key]))
+  && ["denominator", "met", "failed", "excluded", "lateOrUnresolved"].every(key => Number.isSafeInteger(value[key]) && Number(value[key]) >= 0)
+  && Array.isArray(value.policyVersions) && value.policyVersions.every(item => Number.isSafeInteger(item))
+  && textArray(value.calendarVersions)
+  && Array.isArray(value.ticketResults)
+  && value.ticketResults.every(item => object(item) && text(item.ticketId) && ["met", "failed", "excluded"].includes(String(item.outcome)) && optionalText(item.terminalAt) && optionalText(item.exclusion));
+export const parseSupportSlaReport = (value: unknown): SupportSlaMonthlyReport => {
+  if (!supportSlaReport(value)) fail("SLA 月报", "report");
+  return value as SupportSlaMonthlyReport;
+};
+export const parseSupportSlaCorrection = (value: unknown): SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string } => {
+  if (!object(value)) fail("SLA correction", "response");
+  const candidate = value as Record<string, unknown>;
+  if (candidate.status === "no_change" && text(candidate.original_report_id) && text(candidate.checksum)) return { status: "no_change", originalReportId: candidate.original_report_id, checksum: candidate.checksum };
+  if (text(candidate.correctionId) && text(candidate.originalReportId) && text(candidate.workspaceId) && text(candidate.reason) && text(candidate.sourceChecksum) && text(candidate.correctedChecksum) && text(candidate.idempotencyKey) && candidate.status === "pending_review") return candidate as unknown as SupportSlaCorrectionRun;
+  return fail("SLA correction", "response");
+};
+export const parseSupportSlaCorrectionDecision = (value: unknown): SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress => {
+  if (!object(value)) fail("SLA correction 决策", "response");
+  const candidate = value as Record<string, unknown>;
+  if (candidate.status === "pending_approval" && text(candidate.correctionId) && text(candidate.workspaceId) && candidate.requiredApprovals === 2 && Array.isArray(candidate.approvals)) return candidate as unknown as SupportSlaCorrectionApprovalProgress;
+  if (text(candidate.decisionId) && text(candidate.correctionId) && text(candidate.workspaceId) && text(candidate.reason) && text(candidate.actorId) && text(candidate.idempotencyKey) && text(candidate.decidedAt) && ["approved", "rejected"].includes(String(candidate.decision))) return candidate as unknown as SupportSlaCorrectionDecision;
+  return fail("SLA correction 决策", "response");
 };
 
 const financeRecord = (value: unknown, detail = false): boolean => {
@@ -240,6 +266,9 @@ export const supportClient: SupportDomainClient = {
   transition: async (input) => parseSupportMutation(await rpcForWorkspace(input.workspaceId, "ops.support.ticket.transition", { ticket_id: input.ticketId, status: input.status, reason: input.reason, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey })),
   comment: async (input) => parseSupportMutation(await rpcForWorkspace(input.workspaceId, "ops.support.ticket.comment", { ticket_id: input.ticketId, body: input.body, visibility: input.visibility, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey })),
   exportCrm: async (workspaceId) => parseSupportCrmExport(await rpcForWorkspace(workspaceId, "ops.support.crm.export", { limit: "5000" })),
+  report: async (input) => parseSupportSlaReport(await rpcForWorkspace<SupportSlaMonthlyReport>(input.workspaceId, "ops.support.sla.report", { period_start: input.periodStart, period_end: input.periodEnd, cutoff_at: input.cutoffAt, ...(input.reportId ? { report_id: input.reportId } : {}) })),
+  createCorrection: async (input) => parseSupportSlaCorrection(await rpcForWorkspace<SupportSlaCorrectionRun | { status: "no_change"; original_report_id: string; checksum: string }>(input.workspaceId, "ops.support.sla.correction.create", { original_report_id: input.originalReportId, period_start: input.periodStart, period_end: input.periodEnd, cutoff_at: input.cutoffAt, reason: input.reason, idempotency_key: input.idempotencyKey })),
+  decideCorrection: async (input) => parseSupportSlaCorrectionDecision(await rpcForWorkspace<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>(input.workspaceId, "ops.support.sla.correction.decide", { correction_id: input.correctionId, decision: input.decision, reason: input.reason, idempotency_key: input.idempotencyKey })),
 };
 
 const financeQueryParams = (query: FinanceSearchQuery, includeCursor = true): Record<string, string> => ({

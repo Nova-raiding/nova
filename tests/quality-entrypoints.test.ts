@@ -69,6 +69,7 @@ describe('quality entrypoint coverage', () => {
       'packages/persistence/src/migration-104.test.ts',
       'packages/persistence/src/migration-105.test.ts',
       'packages/persistence/src/migration-106.test.ts',
+      'packages/persistence/src/migration-110.test.ts',
     ]) {
       expect(releaseGate).toContain(contract)
     }

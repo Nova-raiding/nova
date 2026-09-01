@@ -1,4 +1,4 @@
-import { test, chromium } from '@playwright/test'
+import { expect, test, chromium } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
@@ -50,7 +50,15 @@ test('inventory merchant studio as a user', async () => {
   await mobilePage.goto('http://127.0.0.1:18081/', { waitUntil: 'domcontentloaded', timeout: 30_000 })
   await mobilePage.waitForTimeout(1_500)
   await mobilePage.screenshot({ path: `${output}/screenshots/merchant-mobile.png`, fullPage: true })
-  await mobile.close()
-  await context.close()
-  await browser.close()
+  try {
+    const consoleErrors = messages.filter(message => message.type === 'error' || message.type === 'pageerror')
+    expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
+    expect(badResponses, 'Merchant Studio inventory should not observe HTTP error responses').toEqual([])
+    expect(failedRequests, 'Merchant Studio inventory should not observe failed network requests').toEqual([])
+    expect(consoleErrors, 'Merchant Studio inventory should not observe console or page errors').toEqual([])
+  } finally {
+    await mobile.close()
+    await context.close()
+    await browser.close()
+  }
 })

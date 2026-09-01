@@ -14,6 +14,9 @@ export interface ModelCostBudgetReservation {
   estimateCny: number
   estimateVersion: string
   dailyLimitCny: number
+  runKey: string
+  runLimitCny: number
+  overBudgetReason?: 'run' | 'daily' | 'run_and_daily'
   status: ModelCostBudgetReservationStatus
   actualCostCny?: number
   providerRequestId?: string
@@ -33,12 +36,23 @@ export class ModelCostBudgetActualExceededError extends Error {
   readonly providerSucceeded = true
   constructor(readonly details: ModelCostBudgetSnapshot) { super('actual model cost exceeded the reserved daily budget'); this.name = 'ModelCostBudgetActualExceededError' }
 }
+export class ModelRunCostBudgetExceededError extends Error {
+  readonly code = 'MODEL_TASK_COST_LIMIT_EXCEEDED'
+  constructor(readonly details: ModelCostBudgetSnapshot) { super('model run cost budget would be exceeded'); this.name = 'ModelRunCostBudgetExceededError' }
+}
+export class ModelRunCostBudgetActualExceededError extends Error {
+  readonly code = 'MODEL_TASK_COST_ACTUAL_EXCEEDED'
+  readonly providerSucceeded = true
+  constructor(readonly details: ModelCostBudgetSnapshot) { super('actual model cost exceeded the run budget'); this.name = 'ModelRunCostBudgetActualExceededError' }
+}
 export interface ModelUsageRecord {
   id: string
   workspaceId: string
   receiptKey: string
   receiptHash: string
   actionId?: string
+  budgetReservationKey?: string
+  budgetRunKey?: string
   contextLinkId?: string
   contextHash?: string
   modality: ModelUsageModality
@@ -75,8 +89,22 @@ export type ModelUsageRecordInput = Omit<ModelUsageRecord, 'id' | 'receiptKey' |
   observedAt?: string
 }
 
+export type BudgetedModelUsageRecordInput = ModelUsageRecordInput & {
+  budgetReservationKey: string
+  budgetRunKey: string
+  costCny: number
+}
+
+export interface RecordUsageAndSettleBudgetResult {
+  usage: ModelUsageRecord
+  reservation: ModelCostBudgetReservation
+  snapshot: ModelCostBudgetSnapshot
+  runSnapshot: ModelCostBudgetSnapshot
+}
+
 export interface ModelUsageRepository {
   record(input: ModelUsageRecordInput): Promise<ModelUsageRecord>
+  recordUsageAndSettleBudget(input: BudgetedModelUsageRecordInput): Promise<RecordUsageAndSettleBudgetResult>
   list(workspaceId: string, limit?: number): Promise<ModelUsageRecord[]>
   /** Returns the complete usage population for a statement period. */
   listForStatement(workspaceId: string, period?: { fromAt?: string; toAt?: string; actorId?: string }): Promise<ModelUsageRecord[]>
@@ -84,7 +112,7 @@ export interface ModelUsageRepository {
   listByAction(workspaceId: string, actionId: string): Promise<ModelUsageRecord[]>
   claimPending(input: { workspaceId: string; owner: string; limit?: number; leaseSeconds?: number; now?: string }): Promise<ModelUsageRecord[]>
   resolve(input: { workspaceId: string; id: string; expectedRevision: number; status: ModelSettlementStatus; actorId: string; reason: string; evidenceRef?: string; costCny?: number; markupMultiplier?: number; customerChargeCny?: number; pricingPolicyRevision?: number; lastError?: Record<string, unknown>; nextAttemptAt?: string }): Promise<ModelUsageRecord>
-  reserveDailyBudget(input: { workspaceId: string; reservationKey: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number; at?: string }): Promise<{ reservation: ModelCostBudgetReservation; snapshot: ModelCostBudgetSnapshot; reused: boolean }>
+  reserveDailyBudget(input: { workspaceId: string; reservationKey: string; runKey?: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number; runLimitCny?: number; at?: string }): Promise<{ reservation: ModelCostBudgetReservation; snapshot: ModelCostBudgetSnapshot; runSnapshot: ModelCostBudgetSnapshot; reused: boolean }>
   settleDailyBudget(input: { workspaceId: string; reservationKey: string; actualCostCny: number; providerRequestId?: string; at?: string }): Promise<{ reservation: ModelCostBudgetReservation; snapshot: ModelCostBudgetSnapshot }>
   releaseDailyBudget(input: { workspaceId: string; reservationKey: string; at?: string }): Promise<ModelCostBudgetReservation | undefined>
 }
@@ -111,9 +139,23 @@ const budgetDate = (value = now()) => {
 }
 const finiteCny = (value: number, allowZero = false) => Number.isFinite(value) && (allowZero ? value >= 0 : value > 0)
 const roundedCny = (value: number) => Number(value.toFixed(12))
+const mergeOverBudgetReason = (existing: ModelCostBudgetReservation['overBudgetReason'], current: ModelCostBudgetReservation['overBudgetReason']) => {
+  if (existing === 'run_and_daily' || current === 'run_and_daily') return 'run_and_daily' as const
+  if (!existing) return current
+  if (!current || existing === current) return existing
+  return 'run_and_daily' as const
+}
 const validateContextPair = (input: Pick<ModelUsageRecord, 'contextLinkId' | 'contextHash'>) => {
   if ((input.contextLinkId === undefined) !== (input.contextHash === undefined)) throw new Error('MODEL_USAGE_CONTEXT_PAIR_REQUIRED')
   if (input.contextHash !== undefined && !/^[a-f0-9]{64}$/u.test(input.contextHash)) throw new Error('MODEL_USAGE_CONTEXT_HASH_INVALID')
+}
+const validateBudgetPair = (input: Pick<ModelUsageRecord, 'budgetReservationKey' | 'budgetRunKey'>) => {
+  if ((input.budgetReservationKey === undefined) !== (input.budgetRunKey === undefined)) throw new Error('MODEL_USAGE_BUDGET_PAIR_REQUIRED')
+  if (input.budgetReservationKey !== undefined && (!input.budgetReservationKey.trim() || !input.budgetRunKey?.trim())) throw new Error('MODEL_USAGE_BUDGET_PAIR_REQUIRED')
+}
+const assertBudgetLinkMatches = (existing: Pick<ModelUsageRecord, 'budgetReservationKey' | 'budgetRunKey'>, input: Pick<ModelUsageRecord, 'budgetReservationKey' | 'budgetRunKey'>) => {
+  validateBudgetPair(input)
+  if (existing.budgetReservationKey !== input.budgetReservationKey || existing.budgetRunKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
 }
 const validateTokenFields = (input: Pick<ModelUsageRecord, 'inputTokens' | 'outputTokens' | 'totalTokens'>) => {
   for (const value of [input.inputTokens, input.outputTokens, input.totalTokens]) {
@@ -127,7 +169,7 @@ const mergeContext = (existing: ModelUsageRecord, input: Pick<ModelUsageRecord, 
   if (existing.contextHash !== undefined && input.contextHash !== undefined && existing.contextHash !== input.contextHash) throw new Error('MODEL_USAGE_CONTEXT_CONFLICT')
   if (existing.contextLinkId === undefined && input.contextLinkId !== undefined) { existing.contextLinkId = input.contextLinkId; existing.contextHash = input.contextHash; existing.revision += 1 }
 }
-const sameBudgetIntent = (row: ModelCostBudgetReservation, input: { budgetDate: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number }) => row.budgetDate === input.budgetDate && row.modality === input.modality && row.model === input.model && row.estimateCny === input.estimateCny && row.estimateVersion === input.estimateVersion && row.dailyLimitCny === input.dailyLimitCny
+const sameBudgetIntent = (row: ModelCostBudgetReservation, input: { budgetDate: string; runKey: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number; runLimitCny: number }) => row.budgetDate === input.budgetDate && row.runKey === input.runKey && row.modality === input.modality && row.model === input.model && row.estimateCny === input.estimateCny && row.estimateVersion === input.estimateVersion && row.dailyLimitCny === input.dailyLimitCny && row.runLimitCny === input.runLimitCny
 
 export class MemoryModelUsageRepository implements ModelUsageRepository {
   private readonly rows: ModelUsageRecord[] = []
@@ -135,20 +177,53 @@ export class MemoryModelUsageRepository implements ModelUsageRepository {
   async record(input: ModelUsageRecordInput) {
     if (!input.workspaceId.trim()) throw new Error('MODEL_USAGE_WORKSPACE_REQUIRED')
     validateContextPair(input)
+    validateBudgetPair(input)
     validateTokenFields(input)
     const receiptKey = stableReceiptKey(input); const receiptHash = stableReceiptHash(input, receiptKey)
     const existing = this.rows.find(row => row.workspaceId === input.workspaceId && (row.receiptKey === receiptKey || Boolean(input.providerRequestId && row.providerRequestId === input.providerRequestId)))
     if (existing) {
       if (existing.receiptHash !== receiptHash) throw new Error('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
+      assertBudgetLinkMatches(existing, input)
       mergeContext(existing, input)
       if (existing.costCny === undefined && input.costCny !== undefined) {
         Object.assign(existing, { costCny: input.costCny, markupMultiplier: input.markupMultiplier, customerChargeCny: input.customerChargeCny, pricingPolicyRevision: input.pricingPolicyRevision, settlementStatus: input.settlementStatus ?? 'pending_wallet', lastError: input.lastError, nextAttemptAt: input.nextAttemptAt ?? now(), revision: existing.revision + 1 })
       }
       return existing
     }
+    if (input.budgetReservationKey !== undefined) {
+      const reservation = this.budgetReservations.get(`${input.workspaceId}:${input.budgetReservationKey}`)
+      if (!reservation || reservation.runKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+    }
     const settlementStatus = input.settlementStatus ?? (input.costCny === undefined ? 'pending_cost' : 'settled'); validateStatus(settlementStatus)
     const row: ModelUsageRecord = { ...input, id: `model_usage_${randomUUID()}`, receiptKey, receiptHash, settlementStatus, attemptCount: input.attemptCount ?? 0, revision: 1, observedAt: input.observedAt ?? now() }
     this.rows.push(row); return row
+  }
+  async recordUsageAndSettleBudget(input: BudgetedModelUsageRecordInput) {
+    if (!finiteCny(input.costCny, true)) throw new Error('MODEL_COST_BUDGET_ACTUAL_INVALID')
+    const reservation = this.budgetReservations.get(`${requireWorkspaceScope(input.workspaceId)}:${input.budgetReservationKey}`)
+    if (!reservation || reservation.runKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+    if (reservation.status === 'released') throw new Error('MODEL_COST_BUDGET_RESERVATION_RELEASED')
+    const existing = this.rows.find(row => row.workspaceId === input.workspaceId && (row.receiptKey === stableReceiptKey(input) || Boolean(input.providerRequestId && row.providerRequestId === input.providerRequestId)))
+    if (existing?.costCny !== undefined && existing.costCny !== input.costCny) throw new Error('MODEL_USAGE_COST_CONFLICT')
+    const usage = await this.record({ ...input, settlementStatus: 'pending_wallet' })
+    const actualCostCny = roundedCny(this.rows.filter(row => row.workspaceId === input.workspaceId && row.budgetReservationKey === input.budgetReservationKey && row.costCny !== undefined).reduce((sum, row) => sum + (row.costCny ?? 0), 0))
+    const snapshot = { ...this.budgetSnapshot(input.workspaceId, reservation.budgetDate, actualCostCny, reservation.reservationKey), limitCny: reservation.dailyLimitCny }
+    const runSnapshot = { ...this.runBudgetSnapshot(input.workspaceId, reservation.runKey, actualCostCny, reservation.reservationKey), limitCny: reservation.runLimitCny }
+    const dailyExceeded = snapshot.usedCny + snapshot.reservedCny + actualCostCny > reservation.dailyLimitCny
+    const runExceeded = (reservation.runKey !== reservation.reservationKey || reservation.runLimitCny < reservation.dailyLimitCny) && runSnapshot.usedCny + runSnapshot.reservedCny + actualCostCny > reservation.runLimitCny
+    const calculatedReason = runExceeded && dailyExceeded ? 'run_and_daily' as const : runExceeded ? 'run' as const : dailyExceeded ? 'daily' as const : undefined
+    const overBudgetReason = mergeOverBudgetReason(reservation.overBudgetReason, calculatedReason)
+    const providerRequestIds = new Set(this.rows.filter(row => row.workspaceId === input.workspaceId && row.budgetReservationKey === input.budgetReservationKey).map(row => row.providerRequestId).filter((value): value is string => Boolean(value)))
+    const providerRequestId = providerRequestIds.size === 1 ? [...providerRequestIds][0] : undefined
+    const nextStatus = overBudgetReason ? 'over_budget' as const : 'settled' as const
+    if (reservation.status !== nextStatus || reservation.actualCostCny !== actualCostCny || reservation.providerRequestId !== providerRequestId || reservation.overBudgetReason !== overBudgetReason) {
+      Object.assign(reservation, { status: nextStatus, actualCostCny, providerRequestId, overBudgetReason, revision: reservation.revision + 1, updatedAt: input.observedAt ?? now() })
+    }
+    if (overBudgetReason && usage.settlementStatus !== 'manual_attention') Object.assign(usage, { settlementStatus: 'manual_attention' as const, lastError: { code: runExceeded ? 'MODEL_TASK_COST_ACTUAL_EXCEEDED' : 'MODEL_DAILY_COST_ACTUAL_EXCEEDED' }, resolvedBy: 'model-cost-budget', resolutionReason: '实际模型成本超过预算预留，阻断钱包结算与结果交付', resolvedAt: now(), revision: usage.revision + 1 })
+    const committed = { usage, reservation, snapshot, runSnapshot }
+    if (overBudgetReason === 'run' || overBudgetReason === 'run_and_daily') throw Object.assign(new ModelRunCostBudgetActualExceededError(runSnapshot), { committed })
+    if (overBudgetReason === 'daily') throw Object.assign(new ModelCostBudgetActualExceededError(snapshot), { committed })
+    return committed
   }
   async list(workspaceId: string, limit = 100) { return this.rows.filter(row => row.workspaceId === workspaceId).slice(-Math.min(1000, Math.max(1, limit))).reverse() }
   async listForStatement(workspaceId: string, period: { fromAt?: string; toAt?: string; actorId?: string } = {}) {
@@ -176,27 +251,35 @@ export class MemoryModelUsageRepository implements ModelUsageRepository {
   private budgetSnapshot(workspaceId: string, date: string, requestCny: number, excludeKey?: string): ModelCostBudgetSnapshot {
     const allReservations = [...this.budgetReservations.values()].filter(row => row.workspaceId === workspaceId && row.budgetDate === date)
     const reservations = allReservations.filter(row => row.reservationKey !== excludeKey)
-    const linked = new Set(allReservations.map(row => row.reservationKey))
-    const usageActual = this.rows.filter(row => row.workspaceId === workspaceId && budgetDate(row.observedAt) === date && row.costCny !== undefined && (!row.actionId || !linked.has(row.actionId))).reduce((sum, row) => sum + row.costCny!, 0)
+    const usageActual = this.rows.filter(row => row.workspaceId === workspaceId && budgetDate(row.observedAt) === date && row.costCny !== undefined && row.budgetReservationKey === undefined).reduce((sum, row) => sum + row.costCny!, 0)
     const usedCny = usageActual + reservations.filter(row => row.status === 'settled' || row.status === 'over_budget').reduce((sum, row) => sum + (row.actualCostCny ?? 0), 0)
     const reservedCny = reservations.filter(row => row.status === 'active').reduce((sum, row) => sum + row.estimateCny, 0)
     return { usedCny: roundedCny(usedCny), reservedCny: roundedCny(reservedCny), requestCny: roundedCny(requestCny), limitCny: 0 }
   }
-  async reserveDailyBudget(input: { workspaceId: string; reservationKey: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number; at?: string }) {
-    requireWorkspaceScope(input.workspaceId); if (!input.reservationKey.trim() || !input.model.trim() || !input.estimateVersion.trim() || !finiteCny(input.estimateCny) || !finiteCny(input.dailyLimitCny)) throw new Error('MODEL_COST_BUDGET_INPUT_INVALID')
+  private runBudgetSnapshot(workspaceId: string, runKey: string, requestCny: number, excludeKey?: string): ModelCostBudgetSnapshot {
+    const rows = [...this.budgetReservations.values()].filter(row => row.workspaceId === workspaceId && row.runKey === runKey && row.reservationKey !== excludeKey)
+    return { usedCny: roundedCny(rows.filter(row => row.status === 'settled' || row.status === 'over_budget').reduce((sum, row) => sum + (row.actualCostCny ?? 0), 0)), reservedCny: roundedCny(rows.filter(row => row.status === 'active').reduce((sum, row) => sum + row.estimateCny, 0)), requestCny: roundedCny(requestCny), limitCny: 0 }
+  }
+  async reserveDailyBudget(input: { workspaceId: string; reservationKey: string; runKey?: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number; runLimitCny?: number; at?: string }) {
+    const runKey = input.runKey?.trim() || input.reservationKey; const runLimitCny = input.runLimitCny ?? input.dailyLimitCny
+    requireWorkspaceScope(input.workspaceId); if (!input.reservationKey.trim() || !runKey || !input.model.trim() || !input.estimateVersion.trim() || !finiteCny(input.estimateCny) || !finiteCny(input.dailyLimitCny) || !finiteCny(runLimitCny) || runLimitCny > input.dailyLimitCny) throw new Error('MODEL_COST_BUDGET_INPUT_INVALID')
     const date = budgetDate(input.at); const mapKey = `${input.workspaceId}:${input.reservationKey}`; const existing = this.budgetReservations.get(mapKey)
+    const intent = { ...input, budgetDate: date, runKey, runLimitCny }
     if (existing && existing.status !== 'released') {
-      if (!sameBudgetIntent(existing, { ...input, budgetDate: date })) throw new Error('MODEL_COST_BUDGET_IDEMPOTENCY_CONFLICT')
+      if (!sameBudgetIntent(existing, intent)) throw new Error('MODEL_COST_BUDGET_IDEMPOTENCY_CONFLICT')
       const snapshot = { ...this.budgetSnapshot(input.workspaceId, date, existing.estimateCny, existing.reservationKey), limitCny: input.dailyLimitCny }
-      return { reservation: existing, snapshot, reused: true }
+      const runSnapshot = { ...this.runBudgetSnapshot(input.workspaceId, runKey, existing.estimateCny, existing.reservationKey), limitCny: runLimitCny }
+      return { reservation: existing, snapshot, runSnapshot, reused: true }
     }
-    if (existing && !sameBudgetIntent(existing, { ...input, budgetDate: date })) throw new Error('MODEL_COST_BUDGET_IDEMPOTENCY_CONFLICT')
+    if (existing && !sameBudgetIntent(existing, intent)) throw new Error('MODEL_COST_BUDGET_IDEMPOTENCY_CONFLICT')
     const snapshot = { ...this.budgetSnapshot(input.workspaceId, date, input.estimateCny), limitCny: input.dailyLimitCny }
+    const runSnapshot = { ...this.runBudgetSnapshot(input.workspaceId, runKey, input.estimateCny), limitCny: runLimitCny }
+    if ((runKey !== input.reservationKey || runLimitCny < input.dailyLimitCny) && runSnapshot.usedCny + runSnapshot.reservedCny + input.estimateCny > runLimitCny) throw new ModelRunCostBudgetExceededError(runSnapshot)
     if (snapshot.usedCny + snapshot.reservedCny + input.estimateCny > input.dailyLimitCny) throw new ModelCostBudgetExceededError(snapshot)
     const timestamp = input.at ?? now(); const reservation: ModelCostBudgetReservation = existing
-      ? Object.assign(existing, { status: 'active' as const, actualCostCny: undefined, providerRequestId: undefined, revision: existing.revision + 1, updatedAt: timestamp })
-      : { workspaceId: input.workspaceId, budgetDate: date, reservationKey: input.reservationKey, modality: input.modality, model: input.model, estimateCny: roundedCny(input.estimateCny), estimateVersion: input.estimateVersion, dailyLimitCny: roundedCny(input.dailyLimitCny), status: 'active', revision: 1, createdAt: timestamp, updatedAt: timestamp }
-    this.budgetReservations.set(mapKey, reservation); return { reservation, snapshot, reused: false }
+      ? Object.assign(existing, { status: 'active' as const, actualCostCny: undefined, providerRequestId: undefined, overBudgetReason: undefined, revision: existing.revision + 1, updatedAt: timestamp })
+      : { workspaceId: input.workspaceId, budgetDate: date, reservationKey: input.reservationKey, runKey, modality: input.modality, model: input.model, estimateCny: roundedCny(input.estimateCny), estimateVersion: input.estimateVersion, dailyLimitCny: roundedCny(input.dailyLimitCny), runLimitCny: roundedCny(runLimitCny), status: 'active', revision: 1, createdAt: timestamp, updatedAt: timestamp }
+    this.budgetReservations.set(mapKey, reservation); return { reservation, snapshot, runSnapshot, reused: false }
   }
   async settleDailyBudget(input: { workspaceId: string; reservationKey: string; actualCostCny: number; providerRequestId?: string; at?: string }) {
     if (!finiteCny(input.actualCostCny, true)) throw new Error('MODEL_COST_BUDGET_ACTUAL_INVALID')
@@ -205,23 +288,29 @@ export class MemoryModelUsageRepository implements ModelUsageRepository {
     if ((row.status === 'settled' || row.status === 'over_budget') && row.providerRequestId === input.providerRequestId && row.actualCostCny !== input.actualCostCny) throw new Error('MODEL_COST_BUDGET_SETTLEMENT_CONFLICT')
     if ((row.status === 'settled' || row.status === 'over_budget') && row.providerRequestId !== input.providerRequestId && input.actualCostCny < (row.actualCostCny ?? 0)) throw new Error('MODEL_COST_BUDGET_SETTLEMENT_CONFLICT')
     const snapshot = { ...this.budgetSnapshot(input.workspaceId, row.budgetDate, input.actualCostCny, row.reservationKey), limitCny: row.dailyLimitCny }
-    const exceeded = snapshot.usedCny + snapshot.reservedCny + input.actualCostCny > row.dailyLimitCny
+    const runSnapshot = { ...this.runBudgetSnapshot(input.workspaceId, row.runKey, input.actualCostCny, row.reservationKey), limitCny: row.runLimitCny }
+    const dailyExceeded = snapshot.usedCny + snapshot.reservedCny + input.actualCostCny > row.dailyLimitCny
+    const runExceeded = (row.runKey !== row.reservationKey || row.runLimitCny < row.dailyLimitCny) && runSnapshot.usedCny + runSnapshot.reservedCny + input.actualCostCny > row.runLimitCny
+    const exceeded = dailyExceeded || runExceeded
     if ((row.status === 'settled' || row.status === 'over_budget') && row.actualCostCny === input.actualCostCny && row.providerRequestId === input.providerRequestId) {
-      if (row.status === 'over_budget') throw new ModelCostBudgetActualExceededError(snapshot)
+      if (row.status === 'over_budget') { if (row.overBudgetReason === 'run' || row.overBudgetReason === 'run_and_daily') throw new ModelRunCostBudgetActualExceededError(runSnapshot); throw new ModelCostBudgetActualExceededError(snapshot) }
       return { reservation: row, snapshot }
     }
-    Object.assign(row, { status: exceeded ? 'over_budget' as const : 'settled' as const, actualCostCny: roundedCny(input.actualCostCny), providerRequestId: input.providerRequestId, revision: row.revision + 1, updatedAt: input.at ?? now() })
-    if (exceeded) throw new ModelCostBudgetActualExceededError(snapshot)
+    const overBudgetReason = runExceeded && dailyExceeded ? 'run_and_daily' as const : runExceeded ? 'run' as const : dailyExceeded ? 'daily' as const : undefined
+    Object.assign(row, { status: exceeded ? 'over_budget' as const : 'settled' as const, actualCostCny: roundedCny(input.actualCostCny), providerRequestId: input.providerRequestId, overBudgetReason, revision: row.revision + 1, updatedAt: input.at ?? now() })
+    if (runExceeded) throw new ModelRunCostBudgetActualExceededError(runSnapshot)
+    if (dailyExceeded) throw new ModelCostBudgetActualExceededError(snapshot)
     return { reservation: row, snapshot }
   }
   async releaseDailyBudget(input: { workspaceId: string; reservationKey: string; at?: string }) {
     const row = this.budgetReservations.get(`${requireWorkspaceScope(input.workspaceId)}:${input.reservationKey}`); if (!row || row.status !== 'active') return row
+    if (this.rows.some(usage => usage.workspaceId === input.workspaceId && usage.budgetReservationKey === input.reservationKey)) return row
     Object.assign(row, { status: 'released' as const, revision: row.revision + 1, updatedAt: input.at ?? now() }); return row
   }
 }
 
-type UsageRow = { id: string; workspace_id: string; receipt_key: string; receipt_hash: string; action_id: string | null; context_link_id: string | null; context_hash: string | null; modality: ModelUsageModality; model: string; provider_request_id: string | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; cost_cny: number | null; markup_multiplier: number | null; customer_charge_cny: number | null; pricing_policy_revision: number | null; settlement_status: ModelSettlementStatus; attempt_count: number; last_error: Record<string, unknown> | null; next_attempt_at: string | Date | null; claim_owner: string | null; claim_expires_at: string | Date | null; revision: number; resolved_by: string | null; resolution_reason: string | null; resolution_evidence_ref: string | null; resolved_at: string | Date | null; observed_at: string | Date; metadata: Record<string, unknown> | null }
-type BudgetRow = { workspace_id: string; budget_date: string | Date; reservation_key: string; modality: ModelUsageModality; model: string; estimate_cny: number | string; estimate_version: string; daily_limit_cny: number | string; status: ModelCostBudgetReservationStatus; actual_cost_cny: number | string | null; provider_request_id: string | null; revision: number; created_at: string | Date; updated_at: string | Date }
+type UsageRow = { id: string; workspace_id: string; receipt_key: string; receipt_hash: string; action_id: string | null; budget_reservation_key: string | null; budget_run_key: string | null; context_link_id: string | null; context_hash: string | null; modality: ModelUsageModality; model: string; provider_request_id: string | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; cost_cny: number | null; markup_multiplier: number | null; customer_charge_cny: number | null; pricing_policy_revision: number | null; settlement_status: ModelSettlementStatus; attempt_count: number; last_error: Record<string, unknown> | null; next_attempt_at: string | Date | null; claim_owner: string | null; claim_expires_at: string | Date | null; revision: number; resolved_by: string | null; resolution_reason: string | null; resolution_evidence_ref: string | null; resolved_at: string | Date | null; observed_at: string | Date; metadata: Record<string, unknown> | null }
+type BudgetRow = { workspace_id: string; budget_date: string | Date; reservation_key: string; run_key: string; modality: ModelUsageModality; model: string; estimate_cny: number | string; estimate_version: string; daily_limit_cny: number | string; run_limit_cny: number | string; status: ModelCostBudgetReservationStatus; over_budget_reason: 'run' | 'daily' | 'run_and_daily' | null; actual_cost_cny: number | string | null; provider_request_id: string | null; revision: number; created_at: string | Date; updated_at: string | Date }
 const iso = (value: string | Date) => value instanceof Date ? value.toISOString() : String(value)
 const tokenCount = (value: number | string | null) => {
   if (value === null) return undefined
@@ -229,33 +318,106 @@ const tokenCount = (value: number | string | null) => {
   if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error('MODEL_USAGE_TOKEN_COUNT_INVALID')
   return parsed
 }
-const projection = 'id, workspace_id, receipt_key, receipt_hash, action_id, context_link_id, context_hash, modality, model, provider_request_id, input_tokens, output_tokens, total_tokens, cost_cny, markup_multiplier, customer_charge_cny, pricing_policy_revision, settlement_status, attempt_count, last_error, next_attempt_at, claim_owner, claim_expires_at, revision, resolved_by, resolution_reason, resolution_evidence_ref, resolved_at, observed_at, metadata'
-const map = (row: UsageRow): ModelUsageRecord => ({ id: row.id, workspaceId: row.workspace_id, receiptKey: row.receipt_key, receiptHash: row.receipt_hash, ...(row.action_id ? { actionId: row.action_id } : {}), ...(row.context_link_id ? { contextLinkId: row.context_link_id } : {}), ...(row.context_hash ? { contextHash: row.context_hash } : {}), modality: row.modality, model: row.model, ...(row.provider_request_id ? { providerRequestId: row.provider_request_id } : {}), ...(tokenCount(row.input_tokens) !== undefined ? { inputTokens: tokenCount(row.input_tokens) } : {}), ...(tokenCount(row.output_tokens) !== undefined ? { outputTokens: tokenCount(row.output_tokens) } : {}), ...(tokenCount(row.total_tokens) !== undefined ? { totalTokens: tokenCount(row.total_tokens) } : {}), ...(row.cost_cny !== null ? { costCny: Number(row.cost_cny) } : {}), ...(row.markup_multiplier !== null ? { markupMultiplier: Number(row.markup_multiplier) } : {}), ...(row.customer_charge_cny !== null ? { customerChargeCny: Number(row.customer_charge_cny) } : {}), ...(row.pricing_policy_revision !== null ? { pricingPolicyRevision: row.pricing_policy_revision } : {}), settlementStatus: row.settlement_status, attemptCount: row.attempt_count, ...(row.last_error ? { lastError: row.last_error } : {}), ...(row.next_attempt_at ? { nextAttemptAt: iso(row.next_attempt_at) } : {}), ...(row.claim_owner ? { claimOwner: row.claim_owner } : {}), ...(row.claim_expires_at ? { claimExpiresAt: iso(row.claim_expires_at) } : {}), revision: row.revision, ...(row.resolved_by ? { resolvedBy: row.resolved_by } : {}), ...(row.resolution_reason ? { resolutionReason: row.resolution_reason } : {}), ...(row.resolution_evidence_ref ? { resolutionEvidenceRef: row.resolution_evidence_ref } : {}), ...(row.resolved_at ? { resolvedAt: iso(row.resolved_at) } : {}), observedAt: iso(row.observed_at), ...(row.metadata ? { metadata: row.metadata } : {}) })
-const budgetProjection = 'workspace_id,budget_date::text AS budget_date,reservation_key,modality,model,estimate_cny,estimate_version,daily_limit_cny,status,actual_cost_cny,provider_request_id,revision,created_at,updated_at'
-const mapBudget = (row: BudgetRow): ModelCostBudgetReservation => ({ workspaceId: row.workspace_id, budgetDate: iso(row.budget_date).slice(0, 10), reservationKey: row.reservation_key, modality: row.modality, model: row.model, estimateCny: Number(row.estimate_cny), estimateVersion: row.estimate_version, dailyLimitCny: Number(row.daily_limit_cny), status: row.status, ...(row.actual_cost_cny !== null ? { actualCostCny: Number(row.actual_cost_cny) } : {}), ...(row.provider_request_id ? { providerRequestId: row.provider_request_id } : {}), revision: row.revision, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) })
-const budgetLockSql = "SELECT pg_advisory_xact_lock(hashtextextended('model-cost-budget:' || $1 || ':' || $2,0))"
+const projection = 'id, workspace_id, receipt_key, receipt_hash, action_id, budget_reservation_key, budget_run_key, context_link_id, context_hash, modality, model, provider_request_id, input_tokens, output_tokens, total_tokens, cost_cny, markup_multiplier, customer_charge_cny, pricing_policy_revision, settlement_status, attempt_count, last_error, next_attempt_at, claim_owner, claim_expires_at, revision, resolved_by, resolution_reason, resolution_evidence_ref, resolved_at, observed_at, metadata'
+const map = (row: UsageRow): ModelUsageRecord => ({ id: row.id, workspaceId: row.workspace_id, receiptKey: row.receipt_key, receiptHash: row.receipt_hash, ...(row.action_id ? { actionId: row.action_id } : {}), ...(row.budget_reservation_key ? { budgetReservationKey: row.budget_reservation_key } : {}), ...(row.budget_run_key ? { budgetRunKey: row.budget_run_key } : {}), ...(row.context_link_id ? { contextLinkId: row.context_link_id } : {}), ...(row.context_hash ? { contextHash: row.context_hash } : {}), modality: row.modality, model: row.model, ...(row.provider_request_id ? { providerRequestId: row.provider_request_id } : {}), ...(tokenCount(row.input_tokens) !== undefined ? { inputTokens: tokenCount(row.input_tokens) } : {}), ...(tokenCount(row.output_tokens) !== undefined ? { outputTokens: tokenCount(row.output_tokens) } : {}), ...(tokenCount(row.total_tokens) !== undefined ? { totalTokens: tokenCount(row.total_tokens) } : {}), ...(row.cost_cny !== null ? { costCny: Number(row.cost_cny) } : {}), ...(row.markup_multiplier !== null ? { markupMultiplier: Number(row.markup_multiplier) } : {}), ...(row.customer_charge_cny !== null ? { customerChargeCny: Number(row.customer_charge_cny) } : {}), ...(row.pricing_policy_revision !== null ? { pricingPolicyRevision: row.pricing_policy_revision } : {}), settlementStatus: row.settlement_status, attemptCount: row.attempt_count, ...(row.last_error ? { lastError: row.last_error } : {}), ...(row.next_attempt_at ? { nextAttemptAt: iso(row.next_attempt_at) } : {}), ...(row.claim_owner ? { claimOwner: row.claim_owner } : {}), ...(row.claim_expires_at ? { claimExpiresAt: iso(row.claim_expires_at) } : {}), revision: row.revision, ...(row.resolved_by ? { resolvedBy: row.resolved_by } : {}), ...(row.resolution_reason ? { resolutionReason: row.resolution_reason } : {}), ...(row.resolution_evidence_ref ? { resolutionEvidenceRef: row.resolution_evidence_ref } : {}), ...(row.resolved_at ? { resolvedAt: iso(row.resolved_at) } : {}), observedAt: iso(row.observed_at), ...(row.metadata ? { metadata: row.metadata } : {}) })
+const budgetProjection = 'workspace_id,budget_date::text AS budget_date,reservation_key,run_key,modality,model,estimate_cny,estimate_version,daily_limit_cny,run_limit_cny,status,over_budget_reason,actual_cost_cny,provider_request_id,revision,created_at,updated_at'
+const mapBudget = (row: BudgetRow): ModelCostBudgetReservation => ({ workspaceId: row.workspace_id, budgetDate: iso(row.budget_date).slice(0, 10), reservationKey: row.reservation_key, runKey: row.run_key, modality: row.modality, model: row.model, estimateCny: Number(row.estimate_cny), estimateVersion: row.estimate_version, dailyLimitCny: Number(row.daily_limit_cny), runLimitCny: Number(row.run_limit_cny), status: row.status, ...(row.over_budget_reason ? { overBudgetReason: row.over_budget_reason } : {}), ...(row.actual_cost_cny !== null ? { actualCostCny: Number(row.actual_cost_cny) } : {}), ...(row.provider_request_id ? { providerRequestId: row.provider_request_id } : {}), revision: row.revision, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) })
+const budgetLockSql = "SELECT pg_advisory_xact_lock(hashtextextended('model-cost-day:' || $1 || ':' || $2,0))"
+const runBudgetLockSql = "SELECT pg_advisory_xact_lock(hashtextextended('model-cost-run:' || $1 || ':' || $2,0))"
 const budgetTotalsSql = `SELECT
-  COALESCE((SELECT SUM(u.cost_cny) FROM model_usage_ledger u WHERE u.workspace_id=$1 AND u.observed_at >= $2::date AND u.observed_at < $2::date + interval '1 day' AND u.cost_cny IS NOT NULL AND NOT EXISTS (SELECT 1 FROM model_cost_budget_reservations linked WHERE linked.workspace_id=u.workspace_id AND linked.budget_date=$2::date AND linked.reservation_key=u.action_id)),0)
+  COALESCE((SELECT SUM(u.cost_cny) FROM model_usage_ledger u WHERE u.workspace_id=$1 AND u.observed_at >= $2::date AND u.observed_at < $2::date + interval '1 day' AND u.cost_cny IS NOT NULL AND u.budget_reservation_key IS NULL),0)
     + COALESCE(SUM(actual_cost_cny) FILTER (WHERE status IN ('settled','over_budget') AND reservation_key<>COALESCE($3,'')),0) AS used_cny,
   COALESCE(SUM(estimate_cny) FILTER (WHERE status='active' AND reservation_key<>COALESCE($3,'')),0) AS reserved_cny
   FROM model_cost_budget_reservations WHERE workspace_id=$1 AND budget_date=$2::date`
+const runBudgetTotalsSql = `SELECT
+  COALESCE(SUM(actual_cost_cny) FILTER (WHERE status IN ('settled','over_budget') AND reservation_key<>COALESCE($3,'')),0) AS used_cny,
+  COALESCE(SUM(estimate_cny) FILTER (WHERE status='active' AND reservation_key<>COALESCE($3,'')),0) AS reserved_cny
+  FROM model_cost_budget_reservations WHERE workspace_id=$1 AND run_key=$2`
 
 export class PostgresModelUsageRepository implements ModelUsageRepository {
   constructor(private readonly pool: SqlPool) {}
   async record(input: ModelUsageRecordInput) {
-    const workspaceId = requireWorkspaceScope(input.workspaceId); validateContextPair(input); validateTokenFields(input); const receiptKey = stableReceiptKey(input); const receiptHash = stableReceiptHash(input, receiptKey); const status = input.settlementStatus ?? (input.costCny === undefined ? 'pending_cost' : 'settled'); const observedAt = input.observedAt ?? now(); validateStatus(status)
+    const workspaceId = requireWorkspaceScope(input.workspaceId); validateContextPair(input); validateBudgetPair(input); validateTokenFields(input); const receiptKey = stableReceiptKey(input); const receiptHash = stableReceiptHash(input, receiptKey); const status = input.settlementStatus ?? (input.costCny === undefined ? 'pending_cost' : 'settled'); const observedAt = input.observedAt ?? now(); validateStatus(status)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      await client.query(budgetLockSql, [workspaceId, budgetDate(observedAt)])
+      if (input.budgetReservationKey !== undefined) {
+        const identity = await client.query<{ budget_date: string; run_key: string }>('SELECT budget_date::text AS budget_date,run_key FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2', [workspaceId, input.budgetReservationKey])
+        const linkedDate = identity.rows[0] ? iso(identity.rows[0].budget_date).slice(0, 10) : undefined
+        const linkedRunKey = identity.rows[0]?.run_key
+        if (!linkedDate || !linkedRunKey || linkedRunKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+        await client.query(runBudgetLockSql, [workspaceId, linkedRunKey])
+        await client.query(budgetLockSql, [workspaceId, linkedDate])
+        const linked = await client.query<{ run_key: string; status: ModelCostBudgetReservationStatus }>('SELECT run_key,status FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2 FOR UPDATE', [workspaceId, input.budgetReservationKey])
+        if (!linked.rows[0] || linked.rows[0].run_key !== input.budgetRunKey || linked.rows[0].status === 'released') throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+      } else {
+        await client.query(budgetLockSql, [workspaceId, budgetDate(observedAt)])
+      }
       const found = await client.query<UsageRow>(`SELECT ${projection} FROM model_usage_ledger WHERE workspace_id=$1 AND (receipt_key=$2 OR ($3::text IS NOT NULL AND provider_request_id=$3)) FOR UPDATE`, [workspaceId, receiptKey, input.providerRequestId ?? null])
       if (found.rows[0]) {
         const existing = map(found.rows[0]); if (existing.receiptHash !== receiptHash) throw new Error('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
+        assertBudgetLinkMatches(existing, input)
         mergeContext(existing, input)
         if (existing.contextLinkId !== undefined && existing.contextHash !== undefined && (!found.rows[0].context_link_id || !found.rows[0].context_hash)) { const updated = await client.query<UsageRow>(`UPDATE model_usage_ledger SET context_link_id=$3, context_hash=$4, revision=revision+1 WHERE workspace_id=$1 AND id=$2 RETURNING ${projection}`, [workspaceId, existing.id, existing.contextLinkId, existing.contextHash]); Object.assign(existing, map(updated.rows[0]!)) }
         if (existing.costCny === undefined && input.costCny !== undefined) { const updated = await client.query<UsageRow>(`UPDATE model_usage_ledger SET cost_cny=$3, markup_multiplier=$4, customer_charge_cny=$5, pricing_policy_revision=$6, settlement_status=$7, last_error=$8, next_attempt_at=$9, revision=revision+1 WHERE workspace_id=$1 AND id=$2 RETURNING ${projection}`, [workspaceId, existing.id, input.costCny, input.markupMultiplier ?? null, input.customerChargeCny ?? null, input.pricingPolicyRevision ?? null, input.settlementStatus ?? 'pending_wallet', input.lastError ?? null, input.nextAttemptAt ?? now()]); return map(updated.rows[0]!) }
         return existing
       }
-      const inserted = await client.query<UsageRow>(`INSERT INTO model_usage_ledger (id,workspace_id,receipt_key,receipt_hash,action_id,context_link_id,context_hash,modality,model,provider_request_id,input_tokens,output_tokens,total_tokens,cost_cny,markup_multiplier,customer_charge_cny,pricing_policy_revision,settlement_status,attempt_count,last_error,next_attempt_at,observed_at,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING ${projection}`, [randomUUID(), workspaceId, receiptKey, receiptHash, input.actionId ?? null, input.contextLinkId ?? null, input.contextHash ?? null, input.modality, input.model, input.providerRequestId ?? null, input.inputTokens ?? null, input.outputTokens ?? null, input.totalTokens ?? null, input.costCny ?? null, input.markupMultiplier ?? null, input.customerChargeCny ?? null, input.pricingPolicyRevision ?? null, status, input.attemptCount ?? 0, input.lastError ?? null, input.nextAttemptAt ?? (status.startsWith('pending_') ? now() : null), observedAt, input.metadata ?? null]); return map(inserted.rows[0]!)
+      const inserted = await client.query<UsageRow>(`INSERT INTO model_usage_ledger (id,workspace_id,receipt_key,receipt_hash,action_id,budget_reservation_key,budget_run_key,context_link_id,context_hash,modality,model,provider_request_id,input_tokens,output_tokens,total_tokens,cost_cny,markup_multiplier,customer_charge_cny,pricing_policy_revision,settlement_status,attempt_count,last_error,next_attempt_at,observed_at,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING ${projection}`, [randomUUID(), workspaceId, receiptKey, receiptHash, input.actionId ?? null, input.budgetReservationKey ?? null, input.budgetRunKey ?? null, input.contextLinkId ?? null, input.contextHash ?? null, input.modality, input.model, input.providerRequestId ?? null, input.inputTokens ?? null, input.outputTokens ?? null, input.totalTokens ?? null, input.costCny ?? null, input.markupMultiplier ?? null, input.customerChargeCny ?? null, input.pricingPolicyRevision ?? null, status, input.attemptCount ?? 0, input.lastError ?? null, input.nextAttemptAt ?? (status.startsWith('pending_') ? now() : null), observedAt, input.metadata ?? null]); return map(inserted.rows[0]!)
     })
+  }
+  async recordUsageAndSettleBudget(input: BudgetedModelUsageRecordInput) {
+    const workspaceId = requireWorkspaceScope(input.workspaceId); validateContextPair(input); validateBudgetPair(input); validateTokenFields(input)
+    if (!finiteCny(input.costCny, true)) throw new Error('MODEL_COST_BUDGET_ACTUAL_INVALID')
+    const receiptKey = stableReceiptKey(input); const receiptHash = stableReceiptHash(input, receiptKey); const observedAt = input.observedAt ?? now()
+    const outcome = await withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const identity = await client.query<{ budget_date: string; run_key: string }>('SELECT budget_date::text AS budget_date,run_key FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2', [workspaceId, input.budgetReservationKey])
+      const date = identity.rows[0] ? iso(identity.rows[0].budget_date).slice(0, 10) : undefined; const runKey = identity.rows[0]?.run_key
+      if (!date || !runKey || runKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+      await client.query(runBudgetLockSql, [workspaceId, runKey])
+      await client.query(budgetLockSql, [workspaceId, date])
+      const reservationResult = await client.query<BudgetRow>(`SELECT ${budgetProjection} FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2 FOR UPDATE`, [workspaceId, input.budgetReservationKey])
+      let reservation = reservationResult.rows[0] ? mapBudget(reservationResult.rows[0]) : undefined
+      if (!reservation || reservation.runKey !== input.budgetRunKey) throw new Error('MODEL_USAGE_BUDGET_LINK_CONFLICT')
+      if (reservation.status === 'released') throw new Error('MODEL_COST_BUDGET_RESERVATION_RELEASED')
+      const found = await client.query<UsageRow>(`SELECT ${projection} FROM model_usage_ledger WHERE workspace_id=$1 AND (receipt_key=$2 OR ($3::text IS NOT NULL AND provider_request_id=$3)) FOR UPDATE`, [workspaceId, receiptKey, input.providerRequestId ?? null])
+      let usage: ModelUsageRecord
+      if (found.rows[0]) {
+        const existing = map(found.rows[0])
+        if (existing.receiptHash !== receiptHash) throw new Error('MODEL_USAGE_IDEMPOTENCY_CONFLICT')
+        assertBudgetLinkMatches(existing, input)
+        if (existing.costCny !== undefined && existing.costCny !== input.costCny) throw new Error('MODEL_USAGE_COST_CONFLICT')
+        mergeContext(existing, input)
+        let updated = found.rows[0]
+        if (existing.contextLinkId !== undefined && existing.contextHash !== undefined && (!found.rows[0].context_link_id || !found.rows[0].context_hash)) updated = (await client.query<UsageRow>(`UPDATE model_usage_ledger SET context_link_id=$3,context_hash=$4,revision=revision+1 WHERE workspace_id=$1 AND id=$2 RETURNING ${projection}`, [workspaceId, existing.id, existing.contextLinkId, existing.contextHash])).rows[0]!
+        if (existing.costCny === undefined) updated = (await client.query<UsageRow>(`UPDATE model_usage_ledger SET cost_cny=$3,markup_multiplier=$4,customer_charge_cny=$5,pricing_policy_revision=$6,settlement_status='pending_wallet',last_error=$7,next_attempt_at=$8,revision=revision+1 WHERE workspace_id=$1 AND id=$2 RETURNING ${projection}`, [workspaceId, existing.id, input.costCny, input.markupMultiplier ?? null, input.customerChargeCny ?? null, input.pricingPolicyRevision ?? null, input.lastError ?? null, input.nextAttemptAt ?? now()])).rows[0]!
+        usage = map(updated)
+      } else {
+        const inserted = await client.query<UsageRow>(`INSERT INTO model_usage_ledger (id,workspace_id,receipt_key,receipt_hash,action_id,budget_reservation_key,budget_run_key,context_link_id,context_hash,modality,model,provider_request_id,input_tokens,output_tokens,total_tokens,cost_cny,markup_multiplier,customer_charge_cny,pricing_policy_revision,settlement_status,attempt_count,last_error,next_attempt_at,observed_at,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'pending_wallet',$20,$21,$22,$23,$24) RETURNING ${projection}`, [randomUUID(), workspaceId, receiptKey, receiptHash, input.actionId ?? null, input.budgetReservationKey, input.budgetRunKey, input.contextLinkId ?? null, input.contextHash ?? null, input.modality, input.model, input.providerRequestId ?? null, input.inputTokens ?? null, input.outputTokens ?? null, input.totalTokens ?? null, input.costCny, input.markupMultiplier ?? null, input.customerChargeCny ?? null, input.pricingPolicyRevision ?? null, input.attemptCount ?? 0, input.lastError ?? null, input.nextAttemptAt ?? now(), observedAt, input.metadata ?? null])
+        usage = map(inserted.rows[0]!)
+      }
+      const aggregate = await client.query<{ actual_cost_cny: number | string; receipt_count: number | string; provider_request_id: string | null }>(`SELECT COALESCE(SUM(cost_cny),0) AS actual_cost_cny,COUNT(*) FILTER (WHERE cost_cny IS NOT NULL) AS receipt_count,CASE WHEN COUNT(*) FILTER (WHERE cost_cny IS NOT NULL)=1 THEN MAX(provider_request_id) FILTER (WHERE cost_cny IS NOT NULL) ELSE NULL END AS provider_request_id FROM model_usage_ledger WHERE workspace_id=$1 AND budget_reservation_key=$2`, [workspaceId, input.budgetReservationKey])
+      const actualCostCny = Number(aggregate.rows[0]?.actual_cost_cny ?? 0)
+      const totals = await client.query<{ used_cny: number | string; reserved_cny: number | string }>(budgetTotalsSql, [workspaceId, reservation.budgetDate, reservation.reservationKey])
+      const snapshot: ModelCostBudgetSnapshot = { usedCny: Number(totals.rows[0]?.used_cny ?? 0), reservedCny: Number(totals.rows[0]?.reserved_cny ?? 0), requestCny: actualCostCny, limitCny: reservation.dailyLimitCny }
+      const runTotals = await client.query<{ used_cny: number | string; reserved_cny: number | string }>(runBudgetTotalsSql, [workspaceId, reservation.runKey, reservation.reservationKey])
+      const runSnapshot: ModelCostBudgetSnapshot = { usedCny: Number(runTotals.rows[0]?.used_cny ?? 0), reservedCny: Number(runTotals.rows[0]?.reserved_cny ?? 0), requestCny: actualCostCny, limitCny: reservation.runLimitCny }
+      const dailyExceeded = snapshot.usedCny + snapshot.reservedCny + actualCostCny > reservation.dailyLimitCny
+      const runExceeded = (reservation.runKey !== reservation.reservationKey || reservation.runLimitCny < reservation.dailyLimitCny) && runSnapshot.usedCny + runSnapshot.reservedCny + actualCostCny > reservation.runLimitCny
+      const calculatedReason = runExceeded && dailyExceeded ? 'run_and_daily' as const : runExceeded ? 'run' as const : dailyExceeded ? 'daily' as const : undefined
+      const overBudgetReason = mergeOverBudgetReason(reservation.overBudgetReason, calculatedReason)
+      const providerRequestId = aggregate.rows[0]?.provider_request_id ?? null
+      if (reservation.actualCostCny !== actualCostCny || reservation.status !== (overBudgetReason ? 'over_budget' : 'settled') || reservation.providerRequestId !== (providerRequestId ?? undefined) || reservation.overBudgetReason !== (overBudgetReason ?? undefined)) {
+        const updated = await client.query<BudgetRow>(`UPDATE model_cost_budget_reservations SET status=$3,actual_cost_cny=$4,provider_request_id=$5,over_budget_reason=$6,revision=revision+1,updated_at=$7 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${budgetProjection}`, [workspaceId, reservation.reservationKey, overBudgetReason ? 'over_budget' : 'settled', actualCostCny, providerRequestId, overBudgetReason ?? null, observedAt])
+        reservation = mapBudget(updated.rows[0]!)
+      }
+      if (overBudgetReason && usage.settlementStatus !== 'manual_attention') {
+        const updated = await client.query<UsageRow>(`UPDATE model_usage_ledger SET settlement_status='manual_attention',last_error=$3,resolved_by='model-cost-budget',resolution_reason='实际模型成本超过预算预留，阻断钱包结算与结果交付',resolved_at=now(),claim_owner=NULL,claim_expires_at=NULL,revision=revision+1 WHERE workspace_id=$1 AND id=$2 RETURNING ${projection}`, [workspaceId, usage.id, { code: runExceeded ? 'MODEL_TASK_COST_ACTUAL_EXCEEDED' : 'MODEL_DAILY_COST_ACTUAL_EXCEEDED' }])
+        usage = map(updated.rows[0]!)
+      }
+      return { usage, reservation, snapshot, runSnapshot, overBudgetReason }
+    })
+    const committed = { usage: outcome.usage, reservation: outcome.reservation, snapshot: outcome.snapshot, runSnapshot: outcome.runSnapshot }
+    if (outcome.overBudgetReason === 'run' || outcome.overBudgetReason === 'run_and_daily') throw Object.assign(new ModelRunCostBudgetActualExceededError(outcome.runSnapshot), { committed })
+    if (outcome.overBudgetReason === 'daily') throw Object.assign(new ModelCostBudgetActualExceededError(outcome.snapshot), { committed })
+    return committed
   }
   async list(workspaceId: string, limit = 100) { return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => (await client.query<UsageRow>(`SELECT ${projection} FROM model_usage_ledger WHERE workspace_id=$1 ORDER BY observed_at DESC,id DESC LIMIT $2`, [workspaceId, Math.min(1000, Math.max(1, limit))])).rows.map(map)) }
   async listForStatement(workspaceId: string, period: { fromAt?: string; toAt?: string; actorId?: string } = {}) {
@@ -292,29 +454,35 @@ export class PostgresModelUsageRepository implements ModelUsageRepository {
       throw new Error('MODEL_USAGE_REVISION_CONFLICT')
     })
   }
-  async reserveDailyBudget(input: { workspaceId: string; reservationKey: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number; at?: string }) {
-    const workspaceId = requireWorkspaceScope(input.workspaceId); if (!input.reservationKey.trim() || !input.model.trim() || !input.estimateVersion.trim() || !finiteCny(input.estimateCny) || !finiteCny(input.dailyLimitCny)) throw new Error('MODEL_COST_BUDGET_INPUT_INVALID')
+  async reserveDailyBudget(input: { workspaceId: string; reservationKey: string; runKey?: string; modality: ModelUsageModality; model: string; estimateCny: number; estimateVersion: string; dailyLimitCny: number; runLimitCny?: number; at?: string }) {
+    const runKey = input.runKey?.trim() || input.reservationKey; const runLimitCny = input.runLimitCny ?? input.dailyLimitCny
+    const workspaceId = requireWorkspaceScope(input.workspaceId); if (!input.reservationKey.trim() || !runKey || !input.model.trim() || !input.estimateVersion.trim() || !finiteCny(input.estimateCny) || !finiteCny(input.dailyLimitCny) || !finiteCny(runLimitCny) || runLimitCny > input.dailyLimitCny) throw new Error('MODEL_COST_BUDGET_INPUT_INVALID')
     const date = budgetDate(input.at)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      await client.query(runBudgetLockSql, [workspaceId, runKey])
       await client.query(budgetLockSql, [workspaceId, date])
       const existingResult = await client.query<BudgetRow>(`SELECT ${budgetProjection} FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2 FOR UPDATE`, [workspaceId, input.reservationKey])
       const existing = existingResult.rows[0] ? mapBudget(existingResult.rows[0]) : undefined
-      if (existing && !sameBudgetIntent(existing, { ...input, budgetDate: date })) throw new Error('MODEL_COST_BUDGET_IDEMPOTENCY_CONFLICT')
+      if (existing && !sameBudgetIntent(existing, { ...input, budgetDate: date, runKey, runLimitCny })) throw new Error('MODEL_COST_BUDGET_IDEMPOTENCY_CONFLICT')
       const totals = await client.query<{ used_cny: number | string; reserved_cny: number | string }>(budgetTotalsSql, [workspaceId, date, input.reservationKey])
       const snapshot: ModelCostBudgetSnapshot = { usedCny: Number(totals.rows[0]?.used_cny ?? 0), reservedCny: Number(totals.rows[0]?.reserved_cny ?? 0), requestCny: input.estimateCny, limitCny: input.dailyLimitCny }
-      if (existing && existing.status !== 'released') return { reservation: existing, snapshot, reused: true }
+      const runTotals = await client.query<{ used_cny: number | string; reserved_cny: number | string }>(runBudgetTotalsSql, [workspaceId, runKey, input.reservationKey])
+      const runSnapshot: ModelCostBudgetSnapshot = { usedCny: Number(runTotals.rows[0]?.used_cny ?? 0), reservedCny: Number(runTotals.rows[0]?.reserved_cny ?? 0), requestCny: input.estimateCny, limitCny: runLimitCny }
+      if (existing && existing.status !== 'released') return { reservation: existing, snapshot, runSnapshot, reused: true }
+      if ((runKey !== input.reservationKey || runLimitCny < input.dailyLimitCny) && runSnapshot.usedCny + runSnapshot.reservedCny + input.estimateCny > runLimitCny) throw new ModelRunCostBudgetExceededError(runSnapshot)
       if (snapshot.usedCny + snapshot.reservedCny + input.estimateCny > input.dailyLimitCny) throw new ModelCostBudgetExceededError(snapshot)
       const row = existing
-        ? await client.query<BudgetRow>(`UPDATE model_cost_budget_reservations SET status='active',actual_cost_cny=NULL,provider_request_id=NULL,revision=revision+1,updated_at=$3 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${budgetProjection}`, [workspaceId, input.reservationKey, input.at ?? now()])
-        : await client.query<BudgetRow>(`INSERT INTO model_cost_budget_reservations (workspace_id,budget_date,reservation_key,modality,model,estimate_cny,estimate_version,daily_limit_cny,status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,$9) RETURNING ${budgetProjection}`, [workspaceId, date, input.reservationKey, input.modality, input.model, input.estimateCny, input.estimateVersion, input.dailyLimitCny, input.at ?? now()])
-      return { reservation: mapBudget(row.rows[0]!), snapshot, reused: false }
+        ? await client.query<BudgetRow>(`UPDATE model_cost_budget_reservations SET status='active',actual_cost_cny=NULL,provider_request_id=NULL,over_budget_reason=NULL,revision=revision+1,updated_at=$3 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${budgetProjection}`, [workspaceId, input.reservationKey, input.at ?? now()])
+        : await client.query<BudgetRow>(`INSERT INTO model_cost_budget_reservations (workspace_id,budget_date,reservation_key,run_key,modality,model,estimate_cny,estimate_version,daily_limit_cny,run_limit_cny,status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,$11) RETURNING ${budgetProjection}`, [workspaceId, date, input.reservationKey, runKey, input.modality, input.model, input.estimateCny, input.estimateVersion, input.dailyLimitCny, runLimitCny, input.at ?? now()])
+      return { reservation: mapBudget(row.rows[0]!), snapshot, runSnapshot, reused: false }
     })
   }
   async settleDailyBudget(input: { workspaceId: string; reservationKey: string; actualCostCny: number; providerRequestId?: string; at?: string }) {
     const workspaceId = requireWorkspaceScope(input.workspaceId); if (!finiteCny(input.actualCostCny, true)) throw new Error('MODEL_COST_BUDGET_ACTUAL_INVALID')
     const outcome = await withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const dateResult = await client.query<{ budget_date: string }>('SELECT budget_date::text AS budget_date FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2', [workspaceId, input.reservationKey])
-      const date = dateResult.rows[0] ? iso(dateResult.rows[0].budget_date).slice(0, 10) : undefined; if (!date) throw new Error('MODEL_COST_BUDGET_RESERVATION_NOT_FOUND')
+      const dateResult = await client.query<{ budget_date: string; run_key: string }>('SELECT budget_date::text AS budget_date,run_key FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2', [workspaceId, input.reservationKey])
+      const date = dateResult.rows[0] ? iso(dateResult.rows[0].budget_date).slice(0, 10) : undefined; const runKey = dateResult.rows[0]?.run_key; if (!date || !runKey) throw new Error('MODEL_COST_BUDGET_RESERVATION_NOT_FOUND')
+      await client.query(runBudgetLockSql, [workspaceId, runKey])
       await client.query(budgetLockSql, [workspaceId, date])
       const found = await client.query<BudgetRow>(`SELECT ${budgetProjection} FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2 FOR UPDATE`, [workspaceId, input.reservationKey])
       const current = found.rows[0] ? mapBudget(found.rows[0]) : undefined; if (!current) throw new Error('MODEL_COST_BUDGET_RESERVATION_NOT_FOUND')
@@ -323,22 +491,30 @@ export class PostgresModelUsageRepository implements ModelUsageRepository {
       if ((current.status === 'settled' || current.status === 'over_budget') && current.providerRequestId !== input.providerRequestId && input.actualCostCny < (current.actualCostCny ?? 0)) throw new Error('MODEL_COST_BUDGET_SETTLEMENT_CONFLICT')
       const totals = await client.query<{ used_cny: number | string; reserved_cny: number | string }>(budgetTotalsSql, [workspaceId, current.budgetDate, current.reservationKey])
       const snapshot: ModelCostBudgetSnapshot = { usedCny: Number(totals.rows[0]?.used_cny ?? 0), reservedCny: Number(totals.rows[0]?.reserved_cny ?? 0), requestCny: input.actualCostCny, limitCny: current.dailyLimitCny }
-      const exceeded = snapshot.usedCny + snapshot.reservedCny + input.actualCostCny > current.dailyLimitCny
-      if ((current.status === 'settled' || current.status === 'over_budget') && current.actualCostCny === input.actualCostCny && current.providerRequestId === input.providerRequestId) return { reservation: current, snapshot, exceeded: current.status === 'over_budget' }
-      const updated = await client.query<BudgetRow>(`UPDATE model_cost_budget_reservations SET status=$3,actual_cost_cny=$4,provider_request_id=$5,revision=revision+1,updated_at=$6 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${budgetProjection}`, [workspaceId, input.reservationKey, exceeded ? 'over_budget' : 'settled', input.actualCostCny, input.providerRequestId ?? null, input.at ?? now()])
-      return { reservation: mapBudget(updated.rows[0]!), snapshot, exceeded }
+      const runTotals = await client.query<{ used_cny: number | string; reserved_cny: number | string }>(runBudgetTotalsSql, [workspaceId, current.runKey, current.reservationKey])
+      const runSnapshot: ModelCostBudgetSnapshot = { usedCny: Number(runTotals.rows[0]?.used_cny ?? 0), reservedCny: Number(runTotals.rows[0]?.reserved_cny ?? 0), requestCny: input.actualCostCny, limitCny: current.runLimitCny }
+      const dailyExceeded = snapshot.usedCny + snapshot.reservedCny + input.actualCostCny > current.dailyLimitCny
+      const runExceeded = (current.runKey !== current.reservationKey || current.runLimitCny < current.dailyLimitCny) && runSnapshot.usedCny + runSnapshot.reservedCny + input.actualCostCny > current.runLimitCny
+      if ((current.status === 'settled' || current.status === 'over_budget') && current.actualCostCny === input.actualCostCny && current.providerRequestId === input.providerRequestId) return { reservation: current, snapshot, runSnapshot, dailyExceeded: current.overBudgetReason === 'daily' || current.overBudgetReason === 'run_and_daily', runExceeded: current.overBudgetReason === 'run' || current.overBudgetReason === 'run_and_daily' }
+      const overBudgetReason = runExceeded && dailyExceeded ? 'run_and_daily' : runExceeded ? 'run' : dailyExceeded ? 'daily' : null
+      const updated = await client.query<BudgetRow>(`UPDATE model_cost_budget_reservations SET status=$3,actual_cost_cny=$4,provider_request_id=$5,over_budget_reason=$6,revision=revision+1,updated_at=$7 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${budgetProjection}`, [workspaceId, input.reservationKey, runExceeded || dailyExceeded ? 'over_budget' : 'settled', input.actualCostCny, input.providerRequestId ?? null, overBudgetReason, input.at ?? now()])
+      return { reservation: mapBudget(updated.rows[0]!), snapshot, runSnapshot, dailyExceeded, runExceeded }
     })
-    if (outcome.exceeded) throw new ModelCostBudgetActualExceededError(outcome.snapshot)
+    if (outcome.runExceeded) throw new ModelRunCostBudgetActualExceededError(outcome.runSnapshot)
+    if (outcome.dailyExceeded) throw new ModelCostBudgetActualExceededError(outcome.snapshot)
     return { reservation: outcome.reservation, snapshot: outcome.snapshot }
   }
   async releaseDailyBudget(input: { workspaceId: string; reservationKey: string; at?: string }) {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const dateResult = await client.query<{ budget_date: string }>('SELECT budget_date::text AS budget_date FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2', [workspaceId, input.reservationKey])
-      const date = dateResult.rows[0] ? iso(dateResult.rows[0].budget_date).slice(0, 10) : undefined; if (!date) return undefined
+      const dateResult = await client.query<{ budget_date: string; run_key: string }>('SELECT budget_date::text AS budget_date,run_key FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2', [workspaceId, input.reservationKey])
+      const date = dateResult.rows[0] ? iso(dateResult.rows[0].budget_date).slice(0, 10) : undefined; const runKey = dateResult.rows[0]?.run_key; if (!date || !runKey) return undefined
+      await client.query(runBudgetLockSql, [workspaceId, runKey])
       await client.query(budgetLockSql, [workspaceId, date])
       const found = await client.query<BudgetRow>(`SELECT ${budgetProjection} FROM model_cost_budget_reservations WHERE workspace_id=$1 AND reservation_key=$2 FOR UPDATE`, [workspaceId, input.reservationKey])
       const current = found.rows[0] ? mapBudget(found.rows[0]) : undefined; if (!current || current.status !== 'active') return current
+      const linkedUsage = await client.query<{ linked: boolean }>('SELECT EXISTS(SELECT 1 FROM model_usage_ledger WHERE workspace_id=$1 AND budget_reservation_key=$2) AS linked', [workspaceId, input.reservationKey])
+      if (linkedUsage.rows[0]?.linked) return current
       const updated = await client.query<BudgetRow>(`UPDATE model_cost_budget_reservations SET status='released',revision=revision+1,updated_at=$3 WHERE workspace_id=$1 AND reservation_key=$2 RETURNING ${budgetProjection}`, [workspaceId, input.reservationKey, input.at ?? now()])
       return mapBudget(updated.rows[0]!)
     })

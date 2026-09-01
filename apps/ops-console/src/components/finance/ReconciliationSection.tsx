@@ -264,7 +264,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           type={reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "success" : reconciliation.model_usage.reconciliation_status === "pending" ? "warning" : "error"}
           showIcon
           title={`模型用量：${reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "本地账本一致" : reconciliation.model_usage.reconciliation_status === "pending" ? "待结算" : reconciliation.model_usage.reconciliation_status === "needs_review" ? "需要复核" : "未知状态（已阻断）"}`}
-          description={<Space direction="vertical" size={4}><span>{reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验；本页面不将本地一致视为供应商已平账。"}</span>{reconciliation.model_usage.reconciliation_checks && <span>核对异常：未知用户 {reconciliation.model_usage.reconciliation_checks.unknown_actor_count}，孤立 action {reconciliation.model_usage.reconciliation_checks.orphan_action_count}，钱包金额不一致 {reconciliation.model_usage.reconciliation_checks.wallet_amount_mismatch_count}。</span>}</Space>}
+          description={<Space orientation="vertical" size={4}><span>{reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验；本页面不将本地一致视为供应商已平账。"}</span>{reconciliation.model_usage.reconciliation_checks && <span>核对异常：未知用户 {reconciliation.model_usage.reconciliation_checks.unknown_actor_count}，孤立 action {reconciliation.model_usage.reconciliation_checks.orphan_action_count}，钱包金额不一致 {reconciliation.model_usage.reconciliation_checks.wallet_amount_mismatch_count}，任务键缺失 {reconciliation.model_usage.reconciliation_checks.missing_run_key_count ?? 0}，预算链路错配 {reconciliation.model_usage.reconciliation_checks.budget_link_mismatch_count ?? 0}。任务键或预算链路异常时不得重试上游，必须先修复链路。</span>}</Space>}
         />
       )}
       <Row gutter={[16, 16]} className="finance-summary">
@@ -350,6 +350,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         </Form>
       </Modal>
       <Table
+        aria-label="模型用量待结算记录"
         rowKey="id"
         size="small"
         pagination={{ pageSize: 5 }}
@@ -369,6 +370,20 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
             },
           },
           { title: "发现时间", dataIndex: "observed_at", width: 180, render: (value: string) => new Date(value).toLocaleString() },
+          {
+            title: "任务 Run Key",
+            dataIndex: "run_key",
+            width: 220,
+            render: (value: string | null) => value
+              ? <Typography.Text className="ops-token" copyable>{value}</Typography.Text>
+              : <Typography.Text type="danger">缺失（已阻断）</Typography.Text>,
+          },
+          {
+            title: "调用 Action ID",
+            dataIndex: "action_id",
+            width: 220,
+            render: (value: string | null) => <Typography.Text className="ops-token" copyable={Boolean(value)}>{value || "—"}</Typography.Text>,
+          },
           { title: "模态", dataIndex: "modality" },
           { title: "模型", dataIndex: "model" },
           { title: "Provider Request ID", dataIndex: "provider_request_id", width: 200, render: (value: string | null) => <Typography.Text className="ops-token" copyable={Boolean(value)}>{value || "—"}</Typography.Text> },
@@ -381,6 +396,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
               return (
                 <Space orientation="vertical" size={2}>
                   <Typography.Text>{record.settlement_reason || "未提供阻断原因"}</Typography.Text>
+                  {record.last_error?.code ? <Typography.Text type="secondary" className="ops-token">错误码：{record.last_error.code}</Typography.Text> : null}
                   <Typography.Text type="secondary">{settlementPresentation[status].nextAction}</Typography.Text>
                 </Space>
               );

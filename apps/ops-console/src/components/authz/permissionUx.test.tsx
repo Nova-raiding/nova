@@ -5,7 +5,7 @@ import { AuthorizationProvider } from "../../authz/AuthorizationProvider.js";
 import type { OpsSession } from "../../types/ops.js";
 import { AccessDeniedResult } from "./AccessDeniedResult.js";
 import { PermissionGate } from "./PermissionGate.js";
-import { formatJitRemaining, RoleScopeBar } from "./RoleScopeBar.js";
+import { activeJitGrantForNow, formatJitRemaining, RoleScopeBar } from "./RoleScopeBar.js";
 
 const session: OpsSession = {
   actor_id: "actor_1", workspace_id: "ws_1", roles: ["platform_ops"], canonical_roles: ["ops_admin"],
@@ -19,6 +19,11 @@ describe("desktop permission UX", () => {
     expect(formatJitRemaining(15 * 60 * 1000 + 1200)).toBe("15:02");
     expect(formatJitRemaining(-1)).toBe("00:00");
   });
+  it("hides an expired JIT grant before the replacement session arrives", () => {
+    const grants = [{ id: "grant_1", expires_at: "2026-08-31T10:00:00.000Z" }];
+    expect(activeJitGrantForNow(grants, Date.parse("2026-08-31T09:59:59.999Z"))).toBe(grants[0]);
+    expect(activeJitGrantForNow(grants, Date.parse("2026-08-31T10:00:00.000Z"))).toBeUndefined();
+  });
   it("exposes the server-projected JIT mode, exact scope and use budget", () => {
     const html = renderToStaticMarkup(<RoleScopeBar
       session={{ ...session, temporary_grants: [{ id: "grant_1", access_mode: "write", workspace_id: "ws_1", resource_scope: { type: "workspace", ids: ["ws_1"] }, expires_at: "2999-01-01T00:00:00.000Z", max_uses: 3, use_count: 1 }] }}
@@ -28,6 +33,15 @@ describe("desktop permission UX", () => {
     expect(html).toContain("范围 workspace:ws_1");
     expect(html).toContain("使用 1/3");
     expect(html).toContain('aria-live="polite"');
+  });
+  it("offers an explicit exit action while a JIT grant is active", () => {
+    const html = renderToStaticMarkup(<RoleScopeBar
+      session={{ ...session, temporary_grants: [{ id: "grant_1", access_mode: "read", workspace_id: "ws_1", resource_scope: { type: "workspace", ids: ["ws_1"] }, expires_at: "2999-01-01T00:00:00.000Z" }] }}
+      authorization={createAuthorizationProjection(session, true)}
+      onJitExit={() => undefined}
+    />);
+    expect(html).toContain("退出临时授权");
+    expect(html).toContain('aria-label="退出当前临时授权"');
   });
   it("keeps identity, workbench, scope and policy visible", () => {
     const html = renderToStaticMarkup(<RoleScopeBar session={session} authorization={createAuthorizationProjection(session, true)} />);
@@ -71,6 +85,15 @@ describe("desktop permission UX", () => {
     expect(hidden).not.toContain("停用身份");
     expect(readOnly).toContain("当前范围为只读");
     expect(readOnly).toContain("identity.update");
+  });
+
+  it("explains the server-projected scope in read-only UX", () => {
+    const scoped = createAuthorizationProjection({ ...session, effective_permissions: [
+      { capability: "identity.update", effect: "deny", scope: { type: "workspace", ids: ["ws_1"] } },
+    ] }, true);
+    const html = renderToStaticMarkup(<AuthorizationProvider authorization={scoped}><PermissionGate capability="identity.update" behavior="readonly"><button>停用身份</button></PermissionGate></AuthorizationProvider>);
+    expect(html).toContain("当前授权范围未返回");
+    expect(html).toContain("identity.update");
   });
 
   it("shows denied capability, scope and request evidence", () => {

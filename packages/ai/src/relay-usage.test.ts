@@ -78,6 +78,17 @@ describe('relay usage normalization', () => {
     await expect(rejection).rejects.toBe(sinkError)
   })
 
+  it('preserves a committed actual-cost overrun at the provider boundary', async () => {
+    const sinkError = Object.assign(new Error('task actual exceeded'), { code: 'MODEL_TASK_COST_ACTUAL_EXCEEDED', providerSucceeded: true })
+    const rejection = emitRelayUsage(
+      async () => { throw sinkError },
+      { id: 'req_cost_overrun', usage: { total_tokens: 3, cost_cny: 2 } },
+      new Headers(),
+      { modality: 'text', model: 'relay-text', context: { workspaceId: 'ws_overrun', actionId: 'action_overrun', providerAttemptId: 'attempt_overrun' } },
+    )
+    await expect(rejection).rejects.toBe(sinkError)
+  })
+
   it('uses a stable hashed receipt key when the provider request id is absent', () => {
     const input = { workspaceId: ' ws_usage ', actionId: ' action_1 ', providerAttemptId: ' attempt_1 ', modality: 'image' as const, model: ' image-v1 ' }
     const first = relayUsageReceiptKey(input)

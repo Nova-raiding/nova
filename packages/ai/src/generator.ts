@@ -333,7 +333,7 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
 export function createContentGeneratorFromEnv(source: Record<string, string | undefined> = process.env, usageSink?: RelayUsageSink): ContentGenerator | undefined {
   const relayUrl = source.MODEL_RELAY_BASE_URL?.trim()
   const apiKey = source.MODEL_RELAY_API_KEY?.trim()
-  const model = source.AI_MODEL?.trim() ?? source.MODEL_ID?.trim()
+  const model = source.AI_MODEL?.trim() || source.MODEL_ID?.trim()
   if (!relayUrl || !apiKey || !model) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined

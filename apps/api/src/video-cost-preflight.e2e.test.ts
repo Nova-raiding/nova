@@ -79,7 +79,8 @@ beforeAll(async () => {
   vi.stubEnv('VIDEO_DURATION_SECONDS', '5')
   vi.stubEnv('MODEL_RPM_LIMIT', '100')
   vi.stubEnv('MODEL_TPM_LIMIT', '100000')
-  vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '10')
+  vi.stubEnv('MODEL_DAILY_CNY_LIMIT', '1000')
+  vi.stubEnv('MODEL_MAX_TASK_COST_CNY', '10')
   vi.stubEnv('MODEL_RELAY_VIDEO_COST_EVIDENCE', 'true')
   api = await import('./server.js')
   baseUrl = await startServer()
@@ -137,14 +138,17 @@ describe('video cost preflight over the real HTTP boundary', () => {
       }),
     }
 
+    const missingIdempotency = await callMcp(token, workspaceId, 'multimodal.video.request', { ...requestParams, idempotency_key: undefined })
     const first = await callMcp(token, workspaceId, 'multimodal.video.request', requestParams)
     const retry = await callMcp(token, workspaceId, 'multimodal.video.request', requestParams)
     const after = resultOf<any>(await callMcp<any>(token, workspaceId, 'billing.status', {}))
 
-    expect(first.status).toBe(503)
+    expect(missingIdempotency.status).toBe(400)
+    expect(missingIdempotency.body.error).toMatchObject({ code: 'IDEMPOTENCY_KEY_REQUIRED' })
+    expect(first.status).toBe(422)
     expect(first.body.error).toMatchObject({
-      code: 'MODEL_REQUEST_COST_LIMIT_EXCEEDED',
-      details: { estimated_cost_cny: 544.265625, daily_limit_cny: 10 },
+      code: 'MODEL_TASK_COST_LIMIT_EXCEEDED',
+      details: { estimated_cost_cny: 544.265625, maximum_task_cost_cny: 10 },
     })
     expect(retry.status).toBe(first.status)
     expect(retry.body.error).toEqual(first.body.error)

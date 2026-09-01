@@ -10,6 +10,7 @@ const record = (
   input: Partial<ModelUsageSettlementRecord>,
 ): ModelUsageSettlementRecord => ({
   id: "usage-1",
+  run_key: null,
   action_id: null,
   modality: "text",
   model: "model-1",

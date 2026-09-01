@@ -5,6 +5,8 @@ export type RelayUsageModality = 'text' | 'image' | 'image_edit' | 'ocr' | 'vide
 export interface RelayUsageContext {
   workspaceId?: string
   actionId?: string
+  /** Stable logical task identity shared by all provider calls in one budget run. */
+  runKey?: string
   contextLinkId?: string
   contextHash?: string
   billingUnits?: number
@@ -16,6 +18,7 @@ export interface RelayUsageContext {
 export interface RelayUsageRecord {
   workspaceId?: string
   actionId?: string
+  runKey?: string
   contextLinkId?: string
   contextHash?: string
   modality: RelayUsageModality
@@ -128,6 +131,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
     ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}),
+    ...(defaults.context?.runKey ? { runKey: defaults.context.runKey } : {}),
     ...(defaults.context?.contextLinkId ? { contextLinkId: defaults.context.contextLinkId } : {}),
     ...(defaults.context?.contextHash ? { contextHash: defaults.context.contextHash } : {}),
     modality: defaults.modality,
@@ -154,7 +158,7 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
     try {
       await sink(usage)
     } catch (error) {
-      if ((error as { code?: unknown })?.code === 'MODEL_USAGE_COST_MISSING') throw error
+      if (['MODEL_USAGE_COST_MISSING', 'MODEL_TASK_COST_ACTUAL_EXCEEDED', 'MODEL_DAILY_COST_ACTUAL_EXCEEDED'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
       throw new ModelUsageSettlementPendingError(relayUsageReceiptKey(usage))
     }
     usage.metadata = { ...(usage.metadata ?? {}), settlement: 'recorded' satisfies RelayUsageSettlement }

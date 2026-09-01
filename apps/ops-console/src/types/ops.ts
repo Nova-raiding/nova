@@ -684,6 +684,7 @@ export type ModelUsageSettlementDecision =
 
 export type ModelUsageSettlementRecord = {
   id: string;
+  run_key: string | null;
   action_id: string | null;
   modality: string;
   model: string;
@@ -720,7 +721,7 @@ export type Reconciliation = {
     by_modality: Record<string, number>;
     unsettled: ModelUsageSettlementRecord[];
     reconciliation_status?: "locally_consistent" | "pending" | "needs_review" | string;
-    reconciliation_checks?: { unknown_actor_count: number; orphan_action_count: number; wallet_amount_mismatch_count: number };
+    reconciliation_checks?: { unknown_actor_count: number; orphan_action_count: number; wallet_amount_mismatch_count: number; missing_run_key_count?: number; budget_link_mismatch_count?: number };
     external_provider_statement?: { status: "externally_unverified" | string; source?: string; endpoint?: string; auth?: string; note?: string };
     by_actor?: Array<{ actor_id: string; record_count: number; input_tokens: number; output_tokens: number; total_tokens: number; provider_cost_cny: string | null; customer_charge_cny: string; unsettled_records: number; by_modality: Record<string, number> }>;
   };

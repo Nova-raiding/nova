@@ -79,6 +79,17 @@ describe('MemorySupportRepository', () => {
     expect(crm).toEqual([expect.objectContaining({ customerId: 'customer_1', totalTickets: 2, openTickets: 2, urgentTickets: 1 })])
     expect(JSON.stringify(crm)).not.toContain('内部敏感备注')
   })
+
+  it('records an idempotent SLA action without changing ticket status', async () => {
+    const repository = new MemorySupportRepository()
+    const created = await repository.create(createInput())
+    const action = await repository.recordSlaAction({ workspaceId: 'ws_1', ticketId: created.ticket.id, state: 'at_risk', dueAt: created.ticket.sla.firstResponseDueAt, expectedRevision: 1, actorId: 'sla-worker', idempotencyKey: 'sla-action-001' })
+    const replay = await repository.recordSlaAction({ workspaceId: 'ws_1', ticketId: created.ticket.id, state: 'at_risk', dueAt: created.ticket.sla.firstResponseDueAt, expectedRevision: 1, actorId: 'sla-worker', idempotencyKey: 'sla-action-001' })
+    expect(action.ticket.status).toBe('open')
+    expect(action.event.eventType).toBe('sla_at_risk')
+    expect(replay.replayed).toBe(true)
+    expect((await repository.listEvents('ws_1', created.ticket.id)).at(-1)).toMatchObject({ eventType: 'sla_at_risk', sequence: 2 })
+  })
 })
 
 describe('PostgresSupportRepository', () => {
