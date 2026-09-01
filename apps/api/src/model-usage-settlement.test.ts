@@ -364,6 +364,28 @@ describe('API model usage settlement invariants', () => {
     expect(harness.budgetSettlements).toContainEqual(expect.objectContaining({ workspaceId, reservationKey: actionId, actualCostCny: 0.02, providerRequestId: harness.providerRequestId }))
   })
 
+  it('settles included-quota repair receipts on distinct zero-charge actions', async () => {
+    const workspaceId = `ws_included_repair_${Date.now()}`
+    const actionId = `model:included-repair-${Date.now()}`
+    const firstReceipt = `included-first-${Date.now()}`
+    const repairReceipt = `included-repair-${Date.now()}`
+    harness.costCny = 0.02
+    harness.providerRequestId = firstReceipt
+    await authorizeAction(workspaceId, actionId, 'included_quota')
+
+    await expect(generate(workspaceId, actionId)).resolves.toMatchObject({ title: '结算测试标题' })
+    harness.providerRequestId = repairReceipt
+    await expect(generate(workspaceId, actionId)).resolves.toMatchObject({ title: '结算测试标题' })
+
+    const rows = await harness.modelUsage!.list(workspaceId, 10)
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerRequestId: firstReceipt, customerChargeCny: 0, settlementStatus: 'settled' }),
+      expect.objectContaining({ providerRequestId: repairReceipt, customerChargeCny: 0, settlementStatus: 'settled' }),
+    ]))
+    expect(await harness.actionLedger!.get(workspaceId, actionId)).toMatchObject({ settlementStatus: 'settled', providerRequestId: firstReceipt })
+    expect(await harness.actionLedger!.get(workspaceId, `model-usage:${repairReceipt}`)).toMatchObject({ settlement: 'included_quota', amountFen: 0, settlementStatus: 'settled', providerRequestId: repairReceipt })
+  })
+
   it('settles entitlement-funded usage without creating a wallet charge', async () => {
     const workspaceId = `ws_entitlement_settled_${Date.now()}`
     const actionId = `image:entitlement-${Date.now()}`

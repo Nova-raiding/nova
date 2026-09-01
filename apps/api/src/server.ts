@@ -211,12 +211,31 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
   const durableZeroChargeAuthorization = zeroCustomerChargeAuthorization ? durableAuthorization : undefined
   try {
     if (durableZeroChargeAuthorization && durableAuthorizationActionKey) {
-      if (durableZeroChargeAuthorization.settlementStatus === 'authorized') {
-        await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: durableAuthorizationActionKey, from: ['authorized'], to: 'pending_receipt' })
-      } else if (durableZeroChargeAuthorization.settlementStatus !== 'pending_receipt' && durableZeroChargeAuthorization.settlementStatus !== 'settled') {
+      let settlementActionKey = durableAuthorizationActionKey
+      if (durableZeroChargeAuthorization.settlementStatus === 'settled') {
+        settlementActionKey = `model-usage:${receiptKey}`
+        const repairAction = await recordActionSettlement({
+          workspaceId,
+          actionKey: settlementActionKey,
+          actionKind: durableZeroChargeAuthorization.actionKind,
+          settlement: durableZeroChargeAuthorization.settlement,
+          amountFen: 0,
+          reservedAmountFen: 0,
+          multiplier: effectiveMultiplier,
+          settlementStatus: 'authorized',
+          actorId: durableZeroChargeAuthorization.actorId,
+          description: '模型结构修复请求真实用量结算',
+          ...(durableZeroChargeAuthorization.taskId ? { taskId: durableZeroChargeAuthorization.taskId } : {}),
+          ...(durableZeroChargeAuthorization.campaignItemId ? { campaignItemId: durableZeroChargeAuthorization.campaignItemId } : {}),
+          ...(durableZeroChargeAuthorization.contextLinkId && durableZeroChargeAuthorization.contextHash ? { contextLinkId: durableZeroChargeAuthorization.contextLinkId, contextHash: durableZeroChargeAuthorization.contextHash } : {}),
+        })
+        if (repairAction.settlementStatus === 'authorized') await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: settlementActionKey, from: ['authorized'], to: 'pending_receipt' })
+      } else if (durableZeroChargeAuthorization.settlementStatus === 'authorized') {
+        await persistence.actionLedger?.transitionSettlementStatus({ workspaceId, actionKey: settlementActionKey, from: ['authorized'], to: 'pending_receipt' })
+      } else if (durableZeroChargeAuthorization.settlementStatus !== 'pending_receipt') {
         throw Object.assign(new Error(`model action settlement is ${durableZeroChargeAuthorization.settlementStatus}`), { code: 'MODEL_USAGE_ZERO_CHARGE_SETTLEMENT_BLOCKED' })
       }
-      await persistence.actionLedger?.settleProviderUsage({ workspaceId, actionKey: durableAuthorizationActionKey, actualAmountFen: 0, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
+      await persistence.actionLedger?.settleProviderUsage({ workspaceId, actionKey: settlementActionKey, actualAmountFen: 0, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
     } else if ((durableWalletAuthorization || reservation) && recordedUsage.customerChargeCny !== undefined) {
       const actualAmountFen = Math.max(1, Math.ceil(recordedUsage.customerChargeCny * 100))
       if (durableWalletAuthorization && usage.actionId) {
