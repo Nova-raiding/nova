@@ -48,6 +48,12 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('setConfigurationError(isImageGenerationConfigurationError(cause))')
   })
 
+  it('names and assertively announces task-read failures while retaining recovery', () => {
+    expect(app).toContain('aria-live="assertive" aria-atomic="true" aria-labelledby="image-job-read-error-title" aria-describedby="image-job-read-error-description"')
+    expect(app).toContain('id="image-job-read-error-title">图片任务状态暂时不可用</strong>')
+    expect(app).toContain('id="image-job-read-error-description">任务状态读取失败：{error}。已保留上次可信状态；请刷新任务状态后继续。</span>')
+  })
+
   it('focuses image generation form errors and links them to both fields', () => {
     expect(app).toContain('const imageGenerationErrorRef = useRef<HTMLDivElement>(null)')
     expect(app).toContain('window.requestAnimationFrame(() => imageGenerationErrorRef.current?.focus({ preventScroll: true }))')
