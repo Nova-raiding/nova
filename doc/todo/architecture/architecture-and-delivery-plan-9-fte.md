@@ -401,6 +401,7 @@ Runtime                                         50 家容量 [Load+Fault]
   - 本地门禁证据：`4a3b4fc` health correlation contract 已通过，覆盖 request/trace/workspace/job/connector/receipt 关联、敏感字段隔离、依赖失败时 health/readyz 非 200 和观测终态去重；`01744fe` capacity evidence gate 已通过，校验 duration/metrics 一致性、租户隔离、故障注入、队列收敛和过期时间；`57b7e03` storage evidence gate 已通过，校验版本/来源绑定、配置 checksum、保留策略、隔离恢复及 artifact checksum。
   - 上述均为本地合同/证据格式门禁，不是运行结果。真实 50 家负载、噪声租户指标、故障恢复、连续 6 小时 soak、目标部署、回滚演练和 canary 仍未完成。
 - [ ] T7 全员：Day 5/9/14 集成门禁和模块级缺陷清零。
+  - [x] 本地 Docker release gate：`test:local-release-gate` 真实联查 `/healthz`、`/releasez` 与 PostgreSQL `schema_migrations`，验证当前源码迁移链连续且数据库链尾一致；本地未注入签名 release metadata 时保持 `ready: false`。该证据不替代冻结提交、生产容量、OIDC 或 canary。
 
 ## GSTACK REVIEW REPORT
 

@@ -27,6 +27,7 @@
     "test:merchant-studio-smoke": "tsx tests/merchant-studio-smoke.ts",
     "test:browser:all": "npm exec -- playwright test dogfood/chatgpt-all-functions/merchant-all.spec.js dogfood/chatgpt-all-functions/merchant-interactions.spec.js dogfood/chatgpt-all-functions/merchant.spec.js dogfood/chatgpt-all-functions/merchant-data-safety.spec.js dogfood/chatgpt-all-functions/ops-all.spec.js dogfood/chatgpt-all-functions/ops-users.spec.js dogfood/chatgpt-all-functions/ops.spec.js --workers=1",
     "test:backup-restore": "sh tests/backup-restore-acceptance.sh",
+    "test:local-release-gate": "vitest run tests/local-docker-release-gate.test.ts",
     "test:redis-loss-recovery": "tsx tests/redis-loss-recovery-smoke.ts",
     "test:fault-acceptance": "tsx tests/fault-acceptance.ts",
     "test:capacity-workload": "tsx tests/capacity-workload.ts",
