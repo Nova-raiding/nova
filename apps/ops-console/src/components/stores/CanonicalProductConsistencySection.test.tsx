@@ -48,9 +48,19 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain('id="canonical-consistency-error-summary"');
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-labelledby="canonical-consistency-error-summary-label"');
+    expect(markup).toContain('aria-live="assertive"');
+    expect(markup).toContain('aria-atomic="true"');
     expect(markup).toContain('canonical-consistency-card');
     expect(markup).toContain('canonical-consistency-filter');
     expect(markup).toContain('canonical-consistency-action');
+  });
+
+  it("exposes a keyboard focus target and recovery guidance for report errors", () => {
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, findings: [], orphanFindings: [], error: { code: "CONSISTENCY_READ_FAILED", message: "读取失败" }, contractStatus: "unavailable", availability: "unavailable" }} onRefresh={vi.fn()} />);
+    expect(markup).toContain('id="canonical-consistency-error-summary"');
+    expect(markup).toContain('tabindex="-1"');
+    expect(markup).toContain("CONSISTENCY_READ_FAILED");
+    expect(markup).toContain("错误状态不会自动放行后续操作");
   });
 
   it("renders orphan relation objects instead of hiding them in the blocked count", () => {
