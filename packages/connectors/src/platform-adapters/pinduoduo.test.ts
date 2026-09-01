@@ -28,4 +28,10 @@ describe('Pinduoduo adapter', () => {
       found: true, state: 'rejected', rejection: { rawCode: 'PDD-SKU-101', fields: [{ path: 'sku.price', rawCode: 'PRICE_RANGE' }] },
     })
   })
+
+  it('reads nested provider task identity and infers rejection from error evidence', () => {
+    expect(mapPinduoduoWriteStatus({ result: { goods_sign: 'gs-1', task_id: 'pdd-task-1', error_response: { error_code: 'PDD-400', error_msg: '商品校验失败' } } }, { idempotencyKey: 'pdd-nested' })).toMatchObject({
+      found: true, state: 'rejected', remoteId: 'gs-1', requestId: 'pdd-task-1', rejection: { rawCode: 'PDD-400', message: '商品校验失败' },
+    })
+  })
 })

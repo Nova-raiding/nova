@@ -30,4 +30,10 @@ describe('JD Open Platform adapter', () => {
       rejection: { rawCode: 'JD-ATTR-400', message: '属性不符合类目规则', fields: [{ path: 'title', rawCode: 'TITLE-LONG', message: '标题过长' }] },
     })
   })
+
+  it('reads nested provider receipt identity and rejection evidence', () => {
+    expect(mapJdWriteStatus({ data: { ware_id: 100, request_id: 'jd-provider-1', error_code: 'JD-400', message: '校验失败' } }, { idempotencyKey: 'jd-nested' })).toMatchObject({
+      found: true, state: 'rejected', remoteId: '100', requestId: 'jd-provider-1', rejection: { rawCode: 'JD-400', message: '校验失败' },
+    })
+  })
 })

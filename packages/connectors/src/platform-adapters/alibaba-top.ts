@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto'
 import type { PlatformWriteDraft, RawProduct, RequestSigner, WriteIdentity, WriteReceipt, WriteStatus } from '../types.js'
-import { mapPlatformRejection } from './rejection.js'
+import { mapPlatformRejection, platformEnvelope, providerRequestId } from './rejection.js'
 
 export interface AlibabaTopSignerOptions {
   appKey: string
@@ -78,15 +78,15 @@ export function mapAlibabaTopProducts(payload: unknown, platform: 'taobao' | 'tm
 }
 
 export function mapAlibabaTopWriteReceipt(payload: unknown, input: PlatformWriteDraft, operation: 'create' | 'update', platform: 'taobao' | 'tmall'): WriteReceipt {
-  const record = asRecord(payload)
-  return { platform, operation, remoteId: stringValue(record?.num_iid) ?? stringValue(record?.item_id) ?? input.remoteId ?? '', requestId: stringValue(record?.request_id) ?? stringValue(record?.task_id) ?? '', status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
+  const record = platformEnvelope(payload)
+  return { platform, operation, remoteId: stringValue(record?.num_iid) ?? stringValue(record?.item_id) ?? input.remoteId ?? '', requestId: providerRequestId(payload) ?? '', status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }
 }
 
 export function mapAlibabaTopWriteStatus(payload: unknown, _request: WriteIdentity, platform: 'taobao' | 'tmall'): WriteStatus {
-  const record = asRecord(payload)
-  const state = ['submitted', 'published', 'rejected', 'unknown'].includes(String(record?.state)) ? String(record?.state) as WriteStatus['state'] : record?.success === true ? 'submitted' : 'unknown'
-  const rejection = state === 'rejected' ? mapPlatformRejection(payload) : undefined
-  const requestId = stringValue(record?.request_id) ?? stringValue(record?.task_id)
+  const record = platformEnvelope(payload)
+  const rejection = mapPlatformRejection(payload)
+  const state = ['submitted', 'published', 'rejected', 'unknown'].includes(String(record?.state)) ? String(record?.state) as WriteStatus['state'] : rejection ? 'rejected' : record?.success === true ? 'submitted' : 'unknown'
+  const requestId = providerRequestId(payload)
   return { found: record?.found === true || Boolean(stringValue(record?.num_iid) ?? stringValue(record?.item_id)) || state === 'rejected', state, ...(stringValue(record?.num_iid) ?? stringValue(record?.item_id) ? { remoteId: stringValue(record?.num_iid) ?? stringValue(record?.item_id) } : {}), ...(requestId ? { requestId } : {}), simulated: false, ...(rejection ? { rejection } : {}) }
 }
 

@@ -38,4 +38,10 @@ describe('Alibaba TOP signer', () => {
       state: 'rejected', rejection: { rawCode: '27', message: '类目属性缺失', fields: [{ path: 'cid', rawCode: 'MISSING', message: '请选择类目' }] },
     })
   })
+
+  it.each(['taobao', 'tmall'] as const)('reads nested TOP response identity and error evidence for %s', platform => {
+    expect(mapAlibabaTopWriteStatus({ response: { item_id: 1122, provider_request_id: `${platform}-provider-1`, error_response: { code: 27, sub_msg: '类目属性缺失' } } }, { idempotencyKey: `${platform}-nested` }, platform)).toMatchObject({
+      found: true, state: 'rejected', remoteId: '1122', requestId: `${platform}-provider-1`, rejection: { rawCode: '27', message: '类目属性缺失' },
+    })
+  })
 })
