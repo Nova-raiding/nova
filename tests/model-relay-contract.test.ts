@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId } from '../scripts/model-relay-canary.js'
+import { blockHttpProbe, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
+  const completeProbe = (modality: 'text' | 'image' | 'image_edit' | 'ocr' | 'video') => ({
+    modality,
+    endpoint: '/probe',
+    model: `${modality}-v1`,
+    httpStatus: 200,
+    providerRequestId: `req-${modality}`,
+    usageObserved: true,
+    costObserved: true,
+    costSource: 'provider_receipt' as const,
+    costCny: 0.01,
+    responseValid: true,
+  })
+
   it('does not disguise a response or async job id as a provider request id', () => {
     expect(extractProviderRequestId({ id: 'completion_1', task_id: 'job_1' }, new Headers())).toBeUndefined()
     expect(extractProviderRequestId({ provider_request_id: 'provider_req_1' }, new Headers())).toBe('provider_req_1')
@@ -37,6 +50,35 @@ describe('production model relay contract', () => {
     expect(evaluateVideoProbePayload({ code: 0, message: 'ok', data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'https://cdn.example/result.mp4', quota: 123, data: { request_id: 'request_nested', usage: { duration_seconds: 5 } } } })).toEqual({ ready: true, providerJobId: 'job_nested' })
     expect(evaluateVideoProbePayload({ data: { task_id: 'job_output', status: 'SUCCESS', data: { output: { url: 'https://cdn.example/output.mp4' } } } })).toEqual({ ready: true, providerJobId: 'job_output' })
     expect(evaluateVideoProbePayload({ code: 5001, data: { task_id: 'job_error', status: 'SUCCESS', result_url: 'https://cdn.example/stale.mp4' } })).toEqual({ ready: false, providerJobId: 'job_error', reason: 'video_relay_error_code' })
+  })
+
+  it('keeps an async pending video canary blocked even when usage and cost exist', () => {
+    expect(finalizeSuccessfulProbe({
+      ...completeProbe('video'),
+      providerJobId: 'job_pending',
+      responseValid: false,
+      responseFailure: 'video_async_pending',
+    })).toMatchObject({ state: 'blocked', providerJobId: 'job_pending', detail: 'video_async_pending' })
+  })
+
+  it('keeps OCR 503 as an explicit HTTP failure rather than success evidence', () => {
+    expect(blockHttpProbe({ modality: 'ocr', endpoint: '/chat/completions', model: 'ocr-v1' }, 503, 'req-ocr')).toEqual({
+      modality: 'ocr', endpoint: '/chat/completions', model: 'ocr-v1', state: 'blocked', httpStatus: 503,
+      providerRequestId: 'req-ocr', usageObserved: false, costObserved: false, detail: 'relay returned HTTP 503',
+    })
+  })
+
+  it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)(
+    'fails %s closed when request identity, usage, or cost evidence is missing',
+    modality => {
+      expect(finalizeSuccessfulProbe({ ...completeProbe(modality), providerRequestId: undefined })).toMatchObject({ state: 'blocked', detail: 'provider_request_id_missing' })
+      expect(finalizeSuccessfulProbe({ ...completeProbe(modality), usageObserved: false })).toMatchObject({ state: 'blocked', detail: 'usage_evidence_missing' })
+      expect(finalizeSuccessfulProbe({ ...completeProbe(modality), costObserved: false, costCny: undefined })).toMatchObject({ state: 'blocked', detail: 'cost_evidence_missing' })
+    },
+  )
+
+  it.each(['text', 'image', 'image_edit', 'ocr', 'video'] as const)('marks %s ready only with complete attributable evidence', modality => {
+    expect(finalizeSuccessfulProbe(completeProbe(modality))).toMatchObject({ state: 'ready' })
   })
 
   it('reads nested relay usage but never treats unversioned quota as CNY', async () => {

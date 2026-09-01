@@ -22,6 +22,11 @@ export type ProbeResult = {
   detail?: string
 }
 
+type SuccessfulProbe = Omit<ProbeResult, 'state' | 'detail'> & {
+  responseValid: boolean
+  responseFailure?: string
+}
+
 const source = process.env.MODEL_RELAY_BASE_URL?.trim() ?? ''
 const key = process.env.MODEL_RELAY_API_KEY?.trim() ?? ''
 const videoKey = process.env.VIDEO_MODEL_RELAY_API_KEY?.trim() || key
@@ -139,6 +144,37 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
   return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: providerJobId ? 'video_async_state_missing' : 'video_response_missing_job_or_artifact' }
 }
 
+/**
+ * A successful HTTP response is not a successful canary. Production evidence
+ * must remain blocked until it is attributable and both usage and cost are
+ * observable. Keeping this decision pure makes every modality use the same
+ * fail-closed contract, including asynchronous video status responses.
+ */
+export function finalizeSuccessfulProbe(input: SuccessfulProbe): ProbeResult {
+  const { responseValid, responseFailure, ...result } = input
+  if (!responseValid) return { ...result, state: 'blocked', detail: responseFailure ?? 'response_contract_invalid' }
+  if (!result.providerRequestId) return { ...result, state: 'blocked', detail: 'provider_request_id_missing' }
+  if (result.usageObserved !== true) return { ...result, state: 'blocked', detail: 'usage_evidence_missing' }
+  if (result.costObserved !== true || result.costCny === undefined || !result.costSource) return { ...result, state: 'blocked', detail: 'cost_evidence_missing' }
+  return { ...result, state: 'ready' }
+}
+
+export function blockHttpProbe(
+  common: Pick<ProbeResult, 'modality' | 'endpoint' | 'model'>,
+  httpStatus: number,
+  providerRequestId?: string,
+): ProbeResult {
+  return {
+    ...common,
+    state: 'blocked',
+    httpStatus,
+    ...(providerRequestId ? { providerRequestId } : {}),
+    usageObserved: false,
+    costObserved: false,
+    detail: `relay returned HTTP ${httpStatus}`,
+  }
+}
+
 function hasHttpsOutput(value: unknown, depth = 0): boolean {
   if (depth > 2) return false
   if (typeof value === 'string') return /^https:\/\//u.test(value)
@@ -183,7 +219,7 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
       .then(text => JSON.parse(text) as unknown)
       .catch(() => undefined)
     const providerRequestId = extractProviderRequestId(payload, response.headers)
-    if (!response.ok) return { ...common, state: 'blocked', httpStatus: response.status, ...(providerRequestId ? { providerRequestId } : {}), detail: `relay returned HTTP ${response.status}` }
+    if (!response.ok) return blockHttpProbe(common, response.status, providerRequestId)
     let measured: Awaited<ReturnType<typeof evaluateRelayUsageEvidence>>
     try { measured = await evaluateRelayUsageEvidence(payload, response.headers, modality, model) }
     catch (error) {
@@ -196,15 +232,15 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
       : modality === 'video'
         ? videoEvaluation?.ready === true
         : Boolean(payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).data))
-    return {
+    return finalizeSuccessfulProbe({
       ...common,
-      state: valid ? 'ready' : 'blocked',
       httpStatus: response.status,
       ...(providerRequestId ? { providerRequestId } : {}),
       ...(videoEvaluation?.providerJobId ? { providerJobId: videoEvaluation.providerJobId } : {}),
       ...measured,
-      ...(valid ? {} : { detail: videoEvaluation?.reason ?? 'response shape is incompatible with the merchant relay contract' }),
-    }
+      responseValid: valid,
+      ...(valid ? {} : { responseFailure: videoEvaluation?.reason ?? 'response_shape_incompatible' }),
+    })
   } catch (error) {
     return { ...common, state: 'blocked', detail: error instanceof Error ? error.name === 'AbortError' ? 'timeout' : error.message : 'probe_failed' }
   } finally { clearTimeout(timer) }
