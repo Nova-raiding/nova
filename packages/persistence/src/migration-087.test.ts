@@ -16,7 +16,8 @@ describe('migration 087 atomic asset promotion cleanup', () => {
     const sql = await readFile(new URL('./migrations/087_asset_promotion_cleanup_tasks.sql', import.meta.url), 'utf8')
     const migrations = await loadMigrations()
     expect(migrations.find(item => item.version === 87)).toMatchObject({ version: 87, name: 'asset_promotion_cleanup_tasks' })
-    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: 123 }, (_, index) => index + 1))
+    const latestVersion = Math.max(...migrations.map(item => item.version))
+    expect(migrations.map(item => item.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(sql).toContain('asset_promotion_cleanup_tasks')
     expect(sql).not.toContain('FOR UPDATE SKIP LOCKED') // claim SQL belongs to the repository, not the migration
     expect(sql).toContain('asset promotion cleanup binding is immutable')
