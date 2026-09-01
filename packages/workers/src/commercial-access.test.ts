@@ -9,7 +9,7 @@ function event(overrides: Record<string, unknown> = {}): DurableOutboxEvent {
     payload: { commercial_access_snapshot: {
       schema_version: 1, decision_id: 'commercial_enqueue_1', workspace_id: 'ws_a', operation: 'generation.execute', access_mode: 'POINT_CHARGED',
       access_revision: 'access_7', balance_state: 'known', entitlement_snapshot_id: 'entitlement_snapshot_3', entitlement_snapshot_checksum: 'a'.repeat(64),
-      rate_version: 'rate_2', quoted_points: 2, reservation_id: 'reservation_1', decided_at: '2026-09-01T09:59:00.000Z', ...overrides,
+      rate_version: 'rate_2', quoted_points: 2, reservation_id: 'reservation_1', decided_at: '2026-09-01T09:59:40.000Z', ...overrides,
     } },
   }
 }
@@ -40,6 +40,19 @@ describe('worker commercial execution gate', () => {
     await expect(guard.assertCommercialAccess(event({ workspace_id: 'ws_b' }), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID' })
     await expect(guard.assertCommercialAccess(event({ entitlement_snapshot_id: undefined, entitlement_snapshot_checksum: undefined, subscription_snapshot_id: 'legacy_subscription', subscription_snapshot_checksum: 'a'.repeat(64) }), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', message: expect.stringContaining('legacy subscription') })
     expect(recheck).not.toHaveBeenCalled()
+  })
+
+  it('rejects stale or future enqueue snapshots before authoritative recheck', async () => {
+    const recheck = vi.fn()
+    const guard = createCommercialAccessGuard(recheck, { now: () => now, maxEvidenceAgeMs: 30_000 })
+    await expect(guard.assertCommercialAccess(event({ decided_at: '2026-09-01T09:59:00.000Z' }), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', retryable: false })
+    await expect(guard.assertCommercialAccess(event({ decided_at: '2026-09-01T10:00:06.000Z' }), 'generation.execute')).rejects.toMatchObject({ code: 'COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', retryable: false })
+    expect(recheck).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid snapshot freshness configuration', () => {
+    expect(() => createCommercialAccessGuard(vi.fn(), { maxEvidenceAgeMs: 0 })).toThrow('maxEvidenceAgeMs')
+    expect(() => createCommercialAccessGuard(vi.fn(), { maxEvidenceAgeMs: Number.POSITIVE_INFINITY })).toThrow('maxEvidenceAgeMs')
   })
 
   it('supports point-required zero-charge work without inventing a reservation', async () => {

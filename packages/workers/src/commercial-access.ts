@@ -79,10 +79,12 @@ export function createCommercialAccessGuard(
 ): WorkerCommercialAccessGuard {
   const now = options.now ?? (() => Date.now())
   const maxEvidenceAgeMs = options.maxEvidenceAgeMs ?? 30_000
+  if (!Number.isFinite(maxEvidenceAgeMs) || maxEvidenceAgeMs <= 0) throw new RangeError('maxEvidenceAgeMs must be a positive finite number')
   return {
     async assertCommercialAccess(event, operation, signal) {
       signal?.throwIfAborted()
       const snapshot = parseWorkerCommercialAccessSnapshot(event, operation)
+      validateSnapshotFreshness(snapshot, now(), maxEvidenceAgeMs)
       let current: WorkerCommercialAccessRecheck
       try {
         current = await recheck({ event, operation, snapshot, ...(signal ? { signal } : {}) })
@@ -154,6 +156,11 @@ function validateCommercialRecheck(current: WorkerCommercialAccessRecheck, snaps
   } else if (current.reservationId !== undefined || current.reservationState !== 'not_required') {
     throw recheckInvalid('no-charge commercial access returned reservation evidence')
   }
+}
+
+function validateSnapshotFreshness(snapshot: WorkerCommercialAccessSnapshot, now: number, maxAgeMs: number): void {
+  const decidedAt = Date.parse(snapshot.decidedAt)
+  if (decidedAt > now + 5_000 || now - decidedAt > maxAgeMs) throw snapshotError('commercial access snapshot evidence is stale')
 }
 
 function snapshotError(message: string): WorkerCommercialAccessError { return new WorkerCommercialAccessError('COMMERCIAL_EXECUTION_SNAPSHOT_INVALID', message, false) }
