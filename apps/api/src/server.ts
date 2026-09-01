@@ -40,6 +40,7 @@ import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-
 import { evaluatePlatformModelBudgetEstimate, evaluatePlatformModelCostGate, evaluatePlatformModelGate, evaluatePlatformModelRelayGate, evaluatePlatformModelTaskCostLimit, evaluatePlatformModelTaskRequestCost, type PlatformModelKind } from '../../../packages/ai/src/platform-model-gate.js'
 import { DocumentParseError, parseDocumentFacts, type ParseErrorContext } from '../../../packages/application/src/document-parser.js'
 import { validateProtectedProductIntent, type ProtectedProductIntentValidation } from '../../../packages/application/src/protected-product-intent.js'
+import { projectCommercialEntitlement } from '../../../packages/application/src/commercial-entitlement-projection.js'
 import { buildCanonicalChainConsistencyReport, canonicalProductReadModeFromFlag, CANONICAL_PRODUCT_READ_MODE_FLAG, resolveCanonicalProductReadScope, type CanonicalChainConsistencyInput, type CanonicalProductReadMode } from '../../../packages/application/src/canonical-product-consistency.js'
 import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOperation } from '../../../packages/application/src/campaign-delivery-orchestrator.js'
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
@@ -5963,6 +5964,30 @@ function billingCapabilityEntitlements(input: {
   }
 }
 
+function commercialEntitlementProjection(subscription: Awaited<ReturnType<SubscriptionRepository['get']>>) {
+  const source = {
+    workspaceId: subscription.workspaceId,
+    status: subscription.status,
+    planCode: subscription.planCode,
+    planName: subscription.planName,
+    billingCycle: subscription.billingCycle,
+    priceCny: subscription.priceCny,
+    includedStores: subscription.includedStores,
+    includedTasks: subscription.includedTasks,
+    currentPeriodStart: subscription.currentPeriodStart,
+    currentPeriodEnd: subscription.currentPeriodEnd,
+    revision: subscription.revision,
+    updatedAt: subscription.updatedAt,
+  }
+  return projectCommercialEntitlement({
+    plan: subscription.planCode,
+    period: { start: subscription.currentPeriodStart, end: subscription.currentPeriodEnd },
+    status: subscription.status,
+    sourceVersion: `${subscription.planCode}:revision-${subscription.revision}`,
+    checksum: createHash('sha256').update(canonicalJson(source)).digest('hex'),
+  })
+}
+
 function runtimeHealth() {
   const base = service.health()
   const configuredRateLimit = Number(process.env.API_RATE_LIMIT_PER_MINUTE ?? DEFAULT_RATE_LIMIT)
@@ -9413,8 +9438,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const orders = await (persistence.subscriptions ?? memorySubscriptions).listOrders(workspaceId, 20, privilegedBillingReader ? undefined : actorId)
       return result({ settings: await (persistence.commercial ?? memoryCommercial).getSettings(workspaceId), platforms: await (persistence.commercial ?? memoryCommercial).listPlatformSettings(workspaceId), usage: await (persistence.usage ?? memoryUsage).get(workspaceId), subscription: await (persistence.subscriptions ?? memorySubscriptions).get(workspaceId), orders, entitlements: await (persistence.entitlements ?? memoryEntitlements).list(workspaceId) })
     }
-    case 'subscription.get':
-      return result({ ...(await (persistence.subscriptions ?? memorySubscriptions).get(workspaceId)), entitlements: await (persistence.entitlements ?? memoryEntitlements).list(workspaceId) })
+    case 'subscription.get': {
+      const subscription = await (persistence.subscriptions ?? memorySubscriptions).get(workspaceId)
+      return result({ ...subscription, commercial_entitlement: commercialEntitlementProjection(subscription), entitlements: await (persistence.entitlements ?? memoryEntitlements).list(workspaceId) })
+    }
     case 'subscription.orders.list': {
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 50
       const { scope, actorId } = billingReadScope(req, params)

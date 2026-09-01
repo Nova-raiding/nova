@@ -31,7 +31,7 @@ export interface CommercialEntitlementProjectionInput {
 }
 
 const SHA256 = /^[a-f0-9]{64}$/u
-const AVAILABLE_SOURCE_STATUSES = new Set(['active', 'available'])
+const AVAILABLE_SOURCE_STATUSES = new Set(['active', 'available', 'trialing'])
 const BLOCKED_SOURCE_STATUSES = new Set(['active_restricted', 'blocked', 'canceled', 'expired', 'paused', 'past_due'])
 
 const emptyProjection = (status: CommercialEntitlementProjectionStatus): CommercialEntitlementProjection => ({
