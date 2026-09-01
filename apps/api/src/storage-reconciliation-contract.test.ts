@@ -32,7 +32,7 @@ describe('storage reconciliation API contract', () => {
       workspaceId: 'ws-a', status: 'attention_required', runStatus: 'failed', findings: [],
       quota: { usedBytes: 0, reservedBytes: 0, projectedBytes: 0 },
       counts: { references: 0, inventoryObjects: 0, matched: 0, missing: 0, metadataMismatches: 0, orphans: 0, crossWorkspace: 0, duplicates: 0, invalidMetadata: 0 },
-      error: { code: 'RECONCILIATION_PROVIDER_FAILED', message: 'secret provider detail' },
+      error: { code: 'RECONCILIATION_PROVIDER_FAILED', message: 'secret provider detail', retryable: true, nextActions: ['retry'] },
     })
     expect(result).toMatchObject({ status: 'failed', runStatus: 'failed', errorMessage: expect.any(String) })
     expect(JSON.stringify(result)).not.toContain('secret provider detail')
