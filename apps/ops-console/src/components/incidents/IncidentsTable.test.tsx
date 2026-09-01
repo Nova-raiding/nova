@@ -10,4 +10,13 @@ describe('IncidentsTable', () => {
     expect(html).toContain('查看事故：支付不可用')
     expect(html).toContain('min-height:44px')
   })
+
+  it('announces loading without replacing existing rows and keeps the table keyboard-ready', () => {
+    const html = renderToStaticMarkup(<IncidentsTable loading onSelect={() => undefined} incidents={[{ id: 'incident_2', workspaceId: 'ws_1', title: '库存延迟', summary: '库存同步延迟', severity: 'sev2', status: 'monitoring', affectedComponents: [], affectedWorkspaceIds: [], revision: 2, createdBy: 'ops_1', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' }]} />)
+    expect(html).toContain('aria-busy="true"')
+    expect(html).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(html).toContain('正在加载事故列表，现有结果会保留。')
+    expect(html).toContain('库存延迟')
+    expect(html).toContain('查看事故：库存延迟')
+  })
 })
