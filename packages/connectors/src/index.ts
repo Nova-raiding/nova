@@ -20,6 +20,7 @@ export * from './capability-evidence.js'
 export * from './readiness.js'
 export * from './platform-preflight.js'
 export * from './canary.js'
+export * from './sync-safety.js'
 export { jdProfile, taobaoProfile, tmallProfile, pinduoduoProfile, xiaohongshuProfile, douyinProfile }
 
 export const profiles = { jd: jdProfile, taobao: taobaoProfile, tmall: tmallProfile, pinduoduo: pinduoduoProfile, xiaohongshu: xiaohongshuProfile, douyin: douyinProfile } as const

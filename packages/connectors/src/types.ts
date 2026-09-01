@@ -163,6 +163,11 @@ export interface HttpConnectorConfig {
     updatePath: string
     queryPath: string
   }
+  /** Optional bounded window for incremental synchronization. */
+  sync?: {
+    updatedSince?: string
+    updatedUntil?: string
+  }
   /** Optional platform-specific media upload endpoint. Without it, selected generated visuals remain fail-closed. */
   mediaUploadPath?: string
   /** Evidence that the platform media field/upload mapping was verified end-to-end. */

@@ -8,6 +8,7 @@ import { xiaohongshuProfile } from './profiles/xiaohongshu.js'
 import { douyinProfile } from './profiles/douyin.js'
 import { validateConnectorAuthorizationReadiness, validateConnectorReadiness, type ConnectorReadiness } from './readiness.js'
 import { assertOutboundUrl, inspectOutboundUrl, isSecureEnvironment, officialHostsFor } from './outbound-security.js'
+import { deduplicateSyncProducts, SyncContractError, validateNextSyncCursor, validateSyncCursor, validateSyncWindow } from './sync-safety.js'
 import type {
   AccessCredential, AuthorizeInput, AuthorizeResult, ConnectorContext, CredentialProvider, CredentialRef, Cursor,
   HttpConnectorConfig, HttpRequestBodyEncoding, HttpRequestDescriptor, MappingVersion, NormalizedPlatformError, Platform, PlatformConnector,
@@ -266,12 +267,37 @@ export class HttpPlatformConnector implements PlatformConnector {
 
   async syncProducts(ctx: ConnectorContext, cursor?: Cursor): Promise<ProductPage> {
     const config = this.requireConfig()
+    let syncWindow: ReturnType<typeof validateSyncWindow>
+    let requestedCursor: string | undefined
+    try {
+      syncWindow = validateSyncWindow(config.sync)
+      requestedCursor = validateSyncCursor(cursor)
+    } catch (error) {
+      throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: error instanceof Error ? error.message : 'sync cursor is invalid', retryable: false }))
+    }
     const url = new URL(joinUrl(config.api.baseUrl, config.api.syncPath))
-    if (cursor?.value) url.searchParams.set('cursor', cursor.value)
-    const payload = await this.request('GET', url.toString(), await this.resolveCredential(ctx), undefined, 'json', false, ctx.signal)
-    const items = config.mapProducts?.(payload, this.platform) ?? defaultProducts(payload, this.platform)
-    const nextCursor = isRecord(payload) && readString(payload.nextCursor) ? { value: readString(payload.nextCursor) } : undefined
-    return { items, nextCursor, source: 'official_api', simulated: false }
+    if (requestedCursor) url.searchParams.set('cursor', requestedCursor)
+    if (syncWindow?.updatedSince) url.searchParams.set('updated_since', syncWindow.updatedSince)
+    if (syncWindow?.updatedUntil) url.searchParams.set('updated_until', syncWindow.updatedUntil)
+    let payload: unknown
+    try {
+      payload = await this.request('GET', url.toString(), await this.resolveCredential(ctx), undefined, 'json', false, ctx.signal)
+    } catch (error) {
+      if (error instanceof ConnectorFailure && error.normalized.code === 'TIMEOUT') {
+        throw new ConnectorFailure({ ...error.normalized, unknown: true, retryable: true, details: { ...(error.normalized.details ?? {}), reconcileRequired: true, syncCursor: requestedCursor ?? null } })
+      }
+      throw error
+    }
+    let items: RawProduct[]
+    try {
+      items = deduplicateSyncProducts(config.mapProducts?.(payload, this.platform) ?? defaultProducts(payload, this.platform), this.platform, syncWindow)
+      const rawNextCursor = isRecord(payload) && readString(payload.nextCursor) ? { value: readString(payload.nextCursor) } : undefined
+      const nextCursor = validateNextSyncCursor(rawNextCursor, requestedCursor)
+      return { items, nextCursor, source: 'official_api', simulated: false }
+    } catch (error) {
+      if (error instanceof SyncContractError) throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: error.message, retryable: false }))
+      throw error
+    }
   }
 
   mapToCanonical(raw: RawProduct, mapping: MappingVersion) { return this.profile.mapProduct(raw, mapping) }
