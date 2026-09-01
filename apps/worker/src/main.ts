@@ -95,6 +95,11 @@ export async function allSettledWithConcurrency<T, R>(
   return results
 }
 
+export function imageReconciliationQueryTimeoutMs(workerApiTimeoutMs: number): number {
+  if (!Number.isSafeInteger(workerApiTimeoutMs) || workerApiTimeoutMs < 1) throw new RangeError('worker API timeout must be a positive integer')
+  return Math.min(workerApiTimeoutMs, 5 * 60 * 1000)
+}
+
 export function publishIdempotencyKey(event: DurableOutboxEvent): string {
   const configured = event.payload.idempotencyKey
   return typeof configured === 'string' && configured.trim() ? configured : event.aggregateId
@@ -1502,7 +1507,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         }
         if (config.role === 'reconcile' && startedAt >= nextImageGenerationReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image generation reconciliation')
-          const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: config.workerApiTimeoutMs, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
+          const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: imageReconciliationQueryTimeoutMs(config.workerApiTimeoutMs), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
           nextImageGenerationReconciliationAt = Date.now() + config.imageGenerationReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { imageGenerationReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
         }
