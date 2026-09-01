@@ -6403,7 +6403,7 @@ function readStaticBrief(value: unknown): StaticBrief | undefined {
 }
 
 export function readContentModules(value: unknown): ContentModule[] | undefined {
-  if (value === undefined) return undefined
+  if (value === undefined) throw new DomainError('CONTENT_SCHEMA_INVALID', '异步 worker 的 modules 必须包含 1 至 16 个合法模块', 400)
   if (!Array.isArray(value) || value.length === 0 || value.length > 16) throw new DomainError('CONTENT_SCHEMA_INVALID', '异步 worker 的 modules 必须包含 1 至 16 个合法模块', 400)
   try {
     return validateContentSchema({ title: 'worker-result', detail: 'worker-result', sellingPoints: ['worker-result'], modules: value }, '异步 worker', { requireDecisionContracts: true }).modules

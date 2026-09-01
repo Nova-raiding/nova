@@ -47,6 +47,10 @@ function expectSchemaFailure(value: unknown) {
 }
 
 describe('asynchronous worker content module reader', () => {
+  it('rejects a missing module array instead of falling back to defaults', () => {
+    expectSchemaFailure(undefined)
+  })
+
   it('fails the whole result when valid and invalid modules are mixed', () => {
     expectSchemaFailure([moduleFixture('hero', 1), { key: 'broken' }])
   })

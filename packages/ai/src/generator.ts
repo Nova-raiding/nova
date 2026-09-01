@@ -170,6 +170,9 @@ export function validateContentSchema(value: unknown, source = 'content', option
   else value.sellingPoints.forEach((item, index) => { if (typeof item !== 'string' || !item.trim()) errors.push(`sellingPoints[${index}] 必须是非空字符串`) })
 
   let modules: ContentModule[] | undefined
+  if (options.requireDecisionContracts === true && value.modules === undefined) {
+    errors.push('modules 必须是非空数组')
+  }
   if (value.modules !== undefined) {
     if (!Array.isArray(value.modules) || value.modules.length === 0) errors.push('modules 必须是非空数组')
     else {
