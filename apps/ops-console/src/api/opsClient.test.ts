@@ -5,6 +5,7 @@ import {
   describeOpsError,
   hasOpsConnection,
   opsRestGetWithMeta,
+  purgeLocalOpsCredentialsForManagedSession,
   readOpsConnectionConfig,
   resolveManagedOpsSession,
   rpcForWorkspace,
@@ -23,6 +24,24 @@ describe("workspace RPC boundary", () => {
     expect(resolveManagedOpsSession({ PROD: true, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "oidc" })).toBe(true);
     expect(resolveManagedOpsSession({ PROD: false, VITE_OPS_AUTH_MODE: "local" })).toBe(false);
+  });
+
+  it("removes persisted local bearer credentials when the managed bundle starts", () => {
+    const removeItem = vi.fn();
+
+    purgeLocalOpsCredentialsForManagedSession({ removeItem }, true);
+
+    expect(removeItem.mock.calls.map(([key]) => key)).toEqual([
+      "ops_connection_config_v1",
+      "ops_actor_id",
+      "ops_api_token",
+    ]);
+    expect(removeItem).not.toHaveBeenCalledWith("ops_api_base");
+    expect(removeItem).not.toHaveBeenCalledWith("ops_workspace_id");
+
+    removeItem.mockClear();
+    purgeLocalOpsCredentialsForManagedSession({ removeItem }, false);
+    expect(removeItem).not.toHaveBeenCalled();
   });
 
   it("atomically saves a local connection and reads the same tuple after refresh", async () => {

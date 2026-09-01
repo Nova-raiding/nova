@@ -5,6 +5,9 @@ import "./styles.css";
 import App from "./App";
 import { App as AntdApp, ConfigProvider } from "antd";
 import { opsTheme } from "./theme/opsTheme.js";
+import { purgeLocalOpsCredentialsForManagedSession } from "./api/opsClient.js";
+
+purgeLocalOpsCredentialsForManagedSession(localStorage);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
