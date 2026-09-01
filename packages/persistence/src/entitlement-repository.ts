@@ -41,6 +41,12 @@ export class EntitlementGrantIdempotencyConflictError extends Error {
   constructor() { super('entitlement grant idempotency key was reused with a different intent'); this.name = 'EntitlementGrantIdempotencyConflictError' }
 }
 
+function validateConsumptionInput(input: { units: number; idempotencyKey: string }) {
+  if (!Number.isInteger(input.units) || input.units <= 0 || !input.idempotencyKey.trim()) {
+    throw new Error('ENTITLEMENT_CONSUMPTION_INPUT_INVALID')
+  }
+}
+
 const projection = 'id, workspace_id AS "workspaceId", order_no AS "orderNo", addon_code AS "addonCode", kind, granted_units AS "grantedUnits", used_units AS "usedUnits", granted_units-used_units AS "remainingUnits", created_at AS "createdAt"'
 
 export class MemoryEntitlementRepository implements EntitlementRepository {
@@ -60,6 +66,7 @@ export class MemoryEntitlementRepository implements EntitlementRepository {
   }
   async list(workspaceId: string) { return [...this.items.values()].filter(item => item.workspaceId === workspaceId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) }
   async consume(input: { workspaceId: string; kind: EntitlementKind; units: number; idempotencyKey: string }) {
+    validateConsumptionInput(input)
     const existing = this.consumptions.get(`${input.workspaceId}:${input.idempotencyKey}`)
     if (existing) { if (existing.units !== input.units || [...this.items.values()].find(item => item.id === existing.entitlementId)?.kind !== input.kind) throw new EntitlementConsumptionIdempotencyConflictError(); return existing.refundedAt ? undefined : existing }
     const entitlement = [...this.items.values()].find(item => item.workspaceId === input.workspaceId && item.kind === input.kind && item.remainingUnits >= input.units)
@@ -100,6 +107,7 @@ export class PostgresEntitlementRepository implements EntitlementRepository {
     return withWorkspaceTransaction(this.pool, workspaceId, async client => (await client.query<SubscriptionEntitlement>(`SELECT ${projection} FROM subscription_entitlements WHERE workspace_id=$1 ORDER BY created_at DESC`, [workspaceId])).rows)
   }
   async consume(input: { workspaceId: string; kind: EntitlementKind; units: number; idempotencyKey: string }) {
+    validateConsumptionInput(input)
     requireWorkspaceScope(input.workspaceId)
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
       const existing = await client.query<EntitlementConsumption & { kind: EntitlementKind }>(`SELECT c.id, c.workspace_id AS "workspaceId", c.entitlement_id AS "entitlementId", c.idempotency_key AS "idempotencyKey", c.units, c.created_at AS "createdAt", c.refunded_at AS "refundedAt", e.kind FROM subscription_entitlement_consumptions c JOIN subscription_entitlements e ON e.id=c.entitlement_id WHERE c.workspace_id=$1 AND c.idempotency_key=$2`, [input.workspaceId, input.idempotencyKey])

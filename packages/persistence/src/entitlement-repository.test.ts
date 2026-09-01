@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { EntitlementConsumptionIdempotencyConflictError, EntitlementGrantIdempotencyConflictError, MemoryEntitlementRepository } from './entitlement-repository.js'
 
 describe('MemoryEntitlementRepository', () => {
+  it('rejects non-positive units and blank idempotency keys before changing the ledger', async () => {
+    const repository = new MemoryEntitlementRepository()
+    await repository.grant({ workspaceId: 'ws_invalid_consume', orderNo: 'SO1', addonCode: 'image_pack', kind: 'image_generation', units: 2 })
+
+    await expect(repository.consume({ workspaceId: 'ws_invalid_consume', kind: 'image_generation', units: 0, idempotencyKey: 'zero' })).rejects.toThrow('ENTITLEMENT_CONSUMPTION_INPUT_INVALID')
+    await expect(repository.consume({ workspaceId: 'ws_invalid_consume', kind: 'image_generation', units: -1, idempotencyKey: 'negative' })).rejects.toThrow('ENTITLEMENT_CONSUMPTION_INPUT_INVALID')
+    await expect(repository.consume({ workspaceId: 'ws_invalid_consume', kind: 'image_generation', units: 1, idempotencyKey: '   ' })).rejects.toThrow('ENTITLEMENT_CONSUMPTION_INPUT_INVALID')
+    expect((await repository.list('ws_invalid_consume'))[0]).toMatchObject({ usedUnits: 0, remainingUnits: 2 })
+  })
+
   it('grants each paid addon once and exposes remaining units', async () => {
     const repository = new MemoryEntitlementRepository()
     const input = { workspaceId: 'ws_entitlement', orderNo: 'SO1', addonCode: 'image_pack', kind: 'image_generation' as const, units: 100 }
