@@ -79,6 +79,9 @@ done
 image_set_digest=$(sh "$(dirname "$0")/validate-kubernetes-release.sh" "$RENDERED_MANIFEST_PATH" "$IMAGE_DIGESTS_JSON" --print-image-set-digest)
 printf '%s\n' "$image_set_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo 'canonical image set digest is invalid' >&2; exit 1; }
 ruby "$(dirname "$0")/validate-rendered-production-config.rb" "$config_path" "$RENDERED_MANIFEST_PATH"
+scanner_contract_validator="$repo_root/infra/kubernetes/validate-scanner-contract.rb"
+[ -f "$scanner_contract_validator" ] || { echo "scanner Kubernetes contract validator is missing: $scanner_contract_validator" >&2; exit 1; }
+ruby "$scanner_contract_validator" "$RENDERED_MANIFEST_PATH"
 manifest_sha256=$(shasum -a 256 "$RENDERED_MANIFEST_PATH" | awk '{print $1}')
 release_git_sha=$(git -C "$repo_root" rev-parse HEAD)
 # Establish the immutable trust anchor before any evidence gate. Relay and

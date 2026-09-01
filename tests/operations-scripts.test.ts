@@ -244,7 +244,7 @@ describe('deployment operation scripts', () => {
     ] }))
     const script = 'infra/scripts/deploy-preflight.sh'
     const base = { PRODUCTION_CONFIG_PATH: config, CAPABILITY_EVIDENCE_PATH: evidence, CAPACITY_REPORT_PATH: capacity, MODEL_RELAY_EVIDENCE_PATH: relayEvidence, CODEX_APP_HOST_EVIDENCE_PATH: hostEvidence, OBJECT_STORAGE_EVIDENCE_PATH: storageEvidence, CANONICAL_CUTOVER_EVIDENCE_PATH: canonicalCutoverEvidence, PRODUCTION_EVIDENCE_ARTIFACT_ROOT: directory, EXPECTED_MIGRATION_VERSION: '078', RELEASE_MANIFEST_PATH: releaseManifest, PAYMENT_EVIDENCE_PATH: paymentEvidence, RESTORE_EVIDENCE_PATH: restoreEvidence, RENDERED_MANIFEST_PATH: manifest, RELEASE_ID: 'release-1', IMAGE_DIGESTS_JSON: JSON.stringify(imageDigests), API_IMAGE_REF: `registry.example.com/merchant-api@${imageDigests['merchant-api']}`, WORKER_IMAGE_REF: `registry.example.com/merchant-worker@${imageDigests['merchant-worker']}`, DATABASE_URL: 'postgresql://db.internal/merchant?sslmode=verify-full', OPS_DATABASE_URL: 'postgresql://ops-db.internal/merchant?sslmode=verify-full', REDIS_URL: 'rediss://redis.internal', SECRET_PROVIDER: 'vault' }
-    expect(() => run(script, [config], base)).toThrow(/trust anchor is not provisioned/)
+    expect(() => run(script, [config], base)).toThrow(/scanner|merchant-worker-scan|ConfigMap\/merchant-runtime/i)
     const matchingManifest = readFileSync(manifest, 'utf8')
     const driftedManifest = JSON.parse(matchingManifest)
     driftedManifest.items[0].data.MODEL_RELAY_BASE_URL = 'https://different-relay.example.com'
@@ -271,7 +271,7 @@ describe('deployment operation scripts', () => {
     expect(() => run(script, [config], { ...base, OPS_DATABASE_URL: 'postgresql://127.0.0.9/merchant?sslmode=verify-full' })).toThrow(/OPS_DATABASE_URL.*local/)
     expect(() => run(script, [config], { ...base, REDIS_URL: 'redis://redis.internal' })).toThrow()
     writeFileSync(relayEvidence, readFileSync(relayEvidence, 'utf8').replace('https://relay.example.com', 'https://other-relay.example.com'))
-    expect(() => run(script, [config], base)).toThrow(/trust anchor|relay|origin/)
+    expect(() => run(script, [config], base)).toThrow(/scanner|merchant-worker-scan|ConfigMap\/merchant-runtime/i)
     writeFileSync(relayEvidence, readFileSync(relayEvidence, 'utf8').replace('https://other-relay.example.com', 'https://relay.example.com'))
     expect(() => run(script, [config], { ...base, RENDERED_MANIFEST_PATH: join(directory, 'missing.yaml') })).toThrow()
     writeFileSync(manifest, 'image: REPLACE_ME/merchant-api:0.1.0')
@@ -290,7 +290,9 @@ describe('deployment operation scripts', () => {
     expect(deployPreflight).toContain('--expected-bridge-sha256')
     expect(deployPreflight).toContain('release-manifest-gate.ts')
     expect(deployPreflight).toContain('validate-rendered-production-config.rb')
+    expect(deployPreflight).toContain('validate-scanner-contract.rb')
     expect(deployPreflight.indexOf('validate-rendered-production-config.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
+    expect(deployPreflight.indexOf('validate-scanner-contract.rb')).toBeLessThan(deployPreflight.indexOf('capability-evidence-gate.ts'))
     for (const binding of ['--artifact-root', '--public-key', '--key-id', '--capability-evidence', '--capacity-evidence', '--model-relay-evidence', '--payment-evidence', '--restore-evidence', '--object-storage-evidence', '--codex-app-host-evidence', '--canonical-cutover-evidence']) expect(deployPreflight).toContain(binding)
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found' })).toThrow()
     expect(() => run('infra/scripts/launch-preflight.sh', [], { PRODUCTION_CONFIG_PATH: '/not-found', SKIP_LOCAL_OPS_GATE: 'true', NODE_ENV: 'production' })).toThrow(/SKIP_LOCAL_OPS_GATE/)
