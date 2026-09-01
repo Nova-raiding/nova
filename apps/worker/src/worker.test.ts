@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -50,6 +50,23 @@ const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
 }
 
 describe('worker production entry', () => {
+  it('bounds workspace maintenance concurrency and preserves settled results', async () => {
+    let active = 0
+    let peak = 0
+    const results = await allSettledWithConcurrency([0, 1, 2, 3, 4, 5], 2, async value => {
+      active += 1
+      peak = Math.max(peak, active)
+      await new Promise(resolve => setTimeout(resolve, 5))
+      active -= 1
+      if (value === 3) throw new Error('workspace failed')
+      return value * 2
+    })
+
+    expect(peak).toBe(2)
+    expect(results.map(result => result.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled', 'rejected', 'fulfilled', 'fulfilled'])
+    expect(results[5]).toEqual({ status: 'fulfilled', value: 10 })
+  })
+
   it('uses the persisted event authority endpoint for non-publish critical operations', async () => {
     const checkedAt = new Date().toISOString()
     const fetcher = vi.fn(async (input: string | URL | Request) => {

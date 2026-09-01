@@ -74,6 +74,27 @@ export function quotaAdmissionForEvent(
   return { tenantId: event.workspaceId, namespace, key, limitPerWindow }
 }
 
+export async function allSettledWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  operation: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const limit = Math.max(1, Math.min(Math.floor(concurrency), items.length || 1))
+  const results = new Array<PromiseSettledResult<R>>(items.length)
+  let cursor = 0
+  await Promise.all(Array.from({ length: limit }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++
+      try {
+        results[index] = { status: 'fulfilled', value: await operation(items[index]!, index) }
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason }
+      }
+    }
+  }))
+  return results
+}
+
 export function publishIdempotencyKey(event: DurableOutboxEvent): string {
   const configured = event.payload.idempotencyKey
   return typeof configured === 'string' && configured.trim() ? configured : event.aggregateId
@@ -1468,25 +1489,25 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           : await pollOnce(repository, dispatchers, { ...config, workspaces, ...(scannerHeartbeat ? { claimAdmission: () => scannerHeartbeat!.canProcessScans() } : {}) }, queueFactory, { executionAuthorization, publishRequested, reconcileRequested, generationRequested, imageGenerationRequested, syncRequested, scanRequested, imageContinuationRequested, onGenerationResult, onGenerationDeferred, onPublishObservation })
         if (config.role === 'reconcile' && startedAt >= nextStorageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for storage reconciliation')
-          const reconciliation = await Promise.allSettled(workspaces.map(workspaceId => postStorageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
+          const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postStorageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
           nextStorageReconciliationAt = Date.now() + config.storageReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { storageReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
         }
         if (config.role === 'reconcile' && startedAt >= nextModelUsageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage reconciliation')
-          const reconciliation = await Promise.allSettled(workspaces.map(workspaceId => postModelUsageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
+          const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postModelUsageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
           nextModelUsageReconciliationAt = Date.now() + config.modelUsageReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { modelUsageReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
         }
         if (config.role === 'reconcile' && startedAt >= nextImageGenerationReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image generation reconciliation')
-          const reconciliation = await Promise.allSettled(workspaces.map(workspaceId => reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: config.workerApiTimeoutMs, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
+          const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => reconcileImageGenerationWorkspace({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(100, config.batchSize), ...(imageGenerator?.queryStatus ? { queryStatus: imageGenerator.queryStatus.bind(imageGenerator) } : {}), queryTimeoutMs: config.workerApiTimeoutMs, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
           nextImageGenerationReconciliationAt = Date.now() + config.imageGenerationReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { imageGenerationReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
         }
         if (config.role === 'reconcile' && startedAt >= nextSupportSlaScanAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for support SLA scan')
-          const scans = await Promise.allSettled(workspaces.map(workspaceId => postSupportSlaScan({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(1000, config.batchSize), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
+          const scans = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postSupportSlaScan({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, limit: Math.min(1000, config.batchSize), ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
           nextSupportSlaScanAt = Date.now() + config.supportSlaScanIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { supportSlaScan: { completed: scans.filter(item => item.status === 'fulfilled').length, failed: scans.filter(item => item.status === 'rejected').length } })
         }
@@ -1494,7 +1515,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for support SLA report')
           const schedule = planSupportSlaReportSchedule(new Date(startedAt))
           const reports = schedule
-            ? await Promise.allSettled(workspaces.map(workspaceId => postSupportSlaReport({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, periodStart: schedule.periodStart, periodEnd: schedule.periodEnd, cutoffAt: schedule.cutoffAt, reportId: schedule.reportId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) })))
+            ? await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postSupportSlaReport({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, periodStart: schedule.periodStart, periodEnd: schedule.periodEnd, cutoffAt: schedule.cutoffAt, reportId: schedule.reportId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
             : []
           nextSupportSlaReportAt = Date.now() + config.supportSlaReportIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { supportSlaReport: { scheduled: Boolean(schedule), completed: reports.filter(item => item.status === 'fulfilled').length, failed: reports.filter(item => item.status === 'rejected').length } })
