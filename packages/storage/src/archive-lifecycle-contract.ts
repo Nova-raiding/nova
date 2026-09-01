@@ -29,7 +29,7 @@ export function checkDurableArchiveReference(input: unknown): DurableArchiveChec
   if (!['asset', 'generated_image', 'generated_video'].includes(String(value.kind))) reasons.push('kind is unsupported')
   if (!value.workspaceId || !value.entityId) reasons.push('workspaceId and entityId are required')
   const keyParts = typeof value.storageKey === 'string' ? value.storageKey.split('/') : []
-  if (typeof value.storageKey !== 'string' || !['quarantine', 'clean'].includes(keyParts[0] ?? '') || keyParts[1] !== value.workspaceId || keyParts.length < 4 || value.storageKey.startsWith('fixture://')) reasons.push('storageKey must be a workspace-scoped quarantine/clean object key')
+  if (typeof value.storageKey !== 'string' || !['quarantine', 'clean'].includes(keyParts[0] ?? '') || keyParts[1] !== value.workspaceId || keyParts.length < 4 || value.storageKey.startsWith('fixture://') || value.storageKey.startsWith('/') || value.storageKey.includes('\\') || keyParts.some(part => !part || part === '.' || part === '..')) reasons.push('storageKey must be a workspace-scoped quarantine/clean object key')
   if (typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) reasons.push('sha256 must be a SHA-256 digest')
   const sizeBytes = value.sizeBytes
   if (typeof sizeBytes !== 'number' || !Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) reasons.push('sizeBytes must be positive')

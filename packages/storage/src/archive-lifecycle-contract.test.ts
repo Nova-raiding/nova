@@ -47,6 +47,12 @@ describe('durable archive lifecycle contract', () => {
     })
   })
 
+  it('rejects traversal and non-portable archive keys', () => {
+    const base = { kind: 'asset' as const, workspaceId: 'ws_restore', entityId: 'asset_1', sha256: '0'.repeat(64), sizeBytes: 1, revision: 1 }
+    expect(checkDurableArchiveReference({ ...base, storageKey: 'clean/ws_restore/asset_1/../file' }).restorable).toBe(false)
+    expect(checkDurableArchiveReference({ ...base, storageKey: 'clean/ws_restore/asset_1\\file' }).restorable).toBe(false)
+  })
+
   it('requires both the durable snapshot reference and the object bytes at restore time', async () => {
     const root = await mkdtemp(join(tmpdir(), 'merchant-archive-restore-'))
     try {
