@@ -4630,16 +4630,26 @@ export function resolveAuthorizationResourceScope(policy: ReturnType<typeof getM
   return { type: 'account' as const, id: exactId(params.account_id) }
 }
 
-function resolveLoadedAuthorizationResourceScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, params: Record<string, unknown>, principal?: Pick<RequestPrincipal, 'actorId'>) {
+async function resolveLoadedAuthorizationResourceScope(policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, workspaceId: string, params: Record<string, unknown>, principal?: Pick<RequestPrincipal, 'actorId'>) {
   const direct = resolveAuthorizationResourceScope(policy, workspaceId, params, principal)
   if (direct?.id || (direct?.type !== 'brand' && direct?.type !== 'account')) return direct
   const taskId = typeof params.task_id === 'string' && params.task_id.trim() ? params.task_id.trim() : undefined
   const contentVersionId = typeof params.content_version_id === 'string' && params.content_version_id.trim() ? params.content_version_id.trim() : undefined
   const contentVersion = contentVersionId ? service.contentVersions.get(contentVersionId) : undefined
   const task = taskId ? service.tasks.get(taskId) : contentVersion ? service.tasks.get(contentVersion.taskId) : undefined
-  if (!task || task.workspaceId !== workspaceId) return direct
-  if (direct.type === 'brand') return { type: 'brand' as const, id: task.brandId }
-  return { type: 'account' as const, id: task.accountId }
+  if (task?.workspaceId === workspaceId) {
+    if (direct.type === 'brand') return { type: 'brand' as const, id: task.brandId }
+    return { type: 'account' as const, id: task.accountId }
+  }
+  const productId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : undefined
+  const product = productId ? service.products.get(productId) : undefined
+  if (!product || product.workspaceId !== workspaceId) return direct
+  if (direct.type === 'account') return { type: 'account' as const, id: product.accountId }
+  const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
+  const brandIds = [...new Set(canonical.filter(item => item.sourceProductId === product.id).map(item => item.brandId))]
+  if (brandIds.length === 1) return { type: 'brand' as const, id: brandIds[0] }
+  const recordedBrandId = typeof (product as Product & { brandId?: unknown }).brandId === 'string' ? (product as Product & { brandId: string }).brandId.trim() : ''
+  return { type: 'brand' as const, id: brandIds.length === 0 && recordedBrandId ? recordedBrandId : undefined }
 }
 
 async function permissionAtomsForResolvedResource(req: IncomingMessage, workspaceId: string, policy: NonNullable<ReturnType<typeof getMcpMethodPolicy>>, resourceScope: ReturnType<typeof resolveAuthorizationResourceScope>, atoms: readonly PermissionAtom[]) {
@@ -4747,7 +4757,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const capabilityDomain = policy.capability.split('.')[0]!
   const enforce = runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(capabilityDomain)
   const principal = requestPrincipals.get(req)
-  const resourceScope = resolveLoadedAuthorizationResourceScope(policy, workspaceId, params, principal)
+  const resourceScope = await resolveLoadedAuthorizationResourceScope(policy, workspaceId, params, principal)
   const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projection.atoms)
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,

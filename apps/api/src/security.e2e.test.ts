@@ -1022,7 +1022,7 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(editorHeaders, 5.1, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'admin' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 6, 'brand-unit.list', {})).data?.result).toMatchObject({ count: 1 })
     expect((await mcp(editorHeaders, 6.1, 'workspace.health', {})).data?.result.capabilityCards.brandNavigation.items).toEqual([expect.objectContaining({ id: 'brand_access', title: '权限品', platforms: [expect.objectContaining({ platform: 'taobao', stores: [expect.objectContaining({ accountId: account.id })] })] })])
-    expect((await mcp(editorHeaders, 6.2, 'creative.brief', { product_id: hiddenSource.id, asset_type: 'banner' })).error?.code).toBe('PRODUCT_NOT_FOUND')
+    expect((await mcp(editorHeaders, 6.2, 'creative.brief', { product_id: hiddenSource.id, asset_type: 'banner' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect((await mcp(editorHeaders, 6.3, 'creative.preview', { product_id: hiddenSource.id, asset_type: 'banner' })).error?.code).toBe('PRODUCT_NOT_FOUND')
     expect((await mcp(editorHeaders, 6.4, 'catalog.image.generate', { product_id: hiddenSource.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `hidden-image-${workspaceId}` })).error?.code).toBe('PRODUCT_NOT_FOUND')
     const generatedJob = service.enqueueImageGeneration({ workspaceId, productId: source.id, idempotencyKey: `brand-image-${workspaceId}`, count: 1 })
