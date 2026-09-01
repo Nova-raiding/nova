@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 
 export type RelayEnvironment = Record<string, string | undefined>
-export interface CodexRelayValidationResult { errors: string[]; provider?: string; hostBaseUrl?: string; businessBaseUrl?: string }
+export interface CodexRelayValidationResult { errors: string[]; provider?: string; model?: string; envKey?: string; hostBaseUrl?: string; businessBaseUrl?: string }
 
 const LEGACY = ['AI_BASE_URL', 'IMAGE_BASE_URL', 'VIDEO_BASE_URL', 'AI_API_KEY', 'IMAGE_API_KEY', 'VIDEO_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY'] as const
 const BUSINESS_MODELS = ['AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL'] as const
@@ -27,7 +27,8 @@ export function validateCodexRelay(config: string, env: RelayEnvironment = proce
   if (!config.trim()) errors.push('Codex 用户配置不存在或为空')
   const provider = field(config, 'model_provider')
   if (placeholder(provider)) errors.push('Codex 配置缺少有效的 model_provider')
-  if (placeholder(field(config, 'model'))) errors.push('Codex 配置缺少有效的 host model')
+  const model = field(config, 'model')
+  if (placeholder(model)) errors.push('Codex 配置缺少有效的 host model')
   const section = provider ? config.match(new RegExp(`\\[model_providers\\.${regexLiteral(provider)}\\]([\\s\\S]*?)(?=\\n\\[|$)`, 'u'))?.[1] ?? '' : ''
   if (provider && !section) errors.push(`Codex 配置缺少 model_providers.${provider} section`)
   const baseUrl = field(section, 'base_url')
@@ -44,13 +45,69 @@ export function validateCodexRelay(config: string, env: RelayEnvironment = proce
   if (placeholder(env.MODEL_RELAY_API_KEY)) errors.push('业务模型 relay 缺少 MODEL_RELAY_API_KEY')
   for (const variable of BUSINESS_MODELS) if (placeholder(env[variable]?.trim())) errors.push(`业务模型 relay 缺少有效的 ${variable}`)
   for (const variable of LEGACY) if (env[variable]?.trim()) errors.push(`检测到不允许的直连模型配置：${variable}；请移除并仅使用 MODEL_RELAY_*`)
-  return { errors, provider, hostBaseUrl: baseUrl, businessBaseUrl }
+  return { errors, provider, model, envKey, hostBaseUrl: baseUrl, businessBaseUrl }
 }
 
 export function runCodexRelayValidation(configPath: string, env: RelayEnvironment = process.env) {
   const exists = existsSync(configPath)
   const result = validateCodexRelay(exists ? readFileSync(configPath, 'utf8') : '', env)
   if (!exists) result.errors.unshift(`Codex 用户配置不存在：${configPath}`)
+  return result
+}
+
+function catalogModelIds(payload: Record<string, unknown>) {
+  const entries = [...(Array.isArray(payload.data) ? payload.data : []), ...(Array.isArray(payload.models) ? payload.models : [])]
+  return new Set(entries.flatMap(entry => {
+    if (typeof entry === 'string' && entry.trim()) return [entry.trim()]
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
+    const id = (entry as Record<string, unknown>).id
+    return typeof id === 'string' && id.trim() ? [id.trim()] : []
+  }))
+}
+
+export async function probeCodexRelayCatalog(
+  result: CodexRelayValidationResult,
+  env: RelayEnvironment = process.env,
+  fetcher: typeof fetch = fetch,
+) {
+  if (result.errors.length || !result.hostBaseUrl || !result.envKey || !result.model) return result
+  const secret = env[result.envKey]?.trim()
+  if (!secret) return result
+  try {
+    const endpoint = `${result.hostBaseUrl.replace(/\/+$/u, '')}/models`
+    const response = await fetcher(endpoint, {
+      headers: { accept: 'application/json', authorization: `Bearer ${secret}` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10_000),
+    })
+    const text = await response.text()
+    if (!response.ok) {
+      result.errors.push(`Codex host relay /models 返回 HTTP ${response.status}`)
+      return result
+    }
+    if (Buffer.byteLength(text, 'utf8') > 2 * 1024 * 1024) {
+      result.errors.push('Codex host relay /models 响应超过 2MB 安全上限')
+      return result
+    }
+    let payload: unknown
+    try { payload = JSON.parse(text) } catch {
+      result.errors.push('Codex host relay /models 未返回合法 JSON')
+      return result
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      result.errors.push('Codex host relay /models 返回的目录不是对象')
+      return result
+    }
+    const catalog = payload as Record<string, unknown>
+    if (!Array.isArray(catalog.data)) result.errors.push('Codex host relay /models 缺少 OpenAI data 数组')
+    // Codex App 0.151 dynamically refreshes the provider catalog from this
+    // additional field. A relay can satisfy the public OpenAI data[] contract
+    // yet still leave the desktop app on a stale cross-provider model cache.
+    if (!Array.isArray(catalog.models)) result.errors.push('Codex host relay /models 与当前 Codex App 目录契约不兼容：缺少顶层 models 数组')
+    if (!catalogModelIds(catalog).has(result.model)) result.errors.push(`Codex host relay /models 未声明当前 host model：${result.model}`)
+  } catch (error) {
+    result.errors.push(`Codex host relay /models 探测失败：${error instanceof Error && error.name === 'TimeoutError' ? '请求超时' : '连接失败'}`)
+  }
   return result
 }
 
@@ -90,7 +147,8 @@ function resolveCliEnvironment(): RelayEnvironment {
 
 if (resolve(process.argv[1] ?? '') === resolve(fileURLToPath(import.meta.url))) {
   const path = resolve(process.env.CODEX_CONFIG_PATH?.trim() || `${homedir()}/.codex/config.toml`)
-  const result = runCodexRelayValidation(path, resolveCliEnvironment())
+  const environment = resolveCliEnvironment()
+  const result = await probeCodexRelayCatalog(runCodexRelayValidation(path, environment), environment)
   if (result.errors.length) {
     console.error('codex relay validation failed')
     for (const error of result.errors) console.error(`- ${error}`)
