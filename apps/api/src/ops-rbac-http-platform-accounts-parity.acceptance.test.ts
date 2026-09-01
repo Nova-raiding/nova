@@ -54,6 +54,36 @@ async function callMcp(base: string, token: string, workspaceId: string) {
   return { response, body: await response.json() as Envelope }
 }
 
+async function callTaskTimelineHttp(base: string, token: string, workspaceId: string, taskId: string) {
+  const response = await fetch(`${base}/v1/tasks/${encodeURIComponent(taskId)}/timeline`, {
+    headers: {
+      authorization: `Bearer ${token}`,
+      'x-workspace-id': workspaceId,
+      'x-ops-workbench': 'workspace',
+    },
+  })
+  return { response, body: await response.json() as Envelope }
+}
+
+async function callTaskTimelineMcp(base: string, token: string, workspaceId: string, taskId: string) {
+  const response = await fetch(`${base}/mcp`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      'x-workspace-id': workspaceId,
+      'x-ops-workbench': 'workspace',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: `task-timeline-cross-tenant-${Date.now()}`,
+      method: 'task.timeline',
+      params: { task_id: taskId },
+    }),
+  })
+  return { response, body: await response.json() as Envelope }
+}
+
 function configureToken(token: string, actorId: string, workspaces: string[], extra: Record<string, unknown> = {}) {
   const configured = JSON.parse(process.env.API_AUTH_TOKENS ?? '{}') as Record<string, unknown>
   configured[token] = { workspaces, actor_id: actorId, roles: ['merchant_admin'], workbenches: ['workspace'], ...extra }
@@ -148,5 +178,35 @@ describe('Ops HTTP/MCP platform account list parity', () => {
     expect(denialAudits).toEqual(expect.arrayContaining([
       expect.objectContaining({ actorId: deniedActorId, after: expect.objectContaining({ result: 'deny', reason_code: 'AUTHZ_EXPLICIT_DENY', policy_version: AUTHZ_POLICY_VERSION, decision_id: expect.any(String) }) }),
     ]))
+  })
+
+  it('keeps a foreign task account inaccessible over HTTP and MCP without leaking the foreign tenant', async () => {
+    const workspaceId = `ws_task_scope_owner_${Date.now()}`
+    const foreignWorkspaceId = `ws_task_scope_foreign_${Date.now()}`
+    const actorId = `task-scope-owner-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    const foreignAccount = service.registerPlatformAccount({ workspaceId: foreignWorkspaceId, platform: 'taobao', remoteAccountId: `task-scope-foreign-${foreignWorkspaceId}`, credentialRef: `vault://task-scope/${foreignWorkspaceId}` })
+    const foreignProduct = service.importProduct({ workspaceId: foreignWorkspaceId, platform: 'taobao', accountId: foreignAccount.id, localProductKey: `task-scope-product-${foreignWorkspaceId}`, title: '跨租户任务商品', stock: 1 })
+    const foreignTask = service.createTask({ workspaceId: foreignWorkspaceId, productId: foreignProduct.id, platform: 'taobao', accountId: foreignAccount.id })
+    configureToken('task-scope-owner-token', actorId, [workspaceId])
+    const base = await start()
+
+    const [http, mcp] = await Promise.all([
+      callTaskTimelineHttp(base, 'task-scope-owner-token', workspaceId, foreignTask.id),
+      callTaskTimelineMcp(base, 'task-scope-owner-token', workspaceId, foreignTask.id),
+    ])
+
+    for (const result of [http, mcp]) {
+      expect(result.response.status, JSON.stringify(result.body)).toBe(403)
+      expect(result.body.data).toBeNull()
+      expect(result.body.error).toMatchObject({ code: 'FORBIDDEN' })
+      expect(JSON.stringify(result.body)).not.toContain(foreignWorkspaceId)
+      expect(JSON.stringify(result.body)).not.toContain(foreignAccount.id)
+      expect(result.body.request_id).toMatch(/^req_/)
+      expect(result.body.trace_id).toBe(result.body.request_id)
+      expect(result.body.workspace_id).toBe(workspaceId)
+    }
+    expect(http.body.error?.details?.reason_code).toBe(mcp.body.error?.details?.reason_code)
+    expect(http.body.error?.details?.required_scope).toBe(mcp.body.error?.details?.required_scope)
   })
 })
