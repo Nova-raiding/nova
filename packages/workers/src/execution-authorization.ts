@@ -43,6 +43,8 @@ export interface WorkerExecutionAuthorizationGuard {
   assertAuthorized(event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal): Promise<WorkerAuthorizationRecheck>
 }
 
+export type AuthorizedWorkerProviderCall<T> = (authorization: WorkerAuthorizationRecheck, signal?: AbortSignal) => Promise<T>
+
 /**
  * The last in-process boundary before a worker is allowed to invoke an
  * external system. Implementations must persist the reservation; an in-memory
@@ -153,6 +155,25 @@ export function createUnavailableExecutionAuthorizationGuard(reason = 'authorita
   return createExecutionAuthorizationGuard(async () => {
     throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RECHECK_UNAVAILABLE', reason, { retryable: true })
   })
+}
+
+/**
+ * The execution-check boundary for queued work. A durable event may have been
+ * authorized when it was queued, but the grant, scope, or resource revision
+ * can change before a worker handles it. Keep the provider callback inside
+ * this helper so callers cannot accidentally invoke it before the fresh
+ * authoritative check has completed.
+ */
+export async function executeAfterAuthorizationCheck<T>(input: {
+  guard: WorkerExecutionAuthorizationGuard
+  event: DurableOutboxEvent
+  operation: CriticalWorkerOperation
+  providerCall: AuthorizedWorkerProviderCall<T>
+  signal?: AbortSignal
+}): Promise<T> {
+  const authorization = await input.guard.assertAuthorized(input.event, input.operation, input.signal)
+  input.signal?.throwIfAborted()
+  return input.providerCall(authorization, input.signal)
 }
 
 export function parseWorkerAuthorizationSnapshot(event: DurableOutboxEvent, operation: CriticalWorkerOperation): WorkerAuthorizationSnapshot {

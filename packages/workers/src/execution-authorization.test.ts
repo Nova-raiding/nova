@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DurableOutboxEvent } from './durable.js'
-import { createExecutionAuthorizationGuard, createUnavailableExecutionAuthorizationGuard, type WorkerAuthorizationSnapshot } from './execution-authorization.js'
+import { createExecutionAuthorizationGuard, createUnavailableExecutionAuthorizationGuard, executeAfterAuthorizationCheck, type WorkerAuthorizationSnapshot } from './execution-authorization.js'
 
 const now = Date.parse('2026-08-31T10:00:00.000Z')
 function event(overrides: Record<string, unknown> = {}): DurableOutboxEvent {
@@ -42,6 +42,27 @@ describe('worker execution-time authorization', () => {
     await expect(createExecutionAuthorizationGuard(async () => ({ ...base, resourceId: 'publish_2' }), { now: () => now }).assertAuthorized(event(), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID' })
     await expect(createExecutionAuthorizationGuard(async () => ({ ...base, scopeHash: 'b'.repeat(64) }), { now: () => now }).assertAuthorized(event(), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID' })
     await expect(createExecutionAuthorizationGuard(async () => ({ ...base, identityId: 'identity_2' }), { now: () => now }).assertAuthorized(event(), 'publish.execute')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID' })
+  })
+
+  it('does not call the provider for a queued event after its grant is revoked', async () => {
+    const provider = vi.fn(async () => 'sent')
+    const guard = createExecutionAuthorizationGuard(async () => ({
+      recheckId: 'decision_execute', actorId: 'merchant_1', identityId: 'identity_1', workspaceId: 'ws_a', workbench: 'workspace', contextId: 'workspace:ws_a', contextVersion: 'ctx_8', policyVersion: 'policy_4', grantRevision: 'grant_12', grantIds: [], scopeHash: 'a'.repeat(64), capability: 'publish.execute', resourceId: 'publish_1', resourceRevision: '1', requestId: 'req_1', traceId: 'trace_1', authorized: false, checkedAt: '2026-08-31T09:59:59.000Z',
+    }), { now: () => now })
+    await expect(executeAfterAuthorizationCheck({ guard, event: event({}), operation: 'publish.execute', providerCall: provider })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_DENIED', retryable: false })
+    expect(provider).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['scope', { scopeHash: 'b'.repeat(64), resourceRevision: undefined }],
+    ['revision', { scopeHash: undefined, resourceRevision: '2' }],
+  ])('does not call the provider for a queued event after %s mismatch', async (_kind, mismatch) => {
+    const provider = vi.fn(async () => 'sent')
+    const guard = createExecutionAuthorizationGuard(async ({ snapshot }) => ({
+      recheckId: 'decision_execute', actorId: snapshot.actorId, identityId: snapshot.identityId, workspaceId: 'ws_a', workbench: 'workspace', contextId: 'workspace:ws_a', contextVersion: 'ctx_8', policyVersion: 'policy_4', grantRevision: 'grant_12', grantIds: snapshot.grantIds, scopeHash: mismatch.scopeHash ?? snapshot.scopeHash, capability: 'publish.execute', resourceId: 'publish_1', resourceRevision: mismatch.resourceRevision ?? snapshot.resourceRevision, requestId: snapshot.requestId, traceId: snapshot.traceId, authorized: true, checkedAt: '2026-08-31T09:59:59.000Z',
+    }), { now: () => now })
+    await expect(executeAfterAuthorizationCheck({ guard, event: event({}), operation: 'publish.execute', providerCall: provider })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID', retryable: true })
+    expect(provider).not.toHaveBeenCalled()
   })
 
   it('exposes an explicit unavailable-authority blocker instead of manufacturing an allow', async () => {
