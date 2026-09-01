@@ -439,6 +439,7 @@ describe('API HTTP vertical slice', () => {
     expect(campaignResult).toMatchObject({ storage: 'memory', durable: false, state: 'draft', revision: 1, productIds: [product.id] })
     expect(campaignResult.delivery_manifest).toMatchObject({ workspaceId, campaignId: campaignResult.id, state: 'blocked', revision: expect.any(Number), externallyUnverified: true, validation: { valid: false, code: 'CAMPAIGN_ITEM_EVIDENCE_REQUIRED' }, items: [{ productId: product.id, state: 'blocked', nextAction: 'resolve_review' }] })
     expect(JSON.stringify(campaignResult.delivery_manifest)).not.toContain('production_canary')
+    expect(JSON.stringify(campaignResult.delivery_manifest)).not.toContain('planned-listing:')
     expect(JSON.stringify(campaignResult.delivery_manifest)).not.toContain('durable://batch_campaigns')
     const campaignList = await call(3.005, 'campaign.batch.list', { platform: 'taobao', account_id: account.id })
     expect(campaignList.error).toBeNull()
