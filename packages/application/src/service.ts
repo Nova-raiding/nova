@@ -15,6 +15,7 @@ import { planDeliveryVariants, type DeliveryVariantPlan, type DeliveryVariantPla
 import { resolvePlatformMediaSpecifications, type PlatformMediaSpecRuntimeRecord } from '../../../packages/multimodal/src/platform-media-spec-runtime.js'
 import { planAssetPreviews, type AssetPreviewPlan } from '../../../packages/multimodal/src/asset-preview-planner.js'
 import { buildCanonicalExecutionBinding, sameCanonicalExecutionBinding, type CanonicalExecutionBinding } from './canonical-execution-binding.js'
+import { orchestrateDetailPageModules } from './detail-page-orchestrator.js'
 
 export type Platform = 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin'
 const supportedPlatforms: readonly Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
@@ -3482,7 +3483,8 @@ export class MerchantService {
     if (!replacement) throw new DomainError('CONTENT_MODULE_NOT_FOUND', `不支持局部重生成模块: ${moduleKey}`, 404, { module_key: moduleKey, available_modules: defaults.map(module => module.key) })
     const existingModules = source.body.modules?.length ? source.body.modules : contentModules(frozenProduct, task.platform)
     if (!existingModules.some(module => module.key === moduleKey)) throw new DomainError('CONTENT_MODULE_NOT_FOUND', `源版本不存在模块: ${moduleKey}`, 404, { module_key: moduleKey })
-    const body = { ...clone(source.body), modules: existingModules.map(module => module.key === moduleKey ? clone(replacement) : clone(module)) }
+    const regeneratedModules = existingModules.map(module => module.key === moduleKey ? clone(replacement) : clone(module))
+    const body = { ...clone(source.body), modules: orchestrateContentModules(regeneratedModules, frozenProduct) }
     const version: ContentVersion = { id: id('cv'), taskId: task.id, parentId: source.id, version: this.nextContentVersionNumber(task.workspaceId, task.id), body, lockedFields: [...locked], factVersionIds: [...source.factVersionIds], ruleVersionIds: [...source.ruleVersionIds], ...(source.brandSnapshot ? { brandSnapshot: clone(source.brandSnapshot) } : {}), versionVector: contentVersionVector({ task, product: frozenProduct, factVersionIds: source.factVersionIds, ruleVersionIds: source.ruleVersionIds, taskInputSnapshotId: source.versionVector?.taskInputSnapshotId, createdBy: 'user', reason: input.reason, modelId: source.versionVector?.modelId }), state: 'review_required', revision: 1 }
     this.contentVersions.set(version.id, version)
     task.contentVersionId = version.id
@@ -4582,10 +4584,11 @@ function contentModules(product: Product, platform: Platform): ContentModule[] {
   ]
   if (product.images?.length) modules.push({ key: 'real_images', title: '真实图片建议', purpose: '说明详情页各模块应使用的真实商品图', body: product.images.map((image, index) => `图片${index + 1}：${image}`).join('\n'), factSourceIds: source })
   modules.push({ key: 'platform', title: '平台交付说明', purpose: '明确目标平台和人工审核边界', body: `${platform} 内容需经过平台规则预检和人工确认；无事实来源的模块不进入正式交付。`, factSourceIds: source })
-  return modules.map(module => module.body.startsWith('[待确认]')
+  const contractedModules = modules.map(module => module.body.startsWith('[待确认]')
     ? { ...module, contentKind: 'pending' as const, pendingReason: module.body.replace(/^\[待确认\]\s*/u, '').replace(/[。.]$/u, '') }
     : { ...module, contentKind: 'fact' as const })
     .map(module => ({ ...module, decisionContract: detailPageDecisionContract(module, product, platform) }))
+  return orchestrateContentModules(contractedModules, product)
 }
 
 function defaultStaticBrief(platform: Platform, productTitle: string, sellingPoints: string[], price?: number, promotionExpression?: string): StaticBrief {
@@ -4608,7 +4611,10 @@ function defaultStaticBrief(platform: Platform, productTitle: string, sellingPoi
 }
 
 function withContentModules(body: ContentVersion['body'], platform: Platform, product: Product): ContentVersion['body'] {
-  return body.modules?.length ? body : { ...body, modules: contentModules(product, platform) }
+  const modules = body.modules === undefined
+    ? contentModules(product, platform)
+    : orchestrateContentModules(body.modules, product)
+  return { ...body, modules }
 }
 
 function withStaticBrief(body: ContentVersion['body'], platform: Platform, product: Product): ContentVersion['body'] {
@@ -4650,18 +4656,22 @@ function normalizeCodexBody(body: ContentVersion['body'], platform: Platform, pr
       ...(candidate.decisionContract && typeof candidate.decisionContract === 'object' && !Array.isArray(candidate.decisionContract) ? { decisionContract: clone(candidate.decisionContract) as NonNullable<ContentModule['decisionContract']> } : {}),
     }
   })
-  const defaults = contentModules(product, platform)
-  const customByKey = new Map(modules.map(module => [module.key, module]))
-  const normalizedModules = [
-    ...defaults.map(module => customByKey.get(module.key) ?? module),
-    ...modules.filter(module => !defaults.some(defaultModule => defaultModule.key === module.key)),
-  ]
+  // An absent modules field means the producer delegated to the deterministic
+  // fixture template. A present field is the producer's explicit page plan:
+  // preserve its omissions and only apply evidence-aware ordering/filtering.
+  const normalizedModules = body.modules === undefined
+    ? contentModules(product, platform)
+    : orchestrateContentModules(modules, product)
   const candidateBrief = body.brief as unknown
   const fallbackBrief = defaultStaticBrief(platform, product.title, body.sellingPoints, product.price)
   const brief = candidateBrief && typeof candidateBrief === 'object' && !Array.isArray(candidateBrief)
     ? normalizeStaticBrief(candidateBrief as Record<string, unknown>, fallbackBrief)
     : fallbackBrief
   return { ...body, modules: normalizedModules, brief }
+}
+
+function orchestrateContentModules(modules: readonly ContentModule[], product: Product): ContentModule[] {
+  return orchestrateDetailPageModules(modules, product.category ?? '').modules
 }
 
 function bodyTextStartsPending(value: unknown): boolean {

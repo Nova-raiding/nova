@@ -5,6 +5,7 @@ import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecyclePort
 import type { CampaignDeliveryManifestInput } from './campaign-delivery-manifest.js'
 import { verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest } from '../../multimodal/src/delivery-bundle-manifest.js'
 import { platformMediaSpecImmutableDigest, type PlatformMediaSpecRuntimeRecord } from '../../multimodal/src/platform-media-spec-runtime.js'
+import type { ContentModule, DetailPageEvidenceStatus } from '../../ai/src/generator.js'
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 
@@ -34,6 +35,32 @@ function runtimeMediaSpec(overrides: Partial<PlatformMediaSpecRuntimeRecord> = {
   }
   const value = { ...base, ...overrides } as Omit<PlatformMediaSpecRuntimeRecord, 'immutableDigest'>
   return { ...value, immutableDigest: overrides.immutableDigest ?? platformMediaSpecImmutableDigest(value) }
+}
+
+function decisionModule(
+  key: string,
+  priority: number,
+  input: { optional?: boolean; status?: DetailPageEvidenceStatus } = {},
+): ContentModule {
+  const sourceId = 'product:prod_fixture_1:v1'
+  const status = input.status ?? 'verified'
+  return {
+    key,
+    title: key,
+    purpose: `${key} 页面任务`,
+    body: `${key} 已确认正文`,
+    factSourceIds: [sourceId],
+    contentKind: 'fact',
+    decisionContract: {
+      buyerQuestion: `${key} 回答什么问题？`,
+      pageTask: `${key} 页面任务`,
+      claim: { text: `${key} 已确认正文`, factSourceIds: [sourceId], platforms: ['taobao'], limitations: [] },
+      evidence: { type: 'parameter', sourceIds: status === 'verified' ? [sourceId] : [], status },
+      visualContract: { requiredElements: [key], protectedElements: [], prohibitedImplications: [], accessibilityText: `${key} 可访问文本` },
+      priority,
+      optional: input.optional ?? false,
+    },
+  }
 }
 
 function readStoredZip(input: Uint8Array): Map<string, Uint8Array> {
@@ -1253,6 +1280,45 @@ describe('MerchantService', () => {
     expect(service.completeGeneration({ workspaceId: 'ws_demo', jobId: first.id, body: { title: '不同标题', detail: '不同详情', sellingPoints: ['不同卖点'] } }).version.id).toBe(completed.version.id)
   })
 
+  it('applies the same explicit dynamic module plan to sync, Codex and async generation', async () => {
+    const explicitModules = [
+      decisionModule('late_verified', 30),
+      decisionModule('optional_missing', 1, { optional: true, status: 'missing' }),
+      decisionModule('early_verified', 10),
+      decisionModule('required_missing', 15, { status: 'missing' }),
+      decisionModule('required_conflict', 20, { status: 'conflict' }),
+      decisionModule('required_expired', 25, { status: 'expired' }),
+    ]
+    const expectedKeys = ['early_verified', 'required_missing', 'required_conflict', 'required_expired', 'late_verified']
+    const generatedBody = { title: '动态详情页', detail: '只保留模型明确编排的模块', sellingPoints: ['有证据的卖点'], modules: explicitModules }
+
+    const syncService = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => generatedBody } })
+    syncService.products.get('prod_fixture_1')!.category = '数码'
+    const syncTask = syncService.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    syncService.selectDirection(syncTask.id, 'A')
+    syncService.confirmProductionPlan('ws_demo', syncTask.id, 'merchant')
+    const syncVersion = await syncService.generateDraft(syncTask.id)
+    expect(syncVersion.body.modules?.map(module => module.key)).toEqual(expectedKeys)
+    expect(syncVersion.body.modules).not.toContainEqual(expect.objectContaining({ key: 'hero' }))
+
+    const codexService = new MerchantService({ fixtureMode: true })
+    codexService.products.get('prod_fixture_1')!.category = '数码'
+    const codexTask = codexService.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    codexService.selectDirection(codexTask.id, 'A')
+    codexService.confirmProductionPlan('ws_demo', codexTask.id, 'merchant')
+    const codexVersion = codexService.commitCodexDraft({ taskId: codexTask.id, body: generatedBody })
+    expect(codexVersion.body.modules?.map(module => module.key)).toEqual(expectedKeys)
+
+    const asyncService = new MerchantService({ fixtureMode: true })
+    asyncService.products.get('prod_fixture_1')!.category = '数码'
+    const asyncTask = asyncService.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    asyncService.selectDirection(asyncTask.id, 'A')
+    asyncService.confirmProductionPlan('ws_demo', asyncTask.id, 'merchant')
+    const job = asyncService.enqueueGeneration({ workspaceId: 'ws_demo', taskId: asyncTask.id, idempotencyKey: 'dynamic-modules' })
+    const asyncVersion = asyncService.completeGeneration({ workspaceId: 'ws_demo', jobId: job.id, body: generatedBody }).version
+    expect(asyncVersion.body.modules?.map(module => module.key)).toEqual(expectedKeys)
+  })
+
   it('serializes synchronous generation retries and replays the same content version', async () => {
     const service = new MerchantService({ fixtureMode: true })
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
@@ -1778,6 +1844,32 @@ describe('MerchantService', () => {
     expect(JSON.parse(json.body).brief).toMatchObject({ placement: expect.any(String) })
     const markdown = service.exportContent('ws_demo', version.id, 'markdown')
     expect(markdown.body).toContain('静态素材 Brief')
+  })
+
+  it('uses the cookware rhythm for fixture modules and re-orchestrates a local module regeneration', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const product = service.products.get('prod_fixture_1')!
+    product.category = '厨房锅具'
+    product.attributes = { 材质: '已确认钛合金', 功能: '已确认日常煎炒', 规格: '30CM' }
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: product.id, platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    const draft = service.createDraft(task.id)
+
+    expect(draft.body.modules?.slice(0, 7).map(module => module.key)).toEqual([
+      'hero', 'details_craft', 'selling_points', 'solution', 'specifications', 'size_guide', 'sku',
+    ])
+    const sourceModules = draft.body.modules!
+    const details = sourceModules.find(module => module.key === 'details_craft')!
+    const hero = sourceModules.find(module => module.key === 'hero')!
+    draft.body.modules = [details, hero]
+
+    const regenerated = service.regenerateContentModule({
+      workspaceId: 'ws_demo',
+      sourceVersionId: draft.id,
+      moduleKey: 'details_craft',
+      reason: '验证局部重生成沿用动态编排',
+    })
+    expect(regenerated.version.body.modules?.map(module => module.key)).toEqual(['hero', 'details_craft'])
   })
 
   it('does not upgrade or mutate historical versions during a read', () => {
