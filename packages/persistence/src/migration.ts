@@ -400,6 +400,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const enforceModelUsageBudgetRunLinkage = await readFile(new URL('./migrations/118_enforce_model_usage_budget_run_linkage.sql', import.meta.url), 'utf8')
   const authorizationExecutionReservations = await readFile(new URL('./migrations/120_authorization_execution_reservations.sql', import.meta.url), 'utf8')
   const authorizationExecutionReservationsAcl = await readFile(new URL('./migrations/121_authorization_execution_reservations_acl.sql', import.meta.url), 'utf8')
+  const authorizationExecutionDecisionCorrelation = await readFile(new URL('./migrations/142_authorization_execution_decision_correlation.sql', import.meta.url), 'utf8')
   const campaignItemLegacyCanonicalIntegrity = await readFile(new URL('./migrations/122_campaign_item_legacy_canonical_integrity.sql', import.meta.url), 'utf8')
   const commercialOrderSnapshots = await readFile(new URL('./migrations/123_commercial_order_snapshots.sql', import.meta.url), 'utf8')
   const blockPlatformRoleInWorkspaceMembers = await readFile(new URL('./migrations/124_block_platform_role_in_workspace_members.sql', import.meta.url), 'utf8')
@@ -419,6 +420,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const interactiveConfirmationTicketReservations = await readFile(new URL('./migrations/139_interactive_confirmation_ticket_reservations.sql', import.meta.url), 'utf8')
   const interactiveConfirmationTicketAclGuard = await readFile(new URL('./migrations/141_interactive_confirmation_ticket_acl_guard.sql', import.meta.url), 'utf8')
   const interactiveConfirmationTicketFencing = await readFile(new URL('./migrations/140_interactive_confirmation_ticket_fencing.sql', import.meta.url), 'utf8')
+  const requireOpsPlatformScopeForSummary = await readFile(new URL('./migrations/143_require_ops_platform_scope_for_summary.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -561,6 +563,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 139, name: 'interactive_confirmation_ticket_reservations', sql: interactiveConfirmationTicketReservations },
     { version: 140, name: 'interactive_confirmation_ticket_fencing', sql: interactiveConfirmationTicketFencing },
     { version: 141, name: 'interactive_confirmation_ticket_acl_guard', sql: interactiveConfirmationTicketAclGuard },
+    { version: 142, name: 'authorization_execution_decision_correlation', sql: authorizationExecutionDecisionCorrelation },
+    { version: 143, name: 'require_ops_platform_scope_for_summary', sql: requireOpsPlatformScopeForSummary },
   ]
 }
 

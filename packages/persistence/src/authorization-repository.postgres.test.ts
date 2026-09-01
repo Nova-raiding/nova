@@ -13,7 +13,7 @@ class ReservationClient implements SqlClient {
   private reservationExists = false
   constructor(private readonly revision = 2) {}
   private readonly row = {
-    reservationId: 'reservation-120', eventId: 'event-120', subjectIdentityId: subject,
+    reservationId: 'reservation-120', eventId: 'event-120', decisionId: 'decision-120', subjectIdentityId: subject,
     workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120',
     scopeHash, grantId, authorizationRevision: 2, grantRevision: 2, reservedAt: now,
   }
@@ -40,7 +40,7 @@ describe('PostgresAuthorizationRepository.reserveExecution', () => {
     const client = new ReservationClient()
     const pool: SqlPool = { connect: async () => client }
     const repository = new PostgresAuthorizationRepository(pool, () => new Date(now))
-    const input = { reservationId: 'reservation-120', eventId: 'event-120', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120', scopeHash, expectedAuthorizationRevision: 2, grantId, expectedGrantRevision: 2, at: now }
+    const input = { reservationId: 'reservation-120', eventId: 'event-120', decisionId: 'decision-120', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120', scopeHash, expectedAuthorizationRevision: 2, grantId, expectedGrantRevision: 2, at: now }
 
     await expect(repository.reserveExecution(input)).resolves.toMatchObject({ reservationId: input.reservationId, eventId: input.eventId, grantRevision: 2, authorizationRevision: 2, reservedAt: now })
     await expect(repository.reserveExecution(input)).resolves.toMatchObject({ reservationId: input.reservationId, eventId: input.eventId })
@@ -51,13 +51,13 @@ describe('PostgresAuthorizationRepository.reserveExecution', () => {
   it('fails closed when the subject revision is stale and never inserts', async () => {
     const client = new ReservationClient(2)
     const repository = new PostgresAuthorizationRepository({ connect: async () => client }, () => new Date(now))
-    await expect(repository.reserveExecution({ reservationId: 'reservation-stale', eventId: 'event-stale', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120', scopeHash, expectedAuthorizationRevision: 1, grantId, expectedGrantRevision: 1, at: now })).resolves.toBeUndefined()
+    await expect(repository.reserveExecution({ reservationId: 'reservation-stale', eventId: 'event-stale', decisionId: 'decision-stale', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120', scopeHash, expectedAuthorizationRevision: 1, grantId, expectedGrantRevision: 1, at: now })).resolves.toBeUndefined()
     expect(client.queries.some(query => query.startsWith('INSERT INTO authorization_execution_reservations'))).toBe(false)
   })
 
   it('rejects invalid reservation identity before opening a transaction', async () => {
     const connect = async () => { throw new Error('must not connect') }
     const repository = new PostgresAuthorizationRepository({ connect }, () => new Date(now))
-    await expect(repository.reserveExecution({ reservationId: ' ', eventId: 'event', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'cap', resourceId: 'task', scopeHash, expectedAuthorizationRevision: 0 })).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' } satisfies Partial<AuthorizationRepositoryError>)
+    await expect(repository.reserveExecution({ reservationId: ' ', eventId: 'event', decisionId: 'decision', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'cap', resourceId: 'task', scopeHash, expectedAuthorizationRevision: 0 })).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' } satisfies Partial<AuthorizationRepositoryError>)
   })
 })

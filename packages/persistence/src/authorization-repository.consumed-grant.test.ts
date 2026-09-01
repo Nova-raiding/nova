@@ -28,6 +28,7 @@ const issueInput = {
 const reservationInput = (grant: { id: string; scopeHash: string; revision: number; authorizationRevision: number }) => ({
   reservationId: 'reservation-consumed-grant',
   eventId: 'event-consumed-grant',
+  decisionId: 'decision-consumed-grant',
   subjectIdentityId,
   workspaceId,
   capability,
@@ -85,7 +86,7 @@ describe('authorization execution reservation and consumed grants', () => {
         }
         if (text.includes('FROM authorization_revisions')) return { rows: [{ revision: 2 }] as Row[] }
         if (text.startsWith('INSERT INTO authorization_execution_reservations')) return {
-          rows: [{ reservationId: 'reservation-pg-consumed', eventId: 'event-pg-consumed', subjectIdentityId, workspaceId, capability, resourceId: 'task-consumed-grant', scopeHash, grantId, authorizationRevision: 2, grantRevision: 2, reservedAt: at }] as Row[],
+          rows: [{ reservationId: 'reservation-pg-consumed', eventId: 'event-pg-consumed', decisionId: 'decision-pg-consumed', subjectIdentityId, workspaceId, capability, resourceId: 'task-consumed-grant', scopeHash, grantId, authorizationRevision: 2, grantRevision: 2, reservedAt: at }] as Row[],
         }
         throw new Error(`unexpected SQL: ${text}`)
       },
@@ -97,6 +98,7 @@ describe('authorization execution reservation and consumed grants', () => {
     await expect(repository.reserveExecution({
       reservationId: 'reservation-pg-consumed',
       eventId: 'event-pg-consumed',
+      decisionId: 'decision-pg-consumed',
       subjectIdentityId,
       workspaceId,
       capability,

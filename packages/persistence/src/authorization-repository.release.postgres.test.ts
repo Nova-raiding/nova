@@ -38,14 +38,15 @@ describe('authorization execution reservation PostgreSQL release acceptance', ()
       const admittedAt = new Date(Date.now() + 1_000).toISOString()
       const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: identityId, workspaceId: 'ws_reservation_a', capability: 'customer.content.update', scopeHash: authorizationScopeHash(scope), expectedRevision: 1, actorId: 'release-worker', reason: 'admit reservation release event', at: admittedAt })
       expect(consumed).toMatchObject({ id: grant.id, useCount: 1, revision: 2, authorizationRevision: '2' })
-      const input = { reservationId: `reservation-${identityId}`, eventId: `event-${identityId}`, subjectIdentityId: identityId, workspaceId: 'ws_reservation_a', capability: 'customer.content.update', resourceId: 'task-reservation-release', scopeHash: authorizationScopeHash(scope), expectedAuthorizationRevision: 2, grantId: grant.id, expectedGrantRevision: 2, at: admittedAt }
+      const input = { reservationId: `reservation-${identityId}`, eventId: `event-${identityId}`, decisionId: `decision-${identityId}`, subjectIdentityId: identityId, workspaceId: 'ws_reservation_a', capability: 'customer.content.update', resourceId: 'task-reservation-release', scopeHash: authorizationScopeHash(scope), expectedAuthorizationRevision: 2, grantId: grant.id, expectedGrantRevision: 2, at: admittedAt }
       const first = await repository.reserveExecution(input)
       expect(first).toMatchObject({ reservationId: input.reservationId, eventId: input.eventId, grantRevision: 2 })
       await expect(repository.reserveExecution(input)).resolves.toMatchObject({ reservationId: input.reservationId, eventId: input.eventId })
       await repository.revokeGrant({ id: grant.id, subjectIdentityId: identityId, actorId: 'release-approver', reason: 'release reservation revoke', expectedRevision: 2, expectedAuthorizationRevision: 2 })
       await expect(repository.reserveExecution(input)).resolves.toMatchObject({ reservationId: input.reservationId, eventId: input.eventId })
-      const row = await database.query(`SELECT reservation_id,event_id,grant_id,authorization_revision,grant_revision FROM authorization_execution_reservations`)
+      const row = await database.query(`SELECT reservation_id,event_id,decision_id,grant_id,authorization_revision,grant_revision FROM authorization_execution_reservations`)
       expect(row.rows).toHaveLength(1)
+      expect(row.rows[0]).toMatchObject({ decision_id: input.decisionId })
     } finally {
       await ops?.end()
       await database?.end()

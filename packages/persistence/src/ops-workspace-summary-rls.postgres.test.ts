@@ -64,6 +64,7 @@ describe('merchant_ops workspace summary RLS boundary', () => {
 
       ops = new Pool({ connectionString: connection(base, databaseName, 'merchant_ops', 'merchant_ops_local_only'), max: 1 })
 
+      expect((await ops.query('SELECT workspace_id FROM ops_workspace_summaries')).rows).toEqual([])
       await ops.query('BEGIN')
       await ops.query("SELECT set_config('app.platform_scope', 'platform_ops', true)")
       const summary = await ops.query<{ workspace_id: string; plan_name: string; member_count: number }>(

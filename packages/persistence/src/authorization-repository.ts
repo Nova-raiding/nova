@@ -84,6 +84,7 @@ export interface RevokeAuthorizationGrantInput { id: string; subjectIdentityId: 
 export interface AuthorizationExecutionReservation {
   reservationId: string
   eventId: string
+  decisionId: string
   subjectIdentityId: string
   workspaceId: string
   capability: string
@@ -96,6 +97,7 @@ export interface AuthorizationExecutionReservation {
 export interface ReserveAuthorizationExecutionInput {
   reservationId: string
   eventId: string
+  decisionId: string
   subjectIdentityId: string
   workspaceId: string
   capability: string
@@ -230,11 +232,11 @@ export class MemoryAuthorizationRepository implements AuthorizationRepository {
     this.grants.set(row.id, revoked); return clone(revoked)
   }
   async reserveExecution(input: ReserveAuthorizationExecutionInput) {
-    requireText(input.reservationId, 1, 255); requireText(input.eventId, 1, 255); requireText(input.subjectIdentityId, 1, 255); requireText(input.workspaceId, 1, 255); requireText(input.capability, 1, 255); requireText(input.resourceId, 1, 255); requireExpectedRevision(input.expectedAuthorizationRevision)
+    requireText(input.reservationId, 1, 255); requireText(input.eventId, 1, 255); requireText(input.decisionId, 1, 255); requireText(input.subjectIdentityId, 1, 255); requireText(input.workspaceId, 1, 255); requireText(input.capability, 1, 255); requireText(input.resourceId, 1, 255); requireExpectedRevision(input.expectedAuthorizationRevision)
     if (!/^[a-f0-9]{64}$/u.test(input.scopeHash)) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
     const existing = this.executionReservations.get(input.reservationId)
     if (existing) {
-      const same = existing.eventId === input.eventId && existing.subjectIdentityId === input.subjectIdentityId && existing.workspaceId === input.workspaceId && existing.capability === input.capability && existing.resourceId === input.resourceId && existing.scopeHash === input.scopeHash
+      const same = existing.eventId === input.eventId && existing.decisionId === input.decisionId && existing.subjectIdentityId === input.subjectIdentityId && existing.workspaceId === input.workspaceId && existing.capability === input.capability && existing.resourceId === input.resourceId && existing.scopeHash === input.scopeHash
       if (!same) throw new AuthorizationRepositoryError('AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT')
       return clone(existing)
     }
@@ -257,7 +259,7 @@ export class MemoryAuthorizationRepository implements AuthorizationRepository {
     } else if (input.expectedGrantRevision !== undefined) {
       throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
     }
-    const reservation: AuthorizationExecutionReservation = { reservationId: input.reservationId, eventId: input.eventId, subjectIdentityId: input.subjectIdentityId, workspaceId: input.workspaceId, capability: input.capability, resourceId: input.resourceId, scopeHash: input.scopeHash, authorizationRevision: currentAuthorizationRevision, ...(grantRevision === undefined ? {} : { grantRevision }), reservedAt: input.at ?? this.clock().toISOString() }
+    const reservation: AuthorizationExecutionReservation = { reservationId: input.reservationId, eventId: input.eventId, decisionId: input.decisionId, subjectIdentityId: input.subjectIdentityId, workspaceId: input.workspaceId, capability: input.capability, resourceId: input.resourceId, scopeHash: input.scopeHash, authorizationRevision: currentAuthorizationRevision, ...(grantRevision === undefined ? {} : { grantRevision }), reservedAt: input.at ?? this.clock().toISOString() }
     this.executionReservations.set(input.reservationId, reservation)
     return clone(reservation)
   }
@@ -265,10 +267,10 @@ export class MemoryAuthorizationRepository implements AuthorizationRepository {
 
 type RoleRow = { id: string; subjectIdentityId: string; role: PlatformAssignedRole; assignedBy: string; reason: string; validFrom: string | Date; expiresAt: string | Date | null; revokedAt: string | Date | null; revokedBy: string | null; revocationReason: string | null; revision: number; authorizationRevision: number; createdAt: string | Date; updatedAt: string | Date }
 type GrantRow = { id: string; grantKind: AuthorizationGrantKind; accessMode: AuthorizationGrantMode; subjectIdentityId: string; workspaceId: string; capabilities: string[]; resourceScope: Record<string, unknown>; scopeHash: string; reason: string; ticketRef: string; issuedBy: string; approvedBy: string; approvedAt: string | Date; issuedAt: string | Date; expiresAt: string | Date; revokedAt: string | Date | null; revokedBy: string | null; revocationReason: string | null; maxUses: number; useCount: number; revision: number; authorizationRevision: number; createdAt: string | Date; updatedAt: string | Date }
-type AuthorizationExecutionReservationRow = { reservationId: string; eventId: string; subjectIdentityId: string; workspaceId: string; capability: string; resourceId: string; scopeHash: string; grantId: string | null; authorizationRevision: number; grantRevision: number | null; reservedAt: string | Date }
+type AuthorizationExecutionReservationRow = { reservationId: string; eventId: string; decisionId: string; subjectIdentityId: string; workspaceId: string; capability: string; resourceId: string; scopeHash: string; grantId: string | null; authorizationRevision: number; grantRevision: number | null; reservedAt: string | Date }
 const roleProjection = `id, subject_identity_id AS "subjectIdentityId", role, assigned_by AS "assignedBy", reason, valid_from AS "validFrom", expires_at AS "expiresAt", revoked_at AS "revokedAt", revoked_by AS "revokedBy", revocation_reason AS "revocationReason", revision, authorization_revision AS "authorizationRevision", created_at AS "createdAt", updated_at AS "updatedAt"`
 const grantProjection = `id, grant_kind AS "grantKind", access_mode AS "accessMode", subject_identity_id AS "subjectIdentityId", workspace_id AS "workspaceId", capabilities, resource_scope AS "resourceScope", scope_hash AS "scopeHash", reason, ticket_ref AS "ticketRef", issued_by AS "issuedBy", approved_by AS "approvedBy", approved_at AS "approvedAt", issued_at AS "issuedAt", expires_at AS "expiresAt", revoked_at AS "revokedAt", revoked_by AS "revokedBy", revocation_reason AS "revocationReason", max_uses AS "maxUses", use_count AS "useCount", revision, authorization_revision AS "authorizationRevision", created_at AS "createdAt", updated_at AS "updatedAt"`
-const authorizationExecutionReservationProjection = `reservation_id AS "reservationId", event_id AS "eventId", subject_identity_id AS "subjectIdentityId", workspace_id AS "workspaceId", capability, resource_id AS "resourceId", scope_hash AS "scopeHash", grant_id AS "grantId", authorization_revision AS "authorizationRevision", grant_revision AS "grantRevision", reserved_at AS "reservedAt"`
+const authorizationExecutionReservationProjection = `reservation_id AS "reservationId", event_id AS "eventId", decision_id AS "decisionId", subject_identity_id AS "subjectIdentityId", workspace_id AS "workspaceId", capability, resource_id AS "resourceId", scope_hash AS "scopeHash", grant_id AS "grantId", authorization_revision AS "authorizationRevision", grant_revision AS "grantRevision", reserved_at AS "reservedAt"`
 const roleFromRow = (row: RoleRow): PlatformRoleAssignment => {
   const { expiresAt, revokedAt, revokedBy, revocationReason, ...rest } = row
   return { ...rest, validFrom: iso(row.validFrom), ...(optionalIso(expiresAt) ? { expiresAt: optionalIso(expiresAt) } : {}), ...(optionalIso(revokedAt) ? { revokedAt: optionalIso(revokedAt), revokedBy: revokedBy!, revocationReason: revocationReason! } : {}), createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt) }
@@ -278,7 +280,7 @@ const grantFromRow = (row: GrantRow): AuthorizationGrant => {
   return { ...rest, approvedAt: iso(row.approvedAt), issuedAt: iso(row.issuedAt), expiresAt: iso(row.expiresAt), ...(optionalIso(revokedAt) ? { revokedAt: optionalIso(revokedAt), revokedBy: revokedBy!, revocationReason: revocationReason! } : {}), createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt) }
 }
 const authorizationExecutionReservationFromRow = (row: AuthorizationExecutionReservationRow): AuthorizationExecutionReservation => ({
-  reservationId: row.reservationId, eventId: row.eventId, subjectIdentityId: row.subjectIdentityId,
+  reservationId: row.reservationId, eventId: row.eventId, decisionId: row.decisionId, subjectIdentityId: row.subjectIdentityId,
   workspaceId: row.workspaceId, capability: row.capability, resourceId: row.resourceId,
   scopeHash: row.scopeHash, authorizationRevision: Number(row.authorizationRevision),
   ...(row.grantRevision == null ? {} : { grantRevision: Number(row.grantRevision) }), reservedAt: iso(row.reservedAt),
@@ -310,7 +312,7 @@ export class PostgresAuthorizationRepository implements AuthorizationRepository 
       // role intentionally has no UPDATE privilege on this append-only table.
       const loadExisting = () => client.query<AuthorizationExecutionReservationRow>(`SELECT ${authorizationExecutionReservationProjection} FROM authorization_execution_reservations WHERE reservation_id=$1 OR event_id=$2`, [input.reservationId, input.eventId])
       const assertSameReservation = (existing: AuthorizationExecutionReservationRow) => {
-        const same = existing.reservationId === input.reservationId && existing.eventId === input.eventId && existing.subjectIdentityId === input.subjectIdentityId && existing.workspaceId === input.workspaceId && existing.capability === input.capability && existing.resourceId === input.resourceId && existing.scopeHash === input.scopeHash && (existing.grantId ?? undefined) === input.grantId && Number(existing.authorizationRevision) === input.expectedAuthorizationRevision && (existing.grantRevision == null ? undefined : Number(existing.grantRevision)) === input.expectedGrantRevision
+        const same = existing.reservationId === input.reservationId && existing.eventId === input.eventId && existing.decisionId === input.decisionId && existing.subjectIdentityId === input.subjectIdentityId && existing.workspaceId === input.workspaceId && existing.capability === input.capability && existing.resourceId === input.resourceId && existing.scopeHash === input.scopeHash && (existing.grantId ?? undefined) === input.grantId && Number(existing.authorizationRevision) === input.expectedAuthorizationRevision && (existing.grantRevision == null ? undefined : Number(existing.grantRevision)) === input.expectedGrantRevision
         if (!same) throw new AuthorizationRepositoryError('AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT')
         return authorizationExecutionReservationFromRow(existing)
       }
@@ -330,8 +332,8 @@ export class PostgresAuthorizationRepository implements AuthorizationRepository 
       // a consumed maxUses=1 grant is the expected legal case.
       if (input.grantId !== undefined && (!grant || grant.workspaceId !== input.workspaceId || !grant.capabilities.includes(input.capability) || grant.scopeHash !== input.scopeHash || grant.revokedAt || Number(grant.revision) !== input.expectedGrantRevision || Number(grant.authorizationRevision) !== input.expectedAuthorizationRevision || Number(grant.useCount) < 1 || Date.parse(String(grant.issuedAt)) > Date.parse(at) || Date.parse(String(grant.expiresAt)) <= Date.parse(at))) return undefined
       const grantRevision = grant?.revision
-      const values = [input.reservationId, input.eventId, input.subjectIdentityId, input.workspaceId, input.capability, input.resourceId, input.scopeHash, input.grantId ?? null, authorizationRevision, grantRevision ?? null, at]
-      const inserted = (await client.query<AuthorizationExecutionReservationRow>(`INSERT INTO authorization_execution_reservations (reservation_id,event_id,subject_identity_id,workspace_id,capability,resource_id,scope_hash,grant_id,authorization_revision,grant_revision,reserved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING ${authorizationExecutionReservationProjection}`, values)).rows[0]
+      const values = [input.reservationId, input.eventId, input.decisionId, input.subjectIdentityId, input.workspaceId, input.capability, input.resourceId, input.scopeHash, input.grantId ?? null, authorizationRevision, grantRevision ?? null, at]
+      const inserted = (await client.query<AuthorizationExecutionReservationRow>(`INSERT INTO authorization_execution_reservations (reservation_id,event_id,decision_id,subject_identity_id,workspace_id,capability,resource_id,scope_hash,grant_id,authorization_revision,grant_revision,reserved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING RETURNING ${authorizationExecutionReservationProjection}`, values)).rows[0]
       if (inserted) return authorizationExecutionReservationFromRow(inserted)
       const existing = (await loadExisting()).rows[0]
       if (!existing) throw new AuthorizationRepositoryError('AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT')

@@ -3872,6 +3872,7 @@ export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthori
     reservation = await authzRepository.reserveExecution({
       reservationId: `worker-execution:${execution.eventId}:${snapshot.capability}`,
       eventId: execution.eventId,
+      decisionId: snapshot.decisionId,
       subjectIdentityId,
       workspaceId,
       capability: workerOperationCapabilities[snapshot.capability],
