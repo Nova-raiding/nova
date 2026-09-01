@@ -31,6 +31,15 @@ describe('worker authorization recheck API', () => {
       expect(reserved).toMatchObject({ authorized: true, reservation_id: 'worker-execution:evt_authz_api:generation.execute', event_id: 'evt_authz_api' })
       await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).resolves.toMatchObject({ reservation_id: (reserved as { reservation_id: string }).reservation_id })
       await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), grantIds: ['forged-grant'] }, 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+      await repository.revokeGrant({
+        id: grant.id,
+        subjectIdentityId: 'identity_authz_api',
+        actorId: 'operator_a',
+        reason: '撤销已入队的临时授权',
+        expectedRevision: 2,
+        expectedAuthorizationRevision: 2,
+      })
+      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
       await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), identityId: 'other-identity' }, 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
       await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws-other', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
       await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task-other')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })

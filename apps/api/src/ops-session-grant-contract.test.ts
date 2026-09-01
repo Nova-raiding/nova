@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
-import { server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import { operationAudits, server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
 
 type RpcBody<T = unknown> = {
   request_id?: string
@@ -189,5 +189,10 @@ describe('Ops session and grant API local contracts', () => {
     expect(denied.body.error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: expect.any(String), decision_id: expect.any(String), policy_version: AUTHZ_POLICY_VERSION } })
     expect(denied.body.request_id).toMatch(/^req_/)
     expect(denied.body.trace_id).toBe(denied.body.request_id)
+    const decisionId = denied.body.error?.details?.decision_id
+    const denialAudit = (await operationAudits.list(workspaceId)).find(item => item.action === 'authz.decision' && item.actorId === actorId && item.resourceId === 'ops.authorization.grants.list')
+    expect(denialAudit).toMatchObject({
+      after: { decision_id: decisionId, request_id: denied.body.request_id, trace_id: denied.body.trace_id, result: 'deny' },
+    })
   })
 })
