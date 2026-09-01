@@ -5,7 +5,7 @@ import { resolve, sep } from 'node:path'
 export const REQUIRED_RELAY_MODALITIES = ['text', 'image', 'image_edit', 'ocr', 'video'] as const
 type Modality = typeof REQUIRED_RELAY_MODALITIES[number]
 type RelayResult = { modality?: Modality; state?: string; endpoint?: string; model?: string; providerRequestId?: string; providerJobId?: string; usageObserved?: boolean; costObserved?: boolean; costSource?: string; costCny?: number; pricingVersion?: string; pricingGroup?: string; evidence_ref?: string }
-type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; environment?: string; simulated?: boolean; relay?: string; results?: RelayResult[] }
+type RelayEvidence = { schema_version?: string; release_id?: string; generated_at?: string; expires_at?: string; environment?: string; simulated?: boolean; relay?: string; results?: RelayResult[] }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const isIsoInstant = (value: unknown): value is string => nonEmpty(value) && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value)
@@ -34,7 +34,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
   return []
 }
 
-export function validateModelRelayEvidence(document: unknown, options: { expectedReleaseId?: string; expectedRelay?: string; requireProduction?: boolean; artifactRoot?: string } = {}): string[] {
+export function validateModelRelayEvidence(document: unknown, options: { expectedReleaseId?: string; expectedRelay?: string; requireProduction?: boolean; artifactRoot?: string; now?: Date } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as RelayEvidence
@@ -44,6 +44,14 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
   if (options.requireProduction && value.environment !== 'production') errors.push('environment must be production')
   if (options.requireProduction && value.simulated !== false) errors.push('simulated must be false')
   if (!isIsoInstant(value.generated_at)) errors.push('generated_at must be an ISO instant')
+  if (options.requireProduction) {
+    if (!isIsoInstant(value.expires_at)) errors.push('expires_at must be an ISO instant')
+    else {
+      const expiresAt = Date.parse(value.expires_at)
+      if (isIsoInstant(value.generated_at) && expiresAt <= Date.parse(value.generated_at)) errors.push('expires_at must be after generated_at')
+      if (expiresAt <= (options.now ?? new Date()).getTime()) errors.push('relay evidence is expired')
+    }
+  }
   if (!nonEmpty(value.relay)) errors.push('relay is required')
   else try {
     const relay = new URL(value.relay)

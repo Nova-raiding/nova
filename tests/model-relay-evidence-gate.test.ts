@@ -43,4 +43,14 @@ describe('model relay evidence gate', () => {
       'providerRequestId must be unique across modalities: req-text (text, image)',
     )
   })
+
+  it('requires unexpired production evidence with a bounded validity window', () => {
+    expect(validateModelRelayEvidence(evidence, { requireProduction: true, now: new Date('2026-08-27T00:00:00Z') })).toContain('expires_at must be an ISO instant')
+
+    const expired = { ...evidence, expires_at: '2026-08-26T12:00:00Z' }
+    expect(validateModelRelayEvidence(expired, { requireProduction: true, now: new Date('2026-08-27T00:00:00Z') })).toContain('relay evidence is expired')
+
+    const invalidWindow = { ...evidence, expires_at: '2026-08-25T12:00:00Z' }
+    expect(validateModelRelayEvidence(invalidWindow, { requireProduction: true, now: new Date('2026-08-24T00:00:00Z') })).toContain('expires_at must be after generated_at')
+  })
 })
