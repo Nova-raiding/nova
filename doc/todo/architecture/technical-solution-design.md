@@ -551,13 +551,16 @@ Release 1 的 50 并发指 50 个工作区保持在线并可在同一分钟各�
 [ ] 增量或时间窗同步与去重
 [ ] raw fixture + canonical golden fixture
 [ ] create/update 字段白名单
-[ ] 400/401/403/409/429/5xx/timeout 错误映射
-[ ] 写入后回读
-[ ] timeout 后安全查询/对账
+[x] 本地 connector preflight：placeholder、HTTPS、scope/host、tenant binding 和 production-canary evidence fail-closed（`7774064`，`platform-preflight.test.ts`）
+[x] 本地 400/401/403/409/429/5xx/timeout 错误映射契约（`60f16c3`，`http-connector.test.ts`）
+[x] 本地写入后回读契约：远端 ID 缺失/不匹配时保持 `unknown`，不生成发布成功语义（`60f16c3`，`connector.http.contract.test.ts`）
+[x] 本地 timeout 后安全查询/对账契约：timeout 可重试但回读身份不匹配时 fail-closed（`60f16c3`、`bc4dc72`，相关 connector/API contract tests）
 [ ] sandbox/测试店铺证据
 ```
 
 淘宝通过不能替代天猫通过，反之亦然。
+
+上述勾选仅表示本地代码与 contract test 已覆盖，不表示已完成 OAuth sandbox、真实店铺或真实平台证据；这些外部验收仍保持未完成。
 
 ## 15. CI/CD、环境与上线配置
 
