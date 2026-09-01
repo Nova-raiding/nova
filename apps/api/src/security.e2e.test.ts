@@ -1035,6 +1035,9 @@ describe('security and access-control acceptance gates', () => {
     const hiddenTask = service.createTask({ workspaceId, productId: source.id, platform: 'taobao', accountId: account.id, brandId: 'brand_hidden' })
     expect((await mcp(editorHeaders, 7.01, 'task.timeline', { task_id: protectedTask.id })).error).toBeNull()
     expect((await mcp(editorHeaders, 7.02, 'task.timeline', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 7.03, 'task.answer', { task_id: protectedTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 7.04, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(ownerHeaders, 7.05, 'task.answer', { task_id: hiddenTask.id, answers_json: '{}' })).error).toBeNull()
     const restPublishDenied = await fetch(`${base}/v1/publish-jobs`, {
       method: 'POST',
       headers: { ...editorHeaders, 'idempotency-key': 'brand-editor-publish-denied' },
