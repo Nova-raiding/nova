@@ -9,7 +9,10 @@ export interface InteractiveConfirmationTicket {
   expiresAt: string
 }
 
-export type ConsumeInteractiveConfirmationTicketInput = Omit<InteractiveConfirmationTicket, 'expiresAt'>
+export type ConsumeInteractiveConfirmationTicketInput = Omit<InteractiveConfirmationTicket, 'expiresAt'> & {
+  /** Raw bearer accepted only for rows created before digest-versioned storage. */
+  legacyNonceHash?: string
+}
 
 export interface InteractiveConfirmationTicketRepository {
   issue(input: InteractiveConfirmationTicket): Promise<InteractiveConfirmationTicket>
@@ -45,6 +48,7 @@ function scope(input: ConsumeInteractiveConfirmationTicketInput) {
     sessionId: identifier(input.sessionId, 'INTERACTIVE_CONFIRMATION_SESSION_ID_INVALID', 512),
     intentHash: digest(input.intentHash, 'INTERACTIVE_CONFIRMATION_INTENT_HASH_INVALID'),
     nonceHash: digest(input.nonceHash, 'INTERACTIVE_CONFIRMATION_NONCE_HASH_INVALID'),
+    ...(input.legacyNonceHash === undefined ? {} : { legacyNonceHash: digest(input.legacyNonceHash, 'INTERACTIVE_CONFIRMATION_LEGACY_NONCE_HASH_INVALID') }),
   }
 }
 
@@ -99,10 +103,13 @@ export class PostgresInteractiveConfirmationTicketRepository implements Interact
             AND actor_id=$2
             AND session_id=$3
             AND intent_hash=$4
-            AND nonce_hash=$5
+            AND (
+              (nonce_digest_version=2 AND nonce_hash=$5)
+              OR (nonce_digest_version=1 AND nonce_hash IN ($5,$6))
+            )
             AND consumed_at IS NULL
             AND expires_at>now()`,
-        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash],
+        [ticket.workspaceId, ticket.actorId, ticket.sessionId, ticket.intentHash, ticket.nonceHash, ticket.legacyNonceHash ?? ticket.nonceHash],
       )
       return result.rowCount === 1
     })
