@@ -149,4 +149,29 @@ describe('authorization policy registry', () => {
       resourceScope: { type: 'workspace', id: 'ws_1' },
     })).toMatchObject({ authorized: false, reason_code: 'AUTHZ_CAPABILITY_MISSING' })
   })
+
+  it('fails closed for revoked, expired, malformed, and wildcard grant atoms', () => {
+    const policy = getMcpMethodPolicy('catalog.product.update')!
+    const evaluate = (atom: Parameters<typeof evaluatePermissionAtoms>[0]['atoms'][number]) => evaluatePermissionAtoms({
+      decisionId: 'grant-fail-closed', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z',
+      atoms: [atom], resourceScope: { type: 'workspace', id: 'ws_1' },
+    })
+    const base = { capability: policy.capability, effect: 'allow' as const, scope: { type: 'workspace' as const, ids: ['ws_1'] }, source: 'temporary_grant' as const, sourceId: 'grant_1', obligations: [] as const }
+    for (const atom of [
+      { ...base, expiresAt: '2026-08-31T23:59:59.000Z' },
+      { ...base, expiresAt: 'not-a-date' },
+      { ...base, revokedAt: '2026-08-31T23:00:00.000Z' },
+      { ...base, scope: { type: 'workspace' as const, ids: ['*'] } },
+      { ...base, scope: { type: 'workspace' as const, ids: [] } },
+    ]) {
+      expect(evaluate(atom)).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_CAPABILITY_MISSING' })
+    }
+  })
+
+  it('allows an unexpired exact-scope grant and rejects a different resource', () => {
+    const policy = getMcpMethodPolicy('catalog.product.update')!
+    const atom = { capability: policy.capability, effect: 'allow' as const, scope: { type: 'workspace' as const, ids: ['ws_1'] }, source: 'temporary_grant' as const, sourceId: 'grant_exact', obligations: [] as const, expiresAt: '2026-09-01T00:01:00.000Z' }
+    expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-allow', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'workspace', id: 'ws_1' } })).toMatchObject({ authorized: true, result: 'allow' })
+    expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-deny', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'workspace', id: 'ws_2' } })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+  })
 })

@@ -90,6 +90,7 @@ export interface PermissionAtom {
   obligations: readonly AuthorizationObligation[]
   effectLimit?: AuthorizationEffect
   expiresAt?: string
+  revokedAt?: string
   revision?: string
 }
 
@@ -182,8 +183,22 @@ export function evaluatePermissionAtoms(input: {
   resourceScope?: { type: AuthorizationScopeType; id?: string }
   workbench: OpsWorkbench
   mode: AuthorizationDecisionMode
+  now?: string
 }): AuthorizationDecision {
-  const relevant = input.atoms.filter(atom => atom.capability === input.policy.capability && (atom.effect !== 'allow' || input.policy.effect === 'read' || atom.effectLimit !== 'read'))
+  const now = input.now === undefined ? Date.now() : Date.parse(input.now)
+  const usable = Number.isFinite(now) ? input.atoms.filter(atom => {
+    if (atom.revokedAt !== undefined) return false
+    if (atom.expiresAt !== undefined) {
+      const expiresAt = Date.parse(atom.expiresAt)
+      if (!Number.isFinite(expiresAt) || expiresAt <= now) return false
+    }
+    if (atom.scope.ids.length === 0 || atom.scope.ids.some(id => id.length === 0 || /[\u0000-\u001f\u007f]/.test(id))) return false
+    // Resource grants must identify exact resources. Only platform-level
+    // assignments may use the aggregate wildcard.
+    if ((atom.source === 'resource_grant' || atom.source === 'temporary_grant') && atom.scope.ids.includes('*')) return false
+    return true
+  }) : []
+  const relevant = usable.filter(atom => atom.capability === input.policy.capability && (atom.effect !== 'allow' || input.policy.effect === 'read' || atom.effectLimit !== 'read'))
   return evaluateAuthorizationDecision({
     decisionId: input.decisionId,
     policy: input.policy,
