@@ -15,6 +15,7 @@ describe('canonical backfill run repository', () => {
     const repository = new MemoryCanonicalBackfillRunRepository()
     const run = await repository.create({ workspaceId: 'ws_run_owner', dryRun: false, createdBy: 'ops', reason: '执行' })
     await expect(repository.get({ workspaceId: 'ws_run_other', id: run.id })).resolves.toBeUndefined()
+    await expect(repository.update({ id: run.id, workspaceId: 'ws_run_other', expectedRevision: run.revision, status: 'running' })).rejects.toThrow('CANONICAL_BACKFILL_RUN_NOT_FOUND')
   })
 
   it('enforces terminal and pause/resume transitions at the repository boundary', async () => {
@@ -34,5 +35,12 @@ describe('canonical backfill run repository', () => {
     const retried = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })
     expect(retried).toMatchObject({ status: 'running', revision: 3, lastResult: { error: 'temporary database timeout' } })
     await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })).rejects.toBeInstanceOf(CanonicalBackfillRunRevisionConflictError)
+  })
+
+  it('keeps conflict-bearing failures terminal instead of replaying the queue', async () => {
+    const repository = new MemoryCanonicalBackfillRunRepository()
+    const run = await repository.create({ workspaceId: 'ws_conflict_retry', dryRun: false, createdBy: 'ops', reason: '冲突收口' })
+    const failed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: run.revision, status: 'failed', lastResult: { error: 'conflicts require review', conflicts: [{ code: 'MISSING_BRAND' }] } })
+    await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })).rejects.toBeInstanceOf(CanonicalBackfillRunStateError)
   })
 })
