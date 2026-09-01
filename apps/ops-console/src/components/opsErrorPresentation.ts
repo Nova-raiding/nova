@@ -64,6 +64,25 @@ const RETRYABLE_CODES = new Set([
 const candidate = (error: unknown): Partial<OpsRequestError> =>
   error && typeof error === "object" ? error as Partial<OpsRequestError> : {};
 
+/**
+ * Keep server-projected diagnostic lists useful and bounded at the UI edge.
+ * These values are evidence, not authorization input: discard malformed
+ * entries, trim whitespace, de-duplicate, and cap rendering work so a bad
+ * denial payload cannot flood the error surface.
+ */
+export function normalizeDiagnosticTokens(value: unknown, max = 16): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const tokens: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const token = item.trim();
+    if (!token || tokens.includes(token)) continue;
+    tokens.push(token);
+    if (tokens.length >= max) break;
+  }
+  return tokens.length ? tokens : undefined;
+}
+
 function normalizedCode(error: unknown): string | undefined {
   const structured = candidate(error).code;
   if (typeof structured === "string" && structured.trim()) return structured.trim().toUpperCase();
@@ -103,13 +122,11 @@ function diagnostics(error: unknown, code: string | undefined) {
   const details = value.details;
   const decisionId = typeof details?.decision_id === "string" && details.decision_id.trim() ? details.decision_id.trim() : undefined;
   const reasonCode = typeof details?.reason_code === "string" && details.reason_code.trim() ? details.reason_code.trim() : undefined;
-  const obligationsMissing = Array.isArray(details?.obligations_missing)
-    ? details.obligations_missing.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
-    : undefined;
+  const obligationsMissing = normalizeDiagnosticTokens(details?.obligations_missing);
   return {
     ...(code ? { code } : {}),
-    ...(typeof value.requestId === "string" && value.requestId ? { requestId: value.requestId } : {}),
-    ...(typeof value.traceId === "string" && value.traceId ? { traceId: value.traceId } : {}),
+    ...(typeof value.requestId === "string" && value.requestId.trim() ? { requestId: value.requestId.trim() } : {}),
+    ...(typeof value.traceId === "string" && value.traceId.trim() ? { traceId: value.traceId.trim() } : {}),
     ...(decisionId ? { decisionId } : {}),
     ...(reasonCode ? { reasonCode } : {}),
     ...(obligationsMissing?.length ? { obligationsMissing } : {}),

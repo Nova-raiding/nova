@@ -1,6 +1,7 @@
 import { Button, Result, Space, Typography } from "antd";
 import { useEffect, useRef } from "react";
 import type { OpsScope } from "../../authz/authorization.js";
+import { normalizeDiagnosticTokens } from "../opsErrorPresentation.js";
 
 export function explainAccessDeniedReason(reasonCode?: string): string | undefined {
   if (!reasonCode) return undefined;
@@ -46,6 +47,7 @@ export function AccessDeniedResult({
     headingRef.current?.focus({ preventScroll: true });
   }, []);
   const scopeText = scope.kind === "platform" ? "平台全局" : `${scope.kind}:${scope.id ?? "未识别"}`;
+  const visibleObligations = normalizeDiagnosticTokens(obligationsMissing);
   const accessContext = `当前会话在${scopeText}范围内缺少 ${capability} 能力；服务端仍会独立校验每个请求。`;
   return (
     <Result
@@ -74,7 +76,7 @@ export function AccessDeniedResult({
         {traceId ? <Typography.Paragraph>追踪 ID：<Typography.Text copyable code>{traceId}</Typography.Text></Typography.Paragraph> : null}
         {decisionId ? <Typography.Paragraph>决策 ID：<Typography.Text copyable code>{decisionId}</Typography.Text></Typography.Paragraph> : null}
         {reasonCode ? <Typography.Paragraph>决策原因：{explainAccessDeniedReason(reasonCode)} <Typography.Text code>{reasonCode}</Typography.Text></Typography.Paragraph> : null}
-        {obligationsMissing?.length ? <Typography.Paragraph>缺失义务：<Typography.Text code>{obligationsMissing.join(", ")}</Typography.Text></Typography.Paragraph> : null}
+        {visibleObligations?.length ? <Typography.Paragraph>缺失义务：<Typography.Text code>{visibleObligations.join(", ")}</Typography.Text></Typography.Paragraph> : null}
       </div>
     </Result>
   );

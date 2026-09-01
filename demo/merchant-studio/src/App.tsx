@@ -5975,6 +5975,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const [selectionNotice, setSelectionNotice] = useState('')
   const selectionErrorRef = useRef<HTMLDivElement>(null)
   const imageJobReadErrorRef = useRef<HTMLDivElement>(null)
+  const imageJobConfigurationErrorRef = useRef<HTMLDivElement>(null)
   const [retrying, setRetrying] = useState(false)
   const pollDelayRef = useRef(IMAGE_JOB_INITIAL_POLL_DELAY_MS)
   // A safe retry creates a new durable job. Keep polling that returned job
@@ -6019,6 +6020,9 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
       window.requestAnimationFrame(() => imageJobReadErrorRef.current?.focus())
     }
   }, [error, job, loading])
+  useEffect(() => {
+    if (!baseUrl) window.requestAnimationFrame(() => imageJobConfigurationErrorRef.current?.focus())
+  }, [baseUrl])
   const labels: Record<string, string> = { queued: '排队中', leased: '已分配执行权', running: '处理中', succeeded: '生成完成，等待候选审查', failed: '生成失败', provider_reserved: imageGenerationExecutionLabel('provider_reserved'), provider_dispatching: imageGenerationExecutionLabel('provider_dispatching'), provider_started: imageGenerationExecutionLabel('provider_started'), outcome_unknown: imageGenerationExecutionLabel('outcome_unknown') }
   const archiveLabels: Record<string, string> = { pending: '归档中', partial: '部分归档', archived: '已归档', external_unarchived: '外部归档未确认' }
   const gateLabels: Record<string, string> = { pending: '待归档', archived: '已归档', partial: '部分归档', external_unarchived: '归档未确认', quarantined: '扫描隔离', clean: '扫描通过', blocked: '扫描阻断', approved: '权益已确认', rejected: '权益拒绝', unreviewed: '待人工审核', passed: '人工审核通过', not_checked: '真实性未检查', unverified: '真实性未确认' }
@@ -6063,7 +6067,10 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     catch (cause) { setError(describeApiError(cause)) }
     finally { setRetrying(false) }
   }
-  if (!baseUrl) return <div className="info-notice" role="status">配置 API 后才能读取真实图片任务。</div>
+  if (!baseUrl) return <div ref={imageJobConfigurationErrorRef} className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-title" aria-describedby="image-job-config-description">
+    <strong id="image-job-config-title">图片任务暂不可用</strong>
+    <span id="image-job-config-description">尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。请联系管理员完成测试环境配置后，再刷新此页面。</span>
+  </div>
   const isTerminal = job?.state === 'succeeded' || job?.state === 'failed'
   return <section className="panel image-generation-job-panel" aria-labelledby="image-job-title" aria-busy={loading}>
     <div className="detail-section-head"><div><span className="section-kicker">IMAGE JOB</span><h3 id="image-job-title">图片生成任务</h3></div><StatusChip tone={displayStateTone}>{loading && !job ? '读取中…' : displayStateLabels[displayState] ?? '状态待确认'}</StatusChip></div>

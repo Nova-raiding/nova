@@ -31,6 +31,13 @@ describe('image generation desktop accessibility contract', () => {
     expect(app).toContain('aria-busy={loading}')
   })
 
+  it('exposes missing API or relay configuration as a focused recoverable blocker', () => {
+    expect(app).toContain('imageJobConfigurationErrorRef')
+    expect(app).toContain('role="alert" tabIndex={-1} aria-labelledby="image-job-config-title"')
+    expect(app).toContain('尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。')
+    expect(app).toContain('请联系管理员完成测试环境配置后，再刷新此页面。')
+  })
+
   it('announces the six-candidate limit and blocked candidate recovery path', () => {
     expect(app).toContain('最多选择 6 张候选图，请先取消一张再继续。')
     expect(app).toContain('这张候选图尚未满足归档、安全扫描、权益、真实性或人工审核门禁，暂不能选择。')

@@ -1,9 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { OpsPageError } from "./OpsPageError.js";
-import { presentOpsError } from "./opsErrorPresentation.js";
+import { normalizeDiagnosticTokens, presentOpsError } from "./opsErrorPresentation.js";
 
 describe("OpsPageError", () => {
+  it("normalizes server diagnostic lists before rendering denial evidence", () => {
+    expect(normalizeDiagnosticTokens([" mfa ", "mfa", "", 42, "approval"])).toEqual(["mfa", "approval"]);
+    expect(normalizeDiagnosticTokens(["   ", null])).toBeUndefined();
+    expect(normalizeDiagnosticTokens(Array.from({ length: 20 }, (_, index) => `obligation_${index}`))).toHaveLength(16);
+  });
+
   it("exposes an assertive error and an accessible retry action", () => {
     const markup = renderToStaticMarkup(<OpsPageError error="运营 API 请求超时" onRetry={() => undefined} />);
     expect(markup).toContain('data-state="error"');
@@ -119,5 +125,19 @@ describe("OpsPageError", () => {
     expect(markup).toContain("dec-7");
     expect(markup).toContain("缺失义务");
     expect(markup).toContain("mfa, approval");
+  });
+
+  it("trims and bounds server-projected denial evidence", () => {
+    const error = Object.assign(new Error("forbidden"), {
+      code: "FORBIDDEN",
+      requestId: " req-403 ",
+      traceId: " trace-403 ",
+      details: { obligations_missing: [" mfa ", "mfa", "", "approval"] },
+    });
+    expect(presentOpsError(error)).toMatchObject({
+      requestId: "req-403",
+      traceId: "trace-403",
+      obligationsMissing: ["mfa", "approval"],
+    });
   });
 });

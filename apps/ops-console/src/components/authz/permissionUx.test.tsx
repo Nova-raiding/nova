@@ -198,4 +198,17 @@ describe("desktop permission UX", () => {
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('disabled=""');
   });
+
+  it("does not render duplicate or malformed obligations in a 403 summary", () => {
+    const html = renderToStaticMarkup(<AccessDeniedResult
+      domainLabel="用户与租户"
+      capability="identity.read"
+      scope={{ kind: "workspace", id: "ws_1" }}
+      obligationsMissing={[" mfa ", "mfa", "", "approval"]}
+      onBack={() => undefined}
+      onRefresh={() => undefined}
+    />);
+    expect(html).toContain("mfa, approval");
+    expect(html).not.toContain("mfa, mfa");
+  });
 });

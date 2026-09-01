@@ -15,6 +15,7 @@ import { domainReadCapabilities } from "../authz/authorization.js";
 import type { OpsWorkbench } from "../types/ops.js";
 import { urlForWorkbench, workbenchIntentFromLocation } from "../navigation/opsWorkbenchLocation.js";
 import { UnsavedChangesProvider, useUnsavedChangesState } from "../components/authz/UnsavedChangesContext.js";
+import { normalizeDiagnosticTokens } from "../components/opsErrorPresentation.js";
 
 const { Content } = Layout;
 
@@ -86,11 +87,7 @@ export function accessDeniedEvidence(
   const decisionId = typeof details?.decision_id === "string" && details.decision_id.trim()
     ? details.decision_id.trim()
     : undefined;
-  const obligationsMissing = Array.isArray(details?.obligations_missing)
-    ? details.obligations_missing
-      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
-      .map((value) => value.trim())
-    : undefined;
+  const obligationsMissing = normalizeDiagnosticTokens(details?.obligations_missing);
   return {
     ...(decisionId ? { decisionId } : {}),
     ...(obligationsMissing?.length ? { obligationsMissing } : {}),
