@@ -35,4 +35,12 @@ describe('model relay evidence gate', () => {
     expect(validateModelRelayEvidence(evidence, { expectedRelay: 'https://relay.example.com/v1' })).toEqual([])
     expect(validateModelRelayEvidence(evidence, { expectedRelay: 'https://other-relay.example.com/v1' })).toContain('relay must match the rendered production model_relay_base_url origin')
   })
+
+  it('rejects a provider request id reused by multiple modalities', () => {
+    const invalid = structuredClone(evidence)
+    invalid.results[1]!.providerRequestId = invalid.results[0]!.providerRequestId
+    expect(validateModelRelayEvidence(invalid)).toContain(
+      'providerRequestId must be unique across modalities: req-text (text, image)',
+    )
+  })
 })

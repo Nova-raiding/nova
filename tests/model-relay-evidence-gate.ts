@@ -52,10 +52,16 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
   } catch { errors.push('relay must be a valid HTTPS URL') }
   if (!Array.isArray(value.results)) return [...errors, 'results is required']
   const byModality = new Map<string, RelayResult>()
+  const byProviderRequestId = new Map<string, string>()
   for (const result of value.results) {
     if (!result || typeof result !== 'object' || !nonEmpty(result.modality)) { errors.push('each results item must have a modality'); continue }
     if (byModality.has(result.modality)) errors.push(`duplicate modality: ${result.modality}`)
     byModality.set(result.modality, result)
+    if (nonEmpty(result.providerRequestId)) {
+      const previousModality = byProviderRequestId.get(result.providerRequestId)
+      if (previousModality) errors.push(`providerRequestId must be unique across modalities: ${result.providerRequestId} (${previousModality}, ${result.modality})`)
+      else byProviderRequestId.set(result.providerRequestId, result.modality)
+    }
   }
   for (const modality of REQUIRED_RELAY_MODALITIES) {
     const result = byModality.get(modality)
