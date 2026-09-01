@@ -306,7 +306,7 @@ export function estimateContentGenerationTokens(value: unknown) { return Math.ce
 
 const REPAIR_MESSAGE_TOKEN_RESERVE = 800
 const REPAIR_DIAGNOSTIC_MAX_CHARS = 600
-const REPAIR_MAX_OUTPUT_TOKENS = 800
+const REPAIR_MAX_OUTPUT_TOKENS = 2_500
 export const MAX_CONTENT_INPUT_TOKENS = 4_000
 function estimateRequestTokensFromPrompt(promptText: string, additionalMessages: readonly string[] = []) {
   const payload = additionalMessages.length ? { prompt: promptText, additionalMessages } : { prompt: promptText }

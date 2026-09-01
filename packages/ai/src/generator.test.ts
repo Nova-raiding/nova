@@ -134,6 +134,20 @@ describe('content generator', () => {
     expect(relayUsageReceiptKey(usage[0]!)).not.toBe(relayUsageReceiptKey(usage[1]!))
   })
 
+  it('reserves a full structured-output budget for repair responses', async () => {
+    const maxTokens: number[] = []
+    const replies = [{}, validGeneratedContent()]
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => undefined, maxOutputTokens: 2_500,
+      fetch: async (_url, init) => {
+        maxTokens.push((JSON.parse(String(init?.body)) as { max_tokens: number }).max_tokens)
+        return new Response(JSON.stringify({ id: `repair-budget-${maxTokens.length}`, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(replies.shift()) } }] }), { status: 200 })
+      },
+    })
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 } })).resolves.toMatchObject({ title: '标题' })
+    expect(maxTokens).toEqual([2_500, 2_500])
+  })
+
   it('only creates a provider from a complete HTTPS relay configuration', () => {
     expect(createContentGeneratorFromEnv({ AI_BASE_URL: 'https://model.example', AI_MODEL: 'model' })).toBeUndefined()
     expect(createContentGeneratorFromEnv({ AI_BASE_URL: 'https://model.example', AI_API_KEY: 'secret', AI_MODEL: 'model' })).toBeUndefined()
