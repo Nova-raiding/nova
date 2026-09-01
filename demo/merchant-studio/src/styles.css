@@ -284,6 +284,25 @@ select:focus-visible,textarea:focus-visible,[role="tab"]:focus-visible,[role="ta
 .image-generation-job-panel .image-candidate-fallback {
   color: #7a2424;
 }
+/* Keep the job-level status badge readable in every semantic state. The
+   visible label remains the source of truth; these scoped tokens only ensure
+   the badge text also meets WCAG AA when the surrounding surface changes. */
+.image-generation-job-panel .status-chip {
+  color: #43534a;
+  background: #eef1ee;
+}
+.image-generation-job-panel .status-chip.green {
+  color: #0f513a;
+  background: #e5f2eb;
+}
+.image-generation-job-panel .status-chip.blue {
+  color: #285a9d;
+  background: #eaf1fb;
+}
+.image-generation-job-panel .status-chip.amber {
+  color: #85520b;
+  background: #fff5d9;
+}
 .image-candidate-pagination{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:14px;color:#43534a;font-size:12px;line-height:1.45;text-align:center}.image-candidate-pagination .secondary-button{min-width:88px}
 
 /* Desktop image-generation layout contract: the panel must shrink inside its

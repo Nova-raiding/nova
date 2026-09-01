@@ -25,6 +25,15 @@ describe('image candidate selection accessibility styles', () => {
     expect(styles).toContain('color: #7a2424')
   })
 
+  it('keeps the job status badge AA-readable for every semantic tone', () => {
+    expect(contrastRatio('#43534a', '#eef1ee')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('#0f513a', '#e5f2eb')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('#285a9d', '#eaf1fb')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('#85520b', '#fff5d9')).toBeGreaterThanOrEqual(4.5)
+    expect(styles).toContain('.image-generation-job-panel .status-chip.blue')
+    expect(styles).toContain('.image-generation-job-panel .status-chip.amber')
+  })
+
   it('keeps the full selection control keyboard-visible', () => {
     expect(styles).toContain('.candidate-select-control:focus-within{outline:3px solid #176b4d')
     expect(styles).toContain('outline-offset:2px')
