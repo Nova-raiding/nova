@@ -75,9 +75,9 @@ assert.equal(apiEnv.MAX_ACTIVE_JOBS_PER_WORKSPACE, '3')
 assert.equal(apiEnv.REQUEST_BODY_LIMIT_BYTES, '52428800')
 assert.ok(apiEnv.WORKER_API_CREDENTIALS, 'API must expose the role-scoped worker credential map')
 const workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>
-assert.deepEqual(Object.keys(workerCredentials).sort(), ['automation', 'generation', 'publish', 'reconcile', 'sync'])
-assert.equal(new Set(Object.values(workerCredentials).map(value => value.token)).size, 5, 'worker role tokens must be distinct')
-assert.equal(new Set(Object.values(workerCredentials).map(value => value.signing_secret)).size, 5, 'worker signing secrets must be distinct')
+assert.deepEqual(Object.keys(workerCredentials).sort(), ['automation', 'generation', 'publish', 'reconcile', 'scan', 'sync'])
+assert.equal(new Set(Object.values(workerCredentials).map(value => value.token)).size, 6, 'worker role tokens must be distinct')
+assert.equal(new Set(Object.values(workerCredentials).map(value => value.signing_secret)).size, 6, 'worker signing secrets must be distinct')
 
 for (const [index, name] of workerServices.entries()) {
   const workerEnv = environment(services[name]!)
@@ -88,10 +88,9 @@ for (const [index, name] of workerServices.entries()) {
   if (name === 'worker-scan') {
     assert.equal(workerEnv.WORKER_API_TOKEN, workerEnv.ASSET_SCANNER_API_TOKEN, 'worker-scan must use its independent scanner token')
     assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, workerEnv.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET, 'worker-scan must use its independent scanner signing secret')
-  } else {
-    assert.equal(workerEnv.WORKER_API_TOKEN, credential?.token, `${name} must receive only its role token`)
-    assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, credential?.signing_secret, `${name} must receive only its role signing secret`)
   }
+  assert.equal(workerEnv.WORKER_API_TOKEN, credential?.token, `${name} must receive only its role token`)
+  assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, credential?.signing_secret, `${name} must receive only its role signing secret`)
   assert.equal(workerEnv.WORKER_WORKSPACES, 'auto')
   assert.equal(workerEnv.WORKER_DB_POOL_MAX, '5')
   assert.equal(workerEnv.WORKER_POLL_INTERVAL_MS, '500')
@@ -118,8 +117,8 @@ assert.ok(scannerEnv.ASSET_SCANNER_API_TOKEN, 'scanner callback token must be in
 assert.ok(scannerEnv.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET, 'scanner workspace signing secret must be injected independently')
 assert.ok(scannerEnv.ASSET_SCAN_RECEIPT_KEY_ID, 'scanner receipt key id must be explicit')
 assert.ok('ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM' in scannerEnv, 'scanner receipt signing key input must exist')
-assert.ok(Object.values(workerCredentials).every(value => value.token !== scannerEnv.ASSET_SCANNER_API_TOKEN), 'scanner must not share a normal worker token')
-assert.ok(Object.values(workerCredentials).every(value => value.signing_secret !== scannerEnv.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET), 'scanner must not share a normal worker signing secret')
+assert.ok(Object.entries(workerCredentials).every(([role, value]) => role === 'scan' || value.token !== scannerEnv.ASSET_SCANNER_API_TOKEN), 'scanner must not share another worker role token')
+assert.ok(Object.entries(workerCredentials).every(([role, value]) => role === 'scan' || value.signing_secret !== scannerEnv.ASSET_SCANNER_WORKSPACE_SIGNING_SECRET), 'scanner must not share another worker role signing secret')
 assert.equal(services['worker-scan']!.depends_on?.clamav?.condition, 'service_healthy', 'scan worker must wait for fresh and reachable ClamAV')
 assert.ok(services.clamav!.healthcheck?.test?.some(value => value.includes('clamdscan --ping')), 'ClamAV PING healthcheck is required')
 assert.ok(services.clamav!.healthcheck?.test?.some(value => value.includes('clamdscan --version')), 'ClamAV freshness must inspect the running daemon, not only files on disk')
