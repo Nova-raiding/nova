@@ -20,6 +20,8 @@ const evidence = {
     'candidate_selection_persisted',
     'selection_not_reviewed',
     'selection_not_published',
+    'automation_read_only',
+    'automation_host_absent',
   ].map(id => ({ id, state: 'passed', evidence_ref: artifact(id), console_errors: 0, network_errors: 0 })),
 }
 
@@ -56,5 +58,14 @@ describe('Codex App host evidence gate', () => {
     const invalid = structuredClone(evidence)
     invalid.scenarios = invalid.scenarios.filter(({ id }) => id !== 'candidate_images_rendered')
     expect(validateCodexAppHostEvidence(invalid)).toContain('candidate_images_rendered scenario is required')
+  })
+
+  it('requires explicit evidence that Automation stays read-only and fails closed without a host', () => {
+    const invalid = structuredClone(evidence)
+    invalid.scenarios = invalid.scenarios.filter(({ id }) => id !== 'automation_read_only' && id !== 'automation_host_absent')
+    expect(validateCodexAppHostEvidence(invalid)).toEqual(expect.arrayContaining([
+      'automation_read_only scenario is required',
+      'automation_host_absent scenario is required',
+    ]))
   })
 })

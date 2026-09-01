@@ -16,6 +16,8 @@ const REQUIRED_SCENARIOS = [
   'candidate_selection_persisted',
   'selection_not_reviewed',
   'selection_not_published',
+  'automation_read_only',
+  'automation_host_absent',
 ] as const
 type ScenarioId = typeof REQUIRED_SCENARIOS[number]
 type Scenario = { id?: ScenarioId; state?: string; evidence_ref?: string; console_errors?: number; network_errors?: number }
