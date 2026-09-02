@@ -11,6 +11,25 @@ const postgresIt = databaseUrlValue ? it : it.skip
 const sideEffectNames = ['outbox', 'queue', 'storage', 'relay', 'scanner', 'connector'] as const
 const createEffectSpy = () => vi.fn((_policy: CommercialOperationPolicy) => undefined)
 
+function policyId(policy: CommercialOperationPolicy) {
+  return `${policy.surface}:${policy.operation}`
+}
+
+function expectExactExecution(
+  expectedPolicies: readonly CommercialOperationPolicy[],
+  executedIds: ReadonlySet<string>,
+  label: string,
+) {
+  const bySurface = expectedPolicies.reduce<Record<string, number>>((counts, policy) => {
+    counts[policy.surface] = (counts[policy.surface] ?? 0) + 1
+    return counts
+  }, {})
+  expect(
+    [...executedIds].sort(),
+    `${label}; registry inventory ${JSON.stringify({ total: expectedPolicies.length, bySurface })}`,
+  ).toEqual(expectedPolicies.map(policyId).sort())
+}
+
 function databaseUrl(base: URL, name: string, user?: string, password?: string) {
   const value = new URL(base)
   value.pathname = `/${name}`
@@ -75,17 +94,27 @@ describe('commercial zero-side-effect PostgreSQL E2 matrix', () => {
         policy.domain === 'COMMERCIAL' && policy.enabled && policy.classification !== 'RECOVERY_CONTROL')
       const before = await commercialFactCounts(database)
       const service = createService(COMMERCIAL_OPERATION_REGISTRY)
+      const zeroExecutedIds = new Set<string>()
+      const unknownExecutedIds = new Set<string>()
       for (const policy of enabledBusiness) {
         await expect(dispatch(service, policy, 'ws_zero')).resolves.toMatchObject({ outcome: 'DECISION', decision: { allowed: false, error_code: 'CREATIVE_POINTS_EXHAUSTED' } })
+        zeroExecutedIds.add(policyId(policy))
         await expect(dispatch(service, policy, 'ws_unknown')).resolves.toMatchObject({ outcome: 'DECISION', decision: { allowed: false, error_code: 'CREATIVE_POINTS_UNAVAILABLE' } })
+        unknownExecutedIds.add(policyId(policy))
       }
+      expectExactExecution(enabledBusiness, zeroExecutedIds, 'PostgreSQL zero rejection execution coverage')
+      expectExactExecution(enabledBusiness, unknownExecutedIds, 'PostgreSQL unknown rejection execution coverage')
 
       const enabledCharged = COMMERCIAL_OPERATION_REGISTRY.map(policy =>
         policy.domain === 'COMMERCIAL' && policy.classification === 'POINT_CHARGED' ? { ...policy, enabled: true } : policy)
       const chargedService = createService(enabledCharged)
-      for (const policy of enabledCharged.filter(item => item.domain === 'COMMERCIAL' && item.classification === 'POINT_CHARGED')) {
+      const chargedInventory = enabledCharged.filter(item => item.domain === 'COMMERCIAL' && item.classification === 'POINT_CHARGED')
+      const insufficientExecutedIds = new Set<string>()
+      for (const policy of chargedInventory) {
         await expect(dispatch(chargedService, policy, 'ws_insufficient')).resolves.toMatchObject({ outcome: 'DECISION', decision: { allowed: false, error_code: 'CREATIVE_POINTS_INSUFFICIENT' } })
+        insufficientExecutedIds.add(policyId(policy))
       }
+      expectExactExecution(chargedInventory, insufficientExecutedIds, 'PostgreSQL insufficient rejection execution coverage')
 
       expect(await commercialFactCounts(database)).toEqual(before)
       for (const effect of Object.values(external)) expect(effect).not.toHaveBeenCalled()

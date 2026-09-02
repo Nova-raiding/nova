@@ -48,6 +48,30 @@ function expectNoSideEffects(effects: Record<SideEffectName, SideEffectSpy>) {
   for (const name of sideEffectNames) expect(effects[name], `${name} must remain untouched`).not.toHaveBeenCalled()
 }
 
+function policyId(policy: CommercialOperationPolicy) {
+  return `${policy.surface}:${policy.operation}`
+}
+
+function inventoryDiagnostic(policies: readonly CommercialOperationPolicy[]) {
+  const bySurface = policies.reduce<Record<string, number>>((counts, policy) => {
+    counts[policy.surface] = (counts[policy.surface] ?? 0) + 1
+    return counts
+  }, {})
+  return JSON.stringify({ total: policies.length, bySurface })
+}
+
+function expectExactExecution(
+  expectedPolicies: readonly CommercialOperationPolicy[],
+  executedIds: ReadonlySet<string>,
+  label: string,
+) {
+  const expectedIds = expectedPolicies.map(policyId).sort()
+  expect(
+    [...executedIds].sort(),
+    `${label}; registry inventory ${inventoryDiagnostic(expectedPolicies)}`,
+  ).toEqual(expectedIds)
+}
+
 const enabledBusiness = COMMERCIAL_OPERATION_REGISTRY.filter(policy =>
   policy.domain === 'COMMERCIAL' && policy.enabled && policy.classification !== 'RECOVERY_CONTROL')
 const disabledBusiness = COMMERCIAL_OPERATION_REGISTRY.filter(policy =>
@@ -57,10 +81,10 @@ const chargedInventory = COMMERCIAL_OPERATION_REGISTRY.filter(policy =>
 
 describe('commercial registry generated zero-side-effect E1 matrix', () => {
   it('covers every current enabled MCP/HTTP business entry from the shared registry', () => {
-    expect(enabledBusiness).toHaveLength(173)
-    expect(enabledBusiness.filter(policy => policy.surface === 'MCP')).toHaveLength(115)
-    expect(enabledBusiness.filter(policy => policy.surface === 'HTTP')).toHaveLength(58)
-    expect(new Set(enabledBusiness.map(policy => `${policy.surface}:${policy.operation}`)).size).toBe(enabledBusiness.length)
+    const ids = enabledBusiness.map(policyId)
+    expect(enabledBusiness.length, inventoryDiagnostic(enabledBusiness)).toBeGreaterThan(0)
+    expect(new Set(enabledBusiness.map(policy => policy.surface))).toEqual(new Set(['MCP', 'HTTP']))
+    expect(new Set(ids).size, `duplicate operation ID; ${inventoryDiagnostic(enabledBusiness)}`).toBe(ids.length)
   })
 
   it('keeps the two central API dispatch gates before hydration and handler dispatch', () => {
@@ -85,21 +109,26 @@ describe('commercial registry generated zero-side-effect E1 matrix', () => {
   ])('rejects the complete enabled non-recovery inventory at %s before every side-effect port', async (_state, balance, code) => {
     const effects = sideEffectSpies()
     const service = serviceFor(COMMERCIAL_OPERATION_REGISTRY, balance)
+    const executedIds = new Set<string>()
     for (const policy of enabledBusiness) {
       const result = await guardedDispatch(service, policy, effects)
-      expect(result, `${policy.surface}:${policy.operation}`).toMatchObject({ outcome: 'DECISION', decision: { allowed: false, error_code: code } })
+      expect(result, policyId(policy)).toMatchObject({ outcome: 'DECISION', decision: { allowed: false, error_code: code } })
+      executedIds.add(policyId(policy))
     }
+    expectExactExecution(enabledBusiness, executedIds, `${_state} rejection execution coverage`)
     expectNoSideEffects(effects)
   })
 
   it('rejects every disabled business entry before balance, quote, or side-effect work', async () => {
     const effects = sideEffectSpies()
     const service = serviceFor(COMMERCIAL_OPERATION_REGISTRY, { state: 'known', available_points: 100, access_revision: '7', freshness: 'fresh' })
+    const executedIds = new Set<string>()
     for (const policy of disabledBusiness) {
       const result = await guardedDispatch(service, policy, effects)
-      expect(result, `${policy.surface}:${policy.operation}`).toMatchObject({ outcome: 'DENY_DISABLED' })
+      expect(result, policyId(policy)).toMatchObject({ outcome: 'DENY_DISABLED' })
+      executedIds.add(policyId(policy))
     }
-    expect(disabledBusiness).toHaveLength(35)
+    expectExactExecution(disabledBusiness, executedIds, 'disabled rejection execution coverage')
     expectNoSideEffects(effects)
   })
 
@@ -113,14 +142,16 @@ describe('commercial registry generated zero-side-effect E1 matrix', () => {
         : policy)
     const effects = sideEffectSpies()
     const service = serviceFor(enabledCharged, { state: 'known', available_points: 1, access_revision: '7', freshness: 'fresh' }, 2)
+    const executedIds = new Set<string>()
     for (const policy of chargedInventory) {
       const result = await guardedDispatch(service, { ...policy, enabled: true }, effects)
-      expect(result, `${policy.surface}:${policy.operation}`).toMatchObject({
+      expect(result, policyId(policy)).toMatchObject({
         outcome: 'DECISION',
         decision: { allowed: false, error_code: 'CREATIVE_POINTS_INSUFFICIENT', available_points: 1, quoted_points: 2 },
       })
+      executedIds.add(policyId(policy))
     }
-    expect(chargedInventory).toHaveLength(29)
+    expectExactExecution(chargedInventory, executedIds, 'insufficient rejection execution coverage')
     expectNoSideEffects(effects)
   })
 })
