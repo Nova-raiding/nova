@@ -13,6 +13,7 @@ import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
 import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
+import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
 import { IdentityLifecycleError, MemoryIdentityLifecycleRepository, PostgresIdentityLifecycleRepository, type IdentityAuthorizationSnapshot, type IdentityLifecycleRepository, type IdentityOperationsDetail } from '../../../packages/persistence/src/identity-lifecycle-repository.js'
 import { MemoryReconciliationStatusRepository, PostgresReconciliationStatusRepository, type ReconciliationStatusRepository } from '../../../packages/persistence/src/reconciliation-status-repository.js'
@@ -7068,6 +7069,77 @@ function requiredPositiveInteger(input: JsonObject, key: string, allowZero = fal
   return parsed
 }
 
+function serviceFulfillmentEventProjection(event: ServiceFulfillmentEventRecord) {
+  return {
+    id: event.id,
+    workspace_id: event.workspaceId,
+    allocation_id: event.allocationId,
+    event_type: event.type,
+    revision: event.revision,
+    idempotency_key: event.idempotencyKey,
+    actor_id: event.actorId,
+    reason: event.reason,
+    schedule_at: event.scheduleAt,
+    actual_quantity: event.actualQuantity,
+    corrects_event_id: event.correctsEventId,
+    before: event.before,
+    after: event.after,
+    evidence: event.evidence,
+    created_at: event.createdAt,
+  }
+}
+
+function throwServiceFulfillmentDomainError(error: unknown): never {
+  if (!(error instanceof ServiceFulfillmentRepositoryError)) throw error
+  const conflictCodes = new Set([
+    'SERVICE_ALLOCATION_IDEMPOTENCY_CONFLICT',
+    'SERVICE_FULFILLMENT_IDEMPOTENCY_CONFLICT',
+    'SERVICE_FULFILLMENT_REVISION_CONFLICT',
+    'SERVICE_FULFILLMENT_TRANSITION_INVALID',
+    'SERVICE_FULFILLMENT_QUOTA_EXCEEDED',
+    'SERVICE_FULFILLMENT_CORRECTION_INVALID',
+  ])
+  const status = error.code === 'SERVICE_ALLOCATION_NOT_FOUND' ? 404 : conflictCodes.has(error.code) ? 409 : 400
+  throw new DomainError(error.code, error.message, status)
+}
+
+async function appendServiceFulfillmentCommand(
+  req: IncomingMessage,
+  params: JsonObject,
+  type: 'scheduled' | 'started' | 'completed' | 'adjusted',
+) {
+  const repository = persistence.serviceFulfillment
+  if (!repository) throw new DomainError('COMMERCIAL_SERVICE_FULFILLMENT_REPOSITORY_UNAVAILABLE', '服务履约事实仓储尚未配置，禁止写入伪进度', 503)
+  const workspaceId = required(params, 'target_workspace_id')
+  const evidence = parseJsonObjectParameter(params, 'evidence_json')
+  if (Object.keys(evidence).length === 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'evidence_json 不能为空对象', 400)
+  try {
+    const saved = await repository.appendEvent({
+      workspaceId,
+      allocationId: required(params, 'allocation_id'),
+      type,
+      expectedRevision: requiredPositiveInteger(params, 'expected_revision'),
+      idempotencyKey: required(params, 'idempotency_key'),
+      actorId: requestActor(req),
+      reason: requiredOperationalReason(params),
+      evidence,
+      ...(type === 'scheduled' ? { scheduleAt: required(params, 'schedule_at') } : {}),
+      ...(type === 'completed' ? { actualQuantity: requiredPositiveInteger(params, 'actual_quantity') } : {}),
+      ...(type === 'adjusted' ? {
+        correctsEventId: required(params, 'corrects_event_id'),
+        actualQuantity: requiredPositiveInteger(params, 'actual_quantity', true),
+      } : {}),
+    })
+    return {
+      schema_version: 'commercial.service-fulfillment-command.v1',
+      allocation: projectServiceFulfillment(saved.allocation),
+      event: serviceFulfillmentEventProjection(saved.event),
+    }
+  } catch (error) {
+    return throwServiceFulfillmentDomainError(error)
+  }
+}
+
 function platformGovernanceGatesRequired() {
   if (process.env.REQUIRE_PLATFORM_GOVERNANCE_GATES === 'true') return true
   if (process.env.REQUIRE_PLATFORM_GOVERNANCE_GATES === 'false') return false
@@ -11235,6 +11307,44 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const items = (await persistence.serviceFulfillment.listAllocations(targetWorkspaceId, limit)).map(projectServiceFulfillment)
       return result({ schema_version: 'commercial.service-fulfillment.v2', items, total: items.length, next_cursor: null })
     }
+    case 'ops.commercial.service-allocation.create': {
+      const repository = persistence.serviceFulfillment
+      if (!repository) throw new DomainError('COMMERCIAL_SERVICE_FULFILLMENT_REPOSITORY_UNAVAILABLE', '服务履约事实仓储尚未配置，禁止创建伪分配', 503)
+      const evidence = parseJsonObjectParameter(params, 'evidence_json')
+      if (Object.keys(evidence).length === 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'evidence_json 不能为空对象', 400)
+      const expectedRevision = requiredPositiveInteger(params, 'expected_revision', true)
+      if (expectedRevision !== 0) throw new DomainError('SERVICE_FULFILLMENT_REVISION_CONFLICT', '新服务分配的 expected_revision 必须为 0', 409)
+      try {
+        const allocation = await repository.createAllocation({
+          workspaceId: required(params, 'target_workspace_id'),
+          orderSnapshotId: required(params, 'order_snapshot_id'),
+          entitlementSnapshotId: required(params, 'entitlement_snapshot_id'),
+          serviceType: required(params, 'service_type'),
+          unit: required(params, 'unit') as 'count' | 'minute' | 'contract_label',
+          ...(params.allocated_quantity !== undefined ? { allocatedQuantity: requiredPositiveInteger(params, 'allocated_quantity') } : {}),
+          ...(typeof params.contract_label === 'string' && params.contract_label.trim() ? { contractLabel: params.contract_label.trim() } : {}),
+          ...(typeof params.period_start === 'string' && params.period_start.trim() ? { periodStart: params.period_start.trim() } : {}),
+          ...(typeof params.period_end === 'string' && params.period_end.trim() ? { periodEnd: params.period_end.trim() } : {}),
+          sourceChecksum: required(params, 'source_checksum'),
+          expectedRevision: 0,
+          idempotencyKey: required(params, 'idempotency_key'),
+          actorId: requestActor(req),
+          reason: requiredOperationalReason(params),
+          evidence,
+        })
+        return result({ schema_version: 'commercial.service-allocation.v1', allocation: projectServiceFulfillment(allocation) })
+      } catch (error) {
+        return throwServiceFulfillmentDomainError(error)
+      }
+    }
+    case 'ops.commercial.service-fulfillment.schedule':
+      return result(await appendServiceFulfillmentCommand(req, params, 'scheduled'))
+    case 'ops.commercial.service-fulfillment.start':
+      return result(await appendServiceFulfillmentCommand(req, params, 'started'))
+    case 'ops.commercial.service-fulfillment.complete':
+      return result(await appendServiceFulfillmentCommand(req, params, 'completed'))
+    case 'ops.commercial.service-fulfillment.adjust':
+      return result(await appendServiceFulfillmentCommand(req, params, 'adjusted'))
     case 'ops.commercial.offers.list':
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'])
       return result(await (persistence.commercialExtensions ?? memoryCommercialExtensions).listOffers())

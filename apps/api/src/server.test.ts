@@ -97,6 +97,13 @@ describe('central commercial access gate', () => {
     expect(rates).toContain('persistence.commercialCatalog.listRates()')
     expect(rates).toContain('projectCreativePointRate')
     expect(rates).toContain('COMMERCIAL_RATE_CARD_UNAVAILABLE')
+    const fulfillment = source.slice(source.indexOf("case 'ops.commercial.service-fulfillment.list':"), source.indexOf("case 'ops.commercial.offers.list':"))
+    expect(fulfillment).toContain("case 'ops.commercial.service-allocation.create':")
+    expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'scheduled')")
+    expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'started')")
+    expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'completed')")
+    expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'adjusted')")
+    expect(fulfillment).not.toContain("case 'ops.commercial.service-fulfillment.cancel'")
   })
 })
 
