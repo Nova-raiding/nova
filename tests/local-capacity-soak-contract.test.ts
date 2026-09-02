@@ -147,9 +147,13 @@ describe('local capacity soak contract', () => {
 
   it('keeps idempotency tenant-scoped while the harness shares one queue runner', async () => {
     let id = 0
-    const worker = new InMemoryJobRunner<{ value: string }, string>('publish', async ({ job }) => job.payload.value, { idFactory: () => `same-id-${++id}` })
+    const providerWrites: string[] = []
+    const worker = new InMemoryJobRunner<{ value: string }, string>('publish', async ({ job }) => {
+      providerWrites.push(job.workspaceId)
+      return job.payload.value
+    }, { idFactory: () => `same-id-${++id}` })
     const first = worker.enqueue({ workspaceId: 'tenant-a', idempotencyKey: 'same', payload: { value: 'a' } })
-    const duplicate = worker.enqueue({ workspaceId: 'tenant-a', idempotencyKey: 'same', payload: { value: 'duplicate' } })
+    const duplicate = worker.enqueue({ workspaceId: 'tenant-a', idempotencyKey: 'same', payload: { value: 'a' } })
     const otherTenant = worker.enqueue({ workspaceId: 'tenant-b', idempotencyKey: 'same', payload: { value: 'b' } })
 
     expect(duplicate).toBe(first)
@@ -158,5 +162,6 @@ describe('local capacity soak contract', () => {
     await worker.runUntilIdle()
     expect(first.result).toBe('a')
     expect(otherTenant.result).toBe('b')
+    expect(providerWrites).toEqual(['tenant-a', 'tenant-b'])
   })
 })
