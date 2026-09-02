@@ -184,6 +184,27 @@ describe('durable outbox dispatcher', () => {
     expect(queue.size).toBe(1)
   })
 
+  it('keeps in-flight message identity while a worker claim is outstanding', async () => {
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const original = event({ id: 'evt_in_flight', payload: { taskId: 'task_a' } })
+    const conflicting = event({ id: 'evt_in_flight', payload: { taskId: 'task_b' } })
+
+    await queue.enqueue({ id: original.id, value: original })
+    const claimed = await queue.dequeue()
+    await expect(queue.contains(original.id)).resolves.toBe(true)
+    await expect(queue.enqueue({ id: conflicting.id, value: conflicting }))
+      .rejects.toThrow('WORKER_QUEUE_MESSAGE_CONFLICT')
+    await expect(queue.enqueue({ id: original.id, value: original })).resolves.toBeUndefined()
+    expect(queue.size).toBe(0)
+
+    await queue.nack(claimed!, 0)
+    expect(queue.size).toBe(1)
+    const retry = await queue.dequeue()
+    await queue.ack(retry!)
+    await expect(queue.enqueue({ id: conflicting.id, value: conflicting })).resolves.toBeUndefined()
+    expect(queue.size).toBe(1)
+  })
+
   it('does not re-run a duplicate transport delivery after the durable outcome is acknowledged', async () => {
     const store = new Store(event({ id: 'evt_duplicate' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const handler = vi.fn(async () => ({ value: 'ok' }))

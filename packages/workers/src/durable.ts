@@ -148,6 +148,7 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
 
 export class InMemoryQueue<T> implements QueuePort<T> {
   private readonly messages: QueueMessage<T>[] = []
+  private readonly processingFingerprints = new Map<string, string>()
   constructor(private readonly now: () => number = () => Date.now()) {}
   async enqueue(message: QueueMessage<T>): Promise<void> {
     assertQueueMessageId(message.id)
@@ -158,19 +159,42 @@ export class InMemoryQueue<T> implements QueuePort<T> {
       }
       return
     }
+    const processingFingerprint = this.processingFingerprints.get(message.id)
+    if (processingFingerprint !== undefined) {
+      if (processingFingerprint !== stableQueueSerialization(message.value)) {
+        throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
+      }
+      return
+    }
     this.messages.push({ ...message })
   }
   async dequeue(): Promise<QueueMessage<T> | undefined> {
     const index = this.messages.findIndex(message => (message.notBefore ?? 0) <= this.now())
     if (index < 0) return undefined
-    return this.messages.splice(index, 1)[0]
+    const message = this.messages.splice(index, 1)[0]
+    if (!message) return undefined
+    this.processingFingerprints.set(message.id, stableQueueSerialization(message.value))
+    return message
   }
-  async ack(_message: QueueMessage<T>): Promise<void> {}
+  async ack(message: QueueMessage<T>): Promise<void> {
+    this.processingFingerprints.delete(message.id)
+  }
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
     assertQueueRetryDelay(delayMs)
-    await this.enqueue({ ...message, ...(delayMs > 0 ? { notBefore: this.now() + delayMs } : {}) })
+    const fingerprint = stableQueueSerialization(message.value)
+    const processingFingerprint = this.processingFingerprints.get(message.id)
+    if (processingFingerprint !== undefined && processingFingerprint !== fingerprint) {
+      throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
+    }
+    // The claim is still represented by processingFingerprints, so enqueue()
+    // would intentionally deduplicate it. Requeue explicitly, then release
+    // the in-flight identity only after the retry is present.
+    this.messages.push({ ...message, ...(delayMs > 0 ? { notBefore: this.now() + delayMs } : {}) })
+    this.processingFingerprints.delete(message.id)
   }
-  async contains(id: string): Promise<boolean> { return this.messages.some(message => message.id === id) }
+  async contains(id: string): Promise<boolean> {
+    return this.messages.some(message => message.id === id) || this.processingFingerprints.has(id)
+  }
   get size(): number { return this.messages.length }
 }
 
