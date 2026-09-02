@@ -6,6 +6,7 @@ import { homedir, tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
+import { assertRelayEvidence } from './relay-evidence.mjs'
 
 const PROTOCOL_VERSION = '2025-06-18'
 const PLUGIN_VERSION = (() => {
@@ -41,7 +42,6 @@ const TASK_UI_METHODS = new Map([
 ])
 const RECHARGE_UI_METHODS = new Set()
 const IMAGE_EDIT_UI_METHODS = new Set()
-const RELAY_EVIDENCE_METHODS = new Set(['content.generate', 'catalog.image.generate', 'multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit'])
 const MAX_LOCAL_UPLOAD_BYTES = 50 * 1024 * 1024
 const MAX_EXPORT_ARTIFACT_BYTES = 25 * 1024 * 1024
 const MAX_REMOTE_RESPONSE_BYTES = 36 * 1024 * 1024
@@ -1317,27 +1317,8 @@ function assertTransportConfiguration() {
   }
 }
 
-function assertRelayEvidence(method, result) {
-  if (!RELAY_EVIDENCE_METHODS.has(method) || !['production', 'staging', 'preview'].includes(deploymentEnvironment()) || allowsLocalFixtureFallback()) return
-  const execution = result && typeof result === 'object' && !Array.isArray(result) && result.execution && typeof result.execution === 'object' ? result.execution : {}
-  const pending = result && typeof result === 'object' && !Array.isArray(result) && (['queued', 'generating', 'processing'].includes(result.state) || ['queued', 'running', 'pending'].includes(result.status))
-  if (pending) return
-  const simulated = execution.simulated === true || result?.simulated === true || result?.mode === 'fixture'
-  const providerRequestId = execution.providerRequestId ?? execution.provider_request_id ?? result?.providerRequestId ?? result?.provider_request_id
-  const usage = execution.usage ?? result?.usage
-  const cost = execution.costCny ?? execution.cost_cny ?? result?.costCny ?? result?.cost_cny
-  const missing = []
-  if (simulated) missing.push('provider_execution')
-  if (execution.providerExecuted !== true) missing.push('provider_execution')
-  if (typeof providerRequestId !== 'string' || !providerRequestId.trim()) missing.push('provider_request_id')
-  if (!usage || typeof usage !== 'object' || Array.isArray(usage) || Object.keys(usage).length === 0) missing.push('usage')
-  if (cost === undefined || cost === null || (typeof cost !== 'number' && typeof cost !== 'string')) missing.push('cost_cny')
-  if (missing.length > 0) {
-    const error = new Error('model relay evidence is incomplete; result delivery is blocked')
-    error.code = 'MODEL_RELAY_EVIDENCE_REQUIRED'
-    error.details = { operation_status: 'blocked', missing: [...new Set(missing)] }
-    throw error
-  }
+function requireRelayEvidence(method, result) {
+  return assertRelayEvidence(method, result, { environment: deploymentEnvironment(), fixtureFallback: allowsLocalFixtureFallback() })
 }
 
 function safeStructuredErrorMessage(error, code, details) {
@@ -2120,7 +2101,7 @@ async function callRemote(method, params) {
         // the API exposes native MCP transport responses.
         const result = payload.data?.result
         if (result === undefined) throw new Error('MCP gateway response is missing data.result')
-        assertRelayEvidence(method, result)
+        requireRelayEvidence(method, result)
         if (method === 'workspace.bootstrap' && result && typeof result === 'object' && typeof result.workspaceId === 'string' && result.workspaceId.trim()) {
           // Keep the first-run flow seamless within this plugin process. The
           // returned binding remains the durable cross-session contract.
