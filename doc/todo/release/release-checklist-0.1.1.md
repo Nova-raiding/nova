@@ -10,6 +10,8 @@
 
 > 2026-09-02 本地 runtime evidence 增量：`tests/local-docker-runtime-contract.test.ts` 新增真实 Compose `docker inspect` 证据，逐一校验 API、replica、UI、Ops UI、ClamAV、Postgres、Redis 与六类 Worker 的运行状态、immutable `sha256` image ID 和 `StartedAt`。该证据可绑定本地运行实例的镜像身份与启动时间，但不替代生产镜像签名、部署 release ID、目标集群和 canary，因此生产继续 NO-GO。
 
+> 2026-09-02 本地 runtime evidence replay 增量：新增 `tests/local-docker-runtime-evidence.ts`，动态采集同一 Compose 项目的容器 ID、镜像 sha256、运行状态、健康状态和启动时间，并通过独立 schema gate 固化为 JSON；`--replay --output <evidence.json>` 可在不连接 Docker 时重放校验。证据固定为 `environment=test`、`profile=local_compose`，拒绝生产环境、缺服务、非不可变镜像引用和不健康快照；该项只关闭本地运行证据可重放缺口，不替代生产签名、部署 release ID、目标集群或 canary。
+
 > 2026-08-31 UI 控制面增量：Ops Console 功能开关编辑器已对 canonical 商品链切读值显示前置条件和恢复提示；生产服务端仍强制要求正式 `canonical-cutover-evidence`。Ops Console 61 个测试文件、277 项通过，release gates 57 个文件通过、1 个跳过（324 项通过、6 项跳过）；该增量不解除真实 workspace shadow、回滚、宿主和生产资源证据门禁。
 
 > 2026-08-31 增量：MCP 当前权威基线已更新为 247；OpenAPI `McpRequest.method` 枚举已同步图片审计、计费审计和 durable authorization 方法。历史测试数字仅代表当时工作树，当前结果必须以 Repository `0.1.1`、plugin `0.1.0+codex.20260831125200` 和同一冻结提交重新执行；仓库代码级 gate 通过也不解除真实生产资源、Provider、平台、支付、OIDC 和正式 ChatGPT 宿主证据门禁。
