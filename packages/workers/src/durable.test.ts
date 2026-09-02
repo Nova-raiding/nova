@@ -66,6 +66,15 @@ const staleLeaseError = () => Object.assign(new Error('outbox event not found'),
 afterEach(() => vi.useRealTimers())
 
 describe('durable outbox dispatcher', () => {
+  it('rejects invalid lease and retry configuration before claiming work', () => {
+    const handler = async () => ({ value: true })
+    expect(() => new DurableOutboxDispatcher(new Store(event()), new InMemoryQueue(), handler, { leaseMs: 0 })).toThrow('leaseMs')
+    expect(() => new DurableOutboxDispatcher(new Store(event()), new InMemoryQueue(), handler, { leaseMs: 86_400_001 })).toThrow('leaseMs')
+    expect(() => new DurableOutboxDispatcher(new Store(event()), new InMemoryQueue(), handler, { baseDelayMs: -1 })).toThrow('baseDelayMs')
+    expect(() => new DurableOutboxDispatcher(new Store(event()), new InMemoryQueue(), handler, { baseDelayMs: 200, maxDelayMs: 100 })).toThrow('maxDelayMs')
+    expect(() => new DurableOutboxDispatcher(new Store(event()), new InMemoryQueue(), handler, { maxAttempts: 0 })).toThrow('maxAttempts')
+  })
+
   it('keeps Redis claims in processing until ack and requeues before removing on nack', async () => {
     const calls: string[] = []
     const encoded = JSON.stringify({ id: 'evt_1', value: JSON.stringify(event()) })

@@ -158,12 +158,25 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     this.now = options.now ?? (() => Date.now())
     this.leaseMs = options.leaseMs ?? 30_000
     this.handlerTimeoutMs = options.handlerTimeoutMs ?? this.leaseMs
+    if (!Number.isSafeInteger(this.leaseMs) || this.leaseMs <= 0 || this.leaseMs > 86_400_000) {
+      throw new RangeError('leaseMs must be a positive integer within one day')
+    }
     if (!Number.isSafeInteger(this.handlerTimeoutMs) || this.handlerTimeoutMs <= 0) {
       throw new RangeError('handlerTimeoutMs must be a positive integer')
     }
     this.baseDelayMs = options.baseDelayMs ?? 100
     this.maxDelayMs = options.maxDelayMs ?? 30_000
     this.maxAttempts = options.maxAttempts ?? 5
+    if (!Number.isSafeInteger(this.baseDelayMs) || this.baseDelayMs < 0 || this.baseDelayMs > 86_400_000) {
+      throw new RangeError('baseDelayMs must be a non-negative integer within one day')
+    }
+    if (!Number.isSafeInteger(this.maxDelayMs) || this.maxDelayMs < 0 || this.maxDelayMs > 86_400_000) {
+      throw new RangeError('maxDelayMs must be a non-negative integer within one day')
+    }
+    if (this.maxDelayMs < this.baseDelayMs) throw new RangeError('maxDelayMs must be greater than or equal to baseDelayMs')
+    if (!Number.isSafeInteger(this.maxAttempts) || this.maxAttempts < 1 || this.maxAttempts > 100) {
+      throw new RangeError('maxAttempts must be an integer between 1 and 100')
+    }
     this.claim = options.claim
   }
 
