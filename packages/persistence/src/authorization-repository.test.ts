@@ -66,6 +66,14 @@ describe('durable authorization repository', () => {
     expect(await repo.getAuthorizationRevision(subject)).toBe(0)
   })
 
+  it('fails closed on malformed read identities and timestamps', async () => {
+    const repo = repository()
+    await expect(repo.getGrant(' ', subject)).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    await expect(repo.getGrant('grant-id', 'subject\nunsafe')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    await expect(repo.listActivePlatformRoles(subject, 'not-a-timestamp')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    await expect(repo.listActiveGrants(subject, ' ', new Date(start).toISOString())).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+  })
+
   it('rejects ambiguous or unsafe resource scopes before advancing authorization state', async () => {
     const repo = repository()
     const issue = (resourceScope: Record<string, unknown>, ticketRef: string) => repo.issueGrant({

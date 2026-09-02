@@ -73,4 +73,12 @@ describe('PostgresAuthorizationRepository.reserveExecution', () => {
     const repository = new PostgresAuthorizationRepository({ connect }, () => new Date(now))
     await expect(repository.reserveExecution({ reservationId: 'reservation', eventId: 'event', decisionId: 'decision\ninvalid', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'cap', resourceId: 'task', scopeHash, expectedAuthorizationRevision: 0 })).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' } satisfies Partial<AuthorizationRepositoryError>)
   })
+
+  it('rejects malformed read identities before opening a transaction', async () => {
+    const connect = async () => { throw new Error('must not connect') }
+    const repository = new PostgresAuthorizationRepository({ connect }, () => new Date(now))
+    await expect(repository.getGrant(' ', subject)).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' } satisfies Partial<AuthorizationRepositoryError>)
+    await expect(repository.listActivePlatformRoles(subject, 'invalid-time')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' } satisfies Partial<AuthorizationRepositoryError>)
+    await expect(repository.listActiveGrants(subject, ' ', now)).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' } satisfies Partial<AuthorizationRepositoryError>)
+  })
 })
