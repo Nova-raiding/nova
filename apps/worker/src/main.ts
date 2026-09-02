@@ -21,7 +21,7 @@ import { createQuotaCounterStore } from './quota-transport.js'
 import { createPersistentWorkerMappingPreflightAdapter, createPostgresWorkerMappingScopeLoader, WorkerMappingExecutionContext } from './mapping-preflight-adapter.js'
 import { ASSET_SCAN_RECEIPT_SCHEMA, assetScanReceiptDigest, canonicalAssetScanReceipt, parseAssetScanReceipt, signAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
 import { createScannerRequestProof } from '../../../packages/security/src/scanner-request-proof.js'
-import { createWorkerRequestProof, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
+import { createWorkerRequestProof, resolveWorkerId, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
 import { createClamAvScanner, type ClamAvScanner } from './clamav-scanner.js'
 import { ScannerHeartbeatController } from './scanner-heartbeat.js'
 import { createExecutionAuthorizationGuard, WorkerExecutionAuthorizationError, type WorkerAuthorizationRecheck } from '../../../packages/workers/src/execution-authorization.js'
@@ -50,6 +50,7 @@ export interface WorkerConfig {
   apiBaseUrl?: string
   apiToken?: string
   apiSigningSecret?: string
+  workerId: string
   /** Set by readWorkerConfig; production handlers must never bypass the API gate. */
   environment?: 'production' | 'non-production'
   platformQuotaPerMinute: number
@@ -250,7 +251,7 @@ async function fetchWorkerApi(fetcher: typeof fetch, url: string, init: RequestI
       const workspaceId = headers.get('x-workspace-id') ?? ''
       const body = typeof init.body === 'string' || init.body instanceof Uint8Array ? init.body : undefined
       if (init.body !== undefined && body === undefined) throw new Error('signed worker requests require a string or Uint8Array body')
-      const proof = createWorkerRequestProof({ secret: signingSecret, role: workerRoleForRequest(method, requestTarget, body), method, requestTarget, workspaceId, body })
+      const proof = createWorkerRequestProof({ secret: signingSecret, workerId: headers.get('x-worker-id') ?? undefined, role: workerRoleForRequest(method, requestTarget, body), method, requestTarget, workspaceId, body })
       for (const [name, value] of Object.entries(proof.headers)) headers.set(name, value)
     }
     return await fetcher(url, { ...init, headers: Object.fromEntries(headers.entries()), signal: controller.signal })
@@ -260,8 +261,8 @@ async function fetchWorkerApi(fetcher: typeof fetch, url: string, init: RequestI
   }
 }
 
-function workerAuthIntent(signingSecret: string): Record<string, string> {
-  return { 'x-internal-worker-signing-secret': signingSecret }
+function workerAuthIntent(signingSecret: string, workerId = resolveWorkerId()): Record<string, string> {
+  return { 'x-internal-worker-signing-secret': signingSecret, 'x-worker-id': workerId }
 }
 
 function workerRoleForRequest(method: string, requestTarget: string, body?: string | Uint8Array): WorkerRequestRole {
@@ -471,14 +472,14 @@ export async function assertPublishExecution(input: {
   return { credentialRef: envelope.data.credential_ref, payloadHash: envelope.data.payload_hash, mediaRequired: envelope.data.media_required === true, ...(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) ? { authorizationSnapshot: snapshot as Record<string, unknown> } : {}) }
 }
 
-export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'>, fetcher: typeof fetch = fetch) {
+export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'> & Partial<Pick<WorkerConfig, 'workerId'>>, fetcher: typeof fetch = fetch) {
   return createExecutionAuthorizationGuard(async ({ event, operation, signal }) => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for execution authorization recheck')
     const path = operation === 'publish.execute'
       ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check?event_id=${encodeURIComponent(event.id)}`
       : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}`
     const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
-      headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret) : {}) },
+      headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret, config.workerId ?? resolveWorkerId()) : {}) },
       redirect: 'error', signal,
     })
     if (!response.ok) {
@@ -505,14 +506,14 @@ export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 
 /** Re-check the immutable commercial quote and reservation after identity /
  * RBAC authorization and immediately before provider I/O. The API owns the
  * ledger transaction; this adapter only consumes signed, current evidence. */
-export function createApiCommercialAccessGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'>, fetcher: typeof fetch = fetch) {
+export function createApiCommercialAccessGuard(config: Pick<WorkerConfig, 'apiBaseUrl' | 'apiToken' | 'apiSigningSecret'> & Partial<Pick<WorkerConfig, 'workerId'>>, fetcher: typeof fetch = fetch) {
   return createCommercialAccessGuard(async ({ event, operation, signal }) => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for commercial access recheck')
     const path = operation === 'publish.execute'
       ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check?event_id=${encodeURIComponent(event.id)}`
       : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}`
     const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
-      headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret) : {}) },
+      headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret, config.workerId ?? resolveWorkerId()) : {}) },
       redirect: 'error', signal,
     })
     if (!response.ok) {
@@ -1083,6 +1084,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
   const apiBaseUrl = env.WORKER_API_BASE_URL?.trim()
   const apiToken = env.WORKER_API_TOKEN?.trim()
   const apiSigningSecret = env.WORKER_API_SIGNING_SECRET?.trim()
+  const workerId = resolveWorkerId(env)
   const callbackRole = role === 'all' || role === 'sync' || role === 'generation' || role === 'publish' || role === 'reconcile' || role === 'automation'
   const controlledEnvironment = ['staging', 'preview', 'production'].includes(env.NODE_ENV ?? '')
   if (controlledEnvironment && callbackRole && (!apiBaseUrl || !apiToken || !apiSigningSecret)) {
@@ -1122,6 +1124,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     ...(apiBaseUrl ? { apiBaseUrl: apiBaseUrl.replace(/\/$/, '') } : {}),
     ...(apiToken ? { apiToken } : {}),
     ...(apiSigningSecret ? { apiSigningSecret } : {}),
+    workerId,
     platformQuotaPerMinute: positiveInt(env.WORKER_PLATFORM_QUOTA_PER_MINUTE, 60, 'WORKER_PLATFORM_QUOTA_PER_MINUTE'),
     modelQuotaPerMinute: positiveInt(env.WORKER_MODEL_QUOTA_PER_MINUTE, 60, 'WORKER_MODEL_QUOTA_PER_MINUTE'),
     dependencyCheckIntervalMs: positiveInt(env.WORKER_DEPENDENCY_CHECK_INTERVAL_MS, DEFAULT_WORKER_DEPENDENCY_CHECK_INTERVAL_MS, 'WORKER_DEPENDENCY_CHECK_INTERVAL_MS'),
@@ -1420,7 +1423,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     const accountId = event.payload.account_id
     if (!['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'].includes(String(platform)) || typeof accountId !== 'string' || !accountId) throw new Error('sync event is missing platform or account_id')
     const execution = await syncExecutionContext({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
-    const remoteJob = await fetchWorkerApi(fetch, `${config.apiBaseUrl}/v1/sync-jobs/${encodeURIComponent(event.aggregateId)}`, { headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret) : {}) }, redirect: 'error', signal })
+    const remoteJob = await fetchWorkerApi(fetch, `${config.apiBaseUrl}/v1/sync-jobs/${encodeURIComponent(event.aggregateId)}`, { headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret, config.workerId) : {}) }, redirect: 'error', signal })
     if (!remoteJob.ok) throw new Error(`sync job API returned ${remoteJob.status}`)
     const envelope = await parseWorkerApiJson(remoteJob) as { data?: { resumeCursor?: string; state?: string } }
     const cursor = typeof envelope.data?.resumeCursor === 'string' ? envelope.data.resumeCursor : typeof event.payload.cursor === 'string' ? event.payload.cursor : undefined

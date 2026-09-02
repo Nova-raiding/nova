@@ -609,7 +609,7 @@ describe('worker production entry', () => {
       apiBaseUrl: 'http://api', apiToken: 'token', event,
       signingSecret: 'signing-secret',
       fetcher: async (_url, init) => {
-        expect(init?.headers).toMatchObject({ 'x-worker-workspace-signature': expect.stringMatching(/^[a-f0-9]{64}$/u) })
+        expect(init?.headers).toMatchObject({ 'x-worker-id': expect.any(String), 'x-worker-workspace-signature': expect.stringMatching(/^[a-f0-9]{64}$/u) })
         return new Response(JSON.stringify({ data: { state: 'failed', taskId: 'task_stale' } }), { status: 200 })
       },
     })).rejects.toMatchObject({ code: 'GENERATION_JOB_TERMINAL' })

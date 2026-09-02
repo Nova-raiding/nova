@@ -15,31 +15,38 @@ function isSafeRequestTarget(value: string): boolean {
 type ProofBase = {
   secret: string
   role: WorkerRequestRole
+  workerId?: string
   method: string
   requestTarget: string
   workspaceId: string
   body?: string | Uint8Array
 }
 
+export function resolveWorkerId(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.WORKER_ID?.trim() || env.HOSTNAME?.trim()
+  return configured && /^[A-Za-z0-9_.:-]{1,128}$/u.test(configured) ? configured : 'legacy-worker'
+}
+
 export function workerRequestBodySha256(body?: string | Uint8Array): string {
   return createHash('sha256').update(body ?? new Uint8Array()).digest('hex')
 }
 
-export function canonicalWorkerRequestProof(input: Omit<ProofBase, 'secret' | 'body'> & { timestamp: string; nonce: string; bodySha256: string }): string {
-  return [input.role, input.method, input.requestTarget, input.workspaceId, input.timestamp, input.nonce, input.bodySha256].join('\n')
+export function canonicalWorkerRequestProof(input: Omit<ProofBase, 'secret' | 'body'> & { workerId: string; timestamp: string; nonce: string; bodySha256: string }): string {
+  return [input.workerId, input.role, input.method, input.requestTarget, input.workspaceId, input.timestamp, input.nonce, input.bodySha256].join('\n')
 }
 
 export function createWorkerRequestProof(input: ProofBase & { timestampSeconds?: number; nonce?: string }) {
   const timestamp = String(input.timestampSeconds ?? Math.floor(Date.now() / 1000))
   const nonce = input.nonce ?? randomBytes(24).toString('base64url')
+  const workerId = input.workerId?.trim() || resolveWorkerId()
   if (!input.secret || !WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !isSafeRequestTarget(input.requestTarget)
-    || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !/^\d{10}$/u.test(timestamp) || !/^[A-Za-z0-9_-]{16,128}$/u.test(nonce)) {
+    || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !/^[A-Za-z0-9_.:-]{1,128}$/u.test(workerId) || !/^\d{10}$/u.test(timestamp) || !/^[A-Za-z0-9_-]{16,128}$/u.test(nonce)) {
     throw new Error('worker request proof input is invalid')
   }
   const bodySha256 = workerRequestBodySha256(input.body)
-  const canonical = canonicalWorkerRequestProof({ role: input.role, method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp, nonce, bodySha256 })
+  const canonical = canonicalWorkerRequestProof({ workerId, role: input.role, method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp, nonce, bodySha256 })
   const signature = createHmac('sha256', input.secret).update(canonical).digest('hex')
-  return { timestamp, nonce, bodySha256, signature, canonical, headers: { 'x-worker-role': input.role, 'x-worker-timestamp': timestamp, 'x-worker-nonce': nonce, 'x-worker-body-sha256': bodySha256, 'x-worker-workspace-signature': signature } }
+  return { workerId, timestamp, nonce, bodySha256, signature, canonical, headers: { 'x-worker-id': workerId, 'x-worker-role': input.role, 'x-worker-timestamp': timestamp, 'x-worker-nonce': nonce, 'x-worker-body-sha256': bodySha256, 'x-worker-workspace-signature': signature } }
 }
 
 function safeEqualHex(left: string, right: string): boolean {
@@ -55,15 +62,16 @@ export function verifyWorkerRequestProof(input: ProofBase & { timestamp: string;
       || typeof input.bodySha256 !== 'string' || typeof input.signature !== 'string'
       || (input.body !== undefined && typeof input.body !== 'string' && !(input.body instanceof Uint8Array))) return false
     const timestampSeconds = Number(input.timestamp)
+    const workerId = input.workerId?.trim() || resolveWorkerId()
     const nowSeconds = input.nowSeconds ?? Math.floor(Date.now() / 1000)
     const maxSkewSeconds = input.maxSkewSeconds ?? WORKER_REQUEST_PROOF_MAX_SKEW_SECONDS
     if (!WORKER_ROLES.includes(input.role) || !/^[A-Z]+$/u.test(input.method) || !isSafeRequestTarget(input.requestTarget)
-      || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
+      || !/^[A-Za-z0-9_-]{1,128}$/u.test(input.workspaceId) || !/^[A-Za-z0-9_.:-]{1,128}$/u.test(workerId) || !Number.isSafeInteger(timestampSeconds) || !/^\d{10}$/u.test(input.timestamp)
       || !Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxSkewSeconds) || maxSkewSeconds < 0 || maxSkewSeconds > MAX_CONFIGURED_SKEW_SECONDS
       || Math.abs(nowSeconds - timestampSeconds) > maxSkewSeconds || !/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) return false
     const actualDigest = workerRequestBodySha256(input.body)
     if (!safeEqualHex(input.bodySha256.toLowerCase(), actualDigest)) return false
-    const canonical = canonicalWorkerRequestProof({ role: input.role, method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp: input.timestamp, nonce: input.nonce, bodySha256: input.bodySha256.toLowerCase() })
+    const canonical = canonicalWorkerRequestProof({ workerId, role: input.role, method: input.method, requestTarget: input.requestTarget, workspaceId: input.workspaceId, timestamp: input.timestamp, nonce: input.nonce, bodySha256: input.bodySha256.toLowerCase() })
     return safeEqualHex(input.signature.toLowerCase(), createHmac('sha256', input.secret).update(canonical).digest('hex'))
   } catch { return false }
 }

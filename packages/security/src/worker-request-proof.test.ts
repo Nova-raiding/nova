@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createWorkerRequestProof, verifyWorkerRequestProof } from './worker-request-proof.js'
 
 describe('worker request proof', () => {
-  const base = { secret: 'role-scoped-secret', role: 'generation' as const, method: 'POST', requestTarget: '/v1/generation-jobs/job_1/result', workspaceId: 'ws_1', body: '{"ok":true}', timestampSeconds: 1_800_000_000, nonce: 'nonce_1234567890123456' }
+  const base = { secret: 'role-scoped-secret', workerId: 'worker-a', role: 'generation' as const, method: 'POST', requestTarget: '/v1/generation-jobs/job_1/result', workspaceId: 'ws_1', body: '{"ok":true}', timestampSeconds: 1_800_000_000, nonce: 'nonce_1234567890123456' }
 
   it('binds role, route, workspace and exact body', () => {
     const proof = createWorkerRequestProof(base)
@@ -14,6 +14,13 @@ describe('worker request proof', () => {
   it('rejects expired proofs', () => {
     const proof = createWorkerRequestProof(base)
     expect(verifyWorkerRequestProof({ ...base, timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature, nowSeconds: 1_800_000_061 })).toBe(false)
+  })
+
+  it('binds the proof to the stable worker identity', () => {
+    const proof = createWorkerRequestProof(base)
+    expect(proof.headers['x-worker-id']).toBe('worker-a')
+    expect(verifyWorkerRequestProof({ ...base, workerId: 'worker-b', timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature, nowSeconds: 1_800_000_000 })).toBe(false)
+    expect(verifyWorkerRequestProof({ ...base, workerId: 'worker-a', timestamp: proof.timestamp, nonce: proof.nonce, bodySha256: proof.bodySha256, signature: proof.signature, nowSeconds: 1_800_000_000 })).toBe(true)
   })
 
   it('fails closed for malformed runtime verification input', () => {

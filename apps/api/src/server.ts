@@ -8281,18 +8281,20 @@ async function requireWorkerAuthorization(req: IncomingMessage) {
   const credential = credentialIndex >= 0 ? candidates[credentialIndex] : undefined
   if (!credential) throw new DomainError(ERROR_CODES.FORBIDDEN, 'worker internal authorization required', 403)
   const workspaceId = header(req, 'x-workspace-id')?.trim() ?? ''
+  const workerId = header(req, 'x-worker-id')?.trim() ?? ''
   const timestamp = header(req, 'x-worker-timestamp')?.trim() ?? ''
   const nonce = header(req, 'x-worker-nonce')?.trim() ?? ''
   const bodySha256 = header(req, 'x-worker-body-sha256')?.trim().toLowerCase() ?? ''
   const signature = header(req, 'x-worker-workspace-signature')?.trim() ?? ''
   const rawBody = await requestBodyBytes(req, DEFAULT_BODY_LIMIT)
-  if (!verifyWorkerRequestProof({ secret: credential.signingSecret, role, method: req.method ?? 'GET', requestTarget, workspaceId, body: rawBody, timestamp, nonce, bodySha256, signature })) {
+  if (!workerId) throw new DomainError(ERROR_CODES.FORBIDDEN, 'worker identity header is required', 403)
+  if (!verifyWorkerRequestProof({ secret: credential.signingSecret, role, workerId, method: req.method ?? 'GET', requestTarget, workspaceId, body: rawBody, timestamp, nonce, bodySha256, signature })) {
     throw new DomainError(ERROR_CODES.FORBIDDEN, 'worker proof is missing, expired, or not bound to this role and request', 403)
   }
   if (!await consumeWorkerNonce(nonce)) throw new DomainError('WORKER_NONCE_REPLAY', 'worker request proof has already been used', 409)
   enrichRequestObservation(req, {
     workspaceId,
-    actorId: `worker:${role}`,
+    actorId: `worker:${workerId}`,
     workerRole: role,
     workerCredentialSlot: credentialIndex === 0 ? 'current' : 'rotation',
     workerProofTimestamp: Number(timestamp),

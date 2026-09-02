@@ -1669,6 +1669,9 @@ describe('security and access-control acceptance gates', () => {
     expect((await oidc.json() as Envelope).error?.code).toBe('FORBIDDEN')
 
     const proof = workerProofHeaders({ role: 'generation', secret: 'worker-signing-secret', method: 'POST', path, workspaceId: 'ws_worker', body })
+    const forgedIdentity = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof, 'x-worker-id': 'worker-forged' }, body })
+    expect(forgedIdentity.status).toBe(403)
+    expect((await forgedIdentity.json() as Envelope).error?.code).toBe('FORBIDDEN')
     const tampered = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof }, body: `${body} ` })
     expect(tampered.status).toBe(403)
     const accepted = await fetch(`${base}${path}`, { method: 'POST', headers: { ...commonHeaders, authorization: 'Bearer worker-token', ...proof }, body })
