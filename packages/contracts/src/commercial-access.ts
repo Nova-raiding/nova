@@ -285,8 +285,8 @@ export function assertCommercialOperationRegistryTotality(
   }
 }
 
-export function isCommercialAccessErrorCode(code: ErrorCode): code is CommercialAccessErrorCode {
-  return (COMMERCIAL_ACCESS_ERROR_CODES as readonly ErrorCode[]).includes(code)
+export function isCommercialAccessErrorCode(code: string): code is CommercialAccessErrorCode {
+  return (COMMERCIAL_ACCESS_ERROR_CODES as readonly string[]).includes(code)
 }
 
 /** Validates the wire-level null and fail-closed invariants. */

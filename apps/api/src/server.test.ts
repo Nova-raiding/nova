@@ -2,8 +2,9 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requirePublishAuthorizationSnapshot } from './server.js'
+import { DomainError } from '../../../packages/application/src/service.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
@@ -34,6 +35,43 @@ describe('central commercial access gate', () => {
     await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'unregistered.business.action')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_UNCLASSIFIED', status: 503 })
   })
 
+  it.each([
+    'CREATIVE_POINTS_EXHAUSTED',
+    'CREATIVE_POINTS_INSUFFICIENT',
+    'CREATIVE_POINTS_UNAVAILABLE',
+    'RATE_CARD_UNAVAILABLE',
+    'COMMERCIAL_ACCESS_STALE',
+  ])('preserves %s evidence for the native ChatGPT MCP transport', (code) => {
+    const details = {
+      balance_state: code === 'CREATIVE_POINTS_UNAVAILABLE' ? 'unknown' : 'known',
+      available_points: code === 'CREATIVE_POINTS_UNAVAILABLE' ? null : 3,
+      quoted_points: code === 'CREATIVE_POINTS_INSUFFICIENT' ? 10 : null,
+      access_revision: code === 'CREATIVE_POINTS_UNAVAILABLE' ? null : '7',
+      rate_card_version: code === 'CREATIVE_POINTS_INSUFFICIENT' ? 'rate:v1' : null,
+      next_actions: ['commercial.access.get', 'creative-points.balance.get'],
+      retryable: code === 'CREATIVE_POINTS_UNAVAILABLE' || code === 'RATE_CARD_UNAVAILABLE' || code === 'COMMERCIAL_ACCESS_STALE',
+    }
+    expect(nativeMcpCommercialErrorData(new DomainError(code, 'blocked', 503, details), request)).toEqual({
+      ...details,
+      code,
+      request_id: 'req_commercial_test',
+      trace_id: 'trace_commercial_test',
+    })
+  })
+
+  it('does not attach business data to non-commercial JSON-RPC failures', () => {
+    expect(nativeMcpCommercialErrorData(new DomainError('INVALID_REQUEST', 'invalid', 400), request)).toBeUndefined()
+  })
+
+  it('derives native ChatGPT tool availability from the shared commercial registry', () => {
+    expect(isNativeMcpToolEnabled('merchant.start')).toBe(true)
+    expect(isNativeMcpToolEnabled('creative-points.balance.get')).toBe(true)
+    expect(isNativeMcpToolEnabled('billing.recharge.create')).toBe(false)
+    expect(isNativeMcpToolEnabled('content.generate')).toBe(false)
+    expect(isNativeMcpToolEnabled('ops.finance.export')).toBe(false)
+    expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)
+  })
+
   it('keeps all statement recovery surfaces backed by the creative-point ledger', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const mcpStart = source.indexOf("case 'creative-points.statement.list':")
@@ -48,14 +86,17 @@ describe('central commercial access gate', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const access = source.slice(source.indexOf("case 'ops.commercial.access.summary':"), source.indexOf("case 'ops.commercial.catalog-v2.list':"))
     const catalog = source.slice(source.indexOf("case 'ops.commercial.catalog-v2.list':"), source.indexOf("case 'ops.commercial.access-blocks.list':"))
-    expect(access).toContain('decision_id:')
-    expect(access).toContain('allowed:')
+    expect(access).toContain('projectCommercialAccessSummary')
+    expect(access).toContain('CREATIVE_POINT_BALANCE_REPOSITORY_UNAVAILABLE')
     expect(access).not.toContain('decision: access')
-    for (const field of ['name', 'type', 'price_label', 'benefits_summary', 'approval_state']) expect(catalog).toContain(field)
-    expect(catalog).toContain("capabilities.has('commercial.private_sku.read')")
+    expect(catalog).toContain('effectiveAuthorizationProjection')
+    expect(catalog).toContain('authorizeCommercialCatalogRead')
+    expect(catalog).toContain('projectCommercialCatalogItem')
+    expect(catalog).not.toContain("capabilities.has('commercial.private_sku.read')")
     const rates = source.slice(source.indexOf("case 'ops.commercial.rate-cards.list':"), source.indexOf("case 'ops.commercial.service-fulfillment.list':"))
     expect(rates).toContain('persistence.commercialCatalog.listRates()')
-    for (const field of ['action_code', 'action_label', 'unit_label', 'points_rule', 'approval_state', 'blocking_reason']) expect(rates).toContain(field)
+    expect(rates).toContain('projectCreativePointRate')
+    expect(rates).toContain('COMMERCIAL_RATE_CARD_UNAVAILABLE')
   })
 })
 

@@ -5,6 +5,11 @@
   --ops-focus-offset: 3px;
   --ops-focus-width: 3px;
   --ops-motion-fast: 120ms;
+  --ops-text: #0f172a;
+  --ops-text-secondary: #475569;
+  --ops-surface: #fff;
+  --ops-border: #e2e8f0;
+  --ops-danger: #b91c1c;
   /* Ops navigation tokens: one desktop surface, shared by scope and action controls. */
   --ops-nav-surface: #12234f;
   --ops-nav-surface-raised: rgb(15 34 78 / 72%);
@@ -147,14 +152,19 @@ body { margin: 0; min-width: 320px; background: #f8fafc; }
 .ops-token { min-width: 0; overflow-wrap: anywhere; }
 .commercial-operations-workspace > .ant-tabs > .ant-tabs-nav { margin-bottom: 8px; }
 .commercial-operations-workspace > .ant-tabs > .ant-tabs-nav .ant-tabs-tab { min-height: 44px; padding-inline: 4px; font-weight: 600; }
-.commercial-access-status { width: 100%; min-height: 52px; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; }
+.commercial-access-status { width: 100%; min-height: 52px; padding: 12px 16px; border: 1px solid var(--ops-border); border-radius: 6px; background: var(--ops-surface); }
 .commercial-access-status .ops-token { font-variant-numeric: tabular-nums; }
 .commercial-view { min-width: 0; scroll-margin-top: 24px; }
 .commercial-view > h4 { margin: 0 0 12px !important; }
 .commercial-view > h4:focus { outline: none; }
 .commercial-view > h4:focus-visible { outline: var(--ops-focus-width) solid var(--ops-focus-color); outline-offset: var(--ops-focus-offset); border-radius: 4px; }
-.commercial-filter-bar { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 12px; border: 1px solid #e2e8f0; border-bottom: 0; background: #fff; }
-.commercial-view .ant-table-wrapper { border: 1px solid #e2e8f0; }
+.commercial-filter-bar { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 12px; border: 1px solid var(--ops-border); border-bottom: 0; background: var(--ops-surface); }
+.commercial-search { width: 280px; }
+.commercial-status-filter { min-width: 224px; }
+.commercial-error-summary { scroll-margin-top: 24px; }
+.commercial-error-summary:focus { outline: none; }
+.commercial-error-summary:focus-visible { outline: var(--ops-focus-width) solid var(--ops-danger); outline-offset: var(--ops-focus-offset); border-radius: 6px; }
+.commercial-view .ant-table-wrapper { border: 1px solid var(--ops-border); }
 .commercial-view .ant-table-cell { font-variant-numeric: tabular-nums; }
 .ops-readiness-empty-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .ops-batch-detail-region { margin-top: 16px; border-radius: 8px; }

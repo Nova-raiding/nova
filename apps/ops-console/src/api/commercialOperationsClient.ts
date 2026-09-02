@@ -187,12 +187,17 @@ export function parseCommercialAccessSummary(value: unknown): CommercialAccessSu
   if (!object(value)) invalid(method, "结果必须是对象");
   const allowed = boolean(value.allowed);
   if (allowed === null) invalid(method, "allowed 缺失");
+  const balanceState = requiredText(value, method, "balance_state", "balance_state", "balanceState");
+  const availablePoints = finiteNumber(pick(value, "available_points", "availablePoints"));
+  const reservedPoints = finiteNumber(pick(value, "reserved_points", "reservedPoints"));
+  if (balanceState === "known" && (availablePoints === null || reservedPoints === null)) invalid(method, "known 余额必须包含 available_points 与 reserved_points");
+  if (balanceState === "unknown" && (availablePoints !== null || reservedPoints !== null)) invalid(method, "unknown 余额不能携带确定点数");
   return {
     decisionId: requiredText(value, method, "decision_id", "decision_id", "decisionId"),
     workspaceId: requiredText(value, method, "workspace_id", "workspace_id", "workspaceId"),
-    balanceState: requiredText(value, method, "balance_state", "balance_state", "balanceState"),
-    availablePoints: finiteNumber(pick(value, "available_points", "availablePoints")),
-    reservedPoints: finiteNumber(pick(value, "reserved_points", "reservedPoints")),
+    balanceState,
+    availablePoints,
+    reservedPoints,
     quotedPoints: finiteNumber(pick(value, "quoted_points", "quotedPoints")),
     accessRevision: optionalText(pick(value, "access_revision", "accessRevision")),
     rateCardVersion: optionalText(pick(value, "rate_card_version", "rateCardVersion")),
@@ -321,9 +326,9 @@ export const commercialOperationsClient = {
   blocks: async (targetWorkspaceId: string, signal?: AbortSignal) => parseAccessBlocks(await rpc(commercialOperationsMethods.accessBlocks, { target_workspace_id: targetWorkspaceId, status: "open", limit: "100" }, { signal })),
   entitlements: async (targetWorkspaceId: string, signal?: AbortSignal) => parseEntitlements(await rpc(commercialOperationsMethods.entitlements, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   ledger: async (targetWorkspaceId: string, signal?: AbortSignal) => parseLedger(await rpc(commercialOperationsMethods.ledger, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
-  catalog: async (targetWorkspaceId: string, includePrivate: boolean, signal?: AbortSignal) => parseCatalog(await rpc(commercialOperationsMethods.catalog, { target_workspace_id: targetWorkspaceId, limit: "100", include_private: String(includePrivate) }, { signal })),
+  catalog: async (_targetWorkspaceId: string, includePrivate: boolean, signal?: AbortSignal) => parseCatalog(await rpc(commercialOperationsMethods.catalog, { limit: "100", include_private: String(includePrivate) }, { signal })),
   orders: async (targetWorkspaceId: string, signal?: AbortSignal) => parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
-  rates: async (targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
 };
 

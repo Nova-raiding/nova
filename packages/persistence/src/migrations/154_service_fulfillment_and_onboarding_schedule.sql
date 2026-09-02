@@ -16,6 +16,9 @@ CREATE TABLE workspace_service_allocations (
   period_start TIMESTAMPTZ,
   period_end TIMESTAMPTZ,
   source_checksum TEXT NOT NULL CHECK (source_checksum ~ '^[0-9a-f]{64}$'),
+  created_by_actor_id TEXT NOT NULL,
+  creation_reason TEXT NOT NULL CHECK (length(trim(creation_reason)) > 0),
+  creation_evidence JSONB NOT NULL CHECK (creation_evidence <> '{}'::jsonb),
   revision BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0),
   status TEXT NOT NULL DEFAULT 'allocated' CHECK (status IN ('allocated', 'scheduled', 'in_progress', 'completed', 'cancelled')),
   used_quantity BIGINT NOT NULL DEFAULT 0 CHECK (used_quantity >= 0),
@@ -68,7 +71,10 @@ CREATE TABLE workspace_service_fulfillment_events (
 ALTER TABLE onboarding_point_grant_schedules_v2
   ADD COLUMN entitlement_snapshot_id TEXT,
   ADD COLUMN blockers JSONB NOT NULL DEFAULT '["ONBOARDING_GRANT_START_DATE_UNRESOLVED","ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED"]'::jsonb,
-  ADD COLUMN source_checksum TEXT CHECK (source_checksum ~ '^[0-9a-f]{64}$');
+  ADD COLUMN source_checksum TEXT CHECK (source_checksum ~ '^[0-9a-f]{64}$'),
+  ADD COLUMN created_by_actor_id TEXT,
+  ADD COLUMN creation_reason TEXT,
+  ADD COLUMN creation_evidence JSONB;
 
 CREATE INDEX service_allocations_workspace_updated_idx ON workspace_service_allocations(workspace_id, updated_at DESC, id DESC);
 CREATE INDEX service_events_workspace_allocation_idx ON workspace_service_fulfillment_events(workspace_id, allocation_id, revision);
@@ -94,6 +100,8 @@ $$;
 
 CREATE TRIGGER workspace_service_fulfillment_events_append_only BEFORE UPDATE OR DELETE ON workspace_service_fulfillment_events FOR EACH ROW EXECUTE FUNCTION reject_service_fulfillment_fact_mutation();
 CREATE TRIGGER workspace_service_fulfillment_events_no_truncate BEFORE TRUNCATE ON workspace_service_fulfillment_events FOR EACH STATEMENT EXECUTE FUNCTION reject_service_fulfillment_fact_mutation();
+CREATE TRIGGER onboarding_point_grant_schedules_v2_append_only_unresolved BEFORE UPDATE OR DELETE ON onboarding_point_grant_schedules_v2 FOR EACH ROW EXECUTE FUNCTION reject_service_fulfillment_fact_mutation();
+CREATE TRIGGER onboarding_point_grant_schedules_v2_no_truncate_unresolved BEFORE TRUNCATE ON onboarding_point_grant_schedules_v2 FOR EACH STATEMENT EXECUTE FUNCTION reject_service_fulfillment_fact_mutation();
 
 DO $service_fulfillment_acl$
 BEGIN

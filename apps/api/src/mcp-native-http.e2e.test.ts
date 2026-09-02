@@ -32,16 +32,51 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.length).toBeGreaterThan(0)
     expect(payload.result.tools.every(tool => !tool.name.startsWith('ops.'))).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'asset.scan')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'billing.recharge.create')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'content.generate')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'commercial.access.get')).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name === 'creative-points.balance.get')).toBe(true)
+    expect(payload.result.tools.some(tool => tool.name === 'merchant.start')).toBe(true)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)
   })
 
   it('maps tools/call to the existing authorized business RPC and returns MCP content', async () => {
     const base = await start()
-    const response = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 'call-1', method: 'tools/call', params: { name: 'merchant.first_value', arguments: { example: 'true' } } }) })
+    const response = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 'call-1', method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: {} } }) })
     const payload = await response.json() as { jsonrpc: string; id: string; result?: { content: Array<{ type: string; text: string }>; structuredContent: Record<string, unknown> } }
     expect(response.status).toBe(200)
-    expect(payload).toMatchObject({ jsonrpc: '2.0', id: 'call-1', result: { content: [{ type: 'text' }], structuredContent: { execution: { simulated: true } } } })
-    expect(JSON.parse(payload.result!.content[0]!.text)).toMatchObject({ previewOnly: true })
+    expect(payload).toMatchObject({ jsonrpc: '2.0', id: 'call-1', result: { content: [{ type: 'text' }], structuredContent: { schema_version: 'creative-points.balance.v1', workspace_id: 'ws_demo' } } })
+    expect(JSON.parse(payload.result!.content[0]!.text)).toMatchObject({ schema_version: 'creative-points.balance.v1', workspace_id: 'ws_demo' })
+  })
+
+  it('preserves commercial access evidence in native JSON-RPC error.data', async () => {
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...headers, 'x-request-id': 'req_native_points', 'x-trace-id': 'trace_native_points' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'blocked-1', method: 'tools/call', params: { name: 'merchant.start', arguments: {} } }),
+    })
+    const payload = await response.json() as { error?: { code: number; data?: Record<string, unknown> } }
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({
+      error: {
+        code: -32603,
+        data: {
+          code: 'CREATIVE_POINTS_UNAVAILABLE',
+          request_id: 'req_native_points',
+          trace_id: 'trace_native_points',
+          balance_state: 'unknown',
+          available_points: null,
+          quoted_points: null,
+          access_revision: null,
+          rate_card_version: null,
+          classification: 'POINT_REQUIRED_NO_CHARGE',
+          registry_version: 'commercial-operation-registry.v1',
+          next_actions: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
+          retryable: true,
+        },
+      },
+    })
   })
 
   it('rejects unknown native tools with a JSON-RPC method-not-found error', async () => {
@@ -53,6 +88,10 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const compatibilityTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'asset.scan', arguments: {} } }) })
     expect(compatibilityTool.status).toBe(200)
     expect(await compatibilityTool.json()).toMatchObject({ jsonrpc: '2.0', id: 7, error: { code: -32601 } })
+
+    const disabledCommercialTool = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: {} } }) })
+    expect(disabledCommercialTool.status).toBe(200)
+    expect(await disabledCommercialTool.json()).toMatchObject({ jsonrpc: '2.0', id: 8, error: { code: -32601 } })
   })
 
   it('returns JSON-RPC method-not-found for unknown native methods instead of legacy envelopes', async () => {
@@ -74,7 +113,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const base = await start()
     const invalidRequest = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '1.0', id: 5, method: 'initialize' }) })
     expect(await invalidRequest.json()).toMatchObject({ jsonrpc: '2.0', id: 5, error: { code: -32600 } })
-    const invalidParams = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'merchant.first_value', arguments: [] } }) })
+    const invalidParams = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: [] } }) })
     expect(await invalidParams.json()).toMatchObject({ jsonrpc: '2.0', id: 6, error: { code: -32602 } })
   })
 

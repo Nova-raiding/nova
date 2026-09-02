@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { planOnboardingGrantSchedule, ServiceFulfillmentError, ServiceFulfillmentService, type ServiceAllocation, type ServiceFulfillmentEvent } from './service-fulfillment.js'
+import { planOnboardingDeliveryChecklist, planOnboardingGrantSchedule, ServiceFulfillmentError, ServiceFulfillmentService, type ServiceAllocation, type ServiceFulfillmentEvent } from './service-fulfillment.js'
 
 const allocation: ServiceAllocation = {
   id: 'svc_1', workspaceId: 'ws_a', orderSnapshotId: 'ord_snap_1', entitlementSnapshotId: 'ent_snap_1',
@@ -22,6 +22,20 @@ describe('onboarding grant schedule planning', () => {
     expect(rows.every(row => row.points === 500 && row.status === 'unresolved' && row.dueAt === null && row.expiresAt === null)).toBe(true)
     expect(new Set(rows.map(row => row.naturalKey)).size).toBe(6)
     expect(rows[0]?.blockers).toEqual(['ONBOARDING_GRANT_START_DATE_UNRESOLVED', 'ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED'])
+  })
+})
+
+describe('onboarding delivery checklist planning', () => {
+  it('keeps source-listed delivery items and unresolved product limit explicit', () => {
+    const items = planOnboardingDeliveryChecklist({ sourceChecksum: 'a'.repeat(64), maxBrands: 1, maxStores: 5, maxProducts: null, platforms: ['taobao', 'tmall', 'jd', 'pinduoduo', 'douyin', 'xiaohongshu'] })
+    expect(items.map(item => item.itemCode)).toEqual(expect.arrayContaining(['plugin_account_activation', 'system_usage_training', 'launch_acceptance', 'store_initial_scan_entry', 'product_initial_scan_entry', 'brand_asset_initial_entry']))
+    expect(items.find(item => item.itemCode === 'store_initial_scan_entry')).toMatchObject({ quantity: 5, status: 'allocated' })
+    expect(items.find(item => item.itemCode === 'brand_asset_initial_entry')).toMatchObject({ quantity: 1, status: 'allocated' })
+    expect(items.find(item => item.itemCode === 'product_initial_scan_entry')).toMatchObject({ quantity: null, status: 'unresolved', blockers: ['PRODUCT_INITIAL_IMPORT_LIMIT_UNRESOLVED'] })
+  })
+
+  it('rejects non-standard platforms rather than inventing a connector', () => {
+    expect(() => planOnboardingDeliveryChecklist({ sourceChecksum: 'a'.repeat(64), maxBrands: 1, maxStores: 5, maxProducts: 10, platforms: ['erp' as never] })).toThrow(/platform/i)
   })
 })
 

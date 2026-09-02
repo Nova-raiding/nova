@@ -45,6 +45,9 @@ export interface CommercialLoadError {
   code: string;
   requestId?: string;
   traceId?: string;
+  httpStatus?: number;
+  details?: Readonly<Record<string, unknown>>;
+  nextActions?: readonly unknown[];
 }
 
 export interface CommercialDataState<T> {
@@ -75,6 +78,38 @@ function errorEvidence(cause: unknown): CommercialLoadError {
     code: typeof error?.code === "string" ? error.code : "COMMERCIAL_OPERATIONS_UNAVAILABLE",
     ...(typeof error?.requestId === "string" ? { requestId: error.requestId } : {}),
     ...(typeof error?.traceId === "string" ? { traceId: error.traceId } : {}),
+    ...(typeof error?.httpStatus === "number" ? { httpStatus: error.httpStatus } : {}),
+    ...(error?.details && typeof error.details === "object" ? { details: error.details } : {}),
+    ...(Array.isArray(error?.nextActions) ? { nextActions: error.nextActions } : {}),
+  };
+}
+
+export interface CommercialQueryState {
+  view: CommercialView;
+  record: string;
+  status: string;
+  query: string;
+  page: number;
+  sort: string;
+  order: "ascend" | "descend" | "";
+}
+
+const positiveInteger = (value: string | null): number => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+};
+
+export function readCommercialQuery(search: string): CommercialQueryState {
+  const params = new URLSearchParams(search);
+  const order = params.get("order");
+  return {
+    view: readCommercialView(search),
+    record: params.get("record")?.trim() ?? "",
+    status: params.get("status")?.trim() ?? "",
+    query: params.get("q")?.trim() ?? "",
+    page: positiveInteger(params.get("page")),
+    sort: params.get("sort")?.trim() ?? "",
+    order: order === "ascend" || order === "descend" ? order : "",
   };
 }
 
@@ -101,11 +136,34 @@ export function commercialViewUrl(location: Pick<Location, "pathname" | "search"
   return `${location.pathname}${query ? `?${query}` : ""}${location.hash}`;
 }
 
+export function commercialQueryUrl(
+  location: Pick<Location, "pathname" | "search" | "hash">,
+  patch: Partial<CommercialQueryState>,
+): string {
+  const params = new URLSearchParams(location.search);
+  const values: Array<[keyof CommercialQueryState, string, string]> = [
+    ["view", "view", patch.view ?? ""], ["record", "record", patch.record ?? ""],
+    ["status", "status", patch.status ?? ""], ["query", "q", patch.query ?? ""],
+    ["sort", "sort", patch.sort ?? ""], ["order", "order", patch.order ?? ""],
+  ];
+  for (const [field, key, value] of values) {
+    if (!(field in patch)) continue;
+    if (value) params.set(key, value); else params.delete(key);
+  }
+  if (patch.page !== undefined) {
+    if (patch.page > 1) params.set("page", String(patch.page)); else params.delete("page");
+  }
+  const query = params.toString();
+  return `${location.pathname}${query ? `?${query}` : ""}${location.hash}`;
+}
+
 export function useCommercialOperations(
   authorization: AuthorizationProjection,
   client: CommercialOperationsClient = commercialOperationsClient,
 ) {
-  const [view, setViewState] = useState<CommercialView>(() => typeof window === "undefined" ? "blocks" : readCommercialView(window.location.search));
+  const [queryState, setQueryState] = useState<CommercialQueryState>(() => typeof window === "undefined"
+    ? readCommercialQuery("") : readCommercialQuery(window.location.search));
+  const view = queryState.view;
   const [summary, setSummary] = useState<CommercialDataState<CommercialAccessSummary>>({ status: "idle" });
   const [data, setData] = useState(initialDataStates);
   const requestRef = useRef(0);
@@ -116,16 +174,36 @@ export function useCommercialOperations(
   const targetWorkspaceId = readCommercialTargetWorkspace(typeof window === "undefined" ? "" : window.location.search, authorization);
 
   const setView = useCallback((next: CommercialView) => {
-    setViewState(next);
-    if (typeof window !== "undefined") window.history.pushState({}, "", commercialViewUrl(window.location, next));
+    setQueryState((current) => ({ ...current, view: next, record: "", status: "", query: "", page: 1, sort: "", order: "" }));
+    if (typeof window !== "undefined") window.history.pushState({}, "", commercialQueryUrl(window.location, { view: next, record: "", status: "", query: "", page: 1, sort: "", order: "" }));
+  }, []);
+
+  const setQuery = useCallback((patch: Partial<CommercialQueryState>, mode: "push" | "replace" = "push") => {
+    setQueryState((current) => ({ ...current, ...patch }));
+    if (typeof window === "undefined") return;
+    window.history[mode === "replace" ? "replaceState" : "pushState"]({}, "", commercialQueryUrl(window.location, patch));
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const onPopState = () => setViewState(readCommercialView(window.location.search));
+    const onPopState = () => setQueryState(readCommercialQuery(window.location.search));
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  const sensitiveScopeRef = useRef(targetWorkspaceId);
+  useEffect(() => {
+    if (sensitiveScopeRef.current === targetWorkspaceId) return;
+    sensitiveScopeRef.current = targetWorkspaceId;
+    controllerRef.current?.abort();
+    summaryControllerRef.current?.abort();
+    requestRef.current += 1;
+    summaryRequestRef.current += 1;
+    setSummary({ status: "idle" });
+    setData(initialDataStates());
+    setQueryState((current) => ({ ...current, record: "", page: 1 }));
+    if (typeof window !== "undefined") window.history.replaceState({}, "", commercialQueryUrl(window.location, { record: "", page: 1 }));
+  }, [targetWorkspaceId]);
 
   const loadSummary = useCallback(async () => {
     summaryControllerRef.current?.abort();
@@ -195,7 +273,7 @@ export function useCommercialOperations(
     canWriteService: authorization.can(commercialCapabilities.serviceWrite),
   }), [authorization, privateSkuReadable]);
 
-  return { view, setView, summary, data, loadSummary, loadView, permissions };
+  return { view, setView, query: queryState, setQuery, summary, data, loadSummary, loadView, permissions };
 }
 
 export type CommercialOperationsController = ReturnType<typeof useCommercialOperations>;

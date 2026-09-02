@@ -64,6 +64,11 @@ paths:
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { $ref: '#/components/parameters/Limit' }
+        - in: query
+          name: cursor
+          required: false
+          description: Base64url-encoded `{createdAt,id}` keyset cursor returned by the previous page.
+          schema: { type: string, minLength: 1, maxLength: 4096 }
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '401': { $ref: '#/components/responses/ErrorEnvelope' }

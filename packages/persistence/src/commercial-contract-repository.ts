@@ -86,6 +86,24 @@ export interface CommercialEntitlementSnapshotV2 {
   createdAt: string
 }
 
+export interface CommercialAccessDecisionFactV2 {
+  id: string
+  workspaceId: string
+  requestId: string
+  operationKey: string
+  accessClass: 'RECOVERY_CONTROL' | 'POINT_REQUIRED_NO_CHARGE' | 'POINT_CHARGED'
+  balanceState: 'known' | 'unknown'
+  availablePoints: number | null
+  reservedPoints: number | null
+  quotedPoints: number | null
+  accessRevision: number
+  rateCardVersion: string | null
+  allowed: boolean
+  code: 'OK' | 'CREATIVE_POINTS_EXHAUSTED' | 'CREATIVE_POINTS_INSUFFICIENT' | 'CREATIVE_POINTS_UNAVAILABLE' | 'RATE_CARD_UNAVAILABLE' | 'COMMERCIAL_ACCESS_STALE'
+  nextActions: string[]
+  decidedAt: string
+}
+
 type OrderRow = {
   id: string
   workspaceId: string
@@ -219,6 +237,36 @@ export class PostgresCommercialContractRepository {
           throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'entitlement snapshot payload is invalid')
         }
         return { ...row, periodStart: timestamp(row.periodStart)!, periodEnd: timestamp(row.periodEnd)!, createdAt: timestamp(row.createdAt)!, resolvedBenefits: row.resolvedBenefits, unresolvedBlockers: row.unresolvedBlockers as string[] }
+      })
+    })
+  }
+
+  async listAccessDecisions(workspaceId: string, options: { blockedOnly?: boolean; limit?: number } = {}): Promise<CommercialAccessDecisionFactV2[]> {
+    const scope = requireWorkspaceScope(workspaceId)
+    const limit = options.limit ?? 100
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new RangeError('limit must be between 1 and 200')
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      type Row = Omit<CommercialAccessDecisionFactV2, 'availablePoints' | 'reservedPoints' | 'quotedPoints' | 'accessRevision' | 'nextActions' | 'decidedAt'> & { availablePoints: string | number | null; reservedPoints: string | number | null; quotedPoints: string | number | null; accessRevision: string | number; nextActions: unknown; decidedAt: string | Date }
+      const result = await client.query<Row>(
+        `SELECT id,workspace_id AS "workspaceId",request_id AS "requestId",operation_key AS "operationKey",
+                access_class AS "accessClass",balance_state AS "balanceState",available_points AS "availablePoints",
+                reserved_points AS "reservedPoints",quoted_points AS "quotedPoints",access_revision AS "accessRevision",
+                rate_card_version AS "rateCardVersion",allowed,code,next_actions AS "nextActions",decided_at AS "decidedAt"
+           FROM commercial_access_decisions_v2
+          WHERE workspace_id=$1 AND ($2::boolean=false OR allowed=false)
+          ORDER BY decided_at DESC,id DESC LIMIT $3`, [scope, options.blockedOnly === true, limit],
+      )
+      return result.rows.map(row => {
+        if (!Array.isArray(row.nextActions) || !row.nextActions.every(item => typeof item === 'string')) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'access decision next actions are invalid')
+        return {
+          ...row,
+          availablePoints: row.availablePoints === null ? null : safeInteger(row.availablePoints, 'availablePoints'),
+          reservedPoints: row.reservedPoints === null ? null : safeInteger(row.reservedPoints, 'reservedPoints'),
+          quotedPoints: row.quotedPoints === null ? null : safeInteger(row.quotedPoints, 'quotedPoints'),
+          accessRevision: safeInteger(row.accessRevision, 'accessRevision'),
+          nextActions: row.nextActions as string[],
+          decidedAt: timestamp(row.decidedAt)!,
+        }
       })
     })
   }

@@ -25,6 +25,20 @@ export interface OnboardingGrantScheduleDraft {
   blockers: readonly ['ONBOARDING_GRANT_START_DATE_UNRESOLVED', 'ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED']
 }
 
+export const STANDARD_ONBOARDING_PLATFORMS = ['taobao', 'tmall', 'jd', 'pinduoduo', 'douyin', 'xiaohongshu'] as const
+export type StandardOnboardingPlatform = typeof STANDARD_ONBOARDING_PLATFORMS[number]
+
+export interface OnboardingDeliveryChecklistDraft {
+  itemCode: string
+  unit: 'count' | 'contract_label'
+  quantity: number | null
+  contractLabel: string | null
+  status: 'allocated' | 'unresolved'
+  blockers: string[]
+  supportedPlatforms: StandardOnboardingPlatform[]
+  sourceChecksum: string
+}
+
 export interface ServiceAllocation {
   id: string
   workspaceId: string
@@ -159,6 +173,42 @@ export function planOnboardingGrantSchedule(input: {
     status: 'unresolved' as const,
     blockers: ['ONBOARDING_GRANT_START_DATE_UNRESOLVED', 'ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED'] as const,
   }))
+}
+
+/** Builds only source-listed onboarding deliverables from a verified snapshot. */
+export function planOnboardingDeliveryChecklist(input: {
+  sourceChecksum: string
+  maxBrands: number
+  maxStores: number
+  maxProducts: number | null
+  platforms: readonly StandardOnboardingPlatform[]
+}): OnboardingDeliveryChecklistDraft[] {
+  if (!/^[a-f0-9]{64}$/u.test(input.sourceChecksum)) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'sourceChecksum is invalid')
+  for (const [field, value] of [['maxBrands', input.maxBrands], ['maxStores', input.maxStores]] as const) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', `${field} must be positive`)
+  }
+  if (input.maxProducts !== null && (!Number.isSafeInteger(input.maxProducts) || input.maxProducts < 1)) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'maxProducts must be positive or unresolved')
+  const platforms = [...new Set(input.platforms)]
+  if (!platforms.length || platforms.some(platform => !STANDARD_ONBOARDING_PLATFORMS.includes(platform))) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'platforms must be a non-empty subset of the six source platforms')
+  const fixed = (itemCode: string, quantity = 1): OnboardingDeliveryChecklistDraft => ({ itemCode, unit: 'count', quantity, contractLabel: null, status: 'allocated', blockers: [], supportedPlatforms: platforms, sourceChecksum: input.sourceChecksum })
+  return [
+    fixed('plugin_account_activation'),
+    fixed('system_deployment_and_basic_debugging'),
+    fixed('platform_fixed_rule_configuration'),
+    fixed('product_category_rule_configuration'),
+    fixed('campaign_milestone_rule_configuration'),
+    fixed('system_usage_training'),
+    fixed('launch_acceptance'),
+    { itemCode: 'basic_issue_handling', unit: 'contract_label', quantity: null, contractLabel: '基础问题处理', status: 'allocated', blockers: [], supportedPlatforms: platforms, sourceChecksum: input.sourceChecksum },
+    fixed('user_preference_initial_entry'),
+    fixed('enterprise_entity_initial_entry'),
+    fixed('store_initial_scan_entry', input.maxStores),
+    input.maxProducts === null
+      ? { itemCode: 'product_initial_scan_entry', unit: 'contract_label', quantity: null, contractLabel: '按已购月度套餐上限；产品数量上限未解析', status: 'unresolved', blockers: ['PRODUCT_INITIAL_IMPORT_LIMIT_UNRESOLVED'], supportedPlatforms: platforms, sourceChecksum: input.sourceChecksum }
+      : fixed('product_initial_scan_entry', input.maxProducts),
+    fixed('brand_asset_initial_entry', input.maxBrands),
+    fixed('brand_expression_visual_initial_entry', input.maxBrands),
+  ]
 }
 
 export class ServiceFulfillmentService {

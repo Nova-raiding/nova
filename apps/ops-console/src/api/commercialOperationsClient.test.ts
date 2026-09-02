@@ -18,6 +18,17 @@ describe("commercial operations DTO parsers", () => {
     expect(result.errorCode).toBe("CREATIVE_POINTS_UNAVAILABLE");
   });
 
+  it("rejects contradictory balance projections instead of normalizing them", () => {
+    expect(() => parseCommercialAccessSummary({
+      decision_id: "cad_2", workspace_id: "ws_1", balance_state: "known",
+      available_points: null, reserved_points: 0, allowed: false,
+    })).toThrow("known 余额必须包含");
+    expect(() => parseCommercialAccessSummary({
+      decision_id: "cad_3", workspace_id: "ws_1", balance_state: "unknown",
+      available_points: 0, reserved_points: null, allowed: false,
+    })).toThrow("unknown 余额不能携带确定点数");
+  });
+
   it("rejects malformed success payloads instead of showing an empty state", () => {
     expect(() => parseAccessBlocks({ total: 1 })).toThrow("items 必须是对象数组");
     expect(() => parseLedger({ items: [{ id: "ledger_1" }] })).toThrow("返回无法识别的商业运营数据");
