@@ -93,10 +93,24 @@ describe('central commercial access gate', () => {
   it('derives native ChatGPT tool availability from the shared commercial registry', () => {
     expect(isNativeMcpToolEnabled('merchant.start')).toBe(true)
     expect(isNativeMcpToolEnabled('creative-points.balance.get')).toBe(true)
+    expect(isNativeMcpToolEnabled('commercial.order.create')).toBe(true)
+    expect(isNativeMcpToolEnabled('commercial.order.payment.get')).toBe(true)
     expect(isNativeMcpToolEnabled('billing.recharge.create')).toBe(false)
     expect(isNativeMcpToolEnabled('content.generate')).toBe(false)
     expect(isNativeMcpToolEnabled('ops.finance.export')).toBe(false)
     expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)
+  })
+
+  it('keeps V2 order recovery server-owned and leaves legacy arbitrary recharge disabled', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("case 'commercial.order.create':")
+    expect(source).toContain("case 'commercial.order.payment.get':")
+    expect(source).toContain("path === '/v1/commercial/orders'")
+    expect(source).toContain("['purchase', 'upgrade', 'point_pack'].includes(purchaseKind)")
+    expect(source).toContain("resolveApprovedExecutableSku(sku_code, { includePrivate: false, capabilities: [] })")
+    expect(source).toContain("snapshot.lifecycle !== 'approved'")
+    expect(source).toContain("snapshot.executable !== true")
+    expect(source).not.toContain("case 'billing.recharge.create': {\n      return result(await commercialPurchaseService")
   })
 
   it('keeps all statement recovery surfaces backed by the creative-point ledger', () => {

@@ -45,6 +45,9 @@ describe('HTTP authorization policy registry', () => {
   it('matches exact templates without accepting sibling or descendant paths', () => {
     expect(getHttpOperationPolicy('GET', '/v1/commercial/access')).toMatchObject({ mcpMethod: 'commercial.access.get', authentication: 'identity' })
     expect(getHttpOperationPolicy('GET', '/v1/commercial/catalog')).toMatchObject({ mcpMethod: 'commercial.catalog.get', authentication: 'identity' })
+    expect(getHttpOperationPolicy('POST', '/v1/commercial/orders')).toMatchObject({ mcpMethod: 'commercial.order.create', authentication: 'identity' })
+    expect(getHttpOperationPolicy('GET', '/v1/commercial/orders/order-1/payment')).toMatchObject({ mcpMethod: 'commercial.order.payment.get', authentication: 'identity' })
+    expect(getHttpOperationPolicy('POST', '/v1/commercial/orders/order-1/payment')).toBeUndefined()
     expect(getHttpOperationPolicy('GET', '/v1/creative-points/balance')).toMatchObject({ mcpMethod: 'creative-points.balance.get', authentication: 'identity' })
     expect(getHttpOperationPolicy('GET', '/v1/creative-points/statement')).toMatchObject({ mcpMethod: 'creative-points.statement.list', authentication: 'identity' })
     expect(getHttpOperationPolicy('POST', '/v1/tasks/task-1/approve')).toMatchObject({ mcpMethod: 'content.approve', authentication: 'identity' })

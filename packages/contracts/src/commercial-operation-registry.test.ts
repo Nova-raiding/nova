@@ -30,7 +30,7 @@ describe('complete commercial operation registry E1 totality', () => {
       manifest_operations: MCP_METHODS.length + HTTP_OPERATION_POLICIES.length,
       by_surface: { MCP: MCP_METHODS.length, HTTP: HTTP_OPERATION_POLICIES.length, WORKER: 0 },
     })
-    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(382)
+    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(386)
   })
 
   it('fails CI totality when a new runtime method has no reviewed classification', () => {
@@ -50,6 +50,19 @@ describe('complete commercial operation registry E1 totality', () => {
     expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.catalog.get'].properties)).toEqual(['workspace_id'])
     expect(Object.keys(MCP_METHOD_SCHEMAS['creative-points.balance.get'].properties)).toEqual(['workspace_id'])
     expect(Object.keys(MCP_METHOD_SCHEMAS['creative-points.statement.list'].properties)).toEqual(['workspace_id', 'cursor', 'limit'])
+  })
+
+  it('publishes V2 purchase intent without accepting client-owned commercial facts', () => {
+    expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.order.create'].properties)).toEqual(['workspace_id', 'purchase_kind', 'sku_code', 'idempotency_key', 'reason'])
+    expect(MCP_METHOD_SCHEMAS['commercial.order.create'].required).toEqual(['purchase_kind', 'sku_code', 'idempotency_key', 'reason'])
+    expect(MCP_METHOD_SCHEMAS['commercial.order.create'].properties).not.toHaveProperty('amount_fen')
+    expect(MCP_METHOD_SCHEMAS['commercial.order.create'].properties).not.toHaveProperty('currency')
+    expect(MCP_METHOD_SCHEMAS['commercial.order.create'].properties).not.toHaveProperty('points')
+    expect(MCP_METHOD_SCHEMAS['commercial.order.create'].properties).not.toHaveProperty('benefits')
+    expect(getMcpMethodPolicy('commercial.order.create')).toMatchObject({ effect: 'write', scope: 'workspace', capability: 'billing.workspace.update' })
+    expect(resolveMcp('commercial.order.create')).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, classification: 'RECOVERY_CONTROL' } })
+    expect(Object.keys(MCP_METHOD_SCHEMAS['commercial.order.payment.get'].properties)).toEqual(['workspace_id', 'order_id'])
+    expect(getMcpMethodPolicy('commercial.order.payment.get')).toMatchObject({ effect: 'read', scope: 'workspace', capability: 'billing.workspace.read' })
   })
 
   it('keeps every MCP authorization reference attached instead of copying or weakening capabilities', () => {
@@ -147,10 +160,11 @@ describe('complete commercial operation registry E1 totality', () => {
     }
   })
 
-  it('keeps the four workspace recovery reads in exact HTTP/MCP parity', () => {
+  it('keeps workspace recovery reads in exact HTTP/MCP parity', () => {
     const pairs = [
       ['http:GET:/v1/commercial/access', 'commercial.access.get'],
       ['http:GET:/v1/commercial/catalog', 'commercial.catalog.get'],
+      ['http:GET:/v1/commercial/orders/{orderId}/payment', 'commercial.order.payment.get'],
       ['http:GET:/v1/creative-points/balance', 'creative-points.balance.get'],
       ['http:GET:/v1/creative-points/statement', 'creative-points.statement.list'],
     ] as const
@@ -161,9 +175,14 @@ describe('complete commercial operation registry E1 totality', () => {
       })
       expect(getMcpMethodPolicy(method)).toMatchObject({ scope: 'workspace', workbench: 'workspace', effect: 'read' })
     }
+    expect(resolveHttp('http:POST:/v1/commercial/orders')).toMatchObject({
+      outcome: 'REGISTERED',
+      policy: { domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', authorization_policy_ref: 'commercial.order.create' },
+    })
+    expect(getMcpMethodPolicy('commercial.order.create')).toMatchObject({ scope: 'workspace', workbench: 'workspace', effect: 'write' })
   })
 
   it('publishes a deterministic reviewed-registry checksum', () => {
-    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:d5b7d0b5')
+    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:4d49e319')
   })
 })

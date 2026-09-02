@@ -171,10 +171,16 @@ const requireExpectedRevision = (value: number) => {
 }
 const resourceScopeContainsResourceId = (scope: Record<string, unknown>, resourceId: string): boolean => {
   if (!isSafeAuthorizationIdentifier(resourceId)) return false
-  const idSets = Object.entries(scope)
-    .filter(([key, value]) => key.endsWith('_ids') && Array.isArray(value))
-    .map(([, value]) => value as unknown[])
-  return idSets.length > 0 && idSets.some(ids => ids.every(id => isSafeAuthorizationIdentifier(id)) && ids.includes(resourceId))
+  // Re-check the exact-scope invariant at the execution boundary. Persisted
+  // rows may predate issue-time validation or come from an import; a union of
+  // resource kinds must never authorize a side effect.
+  const idEntries = Object.entries(scope).filter(([key]) => key.endsWith('_ids'))
+  if (idEntries.length !== 1) return false
+  const [, ids] = idEntries[0]!
+  return Array.isArray(ids)
+    && ids.length > 0
+    && ids.every(id => isSafeAuthorizationIdentifier(id) && id !== '*')
+    && ids.includes(resourceId)
 }
 const validateResourceScope = (scope: Record<string, unknown>) => {
   const idEntries = Object.entries(scope).filter(([key]) => key.endsWith('_ids'))

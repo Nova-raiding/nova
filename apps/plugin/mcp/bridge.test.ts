@@ -436,6 +436,47 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('exposes V2 order recovery without client commercial facts and requires confirmation for creation', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const request = JSON.parse(body)
+      forwarded.push(request.method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { order_id: 'order-v2', status: 'pending', access_revision: null } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const listed = (await nextLine(child.stdout)).result.tools
+      const create = listed.find((tool: { name: string }) => tool.name === 'commercial.order.create')
+      expect(create.inputSchema.properties).not.toHaveProperty('amount_fen')
+      expect(create.inputSchema.properties).not.toHaveProperty('currency')
+      expect(create.inputSchema.properties).not.toHaveProperty('points')
+      expect(create.inputSchema.properties).not.toHaveProperty('benefits')
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'commercial.order.payment.get', arguments: { order_id: 'order-v2' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { order_id: 'order-v2', status: 'pending', access_revision: null } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', idempotency_key: 'order-create-1', reason: '购买批准点包' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true })
+      expect(forwarded).toEqual(['commercial.order.payment.get'])
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', idempotency_key: 'order-create-1', reason: '购买批准点包' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { order_id: 'order-v2', status: 'pending' } })
+      expect(forwarded).toEqual(['commercial.order.payment.get', 'commercial.order.create'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('renders safe clickable authorization links and keeps disabled recharge creation fail-closed', async () => {
     const server = createServer(async (req, res) => {
       let body = ''

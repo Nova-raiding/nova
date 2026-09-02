@@ -27,7 +27,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(await initialize.json()).toMatchObject({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing' } } })
 
     const listed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) })
-    const payload = await listed.json() as { result: { tools: Array<{ name: string; inputSchema: { type: string } }> } }
+    const payload = await listed.json() as { result: { tools: Array<{ name: string; inputSchema: { type: string; properties?: Record<string, unknown> } }> } }
     expect(listed.status).toBe(200)
     expect(payload.result.tools.length).toBeGreaterThan(0)
     expect(payload.result.tools.every(tool => !tool.name.startsWith('ops.'))).toBe(true)
@@ -35,9 +35,24 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.some(tool => tool.name === 'billing.recharge.create')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'content.generate')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'commercial.access.get')).toBe(true)
+    const orderCreate = payload.result.tools.find(tool => tool.name === 'commercial.order.create')
+    expect(orderCreate?.inputSchema.properties).not.toHaveProperty('amount_fen')
+    expect(orderCreate?.inputSchema.properties).not.toHaveProperty('currency')
+    expect(payload.result.tools.some(tool => tool.name === 'commercial.order.payment.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'creative-points.balance.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'merchant.start')).toBe(true)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)
+  })
+
+  it('exposes V2 order recovery and fails closed when no approved executable SKU exists', async () => {
+    const base = await start()
+    const create = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 'order-1', method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', idempotency_key: 'native-order-1', reason: '购买批准点包' } } }) })
+    expect(create.status).toBe(200)
+    expect(await create.json()).toMatchObject({ jsonrpc: '2.0', id: 'order-1', error: { data: { code: 'COMMERCIAL_PURCHASE_UNAVAILABLE' } } })
+
+    const arbitraryAmount = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 'order-2', method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', amount_fen: '1', idempotency_key: 'native-order-2', reason: '尝试客户端定价' } } }) })
+    expect(arbitraryAmount.status).toBe(200)
+    expect(await arbitraryAmount.json()).toMatchObject({ jsonrpc: '2.0', id: 'order-2', error: { code: -32602 } })
   })
 
   it('maps tools/call to the existing authorized business RPC and returns MCP content', async () => {
