@@ -16720,19 +16720,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   const authorizeMatch = path.match(/^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/authorize$/)
   if (req.method === 'POST' && authorizeMatch) {
     const input = await body(req)
-    const workspaceId = resolveWorkspace(req, input.workspace_id)
-    const actorId = requestActor(req, typeof input.actor_id === 'string' && input.actor_id.trim() ? input.actor_id.trim() : 'actor_demo')
-    const codeVerifier = randomBytes(32).toString('base64url')
-    const state = await oauthStateStore.issue({ workspaceId, actorId, platform: authorizeMatch[1]!, codeVerifier, codeChallenge: hashPkceVerifier(codeVerifier) })
     const platform = authorizeMatch[1] as Platform
-    const configuredRedirectUri = configuredOAuthRedirectUri(platform)
-    const requestedRedirectUri = typeof input.redirect_uri === 'string' ? input.redirect_uri.trim() : undefined
-    const redirectUri = isProduction() ? configuredRedirectUri ?? '' : requestedRedirectUri ?? configuredRedirectUri ?? 'http://127.0.0.1:8787/oauth/callback'
-    if (!redirectUri || (isProduction() && (!validOAuthRedirectUri(platform, redirectUri) || (requestedRedirectUri && requestedRedirectUri !== configuredRedirectUri)))) throw new DomainError('OAUTH_REDIRECT_URI_REQUIRED', `生产 OAuth 必须配置匹配 ${platform} 回调路由的 HTTPS ${oauthRedirectEnv[platform]}（或 PUBLIC_OAUTH_REDIRECT_URI 模板）`, 503)
-    if (!platformAuthorizationConfigured(platform)) throw new DomainError('NOT_CONFIGURED', `${platform} 官方 OAuth 尚未配置`, 503)
-    if (isProduction() && !redisOAuthPort) throw new DomainError('OAUTH_STATE_STORE_UNAVAILABLE', '生产 OAuth 必须配置 Redis 状态存储，禁止使用单副本内存状态', 503)
-    const result = await connectorRuntime.connector(platform).authorize({ workspaceId, actorId, redirectUri, state, codeVerifier })
-    if (!result.ok) throw new DomainError(result.code ?? 'NOT_CONFIGURED', result.message ?? '平台官方 API 尚未配置', 503)
+    const workspaceId = resolveWorkspace(req)
+    const result = await beginPlatformAuthorization(req, platform, input, workspaceId)
     return send(res, 200, workspaceId, result, null, req)
   }
 
