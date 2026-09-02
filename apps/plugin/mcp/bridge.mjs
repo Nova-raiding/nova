@@ -66,7 +66,7 @@ const READ_ONLY_METHODS = new Set([
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
   'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify',
-  'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get',
+  'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
@@ -82,7 +82,7 @@ const COMMERCIAL_RECOVERY_METHODS = new Set([
   'subscription.get', 'subscription.orders.list', 'billing.status',
   'billing.recharge.get', 'billing.recharge.list', 'billing.transactions',
   'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap',
-  'commercial.access.get', 'commercial.catalog.get',
+  'commercial.access.get', 'commercial.catalog.get', 'commercial.order.create', 'commercial.order.payment.get',
   'creative-points.balance.get', 'creative-points.statement.list',
 ])
 const COMMERCIAL_DISABLED_METHODS = new Set([
@@ -265,6 +265,14 @@ const METHODS = {
   'commercial.catalog.get': {
     description: '查看当前工作区可见的版本化商业目录；不可用时明确返回阻断，不回退到 legacy offer。只读恢复入口。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  'commercial.order.create': {
+    description: '基于服务端当前批准且可执行的 SKU 创建 V2 购买、升级或创意点包订单；金额、币种、点数和权益只能由服务端快照决定。',
+    inputSchema: { type: 'object', properties: { purchase_kind: { type: 'string', enum: ['purchase', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['purchase_kind', 'sku_code', 'idempotency_key', 'reason'], additionalProperties: false },
+  },
+  'commercial.order.payment.get': {
+    description: '查询当前工作区 V2 订单支付与权益状态；仅服务端订单事实有效。只读。',
+    inputSchema: { type: 'object', properties: { order_id: boundedString(256) }, required: ['order_id'], additionalProperties: false },
   },
   'creative-points.balance.get': {
     description: '查看当前工作区创意点余额和 access revision；未知余额是 null，不是 0。只读恢复入口。',

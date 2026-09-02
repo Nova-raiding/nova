@@ -1,6 +1,6 @@
 # 商家营销内容助手（桌面 ChatGPT 插件）
 
-发布元数据同步基线（2026-09-01）：MCP 契约注册表为 266 个唯一方法，商家插件运行态为 128 个 MCP 工具，PostgreSQL 迁移链已进入 148。
+发布元数据同步基线（2026-09-02）：MCP 契约注册表为 277 个唯一方法，商家插件运行态为 132 个 MCP 工具，PostgreSQL 迁移链已进入 160。
 
 当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及仅供开发调试的 Merchant Studio。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
 

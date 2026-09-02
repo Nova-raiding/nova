@@ -60,13 +60,13 @@ const READ_ONLY_METHODS = new Set([
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
-  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
+  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'workspace.data.export.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.crm.export',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
   'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify',
-  'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get',
+  'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
   'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
@@ -81,8 +81,8 @@ const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
 const COMMERCIAL_RECOVERY_METHODS = new Set([
   'subscription.get', 'subscription.orders.list', 'billing.status',
   'billing.recharge.get', 'billing.recharge.list', 'billing.transactions',
-  'billing.export', 'workspace.data.delete.request', 'workspace.bootstrap',
-  'commercial.access.get', 'commercial.catalog.get',
+  'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap',
+  'commercial.access.get', 'commercial.catalog.get', 'commercial.order.create', 'commercial.order.payment.get',
   'creative-points.balance.get', 'creative-points.statement.list',
 ])
 const COMMERCIAL_DISABLED_METHODS = new Set([
@@ -140,6 +140,7 @@ const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
   'merchant.start',
   'content.export', 'catalog.image.review', 'catalog.image.select', 'workspace.bootstrap',
+  'workspace.data.export.request', 'workspace.data.delete.request',
   'workspace.interactive.confirm',
   'platform.store.list', 'platform.connect', 'catalog.sync', 'catalog.sync.start',
 ])
@@ -265,6 +266,14 @@ const METHODS = {
     description: '查看当前工作区可见的版本化商业目录；不可用时明确返回阻断，不回退到 legacy offer。只读恢复入口。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
+  'commercial.order.create': {
+    description: '基于服务端当前批准且可执行的 SKU 创建 V2 购买、升级或创意点包订单；金额、币种、点数和权益只能由服务端快照决定。',
+    inputSchema: { type: 'object', properties: { purchase_kind: { type: 'string', enum: ['purchase', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['purchase_kind', 'sku_code', 'idempotency_key', 'reason'], additionalProperties: false },
+  },
+  'commercial.order.payment.get': {
+    description: '查询当前工作区 V2 订单支付与权益状态；仅服务端订单事实有效。只读。',
+    inputSchema: { type: 'object', properties: { order_id: boundedString(256) }, required: ['order_id'], additionalProperties: false },
+  },
   'creative-points.balance.get': {
     description: '查看当前工作区创意点余额和 access revision；未知余额是 null，不是 0。只读恢复入口。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -347,6 +356,8 @@ const METHODS = {
   'billing.reconciliation': { description: '查看余额、充值、消费和退款汇总。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' } }, additionalProperties: false } },
   'billing.reconciliation.run': { description: '由 finance/merchant_admin/platform_ops 运行支付服务商查单对账；已支付订单幂等入账，未知状态保持待处理。', inputSchema: { type: 'object', properties: { limit: { type: 'string' } }, additionalProperties: false } },
   'billing.export': { description: '默认导出本人账务流水；工作区范围需要账务管理权限。金额为人民币元。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' }, format: { type: 'string', enum: ['csv', 'json'] }, from_at: { type: 'string' }, to_at: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false } },
+  'workspace.data.export.request': { description: '申请导出当前工作区全部自有数据；仅登记可恢复申请，不以内容导出代替，也不伪造外部存储交付。', inputSchema: { type: 'object', properties: { reason: reasonProperty, idempotency_key: boundedString(200) }, required: ['reason', 'idempotency_key'], additionalProperties: false } },
+  'workspace.data.export.get': { description: '查询当前工作区一份完整数据导出申请及交付状态；只读。', inputSchema: { type: 'object', properties: { request_id: boundedString(200) }, required: ['request_id'], additionalProperties: false } },
   'platform.settings.get': {
     description: '查看平台启用状态和店铺展示配置。只读。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },

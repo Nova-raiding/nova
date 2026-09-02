@@ -38,6 +38,8 @@ export const HTTP_OPERATION_POLICIES = [
   identity('GET', '/v1/delivery-readiness', 'workspace.health'),
   identity('GET', '/v1/commercial/access', 'commercial.access.get'),
   identity('GET', '/v1/commercial/catalog', 'commercial.catalog.get'),
+  identity('POST', '/v1/commercial/orders', 'commercial.order.create'),
+  identity('GET', '/v1/commercial/orders/{orderId}/payment', 'commercial.order.payment.get'),
   identity('GET', '/v1/creative-points/balance', 'creative-points.balance.get'),
   identity('GET', '/v1/creative-points/statement', 'creative-points.statement.list'),
   identity('GET', '/v1/catalog/categories', 'catalog.categories'),
