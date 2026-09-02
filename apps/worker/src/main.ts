@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { unlink, writeFile } from 'node:fs/promises'
 import { Pool } from 'pg'
-import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
+import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport } from '../../../packages/workers/src/durable.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
@@ -30,6 +30,7 @@ import { assertClamAvExecutionAdmission } from '../../../packages/workers/src/sc
 import { planSupportSlaReportSchedule } from '../../../packages/workers/src/support-sla-scan.js'
 import { validateImageGenerationCallbackResult } from '../../../packages/contracts/src/index.js'
 import { assertGenerationInput } from './generation-input.js'
+import { CreativePointRelaySettlement, relayProviderIdentity } from './creative-point-relay-settlement.js'
 
 export interface WorkerConfig {
   databaseUrl: string
@@ -1233,18 +1234,24 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     : undefined
   const mappingExecution = new WorkerMappingExecutionContext()
   const mappingApprovals = new PostgresMappingPreflightApprovalRepository(pool as unknown as SqlPool)
-  const scanAttempts = new PostgresAssetScanAttemptRepository(pool as unknown as SqlPool)
+  const sqlPool = pool as unknown as SqlPool
+  const scanAttempts = new PostgresAssetScanAttemptRepository(sqlPool)
+  const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
   const runtime = new ConnectorRuntime({
     configSource: process.env,
     credentialProvider: createVaultCredentialProviderFromEnv(),
     mappingPreflight: createPersistentWorkerMappingPreflightAdapter({ approvals: mappingApprovals, scopes: createPostgresWorkerMappingScopeLoader(pool), execution: mappingExecution }),
   })
-  const generationUsageContexts = new Map<string, { runKey: string; contextHash: string; contextLinkId?: string; taskId: string; campaignItemId?: string; signal?: AbortSignal }>()
+  const generationUsageContexts = new Map<string, { runKey: string; contextHash: string; contextLinkId?: string; taskId: string; campaignItemId?: string; event: DurableOutboxEvent; providerRequestIds: string[]; signal?: AbortSignal }>()
   const imageUsageContexts = new Map<string, { runKey: string; contextHash: string; signal?: AbortSignal; providerRequestId?: string }>()
   const contentGenerator = createContentGeneratorFromEnv(process.env, async usage => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage settlement')
     const execution = usage.actionId ? generationUsageContexts.get(usage.actionId) : undefined
     const enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, ...(execution.contextLinkId ? { contextLinkId: execution.contextLinkId } : {}), metadata: { ...(usage.metadata ?? {}), task_id: execution.taskId, campaign_item_id: execution.campaignItemId ?? null } } : usage
+    if (execution) {
+      const providerRequestId = await creativePointSettlement.recordSucceeded(execution.event, enriched)
+      if (providerRequestId) execution.providerRequestIds.push(providerRequestId)
+    }
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   })
   const imageGenerator = createImageGeneratorFromEnv(process.env, async usage => {
@@ -1352,8 +1359,21 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (typeof taskId !== 'string' || !taskId) throw new Error('generation event is missing task_id')
     const modelKey = process.env.AI_MODEL?.trim() ?? process.env.MODEL_ID?.trim() ?? 'configured-model'
     await quotaAdmission.admit(quotaAdmissionForEvent(event, 'model', modelKey, config.modelQuotaPerMinute))
-    generationUsageContexts.set(actionId, { runKey, contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), signal })
-    try { return await contentGenerator.generate(validatedInput, { signal }) }
+    const usageContext = { runKey, contextHash, ...(typeof event.payload.context_link_id === 'string' && event.payload.context_link_id ? { contextLinkId: event.payload.context_link_id } : {}), taskId, ...(typeof event.payload.campaign_item_id === 'string' && event.payload.campaign_item_id ? { campaignItemId: event.payload.campaign_item_id } : {}), event, providerRequestIds: [] as string[], ...(signal ? { signal } : {}) }
+    generationUsageContexts.set(actionId, usageContext)
+    try {
+      const content = await contentGenerator.generate(validatedInput, { signal })
+      await creativePointSettlement.settleForDelivery(event, usageContext.providerRequestIds)
+      return content
+    } catch (error) {
+      const candidate = error as { providerOutcome?: unknown; providerRequestId?: unknown; providerIdempotencyKey?: unknown; code?: unknown; message?: unknown }
+      if (candidate.providerOutcome === 'unknown') await creativePointSettlement.recordProviderOutcome(event, candidate).catch(() => undefined)
+      else if (candidate.providerOutcome === 'failed') {
+        try { await creativePointSettlement.recordProviderOutcome(event, candidate) }
+        catch (settlementError) { throw Object.assign(settlementError instanceof Error ? settlementError : new Error('creative point release is pending'), { code: 'CREATIVE_POINT_SETTLEMENT_PENDING', providerSucceeded: true, reconciliationRequired: true }) }
+      }
+      throw error
+    }
     finally { generationUsageContexts.delete(actionId) }
   }
   const imageGenerationRequested = async (event: DurableOutboxEvent, _projection: unknown, signal?: AbortSignal) => {
