@@ -169,7 +169,7 @@ export async function runCanonicalProductBackfill(pool: SqlPool, input: { worksp
     }
     const finalRows = dryRun
       ? canonical.rows
-      : (await client.query<CanonicalBackfillRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", title, legacy_product_id AS "legacyProductId" FROM canonical_products WHERE workspace_id=$1 ORDER BY id`)).rows
+      : (await client.query<CanonicalBackfillRow>(`SELECT id, workspace_id AS "workspaceId", brand_id AS "brandId", title, legacy_product_id AS "legacyProductId" FROM canonical_products WHERE workspace_id=$1 ORDER BY id`, [workspaceId])).rows
     const finalPlan = planCanonicalProductBackfill({ workspaceId, products: batchProducts, referencedProducts, canonicalProducts: finalRows })
     return { ...finalPlan, insertedIds, dryRun, ...(hasMore && batchProducts.at(-1)?.id ? { nextProductId: batchProducts.at(-1)!.id } : {}) }
   })
