@@ -171,6 +171,12 @@ export function reconcileObjectInventory(input: ReconciliationInput): Reconcilia
 
   let usedBytes = 0
   for (const object of inventory.values()) {
+    if (object.sizeBytes > Number.MAX_SAFE_INTEGER - usedBytes) {
+      // Provider inventory is untrusted. Never let numeric precision loss turn
+      // an oversized inventory into a trustworthy quota or reconciliation
+      // result.
+      throw new Error('RECONCILIATION_SIZE_OVERFLOW')
+    }
     usedBytes += object.sizeBytes
     if (!references.has(object.storageKey)) findings.push({ code: 'ORPHAN_OBJECT', workspaceId: input.workspaceId, storageKey: object.storageKey })
   }

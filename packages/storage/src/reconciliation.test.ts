@@ -89,4 +89,15 @@ describe('object inventory reconciliation', () => {
     expect(() => reconcileObjectInventory({ workspaceId: 'ws_a', references: [], inventory: [], quota: { limitBytes: 10, reservedBytes: Number.NaN } }))
       .toThrow('RECONCILIATION_QUOTA_INVALID')
   })
+
+  it('fails closed when provider inventory totals exceed safe integer precision', () => {
+    expect(() => reconcileObjectInventory({
+      workspaceId: 'ws_a',
+      references: [],
+      inventory: [
+        object('clean/ws_a/asset_large_a/source.bin', Number.MAX_SAFE_INTEGER),
+        object('clean/ws_a/asset_large_b/source.bin', 1),
+      ],
+    })).toThrow('RECONCILIATION_SIZE_OVERFLOW')
+  })
 })
