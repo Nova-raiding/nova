@@ -21,6 +21,11 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.commercial.orders-v2.list',
   'ops.commercial.rate-cards.list',
   'ops.commercial.service-fulfillment.list',
+  'ops.commercial.service-allocation.create',
+  'ops.commercial.service-fulfillment.schedule',
+  'ops.commercial.service-fulfillment.start',
+  'ops.commercial.service-fulfillment.complete',
+  'ops.commercial.service-fulfillment.adjust',
   'ops.canonical.backfill.create',
   'ops.canonical.backfill.get',
   'ops.canonical.backfill.pause',
@@ -137,6 +142,8 @@ export const MCP_RECOVERY_ENABLED_METHODS = [
   'billing.recharge.get',
   'billing.recharge.list',
   'billing.transactions',
+  'workspace.data.export.request',
+  'workspace.data.export.get',
   'workspace.data.delete.request',
 ] as const satisfies readonly McpMethod[]
 

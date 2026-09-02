@@ -404,6 +404,38 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('forwards exact workspace export and deletion recovery requests without a point-gated interactive session', async () => {
+    const forwarded: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      forwarded.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ request_id: 'req_recovery', trace_id: 'trace_recovery', workspace_id: 'ws_test', data: { jsonrpc: '2.0', id: 1, result: { status: 'pending' } }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      const calls = [
+        { name: 'workspace.data.export.request', arguments: { reason: '迁移前完整导出', idempotency_key: 'export-1' } },
+        { name: 'workspace.data.export.get', arguments: { request_id: 'export-1' } },
+        { name: 'workspace.data.delete.request', arguments: { scope: 'workspace', reason: '注销工作区申请', idempotency_key: 'delete-1' } },
+      ]
+      for (const [index, call] of calls.entries()) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: call })}\n`)
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { status: 'pending' } })
+      }
+      expect(forwarded).toEqual(calls.map(call => call.name))
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('renders safe clickable authorization links and keeps disabled recharge creation fail-closed', async () => {
     const server = createServer(async (req, res) => {
       let body = ''

@@ -32,7 +32,7 @@ const base = {
 describe('commercial operation registry E1 contract', () => {
   it('freezes only the reviewed MCP foundation without widening recovery access', () => {
     const policy = (operation: string) => resolveCommercialOperation(COMMERCIAL_MCP_FOUNDATION_POLICIES, { surface: 'MCP', operation })
-    for (const operation of ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'workspace.data.delete.request', 'workspace.bootstrap', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list']) {
+    for (const operation of ['subscription.get', 'subscription.orders.list', 'billing.status', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list']) {
       expect(policy(operation)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'RECOVERY_CONTROL' } })
     }
     for (const operation of ['subscription.order.create', 'subscription.change', 'billing.recharge.create']) {

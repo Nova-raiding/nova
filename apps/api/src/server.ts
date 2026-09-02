@@ -25,6 +25,8 @@ import { CampaignLifecycleError, type CampaignBatchRow, type CampaignBatchState,
 import { contextEnvelopeHash } from '../../../packages/persistence/src/context-snapshot-repository.js'
 import { redactAuditEvidence, redactAuditReason } from '../../../packages/persistence/src/audit-center-repository.js'
 import type { DataDeletionRequest } from '../../../packages/persistence/src/data-lifecycle-repository.js'
+import { MemoryWorkspaceDataExportRepository, PostgresWorkspaceDataExportRepository, WorkspaceDataExportIdempotencyConflictError, type WorkspaceDataExportRepository } from '../../../packages/persistence/src/workspace-data-export-repository.js'
+import { WorkspaceDataExportService } from '../../../packages/application/src/workspace-data-export.js'
 import { hashPkceVerifier, OAuthStateError, OAuthStateStore } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { assetScanReceiptDigest, parseAssetScanReceipt, verifyAssetScanReceiptSignature, type SignedAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
@@ -953,6 +955,7 @@ export interface ApiPersistence {
   growth?: GrowthRepository
   alerts?: OperationalAlertsRepository
   dataLifecycle?: DataLifecycleRepository
+  workspaceDataExport?: WorkspaceDataExportRepository
   members?: MembersRepository
   rules?: RuleRepositoryPort
   brandUnits?: import('../../../packages/persistence/src/index.js').BrandUnitRepository
@@ -1043,6 +1046,7 @@ const memoryCommercialExtensions = new MemoryCommercialExtensionsRepository()
 const memoryGrowth = new MemoryGrowthRepository()
 const memoryAlerts = new MemoryOperationalAlertsRepository()
 const memoryDataLifecycle = new MemoryDataLifecycleRepository()
+const memoryWorkspaceDataExport = new MemoryWorkspaceDataExportRepository()
 const memoryBrandUnits = new MemoryBrandUnitRepository()
 memoryBrandUnits.setConsistencyProjections({
   legacyProducts: () => [...service.products.values()].map(product => ({ id: product.id, workspaceId: product.workspaceId, ...(typeof (product as Product & { brandId?: unknown }).brandId === 'string' ? { brandId: (product as Product & { brandId: string }).brandId } : {}), ...(product.platform ? { platform: product.platform } : {}), ...(product.accountId ? { accountId: product.accountId } : {}), ...(product.sourceAssetIds?.length ? { sourceAssetIds: [...product.sourceAssetIds] } : {}) })),
@@ -1245,7 +1249,7 @@ export async function grantCreativePointsForTests(workspaceId: string, points = 
   })
 }
 
-const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
+const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
 let persistence: ApiPersistence = memoryPersistence
 let persistenceError: unknown
 const workspaceEventSequences = new Map<string, number>()
@@ -2522,6 +2526,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const growth = new PostgresGrowthRepository(sqlPool)
     const alerts = new PostgresOperationalAlertsRepository(sqlPool)
     const dataLifecycle = new PostgresDataLifecycleRepository(sqlPool)
+    const workspaceDataExport = new PostgresWorkspaceDataExportRepository(sqlPool)
     const rules = new PostgresRuleRepository(sqlPool)
     const brandUnits = new PostgresBrandUnitRepository(sqlPool)
     const objectOrphans = new PostgresObjectOrphanRepository(sqlPool)
@@ -2689,7 +2694,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, serviceFulfillment, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, serviceFulfillment, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -12661,6 +12666,30 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
       await recordOperationAudit({ workspaceId, actorId, action: 'workspace.activate', resourceType: 'workspace', resourceId: workspaceId, before: { status: before }, after: { status: 'active', dataRetained: true }, reason })
       return result({ workspaceId, status: 'active', dataRetained: true, reason })
+    }
+    case 'workspace.data.export.request': {
+      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin'])
+      const reason = requiredOperationalReason(params)
+      const idempotencyKey = required(params, 'idempotency_key')
+      const exportService = new WorkspaceDataExportService(persistence.workspaceDataExport ?? memoryWorkspaceDataExport)
+      let request
+      try {
+        request = await exportService.request({ workspaceId, actorId, reason, idempotencyKey })
+      } catch (error) {
+        if (error instanceof WorkspaceDataExportIdempotencyConflictError || (error as { code?: string })?.code === 'WORKSPACE_DATA_EXPORT_IDEMPOTENCY_CONFLICT') {
+          throw new DomainError('WORKSPACE_DATA_EXPORT_IDEMPOTENCY_CONFLICT', '数据导出幂等键已绑定到另一份申请，请换用新的幂等键', 409, { idempotency_key: idempotencyKey })
+        }
+        throw error
+      }
+      await recordOperationAudit({ workspaceId, actorId, action: 'workspace.data.export.request', resourceType: 'workspace_data_export_request', resourceId: request.request_id, before: {}, after: request as unknown as Record<string, unknown>, reason })
+      return result(request)
+    }
+    case 'workspace.data.export.get': {
+      requireOperationsRole(req, ['workspace_owner', 'merchant_admin'])
+      const requestId = required(params, 'request_id')
+      const request = await new WorkspaceDataExportService(persistence.workspaceDataExport ?? memoryWorkspaceDataExport).get({ workspaceId, requestId })
+      if (!request) throw new DomainError('WORKSPACE_DATA_EXPORT_NOT_FOUND', '数据导出申请不存在或不属于当前工作区', 404)
+      return result(request)
     }
     case 'workspace.data.delete.request': {
       const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin'])

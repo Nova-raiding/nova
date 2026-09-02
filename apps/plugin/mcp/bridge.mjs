@@ -60,7 +60,7 @@ const READ_ONLY_METHODS = new Set([
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
-  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
+  'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'workspace.data.export.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
   'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.crm.export',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
@@ -81,7 +81,7 @@ const COMMERCIAL_REGISTRY_VERSION = 'commercial-operation-registry.v1'
 const COMMERCIAL_RECOVERY_METHODS = new Set([
   'subscription.get', 'subscription.orders.list', 'billing.status',
   'billing.recharge.get', 'billing.recharge.list', 'billing.transactions',
-  'billing.export', 'workspace.data.delete.request', 'workspace.bootstrap',
+  'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap',
   'commercial.access.get', 'commercial.catalog.get',
   'creative-points.balance.get', 'creative-points.statement.list',
 ])
@@ -140,6 +140,7 @@ const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
   'merchant.start',
   'content.export', 'catalog.image.review', 'catalog.image.select', 'workspace.bootstrap',
+  'workspace.data.export.request', 'workspace.data.delete.request',
   'workspace.interactive.confirm',
   'platform.store.list', 'platform.connect', 'catalog.sync', 'catalog.sync.start',
 ])
@@ -347,6 +348,8 @@ const METHODS = {
   'billing.reconciliation': { description: '查看余额、充值、消费和退款汇总。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' } }, additionalProperties: false } },
   'billing.reconciliation.run': { description: '由 finance/merchant_admin/platform_ops 运行支付服务商查单对账；已支付订单幂等入账，未知状态保持待处理。', inputSchema: { type: 'object', properties: { limit: { type: 'string' } }, additionalProperties: false } },
   'billing.export': { description: '默认导出本人账务流水；工作区范围需要账务管理权限。金额为人民币元。只读。', inputSchema: { type: 'object', properties: { limit: { type: 'string' }, format: { type: 'string', enum: ['csv', 'json'] }, from_at: { type: 'string' }, to_at: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } }, additionalProperties: false } },
+  'workspace.data.export.request': { description: '申请导出当前工作区全部自有数据；仅登记可恢复申请，不以内容导出代替，也不伪造外部存储交付。', inputSchema: { type: 'object', properties: { reason: reasonProperty, idempotency_key: boundedString(200) }, required: ['reason', 'idempotency_key'], additionalProperties: false } },
+  'workspace.data.export.get': { description: '查询当前工作区一份完整数据导出申请及交付状态；只读。', inputSchema: { type: 'object', properties: { request_id: boundedString(200) }, required: ['request_id'], additionalProperties: false } },
   'platform.settings.get': {
     description: '查看平台启用状态和店铺展示配置。只读。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },

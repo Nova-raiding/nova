@@ -48,6 +48,10 @@ describe('MCP method contract', () => {
     expect(MCP_METHODS).toContain('ops.user.session.revoke')
     expect(MCP_METHODS).toContain('billing.model-usage.reconciliation.run')
     expect(MCP_METHODS).toContain('billing.model-usage.resolve')
+    expect(MCP_METHODS).toContain('workspace.data.export.request')
+    expect(MCP_METHODS).toContain('workspace.data.export.get')
+    expect(MCP_METHOD_SCHEMAS['workspace.data.export.request']).toMatchObject({ required: ['reason', 'idempotency_key'] })
+    expect(MCP_METHOD_SCHEMAS['workspace.data.export.get']).toMatchObject({ required: ['request_id'] })
     expect(MCP_METHODS).toEqual(expect.arrayContaining([
       'ops.support.ticket.create',
       'ops.incident.transition',

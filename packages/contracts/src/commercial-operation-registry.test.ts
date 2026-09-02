@@ -30,7 +30,7 @@ describe('complete commercial operation registry E1 totality', () => {
       manifest_operations: MCP_METHODS.length + HTTP_OPERATION_POLICIES.length,
       by_surface: { MCP: MCP_METHODS.length, HTTP: HTTP_OPERATION_POLICIES.length, WORKER: 0 },
     })
-    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(373)
+    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(380)
   })
 
   it('fails CI totality when a new runtime method has no reviewed classification', () => {
@@ -83,10 +83,16 @@ describe('complete commercial operation registry E1 totality', () => {
     expect(ROLE_CAPABILITIES.finance_ops).not.toContain('commercial.service_fulfillment.read')
     expect(ROLE_CAPABILITIES.support_agent).toEqual(expect.arrayContaining(['commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read']))
     expect(ROLE_CAPABILITIES.support_agent).not.toContain('commercial.point.read')
+    for (const method of ['ops.commercial.service-allocation.create', 'ops.commercial.service-fulfillment.schedule', 'ops.commercial.service-fulfillment.start', 'ops.commercial.service-fulfillment.complete', 'ops.commercial.service-fulfillment.adjust'] as const) {
+      expect(getMcpMethodPolicy(method)).toMatchObject({ capability: 'commercial.service_fulfillment.write', scope: 'platform', workbench: 'platform', effect: 'write' })
+      expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { domain: 'OPS_CONTROL', enabled: true } })
+    }
+    expect(ROLE_CAPABILITIES.ops_admin).toContain('commercial.service_fulfillment.write')
+    expect(ROLE_CAPABILITIES.support_agent).not.toContain('commercial.service_fulfillment.write')
   })
 
   it('defines future write capabilities without granting or advertising fake methods', () => {
-    const writes = ['commercial.access.recover', 'commercial.point.adjust', 'commercial.catalog.draft', 'commercial.catalog.approve', 'commercial.catalog.publish', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.rate.draft', 'commercial.rate.approve', 'commercial.rate.publish', 'commercial.service_fulfillment.write'] as const
+    const writes = ['commercial.access.recover', 'commercial.point.adjust', 'commercial.catalog.draft', 'commercial.catalog.approve', 'commercial.catalog.publish', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.rate.draft', 'commercial.rate.approve', 'commercial.rate.publish'] as const
     expect(CAPABILITIES).toEqual(expect.arrayContaining([...writes]))
     for (const capabilities of Object.values(ROLE_CAPABILITIES)) {
       for (const capability of writes) expect(capabilities).not.toContain(capability)
@@ -154,6 +160,6 @@ describe('complete commercial operation registry E1 totality', () => {
   })
 
   it('publishes a deterministic reviewed-registry checksum', () => {
-    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:d1169331')
+    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:483e5b35')
   })
 })

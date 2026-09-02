@@ -70,6 +70,8 @@ export const COMMERCIAL_MCP_FOUNDATION_POLICIES = defineCommercialOperationRegis
   { surface: 'MCP', operation: 'billing.recharge.list', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'billing.transactions', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'billing.export', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
+  { surface: 'MCP', operation: 'workspace.data.export.request', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
+  { surface: 'MCP', operation: 'workspace.data.export.get', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'workspace.data.delete.request', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'workspace.bootstrap', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },
   { surface: 'MCP', operation: 'commercial.access.get', domain: 'COMMERCIAL', enabled: true, classification: 'RECOVERY_CONTROL', rate_action: null },

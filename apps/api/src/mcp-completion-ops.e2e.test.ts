@@ -212,6 +212,23 @@ describe('MCP completion operations per-method HTTP evidence', () => {
     }))
     expect(acknowledgedList).toEqual([expect.objectContaining({ id: alerts[0].id, acknowledgementReason: '已联系商家重新授权' })])
 
+    const exportKey = `workspace-export-${suffix}`
+    const exportRequest = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.request', {
+      reason: '迁移前导出当前工作区全部自有数据', idempotency_key: exportKey,
+    }))
+    expect(exportRequest).toMatchObject({ workspace_id: workspaceA, scope: 'workspace', status: 'pending', content_export_equivalent: false, delivery: { available: false, artifact_ref: null } })
+    const exportReplay = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.request', {
+      reason: '迁移前导出当前工作区全部自有数据', idempotency_key: exportKey,
+    }))
+    expect(exportReplay.request_id).toBe(exportRequest.request_id)
+    const exportConflict = await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.request', {
+      reason: '改变同一导出幂等键的意图', idempotency_key: exportKey,
+    })
+    expect(exportConflict.body.error?.code).toBe('WORKSPACE_DATA_EXPORT_IDEMPOTENCY_CONFLICT')
+    expect(resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.export.get', { request_id: exportRequest.request_id }))).toEqual(exportRequest)
+    const foreignExportRead = await callMcp(base, tokens.ownerB, workspaceB, 'workspace.data.export.get', { request_id: exportRequest.request_id })
+    expect(foreignExportRead.body.error?.code).toBe('WORKSPACE_DATA_EXPORT_NOT_FOUND')
+
     const cancelKey = `delete-cancel-${suffix}`
     const vagueDeletionReason = await callMcp(base, tokens.ownerA, workspaceA, 'workspace.data.delete.request', {
       scope: 'assets', reason: '删', idempotency_key: `delete-vague-${suffix}`,
@@ -277,6 +294,7 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       { token: tokens.financeA, method: 'ops.alert.ack', params: { alert_id: alerts[0].id, reason: '低权限确认' } },
       { token: tokens.operatorA, method: 'billing.model-usage.reconciliation.run', params: { limit: '1' } },
       { token: tokens.operatorA, method: 'workspace.data.delete.request', params: { scope: 'assets', reason: '低权限删除', idempotency_key: `denied-${suffix}` } },
+      { token: tokens.operatorA, method: 'workspace.data.export.request', params: { reason: '低权限导出', idempotency_key: `export-denied-${suffix}` } },
     ]
     for (const testCase of lowPrivilegeCases) {
       const denied = await callMcp(base, testCase.token, workspaceA, testCase.method, testCase.params)
