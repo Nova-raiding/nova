@@ -189,13 +189,11 @@ export class PostgresWorkspaceDataExportRepository implements WorkspaceDataExpor
     const idempotencyKey = required(input.idempotencyKey, 'WORKSPACE_DATA_EXPORT_IDEMPOTENCY_REQUIRED')
     const intent = requestHash({ requestedBy, reason })
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const inserted = await client.query<ExportRow>(`INSERT INTO workspace_data_export_requests (id, workspace_id, requested_by, reason, idempotency_key, request_hash) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id, idempotency_key) DO NOTHING RETURNING ${projection}`, [randomUUID(), workspaceId, requestedBy, reason, idempotencyKey, intent])
+      if (inserted.rows[0]) return mapRow(inserted.rows[0])
       const existing = await client.query<ExportRow & { requestHash: string }>(`SELECT ${projection}, request_hash AS "requestHash" FROM workspace_data_export_requests WHERE workspace_id=$1 AND idempotency_key=$2`, [workspaceId, idempotencyKey])
-      if (existing.rows[0]) {
-        if (existing.rows[0].requestHash !== intent) throw new WorkspaceDataExportIdempotencyConflictError()
-        return mapRow(existing.rows[0])
-      }
-      const result = await client.query<ExportRow>(`INSERT INTO workspace_data_export_requests (id, workspace_id, requested_by, reason, idempotency_key, request_hash) VALUES ($1,$2,$3,$4,$5,$6) RETURNING ${projection}`, [randomUUID(), workspaceId, requestedBy, reason, idempotencyKey, intent])
-      return mapRow(result.rows[0]!)
+      if (!existing.rows[0] || existing.rows[0].requestHash !== intent) throw new WorkspaceDataExportIdempotencyConflictError()
+      return mapRow(existing.rows[0])
     })
   }
 
