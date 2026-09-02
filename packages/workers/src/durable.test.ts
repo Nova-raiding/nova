@@ -91,6 +91,20 @@ describe('durable outbox dispatcher', () => {
     expect(calls).toEqual(['claim', `push:${encoded}`, `remove:${encoded}`])
   })
 
+  it('discards a malformed Redis claim so the next durable message can be consumed', async () => {
+    const claims = ['not-json', JSON.stringify({ id: 'evt_1', value: JSON.stringify(event()) })]
+    const removed: string[] = []
+    const queue = new RedisQueueAdapter<DurableOutboxEvent>({
+      async push() {},
+      async pop() { return claims.shift() },
+      async remove(_key, value) { removed.push(value) },
+    }, 'queue')
+
+    await expect(queue.dequeue()).rejects.toThrow('WORKER_QUEUE_MESSAGE_INVALID')
+    expect(removed).toEqual(['not-json'])
+    await expect(queue.dequeue()).resolves.toMatchObject({ id: 'evt_1' })
+  })
+
   it('rejects conflicting Redis queue payloads for the same durable message id', async () => {
     const pushed: string[] = []
     const queue = new RedisQueueAdapter<DurableOutboxEvent>({

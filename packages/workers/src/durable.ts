@@ -94,19 +94,29 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
   async dequeue(): Promise<QueueMessage<T> | undefined> {
     const raw = await this.transport.pop(this.key, 0)
     if (!raw) return undefined
-    const parsed = JSON.parse(raw) as { id: string; value: string }
-    if (typeof parsed.value !== 'string') {
+    try {
+      const parsed = JSON.parse(raw) as { id: string; value: string }
+      if (typeof parsed.value !== 'string') {
+        throw new Error('WORKER_QUEUE_MESSAGE_INVALID')
+      }
+      assertQueueMessageId(parsed.id)
+      const value = this.decode(parsed.value)
+      const fingerprint = stableQueueSerialization(value)
+      const existingFingerprint = this.pendingFingerprints.get(parsed.id)
+      if (existingFingerprint !== undefined && existingFingerprint !== fingerprint) {
+        throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
+      }
+      this.pendingFingerprints.set(parsed.id, fingerprint)
+      return { id: parsed.id, value }
+    } catch (cause) {
+      // A claimed poison message cannot be allowed to remain in the
+      // processing list: every restart would claim it again and starve the
+      // durable queue. Remove only this already-claimed raw value; never
+      // acknowledge a different message or turn malformed input into work.
+      await this.transport.remove?.(this.key, raw)
+      if (cause instanceof Error && isQueueMessageError(cause.message)) throw cause
       throw new Error('WORKER_QUEUE_MESSAGE_INVALID')
     }
-    assertQueueMessageId(parsed.id)
-    const value = this.decode(parsed.value)
-    const fingerprint = stableQueueSerialization(value)
-    const existingFingerprint = this.pendingFingerprints.get(parsed.id)
-    if (existingFingerprint !== undefined && existingFingerprint !== fingerprint) {
-      throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
-    }
-    this.pendingFingerprints.set(parsed.id, fingerprint)
-    return { id: parsed.id, value }
   }
 
   async ack(message: QueueMessage<T>): Promise<void> {
@@ -180,6 +190,12 @@ function assertQueueMessageId(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new Error('WORKER_QUEUE_MESSAGE_INVALID')
   }
+}
+
+function isQueueMessageError(message: string): boolean {
+  return message === 'WORKER_QUEUE_MESSAGE_INVALID'
+    || message === 'WORKER_QUEUE_MESSAGE_CONFLICT'
+    || message === 'WORKER_QUEUE_MESSAGE_UNSUPPORTED'
 }
 
 export interface DurableDispatcherOptions {
