@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Input, Modal, Space, Table, Tag, Typography } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Platform, StoreDirectory } from "../../types/ops";
 
 interface StoreDirectorySectionProps {
@@ -26,6 +26,7 @@ export function StoreDirectorySection({
   const [savingAlias, setSavingAlias] = useState(false);
   const [revokingKey, setRevokingKey] = useState<string>();
   const [revokeTarget, setRevokeTarget] = useState<StoreDirectory>();
+  const errorRef = useRef<HTMLDivElement>(null);
   const closeAlias = () => { if (!savingAlias) { setAliasTarget(undefined); setAlias(""); } };
   const submitAlias = async () => {
     if (!aliasTarget || alias.trim().length < 1) return;
@@ -47,6 +48,12 @@ export function StoreDirectorySection({
     await revoke(revokeTarget);
     setRevokeTarget(undefined);
   };
+  const initialLoadFailed = Boolean(error && storeDirectory.length === 0 && !loading);
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus({ preventScroll: true });
+  }, [error]);
+
   return (
     <Card
       id="ops-domain-stores"
@@ -58,15 +65,12 @@ export function StoreDirectorySection({
         </Tag>
       }
     >
-      {error ? (
-        <Alert role="alert" type="error" showIcon title="店铺目录读取失败" description={error} action={onRetry ? <Button style={{ minHeight: 44 }} onClick={onRetry}>重试</Button> : undefined} />
-      ) : (
       <Table
         rowKey={(row: StoreDirectory) => `${row.platform}:${row.accountId}`}
         pagination={{ pageSize: 8 }}
         loading={loading}
-        dataSource={loading ? [] : storeDirectory}
-        locale={{ emptyText: loading ? "正在读取店铺目录…" : "暂无已登记店铺；完成平台授权后会显示在这里。" }}
+        dataSource={storeDirectory}
+        locale={{ emptyText: loading ? "正在读取店铺目录…" : initialLoadFailed ? "尚未取得店铺目录；请先恢复连接或权限。" : "暂无已登记店铺；完成平台授权后会显示在这里。" }}
         columns={[
           {
             title: "平台",
@@ -163,7 +167,19 @@ export function StoreDirectorySection({
           },
         ]}
       />
-      )}
+      {error ? (
+        <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby="store-directory-error-title" style={{ marginTop: 16 }}>
+          <Alert
+            type="error"
+            showIcon
+            title={<span id="store-directory-error-title">店铺目录读取失败</span>}
+            description={initialLoadFailed
+              ? "当前空列表不代表没有已登记店铺；请修复连接或权限后重新加载。"
+              : "已保留上一次成功读取的店铺目录；请修复连接或权限后重新加载。"}
+            action={onRetry ? <Button htmlType="button" style={{ minHeight: 44 }} aria-label="刷新店铺目录" onClick={onRetry}>刷新店铺目录</Button> : undefined}
+          />
+        </div>
+      ) : null}
       <Typography.Text type="secondary">
         此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。
       </Typography.Text>
