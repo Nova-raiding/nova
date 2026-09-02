@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { buildCanonicalChainConsistencyReport } from './canonical-product-consistency.js'
 
@@ -114,6 +115,90 @@ describe('canonical product consistency coverage matrix', () => {
       evaluation: { generatedAt: '2026-08-31T00:00:00.000Z', revision: 7, readMode: 'live', freshness: 'fresh' },
     })
     expect(report).toMatchObject({ contractVersion: 1, contractStatus: 'clean', generatedAt: '2026-08-31T00:00:00.000Z', revision: 7, readMode: 'live', freshness: 'fresh' })
+  })
+
+  it('replays the same verified active chain with a stable report hash', () => {
+    const evaluation = {
+      generatedAt: '2026-09-02T08:00:00.000Z',
+      revision: 'shadow-17',
+      readMode: 'live' as const,
+      freshness: 'fresh' as const,
+      availability: 'available' as const,
+    }
+    const ordered = buildCanonicalChainConsistencyReport({
+      workspaceId: 'ws_replay',
+      legacyProducts: [
+        { id: 'legacy-shadow', workspaceId: 'ws_replay' },
+        { id: 'legacy-active', workspaceId: 'ws_replay', brandId: 'brand-1', platform: 'taobao', accountId: 'store-1', sourceAssetIds: ['asset-1'] },
+      ],
+      canonicalProducts: [
+        { id: 'canonical-active', workspaceId: 'ws_replay', brandId: 'brand-1', legacyProductId: 'legacy-active' },
+      ],
+      listings: [
+        { id: 'listing-active', workspaceId: 'ws_replay', brandId: 'brand-1', canonicalProductId: 'canonical-active', platform: 'taobao', accountId: 'store-1' },
+      ],
+      campaignItems: [
+        { id: 'campaign-active', workspaceId: 'ws_replay', brandId: 'brand-1', canonicalProductId: 'canonical-active', listingId: 'listing-active', taskId: 'task-active', platform: 'taobao', accountId: 'store-1' },
+      ],
+      tasks: [
+        { id: 'task-active', workspaceId: 'ws_replay', productId: 'legacy-active', brandId: 'brand-1', canonicalProductId: 'canonical-active', listingId: 'listing-active', campaignItemId: 'campaign-active', platform: 'taobao', accountId: 'store-1' },
+      ],
+      publishJobs: [
+        { id: 'publish-active', workspaceId: 'ws_replay', taskId: 'task-active', platform: 'taobao', accountId: 'store-1', canonicalProductId: 'canonical-active', listingId: 'listing-active' },
+      ],
+      assetBindings: [
+        { workspaceId: 'ws_replay', productId: 'legacy-active', assetId: 'asset-1', assetRole: 'source', status: 'active', assetExists: true, assetBrandId: 'brand-1', scanStatus: 'clean', rightsStatus: 'approved' },
+      ],
+      evaluation,
+    })
+    const replay = buildCanonicalChainConsistencyReport({
+      workspaceId: 'ws_replay',
+      legacyProducts: [
+        { id: 'legacy-active', workspaceId: 'ws_replay', brandId: 'brand-1', platform: 'taobao', accountId: 'store-1', sourceAssetIds: ['asset-1'] },
+        { id: 'legacy-shadow', workspaceId: 'ws_replay' },
+      ],
+      canonicalProducts: [
+        { id: 'canonical-active', workspaceId: 'ws_replay', brandId: 'brand-1', legacyProductId: 'legacy-active' },
+      ],
+      listings: [
+        { id: 'listing-active', workspaceId: 'ws_replay', brandId: 'brand-1', canonicalProductId: 'canonical-active', platform: 'taobao', accountId: 'store-1' },
+      ],
+      campaignItems: [
+        { id: 'campaign-active', workspaceId: 'ws_replay', brandId: 'brand-1', canonicalProductId: 'canonical-active', listingId: 'listing-active', taskId: 'task-active', platform: 'taobao', accountId: 'store-1' },
+      ],
+      tasks: [
+        { id: 'task-active', workspaceId: 'ws_replay', productId: 'legacy-active', brandId: 'brand-1', canonicalProductId: 'canonical-active', listingId: 'listing-active', campaignItemId: 'campaign-active', platform: 'taobao', accountId: 'store-1' },
+      ],
+      publishJobs: [
+        { id: 'publish-active', workspaceId: 'ws_replay', taskId: 'task-active', listingId: 'listing-active', canonicalProductId: 'canonical-active', accountId: 'store-1', platform: 'taobao' },
+      ],
+      assetBindings: [
+        { workspaceId: 'ws_replay', productId: 'legacy-active', assetId: 'asset-1', assetRole: 'source', status: 'active', assetExists: true, assetBrandId: 'brand-1', scanStatus: 'clean', rightsStatus: 'approved' },
+      ],
+      evaluation,
+    })
+
+    expect(ordered.findings.find(item => item.legacyProductId === 'legacy-active')).toEqual({
+      legacyProductId: 'legacy-active',
+      status: 'verified',
+      contractStatus: 'verified',
+      productId: 'legacy-active',
+      scope: { brandId: 'brand-1', platform: 'taobao', accountId: 'store-1', listingId: 'listing-active' },
+      relation: { listingIds: ['listing-active'], campaignItemIds: ['campaign-active'], taskIds: ['task-active'], publishJobIds: ['publish-active'] },
+      blocking: null,
+      nextAction: null,
+      evidence: { codes: [], generatedAt: '2026-09-02T08:00:00.000Z', revision: 'shadow-17' },
+      codes: [],
+      canonicalProductId: 'canonical-active',
+      listingIds: ['listing-active'],
+      campaignItemIds: ['campaign-active'],
+      taskIds: ['task-active'],
+      publishJobIds: ['publish-active'],
+    })
+    expect(replay).toEqual(ordered)
+    expect(createHash('sha256').update(JSON.stringify(replay)).digest('hex')).toBe(
+      createHash('sha256').update(JSON.stringify(ordered)).digest('hex'),
+    )
   })
 
   it('fails closed for an unavailable read and never returns clean', () => {
