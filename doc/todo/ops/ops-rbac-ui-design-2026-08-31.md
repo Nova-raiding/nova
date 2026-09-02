@@ -339,6 +339,7 @@ type AccessDecision = {
 - [ ] **T4（P2）统一页面骨架**：PageHeader、FilterBar、DataTable、Drawer、DangerActionModal；先迁移用户、成员、财务三个高风险页。验证：无 Card 套 Table、焦点恢复、错误保留输入。
 - 本地可闭环子项：`PageHeader` 已由 `OpsPage` 统一承载用户、成员、财务页面的语义标题、描述关联和下一步状态播报；`PageHeader.test.tsx` 覆盖标题层级、`aria-describedby` 目标及空动作区，尚不代表 T4 的完整骨架迁移完成。
 - [x] 本地可闭环子项：事故 `DataTable` 在保留已有行的同时以 `aria-busy` 和 `polite` live region 播报加载状态，详情按钮保持键盘可达；`IncidentsTable.test.tsx` 覆盖加载播报、行保留和操作名称。该证据不代表 T4 的完整骨架迁移完成。
+- [x] 本地可闭环子项：事故详情 Drawer 在加载期间声明 `aria-busy` 并以 `polite` live region 播报“已有内容会保留”，避免 Spin 只有视觉反馈；`IncidentDetailDrawer.test.tsx` 覆盖桌面详情区域的加载语义。该证据不代表 T4 的完整骨架迁移完成。
 - [ ] **T5（P2）迁移其余 10 域**：按域逐一移除局部硬编码权限和随机样式。验证：13 域视觉快照 + 角色导航矩阵。
 - [ ] **T6（P2）应用 AntD tokens**：根 ConfigProvider + 组件 token；清理业务组件内颜色/圆角/大面积 inline style。验证：1440/1920 桌面截图、对比度与 reduced-motion。
 - [ ] **T7（P1）真实链路验收**：SSO → capability → 页面 → API 403/成功 → 审计证据，在真实桌面浏览器与容器环境验证；fixture 仅做开发辅助。

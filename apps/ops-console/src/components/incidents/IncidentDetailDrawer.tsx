@@ -59,7 +59,11 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
     <Drawer open title={`事故详情 · ${incident.title}`} size={720} onClose={props.onClose} destroyOnHidden aria-label="事故详情" afterOpenChange={(open) => {
       if (!open && triggerRef.current?.isConnected) window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }))
     }}>
-      <Spin spinning={props.loading}>
+      <section aria-label="事故详情内容" aria-busy={props.loading}>
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {props.loading ? '正在加载事故详情，已有内容会保留。' : '事故详情已加载。'}
+        </div>
+        <Spin spinning={props.loading}>
         {props.error ? <div ref={errorRef} tabIndex={-1} aria-label="事故详情错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={props.error} style={{ marginBottom: 16 }} /></div> : null}
         <Descriptions bordered size="small" column={screens.md ? 2 : 1}>
           <Descriptions.Item label="严重度"><IncidentSeverityBadge severity={incident.severity} /></Descriptions.Item>
@@ -109,7 +113,8 @@ export function IncidentDetailDrawer(props: IncidentDetailDrawerProps) {
             <Button htmlType="submit" loading={props.mutating} disabled={scopeNote.trim().length < 3} style={{ minHeight: 44 }}>更新影响范围</Button>
           </Form>
         </> : <Alert style={{ marginTop: 20 }} type="info" showIcon title="当前范围只读" description="缺少 incident.update / incident.administer；状态、指挥官和影响范围不可修改。" />}
-      </Spin>
+        </Spin>
+      </section>
     </Drawer>
   )
 }
