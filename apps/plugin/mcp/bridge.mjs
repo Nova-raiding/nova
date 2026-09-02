@@ -1344,6 +1344,16 @@ function safeStructuredErrorMessage(error, code, details) {
   return userFacingErrorText(code, details)
 }
 
+function isProviderChannelUnavailable(status, remoteError) {
+  if (status !== 503) return false
+  const message = typeof remoteError === 'string'
+    ? remoteError
+    : remoteError && typeof remoteError === 'object'
+      ? [remoteError.message, remoteError.details?.message].filter(value => typeof value === 'string').join(' ')
+      : ''
+  return /no available channel for model/iu.test(message)
+}
+
 function actionCards(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result
   const cards = Array.isArray(result.action_cards) ? result.action_cards.map((card, index) => ({
@@ -2062,10 +2072,27 @@ async function callRemote(method, params) {
         // the same protocol boundary so authz/evidence details are not
         // downgraded to a generic missing-result error.
         const remoteError = payload?.error ?? payload?.data?.error
-        const providerOutcomeUnknown = remoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+        // Some relay gateways expose their provider outage as a bare 503
+        // message instead of the canonical error code. That response still
+        // sits after the provider boundary: retrying an idempotent tool can
+        // duplicate a request whose outcome the relay did not disclose.
+        const normalizedRemoteError = isProviderChannelUnavailable(response.status, remoteError)
+          ? {
+              code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN',
+              message: typeof remoteError === 'string' ? remoteError : remoteError?.message ?? 'model provider channel is unavailable',
+              details: {
+                ...(remoteError && typeof remoteError === 'object' && remoteError.details && typeof remoteError.details === 'object' ? remoteError.details : {}),
+                provider_status: response.status,
+                provider_outcome: 'unknown',
+                reconciliation_required: true,
+                next_action: 'query_provider',
+              },
+            }
+          : remoteError
+        const providerOutcomeUnknown = normalizedRemoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
         const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
-          const error = remoteError ?? {
+          const error = normalizedRemoteError ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
             message: response.status === 401
               ? 'MCP gateway authentication failed'
@@ -2075,7 +2102,7 @@ async function callRemote(method, params) {
           }
           throw Object.assign(new Error(error.message ?? 'MCP gateway error'), { code: error.code, details: error.details })
         }
-        if (!response.ok || !payload || remoteError) {
+        if (!response.ok || !payload || normalizedRemoteError) {
           const retryAfter = response.status === 429 ? Number(response.headers.get('retry-after') ?? '') : Number.NaN
           const retryAfterMs = Number.isFinite(retryAfter) ? Math.max(50, Math.ceil(retryAfter * 1_000)) : 0
           const backoffMs = retryAfterMs > 0 ? retryAfterMs : retryDelayMs * (2 ** (attempt - 1))
