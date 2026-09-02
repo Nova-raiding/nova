@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { parsePublishBatchDetail, publishBatchItemKey, publishBatchItemScope, queueStateLabel, visualEvidenceState } from './MarketingQueuePanel.js'
 
 const panelSource = readFileSync(new URL('./MarketingQueuePanel.tsx', import.meta.url), 'utf8')
+const imageEvidenceModalSource = readFileSync(new URL('./ImageExecutionEvidenceModal.tsx', import.meta.url), 'utf8')
 
 describe('marketing queue delivery evidence', () => {
   it('gives every asynchronous state a truthful, user-facing label', () => {
@@ -92,7 +93,7 @@ describe('marketing queue delivery evidence', () => {
   it('does not offer manual close for observation states and exposes reconciliation only for unknown outcomes', () => {
     expect(panelSource).toContain('仅观测，不可重复生成')
     expect(panelSource).toContain('打开对账')
-    expect(panelSource).toContain('禁止重复生成')
+    expect(imageEvidenceModalSource).toContain('禁止重复生成')
     expect(panelSource).toContain('不会创建第二个 Provider 请求')
   })
 
@@ -108,5 +109,14 @@ describe('marketing queue delivery evidence', () => {
     )
     expect(imageExecutionSection).not.toContain('retryGeneration')
     expect(imageExecutionSection).toContain('打开对账')
+  })
+
+  it('routes image execution evidence into a dedicated desktop recovery modal', () => {
+    expect(panelSource).toContain('ImageExecutionEvidenceModal')
+    expect(panelSource).toContain('证据阻断 ${gate.blockers.length} 项')
+    expect(imageEvidenceModalSource).toContain('图片执行仍被阻断')
+    expect(imageEvidenceModalSource).toContain('request / usage / cost / error evidence')
+    expect(imageEvidenceModalSource).toContain('打开人工收口')
+    expect(imageEvidenceModalSource).toContain('导出脱敏证据包')
   })
 })
