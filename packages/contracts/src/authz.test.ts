@@ -212,6 +212,37 @@ describe('authorization policy registry', () => {
     })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
   })
 
+  it('matches an attributable self scope without requiring a private resource ID', () => {
+    const policy = getMcpMethodPolicy('ops.session')!
+    expect(evaluateAuthorizationDecision({
+      decisionId: 'self-session-implicit-resource',
+      policy,
+      capabilities: [policy.capability],
+      scopes: [{ type: 'self', ids: ['identity_1'] }],
+      workbench: 'workspace',
+      mode: 'enforce',
+    })).toMatchObject({ authorized: true, allowed: true, reason_code: 'AUTHZ_ALLOWED' })
+
+    expect(evaluateAuthorizationDecision({
+      decisionId: 'self-session-explicit-mismatch',
+      policy,
+      capabilities: [policy.capability],
+      scopes: [{ type: 'self', ids: ['identity_1'] }],
+      resourceScope: { type: 'self', id: 'identity_2' },
+      workbench: 'workspace',
+      mode: 'enforce',
+    })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+
+    expect(evaluateAuthorizationDecision({
+      decisionId: 'self-session-multi-principal',
+      policy,
+      capabilities: [policy.capability],
+      scopes: [{ type: 'self', ids: ['identity_1', 'identity_2'] }],
+      workbench: 'workspace',
+      mode: 'enforce',
+    })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+  })
+
   it('keeps capability and scope in one permission atom and enforces read-only grant limits', () => {
     const readPolicy = getMcpMethodPolicy('catalog.search')!
     expect(evaluatePermissionAtoms({

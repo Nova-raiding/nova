@@ -182,10 +182,15 @@ export function evaluateAuthorizationDecision(input: {
   const workbenchMatched = input.policy.scope === 'self'
     || input.workbench === 'platform' && input.policy.scope === 'platform'
     || input.workbench === 'workspace' && input.policy.scope !== 'platform'
-  const scopeMatched = resourceScopeValid && input.resourceScope?.type === input.policy.scope && usableScopes.some(scope => scope.type === input.policy.scope && (
-    scope.type === 'platform' && scope.ids.includes('*')
-      || resourceId !== undefined && (scope.ids.includes(resourceId) || scope.ids.includes('*'))
-  ))
+  const scopeMatched = input.policy.scope === 'self' && input.resourceScope === undefined
+    // A self-scoped method already runs in the authenticated principal's
+    // context. Require one attributable principal ID, but do not require the
+    // caller to echo that private ID as a resource selector.
+    ? usableScopes.some(scope => scope.type === 'self' && scope.ids.length === 1)
+    : resourceScopeValid && input.resourceScope?.type === input.policy.scope && usableScopes.some(scope => scope.type === input.policy.scope && (
+      scope.type === 'platform' && scope.ids.includes('*')
+        || resourceId !== undefined && (scope.ids.includes(resourceId) || scope.ids.includes('*'))
+    ))
   const required = [...new Set(input.policy.obligations)]
   const satisfied = [...new Set(input.satisfiedObligations ?? [])].filter(obligation => required.includes(obligation))
   const missing = required.filter(obligation => !satisfied.includes(obligation))
