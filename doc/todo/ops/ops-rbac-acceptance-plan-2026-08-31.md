@@ -556,6 +556,7 @@ npx tsx -e "import { MCP_METHODS } from './packages/contracts/src/mcp.ts'; impor
 - [x] **P1-GATE-002：集合内容相等而非只比数量（本地契约已验证）。** `6ab248a` 的 `authz.test.ts` 已验证 method key 集合与 `MCP_METHODS` 精确相等，并对未知方法 fail-closed；新增、删除或重命名方法仍必须在最终提交重新执行该门禁。
 - [x] **P1-GATE-003：handler/contract/policy 三集合相等。** `tests/ops-api-surface.test.ts` 直接从 API `case` dispatch 提取完整 handler 集合，不再先按声明集合过滤；动态断言 `declared = registered policy = implemented handler`，任一缺失或额外 handler 都会失败。
 - [ ] **P1-GATE-004：HTTP parity（生产运行证据仍未完成）。** 契约层已由 `HTTP_OPERATION_POLICIES`、OpenAPI 一一覆盖测试及服务端 `enforceRegisteredHttpCapability()` 接入同一 MCP policy；剩余验收是逐路由真实 allow/deny、scope、obligation、JIT、decision audit 和生产 OIDC/RLS 证据，不能仅凭契约测试勾选完成。
+  - **本地已完成一个可重放切片：** `creative-points.balance.get` 与 `GET /v1/creative-points/balance` 通过真实 Bearer 身份共享同一授权决策；覆盖 allow、显式 deny、双 transport decision audit，以及 HTTP `workspace_id` 参数不得覆盖认证工作区。见 `apps/api/src/ops-rbac-http-mcp-creative-points.acceptance.test.ts`。
 
 ### 19.3 前端 P1 completion checklist
 
