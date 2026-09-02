@@ -21,7 +21,7 @@ describe('PostgresCommercialPointAdjustmentApprovalRepository', () => {
 
   it('rejects self approval before inserting a decision', async () => {
     const proposal = { id: 'proposal_1', workspaceId: 'ws_1', pointsDelta: 100, expectedAccessRevision: 7, reason: 'correction', evidence: { ticket: 'T-1' }, expiresAt: null, proposedByActorId: 'maker', idempotencyKey: 'proposal_key', requestHash: 'a'.repeat(64), createdAt: '2026-09-02T00:00:00.000Z' }
-    const client = new Client(sql => sql.includes('FROM commercial_point_adjustment_proposals_v2') && sql.includes('FOR SHARE') ? { rows: [proposal] } : { rows: [] })
+    const client = new Client(sql => sql.includes('FROM commercial_point_adjustment_proposals_v2') && sql.includes('WHERE workspace_id=$1 AND id=$2') ? { rows: [proposal] } : { rows: [] })
     const repository = new PostgresCommercialPointAdjustmentApprovalRepository({ connect: async () => client })
     await expect(repository.decide({ workspaceId: 'ws_1', proposalId: 'proposal_1', decision: 'approved', actorId: 'maker', reason: 'self', evidence: { approval: 'A-1' }, idempotencyKey: 'decision_key', at: '2026-09-02T01:00:00.000Z' })).rejects.toMatchObject({ code: 'COMMERCIAL_ADJUSTMENT_APPROVAL_INVALID' })
     expect(client.calls.some(call => call.sql.includes('INSERT INTO commercial_point_adjustment_decisions_v2'))).toBe(false)

@@ -85,7 +85,7 @@ export class PostgresCommercialPointAdjustmentApprovalRepository implements Comm
         if (replay.requestHash !== requestHash) throw new CommercialPointAdjustmentApprovalRepositoryError('COMMERCIAL_POINT_ADJUSTMENT_IDEMPOTENCY_CONFLICT', 'decision idempotency key is bound to another request')
         return decision(replay)
       }
-      const proposalRows = await client.query<ProposalRow>(`SELECT id,workspace_id AS "workspaceId",points_delta AS "pointsDelta",expected_access_revision AS "expectedAccessRevision",reason,evidence,expires_at AS "expiresAt",proposed_by_actor_id AS "proposedByActorId",idempotency_key AS "idempotencyKey",request_hash AS "requestHash",created_at AS "createdAt" FROM commercial_point_adjustment_proposals_v2 WHERE workspace_id=$1 AND id=$2 FOR SHARE`, [workspaceId, input.proposalId])
+      const proposalRows = await client.query<ProposalRow>(`SELECT id,workspace_id AS "workspaceId",points_delta AS "pointsDelta",expected_access_revision AS "expectedAccessRevision",reason,evidence,expires_at AS "expiresAt",proposed_by_actor_id AS "proposedByActorId",idempotency_key AS "idempotencyKey",request_hash AS "requestHash",created_at AS "createdAt" FROM commercial_point_adjustment_proposals_v2 WHERE workspace_id=$1 AND id=$2`, [workspaceId, input.proposalId])
       const proposalRow = proposalRows.rows[0]
       if (!proposalRow) throw new CommercialPointAdjustmentApprovalRepositoryError('COMMERCIAL_POINT_ADJUSTMENT_NOT_FOUND', 'adjustment proposal was not found')
       if (proposalRow.proposedByActorId === input.actorId) throw new CommercialPointAdjustmentApprovalRepositoryError('COMMERCIAL_ADJUSTMENT_APPROVAL_INVALID', 'proposal maker cannot approve their own adjustment')
