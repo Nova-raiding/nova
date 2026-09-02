@@ -1326,10 +1326,16 @@ function assertRelayEvidence(method, result) {
   const providerRequestId = execution.providerRequestId ?? execution.provider_request_id ?? result?.providerRequestId ?? result?.provider_request_id
   const usage = execution.usage ?? result?.usage
   const cost = execution.costCny ?? execution.cost_cny ?? result?.costCny ?? result?.cost_cny
-  if (simulated || execution.providerExecuted !== true || typeof providerRequestId !== 'string' || !providerRequestId.trim() || !usage || cost === undefined) {
+  const missing = []
+  if (simulated) missing.push('provider_execution')
+  if (execution.providerExecuted !== true) missing.push('provider_execution')
+  if (typeof providerRequestId !== 'string' || !providerRequestId.trim()) missing.push('provider_request_id')
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage) || Object.keys(usage).length === 0) missing.push('usage')
+  if (cost === undefined || cost === null || (typeof cost !== 'number' && typeof cost !== 'string')) missing.push('cost_cny')
+  if (missing.length > 0) {
     const error = new Error('model relay evidence is incomplete; result delivery is blocked')
     error.code = 'MODEL_RELAY_EVIDENCE_REQUIRED'
-    error.details = { operation_status: 'blocked', missing: ['provider_request_id', 'usage', 'cost_cny'] }
+    error.details = { operation_status: 'blocked', missing: [...new Set(missing)] }
     throw error
   }
 }
@@ -1342,6 +1348,16 @@ function safeStructuredErrorMessage(error, code, details) {
   if (/^MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u.test(raw)) return raw
   if (/^content\.export ZIP 文件签名无效$/u.test(raw)) return '导出文件校验失败（ZIP 文件签名无效），未返回文件。请重新生成导出。'
   return userFacingErrorText(code, details)
+}
+
+function isProviderChannelUnavailable(status, remoteError) {
+  if (status !== 503) return false
+  const message = typeof remoteError === 'string'
+    ? remoteError
+    : remoteError && typeof remoteError === 'object'
+      ? [remoteError.message, remoteError.details?.message].filter(value => typeof value === 'string').join(' ')
+      : ''
+  return /no available channel for model/iu.test(message)
 }
 
 function actionCards(method, result) {
@@ -2062,10 +2078,27 @@ async function callRemote(method, params) {
         // the same protocol boundary so authz/evidence details are not
         // downgraded to a generic missing-result error.
         const remoteError = payload?.error ?? payload?.data?.error
-        const providerOutcomeUnknown = remoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+        // Some relay gateways expose their provider outage as a bare 503
+        // message instead of the canonical error code. That response still
+        // sits after the provider boundary: retrying an idempotent tool can
+        // duplicate a request whose outcome the relay did not disclose.
+        const normalizedRemoteError = isProviderChannelUnavailable(response.status, remoteError)
+          ? {
+              code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN',
+              message: typeof remoteError === 'string' ? remoteError : remoteError?.message ?? 'model provider channel is unavailable',
+              details: {
+                ...(remoteError && typeof remoteError === 'object' && remoteError.details && typeof remoteError.details === 'object' ? remoteError.details : {}),
+                provider_status: response.status,
+                provider_outcome: 'unknown',
+                reconciliation_required: true,
+                next_action: 'query_provider',
+              },
+            }
+          : remoteError
+        const providerOutcomeUnknown = normalizedRemoteError?.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
         const transient = retrySafe && !providerOutcomeUnknown && (response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504)
         if ((!response.ok || !payload || remoteError) && (!transient || attempt === maxAttempts)) {
-          const error = remoteError ?? {
+          const error = normalizedRemoteError ?? {
             code: response.status === 401 ? 'MCP_AUTH_REQUIRED' : response.status === 403 ? 'PERMISSION_DENIED' : `HTTP_${response.status}`,
             message: response.status === 401
               ? 'MCP gateway authentication failed'
@@ -2075,7 +2108,7 @@ async function callRemote(method, params) {
           }
           throw Object.assign(new Error(error.message ?? 'MCP gateway error'), { code: error.code, details: error.details })
         }
-        if (!response.ok || !payload || remoteError) {
+        if (!response.ok || !payload || normalizedRemoteError) {
           const retryAfter = response.status === 429 ? Number(response.headers.get('retry-after') ?? '') : Number.NaN
           const retryAfterMs = Number.isFinite(retryAfter) ? Math.max(50, Math.ceil(retryAfter * 1_000)) : 0
           const backoffMs = retryAfterMs > 0 ? retryAfterMs : retryDelayMs * (2 ** (attempt - 1))
