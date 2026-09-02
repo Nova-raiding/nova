@@ -213,7 +213,7 @@ export function OpsHeader({
             <Alert
               type="error"
               showIcon
-              message="连接配置未保存"
+              title="连接配置未保存"
               description={<><OpsConfigError message={configError} /><span>当前草稿已保留，请先修正字段，再保存并刷新。</span></>}
               action={<Button htmlType="button" size="small" style={{ minHeight: 44 }} aria-label={`定位到${recoveryLabel}`} onClick={() => focusConnectionField(recoveryField)}>定位到{recoveryLabel}</Button>}
             />
@@ -255,7 +255,7 @@ export function OpsHeader({
             <Alert
               type="warning"
               showIcon
-              message="本地开发适配器"
+              title="本地开发适配器"
               description="仅用于本机 Docker 验证；不会代表生产 OIDC 身份，也不能作为生产上线证据。"
             />
             <label className="ops-connection-field">

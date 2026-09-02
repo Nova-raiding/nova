@@ -65,6 +65,7 @@ describe("managed session gate", () => {
     expect(source).toContain("style={{ minHeight: 44 }}");
     expect(source).toContain('className="ops-session-error" role="alert" aria-live="assertive" aria-atomic="true" tabIndex={-1}');
     expect(source).toContain('sessionErrorRef.current?.focus({ preventScroll: true })');
+    expect(source).toContain('title={<h1 id="ops-session-error-title" className="ops-result-heading">');
   });
 });
 

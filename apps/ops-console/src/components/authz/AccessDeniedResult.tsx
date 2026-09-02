@@ -54,7 +54,7 @@ export function AccessDeniedResult({
   return (
     <Result
       status="403"
-      title={<span ref={headingRef} tabIndex={-1} role="heading" aria-level={1}>无权访问“{domainLabel}”</span>}
+      title={<h1 ref={headingRef} tabIndex={-1} className="ops-result-heading">无权访问“{domainLabel}”</h1>}
       subTitle={<span id="access-denied-context">{accessContext}{requestId ? ` 请求 ID：${requestId}。` : ""}</span>}
       extra={<Space className="access-denied-actions" aria-busy={refreshing || undefined}>
         <Button type="primary" onClick={onBack}>返回运营总览</Button>

@@ -106,7 +106,7 @@ describe("OpsHeader accessibility", () => {
     expect(source).toContain('ref={configErrorRef} tabIndex={-1}');
     expect(source).toContain('configErrorRef.current?.focus({ preventScroll: true })');
     expect(source).toContain('aria-label="连接配置错误"');
-    expect(source).toContain('message="连接配置未保存"');
+    expect(source).toContain('title="连接配置未保存"');
     expect(source).toContain('定位到{recoveryLabel}');
   });
 
@@ -116,6 +116,13 @@ describe("OpsHeader accessibility", () => {
     expect(source).toContain("afterOpenChange={(open) => {");
     expect(source).toContain("connectionToggleRef.current?.focus({ preventScroll: true })");
     expect(source).toContain("aria-labelledby={connectionTitleId}");
+  });
+
+  it("uses the current Ant Design Alert title API in the connection drawer", async () => {
+    const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
+    expect(source).toContain('title="本地开发适配器"');
+    expect(source).not.toContain('message="本地开发适配器"');
+    expect(source).not.toContain('message="连接配置未保存"');
   });
 
   it("opens the drawer on the first recoverable field and preserves a desktop recovery action row", async () => {
@@ -149,7 +156,7 @@ describe("OpsHeader accessibility", () => {
 
   it("labels the local adapter as development-only in the diagnostic drawer", async () => {
     const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
-    expect(source).toContain('message="本地开发适配器"');
+    expect(source).toContain('title="本地开发适配器"');
     expect(source).toContain('description="仅用于本机 Docker 验证；不会代表生产 OIDC 身份，也不能作为生产上线证据。"');
     expect(source).toContain("type=\"warning\"");
   });

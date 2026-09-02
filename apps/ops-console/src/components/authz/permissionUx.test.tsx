@@ -197,6 +197,8 @@ describe("desktop permission UX", () => {
     expect(html).toContain('tabindex="-1"');
     expect(html).toContain('aria-labelledby="access-denied-evidence-title"');
     expect(html).toContain("权限拒绝详情");
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html).toContain('<h1 tabindex="-1" class="ops-result-heading"');
   });
 
   it("explains the server reason without exposing object existence", () => {

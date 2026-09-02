@@ -245,7 +245,7 @@ function Dashboard({
             <div ref={sessionErrorRef} className="ops-session-error" role="alert" aria-live="assertive" aria-atomic="true" tabIndex={-1} aria-labelledby="ops-session-error-title">
               <Result
                 status="error"
-                title={<span id="ops-session-error-title">无法验证运营权限</span>}
+                title={<h1 id="ops-session-error-title" className="ops-result-heading">无法验证运营权限</h1>}
                 subTitle={`${sessionError ?? "权限会话加载失败"}。为保护运营数据，当前会话已拒绝所有页面与动作。`}
                 extra={<Button type="primary" aria-label="重试权限验证" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试权限验证</Button>}
               />
