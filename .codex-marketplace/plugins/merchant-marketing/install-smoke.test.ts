@@ -180,4 +180,25 @@ describe('Codex plugin installation package', () => {
     expect(readFileSync(resolve(root, 'mcp/bridge.sh'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'mcp/bridge.sh'), 'utf8'))
     expect(readFileSync(resolve(root, 'package.json'), 'utf8')).toBe(readFileSync(resolve(marketplaceRoot, 'package.json'), 'utf8'))
   })
+
+  it('verifies installed runtime files and the commercial recovery tool surface without claiming conversation refresh', () => {
+    const result = spawnSync(process.execPath, [resolve(root, 'scripts/verify-installed-bridge.mjs'), '--source', root, '--installed', root], {
+      encoding: 'utf8',
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:8790', MERCHANT_WORKSPACE_ID: 'ws_install_verify' },
+    })
+    expect(result.status).toBe(0)
+    const evidence = JSON.parse(result.stdout)
+    expect(evidence).toMatchObject({
+      ok: true,
+      plugin_version: readJson('.codex-plugin/plugin.json').version,
+      tools: {
+        required: ['merchant.start', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list'],
+        missing: [],
+        forbidden: [],
+      },
+      current_conversation_refresh: { verified: false },
+    })
+    expect(evidence.tools.count).toBeGreaterThanOrEqual(5)
+    expect(evidence.runtime_files.every((file: { matches: boolean }) => file.matches)).toBe(true)
+  })
 })

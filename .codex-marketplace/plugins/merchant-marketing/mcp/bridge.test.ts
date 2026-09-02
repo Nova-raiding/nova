@@ -172,6 +172,50 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('reuses a server-authored zero-point block before forwarding later business operations and clears it only after an allowed recovery read', async () => {
+    const requests: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const request = JSON.parse(body)
+      requests.push(request.method)
+      res.setHeader('content-type', 'application/json')
+      if (request.method === 'merchant.start') {
+        res.end(JSON.stringify({ data: null, error: { code: 'CREATIVE_POINTS_EXHAUSTED', message: 'commercial access denied', details: { balance_state: 'known', available_points: 0, access_revision: 'access_9', request_id: 'req_zero', trace_id: 'trace_zero', next_actions: ['commercial.access.get', 'creative-points.balance.get', 'task.create'] } } }))
+        return
+      }
+      if (request.method === 'commercial.access.get') {
+        res.end(JSON.stringify({ data: { result: { allowed: true, balance_state: 'known', available_points: 500, access_revision: 'access_10' } }, error: null }))
+        return
+      }
+      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_EXHAUSTED', available_points: 0, access_revision: 'access_9' } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'task.create', arguments: { product_id: 'prod_1', platform: 'taobao' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_EXHAUSTED', recovery_only: true, next_actions: ['commercial.access.get', 'creative-points.balance.get'] } })
+      expect(requests).toEqual(['merchant.start'])
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'commercial.access.get', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { allowed: true, available_points: 500, access_revision: 'access_10' } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'task.create', arguments: { product_id: 'prod_1', platform: 'taobao' } } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
+      expect(requests).toEqual(['merchant.start', 'commercial.access.get', 'task.create'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('continues serving requests after a valid JSON value is not a JSON-RPC object', async () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),

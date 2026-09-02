@@ -55,6 +55,7 @@ let sessionArtifactBytes = 0
 let sessionArtifactFiles = 0
 let interactiveWriteUntil = 0
 let bootstrappedWorkspaceId = ''
+let commercialRecoveryOnlySnapshot
 const READ_ONLY_METHODS = new Set([
   'merchant.first_value',
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
@@ -1286,6 +1287,29 @@ function commercialAccessErrorProjection(code, details) {
   }
 }
 
+function rememberCommercialAccessResult(method, result) {
+  if (!['commercial.access.get', 'creative-points.balance.get', 'billing.status', 'merchant.start'].includes(method) || !result || typeof result !== 'object' || Array.isArray(result)) return
+  const candidate = result.commercial_access ?? result.commercialAccess ?? result.access_decision ?? result.accessDecision ?? (method === 'commercial.access.get' ? result : undefined)
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return
+  if (candidate.allowed === true) {
+    commercialRecoveryOnlySnapshot = undefined
+    return
+  }
+  const code = candidate.error_code ?? candidate.errorCode ?? candidate.code
+  const details = candidate.details && typeof candidate.details === 'object' && !Array.isArray(candidate.details) ? candidate.details : candidate
+  const projection = commercialAccessErrorProjection(code, details)
+  if (projection) commercialRecoveryOnlySnapshot = { code, ...projection }
+}
+
+function recoveryOnlyResult(id, name) {
+  if (!commercialRecoveryOnlySnapshot || COMMERCIAL_RECOVERY_METHODS.has(name) || ['merchant.start', 'workspace.interactive.confirm'].includes(name)) return undefined
+  const structuredContent = {
+    ...commercialRecoveryOnlySnapshot,
+    message: '服务端已将当前会话限制为商业恢复操作；bridge 未转发本次业务请求。请先通过服务端授权的入口恢复并重新读取准入状态。',
+  }
+  return jsonRpc(id, { content: [{ type: 'text', text: userFacingErrorText(structuredContent.code, structuredContent) }], structuredContent, isError: true })
+}
+
 function deploymentEnvironment() {
   return (configuredEnv('DEPLOY_ENV') || configuredEnv('NODE_ENV')).toLowerCase()
 }
@@ -2515,6 +2539,8 @@ async function handle(request) {
       }
       return jsonRpc(id, { content: [{ type: 'text', text: structuredContent.message }], structuredContent, isError: true })
     }
+    const cachedCommercialBlock = recoveryOnlyResult(id, name)
+    if (cachedCommercialBlock) return cachedCommercialBlock
     if (name === 'billing.recharge.get' && Object.prototype.hasOwnProperty.call(args, 'confirm_test_payment')) {
       return jsonRpcError(id, -32602, 'Unsupported tool argument: confirm_test_payment')
     }
@@ -2545,6 +2571,7 @@ async function handle(request) {
     try {
       const remoteResult = await callRemote(name, prepareToolArguments(name, args))
       const rawResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult) : remoteResult
+      rememberCommercialAccessResult(name, rawResult)
       const assetResult = merchantAssetStructuredContent(name, rawResult)
       const workflowResult = merchantWorkflowStructuredContent(assetResult)
       const result = merchantImageCandidateStructuredContent(name, workflowResult, args)
@@ -2565,6 +2592,7 @@ async function handle(request) {
       const details = safeErrorDetails(error && typeof error === 'object' ? error.details : undefined)
       const presentation = toolErrorPresentation(name, args, code, details)
       const commercialAccess = commercialAccessErrorProjection(code, details)
+      if (commercialAccess) commercialRecoveryOnlySnapshot = { code, ...commercialAccess }
       const projectedDetails = commercialAccess && details
         ? { ...details, balance_state: commercialAccess.balance_state, available_points: commercialAccess.available_points, quoted_points: commercialAccess.quoted_points, access_revision: commercialAccess.access_revision, rate_card_version: commercialAccess.rate_card_version, request_id: commercialAccess.request_id, trace_id: commercialAccess.trace_id, next_actions: commercialAccess.next_actions }
         : details

@@ -1,6 +1,6 @@
 # Merchant Marketing Codex Plugin
 
-当前 `tools/list` 为 128 个 MCP 工具，以运行态契约测试为准。
+`tools/list` 的数量以运行态契约测试为准；文档不固化会随共享 registry 变化的数字。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
@@ -66,6 +66,14 @@ bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPA
 商家侧 `tools/list` 数量以当前运行态契约测试为准，不在文档中固化易过期的数字。它不得包含任何 `ops.*`、`asset.scan`、`content.codex.*` 开发入口，也不得包含共享商业 registry 中 disabled 的操作。生成候选不会覆盖商品当前图片，也不能被称为平台已发布图。OAuth 授权回调仍由服务端 REST/官方页面承载；平台统一承担模型中转费用，商家不需要提供自己的 Key。
 
 安装缓存更新后必须重新验证 `tools/list` 与共享 exact registry：恢复集合不得从前缀、HTTP 方法或“只读”推导，未分类或 disabled 操作必须 fail-closed。
+
+可用下面的只读验收器核对源码与已安装缓存的关键运行文件哈希，并检查恢复入口、Ops 隔离和旧任意金额充值入口。它只证明安装 bridge；已经打开的 ChatGPT 对话可能保留启动时的工具快照，仍需开启新对话完成宿主验收。
+
+```bash
+node apps/plugin/scripts/verify-installed-bridge.mjs \
+  --source apps/plugin \
+  --installed /absolute/path/to/installed/merchant-marketing/<version>
+```
 
 主图候选必须先由 `catalog.image.get` 展示、由 `catalog.image.review` 完成检查，再由商家明确选择 1–6 张及顺序后调用 `content.visual.select`。该操作不会改写原版本，而是派生一个新的 `review_required` 内容版本；选图确认、新版本审核与批准、最终发布确认是三个独立步骤，不得互相替代。任何选图集合或顺序变化都会使旧的 `publish.prepare` 预览和确认哈希失效，必须重新审核、批准、准备预览并获得新的明确确认。
 
