@@ -8,6 +8,7 @@ import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
+import type { ContinuousFeatureEntitlementSnapshotV2 } from '../../../packages/application/src/continuous-feature-entitlement.js'
 import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } from '../../../packages/application/src/canonical-backfill-queue.js'
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
@@ -262,7 +263,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
           await settlePluginWalletDebit({ workspaceId, debitIdempotencyKey: usage.actionId, finalAmountFen: actualAmountFen, actorId: durableWalletAuthorization.actorId, providerRequestId: usage.providerRequestId })
         } else if (durableWalletAuthorization.settlementStatus === 'settled') {
           const repairDebitKey = `model-usage:${receiptKey}`
-          await debitPluginWallet({ workspaceId, amountFen: actualAmountFen, idempotencyKey: repairDebitKey, actorId: durableWalletAuthorization.actorId, description: '模型结构修复请求真实用量结算' })
+          await settleLegacyRmbProviderUsage({ workspaceId, amountFen: actualAmountFen, idempotencyKey: repairDebitKey, actorId: durableWalletAuthorization.actorId, description: '模型结构修复请求真实用量结算' })
           await persistence.actionLedger?.settleProviderUsage({ workspaceId, actionKey: repairDebitKey, actualAmountFen, ...(usage.providerRequestId ? { providerRequestId: usage.providerRequestId } : {}) })
         } else {
           throw Object.assign(new Error(`model action settlement is ${durableWalletAuthorization.settlementStatus}`), { code: 'MODEL_USAGE_WALLET_SETTLEMENT_BLOCKED' })
@@ -272,7 +273,7 @@ async function recordRelayUsage(usage: RelayUsageRecord) {
         const requestKey = usage.providerRequestId ?? receiptKey
         if (!reservation.providerRequests.has(requestKey)) {
           if (reservation.providerRequests.size === 0) await settlePluginWalletDebit({ workspaceId, debitIdempotencyKey: reservation.debitIdempotencyKey, finalAmountFen: actualAmountFen, actorId: reservation.actorId, providerRequestId: usage.providerRequestId })
-          else await debitPluginWallet({ workspaceId, amountFen: actualAmountFen, idempotencyKey: `model-usage:${receiptKey}`, actorId: reservation.actorId, description: '模型修复请求真实用量结算' })
+          else await settleLegacyRmbProviderUsage({ workspaceId, amountFen: actualAmountFen, idempotencyKey: `model-usage:${receiptKey}`, actorId: reservation.actorId, description: '模型修复请求真实用量结算' })
           reservation.providerRequests.add(requestKey)
         }
       }
@@ -1256,6 +1257,29 @@ export async function grantCreativePointsForTests(workspaceId: string, points = 
   })
 }
 
+const memoryContinuousFeatureEntitlements = new Map<string, ContinuousFeatureEntitlementSnapshotV2[]>()
+
+export function grantContinuousFeatureEntitlementForTests(workspaceId: string) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('CONTINUOUS_FEATURE_ENTITLEMENT_GRANT_TEST_ONLY')
+  const snapshot: ContinuousFeatureEntitlementSnapshotV2 = {
+    id: `test-entitlement-${workspaceId}`,
+    workspaceId,
+    subscriptionPeriodId: `test-period-${workspaceId}`,
+    periodStart: '2026-01-01T00:00:00.000Z',
+    periodEnd: '2027-01-01T00:00:00.000Z',
+    periodStatus: 'active',
+    catalogVersionId: 'test-catalog-v2',
+    skuCode: 'test-monthly-plan',
+    resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }],
+    unresolvedBlockers: [],
+    executable: true,
+    checksum: createHash('sha256').update(`test-entitlement:${workspaceId}`).digest('hex'),
+    createdAt: '2026-01-01T00:00:00.000Z',
+  }
+  memoryContinuousFeatureEntitlements.set(workspaceId, [snapshot])
+  return snapshot
+}
+
 const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
 let persistence: ApiPersistence = memoryPersistence
 let persistenceError: unknown
@@ -1359,40 +1383,16 @@ async function recordActionSettlement(input: { workspaceId: string; actionKey: s
   return persistence.actionLedger.record({ ...input, units: 1 })
 }
 
-async function consumeEntitlement(input: { workspaceId: string; kind: EntitlementKind; actionKey: string; actionKind: ActionKind; actorId: string; description: string; modelRunKey?: string }) {
+async function observeLegacyImageEntitlementShadow(input: { workspaceId: string; kind: EntitlementKind }) {
   await persistenceReady
-  const modelRunKey = input.modelRunKey?.trim()
-  const modality = modelRunKey ? modalityForActionKind(input.actionKind) : undefined
-  if (modelRunKey && !modality) throw new DomainError('ENTITLEMENT_MODEL_ACTION_INVALID', '权益消费未绑定合法模型动作，已阻断上游请求', 503)
-  let consumption
   try {
-    consumption = await (persistence.entitlements ?? memoryEntitlements).consume({ workspaceId: input.workspaceId, kind: input.kind, units: 1, idempotencyKey: input.actionKey })
-  } catch (error) {
-    if ((error as { code?: string })?.code === 'ENTITLEMENT_CONSUMPTION_IDEMPOTENCY_CONFLICT' || String(error).includes('ENTITLEMENT_CONSUMPTION_IDEMPOTENCY_CONFLICT')) throw new DomainError('ENTITLEMENT_CONSUMPTION_IDEMPOTENCY_CONFLICT', '权益消费幂等键已绑定到其他消费意图，请换用新的幂等键', 409)
-    throw error
+    await (persistence.entitlements ?? memoryEntitlements).list(input.workspaceId)
+    return false as const
+  } catch {
+    // Legacy entitlement inventory is migration shadow only. Its availability,
+    // quantity and read health must never allow or deny a V2-admitted action.
+    return false as const
   }
-  if (consumption) {
-    if (!modelRunKey) {
-      await recordActionSettlement({ workspaceId: input.workspaceId, actionKey: input.actionKey, actionKind: input.actionKind, settlement: 'entitlement', amountFen: 0, actorId: input.actorId, description: input.description })
-      return consumption
-    }
-    try {
-      const policy = await (persistence.commercialExtensions ?? memoryCommercialExtensions).getModelMarkupPolicy()
-      const authorization = await recordActionSettlement({ workspaceId: input.workspaceId, actionKey: input.actionKey, actionKind: input.actionKind, settlement: 'entitlement', amountFen: 0, reservedAmountFen: 0, multiplier: policy.multiplier, settlementStatus: 'authorized', actorId: input.actorId, description: input.description })
-      if (authorization.settlementStatus !== 'authorized' && authorization.settlementStatus !== 'pending_receipt') throw new DomainError('MODEL_ACTION_ALREADY_STARTED', '权益模型操作已经受理或完成，禁止重复调用模型', 409, { settlement_status: authorization.settlementStatus ?? null })
-      await reserveDailyModelBudget(input.workspaceId, input.actionKey, modelRunKey, modality!)
-    } catch (error) {
-      const compensationErrors: string[] = []
-      try { await releaseDailyModelBudget(input.workspaceId, input.actionKey) } catch (compensationError) { compensationErrors.push(compensationError instanceof Error ? compensationError.message : String(compensationError)) }
-      try {
-        const refunded = await (persistence.entitlements ?? memoryEntitlements).refund({ workspaceId: input.workspaceId, idempotencyKey: input.actionKey })
-        if (refunded.refunded) await refundActionSettlement({ workspaceId: input.workspaceId, actionKey: input.actionKey, reason: '模型权益授权或预算预留失败' })
-      } catch (compensationError) { compensationErrors.push(compensationError instanceof Error ? compensationError.message : String(compensationError)) }
-      if (compensationErrors.length) throw new DomainError('ENTITLEMENT_MODEL_AUTHORIZATION_COMPENSATION_FAILED', '模型权益授权失败且补偿未完整完成，已阻断上游请求并等待人工核对', 503, { action_id: input.actionKey, compensation_errors: compensationErrors })
-      throw error
-    }
-  }
-  return consumption
 }
 
 async function refundEntitlement(input: { workspaceId: string; actionKey: string; reason: string }) {
@@ -1541,7 +1541,7 @@ async function withDailyModelBudget<T>(kind: PlatformModelKind, usageContext: { 
 
 type PluginWalletDebitInput = { workspaceId: string; amountFen?: number; idempotencyKey: string; actorId: string; description: string; taskId?: string; campaignItemId?: string; modelRunKey?: string; contextLinkId?: string; contextHash?: string }
 
-async function debitPluginWallet(input: PluginWalletDebitInput) {
+async function settleLegacyRmbProviderUsage(input: PluginWalletDebitInput) {
   const modality = modalityForActionKind(actionKindForDescription(input.description))
   if (!modality) return debitPluginWalletAfterBudget(input)
   const runKey = input.modelRunKey?.trim() || input.taskId?.trim() || input.campaignItemId?.trim() || input.idempotencyKey
@@ -1698,14 +1698,10 @@ async function refundPluginWalletDebit(input: { workspaceId: string; debitIdempo
   return { refunded: true, transaction }
 }
 
-/** A settled wallet balance is the product-wide paid-capability gate. Included
- * task quota changes how a paid action is settled, but never unlocks the
- * plugin while the merchant wallet is empty. */
-async function requirePluginWalletAccess(workspaceId: string) {
-  if (process.env.NODE_ENV === 'test') return 1
-  const balanceFen = await currentWalletBalanceFen(workspaceId)
-  if (balanceFen <= 0) throw new DomainError('RECHARGE_REQUIRED', '请先为插件钱包充值，充值到账后才能使用生成、检查和发布能力', 402, { balance_cny: '0.00', recharge_required: true })
-  return balanceFen
+/** Legacy RMB wallet is read-only migration shadow for new feature admission. */
+async function observeLegacyWalletShadow(workspaceId: string) {
+  try { return await currentWalletBalanceFen(workspaceId) }
+  catch { return null }
 }
 
 function resolveTaskPublishAccount(task: { accountId?: string | null }, requestedAccountId?: string) {
@@ -2742,6 +2738,13 @@ const commercialAccessService = new CommercialAccessService({
       }
     },
   },
+  entitlement_projection: {
+    async listV2EntitlementSnapshots({ workspace_id }) {
+      await persistenceReady
+      if (persistence.commercialContracts) return persistence.commercialContracts.listEntitlementSnapshots(workspace_id)
+      return memoryContinuousFeatureEntitlements.get(workspace_id) ?? []
+    },
+  },
   next_actions: () => ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
 })
 
@@ -2868,9 +2871,11 @@ function assertCommercialDecisionAllowed(req: IncomingMessage, result: Commercia
     const retryable = result.decision.error_code === ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE
       || result.decision.error_code === ERROR_CODES.RATE_CARD_UNAVAILABLE
       || result.decision.error_code === ERROR_CODES.COMMERCIAL_ACCESS_STALE
+      || result.decision.error_code === ERROR_CODES.COMMERCIAL_ENTITLEMENT_UNAVAILABLE
     const status = result.decision.error_code === ERROR_CODES.CREATIVE_POINTS_EXHAUSTED
-      || result.decision.error_code === ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT ? 402 : retryable ? 503 : 409
-    throw new DomainError(result.decision.error_code!, '当前创意点状态不允许执行该操作', status, {
+      || result.decision.error_code === ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT
+      || result.decision.error_code === ERROR_CODES.COMMERCIAL_ENTITLEMENT_REQUIRED ? 402 : retryable ? 503 : 409
+    throw new DomainError(result.decision.error_code!, '当前商业访问事实不允许执行该操作', status, {
       ...commercialDecisionDetails(req, result.decision), retryable,
     })
   }
@@ -8032,9 +8037,8 @@ async function executeReadyImageContinuationOnce(workspaceId: string, jobId: str
   const walletDebitKey = `image:${job.idempotencyKey}`
   let entitlementConsumed = false
   if (continuation.billingState === 'pending') {
-    entitlementConsumed = Boolean(await consumeEntitlement({ workspaceId, kind: 'image_generation', actionKey: walletDebitKey, actionKind: 'model_image', modelRunKey: walletDebitKey, actorId: continuation.requestedBy, description: '商品主图生成权益' }))
-    if (!entitlementConsumed) await requirePluginWalletAccess(workspaceId)
-    if (!entitlementConsumed) await debitPluginWallet({ workspaceId, idempotencyKey: walletDebitKey, modelRunKey: walletDebitKey, actorId: continuation.requestedBy, description: '商品主图生成调用' })
+    entitlementConsumed = Boolean(await observeLegacyImageEntitlementShadow({ workspaceId, kind: 'image_generation' }))
+    await observeLegacyWalletShadow(workspaceId)
     continuation.billingState = 'settled'
   }
   continuation.state = 'executing'
@@ -9088,36 +9092,16 @@ function oauthError(error: OAuthStateError): { status: number; code: string } {
   return { status: 400, code: ERROR_CODES.OAUTH_STATE_INVALID }
 }
 
-async function consumeTaskUsage(workspaceId: string, taskId: string, idempotencyKey: string, actorId: string) {
+async function observeLegacyTaskUsage(workspaceId: string, taskId: string, idempotencyKey: string, actorId: string) {
   const task = service.getTask(taskId)
   if (task.workspaceId !== workspaceId) throw new DomainError('TENANT_SCOPE_DENIED', '无权访问该任务', 403)
-  const taskScope = { taskId: task.id, ...(task.campaignItemId ? { campaignItemId: task.campaignItemId } : {}) }
-  // Recharge is required even when the workspace still has included task
-  // quota. This keeps content generation aligned with the plugin's single
-  // wallet unlock contract; the quota only determines whether a second debit
-  // is needed after the gate passes.
+  // Duplicate provider-side effects remain blocked by the durable action
+  // ledger. Legacy includedTasks/monthly_tasks_used are read only for shadow
+  // diagnostics and never consumed, charged or converted into access.
   await assertProviderActionCanStart(workspaceId, `model:${idempotencyKey}`)
-  await requirePluginWalletAccess(workspaceId)
-  try {
-    const charged = await (persistence.usage ?? memoryUsage).consume({ workspaceId, taskId, idempotencyKey, actorId })
-    if (charged.charged) {
-      try {
-        const policy = await (persistence.commercialExtensions ?? memoryCommercialExtensions).getModelMarkupPolicy()
-        await recordActionSettlement({ workspaceId, actionKey: `model:${idempotencyKey}`, actionKind: 'model_text', settlement: 'included_quota', amountFen: 0, reservedAmountFen: 0, multiplier: policy.multiplier, settlementStatus: 'authorized', actorId, description: '模型生成调用（套餐行动额度）', ...taskScope })
-      } catch (ledgerError) {
-        await (persistence.usage ?? memoryUsage).refund({ workspaceId, taskId, idempotencyKey, actorId, reason: '行动账本写入失败，回滚套餐额度' })
-        throw ledgerError
-      }
-      await recordOperationAudit({ workspaceId, actorId, action: 'usage.consume', resourceType: 'task', resourceId: taskId, before: {}, after: charged.snapshot as unknown as Record<string, unknown>, reason: '生成入口额度消费' })
-    }
-    return { ...charged, settlement: 'included_quota' as const, walletDebited: false }
-  } catch (error) {
-    if (!(error instanceof Error) || error.message !== 'QUOTA_EXCEEDED') throw error
-    await debitPluginWallet({ workspaceId, idempotencyKey: `model:${idempotencyKey}`, actorId, description: '模型生成调用（套餐额度外）', ...taskScope })
-    modelBillingReservations.set(`${workspaceId}:model:${idempotencyKey}`, { debitIdempotencyKey: `model:${idempotencyKey}`, actorId, providerRequests: new Set() })
-    await recordOperationAudit({ workspaceId, actorId, action: 'usage.overage.consume', resourceType: 'task', resourceId: taskId, before: {}, after: { idempotency_key: idempotencyKey, settlement: 'wallet_overage' }, reason: '套餐额度用尽后使用钱包余额' })
-    return { snapshot: await (persistence.usage ?? memoryUsage).get(workspaceId), charged: false, settlement: 'wallet_overage' as const, walletDebited: true }
-  }
+  const snapshot = await (persistence.usage ?? memoryUsage).get(workspaceId)
+  void actorId
+  return { snapshot, charged: false, settlement: 'legacy_shadow' as const, walletDebited: false }
 }
 
 async function markTaskUsageProviderOutcomePending(workspaceId: string, idempotencyKey: string) {
@@ -9957,6 +9941,16 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可展示的 V2 商业目录版本，不能回退到旧套餐数据', 503, { catalog: null })
       return result({ schema_version: 'commercial.catalog.v2', status: 'available', catalog })
     }
+    case 'commercial.order.create': {
+      try {
+        return result(await commercialPurchaseService.create({ workspace_id: workspaceId, actor_id: requestActor(req), purchase_kind: required(params, 'purchase_kind') as 'purchase' | 'upgrade' | 'point_pack', sku_code: required(params, 'sku_code'), idempotency_key: required(params, 'idempotency_key'), reason: required(params, 'reason') }))
+      } catch (error) { rethrowCommercialPurchaseError(error) }
+    }
+    case 'commercial.order.payment.get': {
+      try {
+        return result(await commercialPurchaseService.paymentStatus({ workspace_id: workspaceId, actor_id: requestActor(req), order_id: required(params, 'order_id') }))
+      } catch (error) { rethrowCommercialPurchaseError(error) }
+    }
     case 'merchant.first_value':
       return result(merchantFirstValuePreview(workspaceId, params))
     case 'brand-unit.list': {
@@ -10221,7 +10215,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result({ ...campaign, count: campaign.productIds.length, ...campaignWorkflow(campaign), delivery_manifest: deliveryManifest, storage: persistence.mode, durable: persistence.mode === 'postgres', execution: campaign.taskIds?.length ? 'workflow_active' : 'plan_only', message: campaign.taskIds?.length ? '批量工作流已激活；每个商品会停在需要事实确认、方向确认、审核或发布确认的安全节点。' : '批量运营计划已持久化；调用 campaign.batch.generate 创建逐商品工作流。' })
     }
     case 'campaign.batch.generate': {
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       await persistenceReady
       const campaignId = required(params, 'campaign_id')
       const campaign = await (persistence.brandUnits ?? memoryBrandUnits).getCampaign({ workspaceId, id: campaignId })
@@ -11950,7 +11944,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const usageKey = `${workspaceId}:${jobId}:retry:${previous.revision + 1}`
       const actionId = `model:${usageKey}`
       const prepared = await service.prepareGenerationContext(task.id, actionId)
-      await debitPluginWallet({ workspaceId, idempotencyKey: actionId, actorId, description: '模型文案生成重试调用', taskId: task.id, ...(task.campaignItemId ? { campaignItemId: task.campaignItemId } : {}), ...(prepared.contextRef ? { contextLinkId: prepared.contextRef.id, contextHash: prepared.contextRef.contextHash } : {}) })
+      await observeLegacyWalletShadow(workspaceId)
       try {
         const job = service.retryGeneration({ workspaceId, jobId })
         const authorizationSnapshot = workerAuthorizationSnapshot(req, workspaceId, job.id, 'generation.execute', { method: 'ops.marketing.generation.retry', task_id: task.id, job_revision: job.revision })
@@ -13069,7 +13063,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result((query ? catalogCategories.filter(item => `${item.code}${item.name}${item.fields.join('')}`.toLocaleLowerCase().includes(query)) : catalogCategories).map(item => ({ ...item, category_code: item.code, required_fields: item.fields })))
     }
     case 'catalog.title.optimize': {
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       const productId = required(params, 'product_id')
       const product = service.products.get(productId)
       if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
@@ -13104,7 +13098,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const seoKey = createHash('sha256').update(JSON.stringify({ productId: product.id, requestedPlatform, keyword: params.keyword ?? '', objective: params.objective ?? '' })).digest('hex')
       const seoDebitKey = `seo-geo:${seoKey}`
       const seoActor = requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant'
-      await debitPluginWallet({ workspaceId, idempotencyKey: seoDebitKey, actorId: seoActor, description: 'SEO/GEO 标题建议调用' })
+      await observeLegacyWalletShadow(workspaceId)
       try {
         await persistEvent(workspaceId, product.id, 'catalog.title.optimized', product.version ?? 1, { product_id: product.id, platform: requestedPlatform, suggestion_id: suggestions[0]?.id ?? null, ranking_guarantee: false })
       } catch (error) {
@@ -13496,9 +13490,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const billingRequired = !existingImageJob || existingImageJob.continuation?.billingState === 'pending'
       const billingActorId = existingImageJob?.continuation?.requestedBy ?? requestActor(req)
       if (billingRequired) {
-        entitlementConsumed = Boolean(await consumeEntitlement({ workspaceId, kind: 'image_generation', actionKey: walletDebitKey, actionKind: 'model_image', modelRunKey: walletDebitKey, actorId: billingActorId, description: '商品主图生成权益' }))
-        if (!entitlementConsumed) await requirePluginWalletAccess(workspaceId)
-        if (!entitlementConsumed) await debitPluginWallet({ workspaceId, idempotencyKey: walletDebitKey, modelRunKey: walletDebitKey, actorId: billingActorId, description: '商品主图生成调用' })
+        entitlementConsumed = Boolean(await observeLegacyImageEntitlementShadow({ workspaceId, kind: 'image_generation' }))
+        await observeLegacyWalletShadow(workspaceId)
         if (existingImageJob?.continuation) {
           existingImageJob.continuation.billingState = 'settled'
           existingImageJob.continuation.state = 'executing'
@@ -13626,9 +13619,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       let entitlementConsumed = false
       const existingRetry = [...service.imageGenerationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === retryKey)
       if (!existingRetry) {
-        entitlementConsumed = Boolean(await consumeEntitlement({ workspaceId, kind: 'image_generation', actionKey: walletDebitKey, actionKind: 'model_image', modelRunKey: imageRunKey, actorId: billingActorId, description: '商品主图安全重试权益' }))
-        if (!entitlementConsumed) await requirePluginWalletAccess(workspaceId)
-        if (!entitlementConsumed) await debitPluginWallet({ workspaceId, idempotencyKey: walletDebitKey, modelRunKey: imageRunKey, actorId: billingActorId, description: '商品主图安全重试调用' })
+        entitlementConsumed = Boolean(await observeLegacyImageEntitlementShadow({ workspaceId, kind: 'image_generation' }))
+        await observeLegacyWalletShadow(workspaceId)
       }
       let retried: ReturnType<typeof service.retryImageGeneration>
       try {
@@ -14450,13 +14442,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
       await enforceProductBrandAccess(req, workspaceId, productId)
       if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '请先确认商品、SKU、价格和图片事实，再生成创意 Brief', 409)
       service.assertBrandVisualGenerationReady(workspaceId, product.platform)
       const brief = creativeBrief(workspaceId, product, params)
       const briefDebitKey = `creative-brief:${brief.id}`
       const briefActor = requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant'
-      await debitPluginWallet({ workspaceId, idempotencyKey: briefDebitKey, actorId: briefActor, description: '创意 Brief 生成调用' })
+      await observeLegacyWalletShadow(workspaceId)
       try {
         await persistEvent(workspaceId, brief.id, 'creative.brief_created', brief.version, { brief_id: brief.id, product_id: product.id, asset_type: brief.assetType, platform: brief.platform, sku_ids: brief.skuIds })
       } catch (error) {
@@ -14471,13 +14463,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
       await enforceProductBrandAccess(req, workspaceId, productId)
       if ((await canonicalProductReadControl(workspaceId)).mode === 'canonical_read') await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '请先确认商品事实，再生成创意预览', 409)
       service.assertBrandVisualGenerationReady(workspaceId, product.platform)
       const preview = creativePreview(workspaceId, product, params)
       const previewDebitKey = `creative-preview:${preview.id}`
       const previewActor = requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant'
-      await debitPluginWallet({ workspaceId, idempotencyKey: previewDebitKey, actorId: previewActor, description: '创意预览生成调用' })
+      await observeLegacyWalletShadow(workspaceId)
       try {
         await persistEvent(workspaceId, preview.id, 'creative.preview_created', 1, { preview_id: preview.id, product_id: product.id, asset_type: preview.assetType, platform: preview.platform })
       } catch (error) {
@@ -14532,7 +14524,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       // task's product/listing binding at the action boundary so a legacy
       // task cannot bypass canonical_read after the task was created.
       await assertCanonicalTaskScopeForAction(task)
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       await requireGenerationRulePreflight(workspaceId, task.productId)
       if (durableContentGenerationEnvironment()) {
         requirePlatformModelCostGate('text')
@@ -14548,7 +14540,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const reservationId = `generation:${idempotencyKey}`
         const reserved = existing ? false : await reserveDistributedJobSlot(workspaceId, reservationId)
         const usageKey = `generation:${idempotencyKey}`
-        const usage = await consumeTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
+        const usage = await observeLegacyTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
         try {
           await reserveDailyModelBudget(workspaceId, `model:${usageKey}`, task.id, 'text')
           const prepared = await service.prepareGenerationContext(task.id, `model:${usageKey}`)
@@ -14565,7 +14557,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         }
       }
       const usageKey = `content.generate:${task.id}`
-      const usage = await consumeTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
+      const usage = await observeLegacyTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
       let draft
       try { draft = await service.generateDraft(task.id, undefined, `model:${usageKey}`) } catch (error) { if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(workspaceId, usageKey); else if (usage.charged || usage.walletDebited) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', '内容生成失败'); throw error }
       const execution = await requireSettledContentExecutionEvidence(workspaceId, 'model:' + usageKey)
@@ -14583,7 +14575,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (controlledRelayEnvironment()) throw new DomainError('MODEL_RELAY_REQUIRED', '受控环境禁止绕过中转模型直接提交内容', 409)
       const task = scopeTask(req, required(params, 'task_id'))
       await assertCanonicalTaskScopeForAction(task)
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       let body: import('../../../packages/application/src/service.js').ContentVersion['body']
       try {
         const parsed = JSON.parse(required(params, 'body_json')) as Record<string, unknown>
@@ -14591,7 +14583,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         body = { title: parsed.title, detail: parsed.detail, sellingPoints: parsed.sellingPoints as string[], ...(Array.isArray(parsed.modules) ? { modules: parsed.modules as import('../../../packages/ai/src/generator.js').ContentModule[] } : {}), ...(parsed.brief && typeof parsed.brief === 'object' && !Array.isArray(parsed.brief) ? { brief: parsed.brief as import('../../../packages/ai/src/generator.js').StaticBrief } : {}) }
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'body_json 必须包含合法的 title、detail、sellingPoints', 400) }
       const usageKey = `content.codex.commit:${task.id}:${typeof params.expected_version === 'string' ? params.expected_version : 'latest'}`
-      const usage = await consumeTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
+      const usage = await observeLegacyTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? header(req, 'x-actor-id')?.trim() ?? 'merchant')
       let draft
       try { draft = service.commitCodexDraft({ taskId: task.id, body, ...(typeof params.reason === 'string' && params.reason.trim() ? { reason: params.reason.trim() } : {}) }) } catch (error) { if (usage.charged || usage.walletDebited) await refundTaskUsage(workspaceId, task.id, usageKey, requestPrincipals.get(req)?.actorId ?? 'merchant', 'Codex 内容提交失败'); throw error }
       await persistSnapshot(workspaceId, 'content_version', draft, draft as unknown as Record<string, unknown>)
@@ -15210,7 +15202,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'multimodal.image.edit': {
       requirePlatformModelCostGate('image_edit')
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       let request: unknown
       try { request = JSON.parse(required(params, 'request_json')) } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'request_json 必须是合法 JSON', 400) }
       const candidate = createImageEditCandidate(request as never)
@@ -15237,7 +15229,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const rulePreflight = await requireGenerationRulePreflight(workspaceId, candidate.value.context.product.id, '图片编辑前平台规则校验未通过')
       requireRuleSafeGenerationText(rulePreflight, [candidate.value.prompt], '图片编辑指令命中当前平台规则禁用表达')
       const walletDebitKey = `image-edit:${candidate.value.id}`
-      await debitPluginWallet({ workspaceId, idempotencyKey: walletDebitKey, modelRunKey: `image-edit:${walletDebitKey}`, actorId: requestActor(req), description: '图片编辑调用' })
+      await observeLegacyWalletShadow(workspaceId)
       let walletRefunded = false
       const refundEditWallet = async (reason: string) => {
         if (walletRefunded) return
@@ -15276,7 +15268,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '多模态请求引用的商品不存在或不属于当前工作区', 404)
         await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
       }
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       const rulePreflight = await generationRulePreflight(workspaceId, context.product.id)
       if (rulePreflight.blocking) throw new DomainError('PLATFORM_RULE_PREFLIGHT_BLOCKED', '当前店铺平台规则存在阻断项，不能继续生成', 409, { rule_preflight: rulePreflight })
       const modality = required(params, 'modality') as 'text' | 'image' | 'video'
@@ -15300,7 +15292,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'
         ? `video:${walletDebitKey}`
         : walletDebitKey
-      await debitPluginWallet({ workspaceId, idempotencyKey: walletDebitKey, modelRunKey, actorId: requestActor(req), description: `${modality}生成调用` })
+      await observeLegacyWalletShadow(workspaceId)
       let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
       let generatedImages: string[] | undefined
       let imageJob: ReturnType<typeof service.enqueueImageGeneration> | undefined
@@ -15352,7 +15344,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '视频请求引用的商品不存在或不属于当前工作区', 404)
         await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
       }
-      await requirePluginWalletAccess(workspaceId)
+      await observeLegacyWalletShadow(workspaceId)
       const suppliedVideoRequestKey = (typeof params.idempotency_key === 'string' && params.idempotency_key.trim()) || header(req, 'idempotency-key')?.trim()
       if (isProduction() && !suppliedVideoRequestKey) throw new DomainError('IDEMPOTENCY_KEY_REQUIRED', '生产视频请求必须提供 idempotency_key 或 Idempotency-Key 请求头', 400)
       const rulePreflight = await generationRulePreflight(workspaceId, context.product.id)
@@ -15369,7 +15361,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const videoRequestKey = suppliedVideoRequestKey || randomUUID()
       const walletDebitKey = `video:${videoRequestKey}`
       const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey
-      await debitPluginWallet({ workspaceId, idempotencyKey: walletDebitKey, modelRunKey, actorId: requestActor(req), description: '视频生成调用' })
+      await observeLegacyWalletShadow(workspaceId)
       let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
       let generatedPlan: Awaited<ReturnType<typeof service.generateOneSentenceText>> | undefined
       try {
@@ -15568,6 +15560,20 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const catalog = await persistence.commercialCatalog.list({ includePrivate: false, capabilities: [] })
     if (!catalog.length) throw new DomainError('COMMERCIAL_CATALOG_UNAVAILABLE', '没有可展示的 V2 商业目录版本，不能回退到旧套餐数据', 503, { catalog: null })
     return send(res, 200, workspaceId, { schema_version: 'commercial.catalog.v2', status: 'available', catalog }, null, req)
+  }
+  if (req.method === 'POST' && path === '/v1/commercial/orders') {
+    const input = await body(req)
+    const workspaceId = resolveWorkspace(req, input.workspace_id)
+    try {
+      return send(res, 200, workspaceId, await commercialPurchaseService.create({ workspace_id: workspaceId, actor_id: requestActor(req), purchase_kind: required(input, 'purchase_kind') as 'purchase' | 'upgrade' | 'point_pack', sku_code: required(input, 'sku_code'), idempotency_key: required(input, 'idempotency_key'), reason: required(input, 'reason') }), null, req)
+    } catch (error) { rethrowCommercialPurchaseError(error) }
+  }
+  const commercialPaymentMatch = path.match(/^\/v1\/commercial\/orders\/([^/]+)\/payment$/)
+  if (req.method === 'GET' && commercialPaymentMatch) {
+    const workspaceId = resolveWorkspace(req)
+    try {
+      return send(res, 200, workspaceId, await commercialPurchaseService.paymentStatus({ workspace_id: workspaceId, actor_id: requestActor(req), order_id: decodeURIComponent(commercialPaymentMatch[1]!) }), null, req)
+    } catch (error) { rethrowCommercialPurchaseError(error) }
   }
   if (req.method === 'POST' && path === '/v1/canonical-backfill/conflicts/scan') {
     const input = await body(req)
@@ -17189,7 +17195,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     if (!idempotencyKey) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '生成任务必须携带 Idempotency-Key', 400)
     const product = service.products.get(task.productId)
     if (!product || product.workspaceId !== task.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品快照不存在或不属于当前工作区', 404)
-    await requirePluginWalletAccess(task.workspaceId)
+    await observeLegacyWalletShadow(task.workspaceId)
     const rulePreflight = await requireGenerationRulePreflight(task.workspaceId, product.id)
     requirePlatformModelCostGate('text')
     let existing = [...service.generationJobs.values()].find(candidate => candidate.workspaceId === task.workspaceId && candidate.idempotencyKey === idempotencyKey)
@@ -17201,7 +17207,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const reservationId = `generation:${idempotencyKey}`
     const reserved = await reserveDistributedJobSlot(task.workspaceId, reservationId)
       const usageKey = `generation:${idempotencyKey}`
-      const usage = await consumeTaskUsage(task.workspaceId, task.id, usageKey, requestActor(req))
+      const usage = await observeLegacyTaskUsage(task.workspaceId, task.id, usageKey, requestActor(req))
       try {
         await reserveDailyModelBudget(task.workspaceId, `model:${usageKey}`, task.id, 'text')
         const prepared = await service.prepareGenerationContext(task.id, `model:${usageKey}`)
@@ -17385,13 +17391,13 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const task = scopeTask(req, contentMatch[1]!)
     await assertCanonicalTaskScopeForAction(task)
     const idempotencyKey = header(req, 'idempotency-key')?.trim() || ''
-    await requirePluginWalletAccess(task.workspaceId)
+    await observeLegacyWalletShadow(task.workspaceId)
     if (isProduction() && !idempotencyKey) throw new DomainError(ERROR_CODES.IDEMPOTENCY_KEY_REQUIRED, '生产内容生成必须携带 Idempotency-Key', 400)
     const rulePreflight = await requireGenerationRulePreflight(task.workspaceId, task.productId)
     requirePlatformModelCostGate('text')
     const actorId = requestActor(req)
     const usageKey = `content.rest.generate:${idempotencyKey || task.id}`
-    const usage = await consumeTaskUsage(task.workspaceId, task.id, usageKey, actorId)
+    const usage = await observeLegacyTaskUsage(task.workspaceId, task.id, usageKey, actorId)
     let draft
     try { draft = await service.generateDraft(contentMatch[1]!, idempotencyKey || undefined, `model:${usageKey}`) } catch (error) { if (providerSucceededButSettlementPending(error)) await markTaskUsageProviderOutcomePending(task.workspaceId, usageKey); else if (usage.charged || usage.walletDebited) await refundTaskUsage(task.workspaceId, task.id, usageKey, actorId, 'REST 内容生成失败'); throw error }
     const execution = await requireSettledContentExecutionEvidence(task.workspaceId, 'model:' + usageKey)

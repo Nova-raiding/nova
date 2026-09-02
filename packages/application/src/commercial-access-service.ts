@@ -71,7 +71,7 @@ export interface CommercialAccessServiceOptions {
   readonly balance_projection: CreativePointBalanceProjectionPort
   readonly rate_resolver: ApprovedCreativePointRateResolver
   /** V2 subscription snapshot authority for every non-recovery merchant feature. */
-  readonly entitlement_projection?: ContinuousFeatureEntitlementPort
+  readonly entitlement_projection: ContinuousFeatureEntitlementPort
   /** Only server-authorized recovery actions may be exposed to clients. */
   readonly next_actions?: (error: CommercialAccessErrorCode) => readonly string[]
   /** Injectable for deterministic tests; production defaults to cryptographic UUIDs. */
@@ -123,7 +123,7 @@ export class CommercialAccessService {
   readonly #registryVersion: string
   readonly #balanceProjection: CreativePointBalanceProjectionPort
   readonly #rateResolver: ApprovedCreativePointRateResolver
-  readonly #continuousEntitlement: ContinuousFeatureEntitlementService | undefined
+  readonly #continuousEntitlement: ContinuousFeatureEntitlementService
   readonly #nextActions?: CommercialAccessServiceOptions['next_actions']
   readonly #idFactory: () => string
   readonly #now: () => Date
@@ -134,9 +134,7 @@ export class CommercialAccessService {
     this.#registryVersion = options.registry_version
     this.#balanceProjection = options.balance_projection
     this.#rateResolver = options.rate_resolver
-    this.#continuousEntitlement = options.entitlement_projection
-      ? new ContinuousFeatureEntitlementService({ projection: options.entitlement_projection, now: options.now })
-      : undefined
+    this.#continuousEntitlement = new ContinuousFeatureEntitlementService({ projection: options.entitlement_projection, now: options.now })
     this.#nextActions = options.next_actions
     this.#idFactory = options.id_factory ?? randomUUID
     this.#now = options.now ?? (() => new Date())
@@ -315,17 +313,7 @@ export class CommercialAccessService {
     trace: CommercialAccessDecisionTrace,
     candidate: CommercialAccessDecision,
   ): Promise<CommercialAccessServiceResult> {
-    const entitlement = this.#continuousEntitlement
-      ? await this.#continuousEntitlement.decide({ workspace_id: candidate.workspace_id, decided_at: trace.decided_at })
-      : {
-          allowed: false as const,
-          code: 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE' as const,
-          snapshot_id: null,
-          subscription_period_id: null,
-          catalog_version_id: null,
-          checksum: null,
-          ignored_legacy_sources: [],
-        }
+    const entitlement = await this.#continuousEntitlement.decide({ workspace_id: candidate.workspace_id, decided_at: trace.decided_at })
     if (entitlement.allowed) return this.#decision(trace, candidate)
     return this.#decision(trace, {
       ...candidate,

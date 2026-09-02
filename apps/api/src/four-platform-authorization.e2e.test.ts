@@ -28,7 +28,9 @@ async function call(base: string, workspace: string, method: string, params: Rec
 }
 
 async function grantCommercialAccess(workspace: string) {
-  await (await import('./server.js')).grantCreativePointsForTests(workspace)
+  const runtime = await import('./server.js')
+  await runtime.grantCreativePointsForTests(workspace)
+  runtime.grantContinuousFeatureEntitlementForTests(workspace)
 }
 
 describe('four-platform fixture authorization lifecycle', () => {

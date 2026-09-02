@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { grantCreativePointsForTests, service } from '../apps/api/src/server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, service } from '../apps/api/src/server.js'
 import { server as applicationServer } from '../apps/api/src/server.js'
 import { createPublishWorker } from '../packages/workers/src/factories.js'
 import { InMemoryJobRunner, WorkerFailure } from '../packages/workers/src/runner.js'
@@ -29,6 +29,8 @@ describe('quality gates', () => {
     const account = service.registerPlatformAccount({ workspaceId: owner, platform: 'taobao', remoteAccountId: `quality-${suffix}`, credentialRef: 'fixture://quality' })
     await grantCreativePointsForTests(owner)
     await grantCreativePointsForTests(attacker)
+    grantContinuousFeatureEntitlementForTests(owner)
+    grantContinuousFeatureEntitlementForTests(attacker)
     const { server, base } = await start()
     try {
       const deniedProduct = await request(base, attacker, '/v1/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace_id: attacker, product_id: productId, platform: 'taobao' }) })

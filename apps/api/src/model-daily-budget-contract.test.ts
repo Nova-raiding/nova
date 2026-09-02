@@ -46,11 +46,12 @@ describe('daily model budget provider boundary', () => {
     expect(source).toContain('usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey }')
   })
 
-  it('authorizes entitlement-funded image calls on the provider action without a zero-value wallet debit', () => {
+  it('keeps legacy image entitlement as read-only shadow and retains historical settlement compatibility', () => {
     expect(source).not.toContain('image-addon:')
-    expect(source.match(/consumeEntitlement\(\{ workspaceId, kind: 'image_generation', actionKey: walletDebitKey, actionKind: 'model_image', modelRunKey:/gu)).toHaveLength(3)
-    expect(source).toContain("settlement: 'entitlement', amountFen: 0, reservedAmountFen: 0")
-    expect(source).toContain("const zeroCustomerChargeAuthorization = durableAuthorization?.settlement === 'entitlement' || durableAuthorization?.settlement === 'included_quota'")
+    expect(source.match(/observeLegacyImageEntitlementShadow\(\{ workspaceId, kind: 'image_generation' \}\)/gu)).toHaveLength(3)
+    expect(source).not.toContain('consumeEntitlement(')
+    expect(source).not.toContain('debitPluginWallet(')
+    expect(source).toContain('const zeroCustomerChargeAuthorization = true')
     expect(source).toContain('if (usage.costCny === undefined && relayPricing)')
     expect(source).toContain('if (usage.costCny === undefined)')
     expect(source).toContain("action.settlement === 'entitlement' || action.settlement === 'included_quota'")

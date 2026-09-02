@@ -63,6 +63,7 @@ describe('commercial zero-side-effect PostgreSQL E2 matrix', () => {
           },
         },
         rate_resolver: { resolveApprovedRate: vi.fn(async () => ({ state: 'approved' as const, quoted_points: 2, rate_card_version: 'test-rate-v1' })) },
+        entitlement_projection: { listV2EntitlementSnapshots: vi.fn(async () => { throw new Error('must not be consulted before point rejection') }) },
       })
       const dispatch = async (service: CommercialAccessService, policy: CommercialOperationPolicy, workspaceId: string) => {
         const result = await service.decide({ surface: policy.surface, operation: policy.operation, workspace_id: workspaceId })

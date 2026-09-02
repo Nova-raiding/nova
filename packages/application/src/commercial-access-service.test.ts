@@ -216,6 +216,7 @@ describe('CommercialAccessService E1', () => {
       registry_version: ' ',
       balance_projection: { projectCreativePointBalance: async () => ({ state: 'unknown' }) },
       rate_resolver: { resolveApprovedRate: async () => ({ state: 'unavailable' }) },
+      entitlement_projection: { listV2EntitlementSnapshots: async () => [] },
     })).toThrow('registry_version')
 
     const h = harness({ state: 'unknown' })

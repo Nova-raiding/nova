@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requirePublishAuthorizationSnapshot } from './server.js'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
@@ -35,12 +35,39 @@ describe('central commercial access gate', () => {
     await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'unregistered.business.action')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_UNCLASSIFIED', status: 503 })
   })
 
+  it('applies creative points first and then requires the sole V2 continuous entitlement', async () => {
+    const entitlementOnly = `ws_entitlement_only_${Date.now()}`
+    grantContinuousFeatureEntitlementForTests(entitlementOnly)
+    await expect(enforceMcpCommercialAccess(request, entitlementOnly, 'merchant.start')).rejects.toMatchObject({ code: 'CREATIVE_POINTS_UNAVAILABLE' })
+
+    const pointsOnly = `ws_points_only_${Date.now()}`
+    await grantCreativePointsForTests(pointsOnly, 10)
+    await expect(enforceMcpCommercialAccess(request, pointsOnly, 'merchant.start')).rejects.toMatchObject({ code: 'COMMERCIAL_ENTITLEMENT_REQUIRED' })
+
+    grantContinuousFeatureEntitlementForTests(pointsOnly)
+    await expect(enforceMcpCommercialAccess(request, pointsOnly, 'merchant.start')).resolves.toMatchObject({ allowed: true, available_points: 10 })
+  })
+
+  it('keeps legacy wallet, task quota, and image entitlement out of new admission calls', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    for (const legacyCall of ['requirePluginWalletAccess(', 'consumeTaskUsage(', 'consumeEntitlement(', 'debitPluginWallet(']) {
+      expect(source).not.toContain(legacyCall)
+    }
+    expect(source).toContain('settleLegacyRmbProviderUsage')
+    expect(source).toContain('observeLegacyTaskUsage')
+    expect(source).toContain('observeLegacyWalletShadow')
+    expect(source).toContain('observeLegacyImageEntitlementShadow')
+  })
+
   it.each([
     'CREATIVE_POINTS_EXHAUSTED',
     'CREATIVE_POINTS_INSUFFICIENT',
     'CREATIVE_POINTS_UNAVAILABLE',
     'RATE_CARD_UNAVAILABLE',
     'COMMERCIAL_ACCESS_STALE',
+    'COMMERCIAL_ENTITLEMENT_UNAVAILABLE',
+    'COMMERCIAL_ENTITLEMENT_REQUIRED',
+    'COMMERCIAL_ENTITLEMENT_AMBIGUOUS',
   ])('preserves %s evidence for the native ChatGPT MCP transport', (code) => {
     const details = {
       balance_state: code === 'CREATIVE_POINTS_UNAVAILABLE' ? 'unknown' : 'known',
