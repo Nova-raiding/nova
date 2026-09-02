@@ -17,6 +17,16 @@ describe("StorageReconciliationSection accessibility states", () => {
     expect(html).toContain("不提供客户素材、对象 key 或下载入口");
   });
 
+  it("renders a named empty workspace state with an optional refresh action", () => {
+    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "clean", lastRunAt: "2026-08-29T10:00:00Z" }} onRetry={() => undefined} />);
+    expect(html).toContain("workspace 对账列表（0）");
+    expect(html).toContain('data-state="empty"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('aria-label="刷新 workspace 对账列表"');
+    expect(html).toContain("暂无 workspace 级对账结果");
+  });
+
   it("renders failed, expired, and multi-workspace states without object details", () => {
     const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "failed", errorMessage: "worker timeout" }} summaries={[{ workspaceId: "ws-a", status: "failed", errorMessage: "worker timeout" }, { workspaceId: "ws-b", status: "clean", freshness: "expired", lastRunAt: "2026-08-27T10:00:00Z" }, { workspaceId: "ws-c", status: "clean", freshness: "stale", lastRunAt: "2026-08-28T10:00:00Z" }]} />);
     expect(html).toContain("对账失败");
@@ -40,6 +50,9 @@ describe("StorageReconciliationSection accessibility states", () => {
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-live="assertive"');
+    expect(markup).toContain('data-focus-target="error-summary"');
+    expect(markup).toContain("aria-labelledby=");
+    expect(markup).toContain("aria-describedby=");
     expect(markup).toContain('aria-label="重试加载对账结果"');
     expect(markup).toContain("min-height:44px");
     expect(markup).toContain("对账服务暂时不可用");
