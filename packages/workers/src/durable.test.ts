@@ -107,6 +107,19 @@ describe('durable outbox dispatcher', () => {
     expect(pushed).toHaveLength(1)
   })
 
+  it('rejects unsafe queue message ids before transport or in-memory state changes', async () => {
+    const push = vi.fn(async () => {})
+    const redisQueue = new RedisQueueAdapter<DurableOutboxEvent>({ push, async pop() { return undefined } }, 'queue')
+    for (const id of ['', '   ', 'evt\nforged', 'x'.repeat(257)]) {
+      await expect(redisQueue.enqueue({ id, value: event() })).rejects.toThrow('WORKER_QUEUE_MESSAGE_INVALID')
+    }
+    expect(push).not.toHaveBeenCalled()
+
+    const memoryQueue = new InMemoryQueue<DurableOutboxEvent>()
+    await expect(memoryQueue.enqueue({ id: 'evt\u0000forged', value: event() })).rejects.toThrow('WORKER_QUEUE_MESSAGE_INVALID')
+    expect(memoryQueue.size).toBe(0)
+  })
+
   it('recovers expired Redis claims before acquiring a fresh database lease', async () => {
     const calls: string[] = []
     const queue = new RedisQueueAdapter<DurableOutboxEvent>({

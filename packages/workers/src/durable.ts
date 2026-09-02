@@ -79,6 +79,7 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
   constructor(private readonly transport: RedisQueueTransport, private readonly key: string, private readonly encode: (value: T) => string = value => JSON.stringify(value), private readonly decode: (value: string) => T = value => JSON.parse(value) as T) {}
 
   async enqueue(message: QueueMessage<T>): Promise<void> {
+    assertQueueMessageId(message.id)
     const fingerprint = stableQueueSerialization(message.value)
     const existingFingerprint = this.pendingFingerprints.get(message.id)
     if (existingFingerprint !== undefined) {
@@ -94,9 +95,10 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
     const raw = await this.transport.pop(this.key, 0)
     if (!raw) return undefined
     const parsed = JSON.parse(raw) as { id: string; value: string }
-    if (typeof parsed.id !== 'string' || !parsed.id.trim() || typeof parsed.value !== 'string') {
+    if (typeof parsed.value !== 'string') {
       throw new Error('WORKER_QUEUE_MESSAGE_INVALID')
     }
+    assertQueueMessageId(parsed.id)
     const value = this.decode(parsed.value)
     const fingerprint = stableQueueSerialization(value)
     const existingFingerprint = this.pendingFingerprints.get(parsed.id)
@@ -137,6 +139,7 @@ export class InMemoryQueue<T> implements QueuePort<T> {
   private readonly messages: QueueMessage<T>[] = []
   constructor(private readonly now: () => number = () => Date.now()) {}
   async enqueue(message: QueueMessage<T>): Promise<void> {
+    assertQueueMessageId(message.id)
     const existing = this.messages.find(candidate => candidate.id === message.id)
     if (existing) {
       if (stableQueueSerialization(existing.value) !== stableQueueSerialization(message.value)) {
@@ -171,6 +174,12 @@ function stableQueueSerialization(value: unknown): string {
     return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableQueueSerialization(entry)}`).join(',')}}`
   }
   throw new Error('WORKER_QUEUE_MESSAGE_UNSUPPORTED')
+}
+
+function assertQueueMessageId(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new Error('WORKER_QUEUE_MESSAGE_INVALID')
+  }
 }
 
 export interface DurableDispatcherOptions {
