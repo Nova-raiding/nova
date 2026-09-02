@@ -959,7 +959,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'ops.rules.workspace.audit',
     description: 'Read auditable rule publication and status-change events for the explicitly selected workspace. Workspace operations only.',
-    params: params({ pack_id: { type: 'string' } }),
+    params: params({ pack_id: boundedString(256) }),
   },
   {
     method: 'rule.publish',

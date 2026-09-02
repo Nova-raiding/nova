@@ -43,4 +43,15 @@ describe('canonical backfill run repository', () => {
     const failed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: run.revision, status: 'failed', lastResult: { error: 'conflicts require review', conflicts: [{ code: 'MISSING_BRAND' }] } })
     await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })).rejects.toBeInstanceOf(CanonicalBackfillRunStateError)
   })
+
+  it('clears a stale resume cursor once the run completes', async () => {
+    const repository = new MemoryCanonicalBackfillRunRepository()
+    const run = await repository.create({ workspaceId: 'ws_cursor_clear', dryRun: false, createdBy: 'ops', reason: '完成后清理断点' })
+    const paused = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: run.revision, status: 'paused', cursorProductId: 'prod_25' })
+    const resumed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: paused.revision, status: 'running' })
+    const completed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: resumed.revision, status: 'completed', lastResult: { inserted: 25 } })
+    expect(completed).toMatchObject({ status: 'completed', revision: resumed.revision + 1, lastResult: { inserted: 25 } })
+    expect(completed.cursorProductId).toBeUndefined()
+    expect(await repository.get({ workspaceId: run.workspaceId, id: run.id })).toEqual(completed)
+  })
 })

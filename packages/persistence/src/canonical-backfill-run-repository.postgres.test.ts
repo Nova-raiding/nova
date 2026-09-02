@@ -79,6 +79,24 @@ describe('canonical backfill run repository PostgreSQL scope and CAS', () => {
         cursorProductId: 'canonical_product_50',
       })
       expect(paused).toMatchObject({ status: 'paused', revision: started.revision + 1, cursorProductId: 'canonical_product_50' })
+
+      const resumed = await repository.update({
+        workspaceId: 'backfill_scope_alpha',
+        id: run.id,
+        expectedRevision: paused.revision,
+        status: 'running',
+      })
+
+      const completed = await repository.update({
+        workspaceId: 'backfill_scope_alpha',
+        id: run.id,
+        expectedRevision: resumed.revision,
+        status: 'completed',
+        lastResult: { inserted: 50 },
+      })
+      expect(completed).toMatchObject({ status: 'completed', revision: resumed.revision + 1, lastResult: { inserted: 50 } })
+      expect(completed.cursorProductId).toBeUndefined()
+      await expect(repository.get({ workspaceId: 'backfill_scope_alpha', id: run.id })).resolves.toEqual(completed)
     } finally {
       await app?.end()
       await database?.end()
