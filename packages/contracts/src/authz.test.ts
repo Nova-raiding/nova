@@ -315,4 +315,35 @@ describe('authorization policy registry', () => {
     expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-allow', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'brand', id: 'brand_1' } })).toMatchObject({ authorized: true, result: 'allow' })
     expect(evaluatePermissionAtoms({ decisionId: 'grant-exact-deny', policy, workbench: 'workspace', mode: 'enforce', now: '2026-09-01T00:00:00.000Z', atoms: [atom], resourceScope: { type: 'brand', id: 'brand_2' } })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
   })
+
+  it.each([
+    ['workspace', 'catalog.product.update', { type: 'workspace', ids: ['workspace-a'] }, { type: 'workspace', id: 'workspace-b' }],
+    ['brand', 'catalog.product.update', { type: 'brand', ids: ['brand-a'] }, { type: 'brand', id: 'brand-b' }],
+    ['account', 'platform.store.alias.set', { type: 'account', ids: ['account-a'] }, { type: 'account', id: 'account-b' }],
+  ] as const)('rejects a %s scope from authorizing a same-type foreign tenant resource', (_kind, method, scope, resourceScope) => {
+    const policy = getMcpMethodPolicy(method)!
+    const decision = evaluatePermissionAtoms({
+      decisionId: `cross-tenant-${_kind}`,
+      policy,
+      workbench: 'workspace',
+      mode: 'enforce',
+      now: '2026-09-01T00:00:00.000Z',
+      atoms: [{ capability: policy.capability, effect: 'allow', scope, source: 'temporary_grant', sourceId: `grant-${_kind}`, obligations: [] }],
+      resourceScope,
+    })
+    expect(decision).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+  })
+
+  it('rejects a platform aggregate atom when a customer resource scope is requested', () => {
+    const policy = getMcpMethodPolicy('platform.store.alias.set')!
+    const decision = evaluatePermissionAtoms({
+      decisionId: 'platform-aggregate-customer-detail',
+      policy,
+      workbench: 'workspace',
+      mode: 'enforce',
+      atoms: [{ capability: policy.capability, effect: 'allow', scope: { type: 'platform', ids: ['*'] }, source: 'platform_assignment', sourceId: 'assignment-platform', obligations: [] }],
+      resourceScope: { type: 'account', id: 'customer-account-a' },
+    })
+    expect(decision).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+  })
 })
