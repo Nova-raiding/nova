@@ -35,6 +35,13 @@ const ERROR_CODES = new Set(['NOT_CONFIGURED', 'UNAUTHORIZED', 'RATE_LIMITED', '
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined }
+/** OAuth credentials are copied into HTTP headers or form bodies. Reject
+ * blank and control-character values at the boundary instead of allowing an
+ * unusable/unsafe token to look like a valid credential. */
+function readCredentialToken(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim() || /[\u0000-\u001f\u007f]/u.test(value)) return undefined
+  return value
+}
 /** Provider correlation IDs are evidence, not arbitrary display text. Keep
  * them bounded and printable before they cross audit/log boundaries. */
 function readRequestId(value: unknown): string | undefined {
@@ -420,7 +427,7 @@ export class HttpPlatformConnector implements PlatformConnector {
 
   private parseCredential(payload: unknown, previous?: AccessCredential): AccessCredential {
     const tokenPayload = platformEnvelope(payload) ?? {}
-    const accessToken = readString(tokenPayload.access_token) ?? readString(tokenPayload.accessToken)
+    const accessToken = readCredentialToken(tokenPayload.access_token) ?? readCredentialToken(tokenPayload.accessToken)
     if (!accessToken) throw new ConnectorFailure(this.normalizeError({ code: 'REMOTE_ERROR', message: 'token response did not contain an access token' }))
     const expiresIn = typeof tokenPayload.expires_in === 'number' ? tokenPayload.expires_in : undefined
     return { accessToken, tokenType: readString(tokenPayload.token_type) ?? previous?.tokenType, refreshToken: readString(tokenPayload.refresh_token) ?? previous?.refreshToken, scope: readString(tokenPayload.scope) ?? previous?.scope, expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : previous?.expiresAt }

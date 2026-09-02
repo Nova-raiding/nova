@@ -137,6 +137,20 @@ describe('HttpPlatformConnector', () => {
     await expect(connector.exchangeCode({ code: 'code-1', state: 'state-1' })).rejects.toThrow(/identify a remote merchant account/)
   })
 
+  it('fails closed when OAuth returns a blank or control-character access token', async () => {
+    for (const accessToken of ['   ', 'token\nforged-header']) {
+      const connector = createConfiguredConnector('jd', {
+        config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+        credentials: credentials(),
+        fetch: async () => response({ access_token: accessToken, account_id: 'remote-acct' }),
+        allowTestCredentials: true,
+        allowTestAdapters: true,
+      })
+      await expect(connector.exchangeCode({ code: 'code-invalid-token', state: 'state-1' }))
+        .rejects.toMatchObject({ normalized: { code: 'REMOTE_ERROR' } })
+    }
+  })
+
   it('injects bearer credentials, signer headers, syncs and writes with idempotency', async () => {
     const store = credentials()
     const signer = { sign: vi.fn(() => ({ 'x-platform-signature': 'provided-by-platform-adapter' })) }
