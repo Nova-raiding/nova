@@ -114,6 +114,17 @@ describe('durable outbox dispatcher', () => {
     expect(store.events.get('evt_1')?.publishedAt).toBeTruthy()
   })
 
+  it('rejects a duplicate queue id whose durable payload intent changed', async () => {
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    await queue.enqueue({ id: 'evt_same', value: event({ payload: { taskId: 'task_a' } }) })
+
+    await expect(queue.enqueue({ id: 'evt_same', value: event({ payload: { taskId: 'task_b' } }) }))
+      .rejects.toThrow('WORKER_QUEUE_MESSAGE_CONFLICT')
+    expect(queue.size).toBe(1)
+    await expect(queue.enqueue({ id: 'evt_same', value: event({ payload: { taskId: 'task_a' } }) })).resolves.toBeUndefined()
+    expect(queue.size).toBe(1)
+  })
+
   it('does not re-run a duplicate transport delivery after the durable outcome is acknowledged', async () => {
     const store = new Store(event({ id: 'evt_duplicate' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const handler = vi.fn(async () => ({ value: 'ok' }))

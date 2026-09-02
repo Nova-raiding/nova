@@ -110,7 +110,14 @@ export class InMemoryQueue<T> implements QueuePort<T> {
   private readonly messages: QueueMessage<T>[] = []
   constructor(private readonly now: () => number = () => Date.now()) {}
   async enqueue(message: QueueMessage<T>): Promise<void> {
-    if (!this.messages.some(candidate => candidate.id === message.id)) this.messages.push({ ...message })
+    const existing = this.messages.find(candidate => candidate.id === message.id)
+    if (existing) {
+      if (stableQueueSerialization(existing.value) !== stableQueueSerialization(message.value)) {
+        throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
+      }
+      return
+    }
+    this.messages.push({ ...message })
   }
   async dequeue(): Promise<QueueMessage<T> | undefined> {
     const index = this.messages.findIndex(message => (message.notBefore ?? 0) <= this.now())
@@ -123,6 +130,20 @@ export class InMemoryQueue<T> implements QueuePort<T> {
   }
   async contains(id: string): Promise<boolean> { return this.messages.some(message => message.id === id) }
   get size(): number { return this.messages.length }
+}
+
+function stableQueueSerialization(value: unknown): string {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value)
+  if (typeof value === 'bigint') return `bigint:${value.toString()}`
+  if (typeof value === 'function' || typeof value === 'symbol') throw new Error('WORKER_QUEUE_MESSAGE_UNSUPPORTED')
+  if (Array.isArray(value)) return `[${value.map(stableQueueSerialization).join(',')}]`
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableQueueSerialization(entry)}`).join(',')}}`
+  }
+  throw new Error('WORKER_QUEUE_MESSAGE_UNSUPPORTED')
 }
 
 export interface DurableDispatcherOptions {
