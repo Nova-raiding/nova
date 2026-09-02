@@ -475,7 +475,7 @@ export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 
   return createExecutionAuthorizationGuard(async ({ event, operation, signal }) => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for execution authorization recheck')
     const path = operation === 'publish.execute'
-      ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check`
+      ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check?event_id=${encodeURIComponent(event.id)}`
       : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}`
     const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
       headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret) : {}) },
@@ -509,7 +509,7 @@ export function createApiCommercialAccessGuard(config: Pick<WorkerConfig, 'apiBa
   return createCommercialAccessGuard(async ({ event, operation, signal }) => {
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for commercial access recheck')
     const path = operation === 'publish.execute'
-      ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check`
+      ? `/v1/publish-jobs/${encodeURIComponent(event.aggregateId)}/execution-check?event_id=${encodeURIComponent(event.id)}`
       : `/v1/worker-events/${encodeURIComponent(event.id)}/execution-check?aggregate_id=${encodeURIComponent(event.aggregateId)}&operation=${encodeURIComponent(operation)}`
     const response = await fetchWorkerApi(fetcher, `${config.apiBaseUrl.replace(/\/$/u, '')}${path}`, {
       headers: { accept: 'application/json', authorization: `Bearer ${config.apiToken}`, 'x-workspace-id': event.workspaceId, ...(config.apiSigningSecret ? workerAuthIntent(config.apiSigningSecret) : {}) },

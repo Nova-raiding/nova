@@ -106,6 +106,19 @@ describe('worker production entry', () => {
     expect(fetcher).toHaveBeenCalledOnce()
   })
 
+  it('binds publish authorization and commercial rechecks to the persisted event reservation', async () => {
+    const checkedAt = new Date().toISOString()
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      expect(String(input)).toContain('/v1/publish-jobs/job_publish_auth/execution-check?event_id=evt_publish_auth')
+      return new Response(JSON.stringify({ data: { authorization_recheck: {
+        recheck_id: 'recheck_publish_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_2', policy_version: 'policy_2', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'publish.execute', resource_id: 'job_publish_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, checked_at: checkedAt,
+      } } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch
+    const event = { id: 'evt_publish_auth', workspaceId: 'ws_a', aggregateId: 'job_publish_auth', eventType: 'publish.requested', sequence: 1, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_publish_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'publish.execute', resource_id: 'job_publish_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
+    await expect(createApiExecutionAuthorizationGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token' }, fetcher).assertAuthorized(event, 'publish.execute')).resolves.toMatchObject({ recheckId: 'recheck_publish_auth', resourceId: 'job_publish_auth' })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
   it('consumes current commercial revision, subscription, rate and reservation evidence from the execution endpoint', async () => {
     const checkedAt = new Date().toISOString()
     const fetcher = vi.fn(async (input: string | URL | Request) => {
