@@ -49,6 +49,26 @@ export function workspaceFieldAccessibility(message?: string) {
     : { "aria-invalid": undefined, "aria-describedby": undefined };
 }
 
+type ConnectionRecoveryField = "apiBase" | "workspaceId" | "token";
+
+export function connectionRecoveryField(config: OpsConnectionConfigInput, managedSession: boolean): ConnectionRecoveryField {
+  if (!config.apiBase.trim()) return "apiBase";
+  if (!config.workspaceId.trim()) return "workspaceId";
+  if (!managedSession && !(config.token ?? "").trim()) return "token";
+  return "apiBase";
+}
+
+export function connectionRecoveryLabel(field: ConnectionRecoveryField): string {
+  switch (field) {
+    case "workspaceId":
+      return "工作区 ID";
+    case "token":
+      return "运营 API Token";
+    default:
+      return "运营 API 地址";
+  }
+}
+
 export function OpsHeader({
   managedSession,
   roles,
@@ -69,7 +89,9 @@ export function OpsHeader({
   const [draft, setDraft] = useState<OpsConnectionConfigInput>(readOpsConnectionDraft);
   const [configError, setConfigError] = useState<string>();
   const [workspaceIdError, setWorkspaceIdError] = useState<string>();
+  const apiBaseRef = useRef<InputRef>(null);
   const workspaceIdRef = useRef<InputRef>(null);
+  const tokenRef = useRef<InputRef>(null);
   const configErrorRef = useRef<HTMLDivElement>(null);
   const connectionToggleRef = useRef<HTMLButtonElement>(null);
   const connectionTitleId = useId();
@@ -91,6 +113,34 @@ export function OpsHeader({
     const focusTimer = window.requestAnimationFrame(() => configErrorRef.current?.focus({ preventScroll: true }));
     return () => window.cancelAnimationFrame(focusTimer);
   }, [configError]);
+
+  const recoveryField = workspaceIdError ? "workspaceId" : connectionRecoveryField(draft, managedSession);
+  const recoveryLabel = connectionRecoveryLabel(recoveryField);
+
+  function focusConnectionField(field: ConnectionRecoveryField) {
+    const target = field === "workspaceId"
+      ? workspaceIdRef
+      : field === "token"
+        ? tokenRef
+        : apiBaseRef;
+    target.current?.focus({ preventScroll: true });
+  }
+
+  function resetDraftToSavedConfig() {
+    const restored = readOpsConnectionDraft();
+    setDraft(restored);
+    setConfigError(undefined);
+    setWorkspaceIdError(undefined);
+    if (typeof window === "undefined") return;
+    const nextField = connectionRecoveryField(restored, managedSession);
+    window.requestAnimationFrame(() => focusConnectionField(nextField));
+  }
+
+  useEffect(() => {
+    if (!connectionOpen || configError || typeof window === "undefined") return undefined;
+    const focusTimer = window.requestAnimationFrame(() => focusConnectionField(connectionRecoveryField(draft, managedSession)));
+    return () => window.cancelAnimationFrame(focusTimer);
+  }, [configError, connectionOpen, draft, managedSession]);
 
   return (
     <Layout.Header className="ops-header">
@@ -158,12 +208,27 @@ export function OpsHeader({
       >
       <p id={connectionDescriptionId} className="sr-only">修改本机运营 API 连接配置后保存并刷新。连接失败时请修正字段并重试。</p>
       <Space orientation="vertical" size="middle" className="full-width">
+        {configError ? (
+          <div ref={configErrorRef} tabIndex={-1} aria-label="连接配置错误" className="ops-config-error-summary">
+            <Alert
+              type="error"
+              showIcon
+              message="连接配置未保存"
+              description={<><OpsConfigError message={configError} /><span>当前草稿已保留，请先修正字段，再保存并刷新。</span></>}
+              action={<Button htmlType="button" size="small" style={{ minHeight: 44 }} aria-label={`定位到${recoveryLabel}`} onClick={() => focusConnectionField(recoveryField)}>定位到{recoveryLabel}</Button>}
+            />
+          </div>
+        ) : null}
         <label className="ops-connection-field">
           <span>运营 API 地址</span>
           <Input
+            ref={apiBaseRef}
             name="apiBase"
             value={draft.apiBase}
-            onChange={(event) => setDraft(current => ({ ...current, apiBase: event.target.value }))}
+            onChange={(event) => {
+              setDraft(current => ({ ...current, apiBase: event.target.value }));
+              setConfigError(undefined);
+            }}
             placeholder="真实运营 API 地址"
           />
         </label>
@@ -206,11 +271,15 @@ export function OpsHeader({
             <label className="ops-connection-field">
               <span>运营 API Token</span>
               <Input.Password
+                ref={tokenRef}
                 name="token"
                 autoComplete="current-password"
                 value={draft.token ?? ""}
                 placeholder={hasOpsCredentials() ? "已配置；留空保持不变" : "Bearer token（仅存本机）"}
-                onChange={(event) => setDraft(current => ({ ...current, token: event.target.value }))}
+                onChange={(event) => {
+                  setDraft(current => ({ ...current, token: event.target.value }));
+                  setConfigError(undefined);
+                }}
               />
             </label>
           </>
@@ -235,9 +304,14 @@ export function OpsHeader({
                 : `非生产数据：${dataSource.persistence ?? "未识别"}`}
           </Tag>
         ) : null}
-        <Button className="ops-refresh-button" htmlType="submit" loading={refreshing} disabled={refreshing} aria-busy={refreshing} aria-label="刷新数据（保存连接配置）">{refreshing ? "正在刷新" : "保存并刷新"}</Button>
+        <div role="group" aria-label="连接诊断操作" style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <Button htmlType="button" style={{ minHeight: 44 }} onClick={() => setConnectionOpen(false)}>关闭</Button>
+          <Space wrap>
+            <Button htmlType="button" style={{ minHeight: 44 }} disabled={refreshing} onClick={resetDraftToSavedConfig}>恢复已保存配置</Button>
+            <Button className="ops-refresh-button" htmlType="submit" style={{ minHeight: 44 }} loading={refreshing} disabled={refreshing} aria-busy={refreshing} aria-label="刷新数据（保存连接配置）">{refreshing ? "正在刷新" : "保存并刷新"}</Button>
+          </Space>
+        </div>
       </Space>
-      {configError ? <div ref={configErrorRef} tabIndex={-1} aria-label="连接配置错误" className="ops-config-error-summary"><OpsConfigError message={configError} /></div> : null}
       </form>
       </Drawer>
     </Layout.Header>

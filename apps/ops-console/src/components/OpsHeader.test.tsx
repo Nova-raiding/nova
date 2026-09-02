@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readOpsConnectionConfig, saveOpsConnectionConfig } from "../api/opsClient.js";
-import { OpsConfigError, OpsHeader, readOpsConnectionDraft, saveAndRefreshOpsConnection, workspaceFieldAccessibility } from "./OpsHeader.js";
+import { OpsConfigError, OpsHeader, connectionRecoveryField, connectionRecoveryLabel, readOpsConnectionDraft, saveAndRefreshOpsConnection, workspaceFieldAccessibility } from "./OpsHeader.js";
 
 function storage() {
   const values = new Map<string, string>();
@@ -24,11 +24,20 @@ describe("OpsHeader accessibility", () => {
     expect(markup).toContain("连接诊断");
   });
 
-  it("provides an accessible mobile connection settings disclosure", () => {
+  it("provides an explicit desktop connection settings disclosure", () => {
     const markup = renderToStaticMarkup(<OpsHeader managedSession={false} sessionLoaded={false} onRefresh={() => undefined} />);
     expect(markup).toContain('aria-controls="ops-connection-fields"');
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain("连接诊断");
+  });
+
+  it("chooses the first recoverable field without guessing across auth modes", () => {
+    expect(connectionRecoveryField({ apiBase: "", workspaceId: "ws_demo", token: "token" }, false)).toBe("apiBase");
+    expect(connectionRecoveryField({ apiBase: "http://127.0.0.1:8787", workspaceId: "", token: "token" }, false)).toBe("workspaceId");
+    expect(connectionRecoveryField({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", token: "" }, false)).toBe("token");
+    expect(connectionRecoveryField({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo" }, true)).toBe("apiBase");
+    expect(connectionRecoveryLabel("workspaceId")).toBe("工作区 ID");
+    expect(connectionRecoveryLabel("token")).toBe("运营 API Token");
   });
 
   it("atomically saves the complete local tuple before refreshing", () => {
@@ -97,6 +106,8 @@ describe("OpsHeader accessibility", () => {
     expect(source).toContain('ref={configErrorRef} tabIndex={-1}');
     expect(source).toContain('configErrorRef.current?.focus({ preventScroll: true })');
     expect(source).toContain('aria-label="连接配置错误"');
+    expect(source).toContain('message="连接配置未保存"');
+    expect(source).toContain('定位到{recoveryLabel}');
   });
 
   it("restores focus to the connection diagnostic trigger after drawer close", async () => {
@@ -105,6 +116,14 @@ describe("OpsHeader accessibility", () => {
     expect(source).toContain("afterOpenChange={(open) => {");
     expect(source).toContain("connectionToggleRef.current?.focus({ preventScroll: true })");
     expect(source).toContain("aria-labelledby={connectionTitleId}");
+  });
+
+  it("opens the drawer on the first recoverable field and preserves a desktop recovery action row", async () => {
+    const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
+    expect(source).toContain('const focusTimer = window.requestAnimationFrame(() => focusConnectionField(connectionRecoveryField(draft, managedSession)))');
+    expect(source).toContain('aria-label="连接诊断操作"');
+    expect(source).toContain("恢复已保存配置");
+    expect(source).toContain("setConnectionOpen(false)");
   });
 
   it("marks an invalid workspace field and associates it with the visible error", () => {
