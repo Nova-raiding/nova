@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(158)
+    expect(latestVersion).toBe(159)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -56,6 +56,8 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(157)).toMatchObject({ name: 'service_fulfillment_audit_evidence' })
     expect(byVersion.get(157)?.sql).toContain('require_onboarding_schedule_creation_evidence')
     expect(byVersion.get(158)).toMatchObject({ name: 'creative_point_reversal_allocation_guard' })
+    expect(byVersion.get(159)).toMatchObject({ name: 'commercial_point_adjustment_approvals' })
+    expect(byVersion.get(159)?.sql).toContain('commercial_point_adjustment_decisions_v2')
     expect(byVersion.get(155)).toMatchObject({ name: 'workspace_data_export_requests' })
     expect(byVersion.get(156)).toMatchObject({ name: 'commercial_outbox_insert_acl' })
     expect(byVersion.get(45)).toMatchObject({ name: 'platform_identity_lifecycle' })

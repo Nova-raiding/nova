@@ -30,7 +30,7 @@ describe('complete commercial operation registry E1 totality', () => {
       manifest_operations: MCP_METHODS.length + HTTP_OPERATION_POLICIES.length,
       by_surface: { MCP: MCP_METHODS.length, HTTP: HTTP_OPERATION_POLICIES.length, WORKER: 0 },
     })
-    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(380)
+    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(382)
   })
 
   it('fails CI totality when a new runtime method has no reviewed classification', () => {
@@ -92,11 +92,15 @@ describe('complete commercial operation registry E1 totality', () => {
   })
 
   it('defines future write capabilities without granting or advertising fake methods', () => {
-    const writes = ['commercial.access.recover', 'commercial.point.adjust', 'commercial.catalog.draft', 'commercial.catalog.approve', 'commercial.catalog.publish', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.rate.draft', 'commercial.rate.approve', 'commercial.rate.publish'] as const
+    const writes = ['commercial.access.recover', 'commercial.catalog.draft', 'commercial.catalog.approve', 'commercial.catalog.publish', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.rate.draft', 'commercial.rate.approve', 'commercial.rate.publish'] as const
     expect(CAPABILITIES).toEqual(expect.arrayContaining([...writes]))
     for (const capabilities of Object.values(ROLE_CAPABILITIES)) {
       for (const capability of writes) expect(capabilities).not.toContain(capability)
     }
+    expect(ROLE_CAPABILITIES.ops_admin).toContain('commercial.point.adjust')
+    expect(ROLE_CAPABILITIES.ops_admin).not.toContain('commercial.point.adjust.approve')
+    expect(ROLE_CAPABILITIES.finance_ops).toContain('commercial.point.adjust.approve')
+    expect(ROLE_CAPABILITIES.finance_ops).not.toContain('commercial.point.adjust')
   })
 
   it('keeps platform Ops outside point classes and exact recovery methods auditable', () => {
@@ -160,6 +164,6 @@ describe('complete commercial operation registry E1 totality', () => {
   })
 
   it('publishes a deterministic reviewed-registry checksum', () => {
-    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:483e5b35')
+    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:d5b7d0b5')
   })
 })

@@ -441,6 +441,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const commercialOutboxInsertAcl = await readFile(new URL('./migrations/156_commercial_outbox_insert_acl.sql', import.meta.url), 'utf8')
   const serviceFulfillmentAuditEvidence = await readFile(new URL('./migrations/157_service_fulfillment_audit_evidence.sql', import.meta.url), 'utf8')
   const creativePointReversalAllocationGuard = await readFile(new URL('./migrations/158_creative_point_reversal_allocation_guard.sql', import.meta.url), 'utf8')
+  const commercialPointAdjustmentApprovals = await readFile(new URL('./migrations/159_commercial_point_adjustment_approvals.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -600,6 +601,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 156, name: 'commercial_outbox_insert_acl', sql: commercialOutboxInsertAcl },
     { version: 157, name: 'service_fulfillment_audit_evidence', sql: serviceFulfillmentAuditEvidence },
     { version: 158, name: 'creative_point_reversal_allocation_guard', sql: creativePointReversalAllocationGuard },
+    { version: 159, name: 'commercial_point_adjustment_approvals', sql: commercialPointAdjustmentApprovals },
   ]
 }
 

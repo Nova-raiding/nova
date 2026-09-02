@@ -27,6 +27,8 @@ import { contextEnvelopeHash } from '../../../packages/persistence/src/context-s
 import { redactAuditEvidence, redactAuditReason } from '../../../packages/persistence/src/audit-center-repository.js'
 import type { DataDeletionRequest } from '../../../packages/persistence/src/data-lifecycle-repository.js'
 import { MemoryWorkspaceDataExportRepository, PostgresWorkspaceDataExportRepository, WorkspaceDataExportIdempotencyConflictError, type WorkspaceDataExportRepository } from '../../../packages/persistence/src/workspace-data-export-repository.js'
+import { PostgresCreativePointLifecycleRepository } from '../../../packages/persistence/src/creative-point-lifecycle-repository.js'
+import { CommercialPointAdjustmentApprovalRepositoryError, PostgresCommercialPointAdjustmentApprovalRepository, type CommercialPointAdjustmentApprovalRepository } from '../../../packages/persistence/src/commercial-point-adjustment-approval-repository.js'
 import { WorkspaceDataExportService } from '../../../packages/application/src/workspace-data-export.js'
 import { hashPkceVerifier, OAuthStateError, OAuthStateStore } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
@@ -77,6 +79,7 @@ import { FeatureFlagAuthorizationError, FeatureFlagsService } from './ops/featur
 import { FinanceSearchService, FinanceSearchServiceError } from './ops/finance-search-service.js'
 import { AuditCenterService, AuditCenterServiceError } from './ops/audit-center-service.js'
 import { CommercialOpsReadModelError, authorizeCommercialCatalogRead, commercialOpsPageLimit, decodeCreativePointStatementCursor, paginateCommercialRows, projectCommercialAccessBlocks, projectCommercialAccessSummary, projectCommercialCatalogItem, projectCommercialEntitlement as projectCommercialOpsEntitlement, projectCommercialOpsCapabilities, projectCommercialOrder, projectCreativePointLedgerEntry, projectCreativePointRate, projectServiceFulfillment } from './ops/commercial-ops-read-model.js'
+import { CommercialPointAdjustmentCommandError, decideCommercialPointAdjustment, proposeCommercialPointAdjustment } from './ops/commercial-point-adjustment.js'
 import { supportRolePermissions, type SupportPermission, type SupportRole, type SupportTicketContract, type SupportTicketPageCursor, type SupportTicketPriority, type SupportTicketStatus } from '../../../packages/contracts/src/ops/support.js'
 import { FeatureFlagValidationError, type FeatureFlagEmergencyRequest, type FeatureFlagEvaluationContext, type FeatureFlagListRequest, type FeatureFlagMutationRequest } from '../../../packages/contracts/src/ops/feature-flags.js'
 import { FinanceSearchValidationError, type FinanceRecordKind, type FinanceSearchQuery } from '../../../packages/contracts/src/ops/finance-search.js'
@@ -939,6 +942,8 @@ export interface ApiPersistence {
   mode: 'memory' | 'postgres'
   /** Authoritative creative-point facts. Legacy RMB wallets and task quotas are never access inputs. */
   creativePoints?: CreativePointRepository
+  creativePointLifecycle?: PostgresCreativePointLifecycleRepository
+  commercialPointAdjustmentApprovals?: CommercialPointAdjustmentApprovalRepository
   commercialCatalog?: CommercialCatalogRepository
   commercialContracts?: PostgresCommercialContractRepository
   serviceFulfillment?: ServiceFulfillmentRepository
@@ -2513,6 +2518,8 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const billing = new PostgresBillingRepository(sqlPool, (client, event) => outbox.appendInTransaction(client, event))
     const commercial = new PostgresCommercialRepository(sqlPool)
     const creativePoints = new PostgresCreativePointRepository(sqlPool)
+    const creativePointLifecycle = new PostgresCreativePointLifecycleRepository(sqlPool)
+    const commercialPointAdjustmentApprovals = new PostgresCommercialPointAdjustmentApprovalRepository(sqlPool)
     const commercialCatalog = opsPool ? new PostgresCommercialCatalogRepository(opsSqlPool) : undefined
     const commercialContracts = new PostgresCommercialContractRepository(sqlPool)
     const serviceFulfillment = new PostgresServiceFulfillmentRepository(sqlPool)
@@ -2695,7 +2702,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, serviceFulfillment, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, serviceFulfillment, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -11285,6 +11292,35 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const statement = await persistence.creativePoints.listStatement(targetWorkspaceId, statementInput)
       const items = statement.items.map(projectCreativePointLedgerEntry)
       return result({ schema_version: 'creative-points.statement.v1', items, total: items.length, next_cursor: statement.nextCursor ? Buffer.from(JSON.stringify(statement.nextCursor)).toString('base64url') : null })
+    }
+    case 'ops.commercial.points.adjust.propose':
+    case 'ops.commercial.points.adjust.decide': {
+      if (!persistence.creativePoints || !persistence.creativePointLifecycle || !persistence.commercialPointAdjustmentApprovals) throw new DomainError('COMMERCIAL_POINT_ADJUSTMENT_REPOSITORY_UNAVAILABLE', '创意点调账审批或账本仓储未配置，禁止调账', 503)
+      const principal = requestPrincipals.get(req)
+      const authorization = effectiveAuthorizationProjection(principal, workspaceId)
+      const commandPrincipal = { actorId: requestActor(req), workbench: principal?.workbench === 'platform' && isPlatformOperations(req) ? 'platform' as const : 'workspace' as const, capabilities: authorization.capabilities as CapabilityId[] }
+      const dependencies = { approvals: persistence.commercialPointAdjustmentApprovals, getBalance: (targetWorkspaceId: string) => persistence.creativePoints!.getBalance(targetWorkspaceId), adjust: (input: Parameters<PostgresCreativePointLifecycleRepository['adjust']>[0]) => persistence.creativePointLifecycle!.adjust(input) }
+      try {
+        if (method === 'ops.commercial.points.adjust.propose') {
+          const pointsDelta = Number(required(params, 'points_delta'))
+          const expectedAccessRevision = Number(required(params, 'expected_revision'))
+          if (!Number.isSafeInteger(pointsDelta) || pointsDelta === 0 || !Number.isSafeInteger(expectedAccessRevision) || expectedAccessRevision < 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'points_delta 或 expected_revision 无效', 400)
+          return result(await proposeCommercialPointAdjustment(commandPrincipal, { targetWorkspaceId: required(params, 'target_workspace_id'), pointsDelta, expectedAccessRevision, idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence: parseJsonObjectParameter(params, 'evidence_json'), ...(typeof params.expires_at === 'string' && params.expires_at.trim() ? { expiresAt: params.expires_at.trim() } : {}), requestedAt: new Date().toISOString() }, dependencies))
+        }
+        const decision = required(params, 'decision')
+        if (decision !== 'approved' && decision !== 'rejected') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'decision 必须是 approved 或 rejected', 400)
+        return result(await decideCommercialPointAdjustment(commandPrincipal, { targetWorkspaceId: required(params, 'target_workspace_id'), proposalId: required(params, 'proposal_id'), decision, idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence: parseJsonObjectParameter(params, 'evidence_json'), requestedAt: new Date().toISOString() }, dependencies))
+      } catch (error) {
+        if (error instanceof DomainError) throw error
+        if (error instanceof CommercialPointAdjustmentCommandError) throw new DomainError(error.code, error.message, error.status)
+        if (error instanceof CommercialPointAdjustmentApprovalRepositoryError) {
+          const status = error.code === 'COMMERCIAL_POINT_ADJUSTMENT_NOT_FOUND' ? 404 : 409
+          throw new DomainError(error.code, error.message, status)
+        }
+        const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : null
+        if (code) throw new DomainError(code, error instanceof Error ? error.message : '创意点调账失败', code.includes('UNKNOWN') ? 503 : 409)
+        throw error
+      }
     }
     case 'ops.commercial.orders-v2.list': {
       if (!persistence.commercialContracts) throw new DomainError('COMMERCIAL_ORDER_V2_REPOSITORY_UNAVAILABLE', 'V2 订单与支付快照仓储尚未配置，不能回退到钱包订单', 503)

@@ -47,6 +47,7 @@ export const CAPABILITIES = [
   'commercial.entitlement.read',
   'commercial.point.read',
   'commercial.point.adjust',
+  'commercial.point.adjust.approve',
   'commercial.catalog.read',
   'commercial.catalog.draft',
   'commercial.catalog.approve',
@@ -352,12 +353,12 @@ const commercialFinanceRead: readonly CapabilityId[] = [
 ]
 
 export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly CapabilityId[]>> = {
-  platform_admin: [...platformRead, ...commercialOpsRead, 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export'],
+  platform_admin: [...platformRead, ...commercialOpsRead, 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export'],
   // P0 compatibility: legacy platform_ops resolves here, so existing identity/member/delete
   // enforcement remains intact until durable platform-role assignments replace that alias.
-  ops_admin: [...platformRead, ...commercialOpsRead, 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'support.customer.export', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
+  ops_admin: [...platformRead, ...commercialOpsRead, 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'support.customer.export', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
   support_agent: ['platform.summary.read', 'workspace.directory.read', 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'support.customer.export', 'incident.read', 'incident.update', 'audit.read', 'feature_flag.read', 'commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read'],
-  finance_ops: ['platform.summary.read', 'workspace.directory.read', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
+  finance_ops: ['platform.summary.read', 'workspace.directory.read', 'commercial.point.adjust.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
   security_admin: ['authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'audit.read', 'audit.export', 'feature_flag.read'],
   auditor: [...platformRead, 'audit.export'],
   rules_admin: ['rule.read', 'rule.update', 'rule.publish.approve', 'platform.media_spec.read', 'platform.media_spec.update', 'platform.media_spec.approve', 'audit.read', 'identity.read', 'billing.export'],
@@ -431,6 +432,8 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('commercial.access.read', 'platform', 'finance', ['ops.commercial.access.summary', 'ops.commercial.access-blocks.list']),
   read('commercial.entitlement.read', 'platform', 'finance', ['ops.commercial.entitlements.list']),
   read('commercial.point.read', 'platform', 'finance', ['ops.commercial.points-ledger.list']),
+  write('commercial.point.adjust', 'platform', 'finance', ['ops.commercial.points.adjust.propose'], 'mutation', ['reason', 'revision', 'idempotency']),
+  write('commercial.point.adjust.approve', 'platform', 'finance', ['ops.commercial.points.adjust.decide'], 'mutation', ['reason', 'idempotency']),
   read('commercial.catalog.read', 'platform', 'finance', ['ops.commercial.catalog-v2.list']),
   read('commercial.order.read', 'platform', 'finance', ['ops.commercial.orders-v2.list']),
   read('commercial.rate.read', 'platform', 'finance', ['ops.commercial.rate-cards.list']),
