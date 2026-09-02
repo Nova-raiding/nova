@@ -212,6 +212,19 @@ describe("desktop permission UX", () => {
     expect(html).toContain('disabled=""');
   });
 
+  it("offers an explicit permission-center recovery path for deep-link denial", () => {
+    const html = renderToStaticMarkup(<AccessDeniedResult
+      domainLabel="用户与租户"
+      capability="identity.read"
+      scope={{ kind: "workspace", id: "ws_1" }}
+      onBack={() => undefined}
+      onViewPermissions={() => undefined}
+      onRefresh={() => undefined}
+    />);
+    expect(html).toContain("查看我的权限");
+    expect(html).toMatch(/class="[^"]*ant-btn-link/);
+  });
+
   it("does not render duplicate or malformed obligations in a 403 summary", () => {
     const html = renderToStaticMarkup(<AccessDeniedResult
       domainLabel="用户与租户"

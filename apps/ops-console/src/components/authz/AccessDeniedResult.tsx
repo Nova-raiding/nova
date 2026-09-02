@@ -27,6 +27,7 @@ export function AccessDeniedResult({
   decisionId,
   obligationsMissing,
   onBack,
+  onViewPermissions,
   onRefresh,
   refreshing = false,
 }: {
@@ -39,6 +40,7 @@ export function AccessDeniedResult({
   decisionId?: string;
   obligationsMissing?: readonly string[];
   onBack: () => void;
+  onViewPermissions?: () => void;
   onRefresh: () => void;
   refreshing?: boolean;
 }) {
@@ -56,6 +58,7 @@ export function AccessDeniedResult({
       subTitle={<span id="access-denied-context">{accessContext}{requestId ? ` 请求 ID：${requestId}。` : ""}</span>}
       extra={<Space className="access-denied-actions" aria-busy={refreshing || undefined}>
         <Button type="primary" onClick={onBack}>返回运营总览</Button>
+        {onViewPermissions ? <Button type="link" onClick={onViewPermissions}>查看我的权限</Button> : null}
         <Button
           onClick={onRefresh}
           loading={refreshing}

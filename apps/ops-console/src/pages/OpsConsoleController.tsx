@@ -269,6 +269,7 @@ function Dashboard({
               decisionId={sessionAccessDeniedEvidence.decisionId}
               obligationsMissing={sessionAccessDeniedEvidence.obligationsMissing}
               onBack={() => navigateToDomain("overview")}
+              onViewPermissions={() => navigateToDomain("members")}
               onRefresh={() => void model.load()}
               refreshing={model.loading}
             />
