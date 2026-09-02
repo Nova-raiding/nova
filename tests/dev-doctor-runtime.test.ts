@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commercialRuntimeReadiness, composeServiceHealth, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
+import { codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
 
 describe('developer doctor runtime checks', () => {
   it('parses Docker Compose newline-delimited JSON', () => {
@@ -61,5 +61,94 @@ describe('developer doctor runtime checks', () => {
       },
     } })).toMatchObject({ paymentReady: true, modelRelayReady: true, objectStorageReady: true, scannerReady: true, productionGate: true })
     expect(commercialRuntimeReadiness({ data: {} })).toBeUndefined()
+  })
+
+  it('audits payment fixture and missing OAuth platforms as fail-closed blockers', () => {
+    expect(commercialRuntimeAudit({ data: {
+      writesEnabled: false,
+      setup: {
+        mode: 'fixture',
+        productionGate: false,
+        ai: { costGate: 'blocked' },
+        modelReadiness: {
+          text: { ready: false, providerConfigured: false, reasons: ['model_missing'] },
+          image: { ready: true, providerConfigured: true, reasons: [] },
+          image_edit: { ready: true, providerConfigured: true, reasons: [] },
+          ocr: { ready: true, providerConfigured: true, reasons: [] },
+          video: { ready: true, providerConfigured: true, reasons: [] },
+        },
+        payment: { mode: 'fixture', configured: false, reasons: ['payment_mode_must_be_provider'] },
+        platforms: {
+          jd: { oauthConfigured: true, ready: true },
+          taobao: { oauthConfigured: false, ready: false },
+          tmall: { oauthConfigured: true, ready: true },
+          pinduoduo: { oauthConfigured: false, ready: false },
+          xiaohongshu: { oauthConfigured: true, ready: true },
+          douyin: { oauthConfigured: true, ready: true },
+        },
+      },
+    } })).toEqual({
+      mode: 'fixture',
+      writesEnabled: false,
+      payment: { ready: false, mode: 'fixture', reasons: ['payment_mode_must_be_provider'] },
+      platforms: {
+        ready: false,
+        missingOAuthPlatforms: ['taobao', 'pinduoduo'],
+        blockedPlatforms: ['taobao', 'pinduoduo'],
+      },
+      relay: {
+        ready: false,
+        costGateReady: false,
+        blockedModalities: ['text'],
+        missingProviderConfigured: ['text'],
+        reasons: ['text:model_missing', 'cost_gate_blocked'],
+      },
+      productionGate: false,
+    })
+  })
+
+  it('detects relay 503 and missing usage/cost/provider evidence as blocked release evidence', () => {
+    expect(modelRelayEvidenceAudit({
+      results: [
+        { modality: 'text', state: 'ready', endpoint: '/probe', model: 'text-v1', providerRequestId: 'req-text', usageObserved: true, costObserved: true, costCny: 0.01 },
+        { modality: 'image', state: 'blocked', endpoint: '/probe', model: 'image-v1', providerRequestId: 'req-image', usageObserved: false, costObserved: false, detail: 'relay returned HTTP 503', httpStatus: 503 },
+        { modality: 'image_edit', state: 'ready', endpoint: '/probe', model: 'edit-v1', providerRequestId: '', usageObserved: true, costObserved: true, costCny: 0.02, detail: 'provider_request_id_missing' },
+        { modality: 'ocr', state: 'ready', endpoint: '/probe', model: 'ocr-v1', providerRequestId: 'req-ocr', usageObserved: false, costObserved: true, costCny: 0.03, detail: 'usage_evidence_missing' },
+        { modality: 'video', state: 'ready', endpoint: '/probe', model: 'video-v1', providerRequestId: 'req-video', usageObserved: true, costObserved: false, detail: 'cost_evidence_missing' },
+      ],
+    })).toEqual({
+      ready: false,
+      blockedModalities: ['image'],
+      http503Modalities: ['image'],
+      missingProviderRequestId: ['image_edit'],
+      missingUsageEvidence: ['image', 'ocr'],
+      missingCostEvidence: ['image', 'video'],
+      reasons: [
+        'image:state_blocked',
+        'image:relay_http_503',
+        'image_edit:provider_request_id_missing',
+        'image:usage_evidence_missing',
+        'ocr:usage_evidence_missing',
+        'image:cost_evidence_missing',
+        'video:cost_evidence_missing',
+      ],
+    })
+  })
+
+  it('requires Codex App host evidence to prove 503 error recovery', () => {
+    expect(codexAppHostEvidenceAudit({
+      scenarios: [
+        { id: 'plugin_discovery' },
+        { id: 'error_recovery', error_recovery: { trigger_http_status: 500, trigger_error_code: 'OTHER', reconciliation_required: false, outcome_evidence_ref: '' } },
+      ],
+    })).toEqual({
+      ready: false,
+      reasons: [
+        'error_recovery_http_503_missing',
+        'error_recovery_code_invalid',
+        'error_recovery_reconciliation_required_missing',
+        'error_recovery_outcome_evidence_missing',
+      ],
+    })
   })
 })

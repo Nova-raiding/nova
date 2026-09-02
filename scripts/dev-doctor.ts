@@ -2,7 +2,7 @@ import { accessSync, constants, existsSync, readFileSync, readdirSync } from 'no
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { commercialRuntimeReadiness, composeServiceHealth, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
+import { codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
 
 type Level = 'pass' | 'warn' | 'fail'
 type Check = { id: string; level: Level; message: string; next?: string }
@@ -15,6 +15,7 @@ const add = (id: string, level: Level, message: string, next?: string) => checks
 const run = (command: string, commandArgs: string[] = []) => spawnSync(command, commandArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 const commandReady = (command: string, commandArgs: string[] = []) => run(command, commandArgs).status === 0
 const root = process.cwd()
+const parseJsonFile = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf8')) as unknown
 
 const nodeMajor = Number(process.versions.node.split('.')[0])
 add('node', nodeMajor >= 22 ? 'pass' : 'fail', `Node ${process.versions.node}`, nodeMajor >= 22 ? undefined : '安装 Node 22+；旧 Node/ICU 组合不受支持。')
@@ -127,11 +128,19 @@ for (const [id, url] of [['api', 'http://127.0.0.1:8787/healthz'], ['api_ready',
 
 try {
   const response = await fetch('http://127.0.0.1:8787/readyz', { signal: AbortSignal.timeout(1500) })
-  const readiness = commercialRuntimeReadiness(await response.json() as unknown)
+  const payload = await response.json() as unknown
+  const readiness = commercialRuntimeReadiness(payload)
+  const runtimeAudit = commercialRuntimeAudit(payload)
   const level = (ready: boolean | undefined): Level => ready ? 'pass' : production ? 'fail' : 'warn'
   add('commercial:persistence', level(readiness?.persistenceReady), `商业持久化 ready=${String(readiness?.persistenceReady)}`, '启动真 PostgreSQL，禁止用 memory/fixture 作为商业事实。')
-  add('commercial:payment', level(readiness?.paymentReady), `支付 mode=${readiness?.paymentMode ?? 'unknown'}, ready=${String(readiness?.paymentReady)}`, '配置真实 provider、验签、防重、查询与对账；fixture 不得标记生产 ready。')
+  add('commercial:payment', level(readiness?.paymentReady), `支付 mode=${readiness?.paymentMode ?? 'unknown'}, ready=${String(readiness?.paymentReady)}${runtimeAudit?.payment.reasons.length ? `, reasons=${runtimeAudit.payment.reasons.join(',')}` : ''}`, '配置真实 provider、验签、防重、查询与对账；fixture 不得标记生产 ready。')
+  add('commercial:platform_oauth', level(runtimeAudit?.platforms.ready), runtimeAudit
+    ? `平台 OAuth ready=${String(runtimeAudit.platforms.ready)}, missing=${runtimeAudit.platforms.missingOAuthPlatforms.join(',') || 'none'}, blocked=${runtimeAudit.platforms.blockedPlatforms.join(',') || 'none'}`
+    : '平台 OAuth readiness 不可解析', '补齐六平台官方 OAuth、回调地址、凭据提供器与只读/写入授权；未配置时保持 fail-closed。')
   add('commercial:model_relay', level(readiness?.modelRelayReady), `五模态中转与成本门禁 ready=${String(readiness?.modelRelayReady)}`, '逐模态配置真实中转鉴权、usage、cost 与错误证据。')
+  add('commercial:model_relay_contract', level(runtimeAudit?.relay.ready), runtimeAudit
+    ? `relay contract ready=${String(runtimeAudit.relay.ready)}, costGate=${String(runtimeAudit.relay.costGateReady)}, blocked=${runtimeAudit.relay.blockedModalities.join(',') || 'none'}, providerMissing=${runtimeAudit.relay.missingProviderConfigured.join(',') || 'none'}`
+    : 'relay runtime contract 不可解析', '逐模态补齐 provider 配置与成本门禁；未就绪时阻断真实模型调用。')
   add('commercial:object_storage', level(readiness?.objectStorageReady), `对象存储 mode=${readiness?.objectStorageMode ?? 'unknown'}, ready=${String(readiness?.objectStorageReady)}`, '配置真实对象存储/KMS/scanner 证据；local 模式不满足生产门禁。')
   add('commercial:scanner', level(readiness?.scannerReady), `scanner ready=${String(readiness?.scannerReady)}`, '配置非 fixture scanner、签名回执和新鲜度证据；仅容器存活不满足生产门禁。')
   add('commercial:alerts', level(readiness?.alertReady), `生产告警 ready=${String(readiness?.alertReady)}`, '注入告警 webhook/secret 并验证真实投递。')
@@ -176,6 +185,39 @@ try {
   add('runtime:release', ready ? 'pass' : production ? 'fail' : 'warn', `releasez -> HTTP ${response.status}, ready=${String(releaseReady)}`, '注入与当前不可变发布一致的版本、迁移、图像 digest 和证据元数据。')
 } catch {
   add('runtime:release', production ? 'fail' : 'warn', 'releasez 未运行或返回无效 JSON', '启动 API 并确认 /releasez 可达。')
+}
+
+const modelRelayEvidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
+if (!modelRelayEvidencePath) {
+  add('release:model_relay_evidence', production ? 'fail' : 'warn', 'MODEL_RELAY_EVIDENCE_PATH 未提供；无法验证 relay 503/usage/cost 证据', '运行真实 relay canary，生成并绑定五模态 release evidence。')
+} else {
+  try {
+    const evidence = modelRelayEvidenceAudit(parseJsonFile(modelRelayEvidencePath))
+    const level: Level = evidence?.ready ? 'pass' : production ? 'fail' : 'warn'
+    add('release:model_relay_evidence', level, evidence
+      ? `relay evidence ready=${String(evidence.ready)}, blocked=${evidence.blockedModalities.join(',') || 'none'}, usageMissing=${evidence.missingUsageEvidence.join(',') || 'none'}, costMissing=${evidence.missingCostEvidence.join(',') || 'none'}`
+      : 'relay evidence JSON 不可解析', '重新执行真实 relay canary；缺少 provider_request_id、usage 或 cost evidence 时必须 fail-closed。')
+    add('release:model_relay_503_recovery', evidence?.http503Modalities.length ? production ? 'fail' : 'warn' : 'pass', evidence
+      ? `relay 503 modalities=${evidence.http503Modalities.join(',') || 'none'}`
+      : 'relay 503 evidence JSON 不可解析', 'relay 返回 503 时不得视为成功；需保留对账/恢复证据并阻断交付。')
+  } catch {
+    add('release:model_relay_evidence', production ? 'fail' : 'warn', `无法读取 MODEL_RELAY_EVIDENCE_PATH=${modelRelayEvidencePath}`, '确认 evidence 文件存在且为合法 JSON。')
+  }
+}
+
+const hostEvidencePath = process.env.CODEX_APP_HOST_EVIDENCE_PATH?.trim()
+if (!hostEvidencePath) {
+  add('release:codex_app_error_recovery', production ? 'fail' : 'warn', 'CODEX_APP_HOST_EVIDENCE_PATH 未提供；无法验证 ChatGPT/Codex App 的 503 错误恢复证据', '补采外部宿主 error_recovery 场景证据，禁止用本地/fixture 代替。')
+} else {
+  try {
+    const evidence = codexAppHostEvidenceAudit(parseJsonFile(hostEvidencePath))
+    const level: Level = evidence?.ready ? 'pass' : production ? 'fail' : 'warn'
+    add('release:codex_app_error_recovery', level, evidence
+      ? `Codex App error recovery ready=${String(evidence.ready)}${evidence.reasons.length ? `, reasons=${evidence.reasons.join(',')}` : ''}`
+      : 'Codex App host evidence JSON 不可解析', '必须证明外部宿主发生 503/MODEL_PROVIDER_OUTCOME_UNKNOWN 后进入查询/对账恢复，而不是继续放行。')
+  } catch {
+    add('release:codex_app_error_recovery', production ? 'fail' : 'warn', `无法读取 CODEX_APP_HOST_EVIDENCE_PATH=${hostEvidencePath}`, '确认 host evidence 文件存在且为合法 JSON。')
+  }
 }
 
 const summary = { mode: production ? 'production' : 'local', passed: checks.filter(item => item.level === 'pass').length, warnings: checks.filter(item => item.level === 'warn').length, failures: checks.filter(item => item.level === 'fail').length, checks }
