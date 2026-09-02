@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeGrantScope, parseGrantCapabilities, validateJitExpiry } from "./AuthorizationGovernanceSection";
+import { describeGrantScope, describeGrantStatus, parseGrantCapabilities, validateJitExpiry } from "./AuthorizationGovernanceSection";
 import { readFileSync } from "node:fs";
 
 describe("AuthorizationGovernanceSection", () => {
@@ -34,6 +34,14 @@ describe("AuthorizationGovernanceSection", () => {
     expect(describeGrantScope(" ")).toContain("填写目标工作区 ID");
   });
 
+  it("surfaces local JIT lifecycle states for desktop operators", () => {
+    const now = Date.parse("2026-09-02T10:00:00.000Z");
+    expect(describeGrantStatus({ expiresAt: "2026-09-02T10:03:00.000Z", useCount: 0, maxUses: 1 }, now)).toEqual({ label: "有效", color: "green" });
+    expect(describeGrantStatus({ expiresAt: "2026-09-02T10:00:30.000Z", useCount: 0, maxUses: 1 }, now)).toEqual({ label: "即将到期", color: "orange" });
+    expect(describeGrantStatus({ expiresAt: "2026-09-02T09:59:59.000Z", useCount: 0, maxUses: 1 }, now)).toEqual({ label: "已过期", color: "red" });
+    expect(describeGrantStatus({ expiresAt: "2026-09-02T10:05:00.000Z", useCount: 2, maxUses: 2 }, now)).toEqual({ label: "已用尽", color: "gold" });
+  });
+
   it("keeps role and JIT recovery keyboard reachable while retaining form input", () => {
     expect(source).toContain('aria-label="分配平台角色"');
     expect(source).toContain('aria-label="签发 JIT 授权"');
@@ -41,5 +49,10 @@ describe("AuthorizationGovernanceSection", () => {
     expect(source).toContain('onRetry={() => grantForm.submit()}');
     expect(source).toContain('role="status"');
     expect(source).toContain("不会自动扩展到其他工作区");
+    expect(source).toContain("DangerActionModal");
+    expect(source).toContain("triggerRef={revocationTriggerRef}");
+    expect(source).toContain("最近一次 JIT 已撤销");
+    expect(source).toContain("已检测到");
+    expect(source).toContain('title: "状态"');
   });
 });

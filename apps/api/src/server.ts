@@ -4815,8 +4815,8 @@ function exactConsumedGrantForRequest(req: IncomingMessage, workspaceId: string,
     || decision.scope.resource_id !== workspaceId || grant.subjectIdentityId !== principal.identityId
     || grant.workspaceId !== workspaceId || !grant.capabilities.includes(decision.capability)
     || capability && decision.capability !== capability
-    || grant.resourceScope.type !== 'workspace' || !Array.isArray(grant.resourceScope.ids)
-    || grant.resourceScope.ids.length !== 1 || grant.resourceScope.ids[0] !== workspaceId) return undefined
+    || !Array.isArray(grant.resourceScope.workspace_ids)
+    || grant.resourceScope.workspace_ids.length !== 1 || grant.resourceScope.workspace_ids[0] !== workspaceId) return undefined
   return grant
 }
 const workerAuthorizedRequests = new WeakSet<IncomingMessage>()
@@ -4963,9 +4963,10 @@ function effectiveAuthorizationProjection(principal: RequestPrincipal | undefine
     }
   }
   for (const grant of principal?.activeAuthorizationGrants ?? []) {
-    const rawType = grant.resourceScope.type
-    const rawIds = grant.resourceScope.ids
-    if ((rawType !== 'workspace' && rawType !== 'brand' && rawType !== 'account') || !Array.isArray(rawIds) || rawIds.length === 0 || rawIds.some(id => typeof id !== 'string' || !id.trim()) || (rawType === 'workspace' && (rawIds.length !== 1 || rawIds[0] !== workspaceId))) {
+    const scopeEntries = Object.entries(grant.resourceScope).filter(([key]) => key.endsWith('_ids'))
+    const [scopeKey, rawIds] = scopeEntries[0] ?? []
+    const rawType = typeof scopeKey === 'string' ? scopeKey.slice(0, -4) : undefined
+    if (scopeEntries.length !== 1 || (rawType !== 'workspace' && rawType !== 'brand' && rawType !== 'account') || !Array.isArray(rawIds) || rawIds.length === 0 || rawIds.some(id => typeof id !== 'string' || !id.trim() || id === '*') || (rawType === 'workspace' && (rawIds.length !== 1 || rawIds[0] !== workspaceId))) {
       throw new DomainError('AUTHORIZATION_GRANT_INVALID', '持久授权 grant 的 resource_scope 无法安全解析，已拒绝使用', 503, { grant_id: grant.id })
     }
     for (const value of grant.capabilities) {
@@ -11125,7 +11126,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         resourceScope = parsedScope as Record<string, unknown>
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'JIT capability 或 resource scope JSON 无效', 400) }
       const targetWorkspaceId = required(params, 'target_workspace_id')
-      if (resourceScope.type !== 'workspace' || !Array.isArray(resourceScope.ids) || resourceScope.ids.length !== 1 || resourceScope.ids[0] !== targetWorkspaceId) throw new DomainError('AUTHORIZATION_GRANT_INVALID', 'JIT 必须精确绑定一个目标工作区', 400)
+      if (!Array.isArray(resourceScope.workspace_ids) || resourceScope.workspace_ids.length !== 1 || resourceScope.workspace_ids[0] !== targetWorkspaceId || Object.keys(resourceScope).some(key => key.endsWith('_ids') && key !== 'workspace_ids')) throw new DomainError('AUTHORIZATION_GRANT_INVALID', 'JIT 必须精确绑定一个目标工作区', 400)
       const grantKind = required(params, 'grant_kind')
       const accessMode = required(params, 'access_mode')
       if ((grantKind !== 'temporary' && grantKind !== 'support') || (accessMode !== 'read' && accessMode !== 'write')) throw new DomainError('AUTHORIZATION_GRANT_INVALID', 'JIT 类型或读写模式无效', 400)

@@ -342,10 +342,10 @@ describe('security and access-control acceptance gates', () => {
     const assigned = await call('ops.authorization.role.assign', { subject_identity_id: target, role: 'support_agent', expected_authorization_revision: '0', reason: '客服值班角色' })
     expect(assigned.error).toBeNull()
     expect(assigned.data?.result).toMatchObject({ subjectIdentityId: target, role: 'support_agent', authorizationRevision: 1 })
-    const grant = await call('ops.authorization.grant.issue', { subject_identity_id: target, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: '["support.ticket.read"]', resource_scope_json: JSON.stringify({ type: 'workspace', ids: [workspaceId] }), ticket_ref: 'INC-20260831-1', approved_by: 'security-approver', approved_at: '2026-08-31T03:59:00.000Z', expires_at: '2026-08-31T04:10:00.000Z', max_uses: '2', expected_authorization_revision: '1', reason: '处理指定客服工单' })
+    const grant = await call('ops.authorization.grant.issue', { subject_identity_id: target, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: '["support.ticket.read"]', resource_scope_json: JSON.stringify({ workspace_ids: [workspaceId] }), ticket_ref: 'INC-20260831-1', approved_by: 'security-approver', approved_at: '2026-08-31T03:59:00.000Z', expires_at: '2026-08-31T04:10:00.000Z', max_uses: '2', expected_authorization_revision: '1', reason: '处理指定客服工单' })
     expect(grant.error).toBeNull()
     expect(grant.data?.result).toMatchObject({ subjectIdentityId: target, workspaceId, authorizationRevision: 2 })
-    const wrongScope = await call('ops.authorization.grant.issue', { subject_identity_id: target, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: '["support.ticket.read"]', resource_scope_json: JSON.stringify({ type: 'workspace', ids: ['ws_other'] }), ticket_ref: 'INC-20260831-2', approved_by: 'security-approver', approved_at: '2026-08-31T03:59:00.000Z', expires_at: '2026-08-31T04:10:00.000Z', max_uses: '1', expected_authorization_revision: '2', reason: '越界授权负测' })
+    const wrongScope = await call('ops.authorization.grant.issue', { subject_identity_id: target, target_workspace_id: workspaceId, grant_kind: 'support', access_mode: 'read', capabilities_json: '["support.ticket.read"]', resource_scope_json: JSON.stringify({ workspace_ids: ['ws_other'] }), ticket_ref: 'INC-20260831-2', approved_by: 'security-approver', approved_at: '2026-08-31T03:59:00.000Z', expires_at: '2026-08-31T04:10:00.000Z', max_uses: '1', expected_authorization_revision: '2', reason: '越界授权负测' })
     expect(wrongScope.error?.code).toBe('AUTHORIZATION_GRANT_INVALID')
   })
 
@@ -367,7 +367,7 @@ describe('security and access-control acceptance gates', () => {
     }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
     const platformSession = (await call('platform', 'ops.session')).data?.result
-    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: platformSession.identity_id, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'investigate merchant support case', ticketRef: `SUP-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: platformSession.identity_id, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { workspace_ids: [workspaceId] }, reason: 'investigate merchant support case', ticketRef: `SUP-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
     const workspaceSession = (await call('workspace', 'ops.session')).data?.result
     expect(workspaceSession).toMatchObject({ canonical_roles: [], authorization_revision: 1, context: { access_mode: 'temporary_support', workspace_id: workspaceId } })
     expect(workspaceSession.effective_permissions).toEqual(expect.arrayContaining([expect.objectContaining({ capability: 'support.ticket.read', source: 'temporary_grant', source_id: grant.id, effect_limit: 'read' })]))
@@ -392,7 +392,7 @@ describe('security and access-control acceptance gates', () => {
     }).then(response => response.json() as Promise<Envelope<{ result: any }>>)
 
     const identityId = (await call('ops.session')).data?.result.identity_id
-    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'unrelated support investigation', ticketRef: `DIRECT-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['support.ticket.read'], resourceScope: { workspace_ids: [workspaceId] }, reason: 'unrelated support investigation', ticketRef: `DIRECT-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
 
     expect((await call('ops.marketing.queue')).error).toBeNull()
     const session = (await call('ops.session')).data?.result
@@ -416,7 +416,7 @@ describe('security and access-control acceptance gates', () => {
     }).then(async response => ({ status: response.status, body: await response.json() as Envelope<{ result: any }> }))
 
     const identityId = (await call('ops.session')).body.data?.result.identity_id
-    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'exact queue investigation', ticketRef: `SUSPENDED-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { workspace_ids: [workspaceId] }, reason: 'exact queue investigation', ticketRef: `SUSPENDED-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
     await workspaceMembers.suspend({ workspaceId, externalSubject: actorId, actorId: 'security-admin', reason: 'security suspension' })
 
     const denied = await call('ops.marketing.queue')
@@ -444,7 +444,7 @@ describe('security and access-control acceptance gates', () => {
     }).then(async response => ({ status: response.status, body: await response.json() as Envelope<{ result: any }> }))
 
     const identityId = (await call('platform', 'ops.session')).body.data?.result.identity_id
-    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'one queue inspection', ticketRef: `QUEUE-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId, capabilities: ['marketing.queue.read'], resourceScope: { workspace_ids: [workspaceId] }, reason: 'one queue inspection', ticketRef: `QUEUE-${Date.now()}`, issuedBy: 'support-lead', approvedBy: 'security-approver', approvedAt: '2026-08-31T03:59:00.000Z', expectedAuthorizationRevision: 0, expiresAt: '2026-08-31T04:15:00.000Z', maxUses: 1 })
 
     const admitted = await call('workspace', 'ops.marketing.queue')
     expect(admitted.status).toBe(200)
@@ -482,7 +482,7 @@ describe('security and access-control acceptance gates', () => {
     const issuedAt = Date.now()
     const repository = new MemoryAuthorizationRepository(() => new Date(issuedAt))
     setAuthorizationRepositoryForTests(repository)
-    const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['catalog.sync.execute'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'approved catalog repair', ticketRef: `WORKER-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['catalog.sync.execute'], resourceScope: { workspace_ids: [workspaceId] }, reason: 'approved catalog repair', ticketRef: `WORKER-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
     const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: identityId, workspaceId, capability: 'catalog.sync.execute', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'support-operator', reason: 'enqueue approved catalog repair' })
     expect(consumed).toBeDefined()
     const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-worker-grant', actorId: 'support-operator', identityId, workspaceId, workbench: 'workspace' as const, contextId: `workspace:${workspaceId}`, contextVersion: 'authz-v1', policyVersion: 'authz-v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, grantIds: [] as string[], scopeHash: grant.scopeHash, capability: 'catalog.sync.execute' as const, resourceId: 'sync-job-1', resourceRevision: '1', requestId: 'req_worker_grant', traceId: 'req_worker_grant', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
@@ -519,7 +519,7 @@ describe('security and access-control acceptance gates', () => {
     const issuedAt = Date.now()
     const repository = new MemoryAuthorizationRepository(() => new Date(issuedAt))
     setAuthorizationRepositoryForTests(repository)
-    const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['customer.publish.execute'], resourceScope: { type: 'workspace', ids: [workspaceId] }, reason: 'one publish only', ticketRef: `PUBLISH-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
+    const grant = await repository.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: identityId, workspaceId, capabilities: ['customer.publish.execute'], resourceScope: { workspace_ids: [workspaceId] }, reason: 'one publish only', ticketRef: `PUBLISH-${Date.now()}`, issuedBy: 'ops-lead', approvedBy: 'security-approver', approvedAt: new Date(issuedAt - 1_000).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(issuedAt + 4 * 60_000).toISOString(), maxUses: 1 })
     const consumed = await repository.consumeGrant({ id: grant.id, subjectIdentityId: identityId, workspaceId, capability: 'customer.publish.execute', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'temporary-publisher', reason: 'enqueue one publish' })
     const snapshot = { schemaVersion: 1 as const, decisionId: 'authz-publish-grant-source', actorId: 'temporary-publisher', identityId, workspaceId, workbench: 'workspace' as const, contextId: `workspace:${workspaceId}`, contextVersion: '2026-08-31.v1', policyVersion: '2026-08-31.v1', grantRevision: `grant:${grant.id}:${consumed!.revision}:${identityId}:${consumed!.authorizationRevision}`, grantIds: [grant.id], scopeHash: grant.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish-job-grant-1', resourceRevision: '1', requestId: 'req_worker_continuation_grant', traceId: 'req_worker_continuation_grant', authorized: true as const, decidedAt: new Date(issuedAt).toISOString() }
 

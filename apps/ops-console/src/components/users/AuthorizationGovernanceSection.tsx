@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Alert, App, Button, Card, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tabs, Tag, Typography } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Alert, App, Button, Card, Col, Form, Input, InputNumber, Row, Select, Space, Table, Tabs, Tag, Typography } from "antd";
 import { describeOpsError, rpc } from "../../api/opsClient";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
+import { DangerActionModal } from "../authz/DangerActionModal";
 import { OpsPageError } from "../OpsPageError";
 import { PermissionMatrixSection } from "./PermissionMatrixSection";
 
@@ -9,6 +10,10 @@ type RoleAssignment = { id: string; role: string; subjectIdentityId: string; exp
 type Grant = { id: string; accessMode: "read" | "write"; workspaceId: string; capabilities: string[]; ticketRef: string; expiresAt: string; useCount: number; maxUses: number; revision: number; authorizationRevision: number };
 type RoleList = { subject_identity_id: string; authorization_revision: number; assignments: RoleAssignment[] };
 type GrantList = { subject_identity_id: string; workspace_id: string; authorization_revision: number; grants: Grant[] };
+type PendingRevocation =
+  | { kind: "role"; title: string; role: RoleAssignment }
+  | { kind: "grant"; title: string; grant: Grant };
+type GrantStatus = { label: string; color: "green" | "gold" | "orange" | "red" };
 
 const platformRoles = ["platform_admin", "ops_admin", "support_agent", "finance_ops", "security_admin", "auditor", "rules_admin", "model_admin", "release_admin"];
 
@@ -30,6 +35,16 @@ export function validateJitExpiry(value: unknown, accessMode: "read" | "write", 
   return undefined;
 }
 
+export function describeGrantStatus(grant: Pick<Grant, "expiresAt" | "useCount" | "maxUses">, now = Date.now()): GrantStatus {
+  if (grant.maxUses > 0 && grant.useCount >= grant.maxUses) return { label: "已用尽", color: "gold" };
+  const expiresAt = Date.parse(grant.expiresAt);
+  if (Number.isFinite(expiresAt)) {
+    if (expiresAt <= now) return { label: "已过期", color: "red" };
+    if (expiresAt - now <= 60_000) return { label: "即将到期", color: "orange" };
+  }
+  return { label: "有效", color: "green" };
+}
+
 export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleModel }) {
   const { message } = App.useApp();
   const canReadRoles = model.authorization.can("authorization.role.read");
@@ -47,33 +62,35 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
   const [roleSubmitError, setRoleSubmitError] = useState<unknown>();
   const [grantSubmitting, setGrantSubmitting] = useState(false);
   const [grantSubmitError, setGrantSubmitError] = useState<unknown>();
+  const [pendingRevocation, setPendingRevocation] = useState<PendingRevocation>();
+  const [revocationReason, setRevocationReason] = useState("");
+  const [revocationSubmitting, setRevocationSubmitting] = useState(false);
+  const [revocationError, setRevocationError] = useState<string>();
+  const [recentGrantRevocation, setRecentGrantRevocation] = useState<{ grantId: string; workspaceId: string; revokedAt: string }>();
+  const [grantStatusNow, setGrantStatusNow] = useState(() => Date.now());
   const [roleForm] = Form.useForm();
   const [grantForm] = Form.useForm();
+  const revocationTriggerRef = useRef<HTMLElement | null>(null);
 
-  const requestRevocationReason = (title: string, onConfirm: (reason: string) => Promise<void>) => {
-    let reason = "";
-    Modal.confirm({
-      title,
-      content: <label style={{ display: "block" }}>
-        <span>撤销原因（至少 3 个字符）</span>
-        <Input.TextArea autoFocus rows={3} aria-label="撤销原因" placeholder="说明撤销原因，包含工单或证据编号" onChange={(event) => { reason = event.target.value; }} />
-      </label>,
-      okText: "确认撤销",
-      okButtonProps: { danger: true },
-      cancelText: "取消",
-      async onOk() {
-        if (reason.trim().length < 3) {
-          message.error("撤销原因至少需要 3 个字符");
-          throw new Error("revocation reason is required");
-        }
-        try {
-          await onConfirm(reason.trim());
-        } catch (error) {
-          message.error(error instanceof Error ? error.message : "撤销失败");
-          throw error;
-        }
-      },
-    });
+  useEffect(() => {
+    if (!grants?.grants.length) return undefined;
+    setGrantStatusNow(Date.now());
+    const timer = window.setInterval(() => setGrantStatusNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [grants?.grants.length]);
+
+  const requestRevocationReason = (target: PendingRevocation, trigger: HTMLElement | null) => {
+    revocationTriggerRef.current = trigger;
+    setPendingRevocation(target);
+    setRevocationReason("");
+    setRevocationError(undefined);
+  };
+
+  const closeRevocationDialog = () => {
+    if (revocationSubmitting) return;
+    setPendingRevocation(undefined);
+    setRevocationReason("");
+    setRevocationError(undefined);
   };
 
   if (!canReadRoles && !canReadGrants) return null;
@@ -95,6 +112,59 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
     finally { setLoading(false); }
   };
 
+  const locallyExpiredGrantCount = grants?.grants.filter((grant) => describeGrantStatus(grant, grantStatusNow).label === "已过期").length ?? 0;
+
+  const submitRevocation = async () => {
+    if (!pendingRevocation || revocationSubmitting) return;
+    if (revocationReason.trim().length < 3) {
+      const nextError = "撤销原因至少需要 3 个字符";
+      setRevocationError(nextError);
+      message.error(nextError);
+      return;
+    }
+    setRevocationSubmitting(true);
+    setRevocationError(undefined);
+    try {
+      if (pendingRevocation.kind === "role") {
+        const { role } = pendingRevocation;
+        await rpc("ops.authorization.role.revoke", {
+          assignment_id: role.id,
+          subject_identity_id: role.subjectIdentityId,
+          expected_revision: String(role.revision),
+          expected_authorization_revision: String(roles?.authorization_revision ?? role.authorizationRevision),
+          reason: revocationReason.trim(),
+        });
+        await loadRoles();
+      } else {
+        const { grant } = pendingRevocation;
+        await rpc("ops.authorization.grant.revoke", {
+          grant_id: grant.id,
+          subject_identity_id: subjectIdentityId.trim(),
+          expected_revision: String(grant.revision),
+          expected_authorization_revision: String(grants?.authorization_revision ?? grant.authorizationRevision),
+          reason: revocationReason.trim(),
+        });
+        setRecentGrantRevocation({
+          grantId: grant.id,
+          workspaceId: grant.workspaceId,
+          revokedAt: new Date().toISOString(),
+        });
+        await loadGrants();
+        model.clearAuthorizationScopedData();
+        await model.load();
+      }
+      setPendingRevocation(undefined);
+      setRevocationReason("");
+      setRevocationError(undefined);
+    } catch (error) {
+      const nextError = describeOpsError(error);
+      setRevocationError(nextError);
+      message.error(nextError);
+    } finally {
+      setRevocationSubmitting(false);
+    }
+  };
+
   return <Card title="角色与 JIT 授权中心" extra={<Tag color="purple">平台控制面</Tag>}>
     <Alert showIcon type="info" title="所有变更由服务端重新授权并写入持久审计" description="平台角色不授予客户正文访问；进入客户工作区必须使用精确 workspace、能力、TTL、工单和审批人绑定的 JIT grant。platform_owner 不在日常入口开放。" />
     <Tabs destroyOnHidden items={[
@@ -109,7 +179,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           { title: "角色", dataIndex: "role", render: (value: string) => <Tag color="blue">{value}</Tag> },
           { title: "到期", dataIndex: "expiresAt", render: (value?: string) => value ?? "长期" },
           { title: "修订", dataIndex: "revision" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles} onClick={() => requestRevocationReason(`撤销 ${row.role}`, async (reason) => { await rpc("ops.authorization.role.revoke", { assignment_id: row.id, subject_identity_id: row.subjectIdentityId, expected_revision: String(row.revision), expected_authorization_revision: String(roles?.authorization_revision ?? row.authorizationRevision), reason }); await loadRoles(); })}>撤销</Button> },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageRoles} onClick={(event) => requestRevocationReason({ kind: "role", title: `撤销 ${row.role}`, role: row }, event.currentTarget)}>撤销</Button> },
         ]} />
         {canManageRoles && <>
           <OpsPageError error={roleSubmitError} onRetry={() => roleForm.submit()} />
@@ -141,13 +211,33 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           <Button style={{ minHeight: 44 }} onClick={() => void loadGrants()} loading={loading} disabled={!subjectIdentityId.trim() || !targetWorkspaceId.trim()}>读取有效 JIT</Button>
         </Space>
         <OpsPageError error={grantLoadError} onRetry={() => void loadGrants()} />
+        {locallyExpiredGrantCount ? <div role="status" aria-live="polite" aria-atomic="true">
+          <Alert
+            showIcon
+            type="warning"
+            message={`已检测到 ${locallyExpiredGrantCount} 条 JIT 在当前桌面会话中到期`}
+            description="这些授权在本地时钟下已失效；请刷新列表或重新签发，避免继续依赖过期快照。"
+          />
+        </div> : null}
+        {recentGrantRevocation ? <div role="status" aria-live="polite" aria-atomic="true">
+          <Alert
+            showIcon
+            type="info"
+            message="最近一次 JIT 已撤销"
+            description={`授权 ${recentGrantRevocation.grantId} 已于 ${recentGrantRevocation.revokedAt} 撤销，并从工作区 ${recentGrantRevocation.workspaceId} 的有效列表中移除。`}
+          />
+        </div> : null}
         <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={false} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
+          { title: "状态", render: (_value, row) => {
+            const status = describeGrantStatus(row, grantStatusNow);
+            return <Tag color={status.color}>{status.label}</Tag>;
+          } },
           { title: "模式", dataIndex: "accessMode", render: (value: string) => <Tag color={value === "write" ? "volcano" : "gold"}>{value}</Tag> },
           { title: "能力", dataIndex: "capabilities", render: (value: string[]) => <Typography.Text>{value.join(", ")}</Typography.Text> },
           { title: "工单", dataIndex: "ticketRef" },
           { title: "使用", render: (_value, row) => `${row.useCount}/${row.maxUses}` },
           { title: "到期", dataIndex: "expiresAt" },
-          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants} onClick={() => requestRevocationReason(`立即撤销 ${row.id}`, async (reason) => { await rpc("ops.authorization.grant.revoke", { grant_id: row.id, subject_identity_id: subjectIdentityId.trim(), expected_revision: String(row.revision), expected_authorization_revision: String(grants?.authorization_revision ?? row.authorizationRevision), reason }); await loadGrants(); model.clearAuthorizationScopedData(); await model.load(); })}>立即撤销</Button> },
+          { title: "操作", render: (_value, row) => <Button danger size="small" style={{ minHeight: 44 }} disabled={!canManageGrants} onClick={(event) => requestRevocationReason({ kind: "grant", title: `立即撤销 ${row.id}`, grant: row }, event.currentTarget)}>立即撤销</Button> },
         ]} />
         {canManageGrants && <>
         <OpsPageError error={grantSubmitError} onRetry={() => grantForm.submit()} />
@@ -185,5 +275,24 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
         </Form></>}
       </Space> }] : []),
     ]} />
+    <DangerActionModal
+      open={Boolean(pendingRevocation)}
+      title={pendingRevocation?.title ?? "撤销授权"}
+      objectLabel={pendingRevocation?.kind === "role" ? "平台角色" : "JIT 授权"}
+      objectValue={pendingRevocation?.kind === "role" ? pendingRevocation.role.role : pendingRevocation?.grant.id ?? "未指定"}
+      scope={pendingRevocation?.kind === "role" ? "平台全局角色" : `workspace:${pendingRevocation?.grant.workspaceId ?? "未指定"}`}
+      impact={pendingRevocation?.kind === "role" ? "撤销后该身份会立即失去对应平台能力。" : "撤销后该身份将立即失去当前工作区的临时访问能力。"}
+      revision={pendingRevocation?.kind === "role" ? pendingRevocation.role.revision : pendingRevocation?.grant.revision}
+      reason={revocationReason}
+      onReasonChange={setRevocationReason}
+      onConfirm={submitRevocation}
+      onCancel={closeRevocationDialog}
+      loading={revocationSubmitting}
+      error={revocationError}
+      confirmLabel="确认撤销"
+      reasonLabel="撤销原因"
+      reasonHint="说明撤销原因，包含工单或证据编号。"
+      triggerRef={revocationTriggerRef}
+    />
   </Card>;
 }
