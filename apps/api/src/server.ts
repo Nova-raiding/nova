@@ -57,7 +57,7 @@ import { CampaignDeliveryOrchestratorAdapter, type CampaignDeliveryLifecycleOper
 import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../../../packages/application/src/campaign-delivery-manifest.js'
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
-import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
+import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isCommercialPurchaseErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
 import { KnowledgeError, KnowledgeModule, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
 import { parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessRecheck, type WorkerCommercialAccessSnapshot } from '../../../packages/workers/src/commercial-access.js'
@@ -9778,14 +9778,20 @@ function nativeMcpErrorCode(error: unknown) {
  * the legacy MCP envelope.
  */
 export function nativeMcpCommercialErrorData(error: unknown, req: IncomingMessage) {
-  if (!(error instanceof DomainError) || !isCommercialAccessErrorCode(error.code)) return undefined
+  const errorCode = error instanceof DomainError
+    ? error.code
+    : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code
+      : undefined
+  if (!errorCode || (!isCommercialAccessErrorCode(errorCode) && !isCommercialPurchaseErrorCode(errorCode))) return undefined
   const correlation = getRequestCorrelation(req)
-  const details = error.details && typeof error.details === 'object' && !Array.isArray(error.details)
-    ? error.details
+  const candidateDetails = error instanceof DomainError ? error.details : undefined
+  const details = candidateDetails && typeof candidateDetails === 'object' && !Array.isArray(candidateDetails)
+    ? candidateDetails
     : {}
   return {
     ...details,
-    code: error.code,
+    code: errorCode,
     request_id: correlation.requestId,
     trace_id: correlation.traceId,
   }
@@ -15563,12 +15569,14 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   }
   if (req.method === 'POST' && path === '/v1/commercial/orders') {
     const input = await body(req)
-    const workspaceId = resolveWorkspace(req, input.workspace_id)
+    const workspaceId = resolveWorkspace(req)
+    const purchaseKind = required(input, 'purchase_kind')
+    if (!['purchase', 'upgrade', 'point_pack'].includes(purchaseKind)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'purchase_kind 无效', 400)
     try {
-      return send(res, 200, workspaceId, await commercialPurchaseService.create({ workspace_id: workspaceId, actor_id: requestActor(req), purchase_kind: required(input, 'purchase_kind') as 'purchase' | 'upgrade' | 'point_pack', sku_code: required(input, 'sku_code'), idempotency_key: required(input, 'idempotency_key'), reason: required(input, 'reason') }), null, req)
+      return send(res, 201, workspaceId, await commercialPurchaseService.create({ workspace_id: workspaceId, actor_id: requestActor(req), purchase_kind: purchaseKind as 'purchase' | 'upgrade' | 'point_pack', sku_code: required(input, 'sku_code'), idempotency_key: required(input, 'idempotency_key'), reason: required(input, 'reason') }), null, req)
     } catch (error) { rethrowCommercialPurchaseError(error) }
   }
-  const commercialPaymentMatch = path.match(/^\/v1\/commercial\/orders\/([^/]+)\/payment$/)
+  const commercialPaymentMatch = path.match(/^\/v1\/commercial\/orders\/([^/]+)\/payment$/u)
   if (req.method === 'GET' && commercialPaymentMatch) {
     const workspaceId = resolveWorkspace(req)
     try {
