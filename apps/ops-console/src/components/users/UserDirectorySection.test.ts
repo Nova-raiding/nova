@@ -79,4 +79,15 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('aria-describedby={actionError ? "user-access-error-title" : undefined}');
     expect(source).toContain('aria-describedby={actionError ? "bulk-suspend-error-title" : undefined}');
   });
+
+  it("keeps directory refresh errors distinguishable and recoverable without stealing focus during background refresh", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('aria-busy={model.userDirectoryLoading}');
+    expect(source).toContain('model.userDirectoryLoading ? "正在加载用户目录，已有结果会保留"');
+    expect(source).toContain('if (initialDirectoryLoadFailed) directoryErrorRef.current?.focus({ preventScroll: true });');
+    expect(source).toContain('role="alert" aria-live="assertive" aria-atomic="true" aria-label="用户目录错误摘要"');
+    expect(source).toContain('model.userDirectory.items.length > 0 ? "已保留最近一次成功加载的用户目录');
+    expect(source).toContain('aria-label="刷新用户目录"');
+    expect(source).toContain('style={{ minHeight: 44 }}');
+  });
 });

@@ -64,15 +64,21 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [bulkSuspending, setBulkSuspending] = useState(false);
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
+  const directoryErrorRef = useRef<HTMLDivElement>(null);
   const [userSort, setUserSort] = useState<UserDirectorySort>();
   const detailTriggerSubjectRef = useRef<string | undefined>(undefined);
   const detailButtonRefs = useRef(new Map<string, HTMLElement>());
   const sortedUsers = useMemo(() => sortUserDirectoryRows(model.userDirectory.items, userSort), [model.userDirectory.items, userSort]);
   const identityWritesDisabled = !canWriteLoadedIdentity(model);
+  const initialDirectoryLoadFailed = Boolean(model.userDirectoryError && !model.userDirectoryLoading && model.userDirectory.items.length === 0);
 
   useEffect(() => {
     if (actionError) actionErrorRef.current?.focus({ preventScroll: true });
   }, [actionError]);
+
+  useEffect(() => {
+    if (initialDirectoryLoadFailed) directoryErrorRef.current?.focus({ preventScroll: true });
+  }, [initialDirectoryLoadFailed]);
 
   useEffect(() => {
     if (canReadUserDirectory) void model.loadUsers();
@@ -158,7 +164,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       <Col xs={24} md={8}><Card><Statistic title="成员关系" value={model.userDirectory.total} /></Card></Col>
       <Col xs={24} md={8}><Card><Statistic title="涉及租户" value={model.userDirectory.workspaceCount} /></Card></Col>
     </Row>
-    <Card title="用户目录">
+    <Card title="用户目录" aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" onFinish={(values) => void model.loadUsers({ ...values, page: 1 })} aria-label="用户目录筛选">
         <Form.Item name="query" label="关键词"><Input allowClear placeholder="身份、姓名、角色或工作区" /></Form.Item>
         <Form.Item name="status" label="状态">
@@ -179,8 +185,19 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
           <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!model.canUserGovernance || !selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
-      <div aria-live="polite" className="ops-visually-hidden">{model.userExporting ? "正在生成用户目录导出文件，请稍候" : ""}</div>
-      {model.userDirectoryError && <Alert className="ops-inline-alert" showIcon type="error" title="用户目录加载失败" description={model.userDirectoryError} action={<Button size="small" onClick={() => void model.loadUsers(form.getFieldsValue())}>重试</Button>} />}
+      <div aria-live="polite" className="ops-visually-hidden">
+        {model.userExporting ? "正在生成用户目录导出文件，请稍候" : model.userDirectoryLoading ? "正在加载用户目录，已有结果会保留" : ""}
+      </div>
+      {model.userDirectoryError && <div ref={directoryErrorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-label="用户目录错误摘要">
+        <Alert
+          className="ops-inline-alert"
+          showIcon
+          type="error"
+          title="用户目录加载失败"
+          description={model.userDirectory.items.length > 0 ? "已保留最近一次成功加载的用户目录；修复连接后可重新拉取最新数据。" : model.userDirectoryError}
+          action={<Button htmlType="button" size="small" style={{ minHeight: 44 }} aria-label="刷新用户目录" onClick={() => void model.loadUsers(form.getFieldsValue())}>刷新用户目录</Button>}
+        />
+      </div>}
       {model.userDirectory.truncated && <Alert className="ops-inline-alert" showIcon type="info" title="结果超过 500 条，请增加筛选条件。" />}
       <Table<PlatformUser>
         aria-label="用户目录数据表"
