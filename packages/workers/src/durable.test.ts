@@ -120,6 +120,21 @@ describe('durable outbox dispatcher', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it('discards a queue envelope whose id is not bound to the durable event', async () => {
+    const store = new Store(event({ id: 'evt_authoritative' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const handler = vi.fn(async () => ({ value: 'must-not-run' }))
+    const acknowledge = vi.spyOn(queue, 'ack')
+    const dispatcher = new DurableOutboxDispatcher(store, queue, handler)
+
+    await queue.enqueue({ id: 'evt_other', value: { ...event({ id: 'evt_authoritative' }), leaseToken: 'lease_1', leaseUntil: new Date(Date.now() + 30_000).toISOString() } })
+    const result = await dispatcher.dispatchOnce()
+
+    expect(result).toMatchObject({ state: 'dead_letter', event: { id: 'evt_authoritative' } })
+    expect(handler).not.toHaveBeenCalled()
+    expect(acknowledge).toHaveBeenCalledOnce()
+    expect(store.events.get('evt_authoritative')?.publishedAt).toBeUndefined()
+  })
+
   it('fails closed when persistence returns an event outside the requested RLS workspace', async () => {
     const store = new Store(event({ workspaceId: 'ws_other' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const dispatcher = new DurableOutboxDispatcher(store, queue, async () => ({ value: true }))

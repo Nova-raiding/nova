@@ -194,6 +194,14 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
     const message = await this.queue.dequeue()
     if (!message) return { state: 'empty' }
     const event = message.value
+    // The queue envelope is part of the durable execution identity. A
+    // transport bug or poisoned message must never make us execute one event
+    // while acknowledging another id; discard only the malformed delivery so
+    // restore() can rebuild the authoritative event by its own id.
+    if (message.id !== event.id) {
+      await this.queue.ack(message)
+      return { state: 'dead_letter', event }
+    }
     const attempt = (event.attempts ?? 0) + 1
     const leaseToken = event.leaseToken
     if (!leaseToken) {
