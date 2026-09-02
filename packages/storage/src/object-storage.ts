@@ -291,6 +291,15 @@ function requireScanEvidence(value: string): string {
   return evidence
 }
 
+function validateStoredScanEvidence(metadata: Partial<ObjectMetadata>): void {
+  if (metadata.zone === 'clean') {
+    requireScanEvidence(metadata.scanEvidenceRef ?? '')
+  } else if (metadata.scanEvidenceRef !== undefined) {
+    requireScanEvidence(metadata.scanEvidenceRef)
+    throw new ObjectStorageError('OBJECT_METADATA_INVALID', '隔离区对象不能携带 clean 扫描证据', 500)
+  }
+}
+
 function cleanKeyForQuarantine(workspaceId: string, quarantineKey: string): { sourceKey: string; targetKey: string } {
   const source = requireKeyForWorkspace(workspaceId, quarantineKey, 'quarantine')
   const parts = source.relative.split('/')
@@ -585,6 +594,7 @@ export class LocalObjectStorage implements ObjectStoragePort {
     try {
       const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as Partial<ObjectMetadata>
       if (metadata.key !== parsed.relative || metadata.workspaceId !== workspaceId || metadata.zone !== parsed.zone || typeof metadata.sha256 !== 'string' || !SHA256.test(metadata.sha256) || typeof metadata.sizeBytes !== 'number' || !Number.isSafeInteger(metadata.sizeBytes) || typeof metadata.contentType !== 'string' || typeof metadata.createdAt !== 'string') throw new ObjectStorageError('OBJECT_METADATA_INVALID', '对象元数据损坏', 500)
+      validateStoredScanEvidence(metadata)
       return metadata as ObjectMetadata
     } catch (error) {
       if (error instanceof ObjectStorageError) throw error
@@ -826,6 +836,7 @@ export class S3CompatibleObjectStorage implements ObjectStoragePort {
     try {
       const metadata = JSON.parse(new TextDecoder().decode(item.body)) as Partial<ObjectMetadata>
       if (metadata.key !== parsed.relative || metadata.workspaceId !== workspaceId || metadata.zone !== parsed.zone || typeof metadata.sha256 !== 'string' || !SHA256.test(metadata.sha256) || typeof metadata.sizeBytes !== 'number' || !Number.isSafeInteger(metadata.sizeBytes) || typeof metadata.contentType !== 'string' || typeof metadata.createdAt !== 'string') throw new ObjectStorageError('OBJECT_METADATA_INVALID', '对象元数据损坏', 500)
+      validateStoredScanEvidence(metadata)
       return metadata as ObjectMetadata
     } catch (error) { if (error instanceof ObjectStorageError) throw error; throw new ObjectStorageError('OBJECT_METADATA_INVALID', '无法读取对象元数据', 500) }
   }

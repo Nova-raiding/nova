@@ -191,6 +191,20 @@ describe('LocalObjectStorage', () => {
     await expect(store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_partial', fileName: 'x.txt', contentType: 'text/plain', body }))
       .rejects.toMatchObject({ code: 'OBJECT_INTEGRITY_FAILED', status: 500 })
   })
+
+  it('fails closed when a clean metadata record loses or corrupts scanner evidence', async () => {
+    const store = await storage()
+    const body = new TextEncoder().encode('evidence-bound clean object')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_a', assetId: 'asset_evidence', fileName: 'x.txt', contentType: 'text/plain', body })
+    const clean = await store.promoteClean({ workspaceId: 'ws_a', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://evidence-bound' })
+    const metadataPath = join(store.rootDir, `${clean.key}.meta.json`)
+    const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as Record<string, unknown>
+
+    for (const value of ['', 'scanner://bad\nheader']) {
+      await writeFile(metadataPath, JSON.stringify({ ...metadata, scanEvidenceRef: value }))
+      await expect(store.get('ws_a', clean.key)).rejects.toMatchObject({ code: 'SCAN_EVIDENCE_REQUIRED', status: 400 })
+    }
+  })
 })
 
 describe('S3CompatibleObjectStorage', () => {
@@ -232,6 +246,25 @@ describe('S3CompatibleObjectStorage', () => {
     const clean = await store.promoteClean({ workspaceId: 'ws_cloud', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://cloud-1' })
     await expect(store.get('ws_cloud', clean.key)).resolves.toMatchObject({ body, metadata: expect.objectContaining({ zone: 'clean' }) })
     await expect(store.get('ws_other', clean.key)).rejects.toMatchObject({ code: 'OBJECT_SCOPE_DENIED' })
+  })
+
+  it('fails closed when a cloud clean metadata record has no scanner evidence', async () => {
+    const objects = new Map<string, { body: Uint8Array; contentType: string; metadata: Record<string, string> }>()
+    const transport: CloudObjectTransport = {
+      async head(key) { const item = objects.get(key); return item ? { contentType: item.contentType, sizeBytes: item.body.byteLength, metadata: item.metadata } : null },
+      async get(key) { const item = objects.get(key); if (!item) throw new CloudObjectNotFoundError(); return { body: item.body, contentType: item.contentType, metadata: item.metadata } },
+      async put(key, input) { objects.set(key, { body: input.body, contentType: input.contentType, metadata: input.metadata }) },
+      async delete(key) { objects.delete(key) },
+    }
+    const store = new S3CompatibleObjectStorage(transport, { keyPrefix: 'merchant' })
+    const body = new TextEncoder().encode('cloud evidence')
+    const quarantine = await store.putQuarantine({ workspaceId: 'ws_cloud', assetId: 'asset_evidence', fileName: 'x.txt', contentType: 'text/plain', body })
+    const clean = await store.promoteClean({ workspaceId: 'ws_cloud', quarantineKey: quarantine.key, scanEvidenceRef: 'scanner://cloud-evidence' })
+    const metadataKey = `merchant/${clean.key}.merchant-meta.json`
+    const existing = objects.get(metadataKey)!
+    const metadata = JSON.parse(new TextDecoder().decode(existing.body)) as Record<string, unknown>
+    objects.set(metadataKey, { ...existing, body: new TextEncoder().encode(JSON.stringify({ ...metadata, scanEvidenceRef: '' })) })
+    await expect(store.get('ws_cloud', clean.key)).rejects.toMatchObject({ code: 'SCAN_EVIDENCE_REQUIRED', status: 400 })
   })
 
   it('copies in S3 without source deletion and makes post-commit cleanup converge after a partial delete', async () => {
