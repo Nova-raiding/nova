@@ -1289,7 +1289,7 @@ function commercialAccessErrorProjection(code, details) {
 
 function rememberCommercialAccessResult(method, result) {
   if (!['commercial.access.get', 'creative-points.balance.get', 'billing.status', 'merchant.start'].includes(method) || !result || typeof result !== 'object' || Array.isArray(result)) return
-  const candidate = result.commercial_access ?? result.commercialAccess ?? result.access_decision ?? result.accessDecision ?? (method === 'commercial.access.get' ? result : undefined)
+  const candidate = result.commercial_access ?? result.commercialAccess ?? result.access_decision ?? result.accessDecision ?? result.decision ?? (method === 'commercial.access.get' ? result : undefined)
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return
   if (candidate.allowed === true) {
     commercialRecoveryOnlySnapshot = undefined

@@ -1,6 +1,6 @@
 # Merchant Marketing Codex Plugin
 
-`tools/list` 的数量以运行态契约测试为准；文档不固化会随共享 registry 变化的数字。
+当前 `tools/list` 为 128 个 MCP 工具，以运行态契约测试为准。
 
 这是可安装的 Codex Plugin 源目录，包含：
 

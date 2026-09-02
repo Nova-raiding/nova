@@ -185,7 +185,7 @@ describe('Codex stdio MCP bridge', () => {
         return
       }
       if (request.method === 'commercial.access.get') {
-        res.end(JSON.stringify({ data: { result: { allowed: true, balance_state: 'known', available_points: 500, access_revision: 'access_10' } }, error: null }))
+        res.end(JSON.stringify({ data: { result: { decision: { allowed: true, balance_state: 'known', available_points: 500, access_revision: 'access_10' } } }, error: null }))
         return
       }
       res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
@@ -206,7 +206,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(requests).toEqual(['merchant.start'])
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'commercial.access.get', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { allowed: true, available_points: 500, access_revision: 'access_10' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { decision: { allowed: true, available_points: 500, access_revision: 'access_10' } } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'task.create', arguments: { product_id: 'prod_1', platform: 'taobao' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
       expect(requests).toEqual(['merchant.start', 'commercial.access.get', 'task.create'])
