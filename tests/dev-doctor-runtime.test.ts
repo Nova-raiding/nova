@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composeServiceHealth, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
+import { commercialRuntimeReadiness, composeServiceHealth, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
 
 describe('developer doctor runtime checks', () => {
   it('parses Docker Compose newline-delimited JSON', () => {
@@ -25,5 +25,41 @@ describe('developer doctor runtime checks', () => {
     expect(releaseReadiness({ data: { ready: false } })).toBe(false)
     expect(releaseReadiness({ ready: true })).toBe(true)
     expect(releaseReadiness({ data: {} })).toBeUndefined()
+  })
+
+  it('reports commercial dependencies as blocked for fixture/local readiness without exposing configuration values', () => {
+    expect(commercialRuntimeReadiness({ data: {
+      writesEnabled: false,
+      persistence: { ready: true },
+      setup: {
+        mode: 'fixture', productionGate: false,
+        ai: { costGate: 'ready' },
+        modelReadiness: Object.fromEntries(['text', 'image', 'image_edit', 'ocr', 'video'].map(name => [name, { ready: true }])),
+        payment: { mode: 'fixture', configured: false, providerApiKey: 'must-not-be-returned' },
+        objectStorage: { configured: true, mode: 'local', bucket: 'must-not-be-returned' },
+        alertNotifications: { ready: false },
+      },
+    } })).toEqual({
+      mode: 'fixture', writesEnabled: false, persistenceReady: true,
+      paymentReady: false, paymentMode: 'fixture', modelRelayReady: false,
+      objectStorageReady: false, objectStorageMode: 'local', scannerReady: false, alertReady: false, productionGate: false,
+    })
+  })
+
+  it('recognizes a complete production commercial runtime contract', () => {
+    expect(commercialRuntimeReadiness({ data: {
+      writesEnabled: true,
+      persistence: { ready: true },
+      setup: {
+        mode: 'production', productionGate: true,
+        ai: { costGate: 'ready' },
+        modelReadiness: Object.fromEntries(['text', 'image', 'image_edit', 'ocr', 'video'].map(name => [name, { ready: true }])),
+        payment: { mode: 'provider', configured: true },
+        objectStorage: { configured: true, mode: 's3' },
+        assetScanner: { ready: true, mode: 'clamav_worker' },
+        alertNotifications: { ready: true },
+      },
+    } })).toMatchObject({ paymentReady: true, modelRelayReady: true, objectStorageReady: true, scannerReady: true, productionGate: true })
+    expect(commercialRuntimeReadiness({ data: {} })).toBeUndefined()
   })
 })

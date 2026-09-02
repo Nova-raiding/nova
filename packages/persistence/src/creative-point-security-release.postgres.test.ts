@@ -204,7 +204,12 @@ describe('creative-point PostgreSQL E2 release gate', () => {
       await database?.end()
       await interrupted?.end()
       for (const name of [databaseName, interruptedName]) {
-        await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [name])
+        let active = 1
+        for (let attempt = 0; attempt < 80 && active > 0; attempt += 1) {
+          active = Number((await admin.query<{ count: string }>('SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname=$1', [name])).rows[0]?.count ?? 0)
+          if (active > 0) await new Promise(resolve => setTimeout(resolve, 25))
+        }
+        expect(active, `database clients did not close for ${name}`).toBe(0)
         await admin.query(`DROP DATABASE IF EXISTS "${name}"`)
       }
       await admin.end()
