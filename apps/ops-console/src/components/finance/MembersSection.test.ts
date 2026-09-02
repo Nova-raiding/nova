@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
@@ -39,5 +40,16 @@ describe("MembersSection", () => {
     const html = renderToStaticMarkup(createElement(MembersSection, { model, client }));
     expect(html).toContain("当前角色只有成员查看权限");
     expect(html).toContain("disabled");
+  });
+
+  it("provides focusable initial-load recovery and announces table loading", () => {
+    const source = readFileSync(new URL("./MembersSection.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('role="alert" aria-live="assertive" aria-atomic="true"');
+    expect(source).toContain('tabIndex={initialLoadFailed ? -1 : undefined}');
+    expect(source).toContain('aria-label={initialLoadFailed ? "成员列表加载错误摘要" : undefined}');
+    expect(source).toContain('aria-label="刷新成员列表"');
+    expect(source).toContain('role="status" aria-live="polite" aria-atomic="true"');
+    expect(source).toContain('aria-busy={state.loading}');
   });
 });
