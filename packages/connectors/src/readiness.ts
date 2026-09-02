@@ -67,7 +67,27 @@ function validRelativePath(value: unknown): value is string {
 }
 
 function isAttributed(evidence: CapabilityEvidence): boolean {
-  return Boolean(evidence.evidenceRef?.trim() && evidence.verifiedBy?.trim() && evidence.verifiedAt?.trim())
+  return validEvidenceText(evidence.evidenceRef, 512)
+    && validEvidenceText(evidence.verifiedBy, 128)
+    && validEvidenceTimestamp(evidence.verifiedAt)
+}
+
+/** Evidence is an authorization input, not display text. Keep it bounded and
+ * reject control characters/placeholders so malformed configuration cannot be
+ * promoted into an apparently verified connector. */
+function validEvidenceText(value: unknown, maxLength: number): value is string {
+  if (typeof value !== 'string') return false
+  const normalized = value.trim()
+  return normalized.length > 0
+    && normalized.length <= maxLength
+    && !/[\u0000-\u001F\u007F]/u.test(normalized)
+    && !/^(?:SET_|CHANGE_ME|REPLACE_ME|TODO|TBD|<[^>]+>)/iu.test(normalized)
+}
+
+function validEvidenceTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/u.test(value.trim())) return false
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) && timestamp <= Date.now() + 5 * 60 * 1000
 }
 
 function evidenceFor(evidence: readonly CapabilityEvidence[] | undefined, platform: Platform, capability: CapabilityName) {
@@ -118,7 +138,11 @@ export function validateConnectorReadiness(
   if (!config.mapWriteReceipt) reasons.push('WRITE_RECEIPT_MAPPING_MISSING')
   if (!config.mapWriteStatus) reasons.push('WRITE_STATUS_MAPPING_MISSING')
   const mapping = config.mappingEvidence
-  if (!mapping?.version.trim() || !mapping.evidenceRef.trim() || !mapping.verifiedBy.trim() || !mapping.verifiedAt.trim()) reasons.push('MAPPING_EVIDENCE_MISSING')
+  if (!mapping
+    || !validEvidenceText(mapping.version, 128)
+    || !validEvidenceText(mapping.evidenceRef, 512)
+    || !validEvidenceText(mapping.verifiedBy, 128)
+    || !validEvidenceTimestamp(mapping.verifiedAt)) reasons.push('MAPPING_EVIDENCE_MISSING')
 
   const verifiedCapabilities: CapabilityName[] = []
   for (const capability of REQUIRED_CONNECTOR_CAPABILITIES) {
