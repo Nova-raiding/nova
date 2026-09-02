@@ -7,11 +7,12 @@ import { createClient } from 'redis'
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenerationCandidateUsability, isTrustedCleanAsset, DomainError, type AssetRegistrationResult, type BrandVisualRules, type KnowledgeGenerationContext, type Platform, type PlatformAccount, type PlatformRejection, type Product, type Task } from '../../../packages/application/src/service.js'
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
+import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
 import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } from '../../../packages/application/src/canonical-backfill-queue.js'
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
 import { ConnectorMappingPreflightError, ConnectorRuntime, SyncPaginationError, type ConnectorRuntimeMappingPreflightAdapter } from '../../../packages/application/src/connector-runtime.js'
-import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
+import { allowedModelUsageSettlementDecisions, AssetScanRedriveError, BusinessSnapshotVersionConflictError, COMMERCIAL_PLATFORMS, CommercialContractError, loadMigrations, MemoryActionLedgerRepository, MemoryAuditCenterRepository, MemoryAuthorizationRepository, MemoryBrandUnitRepository, MemoryCommercialCatalogRepository, MemoryCommercialExtensionsRepository, MemoryCommercialRepository, MemoryContextSnapshotRepository, MemoryCreativePointRepository, MemoryDataLifecycleRepository, MemoryEntitlementRepository, MemoryGrowthRepository, MemoryMembersRepository, MemoryModelUsageRepository, MemoryObjectOrphanRepository, MemoryOperationsRepository, MemoryOperationalAlertsRepository, MemoryPaymentCallbackNonceRepository, MemoryStorageQuotaRepository, MemorySubscriptionRepository, MemoryUsageRepository, PLATFORM_ASSIGNED_ROLES, PostgresActionLedgerRepository, PostgresAssetScanRedriveRepository, PostgresAuditCenterRepository, PostgresAuthorizationRepository, PostgresBillingRepository, PostgresBrandUnitRepository, PostgresBusinessRepository, PostgresCommercialCatalogRepository, PostgresCommercialContractRepository, PostgresCommercialExtensionsRepository, PostgresCommercialRepository, PostgresContextSnapshotRepository, PostgresCreativePointRepository, PostgresDataLifecycleRepository, PostgresEntitlementRepository, PostgresGrowthRepository, PostgresMembersRepository, PostgresModelUsageRepository, PostgresObjectOrphanRepository, PostgresOperationsRepository, PostgresOperationalAlertsRepository, PostgresOpsDataRepository, PostgresOutboxRepository, PostgresPaymentCallbackNonceRepository, PostgresRuleRepository, PostgresServiceFulfillmentRepository, PostgresStorageQuotaRepository, PostgresSubscriptionRepository, PostgresUsageRepository, MemoryKnowledgeHydrationRepository, PostgresKnowledgeHydrationRepository, MemoryAssetPromotionCleanupRepository, PostgresAssetPromotionCleanupRepository, runMigrations, withWorkspaceTransaction, type ActionKind, type ActionLedgerRepository, type ActionSettlement, type AssetPromotionCleanupBinding, type AssetPromotionCleanupRepository, type AssetPromotionCleanupTask, type AssetScanRedriveRepository, type AuditCenterRepository, type AuthorizationGrant, type AuthorizationRepository, type BillingCycle, type BrandAccessRole, type BusinessEntityType, type CommercialCatalogRepository, type CommercialCatalogSkuSnapshot, type CommercialPlatform, type CommercialExtensionsRepository, type ContextSnapshotRepository, type CreativePointRepository, type DataDeletionScope, type DataLifecycleRepository, type EntitlementKind, type EntitlementRepository, type GrowthRepository, type MemberRole, type MemberStatus, type MembersRepository, type ModelUsageRepository, type ModelUsageSettlementDecision, type ObjectOrphanRepository, type OperationsRepository, type OperationalAlert, type OperationalAlertsRepository, type PaymentCallbackNonceRepository, type PersistedRuleAudit, type PersistedRuleVersion, type PlatformAssignedRole, type PlatformRoleAssignment, type ServiceFulfillmentRepository, type SqlPool, type StorageQuotaRepository, type SubscriptionRepository, type UsageRepository, type KnowledgeHydrationRepository } from '../../../packages/persistence/src/index.js'
 import type { OutboxEvent, OutboxRepository } from '../../../packages/persistence/src/repository.js'
 import { ServiceFulfillmentRepositoryError, type ServiceFulfillmentEventRecord } from '../../../packages/persistence/src/service-fulfillment-repository.js'
 import type { SqlClient } from '../../../packages/persistence/src/repository.js'
@@ -2743,6 +2744,97 @@ const commercialAccessService = new CommercialAccessService({
   },
   next_actions: () => ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
 })
+
+function commercialSkuBlockers(snapshot: CommercialCatalogSkuSnapshot): string[] {
+  const blockers = snapshot.payload.blockers
+  return Array.isArray(blockers) && blockers.every(item => typeof item === 'string') ? blockers : []
+}
+
+function commercialPaymentProvider(): string {
+  const provider = process.env.COMMERCIAL_PAYMENT_PROVIDER?.trim()
+  if (!provider || !/^[a-z][a-z0-9_-]{1,63}$/u.test(provider)) {
+    throw new DomainError('COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE', 'V2 商业订单支付渠道尚未配置', 503)
+  }
+  if (isProduction() && provider === 'sandbox') {
+    throw new DomainError('COMMERCIAL_PAYMENT_PROVIDER_UNAVAILABLE', '生产环境不能使用 sandbox 支付渠道', 503)
+  }
+  return provider
+}
+
+function commercialOrderView(order: Awaited<ReturnType<PostgresCommercialContractRepository['createOrder']>>, skuCode: string, accessRevision: number | null = null) {
+  return {
+    order_id: order.id,
+    workspace_id: order.workspaceId,
+    sku_code: skuCode,
+    sku_version_id: order.skuVersionId,
+    status: order.status,
+    amount_fen: order.amountFen,
+    currency: order.currency,
+    payment_provider: order.paymentProvider,
+    access_revision: accessRevision,
+    created_at: order.createdAt,
+    paid_at: order.paidAt,
+  }
+}
+
+const commercialPurchaseService = new CommercialPurchaseService({
+  async resolveApprovedExecutableSku({ sku_code }) {
+    await persistenceReady
+    if (!persistence.commercialCatalog) return null
+    try {
+      const snapshot = await persistence.commercialCatalog.resolveApprovedExecutableSku(sku_code, { includePrivate: false, capabilities: [] })
+      if (snapshot.kind === 'onboarding' || snapshot.lifecycle !== 'approved' || snapshot.executable !== true || snapshot.effectiveAt === null) return null
+      return {
+        code: snapshot.code,
+        kind: snapshot.kind,
+        version_id: snapshot.versionId,
+        lifecycle: snapshot.lifecycle,
+        executable: snapshot.executable,
+        effective_at: snapshot.effectiveAt,
+        blockers: commercialSkuBlockers(snapshot),
+        server_snapshot_ref: `${snapshot.versionId}:${snapshot.checksum}`,
+        server_snapshot: snapshot,
+      }
+    } catch {
+      return null
+    }
+  },
+}, {
+  async createFromServerSnapshot(input) {
+    await persistenceReady
+    if (!persistence.commercialContracts || !isObject(input.server_snapshot)) throw new CommercialPurchaseError('COMMERCIAL_PURCHASE_UNAVAILABLE', 'commercial order repository or resolved snapshot is unavailable')
+    const snapshot = input.server_snapshot as unknown as CommercialCatalogSkuSnapshot
+    if (`${snapshot.versionId}:${snapshot.checksum}` !== input.server_snapshot_ref) throw new CommercialPurchaseError('COMMERCIAL_PURCHASE_UNAVAILABLE', 'resolved commercial snapshot reference mismatch')
+    const order = await persistence.commercialContracts.createOrder({
+      workspaceId: input.workspace_id,
+      sku: snapshot,
+      paymentProvider: commercialPaymentProvider(),
+      createdByActorId: input.actor_id,
+      idempotencyKey: input.idempotency_key,
+      reason: input.reason,
+    })
+    return commercialOrderView(order, snapshot.code)
+  },
+  async getPaymentStatus(input) {
+    await persistenceReady
+    if (!persistence.commercialContracts) return null
+    const status = await persistence.commercialContracts.getPaymentStatus(input.workspace_id, input.order_id)
+    return status ? commercialOrderView(status.order, status.skuCode, status.accessRevision) : null
+  },
+})
+
+function rethrowCommercialPurchaseError(error: unknown): never {
+  if (error instanceof DomainError) throw error
+  if (error instanceof CommercialPurchaseError) {
+    const status = error.code === 'COMMERCIAL_ORDER_NOT_FOUND' ? 404 : error.code === 'COMMERCIAL_PURCHASE_KIND_MISMATCH' ? 409 : 503
+    throw new DomainError(error.code, error.message, status)
+  }
+  if (error instanceof CommercialContractError) {
+    const status = error.code === 'COMMERCIAL_ORDER_NOT_FOUND' ? 404 : error.code === 'COMMERCIAL_CATALOG_UNAVAILABLE' || error.code === 'COMMERCIAL_POLICY_UNRESOLVED' ? 503 : 409
+    throw new DomainError(error.code, error.message, status)
+  }
+  throw error
+}
 
 function commercialDecisionDetails(req: IncomingMessage, decision: CommercialAccessDecision) {
   const id = requestId(req)
