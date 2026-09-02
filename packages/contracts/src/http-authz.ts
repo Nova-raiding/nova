@@ -45,7 +45,7 @@ export const HTTP_OPERATION_POLICIES = [
   identity('GET', '/v1/catalog/categories', 'catalog.categories'),
   identity('GET', '/v1/rules', 'rule.list'),
   identity('GET', '/v1/rules/audit', 'ops.rules.workspace.audit'),
-  identity('POST', '/v1/rules/{packId}/versions', 'knowledge.rule.create'),
+  identity('POST', '/v1/rules/{packId}/versions', 'rule.publish'),
   identity('POST', '/v1/rules/{packId}/versions/{version}/status', 'rule.status'),
   identity('GET', '/v1/brand-profile', 'brand.get'),
   identity('PUT', '/v1/brand-profile', 'brand.upsert'),
