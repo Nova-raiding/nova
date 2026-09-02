@@ -26,6 +26,23 @@ describe('PostgresObjectOrphanRepository', () => {
     expect(claim).not.toMatch(/RETURNING id,/u)
   })
 
+  it('resets next_attempt_at when a duplicate orphan is re-enqueued', async () => {
+    const statements: string[] = []
+    const pool: SqlPool = { connect: async () => ({
+      async query<Row>(sql: string) {
+        statements.push(sql)
+        return { rows: sql.includes('INSERT INTO object_storage_orphans') ? [{ id: 'orphan_1', workspaceId: 'ws_1', objectKey: 'clean/ws_1/asset.png', state: 'pending', attempts: 2, nextAttemptAt: '2026-09-02T00:00:00.000Z' }] as Row[] : [] }
+      },
+      release() {},
+    }) }
+    const repository = new PostgresObjectOrphanRepository(pool)
+
+    await expect(repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/asset.png', reason: 'new cleanup signal', lastError: 'retry now' })).resolves.toMatchObject({ id: 'orphan_1', state: 'pending' })
+    const enqueue = statements.find(sql => sql.includes('INSERT INTO object_storage_orphans'))
+    expect(enqueue).toContain("state='pending'")
+    expect(enqueue).toContain('next_attempt_at=now()')
+  })
+
   postgresIt('serializes claims, fences expired workers, and preserves workspace isolation', async () => {
     const base = new URL(databaseUrl!)
     const databaseName = `orphan_149_${randomUUID().replaceAll('-', '')}`
@@ -72,6 +89,22 @@ describe('PostgresObjectOrphanRepository', () => {
       await expect(repositoryA.markCleaned({ workspaceId: workspaceA, id: queued.id, leaseToken: first.leaseToken })).rejects.toThrow('ORPHAN_LEASE_LOST')
       await expect(repositoryB.markCleaned({ workspaceId: workspaceA, id: queued.id, leaseToken: takeover[0]!.leaseToken })).resolves.toBeUndefined()
       expect(await repositoryB.listPending(workspaceA)).toEqual([])
+
+      const delayed = await repositoryA.enqueue({ workspaceId: workspaceA, objectKey: `clean/${workspaceA}/asset/delayed.png`, reason: 'retry later' })
+      const delayedClaim = await repositoryA.claimPending(workspaceA, { now: delayed.nextAttemptAt, leaseMs: 1_000 })
+      const delayedLease = delayedClaim.find(row => row.id === delayed.id)?.leaseToken
+      if (!delayedLease) throw new Error('expected a delayed lease token')
+      await repositoryA.markRetry({
+        workspaceId: workspaceA,
+        id: delayed.id,
+        leaseToken: delayedLease,
+        error: 'manual review first',
+        nextAttemptAt: '2026-09-03T00:00:00.000Z',
+        manualAttention: true,
+      })
+      const requeued = await repositoryA.enqueue({ workspaceId: workspaceA, objectKey: `clean/${workspaceA}/asset/delayed.png`, reason: 'fresh cleanup event', lastError: 'retry now' })
+      expect(requeued).toMatchObject({ id: delayed.id, state: 'pending' })
+      expect(await repositoryA.claimPending(workspaceA, { now: requeued.nextAttemptAt, leaseMs: 1_000 })).toContainEqual(expect.objectContaining({ id: delayed.id }))
 
       await repositoryA.enqueue({ workspaceId: workspaceB, objectKey: `clean/${workspaceB}/asset/source.png`, reason: 'other workspace' })
       expect(await repositoryA.listPending(workspaceA)).toEqual([])

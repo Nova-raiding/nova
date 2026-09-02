@@ -44,6 +44,25 @@ describe('MemoryObjectOrphanRepository', () => {
     expect(recovered.find(row => row.id === ready.id)).toMatchObject({ id: ready.id, attempts: 2, lastError: 'new worker' })
   })
 
+  it('re-enqueues a delayed or manual-attention orphan for immediate retry', async () => {
+    const repository = new MemoryObjectOrphanRepository()
+    const queued = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'stuck', reason: 'initial failure', lastError: 'first timeout' })
+    const claimed = await repository.claimPending('ws_1', { now: queued.nextAttemptAt, leaseMs: 10_000 })
+    await repository.markRetry({
+      workspaceId: 'ws_1',
+      id: queued.id,
+      leaseToken: claimed[0]!.leaseToken,
+      error: 'needs review',
+      nextAttemptAt: '2026-09-03T00:00:00.000Z',
+      manualAttention: true,
+    })
+
+    const replay = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'stuck', reason: 'new cleanup signal', lastError: 'retry now' })
+    expect(replay).toMatchObject({ id: queued.id, state: 'pending', attempts: 3, lastError: 'retry now' })
+    expect(Date.parse(replay.nextAttemptAt)).toBeGreaterThanOrEqual(Date.parse(replay.updatedAt) - 1_000)
+    expect(await repository.claimPending('ws_1', { now: replay.nextAttemptAt, leaseMs: 10_000 })).toHaveLength(1)
+  })
+
   it('does not cross workspace boundaries and validates claim options', async () => {
     const repository = new MemoryObjectOrphanRepository()
     await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'a', reason: 'test' })
