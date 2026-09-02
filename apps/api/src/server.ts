@@ -5658,6 +5658,10 @@ export function customerDataMethodForHttp(method: string | undefined, path: stri
   if (method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/authorize$/u.test(path)) return 'platform.connect'
   if (method === 'POST' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)\/sync$/u.test(path)) return 'catalog.sync'
   if (method === 'DELETE' && /^\/v1\/platform-accounts\/(jd|taobao|tmall|pinduoduo|xiaohongshu|douyin)$/u.test(path)) return 'platform.revoke'
+  // Publish confirmation is a distinct high-risk MCP operation. Keep the
+  // temporary customer-data grant bound to that exact policy rather than
+  // widening it to the generic product-update boundary.
+  if (method === 'POST' && path === '/v1/publish-jobs') return 'publish.confirm'
   const customerPath = /^\/v1\/(?:products|assets|tasks|content-versions|content|brand-profile|knowledge|sync-jobs|generation-jobs|image-generation-jobs|publish-jobs|delivery-readiness|canonical)(?:\/|$)/u.test(path)
   if (!customerPath) return undefined
   return method === 'GET' ? 'catalog.search' : 'catalog.product.update'

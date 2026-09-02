@@ -648,7 +648,7 @@ describe('API application wiring', () => {
   it('uses the same customer-data grant boundary for HTTP and MCP transports', () => {
     expect(customerDataMethodForHttp('GET', '/v1/products')).toBe('catalog.search')
     expect(customerDataMethodForHttp('GET', '/v1/assets/a1/products')).toBe('catalog.search')
-    expect(customerDataMethodForHttp('POST', '/v1/publish-jobs')).toBe('catalog.product.update')
+    expect(customerDataMethodForHttp('POST', '/v1/publish-jobs')).toBe('publish.confirm')
     expect(customerDataMethodForHttp('GET', '/v1/platform-accounts')).toBe('platform.store.list')
     expect(customerDataMethodForHttp('POST', '/v1/platform-accounts/taobao/authorize')).toBe('platform.connect')
     expect(customerDataMethodForHttp('POST', '/v1/platform-accounts/taobao/sync')).toBe('catalog.sync')
