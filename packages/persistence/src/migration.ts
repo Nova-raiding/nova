@@ -434,6 +434,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const objectStorageOrphanLeases = await readFile(new URL('./migrations/149_object_storage_orphan_leases.sql', import.meta.url), 'utf8')
   const repairLegacyCreativePointAllocations = await readFile(new URL('./migrations/150_repair_legacy_creative_point_allocations.sql', import.meta.url), 'utf8')
   const repairLegacyCreativePointAllocationConstraint = await readFile(new URL('./migrations/151_repair_legacy_creative_point_allocation_constraint.sql', import.meta.url), 'utf8')
+  const authorizationGrantScopeIntegrity = await readFile(new URL('./migrations/152_authorization_grant_scope_integrity.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -586,6 +587,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 149, name: 'object_storage_orphan_leases', sql: objectStorageOrphanLeases },
     { version: 150, name: 'repair_legacy_creative_point_allocations', sql: repairLegacyCreativePointAllocations },
     { version: 151, name: 'repair_legacy_creative_point_allocation_constraint', sql: repairLegacyCreativePointAllocationConstraint },
+    { version: 152, name: 'authorization_grant_scope_integrity', sql: authorizationGrantScopeIntegrity },
   ]
 }
 
