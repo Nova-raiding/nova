@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
+import { assertRelayEvidence } from './relay-evidence.mjs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +14,22 @@ const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
 const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
 process.env.MERCHANT_ARTIFACT_DIR = TEST_ARTIFACT_DIR
 afterAll(async () => { await rm(TEST_ARTIFACT_DIR, { recursive: true, force: true }) })
+
+describe('relay evidence contract', () => {
+  it('reports only missing cost when provider usage is present but cost is null', () => {
+    expect(() => assertRelayEvidence('content.generate', {
+      execution: { simulated: false, providerExecuted: true, providerRequestId: 'relay-req-1', usage: { total_tokens: 12 }, cost_cny: null },
+    }, { environment: 'staging', fixtureFallback: false })).toThrowError(expect.objectContaining({
+      code: 'MODEL_RELAY_EVIDENCE_REQUIRED', details: { operation_status: 'blocked', missing: ['cost_cny'] },
+    }))
+  })
+
+  it('accepts a complete non-fixture provider evidence record', () => {
+    expect(() => assertRelayEvidence('content.generate', {
+      execution: { simulated: false, providerExecuted: true, providerRequestId: 'relay-req-1', usage: { total_tokens: 12 }, cost_cny: 0 },
+    }, { environment: 'production', fixtureFallback: false })).not.toThrow()
+  })
+})
 
 const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.model-usage.reconciliation.run',
