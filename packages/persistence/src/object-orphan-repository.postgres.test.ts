@@ -3,11 +3,29 @@ import { describe, expect, it } from 'vitest'
 import { Pool } from 'pg'
 import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresObjectOrphanRepository } from './object-orphan-repository.js'
+import type { SqlPool } from './repository.js'
 
 const databaseUrl = process.env.OBJECT_ORPHAN_DATABASE_URL ?? process.env.PERSISTENCE_RELEASE_DATABASE_URL
 const postgresIt = databaseUrl ? it : it.skip
 
 describe('PostgresObjectOrphanRepository', () => {
+  it('qualifies the target projection when claiming through an UPDATE FROM CTE', async () => {
+    const statements: string[] = []
+    const pool: SqlPool = { connect: async () => ({
+      async query<Row>(sql: string) {
+        statements.push(sql)
+        return { rows: sql.includes('UPDATE object_storage_orphans AS orphan') ? [{ id: 'orphan_1' }] as Row[] : [] }
+      },
+      release() {},
+    }) }
+    const repository = new PostgresObjectOrphanRepository(pool)
+
+    await expect(repository.claimPending('ws_1')).resolves.toEqual([{ id: 'orphan_1' }])
+    const claim = statements.find(sql => sql.includes('UPDATE object_storage_orphans AS orphan'))
+    expect(claim).toContain('RETURNING orphan.id, orphan.workspace_id')
+    expect(claim).not.toMatch(/RETURNING id,/u)
+  })
+
   postgresIt('serializes claims, fences expired workers, and preserves workspace isolation', async () => {
     const base = new URL(databaseUrl!)
     const databaseName = `orphan_149_${randomUUID().replaceAll('-', '')}`
