@@ -144,6 +144,7 @@ jobs:
           packages/persistence/src/migration-153.test.ts
           packages/persistence/src/migration-154.test.ts
           packages/persistence/src/creative-point-security-release.postgres.test.ts
+          tests/commercial-zero-side-effect-release.postgres.test.ts
           packages/persistence/src/storage-quota-repository.postgres.test.ts
           packages/persistence/src/platform-media-spec-repository.test.ts
           packages/persistence/src/mapping-preflight-approval-repository.test.ts
