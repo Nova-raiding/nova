@@ -162,8 +162,19 @@ export function authorizationScopeHash(scope: Record<string, unknown>): string {
 const requireText = (value: string, min: number, max: number) => {
   if (value !== value.trim() || value.length < min || value.length > max || /[\u0000-\u001f\u007f]/u.test(value)) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
 }
+const isSafeAuthorizationIdentifier = (value: unknown): value is string => typeof value === 'string'
+  && value.length > 0
+  && value === value.trim()
+  && !/[\u0000-\u001f\u007f]/u.test(value)
 const requireExpectedRevision = (value: number) => {
   if (!Number.isSafeInteger(value) || value < 0) throw new AuthorizationRepositoryError('AUTHORIZATION_REVISION_CONFLICT')
+}
+const resourceScopeContainsResourceId = (scope: Record<string, unknown>, resourceId: string): boolean => {
+  if (!isSafeAuthorizationIdentifier(resourceId)) return false
+  const idSets = Object.entries(scope)
+    .filter(([key, value]) => key.endsWith('_ids') && Array.isArray(value))
+    .map(([, value]) => value as unknown[])
+  return idSets.length > 0 && idSets.some(ids => ids.every(id => isSafeAuthorizationIdentifier(id)) && ids.includes(resourceId))
 }
 const normalizeGrant = (input: IssueAuthorizationGrantInput, issuedAt: string) => {
   requireExpectedRevision(input.expectedAuthorizationRevision)
@@ -252,7 +263,7 @@ export class MemoryAuthorizationRepository implements AuthorizationRepository {
       // useCount === maxUses is valid here: maxUses was enforced by
       // consumeGrant, and this reservation represents that already-consumed
       // queue admission.
-      if (!grant || grant.subjectIdentityId !== input.subjectIdentityId || grant.workspaceId !== input.workspaceId || grant.scopeHash !== input.scopeHash || !grant.capabilities.includes(input.capability) || grant.revokedAt || grant.revision !== input.expectedGrantRevision || grant.authorizationRevision !== input.expectedAuthorizationRevision || grant.useCount < 1) return undefined
+      if (!grant || grant.subjectIdentityId !== input.subjectIdentityId || grant.workspaceId !== input.workspaceId || grant.scopeHash !== input.scopeHash || !resourceScopeContainsResourceId(grant.resourceScope, input.resourceId) || !grant.capabilities.includes(input.capability) || grant.revokedAt || grant.revision !== input.expectedGrantRevision || grant.authorizationRevision !== input.expectedAuthorizationRevision || grant.useCount < 1) return undefined
       const at = input.at ?? this.clock().toISOString()
       if (Date.parse(grant.issuedAt) > Date.parse(at) || Date.parse(grant.expiresAt) <= Date.parse(at)) return undefined
       grantRevision = grant.revision
@@ -330,7 +341,7 @@ export class PostgresAuthorizationRepository implements AuthorizationRepository 
       // The enqueue transaction must have consumed the grant before this
       // execution reservation can be created.  Do not re-check maxUses here:
       // a consumed maxUses=1 grant is the expected legal case.
-      if (input.grantId !== undefined && (!grant || grant.workspaceId !== input.workspaceId || !grant.capabilities.includes(input.capability) || grant.scopeHash !== input.scopeHash || grant.revokedAt || Number(grant.revision) !== input.expectedGrantRevision || Number(grant.authorizationRevision) !== input.expectedAuthorizationRevision || Number(grant.useCount) < 1 || Date.parse(String(grant.issuedAt)) > Date.parse(at) || Date.parse(String(grant.expiresAt)) <= Date.parse(at))) return undefined
+      if (input.grantId !== undefined && (!grant || grant.workspaceId !== input.workspaceId || !resourceScopeContainsResourceId(grant.resourceScope, input.resourceId) || !grant.capabilities.includes(input.capability) || grant.scopeHash !== input.scopeHash || grant.revokedAt || Number(grant.revision) !== input.expectedGrantRevision || Number(grant.authorizationRevision) !== input.expectedAuthorizationRevision || Number(grant.useCount) < 1 || Date.parse(String(grant.issuedAt)) > Date.parse(at) || Date.parse(String(grant.expiresAt)) <= Date.parse(at))) return undefined
       const grantRevision = grant?.revision
       const values = [input.reservationId, input.eventId, input.decisionId, input.subjectIdentityId, input.workspaceId, input.capability, input.resourceId, input.scopeHash, input.grantId ?? null, authorizationRevision, grantRevision ?? null, at]
       const inserted = (await client.query<AuthorizationExecutionReservationRow>(`INSERT INTO authorization_execution_reservations (reservation_id,event_id,decision_id,subject_identity_id,workspace_id,capability,resource_id,scope_hash,grant_id,authorization_revision,grant_revision,reserved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING RETURNING ${authorizationExecutionReservationProjection}`, values)).rows[0]

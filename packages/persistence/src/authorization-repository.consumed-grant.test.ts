@@ -82,7 +82,7 @@ describe('authorization execution reservation and consumed grants', () => {
         if (/^(BEGIN|COMMIT|ROLLBACK)/u.test(text) || text.includes("set_config('app.platform_scope'")) return { rows: [] as Row[] }
         if (text.includes('FROM authorization_execution_reservations')) return { rows: [] as Row[] }
         if (text.includes('FROM ops_access_grants') && text.includes('FOR UPDATE')) return {
-          rows: [{ id: grantId, subjectIdentityId, workspaceId, capabilities: [capability], scopeHash, revokedAt: null, revision: 2, authorizationRevision: 2, useCount: 1, maxUses: 1, issuedAt: at, expiresAt: '2026-09-01T10:05:00.000Z' }] as Row[],
+          rows: [{ id: grantId, subjectIdentityId, workspaceId, capabilities: [capability], resourceScope: scope, scopeHash, revokedAt: null, revision: 2, authorizationRevision: 2, useCount: 1, maxUses: 1, issuedAt: at, expiresAt: '2026-09-01T10:05:00.000Z' }] as Row[],
         }
         if (text.includes('FROM authorization_revisions')) return { rows: [{ revision: 2 }] as Row[] }
         if (text.startsWith('INSERT INTO authorization_execution_reservations')) return {

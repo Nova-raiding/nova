@@ -98,6 +98,21 @@ describe('durable authorization repository', () => {
     await expect(repo.reserveExecution({ ...input, reservationId: 'reservation-cas-2', eventId: 'event-cas-2' })).resolves.toBeUndefined()
   })
 
+  it.each([
+    ['workspace', { workspace_ids: ['ws-a'] }, 'ws-b'],
+    ['brand', { brand_ids: ['brand-a'] }, 'brand-b'],
+    ['account', { account_ids: ['account-a'] }, 'account-b'],
+  ] as const)('rejects a consumed grant reservation for a different %s resource ID', async (_scopeKind, resourceScope, foreignResourceId) => {
+    const repo = repository()
+    const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.update'], resourceScope, reason: 'execute scoped operation', ticketRef: `SCOPE-${_scopeKind}`, issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 1 })
+    const consumed = await repo.consumeGrant({ id: grant.id, subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'ops-lead', reason: 'admit scoped operation' })
+    const input = { reservationId: `reservation-${_scopeKind}-foreign`, eventId: `event-${_scopeKind}-foreign`, decisionId: `decision-${_scopeKind}-foreign`, subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: foreignResourceId, scopeHash: grant.scopeHash, expectedAuthorizationRevision: consumed!.authorizationRevision, grantId: grant.id, expectedGrantRevision: consumed!.revision }
+
+    await expect(repo.reserveExecution(input)).resolves.toBeUndefined()
+    const validResourceId = (Object.values(resourceScope)[0] as readonly string[])[0]!
+    await expect(repo.reserveExecution({ ...input, reservationId: `reservation-${_scopeKind}-valid`, eventId: `event-${_scopeKind}-valid`, resourceId: validResourceId })).resolves.toMatchObject({ grantRevision: consumed!.revision })
+  })
+
   it('makes revoke win when it advances the authorization revision before reservation', async () => {
     const repo = repository()
     const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.update'], resourceScope: { task_ids: ['task-cas-2'] }, reason: 'execute approved task', ticketRef: 'CAS-2', issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 1 })
