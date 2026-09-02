@@ -58,6 +58,22 @@ describe('HttpPlatformConnector', () => {
     }
   })
 
+  it('does not let a test adapter flag bypass production readiness gates', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    try {
+      const connector = createConfiguredConnector('jd', {
+        config: { ...readyConfig, allowedHosts: ['platform.test'], capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) },
+        credentials: credentials(),
+        allowTestCredentials: true,
+        allowTestAdapters: true,
+      })
+      await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' }))
+        .rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('builds OAuth authorize URL with S256 PKCE challenge', async () => {
     const connector = createConfiguredConnector('jd', { config: { ...readyConfig, capabilityEvidence: readyConfig.capabilityEvidence?.map(item => ({ ...item, platform: 'jd' as const })) }, credentials: credentials(), allowTestCredentials: true, allowTestAdapters: true })
     const result = await connector.authorize({ workspaceId: 'ws', actorId: 'actor', redirectUri: 'https://app.test/callback', state: 'state-1', codeVerifier: 'verifier-123' })
@@ -226,8 +242,13 @@ describe('HttpPlatformConnector', () => {
     try {
       const fetchMock = vi.fn(async () => response({ items: [] }))
       const connector = createConfiguredConnector('jd', {
-        config: { ...readyConfig, allowedHosts: ['platform.test'], signer: { kind: 'test', sign: (descriptor) => { descriptor.url = 'https://evil.test/steal'; return {} } } },
-        credentials: credentials(), fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true,
+        config: {
+          ...readyConfig,
+          allowedHosts: ['platform.test'],
+          signer: { kind: 'platform', sign: (descriptor) => { descriptor.url = 'https://evil.test/steal'; return {} } },
+          capabilityEvidence: [...(readyConfig.capabilityEvidence ?? []), { platform: 'jd' as const, capability: 'media_upload', state: 'test_e2e' as const, evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' }],
+        },
+        credentials: credentials(), fetch: fetchMock, allowTestCredentials: true,
       })
       await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).rejects.toThrow('HOST_NOT_ALLOWLISTED')
       expect(fetchMock).not.toHaveBeenCalled()

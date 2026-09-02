@@ -84,6 +84,10 @@ export function validateConnectorReadiness(
   config: HttpConnectorConfig | undefined,
   options: { allowTestAdapters?: boolean } = {},
 ): ConnectorReadiness {
+  // This is a test seam, not a deployment switch. Keeping the environment
+  // check here prevents a production caller from accidentally bypassing the
+  // signer, mapping, and capability-evidence gates by passing the flag.
+  const allowTestAdapters = options.allowTestAdapters === true && process.env.NODE_ENV === 'test'
   const reasons: ConnectorReadinessReason[] = []
   if (!config) {
     return { platform, ready: false, reasons: ['CONFIG_MISSING'], verifiedCapabilities: [] }
@@ -94,7 +98,7 @@ export function validateConnectorReadiness(
   const apiPaths = [config.api.syncPath, config.api.createPath, config.api.updatePath, config.api.queryPath]
   if (apiPaths.some(path => !path?.trim())) reasons.push('API_PATH_MISSING')
   else if (apiPaths.some(path => !validRelativePath(path))) reasons.push('API_PATH_MUST_BE_RELATIVE')
-  if (!options.allowTestAdapters && isSecureEnvironment()) {
+  if (!allowTestAdapters && isSecureEnvironment()) {
     const endpoints = [config.oauth.authorizeUrl, config.oauth.tokenUrl, config.oauth.refreshUrl, config.oauth.revokeUrl, config.api.baseUrl]
     const allowedHosts = config.allowedHosts ?? officialHostsFor(platform)
     for (const endpoint of endpoints) {
@@ -107,9 +111,9 @@ export function validateConnectorReadiness(
   // Test adapters intentionally provide only transport fixtures. They still
   // need valid client/endpoint shape, but do not pretend to have production
   // signer, mapping, or platform evidence.
-  if (options.allowTestAdapters) return { platform, ready: reasons.length === 0, reasons, verifiedCapabilities: [] }
+  if (allowTestAdapters) return { platform, ready: reasons.length === 0, reasons, verifiedCapabilities: [] }
   if (!config.signer) reasons.push('SIGNER_MISSING')
-  else if (config.signer.kind !== 'platform' && !options.allowTestAdapters) reasons.push('SIGNER_NOT_ATTESTED')
+  else if (config.signer.kind !== 'platform') reasons.push('SIGNER_NOT_ATTESTED')
   if (!config.mapProducts) reasons.push('PRODUCT_MAPPING_MISSING')
   if (!config.mapWriteReceipt) reasons.push('WRITE_RECEIPT_MAPPING_MISSING')
   if (!config.mapWriteStatus) reasons.push('WRITE_STATUS_MAPPING_MISSING')
@@ -119,7 +123,6 @@ export function validateConnectorReadiness(
   const verifiedCapabilities: CapabilityName[] = []
   for (const capability of REQUIRED_CONNECTOR_CAPABILITIES) {
     const item = evidenceFor(config.capabilityEvidence, platform, capability)
-    if (options.allowTestAdapters) continue
     if (!item) {
       reasons.push('CAPABILITY_EVIDENCE_MISSING')
       continue
