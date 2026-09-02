@@ -29,6 +29,7 @@ export function AuditDetailDrawer({ selected, detail, loading, error, onRetry, o
     keyboard
     autoFocus
     aria-label="审计证据详情"
+    aria-busy={loading || undefined}
     styles={{ body: { overflowWrap: 'anywhere' } }}
   >
     {error ? <div ref={errorRef} role="alert" tabIndex={-1} aria-labelledby="audit-detail-error-title"
@@ -36,7 +37,7 @@ export function AuditDetailDrawer({ selected, detail, loading, error, onRetry, o
       <Alert type="error" showIcon message={<span id="audit-detail-error-title">详情加载失败</span>} description={error}
         action={onRetry ? <Button onClick={onRetry} style={{ minHeight: 44 }}>重试</Button> : undefined} />
     </div> : null}
-    {loading ? <Skeleton active aria-label="正在加载审计详情" /> : detail ? <>
+    {loading ? <div role="status" aria-live="polite" aria-label="正在加载审计详情"><Skeleton active /></div> : detail ? <>
       <Tag color="blue" style={{ marginBottom: 16 }}>服务端已脱敏</Tag>
       <Descriptions bordered size="small" column={1}>
         <Descriptions.Item label="来源"><Tag>{detail.source}</Tag></Descriptions.Item>
