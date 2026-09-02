@@ -165,6 +165,53 @@ describe('authorization policy registry', () => {
     })
   })
 
+  it.each([
+    ['workspace', 'ws_1', 'ws_2'],
+    ['brand', 'brand_1', 'brand_2'],
+    ['account', 'account_1', 'account_2'],
+  ] as const)('rejects a same-type resource ID outside the granted exact scope: %s', (scopeType, grantedId, requestedId) => {
+    const policy = {
+      ...getMcpMethodPolicy(scopeType === 'workspace' ? 'catalog.search' : scopeType === 'brand' ? 'task.timeline' : 'platform.revoke')!,
+      scope: scopeType,
+    }
+    expect(evaluateAuthorizationDecision({
+      decisionId: `cross-${scopeType}`,
+      policy,
+      capabilities: [policy.capability],
+      scopes: [{ type: scopeType, ids: [grantedId] }],
+      resourceScope: { type: scopeType, id: requestedId },
+      workbench: 'workspace',
+      mode: 'enforce',
+    })).toMatchObject({
+      authorized: false,
+      allowed: false,
+      reason_code: 'AUTHZ_SCOPE_MISMATCH',
+    })
+  })
+
+  it('rejects platform resource IDs and non-aggregate platform grants', () => {
+    const policy = getMcpMethodPolicy('ops.users.list')!
+    expect(evaluateAuthorizationDecision({
+      decisionId: 'platform-customer-id',
+      policy,
+      capabilities: [policy.capability],
+      scopes: [{ type: 'platform', ids: ['*'] }],
+      resourceScope: { type: 'platform', id: 'customer_ws_1' },
+      workbench: 'platform',
+      mode: 'enforce',
+    })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+
+    expect(evaluateAuthorizationDecision({
+      decisionId: 'platform-non-aggregate-grant',
+      policy,
+      capabilities: [policy.capability],
+      scopes: [{ type: 'platform', ids: ['customer_ws_1'] }],
+      resourceScope: { type: 'platform', id: '*' },
+      workbench: 'platform',
+      mode: 'enforce',
+    })).toMatchObject({ authorized: false, allowed: false, reason_code: 'AUTHZ_SCOPE_MISMATCH' })
+  })
+
   it('keeps capability and scope in one permission atom and enforces read-only grant limits', () => {
     const readPolicy = getMcpMethodPolicy('catalog.search')!
     expect(evaluatePermissionAtoms({

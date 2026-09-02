@@ -151,8 +151,11 @@ function isSafeAuthorizationIdentifier(value: unknown): value is string {
 function isSafeAuthorizationScope(scope: { type: AuthorizationScopeType; ids: readonly string[] }): boolean {
   if (!['self', 'workspace', 'brand', 'account', 'platform'].includes(scope.type)) return false
   if (scope.ids.length === 0 || scope.ids.some(id => !isSafeAuthorizationIdentifier(id))) return false
+  // A platform grant is only the explicit aggregate. It must never carry a
+  // customer/tenant resource ID that could be mistaken for an exact scope.
+  if (scope.type === 'platform') return scope.ids.length === 1 && scope.ids[0] === '*'
   // A wildcard is an aggregate platform grant, never a tenant/resource grant.
-  return scope.type === 'platform' || !scope.ids.includes('*')
+  return !scope.ids.includes('*')
 }
 
 export function evaluateAuthorizationDecision(input: {
@@ -171,7 +174,9 @@ export function evaluateAuthorizationDecision(input: {
   const resourceScopeValid = input.resourceScope === undefined
     || (['self', 'workspace', 'brand', 'account', 'platform'].includes(input.resourceScope.type)
       && (input.resourceScope.id === undefined || isSafeAuthorizationIdentifier(input.resourceScope.id))
-      && (input.resourceScope.type === 'platform' || input.resourceScope.id !== '*'))
+      && (input.resourceScope.type === 'platform'
+        ? input.resourceScope.id === undefined || input.resourceScope.id === '*'
+        : input.resourceScope.id !== '*'))
   const resourceId = resourceScopeValid ? input.resourceScope?.id : undefined
   const usableScopes = input.scopes.filter(isSafeAuthorizationScope)
   const workbenchMatched = input.policy.scope === 'self'
