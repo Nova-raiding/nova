@@ -25,6 +25,25 @@ describe('object inventory reconciliation', () => {
     expect(report.quota.usedBytes).toBe(12)
   })
 
+  it('fails closed for provider keys containing path separators or control characters', () => {
+    const report = reconcileObjectInventory({
+      workspaceId: 'ws_a',
+      references: [],
+      inventory: [
+        { workspaceId: 'ws_a', storageKey: 'clean/ws_a/asset_1/file\\evil.png', sha256: 'a'.repeat(64), sizeBytes: 1 },
+        { workspaceId: 'ws_a', storageKey: 'clean/ws_a/asset_2/file\u0000.png', sha256: 'b'.repeat(64), sizeBytes: 1 },
+      ],
+    })
+
+    expect(report.status).toBe('attention_required')
+    expect(report.counts.crossWorkspace).toBe(2)
+    expect(report.counts.invalidMetadata).toBe(0)
+    expect(report.findings).toEqual([
+      expect.objectContaining({ code: 'CROSS_WORKSPACE_OBJECT', storageKey: 'clean/ws_a/asset_1/file\\evil.png' }),
+      expect.objectContaining({ code: 'CROSS_WORKSPACE_OBJECT', storageKey: 'clean/ws_a/asset_2/file\u0000.png' }),
+    ])
+  })
+
   it('fails closed for cross-workspace objects and quota overflow', () => {
     const report = reconcileObjectInventory({
       workspaceId: 'ws_a',

@@ -91,7 +91,16 @@ function findingOrder(left: ReconciliationFinding, right: ReconciliationFinding)
 
 function isWorkspaceScopedKey(storageKey: string, workspaceId: string) {
   const parts = storageKey.split('/')
-  return (parts[0] === 'quarantine' || parts[0] === 'clean') && parts[1] === workspaceId && parts.length >= 4 && parts.every(part => part.length > 0 && part !== '.' && part !== '..')
+  return (parts[0] === 'quarantine' || parts[0] === 'clean')
+    && parts[1] === workspaceId
+    && parts.length >= 4
+    // Keep reconciliation's trust boundary identical to the object-storage
+    // adapters. Provider inventories are untrusted input and must not turn
+    // path separators, traversal segments, or control characters into a
+    // seemingly scoped object.
+    && !storageKey.startsWith('/')
+    && !/[\\\u0000-\u001f\u007f\r\n]/u.test(storageKey)
+    && parts.every(part => part.length > 0 && part !== '.' && part !== '..')
 }
 
 const SHA256 = /^[a-f0-9]{64}$/iu
