@@ -8,6 +8,8 @@
 
 > 2026-08-31 Worker 凭证增量：生产 API 改为 `WORKER_API_CREDENTIALS` 角色映射，五类 worker 分别引用独立 Secret key；请求证明覆盖角色、method、target、workspace、body digest、timestamp 与 nonce。release-sim/生产配置/Kubernetes validator 会拒绝共享 key、缺少任一角色或超过两套轮换凭证。完整 release gates 66 个文件通过、1 个跳过（355 项通过、7 项跳过），infra validation、TypeScript、本地双 API 与五类 worker 健康检查通过。该结果不替代真实 Secret Manager 轮换、正式集群和 production canary，生产仍为 NO-GO。
 
+> 2026-09-02 本地 runtime evidence 增量：`tests/local-docker-runtime-contract.test.ts` 新增真实 Compose `docker inspect` 证据，逐一校验 API、replica、UI、Ops UI、ClamAV、Postgres、Redis 与六类 Worker 的运行状态、immutable `sha256` image ID 和 `StartedAt`。该证据可绑定本地运行实例的镜像身份与启动时间，但不替代生产镜像签名、部署 release ID、目标集群和 canary，因此生产继续 NO-GO。
+
 > 2026-08-31 UI 控制面增量：Ops Console 功能开关编辑器已对 canonical 商品链切读值显示前置条件和恢复提示；生产服务端仍强制要求正式 `canonical-cutover-evidence`。Ops Console 61 个测试文件、277 项通过，release gates 57 个文件通过、1 个跳过（324 项通过、6 项跳过）；该增量不解除真实 workspace shadow、回滚、宿主和生产资源证据门禁。
 
 > 2026-08-31 增量：MCP 当前权威基线已更新为 247；OpenAPI `McpRequest.method` 枚举已同步图片审计、计费审计和 durable authorization 方法。历史测试数字仅代表当时工作树，当前结果必须以 Repository `0.1.1`、plugin `0.1.0+codex.20260831125200` 和同一冻结提交重新执行；仓库代码级 gate 通过也不解除真实生产资源、Provider、平台、支付、OIDC 和正式 ChatGPT 宿主证据门禁。

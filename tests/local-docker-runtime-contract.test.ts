@@ -67,6 +67,23 @@ describe("local Docker runtime contract", () => {
     }
   }, 15_000)
 
+  it("records immutable image identity and start-time evidence for every runtime container", () => {
+    const containers = composeContainers()
+    const byService = new Map(containers.map((container) => [container.Service, container]))
+
+    for (const service of expectedServices) {
+      const id = byService.get(service)?.ID
+      expect(id, `${service} must expose a container id`).toMatch(/^[0-9a-f]{12,64}$/u)
+      const evidence = JSON.parse(docker(["inspect", "--format", "{{json .}}", id!])) as {
+        Image?: string
+        State?: { Status?: string; StartedAt?: string }
+      }
+      expect(evidence.Image, `${service} must expose an immutable image id`).toMatch(/^sha256:[0-9a-f]{64}$/u)
+      expect(evidence.State?.Status, `${service} must have runtime state evidence`).toBe("running")
+      expect(Date.parse(evidence.State?.StartedAt ?? ""), `${service} must expose a valid start time`).toBeGreaterThan(0)
+    }
+  }, 15_000)
+
   it("proves worker health checks and heartbeat evidence come from live containers", () => {
     const workerServices = [
       "worker-automation",
