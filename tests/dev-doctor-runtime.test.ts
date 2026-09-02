@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
 
@@ -150,5 +151,25 @@ describe('developer doctor runtime checks', () => {
         'error_recovery_outcome_evidence_missing',
       ],
     })
+  })
+
+  it('pins creative point database security to the release table set', () => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+
+    for (const table of [
+      'creative_point_access_state',
+      'creative_point_adjustments_v2',
+      'creative_point_allocations',
+      'creative_point_grants',
+      'creative_point_ledger_events',
+      'creative_point_operations',
+      'creative_point_provider_receipts_v2',
+      'creative_point_reservations',
+      'creative_point_reversals_v2',
+    ]) expect(source).toContain(`'${table}'`)
+
+    expect(source).toContain("relkind='r'")
+    expect(source).toContain('missingCreativePointForceRls')
+    expect(source).not.toContain('facts.forced_rls === 6')
   })
 })

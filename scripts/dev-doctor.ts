@@ -4,6 +4,18 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
 
+const REQUIRED_CREATIVE_POINT_FORCE_RLS_TABLES = [
+  'creative_point_access_state',
+  'creative_point_adjustments_v2',
+  'creative_point_allocations',
+  'creative_point_grants',
+  'creative_point_ledger_events',
+  'creative_point_operations',
+  'creative_point_provider_receipts_v2',
+  'creative_point_reservations',
+  'creative_point_reversals_v2',
+] as const
+
 type Level = 'pass' | 'warn' | 'fail'
 type Check = { id: string; level: Level; message: string; next?: string }
 
@@ -158,14 +170,28 @@ if (composeReady) {
     'executable_catalog',(SELECT count(*) FROM commercial_catalog_sku_versions WHERE executable),
     'approved_rates',(SELECT count(*) FROM creative_point_rate_card_versions_v2 WHERE lifecycle='approved' AND approval_status='approved' AND executable),
     'point_projections',(SELECT count(*) FROM creative_point_access_state),
-    'forced_rls',(SELECT count(*) FROM pg_class WHERE relname LIKE 'creative_point_%' AND relrowsecurity AND relforcerowsecurity),
+    'forced_rls_tables',COALESCE((SELECT json_agg(relname ORDER BY relname)
+      FROM pg_class
+      WHERE relkind='r'
+        AND relname = ANY(ARRAY['${REQUIRED_CREATIVE_POINT_FORCE_RLS_TABLES.join("','")}']::text[])
+        AND relrowsecurity
+        AND relforcerowsecurity), '[]'::json),
     'app_bypass_rls',(SELECT rolbypassrls FROM pg_roles WHERE rolname='merchant_app')
   )`
   const probe = run('docker', ['compose', '-f', 'infra/local/docker-compose.yml', 'exec', '-T', 'postgres', 'psql', '-U', 'merchant', '-d', 'merchant', '-Atqc', sql])
   try {
-    const facts = JSON.parse(probe.stdout.trim()) as Record<string, number | boolean | null>
+    const facts = JSON.parse(probe.stdout.trim()) as Record<string, number | boolean | null | string[]>
+    const forcedRlsTables = Array.isArray(facts.forced_rls_tables)
+      ? facts.forced_rls_tables.filter((value): value is string => typeof value === 'string')
+      : []
+    const missingCreativePointForceRls = REQUIRED_CREATIVE_POINT_FORCE_RLS_TABLES.filter(table => !forcedRlsTables.includes(table))
     add('commercial:migration_tail', facts.migration_tail === sourceTail ? 'pass' : 'fail', `数据库迁移尾=${String(facts.migration_tail)}, source=${sourceTail}`, '运行不可变前向迁移；禁止删除容器卷或改写 schema_migrations。')
-    add('commercial:database_security', facts.forced_rls === 6 && facts.app_bypass_rls === false ? 'pass' : 'fail', `创意点 FORCE RLS=${String(facts.forced_rls)}/6, merchant_app bypass=${String(facts.app_bypass_rls)}`, '修复 RLS/FORCE 与应用角色；跨租户或 BYPASSRLS 一律阻断发布。')
+    add(
+      'commercial:database_security',
+      missingCreativePointForceRls.length === 0 && facts.app_bypass_rls === false ? 'pass' : 'fail',
+      `创意点 FORCE RLS=${forcedRlsTables.length}/${REQUIRED_CREATIVE_POINT_FORCE_RLS_TABLES.length}, missing=${missingCreativePointForceRls.join(',') || 'none'}, merchant_app bypass=${String(facts.app_bypass_rls)}`,
+      '修复 RLS/FORCE 与应用角色；跨租户或 BYPASSRLS 一律阻断发布。',
+    )
     add('commercial:catalog', Number(facts.catalog_versions) > 0 ? 'pass' : 'fail', `目录版本=${String(facts.catalog_versions)}, executable=${String(facts.executable_catalog)}`)
     const catalogReady = Number(facts.executable_catalog) > 0
     add('commercial:executable_catalog', catalogReady ? 'pass' : production ? 'fail' : 'warn', `已批准可执行目录版本=${String(facts.executable_catalog)}`, '业务/财务批准前目录保持不可执行；禁止用草稿开放收款或业务能力。')
