@@ -18,18 +18,31 @@ function harness(
   balance: CreativePointBalanceProjection,
   rate: ApprovedCreativePointRate = { state: 'approved', quoted_points: 1, rate_card_version: 'rate-v1' },
   trace: { readonly id_factory?: () => string; readonly now?: () => Date } = {},
+  entitlement: 'available' | 'missing' | 'unavailable' = 'available',
 ) {
   const projectCreativePointBalance = vi.fn(async () => balance)
   const resolveApprovedRate = vi.fn(async () => rate)
+  const listV2EntitlementSnapshots = vi.fn(async () => {
+    if (entitlement === 'unavailable') throw new Error('entitlement projection unavailable')
+    if (entitlement === 'missing') return []
+    return [{
+      id: 'entitlement-v2-1', workspaceId: 'workspace-1', subscriptionPeriodId: 'period-1',
+      periodStart: '2026-01-01T00:00:00.000Z', periodEnd: '2027-01-01T00:00:00.000Z', periodStatus: 'active',
+      catalogVersionId: 'catalog-v1', skuCode: 'monthly_basic',
+      resolvedBenefits: [{ code: 'max_brands', quantity: 1 }, { code: 'max_stores', quantity: 5 }],
+      unresolvedBlockers: [], executable: true, checksum: 'a'.repeat(64), createdAt: '2026-01-01T00:00:00.000Z',
+    }]
+  })
   const service = new CommercialAccessService({
     registry,
     registry_version: 'registry-v1',
     balance_projection: { projectCreativePointBalance },
     rate_resolver: { resolveApprovedRate },
+    entitlement_projection: { listV2EntitlementSnapshots },
     next_actions: code => code === ERROR_CODES.CREATIVE_POINTS_EXHAUSTED ? ['billing.status', 'billing.status'] : [],
     ...trace,
   })
-  return { service, projectCreativePointBalance, resolveApprovedRate }
+  return { service, projectCreativePointBalance, resolveApprovedRate, listV2EntitlementSnapshots }
 }
 
 const request = (operation: string) => ({ surface: 'MCP' as const, operation, workspace_id: 'workspace-1' })
@@ -137,6 +150,24 @@ describe('CommercialAccessService E1', () => {
       quoted_points: null, allowed: false, error_code: ERROR_CODES.COMMERCIAL_ACCESS_STALE,
     })
     expect(fresh.resolveApprovedRate).not.toHaveBeenCalled()
+  })
+
+  it('consults V2 entitlement only after creative points pass and fails closed without it', async () => {
+    const zero = harness({ state: 'known', available_points: 0, access_revision: 'r0', freshness: 'fresh' }, undefined, {}, 'unavailable')
+    expect(await decision(zero.service, 'merchant.start')).toMatchObject({ error_code: ERROR_CODES.CREATIVE_POINTS_EXHAUSTED })
+    expect(zero.listV2EntitlementSnapshots).not.toHaveBeenCalled()
+
+    const missing = harness({ state: 'known', available_points: 1, access_revision: 'r1', freshness: 'fresh' }, undefined, {}, 'missing')
+    const missingDecision = await decision(missing.service, 'merchant.start')
+    expect(missing.listV2EntitlementSnapshots).toHaveBeenCalledOnce()
+    expect(missingDecision).toMatchObject({
+      allowed: false, error_code: 'COMMERCIAL_ENTITLEMENT_REQUIRED',
+    })
+
+    const unavailable = harness({ state: 'known', available_points: 1, access_revision: 'r1', freshness: 'fresh' }, undefined, {}, 'unavailable')
+    expect(await decision(unavailable.service, 'merchant.start')).toMatchObject({
+      allowed: false, error_code: 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE',
+    })
   })
 
   it('distinguishes unavailable rate, stale quote, insufficient points, and allowed quote', async () => {

@@ -9,6 +9,10 @@ import {
   type CommercialOperationPolicy,
   type CommercialOperationRef,
 } from '@merchant-marketing/contracts'
+import {
+  ContinuousFeatureEntitlementService,
+  type ContinuousFeatureEntitlementPort,
+} from './continuous-feature-entitlement.js'
 
 export type CreativePointBalanceProjection =
   | {
@@ -66,6 +70,8 @@ export interface CommercialAccessServiceOptions {
   readonly registry_version: string
   readonly balance_projection: CreativePointBalanceProjectionPort
   readonly rate_resolver: ApprovedCreativePointRateResolver
+  /** V2 subscription snapshot authority for every non-recovery merchant feature. */
+  readonly entitlement_projection?: ContinuousFeatureEntitlementPort
   /** Only server-authorized recovery actions may be exposed to clients. */
   readonly next_actions?: (error: CommercialAccessErrorCode) => readonly string[]
   /** Injectable for deterministic tests; production defaults to cryptographic UUIDs. */
@@ -117,6 +123,7 @@ export class CommercialAccessService {
   readonly #registryVersion: string
   readonly #balanceProjection: CreativePointBalanceProjectionPort
   readonly #rateResolver: ApprovedCreativePointRateResolver
+  readonly #continuousEntitlement: ContinuousFeatureEntitlementService | undefined
   readonly #nextActions?: CommercialAccessServiceOptions['next_actions']
   readonly #idFactory: () => string
   readonly #now: () => Date
@@ -127,6 +134,9 @@ export class CommercialAccessService {
     this.#registryVersion = options.registry_version
     this.#balanceProjection = options.balance_projection
     this.#rateResolver = options.rate_resolver
+    this.#continuousEntitlement = options.entitlement_projection
+      ? new ContinuousFeatureEntitlementService({ projection: options.entitlement_projection, now: options.now })
+      : undefined
     this.#nextActions = options.next_actions
     this.#idFactory = options.id_factory ?? randomUUID
     this.#now = options.now ?? (() => new Date())
@@ -232,14 +242,15 @@ export class CommercialAccessService {
           next_actions: normalizeNextActions(this.#nextActions, ERROR_CODES.COMMERCIAL_ACCESS_STALE),
         })
       }
-      return this.#decision(trace, {
+      const candidate = {
         ...knownBase,
         quoted_points: null,
         rate_card_version: null,
         allowed: true,
         error_code: null,
         next_actions: [],
-      })
+      } as const
+      return this.#entitlementDecision(trace, candidate)
     }
 
     let rate: ApprovedCreativePointRate
@@ -285,7 +296,7 @@ export class CommercialAccessService {
         next_actions: normalizeNextActions(this.#nextActions, ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT),
       })
     }
-    return this.#decision(trace, { ...quoteBase, allowed: true, error_code: null, next_actions: [] })
+    return this.#entitlementDecision(trace, { ...quoteBase, allowed: true, error_code: null, next_actions: [] })
   }
 
   #createTrace(): CommercialAccessDecisionTrace {
@@ -298,5 +309,29 @@ export class CommercialAccessService {
 
   #decision(trace: CommercialAccessDecisionTrace, decision: CommercialAccessDecision): CommercialAccessServiceResult {
     return { ...trace, outcome: 'DECISION', decision: assertCommercialAccessDecision(decision) }
+  }
+
+  async #entitlementDecision(
+    trace: CommercialAccessDecisionTrace,
+    candidate: CommercialAccessDecision,
+  ): Promise<CommercialAccessServiceResult> {
+    const entitlement = this.#continuousEntitlement
+      ? await this.#continuousEntitlement.decide({ workspace_id: candidate.workspace_id, decided_at: trace.decided_at })
+      : {
+          allowed: false as const,
+          code: 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE' as const,
+          snapshot_id: null,
+          subscription_period_id: null,
+          catalog_version_id: null,
+          checksum: null,
+          ignored_legacy_sources: [],
+        }
+    if (entitlement.allowed) return this.#decision(trace, candidate)
+    return this.#decision(trace, {
+      ...candidate,
+      allowed: false,
+      error_code: entitlement.code,
+      next_actions: normalizeNextActions(this.#nextActions, entitlement.code),
+    })
   }
 }

@@ -178,13 +178,16 @@ describe('CommercialAccessDecision E1 contract', () => {
     expect(() => assertCommercialAccessDecision({ ...charged, available_points: 5, quoted_points: 5, rate_card_version: 'rate-v1', error_code: ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT })).toThrow('available_points below quoted_points')
   })
 
-  it('registers the five stable errors with explicit HTTP semantics', () => {
+  it('registers the stable commercial access errors with explicit HTTP semantics', () => {
     const expected = [
       [ERROR_CODES.CREATIVE_POINTS_EXHAUSTED, 402],
       [ERROR_CODES.CREATIVE_POINTS_INSUFFICIENT, 402],
       [ERROR_CODES.CREATIVE_POINTS_UNAVAILABLE, 503],
       [ERROR_CODES.RATE_CARD_UNAVAILABLE, 503],
       [ERROR_CODES.COMMERCIAL_ACCESS_STALE, 409],
+      [ERROR_CODES.COMMERCIAL_ENTITLEMENT_UNAVAILABLE, 503],
+      [ERROR_CODES.COMMERCIAL_ENTITLEMENT_REQUIRED, 402],
+      [ERROR_CODES.COMMERCIAL_ENTITLEMENT_AMBIGUOUS, 409],
     ] as const
     for (const [code, status] of expected) {
       expect(isCommercialAccessErrorCode(code)).toBe(true)
