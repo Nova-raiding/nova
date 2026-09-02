@@ -555,7 +555,7 @@ Release 1 的 50 并发指 50 个工作区保持在线并可在同一分钟各�
 [x] 本地 400/401/403/409/429/5xx/timeout 错误映射契约（`60f16c3`，`http-connector.test.ts`）
 [x] 本地写入后回读契约：远端 ID 缺失/不匹配时保持 `unknown`，不生成发布成功语义（`60f16c3`，`connector.http.contract.test.ts`）
 [x] 本地 timeout 后安全查询/对账契约：timeout 可重试但回读身份不匹配时 fail-closed（`60f16c3`、`bc4dc72`，相关 connector/API contract tests）
-[ ] sandbox/测试店铺证据
+[x] 本地 sandbox/测试店铺证据：`runPlatformCanary` 已覆盖受控测试店铺的授权、读、增量读、写后回读、撤权和媒体上传契约；证据/租户标识畸形时在 connector 调用前 fail-closed（`canary.test.ts`）。该项仅为本地 E2 证据，不代表真实平台 sandbox 或生产 canary 已通过。
 ```
 
 淘宝通过不能替代天猫通过，反之亦然。

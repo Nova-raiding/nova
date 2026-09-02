@@ -49,6 +49,30 @@ function evidence(input: PlatformCanaryInput, capability: CapabilityName, state:
   }
 }
 
+function validCanaryText(value: unknown, maxLength: number): value is string {
+  return typeof value === 'string'
+    && value.trim().length > 0
+    && value.trim().length <= maxLength
+    && !/[\u0000-\u001F\u007F]/u.test(value)
+    && !/^(?:SET_|CHANGE_ME|REPLACE_ME|TODO|TBD|<[^>]+>)/iu.test(value.trim())
+}
+
+function validScopeId(value: unknown): value is string {
+  return validCanaryText(value, 256) && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value.trim())
+}
+
+function canaryInputErrors(input: PlatformCanaryInput): string[] {
+  const errors: string[] = []
+  if (!validCanaryText(input.evidenceRef, 512)) errors.push('evidenceRef is invalid')
+  if (!validCanaryText(input.verifiedBy, 128)) errors.push('verifiedBy is invalid')
+  if (!validCanaryText(input.apiVersion, 128)) errors.push('apiVersion is invalid')
+  if (!validCanaryText(input.scope, 512)) errors.push('scope is invalid')
+  if (!validScopeId(input.context.workspaceId)) errors.push('workspaceId is invalid')
+  if (!validScopeId(input.context.accountId)) errors.push('accountId is invalid')
+  if (!validCanaryText(input.expectedRemoteId, 256)) errors.push('expectedRemoteId is invalid')
+  return errors
+}
+
 /**
  * Executes the real connector boundary against a controlled test store. This
  * runner never invents production_canary evidence: every write/revoke check
@@ -63,6 +87,16 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
       ? input.promoteToProductionCanary === true ? 'production_canary' : 'test_e2e'
       : passed ? 'test_e2e' : 'unverified'
     evidenceItems.push(evidence(input, capability, state, simulated))
+  }
+
+  const inputErrors = canaryInputErrors(input)
+  if (inputErrors.length) {
+    // Evidence is an authorization input. Reject malformed attribution before
+    // touching the connector so a bad canary cannot create provider side effects.
+    for (const capability of ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) {
+      add(capability, false, false, 'canary input rejected: invalid evidence or scope attribution')
+    }
+    return { platform: input.connector.platform, passed: false, checks, evidence: evidenceItems }
   }
 
   try {

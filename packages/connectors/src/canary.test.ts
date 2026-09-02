@@ -106,6 +106,22 @@ describe('platform canary runner', () => {
     expect(result.checks.find(item => item.capability === 'create')?.detail).toContain('write canary disabled')
   })
 
+  it('rejects malformed attribution before touching the connector', async () => {
+    const connector = createFakeConnector('taobao', { configured: true, allowFakeWrites: true })
+    const authorize = vi.spyOn(connector, 'authorize')
+    const result = await runPlatformCanary({
+      connector,
+      context: { workspaceId: 'ws_local\nforged', accountId: 'acct_local' },
+      evidenceRef: 'TODO://unverified', verifiedBy: 'qa', apiVersion: 'fixture', scope: 'fixture',
+      expectedRemoteId: profiles.taobao.fixture.remoteId, allowWrite: false, allowRevoke: false,
+    })
+
+    expect(result.passed).toBe(false)
+    expect(result.checks).toHaveLength(9)
+    expect(result.checks.every(item => item.detail?.includes('invalid evidence or scope attribution'))).toBe(true)
+    expect(authorize).not.toHaveBeenCalled()
+  })
+
   it('requires non-simulated write and query evidence even when fixture operations succeed', async () => {
     const result = await runPlatformCanary({
       connector: createFakeConnector('jd', { configured: true, allowFakeWrites: true }),
