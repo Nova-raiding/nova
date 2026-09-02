@@ -66,6 +66,34 @@ describe('durable authorization repository', () => {
     expect(await repo.getAuthorizationRevision(subject)).toBe(0)
   })
 
+  it('rejects ambiguous or unsafe resource scopes before advancing authorization state', async () => {
+    const repo = repository()
+    const issue = (resourceScope: Record<string, unknown>, ticketRef: string) => repo.issueGrant({
+      ...{
+        grantKind: 'temporary' as const,
+        accessMode: 'read' as const,
+        subjectIdentityId: subject,
+        workspaceId: 'ws-a',
+        capabilities: ['customer.content.read'],
+        resourceScope,
+        reason: 'inspect a scoped resource',
+        ticketRef,
+        issuedBy: 'ops-lead',
+        approvedBy: 'security-admin',
+        approvedAt: new Date(start).toISOString(),
+        expectedAuthorizationRevision: 0,
+        expiresAt: new Date(start + 60_000).toISOString(),
+        maxUses: 1,
+      },
+    })
+
+    await expect(issue({ product_ids: ['product-a'], task_ids: ['task-a'] }, 'SCOPE-AMBIGUOUS')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    await expect(issue({ product_ids: ['*'] }, 'SCOPE-WILDCARD')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    await expect(issue({ product_ids: ['product-a'], metadata: { sensitive: true } }, 'SCOPE-NESTED')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    await expect(issue({ product_ids: ['product-\nunsafe'] }, 'SCOPE-CONTROL')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    expect(await repo.getAuthorizationRevision(subject)).toBe(0)
+  })
+
   it('revokes immediately and invalidates the observed authorization revision', async () => {
     const repo = repository()
     const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'read', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.read'], resourceScope: { task_ids: ['t-1'] }, reason: 'inspect failed generation', ticketRef: 'OPS-10', issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 2 })

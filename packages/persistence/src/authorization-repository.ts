@@ -176,6 +176,21 @@ const resourceScopeContainsResourceId = (scope: Record<string, unknown>, resourc
     .map(([, value]) => value as unknown[])
   return idSets.length > 0 && idSets.some(ids => ids.every(id => isSafeAuthorizationIdentifier(id)) && ids.includes(resourceId))
 }
+const validateResourceScope = (scope: Record<string, unknown>) => {
+  const idEntries = Object.entries(scope).filter(([key]) => key.endsWith('_ids'))
+  // A grant must describe one exact resource kind.  Accepting multiple *_ids
+  // collections would turn a single resourceId into an ambiguous union scope.
+  if (idEntries.length !== 1) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
+  for (const [key, value] of Object.entries(scope)) {
+    requireText(key, 1, 255)
+    if (key.endsWith('_ids')) {
+      if (!Array.isArray(value) || value.length === 0 || value.length > 100 || value.some(id => !isSafeAuthorizationIdentifier(id) || id === '*')) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
+      continue
+    }
+    if (typeof value !== 'string') throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
+    requireText(value, 1, 255)
+  }
+}
 const normalizeGrant = (input: IssueAuthorizationGrantInput, issuedAt: string) => {
   requireExpectedRevision(input.expectedAuthorizationRevision)
   requireText(input.subjectIdentityId, 1, 255); requireText(input.workspaceId, 1, 255); requireText(input.reason, 3, 1000); requireText(input.ticketRef, 1, 255); requireText(input.issuedBy, 1, 255); requireText(input.approvedBy, 1, 255)
@@ -183,6 +198,7 @@ const normalizeGrant = (input: IssueAuthorizationGrantInput, issuedAt: string) =
   if (!capabilities.length || capabilities.length > 100 || capabilities.some(value => !value || value !== value.trim())) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
   for (const capability of capabilities) requireText(capability, 1, 255)
   if (!input.resourceScope || Array.isArray(input.resourceScope) || !Object.keys(input.resourceScope).length) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
+  validateResourceScope(input.resourceScope)
   if (!Number.isSafeInteger(input.maxUses) || input.maxUses < 1 || input.maxUses > 100) throw new AuthorizationRepositoryError('AUTHORIZATION_GRANT_INVALID')
   const issued = Date.parse(issuedAt); const approved = Date.parse(input.approvedAt); const expires = Date.parse(input.expiresAt)
   const maxTtl = input.accessMode === 'write' ? 5 * 60_000 : 15 * 60_000
