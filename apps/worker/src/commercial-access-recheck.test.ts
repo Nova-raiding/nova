@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createOutboxHandler } from './handler.js'
 import type { DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import type { WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
-import type { WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
+import { createCommercialAccessGuard, parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessGuard } from '../../../packages/workers/src/commercial-access.js'
 
 function event(eventType = 'generation.requested', operation = 'generation.execute'): DurableOutboxEvent {
   return {
@@ -31,6 +31,42 @@ describe('worker commercial recheck ordering', () => {
     const provider = vi.fn()
     const handler = createOutboxHandler({ executionAuthorization, commercialAccess, generationRequested: provider })
     await expect(handler({ event: event(), attempt: 1, now: Date.now() })).rejects.toMatchObject({ error: { code: 'COMMERCIAL_EXECUTION_REVISION_STALE', retryable: false, unknown: false, decisionId: 'commercial_enqueue', accessRevision: 'access_1', reservationId: 'reservation_1', entitlementSnapshotId: 'entitlement_1', entitlementSnapshotChecksum: 'b'.repeat(64), rateVersion: 'rate_1' } })
+    expect(provider).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['revision', { accessRevision: 'access_2' }, 'COMMERCIAL_EXECUTION_REVISION_STALE'],
+    ['entitlement', { entitlementSnapshotChecksum: 'c'.repeat(64) }, 'COMMERCIAL_EXECUTION_ENTITLEMENT_STALE'],
+    ['rate', { rateVersion: 'rate_2' }, 'COMMERCIAL_EXECUTION_RATE_STALE'],
+    ['reservation', { reservationState: 'consumed' as const }, 'COMMERCIAL_EXECUTION_RESERVATION_INVALID'],
+    ['readiness', { ready: false }, 'COMMERCIAL_EXECUTION_NOT_READY'],
+  ])('blocks %s drift before the provider boundary', async (_case, override, code) => {
+    const durableEvent = event()
+    const snapshot = parseWorkerCommercialAccessSnapshot(durableEvent, 'generation.execute')
+    const executionAuthorization = { assertAuthorized: vi.fn(async () => ({} as never)) } satisfies WorkerExecutionAuthorizationGuard
+    const commercialAccess = createCommercialAccessGuard(async () => ({
+      recheckId: 'commercial_recheck',
+      workspaceId: snapshot.workspaceId,
+      operation: snapshot.operation,
+      accessMode: snapshot.accessMode,
+      accessRevision: snapshot.accessRevision,
+      balanceState: snapshot.balanceState,
+      entitlementSnapshotId: snapshot.entitlementSnapshotId,
+      entitlementSnapshotChecksum: snapshot.entitlementSnapshotChecksum,
+      rateVersion: snapshot.rateVersion,
+      quotedPoints: snapshot.quotedPoints,
+      reservationId: snapshot.reservationId,
+      reservationState: 'active',
+      allowed: true,
+      ready: true,
+      checkedAt: new Date().toISOString(),
+      ...override,
+    }))
+    const provider = vi.fn()
+    const handler = createOutboxHandler({ executionAuthorization, commercialAccess, generationRequested: provider })
+
+    await expect(handler({ event: durableEvent, attempt: 1, now: Date.now() }))
+      .rejects.toMatchObject({ error: { code } })
     expect(provider).not.toHaveBeenCalled()
   })
 

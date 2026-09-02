@@ -590,17 +590,21 @@ describe('worker production entry', () => {
     expect(reported).toEqual([])
   })
 
-  it('dead-letters a generation event after reporting a terminal model failure', async () => {
+  it('keeps provider-accepted generation settlement unknown reserved for reconciliation', async () => {
     const reported: unknown[] = []
-    const pending = Object.assign(new Error('model usage settlement is pending'), { code: 'MODEL_USAGE_SETTLEMENT_PENDING' })
+    const pending = Object.assign(new Error('model usage settlement is pending'), {
+      code: 'MODEL_USAGE_SETTLEMENT_PENDING',
+      providerSucceeded: true,
+      reconciliationRequired: true,
+    })
     const handler = createAuthorizedOutboxHandler({
       generationRequested: async () => { throw pending },
       onGenerationResult: async (_event, result) => { reported.push(result) },
     })
 
     await expect(handler({ event: { id: 'evt_pending', workspaceId: 'ws_a', aggregateId: 'gen_pending', eventType: 'generation.requested', sequence: 1, payload: { input: {} }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() }))
-      .rejects.toMatchObject({ error: { code: 'MODEL_USAGE_SETTLEMENT_PENDING', retryable: false, unknown: false } })
-    expect(reported).toEqual([{ error: { code: 'MODEL_USAGE_SETTLEMENT_PENDING', message: 'model usage settlement is pending' } }])
+      .rejects.toMatchObject({ error: { code: 'MODEL_USAGE_SETTLEMENT_PENDING', retryable: false, unknown: true } })
+    expect(reported).toEqual([])
   })
 
   it('blocks a stale generation event before another provider call', async () => {

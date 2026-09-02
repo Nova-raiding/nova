@@ -159,13 +159,29 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
           await options.onGenerationDeferred?.(event, { code: error.code, message: error.message, retryAfterSeconds: error.decision.retryAfterSeconds }, projection, signal)
           throw new WorkerFailure({ code: error.code, message: error.message, retryable: true, unknown: false })
         }
-        const candidateCode = (error as { code?: unknown })?.code
+        const candidate = error as {
+          code?: unknown
+          unknown?: unknown
+          providerSucceeded?: unknown
+          providerOutcome?: unknown
+          reconciliationRequired?: unknown
+          details?: Record<string, unknown>
+        }
+        const candidateCode = candidate?.code
         const failure = {
           code: typeof candidateCode === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/u.test(candidateCode) ? candidateCode : 'AI_GENERATION_FAILED',
           message: error instanceof Error ? error.message : 'content generation failed',
         }
         if (failure.code === 'GENERATION_JOB_TERMINAL') {
           throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: false })
+        }
+        // The relay may have accepted and billed the request before usage/cost
+        // settlement or its response was lost. Do not report a terminal job
+        // error (which could release the point reservation), and never queue a
+        // blind retry. Durable unknown is reconciled by the separate model
+        // usage worker against the original provider/action identity.
+        if (isProviderOutcomeUnknown(candidate)) {
+          throw new WorkerFailure({ code: failure.code, message: failure.message, retryable: false, unknown: true })
         }
         await options.onGenerationResult?.(event, { error: failure }, projection, signal)
         // The user-facing generation job is now terminal. Retrying this
@@ -310,6 +326,26 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
 
     throw unknownFailure('UNSUPPORTED_EVENT_TYPE', `Event type ${event.eventType} requires manual handling`)
   }
+}
+
+function isProviderOutcomeUnknown(error: {
+  code?: unknown
+  unknown?: unknown
+  providerSucceeded?: unknown
+  providerOutcome?: unknown
+  reconciliationRequired?: unknown
+  details?: Record<string, unknown>
+}): boolean {
+  return error.unknown === true
+    || error.code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN'
+    || error.code === 'MODEL_USAGE_SETTLEMENT_PENDING'
+    || error.code === 'MODEL_USAGE_EVIDENCE_MISSING'
+    || error.providerSucceeded === true
+    || error.providerOutcome === 'unknown'
+    || error.reconciliationRequired === true
+    || error.details?.provider_succeeded === true
+    || error.details?.provider_outcome === 'unknown'
+    || error.details?.reconciliation_required === true
 }
 
 function throwIfLeaseLost(signal?: AbortSignal): void {
