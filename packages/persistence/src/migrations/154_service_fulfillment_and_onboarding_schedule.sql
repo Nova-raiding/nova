@@ -71,10 +71,7 @@ CREATE TABLE workspace_service_fulfillment_events (
 ALTER TABLE onboarding_point_grant_schedules_v2
   ADD COLUMN entitlement_snapshot_id TEXT,
   ADD COLUMN blockers JSONB NOT NULL DEFAULT '["ONBOARDING_GRANT_START_DATE_UNRESOLVED","ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED"]'::jsonb,
-  ADD COLUMN source_checksum TEXT CHECK (source_checksum ~ '^[0-9a-f]{64}$'),
-  ADD COLUMN created_by_actor_id TEXT,
-  ADD COLUMN creation_reason TEXT,
-  ADD COLUMN creation_evidence JSONB;
+  ADD COLUMN source_checksum TEXT CHECK (source_checksum ~ '^[0-9a-f]{64}$');
 
 CREATE INDEX service_allocations_workspace_updated_idx ON workspace_service_allocations(workspace_id, updated_at DESC, id DESC);
 CREATE INDEX service_events_workspace_allocation_idx ON workspace_service_fulfillment_events(workspace_id, allocation_id, revision);

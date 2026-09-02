@@ -23,7 +23,7 @@ describe('migration 154 service fulfillment and onboarding schedule', () => {
     expect(sql).toContain('ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED')
   })
 
-  it('is registered at the migration tail', async () => {
-    expect((await loadMigrations()).at(-1)).toMatchObject({ version: 154, name: 'service_fulfillment_and_onboarding_schedule' })
+  it('remains registered before later recovery migrations', async () => {
+    expect((await loadMigrations()).find(item => item.version === 154)).toMatchObject({ version: 154, name: 'service_fulfillment_and_onboarding_schedule' })
   })
 })

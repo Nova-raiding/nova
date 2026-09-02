@@ -25,7 +25,7 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(154)
+    expect(latestVersion).toBe(158)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
@@ -53,6 +53,11 @@ describe('MigrationRunner', () => {
     expect(byVersion.get(153)?.sql).toContain('CREATE TABLE commercial_orders_v2')
     expect(byVersion.get(154)).toMatchObject({ name: 'service_fulfillment_and_onboarding_schedule' })
     expect(byVersion.get(154)?.sql).toContain('CREATE TABLE workspace_service_fulfillment_events')
+    expect(byVersion.get(157)).toMatchObject({ name: 'service_fulfillment_audit_evidence' })
+    expect(byVersion.get(157)?.sql).toContain('require_onboarding_schedule_creation_evidence')
+    expect(byVersion.get(158)).toMatchObject({ name: 'creative_point_reversal_allocation_guard' })
+    expect(byVersion.get(155)).toMatchObject({ name: 'workspace_data_export_requests' })
+    expect(byVersion.get(156)).toMatchObject({ name: 'commercial_outbox_insert_acl' })
     expect(byVersion.get(45)).toMatchObject({ name: 'platform_identity_lifecycle' })
     expect(byVersion.get(45)?.sql).toContain("current_setting('app.platform_scope', true) = 'platform_ops'")
     expect(byVersion.get(46)).toMatchObject({ name: 'model_usage_settlement' })
