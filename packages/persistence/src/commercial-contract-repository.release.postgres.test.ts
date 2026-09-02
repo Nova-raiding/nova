@@ -35,7 +35,7 @@ describe('commercial contract PostgreSQL E2', () => {
       await database.query(`INSERT INTO commercial_catalog_sku_benefits(id,sku_version_id,benefit_code,quantity,raw_unit) VALUES ('benefit-e2',$1,'monthly_creative_points',5000,'creative_points')`, [sku.versionId])
       app = new Pool({ connectionString: databaseUrl(base, name, 'merchant_app', 'merchant_app_local_only') })
       const repository = new PostgresCommercialContractRepository(app)
-      const order = await repository.createOrder({ workspaceId: 'ws-commercial', sku, paymentProvider: 'alipay', createdByActorId: 'actor-1', idempotencyKey: 'order-e2', now: '2026-09-02T00:00:00Z' })
+      const order = await repository.createOrder({ workspaceId: 'ws-commercial', sku, paymentProvider: 'alipay', createdByActorId: 'actor-1', idempotencyKey: 'order-e2', reason: 'subscribe', now: '2026-09-02T00:00:00Z' })
       const payment = { workspaceId: 'ws-commercial', orderId: order.id, provider: 'alipay', providerEventId: 'event-e2', providerOrderId: 'trade-e2', nonce: 'nonce-e2', payloadHash: 'b'.repeat(64), amountFen: 200000, currency: 'CNY' as const, paidAt: '2026-09-02T00:00:00Z', period: { start: '2026-09-02T00:00:00Z', end: '2026-10-02T00:00:00Z' } }
       await expect(repository.recordVerifiedPaymentAndGrant(payment)).resolves.toMatchObject({ availablePoints: 5000, accessRevision: 1, replayed: false })
       await expect(repository.recordVerifiedPaymentAndGrant(payment)).resolves.toMatchObject({ availablePoints: 5000, accessRevision: 1, replayed: true })
@@ -55,11 +55,17 @@ describe('commercial contract PostgreSQL E2', () => {
         (SELECT count(*)::int FROM commercial_payment_events_v2 WHERE workspace_id='ws-commercial') payments,
         (SELECT count(*)::int FROM creative_point_grants WHERE workspace_id='ws-commercial') grants,
         (SELECT count(*)::int FROM commercial_access_decisions_v2 WHERE workspace_id='ws-commercial') decisions,
-        (SELECT count(*)::int FROM outbox_events WHERE workspace_id='ws-commercial' AND event_type='commercial.payment_grant_committed') outbox`)
-      expect(facts.rows[0]).toEqual({ orders: 1, snapshots: 1, periods: 1, entitlements: 1, payments: 1, grants: 2, decisions: 1, outbox: 1 })
+        (SELECT count(*)::int FROM outbox_events WHERE workspace_id='ws-commercial') outbox`)
+      expect(facts.rows[0]).toEqual({ orders: 1, snapshots: 1, periods: 1, entitlements: 1, payments: 1, grants: 2, decisions: 2, outbox: 2 })
     } finally {
       await app?.end(); await database?.end()
-      await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`)
+      let active = 1
+      for (let attempt = 0; attempt < 80 && active > 0; attempt += 1) {
+        active = Number((await admin.query<{ count: string }>('SELECT count(*)::text AS count FROM pg_stat_activity WHERE datname=$1', [name])).rows[0]?.count ?? 0)
+        if (active > 0) await new Promise(resolve => setTimeout(resolve, 25))
+      }
+      expect(active, `database clients did not close for ${name}`).toBe(0)
+      await admin.query(`DROP DATABASE IF EXISTS "${name}"`)
       await admin.end()
     }
   }, 180_000)

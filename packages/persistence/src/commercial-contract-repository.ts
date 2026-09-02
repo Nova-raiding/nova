@@ -41,6 +41,7 @@ export interface CreateCommercialOrderInput {
   paymentProvider: string
   createdByActorId: string
   idempotencyKey: string
+  reason: string
   /** Required in addition to capability for a private SKU. */
   privateEligibilityId?: string
   now?: string
@@ -69,6 +70,7 @@ export interface PaymentGrantResult {
   availablePoints: number
   replayed: boolean
 }
+export interface CommercialOrderPaymentStatusV2 { order: CommercialOrderV2; skuCode: string; accessRevision: number | null }
 
 export interface CommercialEntitlementSnapshotV2 {
   id: string
@@ -271,17 +273,33 @@ export class PostgresCommercialContractRepository {
     })
   }
 
+  async getPaymentStatus(workspaceId: string, orderId: string): Promise<CommercialOrderPaymentStatusV2 | null> {
+    const scope = requireWorkspaceScope(workspaceId); required(orderId, 'orderId')
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<OrderRow & { skuCode: string; accessRevision: string | number | null }>(
+        `SELECT ${aliasedOrderProjection('o')},s.snapshot->'sku'->>'code' AS "skuCode",l.access_revision AS "accessRevision"
+           FROM commercial_orders_v2 o JOIN commercial_order_snapshots_v2 s ON s.workspace_id=o.workspace_id AND s.order_id=o.id
+           LEFT JOIN creative_point_grants g ON g.workspace_id=o.workspace_id AND g.source_type='commercial_order_v2' AND g.source_id=o.id
+           LEFT JOIN creative_point_ledger_events l ON l.workspace_id=g.workspace_id AND l.operation_id=g.operation_id AND l.event_type='granted'
+          WHERE o.workspace_id=$1 AND o.id=$2 LIMIT 1`, [scope, orderId],
+      )
+      const row = result.rows[0]
+      return row ? { order: mapOrder(row), skuCode: row.skuCode, accessRevision: row.accessRevision === null ? null : safeInteger(row.accessRevision, 'accessRevision') } : null
+    })
+  }
+
   async createOrder(input: CreateCommercialOrderInput): Promise<CommercialOrderV2> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     const idempotencyKey = required(input.idempotencyKey, 'idempotencyKey')
     const paymentProvider = required(input.paymentProvider, 'paymentProvider')
     const actorId = required(input.createdByActorId, 'createdByActorId')
+    const reason = required(input.reason, 'reason')
     const at = instant(input.now ?? new Date().toISOString(), 'now')
     validateOrderSku(input.sku, at)
     const request = {
       sku_id: input.sku.id, sku_version_id: input.sku.versionId, catalog_checksum: input.sku.checksum,
       amount_fen: input.sku.priceFen, currency: input.sku.currency, payment_provider: paymentProvider,
-      actor_id: actorId, private_eligibility_id: input.privateEligibilityId ?? null,
+      actor_id: actorId, reason, private_eligibility_id: input.privateEligibilityId ?? null,
     }
     const requestHash = digest(request)
 
@@ -317,6 +335,17 @@ export class PostgresCommercialContractRepository {
           (id,workspace_id,order_id,sku_id,sku_version_id,catalog_checksum,snapshot,checksum,created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::timestamptz)`,
         [`cos_${randomUUID()}`, workspaceId, id, input.sku.id, input.sku.versionId, input.sku.checksum, JSON.stringify(snapshot), digest(snapshot), at],
+      )
+      await client.query(
+        `INSERT INTO commercial_access_decisions_v2
+          (id,workspace_id,request_id,operation_key,access_class,balance_state,available_points,reserved_points,quoted_points,access_revision,rate_card_version,allowed,code,next_actions,evidence,decided_at)
+         VALUES ($1,$2,$3,'commercial.order.create','RECOVERY_CONTROL','unknown',NULL,NULL,NULL,0,NULL,true,'OK','[]'::jsonb,$4::jsonb,$5::timestamptz)`,
+        [`cad_${randomUUID()}`, workspaceId, idempotencyKey, JSON.stringify({ actor_id: actorId, reason, sku_version_id: input.sku.versionId }), at],
+      )
+      await client.query(
+        `INSERT INTO outbox_events (id,workspace_id,aggregate_id,event_type,sequence,payload)
+         VALUES ($1,$2,$3,'commercial.order_created',1,$4::jsonb)`,
+        [`evt_${randomUUID()}`, workspaceId, id, JSON.stringify({ order_id: id, sku_code: input.sku.code, sku_version_id: input.sku.versionId, actor_id: actorId, reason })],
       )
       return mapOrder(row)
     })

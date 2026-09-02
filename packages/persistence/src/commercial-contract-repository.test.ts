@@ -39,7 +39,7 @@ describe('PostgresCommercialContractRepository', () => {
     })
     const repository = new PostgresCommercialContractRepository(pool(client))
 
-    await expect(repository.createOrder({ workspaceId: 'ws-1', sku, paymentProvider: 'sandbox', createdByActorId: 'actor-1', idempotencyKey: 'order-1', now: '2026-09-02T00:00:00Z' })).resolves.toMatchObject({
+    await expect(repository.createOrder({ workspaceId: 'ws-1', sku, paymentProvider: 'sandbox', createdByActorId: 'actor-1', idempotencyKey: 'order-1', reason: 'subscribe', now: '2026-09-02T00:00:00Z' })).resolves.toMatchObject({
       workspaceId: 'ws-1', amountFen: 200000, skuVersionId: 'sku-basic-v2', status: 'pending',
     })
     const sql = client.calls.map(call => call.sql).join('\n')
@@ -55,7 +55,7 @@ describe('PostgresCommercialContractRepository', () => {
     const repository = new PostgresCommercialContractRepository(pool(new ScriptedClient(() => ({ rows: [] }))))
     const sku = approvedSku({ id: 'sku-private', versionId: 'sku-private-v2', kind: 'private_trial', visibility: 'private', requiredCapability: 'commercial.private_sku.read', durationDays: 7, priceFen: 199900, benefits: [{ code: 'creative_points', quantity: 500, rawValue: null, rawUnit: 'creative_points', normalizedValue: null, policyRef: null, metadata: {} }] })
 
-    await expect(repository.createOrder({ workspaceId: 'ws-1', sku, paymentProvider: 'sandbox', createdByActorId: 'actor-1', idempotencyKey: 'private-1', privateEligibilityId: 'elig-1', now: '2026-09-02T00:00:00Z' }))
+    await expect(repository.createOrder({ workspaceId: 'ws-1', sku, paymentProvider: 'sandbox', createdByActorId: 'actor-1', idempotencyKey: 'private-1', reason: 'private trial', privateEligibilityId: 'elig-1', now: '2026-09-02T00:00:00Z' }))
       .rejects.toMatchObject({ code: 'PRIVATE_SKU_NOT_FOUND' })
   })
 
@@ -125,7 +125,7 @@ describe('PostgresCommercialContractRepository', () => {
   it('keeps unresolved onboarding dates and point-pack expiry fail-closed', async () => {
     const repository = new PostgresCommercialContractRepository(pool(new ScriptedClient(() => ({ rows: [] }))))
     const unavailable = approvedSku({ executable: false, lifecycle: 'pending_business_approval' })
-    await expect(repository.createOrder({ workspaceId: 'ws-1', sku: unavailable, paymentProvider: 'sandbox', createdByActorId: 'actor-1', idempotencyKey: 'blocked-1' }))
+    await expect(repository.createOrder({ workspaceId: 'ws-1', sku: unavailable, paymentProvider: 'sandbox', createdByActorId: 'actor-1', idempotencyKey: 'blocked-1', reason: 'blocked' }))
       .rejects.toEqual(expect.objectContaining<Partial<CommercialContractError>>({ code: 'COMMERCIAL_CATALOG_UNAVAILABLE' }))
   })
 })
