@@ -112,6 +112,34 @@ describe("OpsPageError", () => {
     });
   });
 
+  it("offers explicit permission refresh without retrying the denied action", () => {
+    const markup = renderToStaticMarkup(<OpsPageError
+      error={Object.assign(new Error("forbidden"), { code: "HTTP_403", requestId: "req-action-403" })}
+      onRetry={() => undefined}
+      onRefreshPermissions={() => undefined}
+    />);
+
+    expect(markup).toContain('data-recovery="permission"');
+    expect(markup).toContain('aria-label="刷新权限"');
+    expect(markup).toContain("请求 ID");
+    expect(markup).toContain("req-action-403");
+    expect(markup).not.toContain("重试加载运营数据");
+    expect(markup).not.toContain("刷新运营后台页面");
+  });
+
+  it("locks the permission refresh action while the projection is reloading", () => {
+    const markup = renderToStaticMarkup(<OpsPageError
+      error={Object.assign(new Error("forbidden"), { code: "FORBIDDEN" })}
+      onRefreshPermissions={() => undefined}
+      refreshingPermissions
+    />);
+
+    expect(markup).toContain('aria-label="正在刷新权限"');
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("正在刷新权限");
+  });
+
   it("preserves server decision evidence without inventing client correlation IDs", () => {
     const error = Object.assign(new Error("forbidden"), {
       code: "FORBIDDEN",

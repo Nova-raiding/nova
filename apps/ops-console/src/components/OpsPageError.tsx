@@ -6,10 +6,19 @@ interface OpsPageErrorProps {
   error: unknown;
   onRetry?: () => void;
   onReauthenticate?: () => void;
+  onRefreshPermissions?: () => void;
+  refreshingPermissions?: boolean;
   onContactSupport?: () => void;
 }
 
-export function OpsPageError({ error, onRetry, onReauthenticate, onContactSupport }: OpsPageErrorProps) {
+export function OpsPageError({
+  error,
+  onRetry,
+  onReauthenticate,
+  onRefreshPermissions,
+  refreshingPermissions = false,
+  onContactSupport,
+}: OpsPageErrorProps) {
   const errorRef = useRef<HTMLDivElement>(null);
   const presentation = useMemo(() => presentOpsError(error), [error]);
   useEffect(() => {
@@ -19,6 +28,19 @@ export function OpsPageError({ error, onRetry, onReauthenticate, onContactSuppor
 
   const primaryAction = presentation.recovery === "reauthenticate"
     ? <Button size="small" style={{ minHeight: 44 }} aria-label="重新登录运营后台" onClick={onReauthenticate ?? (() => window.location.reload())}>重新登录</Button>
+    : presentation.recovery === "contact_support" && presentation.code && ["FORBIDDEN", "MEMBER_NOT_ACTIVE", "MEMBER_SUSPENDED", "HTTP_403"].includes(presentation.code) && onRefreshPermissions
+      ? <Button
+        size="small"
+        type="primary"
+        style={{ minHeight: 44 }}
+        aria-label={refreshingPermissions ? "正在刷新权限" : "刷新权限"}
+        aria-busy={refreshingPermissions || undefined}
+        disabled={refreshingPermissions}
+        loading={refreshingPermissions}
+        onClick={onRefreshPermissions}
+      >
+        {refreshingPermissions ? "正在刷新权限" : "刷新权限"}
+      </Button>
     : presentation.recovery === "contact_support"
       ? onContactSupport
         ? <Button size="small" style={{ minHeight: 44 }} aria-label="联系平台支持" onClick={onContactSupport}>联系支持</Button>
@@ -29,7 +51,7 @@ export function OpsPageError({ error, onRetry, onReauthenticate, onContactSuppor
 
   const hasDiagnostics = Boolean(presentation.code || presentation.requestId || presentation.traceId || presentation.decisionId || presentation.reasonCode || presentation.obligationsMissing?.length);
   return (
-    <div ref={errorRef} tabIndex={-1} className="ops-page-error" data-state="error">
+    <div ref={errorRef} tabIndex={-1} className="ops-page-error" data-state="error" data-recovery={presentation.recovery === "contact_support" && presentation.code && ["FORBIDDEN", "MEMBER_NOT_ACTIVE", "MEMBER_SUSPENDED", "HTTP_403"].includes(presentation.code) ? "permission" : presentation.recovery}>
       <Alert
         role="alert"
         aria-live="assertive"
