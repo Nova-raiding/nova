@@ -1,5 +1,5 @@
 import { Segmented, Tag, Typography } from "antd";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { OpsWorkbench } from "../../types/ops.js";
 
 const labels: Record<OpsWorkbench, string> = {
@@ -25,6 +25,7 @@ export function OpsWorkbenchSwitcher({
   onChange?: (workbench: OpsWorkbench) => void;
 }) {
   const rootRef = useRef<HTMLSpanElement>(null);
+  const descriptionId = useId();
   const wasSwitching = useRef(switching);
   useEffect(() => {
     if (wasSwitching.current && !switching) focusActiveWorkbenchControl(rootRef.current);
@@ -39,9 +40,13 @@ export function OpsWorkbenchSwitcher({
   return (
     <span ref={rootRef} aria-label="切换运营工作台" aria-busy={switching}>
       <Typography.Text type="secondary">工作台 </Typography.Text>
+      <span id={descriptionId} className="sr-only">
+        主动选择后将重新验证对应工作台的服务端授权范围；切换期间控件暂不可用。
+      </span>
       {switching ? <span role="status" aria-live="polite" className="sr-only">正在切换运营工作台，请稍候</span> : null}
       <Segmented<OpsWorkbench>
-        aria-label="当前运营工作台"
+        aria-label="当前运营工作台，请主动选择"
+        aria-describedby={descriptionId}
         value={value}
         options={candidates.map((candidate) => ({ label: labels[candidate], value: candidate }))}
         disabled={switching}

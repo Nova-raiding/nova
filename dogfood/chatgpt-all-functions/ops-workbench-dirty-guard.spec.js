@@ -52,6 +52,8 @@ test('keeps a dirty desktop form until workbench switch is confirmed', async ({ 
   await expect(warning).toBeVisible()
   await expect(page.getByRole('heading', { name: '平台规则' })).toBeVisible()
   await expect(draft.getByLabel('规则包 ID')).toHaveValue('dirty_guard_demo')
+  await expect(page.getByText('平台控制台', { exact: true })).toBeVisible()
+  await expect(page.getByRole('radio', { name: '商家工作区' })).toBeChecked()
   await warning.getByRole('button', { name: '继续编辑' }).click()
 
   const currentUrl = page.url()
