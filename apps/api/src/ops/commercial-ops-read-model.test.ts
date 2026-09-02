@@ -63,13 +63,24 @@ describe('commercial Ops read model', () => {
       workspaceId: 'ws_unknown',
       decision: null,
       balance: { workspaceId: 'ws_unknown', availablePoints: null, reservedPoints: null, settledPoints: null, revision: 0 },
-      decisionOutcome: 'DECISION',
+      decisionOutcome: 'DENY_UNCLASSIFIED',
       verifiedAt: '2026-09-02T00:00:00.000Z',
       unavailableDecisionId: 'commercial_unavailable_test',
     })).toMatchObject({
       balance_state: 'unknown', available_points: null, reserved_points: null, settled_points: null,
       access_revision: null, allowed: false,
     })
+  })
+
+  it('rejects malformed DECISION outcome without a concrete access decision', () => {
+    expect(() => projectCommercialAccessSummary({
+      workspaceId: 'ws_malformed',
+      decision: null,
+      balance: { workspaceId: 'ws_malformed', availablePoints: 12, reservedPoints: 0, settledPoints: 0, revision: 3 },
+      decisionOutcome: 'DECISION',
+      verifiedAt: '2026-09-02T00:00:00.000Z',
+      unavailableDecisionId: 'commercial_unavailable_malformed',
+    })).toThrow('DECISION outcome must provide a complete commercial access decision')
   })
 
   it('supports non-commercial access denial outcome in summary', () => {

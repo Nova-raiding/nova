@@ -10,6 +10,12 @@ import type {
   CreativePointStatementCursor,
   CreativePointStatementEntry,
 } from '../../../../packages/persistence/src/creative-point-repository.js'
+import type {
+  CommercialAccessDecisionFactV2,
+  CommercialEntitlementSnapshotV2,
+  CommercialOrderListItemV2,
+} from '../../../../packages/persistence/src/commercial-contract-repository.js'
+import type { ServiceAllocationRecord } from '../../../../packages/persistence/src/service-fulfillment-repository.js'
 
 export const COMMERCIAL_PRIVATE_SKU_READ_CAPABILITY = 'commercial.private_sku.read' as const satisfies CapabilityId
 
@@ -144,6 +150,9 @@ export function projectCommercialAccessSummary(input: {
   verifiedAt: string
   unavailableDecisionId: string
 }) {
+  if (input.decisionOutcome === 'DECISION' && input.decision === null) {
+    throw new TypeError('DECISION outcome must provide a complete commercial access decision')
+  }
   const known = input.balance.availablePoints !== null
   return {
     schema_version: 'commercial.access-summary.v1',
@@ -189,5 +198,110 @@ export function projectCreativePointRate(rate: CreativePointRateSnapshot) {
     blocking_reason: rate.blockers.length ? rate.blockers.join('；') : rate.executable && rate.ruleExecutable ? null : 'RATE_NOT_EXECUTABLE',
     lifecycle: rate.lifecycle,
     executable: rate.executable && rate.ruleExecutable,
+  }
+}
+
+type ResolvedBenefit = { code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null }
+
+function resolvedBenefits(value: readonly unknown[]): ResolvedBenefit[] {
+  return value.flatMap(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const candidate = item as Record<string, unknown>
+    if (!text(candidate.code)) return []
+    const quantity = candidate.quantity === null || Number.isSafeInteger(candidate.quantity) ? candidate.quantity as number | null : null
+    return [{ code: candidate.code, quantity, rawValue: text(candidate.rawValue) ? candidate.rawValue : null, rawUnit: text(candidate.rawUnit) ? candidate.rawUnit : null }]
+  })
+}
+
+function benefitQuantity(benefits: readonly ResolvedBenefit[], code: string): number | null {
+  const matches = benefits.filter(benefit => benefit.code === code && benefit.quantity !== null)
+  return matches.length === 1 ? matches[0]!.quantity : null
+}
+
+export function projectCommercialEntitlement(item: CommercialEntitlementSnapshotV2) {
+  const benefits = resolvedBenefits(item.resolvedBenefits)
+  const storage = benefits.find(benefit => benefit.code === 'cloud_storage')
+  const services = benefits.filter(benefit => ['monthly_one_to_one_hours', 'one_to_one_service_hours', 'outcome_review_count', 'first_response_business_hours'].includes(benefit.code))
+  const serviceSummary = services.map(benefit => `${benefit.code}:${benefit.quantity ?? benefit.rawValue ?? '未决'}${benefit.rawUnit ? ` ${benefit.rawUnit}` : ''}`).join('；') || null
+  return {
+    id: item.id,
+    workspace_id: item.workspaceId,
+    sku_code: item.skuCode,
+    snapshot_version: item.checksum,
+    status: item.executable ? item.periodStatus : 'blocked',
+    brand_limit: benefitQuantity(benefits, 'max_brands'),
+    store_limit: benefitQuantity(benefits, 'max_stores'),
+    storage_label: storage?.rawValue ?? (storage?.quantity !== null && storage?.quantity !== undefined ? `${storage.quantity}${storage.rawUnit ? ` ${storage.rawUnit}` : ''}` : null),
+    service_summary: serviceSummary,
+    period_label: `${item.periodStart} / ${item.periodEnd}`,
+    source_order_id: item.subscriptionPeriodId,
+    updated_at: item.createdAt,
+    unresolved: [...item.unresolvedBlockers],
+    executable: item.executable,
+  }
+}
+
+export function projectCommercialOrder(item: CommercialOrderListItemV2) {
+  const grantState = item.status === 'paid' ? 'granted' : item.status === 'refunded' ? 'refunded' : item.status === 'reconciliation_required' ? 'unknown' : 'not_granted'
+  return {
+    id: item.id,
+    workspace_id: item.workspaceId,
+    sku_code: item.skuCode,
+    sku_version: item.skuVersionId,
+    purchased_points: null,
+    amount_label: `¥${(item.amountFen / 100).toFixed(2)} ${item.currency}`,
+    channel: item.paymentProvider,
+    payment_state: item.status,
+    grant_state: grantState,
+    access_revision: null,
+    created_at: item.createdAt,
+    paid_at: item.paidAt,
+    request_id: item.idempotencyKey,
+  }
+}
+
+export function projectCommercialAccessBlocks(items: readonly CommercialAccessDecisionFactV2[], status: 'open' | 'resolved' | 'all') {
+  const latestAllowedAt = items.find(item => item.allowed)?.decidedAt ?? null
+  return items.filter(item => !item.allowed).flatMap(item => {
+    const state = latestAllowedAt !== null && item.decidedAt < latestAllowedAt ? 'resolved' as const : 'open' as const
+    if (status !== 'all' && status !== state) return []
+    return [{
+      id: item.id,
+      workspace_id: item.workspaceId,
+      state,
+      error_code: item.code,
+      available_points: item.availablePoints,
+      quoted_points: item.quotedPoints,
+      access_revision: item.balanceState === 'known' ? String(item.accessRevision) : null,
+      occurred_at: item.decidedAt,
+      verified_at: item.decidedAt,
+      payment_state: null,
+      grant_state: null,
+      request_id: item.requestId,
+      next_actions: [...item.nextActions],
+      operation_key: item.operationKey,
+      access_class: item.accessClass,
+      rate_card_version: item.rateCardVersion,
+    }]
+  })
+}
+
+export function projectServiceFulfillment(item: ServiceAllocationRecord) {
+  const allocationLabel = item.unit === 'contract_label' ? item.contractLabel! : `${item.allocatedQuantity ?? 0} ${item.unit}`
+  const usedLabel = item.unit === 'contract_label' ? '按合同记录' : `${item.usedQuantity} / ${item.allocatedQuantity ?? 0} ${item.unit}`
+  return {
+    id: item.id,
+    workspace_id: item.workspaceId,
+    service_type: item.serviceType,
+    allocation_label: allocationLabel,
+    used_label: usedLabel,
+    schedule_at: null,
+    status: item.status,
+    owner_label: null,
+    evidence_label: `entitlement:${item.entitlementSnapshotId};checksum:${item.sourceChecksum}`,
+    updated_at: item.updatedAt,
+    revision: item.revision,
+    period_start: item.periodStart,
+    period_end: item.periodEnd,
   }
 }
