@@ -601,6 +601,7 @@ rg -n --glob '!**/*.test.*' "(sessionRoles|opsSession\\?\\.roles|model\\.session
 - [ ] 1440×900 OIDC 桌面浏览器覆盖 platform/workspace/controlled-support、显式 deny、scope mismatch、JIT 到期/撤销、action 403、session 503；每个场景保存截图、console/network 摘要，fixture 与真实 OIDC 证据分栏。
 - [ ] 本地容器必须重新构建 API、ops-ui 与相关 Worker；健康检查、迁移、真实 Postgres role/RLS probe 全绿。缺 signer/key/provider/relay 配置继续显示外部阻断，不注入虚构凭据。
 - [ ] 生产门禁动态报告：当前 MCP 总数、policy 总数、shadow/enforce 总数与比例、HTTP policy 覆盖、scope resolver 覆盖、obligation 覆盖、decision audit 写入、Worker snapshot 覆盖。任一分母来自实时 registry/route/envelope 集合。
+- [x] **本地动态覆盖证据切片（非生产结论）。** `tests/authorization-release-dynamic-gate.test.ts` 从实时 MCP/policy/HTTP registry 计算分母，校验 policy、HTTP identity 引用、scope、obligation 和 Worker snapshot 字段覆盖；不替代真实 OIDC、生产 RLS、audit sink、provider、canary 或 soak 验收。
 - [ ] 在真实 OIDC、生产 DB role/RLS、JIT signer/revocation、audit sink、Worker execution-check、模型中转鉴权/usage/cost/error 与 canary 证据齐备前，整体结论保持 **NO-GO**。
 
 ### 19.6 全量 MCP capability enforcement 增量（2026-08-31）
