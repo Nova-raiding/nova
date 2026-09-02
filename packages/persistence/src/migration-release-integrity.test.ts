@@ -1,3 +1,6 @@
+import { readFile, readdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { MigrationIntegrityError, MigrationRunner, loadMigrations, migrationChecksum, verifyAppliedMigrations, type AppliedMigration } from './migration.js'
 import type { SqlClient, SqlPool } from './repository.js'
@@ -17,6 +20,24 @@ class AppliedHistoryClient implements SqlClient {
 }
 
 describe('migration release integrity gate', () => {
+  it('keeps the application runner aligned with every SQL migration artifact', async () => {
+    const migrations = await loadMigrations()
+    const migrationsDirectory = join(dirname(fileURLToPath(import.meta.url)), 'migrations')
+    const artifactNames = (await readdir(migrationsDirectory))
+      .filter((file) => /^\d{3}_[a-z0-9][a-z0-9_]*\.sql$/u.test(file))
+      .sort()
+
+    expect(migrations).toHaveLength(artifactNames.length)
+    expect(migrations.map((migration) => `${String(migration.version).padStart(3, '0')}_${migration.name}.sql`))
+      .toEqual(artifactNames)
+
+    for (const migration of migrations) {
+      const artifact = artifactNames.find((file) => file.startsWith(`${String(migration.version).padStart(3, '0')}_`))
+      expect(artifact, `missing SQL artifact for migration ${migration.version}`).toBeDefined()
+      expect(migrationChecksum(migration.sql)).toBe(migrationChecksum(await readFile(join(migrationsDirectory, artifact!), 'utf8')))
+    }
+  })
+
   it('ships one complete, ordered migration chain with unique names and stable checksums', async () => {
     const migrations = await loadMigrations()
     const versions = migrations.map(migration => migration.version)
