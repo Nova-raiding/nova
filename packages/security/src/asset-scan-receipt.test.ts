@@ -49,6 +49,8 @@ describe('asset scan receipt', () => {
   it('fails closed for unsafe receipt evidence and runtime signature types', () => {
     const receipt = fixture()
     expect(() => parseAssetScanReceipt({ ...receipt, subject: { ...receipt.subject, object_key: 'quarantine/ws_1/asset_1/../file.png' } })).toThrow('object_key')
+    expect(() => parseAssetScanReceipt({ ...receipt, subject: { ...receipt.subject, object_key: 'quarantine/ws_1/asset_2/file.png' } })).toThrow('object_key')
+    expect(() => parseAssetScanReceipt({ ...receipt, subject: { ...receipt.subject, object_key: 'quarantine/ws_1/asset_1/' } })).toThrow('object_key')
     expect(() => parseAssetScanReceipt({ ...receipt, scan: { ...receipt.scan, findings: ['bad\t finding'] } })).toThrow('findings')
     expect(verifyAssetScanReceiptSignature(receipt, null as unknown as string, 'not-a-key')).toBe(false)
   })

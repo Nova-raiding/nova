@@ -107,7 +107,14 @@ export function parseAssetScanReceipt(value: unknown, options: { now?: Date; max
     expires_at: iso(root.expires_at, 'expires_at'),
   }
   if (!/^[a-f0-9]{64}$/u.test(receipt.subject.sha256)) throw new Error('invalid sha256')
-  if (!receipt.subject.object_key.startsWith(`quarantine/${receipt.subject.workspace_id}/`) || receipt.subject.object_key.includes('\\') || receipt.subject.object_key.split('/').some(segment => segment === '.' || segment === '..')) throw new Error('invalid object_key')
+  const objectKeySegments = receipt.subject.object_key.split('/')
+  if (objectKeySegments.length < 4
+    || objectKeySegments[0] !== 'quarantine'
+    || objectKeySegments[1] !== receipt.subject.workspace_id
+    || objectKeySegments[2] !== receipt.subject.asset_id
+    || objectKeySegments.slice(3).some(segment => segment.length === 0)
+    || receipt.subject.object_key.includes('\\')
+    || objectKeySegments.some(segment => segment === '.' || segment === '..')) throw new Error('invalid object_key')
   const started = Date.parse(receipt.scan.started_at)
   const completed = Date.parse(receipt.scan.completed_at)
   const issued = Date.parse(receipt.issued_at)
