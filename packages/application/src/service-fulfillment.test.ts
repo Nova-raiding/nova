@@ -40,9 +40,9 @@ describe('onboarding delivery checklist planning', () => {
 })
 
 describe('ServiceFulfillmentService', () => {
-  const input = { workspaceId: 'ws_a', allocationId: 'svc_1', type: 'scheduled' as const, expectedRevision: 1, idempotencyKey: 'idem_1', actorId: 'ops_1', reason: 'customer requested session', scheduleAt: '2026-09-05T02:00:00.000Z' }
+  const input = { workspaceId: 'ws_a', allocationId: 'svc_1', type: 'scheduled' as const, expectedRevision: 1, idempotencyKey: 'idem_1', actorId: 'ops_1', reason: 'customer requested session', scheduleAt: '2026-09-05T02:00:00.000Z', evidence: { request: 'evidence://schedule/1' } }
   const build = (overrides: { points?: number | null; state?: 'known' | 'unknown'; allowed?: boolean; authorized?: boolean } = {}) => {
-    const repository = { appendEvent: vi.fn().mockResolvedValue({ allocation, event }) }
+    const repository = { createAllocation: vi.fn().mockResolvedValue(allocation), appendEvent: vi.fn().mockResolvedValue({ allocation, event }) }
     const access = { decide: vi.fn().mockResolvedValue({ balanceState: overrides.state ?? 'known', availablePoints: overrides.points === undefined ? 10 : overrides.points, allowed: overrides.allowed ?? true, accessRevision: overrides.state === 'unknown' ? null : '7' }) }
     const authorization = { authorize: vi.fn().mockResolvedValue(overrides.authorized ?? true) }
     return { service: new ServiceFulfillmentService(repository, access, authorization), repository, access, authorization }
@@ -53,6 +53,13 @@ describe('ServiceFulfillmentService', () => {
     await expect(service.record(input)).resolves.toEqual({ allocation, event, accessRevision: '7' })
     expect(authorization.authorize).toHaveBeenCalledBefore(access.decide)
     expect(access.decide).toHaveBeenCalledBefore(repository.appendEvent)
+  })
+
+  it('creates an allocation only from revision zero and verified evidence', async () => {
+    const { service, repository } = build()
+    const command = { workspaceId: 'ws_a', expectedRevision: 0 as const, idempotencyKey: 'allocation_1', actorId: 'ops_1', reason: 'verified order', orderSnapshotId: 'order_snapshot_1', entitlementSnapshotId: 'entitlement_snapshot_1', serviceType: 'one_to_one', unit: 'minute' as const, allocatedQuantity: 300, periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-10-01T00:00:00.000Z', sourceChecksum: 'a'.repeat(64), evidence: { order: 'evidence://order/1' } }
+    await expect(service.create(command)).resolves.toEqual({ allocation, accessRevision: '7' })
+    expect(repository.createAllocation).toHaveBeenCalledOnce()
   })
 
   it.each([
@@ -73,7 +80,7 @@ describe('ServiceFulfillmentService', () => {
 
   it('requires delivery evidence for completion and explicit before-target for corrections', async () => {
     const { service, repository } = build()
-    await expect(service.record({ ...input, type: 'completed', actualQuantity: 30, scheduleAt: null })).rejects.toBeInstanceOf(ServiceFulfillmentError)
+    await expect(service.record({ ...input, type: 'completed', actualQuantity: 30, scheduleAt: null, evidence: {} })).rejects.toBeInstanceOf(ServiceFulfillmentError)
     await expect(service.record({ ...input, type: 'adjusted', actualQuantity: 20, scheduleAt: null })).rejects.toBeInstanceOf(ServiceFulfillmentError)
     expect(repository.appendEvent).not.toHaveBeenCalled()
   })

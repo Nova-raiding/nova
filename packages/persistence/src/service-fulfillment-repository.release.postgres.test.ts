@@ -22,7 +22,7 @@ describe('service fulfillment PostgreSQL release evidence', () => {
 
       const repository = new PostgresServiceFulfillmentRepository(database)
       const allocationInput = {
-        workspaceId: 'ws_service_a', idempotencyKey: 'allocation:sept:one-to-one',
+        workspaceId: 'ws_service_a', expectedRevision: 0 as const, idempotencyKey: 'allocation:sept:one-to-one',
         orderSnapshotId: 'order_snapshot_a', entitlementSnapshotId: 'entitlement_snapshot_a',
         serviceType: 'one_to_one', unit: 'minute' as const, allocatedQuantity: 300,
         periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-10-01T00:00:00.000Z',
@@ -35,16 +35,16 @@ describe('service fulfillment PostgreSQL release evidence', () => {
       await expect(repository.createAllocation({ ...allocationInput, allocatedQuantity: 301 }))
         .rejects.toMatchObject({ code: 'SERVICE_ALLOCATION_IDEMPOTENCY_CONFLICT' })
 
-      const schedule = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 1, idempotencyKey: 'event:schedule:1', actorId: 'ops_a', reason: 'Customer selected a time', scheduleAt: '2026-09-05T02:00:00.000Z' })
+      const schedule = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 1, idempotencyKey: 'event:schedule:1', actorId: 'ops_a', reason: 'Customer selected a time', scheduleAt: '2026-09-05T02:00:00.000Z', evidence: { request: 'evidence://schedule/1' } })
       expect(schedule.allocation).toMatchObject({ revision: 2, status: 'scheduled', usedQuantity: 0 })
-      expect(await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 1, idempotencyKey: 'event:schedule:1', actorId: 'ops_a', reason: 'Customer selected a time', scheduleAt: '2026-09-05T02:00:00.000Z' })).toEqual(schedule)
+      expect(await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 1, idempotencyKey: 'event:schedule:1', actorId: 'ops_a', reason: 'Customer selected a time', scheduleAt: '2026-09-05T02:00:00.000Z', evidence: { request: 'evidence://schedule/1' } })).toEqual(schedule)
 
-      await expect(repository.appendEvent({ workspaceId: 'ws_service_b', allocationId: allocation.id, type: 'started', expectedRevision: 2, idempotencyKey: 'cross-tenant', actorId: 'ops_b', reason: 'must not see tenant A' }))
+      await expect(repository.appendEvent({ workspaceId: 'ws_service_b', allocationId: allocation.id, type: 'started', expectedRevision: 2, idempotencyKey: 'cross-tenant', actorId: 'ops_b', reason: 'must not see tenant A', evidence: { request: 'cross-tenant' } }))
         .rejects.toMatchObject({ code: 'SERVICE_ALLOCATION_NOT_FOUND' })
-      await expect(repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'started', expectedRevision: 1, idempotencyKey: 'stale', actorId: 'ops_a', reason: 'stale writer' }))
+      await expect(repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'started', expectedRevision: 1, idempotencyKey: 'stale', actorId: 'ops_a', reason: 'stale writer', evidence: { request: 'stale' } }))
         .rejects.toMatchObject({ code: 'SERVICE_FULFILLMENT_REVISION_CONFLICT' })
 
-      const started = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'started', expectedRevision: 2, idempotencyKey: 'event:start:1', actorId: 'ops_a', reason: 'Session began' })
+      const started = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'started', expectedRevision: 2, idempotencyKey: 'event:start:1', actorId: 'ops_a', reason: 'Session began', evidence: { attendance: 'evidence://start/1' } })
       const completed = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'completed', expectedRevision: started.allocation.revision, idempotencyKey: 'event:complete:1', actorId: 'ops_a', reason: 'Session delivered', actualQuantity: 60, evidence: { attendance_record: 'evidence://attendance/1' } })
       expect(completed.allocation).toMatchObject({ revision: 4, status: 'completed', usedQuantity: 60 })
       expect(completed.event.evidence).toEqual({ attendance_record: 'evidence://attendance/1' })
@@ -54,8 +54,8 @@ describe('service fulfillment PostgreSQL release evidence', () => {
       expect(corrected.event.before).toMatchObject({ usedQuantity: 60, correctedActualQuantity: 60 })
       expect(corrected.event.after).toMatchObject({ usedQuantity: 55, correctedActualQuantity: 55 })
 
-      const secondSchedule = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 5, idempotencyKey: 'event:schedule:2', actorId: 'ops_a', reason: 'Customer selected another time', scheduleAt: '2026-09-12T02:00:00.000Z' })
-      const secondStart = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'started', expectedRevision: secondSchedule.allocation.revision, idempotencyKey: 'event:start:2', actorId: 'ops_a', reason: 'Second session began' })
+      const secondSchedule = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 5, idempotencyKey: 'event:schedule:2', actorId: 'ops_a', reason: 'Customer selected another time', scheduleAt: '2026-09-12T02:00:00.000Z', evidence: { request: 'evidence://schedule/2' } })
+      const secondStart = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'started', expectedRevision: secondSchedule.allocation.revision, idempotencyKey: 'event:start:2', actorId: 'ops_a', reason: 'Second session began', evidence: { attendance: 'evidence://start/2' } })
       await expect(repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'completed', expectedRevision: secondStart.allocation.revision, idempotencyKey: 'event:complete:too-large', actorId: 'ops_a', reason: 'Invalid excessive time', actualQuantity: 246, evidence: { attendance_record: 'evidence://attendance/2' } }))
         .rejects.toMatchObject({ code: 'SERVICE_FULFILLMENT_QUOTA_EXCEEDED' })
 

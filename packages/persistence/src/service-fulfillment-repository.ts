@@ -65,6 +65,7 @@ export interface OnboardingGrantScheduleRecord {
 
 export interface CreateServiceAllocationInput {
   workspaceId: string
+  expectedRevision: 0
   idempotencyKey: string
   orderSnapshotId: string
   entitlementSnapshotId: string
@@ -172,6 +173,7 @@ const limit = (value = 100): number => {
 
 function validateAllocation(input: CreateServiceAllocationInput) {
   const workspaceId = requireWorkspaceScope(input.workspaceId)
+  if (input.expectedRevision !== 0) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_REVISION_CONFLICT', 'new service allocation requires expectedRevision 0')
   const unit = input.unit
   if (!['count', 'minute', 'contract_label'].includes(unit)) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'unit is invalid')
   const allocatedQuantity = integer(input.allocatedQuantity, 'allocatedQuantity')
@@ -182,7 +184,9 @@ function validateAllocation(input: CreateServiceAllocationInput) {
   const periodStart = instant(input.periodStart, 'periodStart')
   const periodEnd = instant(input.periodEnd, 'periodEnd')
   if ((periodStart === null) !== (periodEnd === null) || (periodStart && periodEnd && periodStart >= periodEnd)) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'allocation period is invalid')
-  return { workspaceId, idempotencyKey: required(input.idempotencyKey, 'idempotencyKey'), orderSnapshotId: required(input.orderSnapshotId, 'orderSnapshotId'), entitlementSnapshotId: required(input.entitlementSnapshotId, 'entitlementSnapshotId'), serviceType: required(input.serviceType, 'serviceType', 128), unit, allocatedQuantity, contractLabel, periodStart, periodEnd, sourceChecksum: checksum(input.sourceChecksum), actorId: required(input.actorId, 'actorId'), reason: required(input.reason, 'reason', 1000), evidence: boundedObject(input.evidence) }
+  const creationEvidence = boundedObject(input.evidence)
+  if (Object.keys(creationEvidence).length === 0) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'allocation creation requires evidence')
+  return { workspaceId, expectedRevision: 0 as const, idempotencyKey: required(input.idempotencyKey, 'idempotencyKey'), orderSnapshotId: required(input.orderSnapshotId, 'orderSnapshotId'), entitlementSnapshotId: required(input.entitlementSnapshotId, 'entitlementSnapshotId'), serviceType: required(input.serviceType, 'serviceType', 128), unit, allocatedQuantity, contractLabel, periodStart, periodEnd, sourceChecksum: checksum(input.sourceChecksum), actorId: required(input.actorId, 'actorId'), reason: required(input.reason, 'reason', 1000), evidence: creationEvidence }
 }
 
 function validateEvent(input: AppendServiceFulfillmentEventInput) {
@@ -193,7 +197,7 @@ function validateEvent(input: AppendServiceFulfillmentEventInput) {
   const actualQuantity = integer(input.actualQuantity, 'actualQuantity')
   const correctsEventId = input.correctsEventId == null ? null : required(input.correctsEventId, 'correctsEventId')
   if (type === 'scheduled' && scheduleAt === null) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'scheduled event requires scheduleAt')
-  if (type === 'completed' && Object.keys(input.evidence ?? {}).length === 0) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'completed event requires evidence')
+  if (Object.keys(input.evidence ?? {}).length === 0) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'service fulfillment event requires evidence')
   if (type === 'adjusted' && (correctsEventId === null || actualQuantity === null)) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'adjusted event requires correction target and quantity')
   return { workspaceId: requireWorkspaceScope(input.workspaceId), allocationId: required(input.allocationId, 'allocationId'), type, expectedRevision: input.expectedRevision, idempotencyKey: required(input.idempotencyKey, 'idempotencyKey'), actorId: required(input.actorId, 'actorId'), reason: required(input.reason, 'reason', 1000), scheduleAt, actualQuantity, correctsEventId, evidence: boundedObject(input.evidence) }
 }

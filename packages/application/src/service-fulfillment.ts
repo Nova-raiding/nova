@@ -85,7 +85,26 @@ export interface RecordServiceFulfillmentInput {
   evidence?: Record<string, unknown>
 }
 
+export interface CreateServiceAllocationCommand {
+  workspaceId: string
+  expectedRevision: 0
+  idempotencyKey: string
+  actorId: string
+  reason: string
+  orderSnapshotId: string
+  entitlementSnapshotId: string
+  serviceType: string
+  unit: 'count' | 'minute' | 'contract_label'
+  allocatedQuantity?: number | null
+  contractLabel?: string | null
+  periodStart?: string | null
+  periodEnd?: string | null
+  sourceChecksum: string
+  evidence: Record<string, unknown>
+}
+
 export interface ServiceFulfillmentRepositoryPort {
+  createAllocation(input: CreateServiceAllocationCommand): Promise<ServiceAllocation>
   appendEvent(input: RecordServiceFulfillmentInput): Promise<{ allocation: ServiceAllocation; event: ServiceFulfillmentEvent }>
 }
 
@@ -218,6 +237,29 @@ export class ServiceFulfillmentService {
     private readonly authorization: ServiceAuthorizationPort,
   ) {}
 
+  async create(input: CreateServiceAllocationCommand): Promise<{ allocation: ServiceAllocation; accessRevision: string }> {
+    if (input.expectedRevision !== 0) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'new allocation requires expectedRevision 0')
+    const normalized: CreateServiceAllocationCommand = {
+      ...input,
+      workspaceId: required(input.workspaceId, 'workspaceId'),
+      idempotencyKey: required(input.idempotencyKey, 'idempotencyKey'),
+      actorId: required(input.actorId, 'actorId'),
+      reason: required(input.reason, 'reason'),
+      orderSnapshotId: required(input.orderSnapshotId, 'orderSnapshotId'),
+      entitlementSnapshotId: required(input.entitlementSnapshotId, 'entitlementSnapshotId'),
+      serviceType: required(input.serviceType, 'serviceType'),
+      sourceChecksum: required(input.sourceChecksum, 'sourceChecksum'),
+      evidence: evidence(input.evidence),
+    }
+    if (!/^[a-f0-9]{64}$/u.test(normalized.sourceChecksum) || Object.keys(normalized.evidence).length === 0) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'verified source checksum and evidence are required')
+    const authorized = await this.authorization.authorize({ workspaceId: normalized.workspaceId, actorId: normalized.actorId, capability: 'commercial.service_fulfillment.write' })
+    if (!authorized) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_PERMISSION_DENIED', 'service fulfillment capability is required')
+    const decision = await this.access.decide({ workspaceId: normalized.workspaceId, operation: 'service.fulfillment.record' })
+    if (decision.balanceState === 'unknown' || decision.availablePoints === null || !decision.accessRevision) throw new ServiceFulfillmentError('CREATIVE_POINTS_UNAVAILABLE', 'creative point balance is unavailable')
+    if (!decision.allowed || decision.availablePoints <= 0) throw new ServiceFulfillmentError('CREATIVE_POINTS_EXHAUSTED', 'positive creative points are required for service fulfillment')
+    return { allocation: await this.repository.createAllocation(normalized), accessRevision: decision.accessRevision }
+  }
+
   async record(input: RecordServiceFulfillmentInput): Promise<{ allocation: ServiceAllocation; event: ServiceFulfillmentEvent; accessRevision: string }> {
     const normalized: RecordServiceFulfillmentInput = {
       workspaceId: required(input.workspaceId, 'workspaceId'),
@@ -236,7 +278,7 @@ export class ServiceFulfillmentService {
       throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'event type is invalid')
     }
     if (normalized.type === 'scheduled' && normalized.scheduleAt === null) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'scheduled event requires scheduleAt')
-    if (normalized.type === 'completed' && Object.keys(normalized.evidence ?? {}).length === 0) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'completed event requires delivery evidence')
+    if (Object.keys(normalized.evidence ?? {}).length === 0) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'fulfillment event requires evidence')
     if (normalized.type === 'adjusted' && (!normalized.correctsEventId || normalized.actualQuantity === null)) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'adjusted event requires target and corrected quantity')
 
     const authorized = await this.authorization.authorize({ workspaceId: normalized.workspaceId, actorId: normalized.actorId, capability: 'commercial.service_fulfillment.write' })
