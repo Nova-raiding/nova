@@ -51,6 +51,18 @@ describe("desktop permission UX", () => {
     expect(html).not.toContain('class="ops-jit-status" aria-live="polite"');
     expect(html).toContain('aria-hidden="true"');
   });
+  it("announces the JIT boundary and expiry details to assistive technology", () => {
+    const html = renderToStaticMarkup(<RoleScopeBar
+      session={{ ...session, temporary_grants: [{ id: "grant_accessible", access_mode: "read", workspace_id: "ws_1", resource_scope: { type: "workspace", ids: ["ws_1"] }, expires_at: "2999-01-01T00:00:00.000Z", max_uses: 2, use_count: 1 }] }}
+      authorization={createAuthorizationProjection(session, true)}
+    />);
+    expect(html).toMatch(/class="ops-jit-status"[^>]*role="region"/);
+    expect(html).toContain('aria-label="当前临时授权"');
+    expect(html).toMatch(/aria-describedby="[^"]+"/);
+    expect(html).toContain("范围 workspace:ws_1");
+    expect(html).toContain("已使用 1/2 次");
+    expect(html).toContain("剩余");
+  });
   it("offers an explicit exit action while a JIT grant is active", () => {
     const html = renderToStaticMarkup(<RoleScopeBar
       session={{ ...session, temporary_grants: [{ id: "grant_1", access_mode: "read", workspace_id: "ws_1", resource_scope: { type: "workspace", ids: ["ws_1"] }, expires_at: "2999-01-01T00:00:00.000Z" }] }}

@@ -60,6 +60,7 @@ export function RoleScopeBar({
   const primaryRole = roles[0] ? roleLabels[roles[0]] ?? roles[0] : "权限未验证";
   const [rolesOpen, setRolesOpen] = useState(false);
   const rolesPanelId = useId();
+  const jitStatusId = useId();
   const [now, setNow] = useState(() => Date.now());
   const candidateGrant = activeJitGrantForNow(session?.temporary_grants, Date.now());
   // Use the rendered clock for visibility as well as the callback. This closes
@@ -131,9 +132,12 @@ export function RoleScopeBar({
         <Typography.Text>{scopeLabel(authorization)}</Typography.Text>
         <Typography.Text type="secondary">策略 {authorization.policyVersion ?? "未返回"}</Typography.Text>
         {activeGrant ? (
-          <span className="ops-jit-status">
-            <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-              临时授权已启用：{activeGrant.access_mode === "write" ? "可写" : "只读"}。
+          <span className="ops-jit-status" role="region" aria-label="当前临时授权" aria-describedby={jitStatusId}>
+            <span id={jitStatusId} className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              临时授权已启用：{activeGrant.access_mode === "write" ? "可写" : "只读"}；
+              范围 {activeGrant.resource_scope?.type ?? "workspace"}:{activeGrant.resource_scope?.ids?.join(", ") ?? activeGrant.workspace_id ?? "未返回"}；
+              {activeGrant.expires_at ? `剩余 ${formatJitRemaining(Date.parse(activeGrant.expires_at) - now)}` : "会话结束时失效"}；
+              {activeGrant.max_uses !== undefined ? `已使用 ${activeGrant.use_count ?? 0}/${activeGrant.max_uses} 次` : "未提供使用次数上限"}。
             </span>
             <Tag color="gold" icon={<ClockCircleOutlined aria-hidden="true" />} aria-hidden="true">
               临时授权 · {activeGrant.access_mode === "write" ? "可写" : "只读"} · 剩余 {activeGrant.expires_at ? formatJitRemaining(Date.parse(activeGrant.expires_at) - now) : "会话结束"}
