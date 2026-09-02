@@ -29,4 +29,10 @@ describe('local Compose acceptance evidence', () => {
     expect(evidence.cloud_gate).toBe(false)
     expect(evidence.status).toBe('pass')
   })
+
+  it('does not label a non-50-workspace run as the pilot_50 profile', () => {
+    expect(() => buildLocalComposeAcceptanceEvidence({ workspaces: 49 })).toThrow('exactly 50 exercised workspaces')
+    expect(() => buildLocalComposeAcceptanceEvidence({ workspaces: 51 })).toThrow('exactly 50 exercised workspaces')
+    expect(() => buildLocalComposeAcceptanceEvidence({ workspaces: 50.5 })).toThrow('exactly 50 exercised workspaces')
+  })
 })

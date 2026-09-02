@@ -32,6 +32,9 @@ export function buildLocalComposeAcceptanceEvidence(input: {
   configVersion?: string
   dataVersion?: string
 }): LocalComposeAcceptanceEvidence {
+  if (!Number.isInteger(input.workspaces) || input.workspaces !== 50) {
+    throw new Error('pilot_50_compose_postgres evidence requires exactly 50 exercised workspaces')
+  }
   const binding = (explicit: string | undefined, envName: string, fallback: string) => {
     if (explicit !== undefined) return explicit.trim()
     const fromEnv = process.env[envName]
