@@ -89,6 +89,65 @@ VALUES ('ws_demo','trialing','demo_fixture','Local Demo (Fixture)','monthly',0,6
   '2026-08-01T00:00:00Z','2026-09-01T00:00:00Z')
 ON CONFLICT (workspace_id) DO NOTHING;
 
+-- Commercial access reads only the V2 entitlement projection. Keep a single,
+-- active, non-production contract fact chain for the local workspace so the
+-- scanner can exercise the same API/MCP admission path as a real merchant.
+-- This is intentionally local seed data; production manifests never mount or
+-- execute this file and therefore remain fail-closed without real contract
+-- evidence.
+INSERT INTO commercial_orders_v2 (
+  id, workspace_id, sku_id, sku_version_id, amount_fen, currency,
+  payment_provider, status, idempotency_key, request_hash, created_by_actor_id
+)
+SELECT
+  'order_demo_fixture_subscription', 'ws_demo', s.id, v.id, 0, 'CNY',
+  'local_fixture', 'pending', 'demo-fixture-subscription-v1', repeat('1', 64),
+  'local_compose_seed'
+FROM commercial_catalog_skus s
+JOIN commercial_catalog_sku_versions v ON v.sku_id = s.id
+WHERE s.code = 'basic' AND v.version = 1
+ON CONFLICT (workspace_id, id) DO NOTHING;
+
+INSERT INTO commercial_order_snapshots_v2 (
+  id, workspace_id, order_id, sku_id, sku_version_id, catalog_checksum,
+  snapshot, checksum
+)
+SELECT
+  'order_snapshot_demo_fixture_subscription', o.workspace_id, o.id,
+  o.sku_id, o.sku_version_id, v.checksum,
+  jsonb_build_object('source', 'local_compose_seed', 'productionEvidence', false),
+  repeat('2', 64)
+FROM commercial_orders_v2 o
+JOIN commercial_catalog_sku_versions v ON v.id = o.sku_version_id
+WHERE o.workspace_id = 'ws_demo' AND o.id = 'order_demo_fixture_subscription'
+ON CONFLICT (workspace_id, id) DO NOTHING;
+
+INSERT INTO workspace_subscription_periods_v2 (
+  id, workspace_id, order_snapshot_id, period_start, period_end, status, revision
+)
+VALUES (
+  'subscription_period_demo_fixture', 'ws_demo',
+  'order_snapshot_demo_fixture_subscription',
+  date_trunc('month', now()), date_trunc('month', now()) + interval '1 month',
+  'active', 1
+)
+ON CONFLICT (workspace_id, id) DO NOTHING;
+
+INSERT INTO workspace_entitlement_snapshots_v2 (
+  id, workspace_id, subscription_period_id, subscription_period_revision,
+  catalog_version_id, resolved_benefits, unresolved_blockers, executable,
+  checksum
+)
+SELECT
+  'entitlement_snapshot_demo_fixture', 'ws_demo',
+  'subscription_period_demo_fixture', 1, v.id,
+  '[{"code":"max_brands","quantity":1},{"code":"max_stores","quantity":5}]'::jsonb,
+  '[]'::jsonb, true, repeat('3', 64)
+FROM commercial_catalog_sku_versions v
+JOIN commercial_catalog_skus s ON s.id = v.sku_id
+WHERE s.code = 'basic' AND v.version = 1
+ON CONFLICT (workspace_id, id) DO NOTHING;
+
 -- The scanner contract exercises the real asset.uploaded worker path. Seed an
 -- authoritative, non-production creative-point grant so that the commercial
 -- access recheck can admit that local scan without falling back to a legacy
