@@ -335,7 +335,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
           await this.queue.ack(message)
           return { state: 'dead_letter', event: updated }
         }
-        const updated = await this.store.recordFailure(event.workspaceId, event.id, failure, new Date(this.now() + this.maxDelayMs * 1000).toISOString(), event.leaseToken)
+        const updated = await this.store.recordFailure(event.workspaceId, event.id, failure, new Date(this.now() + this.maxDelayMs).toISOString(), event.leaseToken)
         await this.queue.ack(message)
         return { state: 'dead_letter', event: updated }
       }

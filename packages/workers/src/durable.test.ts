@@ -162,6 +162,18 @@ describe('durable outbox dispatcher', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it('persists dead-letter retry timing in milliseconds without inflating the delay', async () => {
+    const store = new Store(event({ id: 'evt_dead_letter_timing', attempts: 4 }))
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async () => {
+      throw new WorkerFailure({ code: 'PERMANENT_FAILURE', message: 'retry exhausted', retryable: true, unknown: false })
+    }, { now: () => 10_000, maxAttempts: 5, maxDelayMs: 30_000 })
+
+    await dispatcher.restore('ws_1')
+    expect((await dispatcher.dispatchOnce()).state).toBe('dead_letter')
+    expect(store.events.get('evt_dead_letter_timing')?.nextAttemptAt).toBe(new Date(40_000).toISOString())
+  })
+
   it('sanitizes malformed durable error evidence before deciding retry', async () => {
     const store = new Store(event({ id: 'evt_malformed_error' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const dispatcher = new DurableOutboxDispatcher(store, queue, async () => {
