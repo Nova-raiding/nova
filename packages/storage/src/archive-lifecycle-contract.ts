@@ -16,6 +16,7 @@ export interface DurableArchiveCheck {
 }
 
 const SHA256 = /^[a-f0-9]{64}$/iu
+const SAFE_SCOPE_SEGMENT = /^(?!\.\.?(?:$|\/))[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u
 
 /**
  * Release-time contract for artifacts that claim restart/backup recovery.
@@ -27,9 +28,10 @@ export function checkDurableArchiveReference(input: unknown): DurableArchiveChec
   if (!input || typeof input !== 'object' || Array.isArray(input)) return { restorable: false, reasons: ['archive reference must be an object'] }
   const value = input as Partial<DurableArchiveReference>
   if (!['asset', 'generated_image', 'generated_video'].includes(String(value.kind))) reasons.push('kind is unsupported')
-  if (!value.workspaceId || !value.entityId) reasons.push('workspaceId and entityId are required')
+  if (typeof value.workspaceId !== 'string' || typeof value.entityId !== 'string' || !value.workspaceId || !value.entityId) reasons.push('workspaceId and entityId are required')
+  else if (!SAFE_SCOPE_SEGMENT.test(value.workspaceId) || !SAFE_SCOPE_SEGMENT.test(value.entityId)) reasons.push('workspaceId and entityId must be safe scope segments')
   const keyParts = typeof value.storageKey === 'string' ? value.storageKey.split('/') : []
-  if (typeof value.storageKey !== 'string' || !['quarantine', 'clean'].includes(keyParts[0] ?? '') || keyParts[1] !== value.workspaceId || keyParts.length < 4 || value.storageKey.startsWith('fixture://') || value.storageKey.startsWith('/') || value.storageKey.includes('\\') || keyParts.some(part => !part || part === '.' || part === '..')) reasons.push('storageKey must be a workspace-scoped quarantine/clean object key')
+  if (typeof value.storageKey !== 'string' || !['quarantine', 'clean'].includes(keyParts[0] ?? '') || keyParts[1] !== value.workspaceId || keyParts[2] !== value.entityId || keyParts.length < 4 || value.storageKey.startsWith('fixture://') || value.storageKey.startsWith('/') || value.storageKey.includes('\\') || keyParts.some(part => !part || part === '.' || part === '..')) reasons.push('storageKey must be a workspace-scoped quarantine/clean object key')
   if (typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)) reasons.push('sha256 must be a SHA-256 digest')
   const sizeBytes = value.sizeBytes
   if (typeof sizeBytes !== 'number' || !Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) reasons.push('sizeBytes must be positive')

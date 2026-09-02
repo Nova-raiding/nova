@@ -53,6 +53,22 @@ describe('durable archive lifecycle contract', () => {
     expect(checkDurableArchiveReference({ ...base, storageKey: 'clean/ws_restore/asset_1\\file' }).restorable).toBe(false)
   })
 
+  it('binds the durable entity identity to the archive key and rejects unsafe scope segments', () => {
+    const base = { kind: 'asset' as const, workspaceId: 'ws_restore', entityId: 'asset_1', sha256: '0'.repeat(64), sizeBytes: 1, revision: 1 }
+    expect(checkDurableArchiveReference({ ...base, storageKey: 'clean/ws_restore/other_asset/output.bin' })).toMatchObject({
+      restorable: false,
+      reasons: ['storageKey must be a workspace-scoped quarantine/clean object key'],
+    })
+    expect(checkDurableArchiveReference({ ...base, entityId: 'asset/1', storageKey: 'clean/ws_restore/asset/1/output.bin' })).toMatchObject({
+      restorable: false,
+      reasons: expect.arrayContaining(['workspaceId and entityId must be safe scope segments']),
+    })
+    expect(checkDurableArchiveReference({ ...base, workspaceId: 'ws\\restore', storageKey: 'clean/ws\\restore/asset_1/output.bin' })).toMatchObject({
+      restorable: false,
+      reasons: expect.arrayContaining(['workspaceId and entityId must be safe scope segments']),
+    })
+  })
+
   it('requires both the durable snapshot reference and the object bytes at restore time', async () => {
     const root = await mkdtemp(join(tmpdir(), 'merchant-archive-restore-'))
     try {
