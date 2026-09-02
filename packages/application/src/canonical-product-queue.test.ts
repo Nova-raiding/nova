@@ -54,4 +54,32 @@ describe('canonical product queue', () => {
       expect.objectContaining({ queueKey: 'task:task_orphan', legacyProductId: 'product_1', platform: 'taobao', accountId: 'account_1' }),
     ]))
   })
+
+  it('round-trips the opaque cursor across pages in stable status order', () => {
+    const pagedInput = {
+      ...input,
+      legacyProducts: [
+        { id: 'product_verified', workspaceId: 'ws_1', brandId: 'brand_1', platform: 'taobao', accountId: 'account_1' },
+        { id: 'product_legacy', workspaceId: 'ws_1', brandId: 'brand_1', platform: 'taobao', accountId: 'account_1' },
+      ],
+      canonicalProducts: [
+        ...input.canonicalProducts,
+        { id: 'canonical_verified', workspaceId: 'ws_1', brandId: 'brand_1', legacyProductId: 'product_verified' },
+      ],
+      listings: [
+        ...input.listings,
+        { id: 'listing_verified', workspaceId: 'ws_1', brandId: 'brand_1', canonicalProductId: 'canonical_verified', platform: 'taobao', accountId: 'account_1' },
+      ],
+    } as const
+    const report = buildCanonicalChainConsistencyReport(pagedInput)
+    const first = buildCanonicalProductQueue(pagedInput, report, { limit: 1 })
+    expect(first.items).toHaveLength(1)
+    expect(first.hasMore).toBe(true)
+    expect(first.nextCursor).toEqual(expect.any(String))
+
+    const second = buildCanonicalProductQueue(pagedInput, report, { limit: 1, cursor: first.nextCursor! })
+    expect(second.items).toHaveLength(1)
+    expect(second.items[0]?.queueKey).not.toBe(first.items[0]?.queueKey)
+    expect(second.nextCursor).toEqual(expect.any(String))
+  })
 })

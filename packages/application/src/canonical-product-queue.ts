@@ -62,7 +62,7 @@ function decodeCursor(value: string | undefined) {
     const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
     const row = parsed as Record<string, unknown>
-    if (typeof row.rank !== 'number' || !Number.isSafeInteger(row.rank) || !(row.rank in rank) || typeof row.key !== 'string' || row.key.length === 0) return undefined
+    if (typeof row.rank !== 'number' || !Number.isSafeInteger(row.rank) || !Object.values(rank).includes(row.rank) || typeof row.key !== 'string' || row.key.length === 0) return undefined
     return { rank: row.rank, key: row.key }
   } catch { return undefined }
 }
