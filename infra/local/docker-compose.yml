@@ -226,7 +226,10 @@ services:
       - merchant-assets:/var/lib/merchant-assets
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
+      # A scanner configured for real callbacks must not advertise API
+      # readiness while the callback trust root is absent. This catches stale
+      # local containers after .env changes before uploads become pending.
+      test: ["CMD-SHELL", "(test \"$${ASSET_SCANNER_MODE}\" != clamav_worker || test -n \"$${ASSET_SCAN_TRUSTED_PUBLIC_KEYS}\") && wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
