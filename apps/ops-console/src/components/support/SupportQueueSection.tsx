@@ -1,6 +1,6 @@
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
-import { useState } from "react";
+import { Alert, Button, Card, Empty, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { useEffect, useRef, useState } from "react";
 import type {
   CreateSupportTicketCommand,
   SupportTicketContract,
@@ -21,6 +21,11 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm<CreateForm>();
   const initialLoadFailed = Boolean(model.error && !model.loading && model.tickets.length === 0);
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (model.error) errorRef.current?.focus({ preventScroll: true });
+  }, [model.error]);
 
   const submit = async () => {
     const values = await form.validateFields();
@@ -66,8 +71,21 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
           onChange={priority => model.setFilters({ ...model.filters, priority })}
         />
       </Space>
+      {model.error ? (
+        <div ref={errorRef} tabIndex={-1} role="alert" aria-labelledby="support-queue-error-title" style={{ marginBottom: 16 }}>
+          <Alert
+            type="error"
+            showIcon
+            message={<span id="support-queue-error-title">工单队列读取失败</span>}
+            description={initialLoadFailed
+              ? "当前空列表不代表没有工单；请修复连接或权限后重新加载。"
+              : "已保留上一次成功读取的工单，修复连接或权限后可重新加载。"}
+            action={<Button htmlType="button" aria-label="刷新工单" style={{ minHeight: 44 }} onClick={() => void model.reload()}>刷新工单</Button>}
+          />
+        </div>
+      ) : null}
       {initialLoadFailed ? (
-        <Typography.Text type="secondary" role="status">工单数据尚未取得，请重试；当前状态不能解释为没有客服工单。</Typography.Text>
+        <Typography.Text type="secondary" role="status">工单数据尚未取得，当前状态不能解释为没有客服工单。</Typography.Text>
       ) : <Table<SupportTicketContract>
         rowKey="id"
         loading={model.loading}
