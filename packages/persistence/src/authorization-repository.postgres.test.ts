@@ -11,18 +11,23 @@ class ReservationClient implements SqlClient {
   readonly queries: string[] = []
   private insertCount = 0
   private reservationExists = false
-  constructor(private readonly revision = 2, private readonly resourceScope: Record<string, unknown> = { task_ids: ['task-120'] }) {}
-  private readonly row = {
-    reservationId: 'reservation-120', eventId: 'event-120', decisionId: 'decision-120', subjectIdentityId: subject,
-    workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120',
-    scopeHash, grantId, authorizationRevision: 2, grantRevision: 2, reservedAt: now,
+  private readonly grantScopeHash: string
+  constructor(private readonly revision = 2, private readonly resourceScope: Record<string, unknown> = { task_ids: ['task-120'] }) {
+    this.grantScopeHash = authorizationScopeHash(resourceScope)
+  }
+  private get row() {
+    return {
+      reservationId: 'reservation-120', eventId: 'event-120', decisionId: 'decision-120', subjectIdentityId: subject,
+      workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120',
+      scopeHash: this.grantScopeHash, grantId, authorizationRevision: 2, grantRevision: 2, reservedAt: now,
+    }
   }
 
   async query<Row = Record<string, unknown>>(text: string): Promise<{ rows: Row[] }> {
     this.queries.push(text)
     if (text === 'SELECT set_config(\'app.platform_scope\', \'platform_ops\', true)' || /^(BEGIN|COMMIT|ROLLBACK)/u.test(text)) return { rows: [] as Row[] }
     if (text.includes('FROM ops_access_grants') && text.includes('FOR UPDATE')) return {
-      rows: [{ id: grantId, grantKind: 'temporary', accessMode: 'write', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.update'], resourceScope: this.resourceScope, scopeHash, reason: 'execute task', ticketRef: 'CAS-120', issuedBy: 'ops', approvedBy: 'security', approvedAt: now, issuedAt: now, expiresAt: '2026-09-01T10:05:00.000Z', revokedAt: null, revokedBy: null, revocationReason: null, maxUses: 1, useCount: 1, revision: 2, authorizationRevision: 2, createdAt: now, updatedAt: now }] as Row[],
+      rows: [{ id: grantId, grantKind: 'temporary', accessMode: 'write', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.update'], resourceScope: this.resourceScope, scopeHash: this.grantScopeHash, reason: 'execute task', ticketRef: 'CAS-120', issuedBy: 'ops', approvedBy: 'security', approvedAt: now, issuedAt: now, expiresAt: '2026-09-01T10:05:00.000Z', revokedAt: null, revokedBy: null, revocationReason: null, maxUses: 1, useCount: 1, revision: 2, authorizationRevision: 2, createdAt: now, updatedAt: now }] as Row[],
     }
     if (text.includes('FROM authorization_revisions')) return { rows: [{ revision: this.revision }] as Row[] }
     if (text.startsWith('INSERT INTO authorization_execution_reservations')) {
@@ -60,6 +65,33 @@ describe('PostgresAuthorizationRepository.reserveExecution', () => {
     const repository = new PostgresAuthorizationRepository({ connect: async () => client }, () => new Date(now))
     await expect(repository.reserveExecution({ reservationId: 'reservation-union', eventId: 'event-union', decisionId: 'decision-union', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-120', scopeHash, expectedAuthorizationRevision: 2, grantId, expectedGrantRevision: 2, at: now })).resolves.toBeUndefined()
     expect(client.queries.some(query => query.startsWith('INSERT INTO authorization_execution_reservations'))).toBe(false)
+  })
+
+  it.each([
+    ['workspace', { task_ids: ['task-120'] }, 'ws-b', 'task-120'],
+    ['brand', { brand_ids: ['brand-a'] }, 'ws-a', 'brand-b'],
+    ['account', { account_ids: ['account-a'] }, 'ws-a', 'account-b'],
+  ] as const)('rejects a cross-tenant %s resource before inserting a reservation', (_scopeType, resourceScope, workspaceId, resourceId) => {
+    const client = new ReservationClient(2, resourceScope)
+    const repository = new PostgresAuthorizationRepository({ connect: async () => client }, () => new Date(now))
+    const inputScopeHash = authorizationScopeHash(resourceScope)
+
+    return expect(repository.reserveExecution({
+      reservationId: `reservation-cross-${_scopeType}`,
+      eventId: `event-cross-${_scopeType}`,
+      decisionId: `decision-cross-${_scopeType}`,
+      subjectIdentityId: subject,
+      workspaceId,
+      capability: 'customer.content.update',
+      resourceId,
+      scopeHash: inputScopeHash,
+      expectedAuthorizationRevision: 2,
+      grantId,
+      expectedGrantRevision: 2,
+      at: now,
+    })).resolves.toBeUndefined().then(() => {
+      expect(client.queries.some(query => query.startsWith('INSERT INTO authorization_execution_reservations'))).toBe(false)
+    })
   })
 
   it('rejects invalid reservation identity before opening a transaction', async () => {
