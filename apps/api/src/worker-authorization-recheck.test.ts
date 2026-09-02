@@ -30,6 +30,7 @@ describe('worker authorization recheck API', () => {
       const reserved = await recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })
       expect(reserved).toMatchObject({ authorized: true, reservation_id: 'worker-execution:evt_authz_api:generation.execute', event_id: 'evt_authz_api' })
       await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).resolves.toMatchObject({ reservation_id: (reserved as { reservation_id: string }).reservation_id })
+      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), decisionId: 'decision_conflict' }, 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', details: { event_id: 'evt_authz_api', reservation_id: 'worker-execution:evt_authz_api:generation.execute' } })
       await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), grantIds: ['forged-grant'] }, 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
       await repository.revokeGrant({
         id: grant.id,
