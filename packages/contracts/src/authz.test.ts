@@ -189,6 +189,32 @@ describe('authorization policy registry', () => {
     })
   })
 
+  it.each([
+    ['workspace descendant id', 'workspace', 'ws_1', 'ws_1/child'],
+    ['workspace prefixed id', 'workspace', 'ws_1', 'ws_10'],
+    ['brand lookalike unicode id', 'brand', 'brand_1', 'brand_１'],
+    ['account descendant id', 'account', 'account_1', 'account_1:child'],
+  ] as const)('requires an exact resource id match and rejects widened selectors for %s', (_label, scopeType, grantedId, requestedId) => {
+    const policy = {
+      ...getMcpMethodPolicy(scopeType === 'workspace' ? 'catalog.search' : scopeType === 'brand' ? 'task.timeline' : 'platform.revoke')!,
+      scope: scopeType,
+    }
+    expect(evaluateAuthorizationDecision({
+      decisionId: `exact-${scopeType}-${requestedId}`,
+      policy,
+      capabilities: [policy.capability],
+      scopes: [{ type: scopeType, ids: [grantedId] }],
+      resourceScope: { type: scopeType, id: requestedId },
+      workbench: 'workspace',
+      mode: 'enforce',
+    })).toMatchObject({
+      authorized: false,
+      allowed: false,
+      reason_code: 'AUTHZ_SCOPE_MISMATCH',
+      scope: { required: scopeType, resource_id: requestedId },
+    })
+  })
+
   it('rejects platform resource IDs and non-aggregate platform grants', () => {
     const policy = getMcpMethodPolicy('ops.users.list')!
     expect(evaluateAuthorizationDecision({

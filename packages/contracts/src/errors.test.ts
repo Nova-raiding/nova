@@ -9,6 +9,8 @@ describe('stable error codes', () => {
 
   it('keeps default transport semantics stable', () => {
     expect(createStableError(ERROR_CODES.TENANT_SCOPE_DENIED, 'denied').status).toBe(403)
+    expect(createStableError(ERROR_CODES.WORKSPACE_SCOPE_MISMATCH, 'scope mismatch').status).toBe(403)
+    expect(createStableError(ERROR_CODES.DATABASE_UNAVAILABLE, 'db unavailable').status).toBe(503)
     expect(createStableError(ERROR_CODES.PLATFORM_RATE_LIMITED, 'slow down', { retryable: true }).retryable).toBe(true)
   })
 })
