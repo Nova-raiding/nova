@@ -74,21 +74,42 @@ export interface RedisQueueTransport {
 }
 
 export class RedisQueueAdapter<T> implements QueuePort<T> {
+  private readonly pendingFingerprints = new Map<string, string>()
+
   constructor(private readonly transport: RedisQueueTransport, private readonly key: string, private readonly encode: (value: T) => string = value => JSON.stringify(value), private readonly decode: (value: string) => T = value => JSON.parse(value) as T) {}
 
   async enqueue(message: QueueMessage<T>): Promise<void> {
-    await this.transport.push(this.key, JSON.stringify({ id: message.id, value: this.encode(message.value) }))
+    const fingerprint = stableQueueSerialization(message.value)
+    const existingFingerprint = this.pendingFingerprints.get(message.id)
+    if (existingFingerprint !== undefined) {
+      if (existingFingerprint !== fingerprint) throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
+      return
+    }
+    const encoded = JSON.stringify({ id: message.id, value: this.encode(message.value) })
+    await this.transport.push(this.key, encoded)
+    this.pendingFingerprints.set(message.id, fingerprint)
   }
 
   async dequeue(): Promise<QueueMessage<T> | undefined> {
     const raw = await this.transport.pop(this.key, 0)
     if (!raw) return undefined
     const parsed = JSON.parse(raw) as { id: string; value: string }
-    return { id: parsed.id, value: this.decode(parsed.value) }
+    if (typeof parsed.id !== 'string' || !parsed.id.trim() || typeof parsed.value !== 'string') {
+      throw new Error('WORKER_QUEUE_MESSAGE_INVALID')
+    }
+    const value = this.decode(parsed.value)
+    const fingerprint = stableQueueSerialization(value)
+    const existingFingerprint = this.pendingFingerprints.get(parsed.id)
+    if (existingFingerprint !== undefined && existingFingerprint !== fingerprint) {
+      throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
+    }
+    this.pendingFingerprints.set(parsed.id, fingerprint)
+    return { id: parsed.id, value }
   }
 
   async ack(message: QueueMessage<T>): Promise<void> {
     await this.transport.remove?.(this.key, JSON.stringify({ id: message.id, value: this.encode(message.value) }))
+    this.pendingFingerprints.delete(message.id)
   }
 
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
@@ -96,7 +117,13 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
     // Push before removing the claim. A crash between these operations can
     // duplicate an idempotent outbox message, while the opposite order could
     // lose it until the database lease expires.
-    await this.enqueue(message)
+    const fingerprint = stableQueueSerialization(message.value)
+    const existingFingerprint = this.pendingFingerprints.get(message.id)
+    if (existingFingerprint !== undefined && existingFingerprint !== fingerprint) {
+      throw new Error('WORKER_QUEUE_MESSAGE_CONFLICT')
+    }
+    await this.transport.push(this.key, JSON.stringify({ id: message.id, value: this.encode(message.value) }))
+    this.pendingFingerprints.set(message.id, fingerprint)
     await this.ack(message)
   }
 

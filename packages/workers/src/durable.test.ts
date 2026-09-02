@@ -91,6 +91,22 @@ describe('durable outbox dispatcher', () => {
     expect(calls).toEqual(['claim', `push:${encoded}`, `remove:${encoded}`])
   })
 
+  it('rejects conflicting Redis queue payloads for the same durable message id', async () => {
+    const pushed: string[] = []
+    const queue = new RedisQueueAdapter<DurableOutboxEvent>({
+      async push(_key, value) { pushed.push(value) },
+      async pop() { return undefined },
+    }, 'queue')
+    const first = event({ payload: { taskId: 'task_a' } })
+    const equivalent = event({ payload: { taskId: 'task_a' } })
+    const conflicting = event({ payload: { taskId: 'task_b' } })
+
+    await queue.enqueue({ id: first.id, value: first })
+    await expect(queue.enqueue({ id: equivalent.id, value: equivalent })).resolves.toBeUndefined()
+    await expect(queue.enqueue({ id: conflicting.id, value: conflicting })).rejects.toThrow('WORKER_QUEUE_MESSAGE_CONFLICT')
+    expect(pushed).toHaveLength(1)
+  })
+
   it('recovers expired Redis claims before acquiring a fresh database lease', async () => {
     const calls: string[] = []
     const queue = new RedisQueueAdapter<DurableOutboxEvent>({
