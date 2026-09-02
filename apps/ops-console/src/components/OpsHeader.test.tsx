@@ -128,6 +128,13 @@ describe("OpsHeader accessibility", () => {
     expect(markup).toContain("权限未验证");
   });
 
+  it("labels the local adapter as development-only in the diagnostic drawer", async () => {
+    const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
+    expect(source).toContain('message="本地开发适配器"');
+    expect(source).toContain('description="仅用于本机 Docker 验证；不会代表生产 OIDC 身份，也不能作为生产上线证据。"');
+    expect(source).toContain("type=\"warning\"");
+  });
+
   it("labels refreshing as an in-progress operation", () => {
     const markup = renderToStaticMarkup(<OpsHeader managedSession sessionLoaded={false} refreshing onRefresh={() => undefined} />);
     expect(markup).toContain("正在刷新");

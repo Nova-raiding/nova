@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Drawer, Input, Layout, Space, Tag, Typography, type InputRef } from "antd";
+import { Alert, Button, Drawer, Input, Layout, Space, Tag, Typography, type InputRef } from "antd";
 import { describeOpsError, hasOpsConnection, hasOpsCredentials, readOpsConnectionConfig, saveOpsConnectionConfig, type OpsConnectionConfigInput } from "../api/opsClient.js";
 import type { OpsDataSource } from "../types/ops.js";
 import type { OpsSession } from "../types/ops.js";
@@ -187,6 +187,12 @@ export function OpsHeader({
           <Tag color="green" className="ops-status-tag">SSO 托管会话</Tag>
         ) : (
           <>
+            <Alert
+              type="warning"
+              showIcon
+              message="本地开发适配器"
+              description="仅用于本机 Docker 验证；不会代表生产 OIDC 身份，也不能作为生产上线证据。"
+            />
             <label className="ops-connection-field">
               <span>操作员 ID</span>
               <Input
