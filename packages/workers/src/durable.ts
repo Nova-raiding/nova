@@ -125,6 +125,7 @@ export class RedisQueueAdapter<T> implements QueuePort<T> {
   }
 
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
+    assertQueueRetryDelay(delayMs)
     if (delayMs > 0) await new Promise<void>(resolve => setTimeout(resolve, delayMs))
     // Push before removing the claim. A crash between these operations can
     // duplicate an idempotent outbox message, while the opposite order could
@@ -166,6 +167,7 @@ export class InMemoryQueue<T> implements QueuePort<T> {
   }
   async ack(_message: QueueMessage<T>): Promise<void> {}
   async nack(message: QueueMessage<T>, delayMs = 0): Promise<void> {
+    assertQueueRetryDelay(delayMs)
     await this.enqueue({ ...message, ...(delayMs > 0 ? { notBefore: this.now() + delayMs } : {}) })
   }
   async contains(id: string): Promise<boolean> { return this.messages.some(message => message.id === id) }
@@ -189,6 +191,12 @@ function stableQueueSerialization(value: unknown): string {
 function assertQueueMessageId(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new Error('WORKER_QUEUE_MESSAGE_INVALID')
+  }
+}
+
+function assertQueueRetryDelay(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 86_400_000) {
+    throw new Error('WORKER_QUEUE_RETRY_DELAY_INVALID')
   }
 }
 

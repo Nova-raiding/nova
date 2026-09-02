@@ -134,6 +134,22 @@ describe('durable outbox dispatcher', () => {
     expect(memoryQueue.size).toBe(0)
   })
 
+  it('rejects unsafe retry delays before Redis or in-memory state changes', async () => {
+    const push = vi.fn(async () => {})
+    const redisQueue = new RedisQueueAdapter<DurableOutboxEvent>({ push, async pop() { return undefined } }, 'queue')
+    const message = { id: 'evt_retry_delay', value: event() }
+    for (const delay of [-1, Number.NaN, Number.POSITIVE_INFINITY, 86_400_001, Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(redisQueue.nack(message, delay)).rejects.toThrow('WORKER_QUEUE_RETRY_DELAY_INVALID')
+    }
+    expect(push).not.toHaveBeenCalled()
+
+    const memoryQueue = new InMemoryQueue<DurableOutboxEvent>()
+    for (const delay of [-1, Number.NaN, Number.POSITIVE_INFINITY, 86_400_001]) {
+      await expect(memoryQueue.nack(message, delay)).rejects.toThrow('WORKER_QUEUE_RETRY_DELAY_INVALID')
+    }
+    expect(memoryQueue.size).toBe(0)
+  })
+
   it('recovers expired Redis claims before acquiring a fresh database lease', async () => {
     const calls: string[] = []
     const queue = new RedisQueueAdapter<DurableOutboxEvent>({
