@@ -53,4 +53,14 @@ describe('object storage production evidence gate', () => {
       'source_binding.config_checksum must be a SHA-256 hash',
     ]))
   })
+  it('fails closed for expired or non-forward evidence windows', () => {
+    const expired = structuredClone(evidence)
+    expect(validateObjectStorageEvidence(expired, { now: '2026-10-01T00:00:00Z' })).toContain('evidence has expired')
+
+    const reversed = structuredClone(evidence)
+    reversed.expires_at = reversed.generated_at
+    expect(validateObjectStorageEvidence(reversed, { now: '2026-08-29T00:00:00Z' })).toEqual(expect.arrayContaining([
+      'expires_at must be later than generated_at',
+    ]))
+  })
 })

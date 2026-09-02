@@ -40,7 +40,7 @@ function validateArtifact(reference: string | undefined, root: string, label: st
   return []
 }
 
-export function validateObjectStorageEvidence(document: unknown, options: { expectedReleaseId?: string; expectedBucket?: string; expectedEndpoint?: string; artifactRoot?: string } = {}): string[] {
+export function validateObjectStorageEvidence(document: unknown, options: { expectedReleaseId?: string; expectedBucket?: string; expectedEndpoint?: string; artifactRoot?: string; now?: Date | string } = {}): string[] {
   const errors: string[] = []
   if (!document || typeof document !== 'object' || Array.isArray(document)) return ['document must be a JSON object']
   const value = document as StorageEvidence
@@ -48,7 +48,12 @@ export function validateObjectStorageEvidence(document: unknown, options: { expe
   if (!text(value.release_id)) errors.push('release_id is required')
   if (options.expectedReleaseId && value.release_id !== options.expectedReleaseId) errors.push(`release_id must match ${options.expectedReleaseId}`)
   if (value.environment !== 'production') errors.push('environment must be production')
-  for (const field of ['generated_at', 'expires_at'] as const) if (!text(value[field]) || Number.isNaN(Date.parse(value[field]!))) errors.push(`${field} must be an ISO instant`)
+  const generatedAt = text(value.generated_at) ? Date.parse(value.generated_at) : Number.NaN
+  const expiresAt = text(value.expires_at) ? Date.parse(value.expires_at) : Number.NaN
+  for (const [field, parsed] of [['generated_at', generatedAt], ['expires_at', expiresAt] ] as const) if (!Number.isFinite(parsed)) errors.push(`${field} must be an ISO instant`)
+  const now = options.now instanceof Date ? options.now.getTime() : Date.parse(options.now ?? new Date().toISOString())
+  if (Number.isFinite(generatedAt) && Number.isFinite(expiresAt) && expiresAt <= generatedAt) errors.push('expires_at must be later than generated_at')
+  if (Number.isFinite(expiresAt) && (!Number.isFinite(now) || expiresAt <= now)) errors.push('evidence has expired')
   for (const field of ['provider', 'bucket', 'endpoint', 'lifecycle_policy_id'] as const) { if (!text(value[field])) errors.push(`${field} is required`); else if (forbidden.test(value[field]!)) errors.push(`${field} must identify a real cloud object store`) }
   if (options.expectedBucket && value.bucket !== options.expectedBucket) errors.push(`bucket must match rendered production config ${options.expectedBucket}`)
   if (options.expectedEndpoint && value.endpoint !== options.expectedEndpoint) errors.push(`endpoint must match rendered production config ${options.expectedEndpoint}`)
