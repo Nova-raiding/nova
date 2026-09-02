@@ -13,6 +13,7 @@ import {
   Tag,
 } from "antd";
 import { SaveOutlined } from "@ant-design/icons";
+import { useEffect, useRef } from "react";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Platform, PlatformSetting } from "../../types/ops";
 
@@ -36,6 +37,13 @@ export function ConfigurationCenterSection({
     dataSetError,
   } = model;
   const configurationError = dataSetError("workspace.commercial.get");
+  const configurationErrorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (configurationError) {
+      configurationErrorRef.current?.focus({ preventScroll: true });
+    }
+  }, [configurationError]);
 
   return (
     <Card
@@ -43,7 +51,17 @@ export function ConfigurationCenterSection({
       title="配置中心"
       extra={<Tag color="blue">Revision {settings?.revision ?? "-"}</Tag>}
     >
-      {configurationError ? <Alert type="error" showIcon title="配置中心读取失败" description={configurationError} /> : null}
+      {configurationError ? (
+        <div ref={configurationErrorRef} tabIndex={-1} role="alert" aria-label="配置中心错误摘要" style={{ marginBottom: 16 }}>
+          <Alert
+            type="error"
+            showIcon
+            title="配置中心读取失败"
+            description={configurationError}
+            action={<Button htmlType="button" onClick={() => void model.load()} aria-label="刷新配置中心" style={{ minHeight: 44 }}>刷新配置</Button>}
+          />
+        </div>
+      ) : null}
       <Tabs
         items={[
           {
