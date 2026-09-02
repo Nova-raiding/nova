@@ -51,9 +51,17 @@ describe('local Docker migration and release gate', () => {
     const row = docker([
       ...compose,
       'exec', '-T', 'postgres', 'psql', '-U', 'merchant', '-d', 'merchant', '-Atqc',
-      "SELECT count(*)::int || ':' || min(version)::int || ':' || max(version)::int FROM schema_migrations",
+      "SELECT count(*)::int || ':' || min(version)::int || ':' || max(version)::int || ':' || string_agg(version::text, ',' ORDER BY version) FROM schema_migrations",
     ])
-    const [count, minimum, maximum] = row.split(':').map(Number)
+    const [countText, minimumText, maximumText, versionsText] = row.split(':')
+    const count = Number(countText)
+    const minimum = Number(minimumText)
+    const maximum = Number(maximumText)
+    const databaseVersions = (versionsText ?? '').split(',').filter(Boolean).map(Number)
     expect({ count, minimum, maximum }).toEqual({ count: versions.length, minimum: 1, maximum: versions.at(-1) })
+    // Count/min/max alone cannot detect a missing interior migration paired
+    // with a duplicate. Compare the complete runtime chain as dynamic
+    // evidence so the local gate fails closed on any gap or duplicate.
+    expect(databaseVersions).toEqual(versions)
   }, 15_000)
 })
