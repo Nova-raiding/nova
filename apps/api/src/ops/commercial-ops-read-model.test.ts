@@ -127,8 +127,10 @@ describe('commercial Ops read model', () => {
   it('projects persisted access decisions and marks a block resolved only after a later allow', () => {
     const decisions = [
       { id: 'allow_2', workspaceId: 'ws_1', requestId: 'req_2', operationKey: 'payment.grant.commit', accessClass: 'RECOVERY_CONTROL' as const, balanceState: 'known' as const, availablePoints: 500, reservedPoints: 0, quotedPoints: null, accessRevision: 2, rateCardVersion: null, allowed: true, code: 'OK' as const, nextActions: [], decidedAt: '2026-09-02T01:00:00.000Z' },
+      { id: 'recovery_read_1', workspaceId: 'ws_1', requestId: 'req_read', operationKey: 'creative-points.balance.get', accessClass: 'RECOVERY_CONTROL' as const, balanceState: 'known' as const, availablePoints: 0, reservedPoints: 0, quotedPoints: null, accessRevision: 1, rateCardVersion: null, allowed: true, code: 'OK' as const, nextActions: [], decidedAt: '2026-09-02T00:30:00.000Z' },
       { id: 'block_1', workspaceId: 'ws_1', requestId: 'req_1', operationKey: 'content.generate', accessClass: 'POINT_CHARGED' as const, balanceState: 'known' as const, availablePoints: 0, reservedPoints: 0, quotedPoints: 1, accessRevision: 1, rateCardVersion: 'rate:v1', allowed: false, code: 'CREATIVE_POINTS_EXHAUSTED' as const, nextActions: ['creative-points.balance.get'], decidedAt: '2026-09-02T00:00:00.000Z' },
     ]
+    expect(projectCommercialAccessBlocks(decisions.slice(1), 'open')).toEqual([expect.objectContaining({ id: 'block_1', state: 'open' })])
     expect(projectCommercialAccessBlocks(decisions, 'open')).toEqual([])
     expect(projectCommercialAccessBlocks(decisions, 'resolved')).toEqual([expect.objectContaining({ id: 'block_1', state: 'resolved', error_code: 'CREATIVE_POINTS_EXHAUSTED', available_points: 0 })])
   })
@@ -141,10 +143,10 @@ describe('commercial Ops read model', () => {
 
     expect(projectCommercialOrder({
       id: 'order_1', workspaceId: 'ws_1', skuId: 'sku_1', skuVersionId: 'sku_v1', skuCode: 'points_500', amountFen: 30_000, currency: 'CNY', paymentProvider: 'wechat', status: 'paid', idempotencyKey: 'order-key', requestHash: 'hash', createdByActorId: 'actor_1', providerOrderId: 'provider_1', createdAt: '2026-09-01T00:00:00.000Z', paidAt: '2026-09-01T00:01:00.000Z',
-    })).toMatchObject({ id: 'order_1', sku_code: 'points_500', amount_label: '¥300.00 CNY', payment_state: 'paid', grant_state: 'granted' })
+    })).toMatchObject({ id: 'order_1', sku_code: 'points_500', amount_label: '¥300.00 CNY', payment_state: 'paid', grant_state: 'unknown' })
 
     expect(projectServiceFulfillment({
       id: 'svc_1', workspaceId: 'ws_1', orderSnapshotId: 'order_snapshot_1', entitlementSnapshotId: 'ent_1', serviceType: 'one_to_one', unit: 'minute', allocatedQuantity: 300, contractLabel: null, periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-10-01T00:00:00.000Z', sourceChecksum: 'source_checksum', createdByActorId: 'actor_1', creationReason: '合同履约', creationEvidence: { source: 'contract' }, revision: 2, status: 'in_progress', usedQuantity: 60, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-02T00:00:00.000Z',
-    })).toMatchObject({ id: 'svc_1', allocation_label: '300 minute', used_label: '60 / 300 minute', status: 'in_progress', revision: 2 })
+    })).toMatchObject({ id: 'svc_1', allocation_label: '300 minute', used_label: '60 / 300 minute', status: 'in_progress', owner_label: 'actor_1', revision: 2 })
   })
 })

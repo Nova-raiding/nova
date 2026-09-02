@@ -234,7 +234,9 @@ export function projectCommercialEntitlement(item: CommercialEntitlementSnapshot
     storage_label: storage?.rawValue ?? (storage?.quantity !== null && storage?.quantity !== undefined ? `${storage.quantity}${storage.rawUnit ? ` ${storage.rawUnit}` : ''}` : null),
     service_summary: serviceSummary,
     period_label: `${item.periodStart} / ${item.periodEnd}`,
-    source_order_id: item.subscriptionPeriodId,
+    // The persisted entitlement snapshot currently references its subscription
+    // period, not the originating order. Do not relabel that fact as an order.
+    source_order_id: null,
     updated_at: item.createdAt,
     unresolved: [...item.unresolvedBlockers],
     executable: item.executable,
@@ -242,7 +244,10 @@ export function projectCommercialEntitlement(item: CommercialEntitlementSnapshot
 }
 
 export function projectCommercialOrder(item: CommercialOrderListItemV2) {
-  const grantState = item.status === 'paid' ? 'granted' : item.status === 'refunded' ? 'refunded' : item.status === 'reconciliation_required' ? 'unknown' : 'not_granted'
+  // Payment and grant are separate facts. This read model has only the order
+  // snapshot, so a paid order must remain unknown until a persisted grant is
+  // joined by the repository instead of being presented as recovered.
+  const grantState = item.status === 'refunded' ? 'refunded' : item.status === 'paid' || item.status === 'reconciliation_required' ? 'unknown' : 'not_granted'
   return {
     id: item.id,
     workspace_id: item.workspaceId,
@@ -261,9 +266,14 @@ export function projectCommercialOrder(item: CommercialOrderListItemV2) {
 }
 
 export function projectCommercialAccessBlocks(items: readonly CommercialAccessDecisionFactV2[], status: 'open' | 'resolved' | 'all') {
-  const latestAllowedAt = items.find(item => item.allowed)?.decidedAt ?? null
   return items.filter(item => !item.allowed).flatMap(item => {
-    const state = latestAllowedAt !== null && item.decidedAt < latestAllowedAt ? 'resolved' as const : 'open' as const
+    const recovered = items.some(candidate => candidate.allowed
+      && candidate.decidedAt > item.decidedAt
+      && candidate.balanceState === 'known'
+      && candidate.availablePoints !== null
+      && candidate.availablePoints > 0
+      && candidate.accessRevision > item.accessRevision)
+    const state = recovered ? 'resolved' as const : 'open' as const
     if (status !== 'all' && status !== state) return []
     return [{
       id: item.id,
@@ -297,7 +307,7 @@ export function projectServiceFulfillment(item: ServiceAllocationRecord) {
     used_label: usedLabel,
     schedule_at: null,
     status: item.status,
-    owner_label: null,
+    owner_label: item.createdByActorId,
     evidence_label: `entitlement:${item.entitlementSnapshotId};checksum:${item.sourceChecksum}`,
     updated_at: item.updatedAt,
     revision: item.revision,
