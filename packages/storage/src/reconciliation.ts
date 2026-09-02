@@ -182,6 +182,11 @@ export function reconcileObjectInventory(input: ReconciliationInput): Reconcilia
   }
   const orphans = findings.filter(finding => finding.code === 'ORPHAN_OBJECT').length
   const reservedBytes = input.quota?.reservedBytes ?? 0
+  if (reservedBytes > Number.MAX_SAFE_INTEGER - usedBytes) {
+    // Both values are individually safe, but their projected total is still
+    // untrusted arithmetic. Do not emit a quota result after precision loss.
+    throw new Error('RECONCILIATION_SIZE_OVERFLOW')
+  }
   const projectedBytes = usedBytes + reservedBytes
   if (input.quota && projectedBytes > input.quota.limitBytes) findings.push({ code: 'QUOTA_EXCEEDED', workspaceId: input.workspaceId, detail: `${projectedBytes} > ${input.quota.limitBytes}` })
 

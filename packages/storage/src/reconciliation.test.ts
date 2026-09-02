@@ -100,4 +100,13 @@ describe('object inventory reconciliation', () => {
       ],
     })).toThrow('RECONCILIATION_SIZE_OVERFLOW')
   })
+
+  it('fails closed when reserved bytes overflow the projected safe total', () => {
+    expect(() => reconcileObjectInventory({
+      workspaceId: 'ws_a',
+      references: [],
+      inventory: [object('clean/ws_a/asset_large/source.bin', Number.MAX_SAFE_INTEGER - 1)],
+      quota: { limitBytes: Number.MAX_SAFE_INTEGER, reservedBytes: 2 },
+    })).toThrow('RECONCILIATION_SIZE_OVERFLOW')
+  })
 })
