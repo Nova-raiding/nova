@@ -30,8 +30,15 @@ export interface CommercialPurchaseOrderView {
   paid_at: string | null
 }
 
-export type CommercialPurchaseErrorCode =
-  | 'COMMERCIAL_PURCHASE_UNAVAILABLE'
-  | 'COMMERCIAL_PURCHASE_KIND_MISMATCH'
-  | 'PRIVATE_PURCHASE_UNAVAILABLE'
-  | 'COMMERCIAL_ORDER_NOT_FOUND'
+export const COMMERCIAL_PURCHASE_ERROR_CODES = [
+  'COMMERCIAL_PURCHASE_UNAVAILABLE',
+  'COMMERCIAL_PURCHASE_KIND_MISMATCH',
+  'PRIVATE_PURCHASE_UNAVAILABLE',
+  'COMMERCIAL_ORDER_NOT_FOUND',
+] as const
+
+export type CommercialPurchaseErrorCode = (typeof COMMERCIAL_PURCHASE_ERROR_CODES)[number]
+
+export function isCommercialPurchaseErrorCode(value: string): value is CommercialPurchaseErrorCode {
+  return (COMMERCIAL_PURCHASE_ERROR_CODES as readonly string[]).includes(value)
+}
