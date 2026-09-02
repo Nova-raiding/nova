@@ -11,8 +11,8 @@ describe('migration 151 legacy creative-point allocation constraint', () => {
     expect(sql).toContain('CHECK (points_delta <> 0)')
   })
 
-  it('is registered at the migration chain tail', async () => {
-    expect((await loadMigrations()).at(-1)).toMatchObject({
+  it('is registered in the migration chain', async () => {
+    expect((await loadMigrations()).find(item => item.version === 151)).toMatchObject({
       version: 151,
       name: 'repair_legacy_creative_point_allocation_constraint',
     })

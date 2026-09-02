@@ -435,6 +435,8 @@ export async function loadMigrations(): Promise<Migration[]> {
   const repairLegacyCreativePointAllocations = await readFile(new URL('./migrations/150_repair_legacy_creative_point_allocations.sql', import.meta.url), 'utf8')
   const repairLegacyCreativePointAllocationConstraint = await readFile(new URL('./migrations/151_repair_legacy_creative_point_allocation_constraint.sql', import.meta.url), 'utf8')
   const authorizationGrantScopeIntegrity = await readFile(new URL('./migrations/152_authorization_grant_scope_integrity.sql', import.meta.url), 'utf8')
+  const commercialContractFacts = await readFile(new URL('./migrations/153_commercial_contract_facts.sql', import.meta.url), 'utf8')
+  const serviceFulfillmentAndOnboardingSchedule = await readFile(new URL('./migrations/154_service_fulfillment_and_onboarding_schedule.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -588,6 +590,8 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 150, name: 'repair_legacy_creative_point_allocations', sql: repairLegacyCreativePointAllocations },
     { version: 151, name: 'repair_legacy_creative_point_allocation_constraint', sql: repairLegacyCreativePointAllocationConstraint },
     { version: 152, name: 'authorization_grant_scope_integrity', sql: authorizationGrantScopeIntegrity },
+    { version: 153, name: 'commercial_contract_facts', sql: commercialContractFacts },
+    { version: 154, name: 'service_fulfillment_and_onboarding_schedule', sql: serviceFulfillmentAndOnboardingSchedule },
   ]
 }
 

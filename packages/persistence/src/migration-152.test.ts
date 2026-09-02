@@ -12,8 +12,8 @@ describe('migration 152 authorization grant scope integrity', () => {
     expect(sql).toContain("RAISE EXCEPTION 'ops access grant scope is invalid'")
   })
 
-  it('is registered at the migration chain tail', async () => {
-    expect((await loadMigrations()).at(-1)).toMatchObject({
+  it('is registered in the migration chain', async () => {
+    expect((await loadMigrations()).find(item => item.version === 152)).toMatchObject({
       version: 152,
       name: 'authorization_grant_scope_integrity',
     })
