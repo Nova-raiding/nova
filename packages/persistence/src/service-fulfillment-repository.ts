@@ -116,6 +116,7 @@ export interface ServiceFulfillmentRepository {
 
 export type ServiceFulfillmentRepositoryErrorCode =
   | 'SERVICE_FULFILLMENT_INPUT_INVALID'
+  | 'SERVICE_ALLOCATION_SOURCE_INVALID'
   | 'SERVICE_ALLOCATION_NOT_FOUND'
   | 'SERVICE_ALLOCATION_IDEMPOTENCY_CONFLICT'
   | 'SERVICE_FULFILLMENT_IDEMPOTENCY_CONFLICT'
@@ -229,6 +230,21 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
   async createAllocation(input: CreateServiceAllocationInput): Promise<ServiceAllocationRecord> {
     const value = validateAllocation(input); const requestHash = hash(value)
     return withWorkspaceTransaction(this.pool, value.workspaceId, async client => {
+      const source = await client.query(
+        `SELECT 1
+           FROM commercial_order_snapshots_v2 os
+           JOIN workspace_subscription_periods_v2 sp
+             ON sp.workspace_id=os.workspace_id AND sp.order_snapshot_id=os.id
+           JOIN workspace_entitlement_snapshots_v2 es
+             ON es.workspace_id=sp.workspace_id
+            AND es.subscription_period_id=sp.id
+            AND es.subscription_period_revision=sp.revision
+          WHERE os.workspace_id=$1 AND os.id=$2 AND es.id=$3
+            AND es.executable=true AND es.unresolved_blockers='[]'::jsonb
+          LIMIT 1`,
+        [value.workspaceId, value.orderSnapshotId, value.entitlementSnapshotId],
+      )
+      if (!source.rows[0]) throw new ServiceFulfillmentRepositoryError('SERVICE_ALLOCATION_SOURCE_INVALID', 'service allocation requires one executable entitlement snapshot bound to the order snapshot')
       const inserted = await client.query<AllocationRow>(`INSERT INTO workspace_service_allocations (id,workspace_id,idempotency_key,request_hash,order_snapshot_id,entitlement_snapshot_id,service_type,unit,allocated_quantity,contract_label,period_start,period_end,source_checksum,created_by_actor_id,creation_reason,creation_evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb) ON CONFLICT (workspace_id,idempotency_key) DO NOTHING RETURNING ${allocationProjection}`, [`svc_${randomUUID()}`, value.workspaceId, value.idempotencyKey, requestHash, value.orderSnapshotId, value.entitlementSnapshotId, value.serviceType, value.unit, value.allocatedQuantity, value.contractLabel, value.periodStart, value.periodEnd, value.sourceChecksum, value.actorId, value.reason, JSON.stringify(value.evidence)])
       if (inserted.rows[0]) return mapAllocation(inserted.rows[0])
       const replay = await client.query<AllocationRow>(`SELECT ${allocationProjection} FROM workspace_service_allocations WHERE workspace_id=$1 AND idempotency_key=$2`, [value.workspaceId, value.idempotencyKey])

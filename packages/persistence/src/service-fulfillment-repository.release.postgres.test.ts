@@ -19,6 +19,36 @@ describe('service fulfillment PostgreSQL release evidence', () => {
       database = new Pool({ connectionString: isolated.toString() })
       await new MigrationRunner(database, await loadMigrations()).run()
       await database.query("INSERT INTO workspaces(id,status) VALUES ('ws_service_a','active'),('ws_service_b','active')")
+      const serviceSku = await database.query<{ sku_id: string; version_id: string; checksum: string }>(
+        `SELECT s.id AS sku_id,v.id AS version_id,v.checksum
+           FROM commercial_catalog_skus s
+           JOIN commercial_catalog_sku_versions v ON v.sku_id=s.id
+          ORDER BY s.id,v.version DESC LIMIT 1`,
+      )
+      const sku = serviceSku.rows[0]!
+      await database.query(
+        `INSERT INTO commercial_orders_v2
+          (id,workspace_id,sku_id,sku_version_id,amount_fen,currency,payment_provider,status,idempotency_key,request_hash,created_by_actor_id)
+         VALUES ('service_order_a','ws_service_a',$1,$2,0,'CNY','release_test','pending','service-order-a',$3,'ops_a')`,
+        [sku.sku_id, sku.version_id, '1'.repeat(64)],
+      )
+      await database.query(
+        `INSERT INTO commercial_order_snapshots_v2
+          (id,workspace_id,order_id,sku_id,sku_version_id,catalog_checksum,snapshot,checksum)
+         VALUES ('order_snapshot_a','ws_service_a','service_order_a',$1,$2,$3,'{}'::jsonb,$4)`,
+        [sku.sku_id, sku.version_id, sku.checksum, '2'.repeat(64)],
+      )
+      await database.query(
+        `INSERT INTO workspace_subscription_periods_v2
+          (id,workspace_id,order_snapshot_id,period_start,period_end,status,revision)
+         VALUES ('service_period_a','ws_service_a','order_snapshot_a','2026-09-01T00:00:00.000Z','2026-10-01T00:00:00.000Z','active',1)`,
+      )
+      await database.query(
+        `INSERT INTO workspace_entitlement_snapshots_v2
+          (id,workspace_id,subscription_period_id,subscription_period_revision,catalog_version_id,resolved_benefits,unresolved_blockers,executable,checksum)
+         VALUES ('entitlement_snapshot_a','ws_service_a','service_period_a',1,$1,'[{"code":"one_to_one_minutes","quantity":300}]'::jsonb,'[]'::jsonb,true,$2)`,
+        [sku.version_id, '3'.repeat(64)],
+      )
 
       const repository = new PostgresServiceFulfillmentRepository(database)
       const allocationInput = {
@@ -34,6 +64,8 @@ describe('service fulfillment PostgreSQL release evidence', () => {
       expect(await repository.createAllocation(allocationInput)).toEqual(allocation)
       await expect(repository.createAllocation({ ...allocationInput, allocatedQuantity: 301 }))
         .rejects.toMatchObject({ code: 'SERVICE_ALLOCATION_IDEMPOTENCY_CONFLICT' })
+      await expect(repository.createAllocation({ ...allocationInput, idempotencyKey: 'allocation:forged', entitlementSnapshotId: 'missing_entitlement' }))
+        .rejects.toMatchObject({ code: 'SERVICE_ALLOCATION_SOURCE_INVALID' })
 
       const schedule = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 1, idempotencyKey: 'event:schedule:1', actorId: 'ops_a', reason: 'Customer selected a time', scheduleAt: '2026-09-05T02:00:00.000Z', evidence: { request: 'evidence://schedule/1' } })
       expect(schedule.allocation).toMatchObject({ revision: 2, status: 'scheduled', usedQuantity: 0 })
