@@ -2,6 +2,7 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 WORKDIR /app
 ARG OPS_CONSOLE_BUILD_MODE=production
 ARG VITE_API_BASE
+ARG VITE_BASE=/
 RUN set -eu; \
     api_base="${VITE_API_BASE:-}"; \
     test -n "$api_base" || { echo >&2 "VITE_API_BASE is required"; exit 1; }; \
@@ -24,7 +25,7 @@ RUN npm ci --workspace apps/ops-console --include-workspace-root
 COPY packages/contracts packages/contracts
 COPY apps/ops-console apps/ops-console
 RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode=oidc; else auth_mode=local; fi; \
-    VITE_API_BASE="$VITE_API_BASE" VITE_OPS_AUTH_MODE="$auth_mode" npm run build --workspace apps/ops-console
+    VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$OPS_CONSOLE_BUILD_MODE" npm run build --workspace apps/ops-console
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:e7623c006de0ea4716e763083668edd9b732371d5479653c2e709fd0696b0348
 ENV OPS_API_UPSTREAM=http://127.0.0.1:8787

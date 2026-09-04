@@ -1,0 +1,37 @@
+services:
+  ui:
+    ports: !override []
+    environment:
+      MERCHANT_API_TOKEN: ${MERCHANT_API_TOKEN:-workspace-local-token}
+
+  ops-ui:
+    ports: !override []
+    build:
+      args:
+        OPS_CONSOLE_BUILD_MODE: local
+        VITE_API_BASE: /ops/api
+        VITE_BASE: /ops/
+
+  api:
+    ports: !override ["127.0.0.1:8787:8787"]
+    environment:
+      PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-http://47.114.34.122}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://47.114.34.122}
+
+  api-replica:
+    ports: !override []
+
+  pilot-gateway:
+    restart: unless-stopped
+    build:
+      context: ../..
+      dockerfile: infra/docker/pilot-gateway.Dockerfile
+    ports: ["0.0.0.0:80:8080"]
+    depends_on:
+      ui: { condition: service_healthy }
+      ops-ui: { condition: service_healthy }
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
