@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const checkoutCommit = '11d5960a326750d5838078e36cf38b85af677262'
 const setupNodeCommit = '49933ea5288caeca8642d1e84afbd3f7d6820020'
+const setupRubyCommit = '95ef2b042f9d7a56d8268cba8559e2842e2ad01b'
 const nodeDigest = 'sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
 const nginxDigest = 'sha256:e7623c006de0ea4716e763083668edd9b732371d5479653c2e709fd0696b0348'
 
@@ -42,6 +43,7 @@ describe('supply-chain reproducibility gate', () => {
     expect(actionReferences).toEqual([
       `actions/checkout@${checkoutCommit}`,
       `actions/setup-node@${setupNodeCommit}`,
+      `ruby/setup-ruby@${setupRubyCommit}`,
     ])
     expect(actionReferences.every((reference) => /@[0-9a-f]{40}$/u.test(reference))).toBe(true)
   })
