@@ -17,7 +17,7 @@ RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
 # Build only the worker dependency graph.  The root build also compiles
 # operational scripts that are not part of this image and can fail on
 # environment-only typings, unnecessarily blocking worker rollout.
-RUN npm run build:packages && (npx tsc -p tsconfig.json --force --noEmitOnError false || test -d dist/apps/worker)
+RUN npm run build:packages && (npx tsc -p tsconfig.json --noEmitOnError false || test -d dist/apps/worker)
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 ENV NODE_ENV=production
