@@ -155,6 +155,10 @@ services:
       API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","bootstrap":true,"workbenches":["platform","workspace"],"roles":["platform_ops","workspace_owner","merchant_admin","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]},"workspace-local-token":{"workspaces":["*"],"actor_id":"workspace_admin_demo","bootstrap":true,"workbenches":["workspace"],"roles":["workspace_owner","merchant_admin"]}}'
       SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:-pilot-local-session-hash-secret}
       ALLOW_WILDCARD_WORKSPACE_GRANT: "true"
+      # Local ChatGPT/MCP requests arrive directly on the loopback API host;
+      # mark that host as the merchant bearer boundary so fixture tokens are
+      # evaluated in the workspace (merchant) workbench.
+      MERCHANT_BEARER_HOSTNAME: ${MERCHANT_BEARER_HOSTNAME:-127.0.0.1}
       PUBLIC_OAUTH_REDIRECT_URI: http://127.0.0.1:${LOCAL_API_PORT:-8787}/v1/oauth/callback/{platform}
       # Local Compose defaults to the six-platform connector mock. Release
       # simulation and production manifests keep fixture mode disabled.
