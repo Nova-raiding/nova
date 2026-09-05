@@ -2758,6 +2758,19 @@ async function initializePersistence(): Promise<ApiPersistence> {
 
 const persistenceReady = initializePersistence().then(value => { persistence = value; return value }).catch(error => { persistenceError = error; throw error })
 
+// Local development fixture: provide a deterministic, idempotent creative-point
+// balance for ws_demo after PostgreSQL repositories are ready. Production and
+// staging never execute this path.
+void persistenceReady.then(async () => {
+  if (process.env.NODE_ENV !== 'development' || process.env.CONNECTOR_FIXTURE_MODE !== 'true' || process.env.MERCHANT_TEST_APPROVED_RATES !== 'true') return
+  if (!persistence?.creativePoints) return
+  await persistence.creativePoints.grant({
+    workspaceId: 'ws_demo', points: 10_000,
+    sourceType: 'test_fixture', sourceId: 'fixture-bootstrap-ws_demo',
+    idempotencyKey: 'fixture-bootstrap:ws_demo', metadata: { fixture: true },
+  })
+}).catch(() => undefined)
+
 const fixtureCommercialRegistry = COMMERCIAL_OPERATION_REGISTRY.map(policy => policy.classification === 'POINT_CHARGED' || MCP_RECOVERY_DISABLED_METHODS.includes(policy.operation as (typeof MCP_RECOVERY_DISABLED_METHODS)[number]) || MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS.includes(policy.operation as (typeof MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS)[number]) || MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS.includes(policy.operation as (typeof MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS)[number]) ? { ...policy, enabled: true } : policy)
 
 const commercialAccessService = new CommercialAccessService({
@@ -18185,6 +18198,9 @@ const server = createServer((req, res) => {
 
 if (process.env.NODE_ENV !== 'test') {
   persistenceReady.then(() => {
+    if (process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true' && persistence.creativePoints) {
+      void persistence.creativePoints.grant({ workspaceId: 'ws_demo', idempotencyKey: 'fixture-bootstrap:ws_demo', sourceType: 'test_fixture', sourceId: 'fixture-bootstrap-ws_demo', points: 10_000, metadata: { fixture: true, non_production: true } }).catch(error => console.error('fixture creative point bootstrap failed', error))
+    }
     const cleanupIntervalMs = Math.max(5_000, Number(process.env.ASSET_PROMOTION_CLEANUP_INTERVAL_MS ?? 15_000))
     const cleanupTimer = setInterval(() => { void drainPromotionCleanupTasks() }, cleanupIntervalMs)
     cleanupTimer.unref()
