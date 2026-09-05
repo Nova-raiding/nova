@@ -119,16 +119,14 @@
           - img [ref=e133]
         - generic [ref=e135]:
           - generic [ref=e136]: 部分运营数据未刷新
-          - generic [ref=e137]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+          - generic [ref=e137]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
       - region "用户与租户" [ref=e138]:
         - generic [ref=e139]:
           - generic [ref=e140]:
             - generic [ref=e141]: PLATFORM GOVERNANCE
             - heading "用户与租户" [level=3] [ref=e142]
             - generic [ref=e143]: 按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。
-          - button "loading 刷新目录" [ref=e145] [cursor=pointer]:
-            - generic:
-              - img "loading"
+          - button "刷新目录" [ref=e145] [cursor=pointer]:
             - generic [ref=e146] [cursor=pointer]: 刷新目录
           - status [ref=e147]:
             - strong [ref=e149]: 当前下一步
@@ -139,7 +137,7 @@
               - img [ref=e157]
             - generic [ref=e159]:
               - generic [ref=e160]: 无法加载运营数据
-              - paragraph [ref=e163]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+              - paragraph [ref=e163]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
             - button "重试加载运营数据" [ref=e165] [cursor=pointer]:
               - generic [ref=e166] [cursor=pointer]: 重 试
           - status [ref=e168]:

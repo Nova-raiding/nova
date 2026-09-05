@@ -195,7 +195,13 @@ function Dashboard({
     if (activeDomain === "rules" && activeWorkbench === "workspace" && canRead("rules"))
       void model.loadRules();
     if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
-    if (activeDomain === "users" && canRead("users")) void model.loadUsers();
+    if (activeDomain === "users" && canRead("users")) {
+      // The platform directory is a route-critical query. Cancel overview
+      // hydration before loading it so cold Redis/Postgres runs cannot starve
+      // the user list behind optional aggregate requests.
+      model.cancelUserRequests();
+      void model.loadUsers();
+    }
   }, [activeDomain, model.canUserGovernance, model.opsSession?.actor_id]);
 
   useEffect(() => {

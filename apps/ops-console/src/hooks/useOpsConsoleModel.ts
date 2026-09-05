@@ -1206,7 +1206,8 @@ export function useOpsConsoleModel() {
     }
   };
   const loadUsers = async (filters: { query?: string; status?: string; workspaceId?: string; page?: number; pageSize?: number } = userDirectoryFilters) => {
-    if (!hasOpsConnection()) return false;
+    recordOpsBootstrapTrace("users_load_enter", { connected: hasOpsConnection(), identity: authorization.can("identity.read") });
+    if (!hasOpsConnection()) { recordOpsBootstrapTrace("users_load_skipped", { reason: "no_connection" }); return false; }
     const requestKey = JSON.stringify(filters);
     if (userDirectoryInFlightKeysRef.current.has(requestKey)) return false;
     const controller = userRequestsRef.current.beginDirectory();
@@ -1224,9 +1225,11 @@ export function useOpsConsoleModel() {
         ...(filters.query?.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.workspaceId?.trim() ? { workspace_id: filters.workspaceId.trim() } : {}),
-      }, { signal: controller.signal });
+      }, { signal: controller.signal, timeoutMs: 30_000 });
+      recordOpsBootstrapTrace("users_load_response", { items: Array.isArray((response as { items?: unknown[] } | undefined)?.items) ? (response as { items: unknown[] }).items.length : -1 });
       if (requestId === userDirectoryRequestRef.current) setUserDirectory(response as unknown as PlatformUserDirectory);
     } catch (cause) {
+      recordOpsBootstrapTrace("users_load_error", { code: (cause as { code?: string })?.code, message: cause instanceof Error ? cause.message : String(cause) });
       if (!controller.signal.aborted && requestId === userDirectoryRequestRef.current) setUserDirectoryError(describeOpsError(cause));
     } finally {
       userDirectoryInFlightKeysRef.current.delete(requestKey);

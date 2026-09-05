@@ -19,7 +19,7 @@ async function filterUserDirectory(page, keyword = '') {
   await filters.getByRole('textbox', { name: '关键词' }).fill(keyword)
   await filters.getByRole('button', { name: /查\s*询/u }).click()
   await expect(filters.getByRole('button', { name: /查\s*询/u })).toBeEnabled({ timeout: 20_000 })
-  return userDirectoryTable(page).getByRole('row').filter({ has: page.getByRole('button', { name: /详\s*情/u }) }).first()
+  return userDirectoryTable(page).getByRole('row').filter({ has: page.getByRole('button', { name: /用户详情/u }) }).first()
 }
 
 async function waitForBackgroundHydration(page) {
@@ -50,7 +50,20 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(page.getByRole('form', { name: '用户目录筛选' })).toBeVisible({ timeout: 20_000 })
 
   const supportRow = await filterUserDirectory(page)
-  await expect(supportRow).toBeVisible({ timeout: 20_000 })
+  // The platform directory aggregates members across every workspace; on a
+  // cold PostgreSQL/Redis run it can finish after the search button is enabled.
+  try {
+    await expect(supportRow).toBeVisible({ timeout: 70_000 })
+  } catch (error) {
+    console.error(JSON.stringify({
+      usersDebug: await page.evaluate(() => ({
+        trace: window.__OPS_BOOTSTRAP_TRACE__ ?? [],
+        text: document.body.innerText.slice(0, 12_000),
+        rows: document.querySelectorAll('[role="row"]').length,
+      })),
+    }))
+    throw error
+  }
   const exportDownload = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出当前筛选' }).click()
   const downloaded = await exportDownload
@@ -58,7 +71,7 @@ test('operates the platform user directory without destructive confirmation', as
   const exportedContent = await readFile(await downloaded.path(), 'utf8')
   expect(exportedContent).toContain('external_subject,display_name,workspace_id')
   expect(exportedContent).toContain('external_subject')
-  const detailButton = supportRow.getByRole('button', { name: /详\s*情/u })
+  const detailButton = supportRow.getByRole('button', { name: /用户详情/u })
   await detailButton.focus()
   await page.keyboard.press('Enter')
   const detailDrawer = page.getByRole('dialog', { name: /用户详情/u })
