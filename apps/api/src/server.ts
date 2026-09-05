@@ -10051,6 +10051,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     // usable before commercial activation because it never calls a model,
     // mutates business state or consumes points.
     || method === 'merchant.first_value'
+    // Model readiness is a diagnostic read and must remain available before
+    // commercial activation; otherwise the host turns a health probe into a
+    // misleading points failure during startup.
+    || method === 'platform.model.status'
   const commercialBeforeOnboarding = !bypassWorkspaceLifecycleGate && (ONBOARDING_METHODS.has(method) || isOpsDomainMethod)
   // Keep MCP and REST onboarding semantics identical: a production business
   // request without any bound store must first explain how to complete store
@@ -15724,6 +15728,29 @@ export function imageGenerationReconciliationIdempotencyKey(input: {
 export async function route(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
   const path = url.pathname
+  if (path === '/oauth/authorize' && req.method === 'GET') {
+    if (isProduction()) { res.statusCode = 404; res.end('not found'); return }
+    const redirect = url.searchParams.get('redirect_uri'); const state = url.searchParams.get('state') ?? ''
+    if (!redirect) { res.statusCode = 400; res.end('redirect_uri required'); return }
+    const target = new URL(redirect); target.searchParams.set('code', 'fixture-code'); if (state) target.searchParams.set('state', state)
+    res.statusCode = 302; res.setHeader('location', target.toString()); res.end(); return
+  }
+  if (path === '/oauth/token' && req.method === 'POST') {
+    if (isProduction()) { res.statusCode = 404; res.end('not found'); return }
+    const fixture = process.env.MERCHANT_MCP_TOKEN?.trim() || 'fixture-token'
+    res.statusCode = 200; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ access_token: fixture, token_type: 'Bearer', expires_in: 3600, scope: 'openid profile merchant' })); return
+  }
+  // OAuth discovery endpoints used by ChatGPT/MCP clients. Keep these public
+  // so an unauthenticated client can discover where to sign in.
+  if (req.method === 'GET' && path === '/.well-known/oauth-protected-resource') {
+    const resource = `${url.origin}/mcp`
+    res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
+    res.end(JSON.stringify({ resource, authorization_servers: [url.origin], scopes_supported: ['openid', 'profile', 'merchant'] })); return
+  }
+  if (req.method === 'GET' && path === '/.well-known/oauth-authorization-server') {
+    res.statusCode = 200; res.setHeader('content-type', 'application/json; charset=utf-8'); res.setHeader('cache-control', 'no-store')
+    res.end(JSON.stringify({ issuer: url.origin, authorization_endpoint: `${url.origin}/oauth/authorize`, token_endpoint: `${url.origin}/oauth/token`, response_types_supported: ['code'], grant_types_supported: ['authorization_code'], code_challenge_methods_supported: ['S256'], scopes_supported: ['openid', 'profile', 'merchant'] })); return
+  }
   if (req.method === 'GET' && path === '/metrics') {
     const metricsToken = process.env.METRICS_AUTH_TOKEN?.trim()
     if (isProduction() && (!metricsToken || header(req, 'authorization') !== `Bearer ${metricsToken}`)) {
@@ -18119,7 +18146,7 @@ const server = createServer((req, res) => {
     const workspaceId = (() => { try { return resolveWorkspace(req) } catch { return isProduction() ? 'unknown' : 'ws_demo' } })()
     enrichRequestObservation(req, { workspaceId, actorId: trustedRequestObservationActor(req) })
     failRequestObservation(req, observedFailure.status, observedFailure.code)
-    if (observedFailure.status === 401 && (req.url ?? '').split('?')[0] === '/mcp') res.setHeader('www-authenticate', 'Bearer')
+    if (observedFailure.status === 401 && (req.url ?? '').split('?')[0] === '/mcp') res.setHeader('www-authenticate', `Bearer resource_metadata="${new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`).origin}/.well-known/oauth-protected-resource"`)
     if (isClientDisconnect(error) && (res.destroyed || res.writableEnded)) return
     if (nativeMcpRequests.has(req) && !res.writableEnded) {
       const id = nativeMcpRequestIds.get(req) ?? null
