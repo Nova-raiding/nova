@@ -10012,6 +10012,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         || (typeof params.target_workspace_id === 'string' ? params.target_workspace_id.trim() : '')
         || (typeof params.workspace_id === 'string' ? params.workspace_id.trim() : '')
         || requestPrincipals.get(req)?.workspaces[0]
+        || ''
       : resolveWorkspace(req, isPlatformWideUserGovernance ? undefined : params.workspace_id)
   enrichRequestObservation(req, {
     workspaceId: workspaceId || undefined,
