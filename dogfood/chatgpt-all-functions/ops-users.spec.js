@@ -81,7 +81,7 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(detailDrawer.getByText('所属租户与角色')).toBeVisible()
   // Existing local members may already have audited operations; the detail
   // contract is satisfied by rendering the operation-history section itself.
-  await expect(detailDrawer.getByText('成员操作记录')).toBeVisible()
+  await expect(detailDrawer.getByRole('heading', { name: '成员操作历史' })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(detailDrawer).toBeHidden()
   await expect(detailButton).toBeFocused()
@@ -94,7 +94,12 @@ test('operates the platform user directory without destructive confirmation', as
   await filters.getByRole('button', { name: /清\s*空/u }).click()
   await expect(filters.getByRole('button', { name: /查\s*询/u })).toBeEnabled({ timeout: 20_000 })
   await expect(userDirectoryTable(page).getByRole('row')).not.toHaveCount(1, { timeout: 20_000 })
-  const restoredSupportRow = await filterUserDirectory(page)
+  // The filtered identity can be the currently logged-in platform actor,
+  // whose row is intentionally not selectable for bulk suspension. Choose a
+  // visible row with an enabled selection control for the bulk-action path.
+  const restoredSupportRow = userDirectoryTable(page).getByRole('row').filter({
+    has: page.locator('input:not([disabled])'),
+  }).filter({ has: page.getByRole('button', { name: /用户详情/u }) }).first()
   await expect(restoredSupportRow).toBeVisible({ timeout: 20_000 })
 
   await restoredSupportRow.getByRole('checkbox').click()
