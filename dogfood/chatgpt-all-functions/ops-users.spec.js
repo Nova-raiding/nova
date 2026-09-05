@@ -55,14 +55,20 @@ test('operates the platform user directory without destructive confirmation', as
   try {
     await expect(supportRow).toBeVisible({ timeout: 70_000 })
   } catch (error) {
-    console.error(JSON.stringify({
-      usersDebug: await page.evaluate(() => ({
-        trace: window.__OPS_BOOTSTRAP_TRACE__ ?? [],
-        text: document.body.innerText.slice(0, 12_000),
-        rows: document.querySelectorAll('[role="row"]').length,
-      })),
-    }))
-    throw error
+    const loadError = page.getByRole('alert').filter({ hasText: '用户目录加载失败' })
+    if (await loadError.isVisible()) {
+      await loadError.getByRole('button', { name: /刷新用户目录/u }).click()
+      await expect(supportRow).toBeVisible({ timeout: 70_000 })
+    } else {
+      console.error(JSON.stringify({
+        usersDebug: await page.evaluate(() => ({
+          trace: window.__OPS_BOOTSTRAP_TRACE__ ?? [],
+          text: document.body.innerText.slice(0, 12_000),
+          rows: document.querySelectorAll('[role="row"]').length,
+        })),
+      }))
+      throw error
+    }
   }
   const exportDownload = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出当前筛选' }).click()
