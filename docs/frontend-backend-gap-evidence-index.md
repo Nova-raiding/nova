@@ -28,3 +28,10 @@
 - 不能把本地 OIDC/Postgres/Redis 验收写成生产发布通过。
 - 不能把后端存在的 case 分支写成前端已有完整闭环。
 - 不能把空列表、fixture 或 API 成功 envelope 写成真实商家数据可用。
+
+## 2026-09-06 复核记录
+
+- `ops.audit.detail`：`opsDomainClients.ts` → `useAuditCenter.ts` → `AuditCenterSection.tsx` → `AuditDetailDrawer.tsx`，已确认源代码调用链。
+- `ops.authorization.matrix.get`：`PermissionMatrixSection.tsx`，由 `AuthorizationGovernanceSection.tsx` 挂载。
+- `ops.storage.reconciliation.list`：`useOpsConsoleModel.ts` hydration → `StoragePage.tsx` → `StorageReconciliationSection.tsx`。
+- 以上仅为源代码交叉证据；仍需真实桌面浏览器、权限拒绝和审计记录验证，不能单凭调用链宣称运行闭环完成。

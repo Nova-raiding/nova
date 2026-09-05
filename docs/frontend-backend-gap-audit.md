@@ -30,21 +30,21 @@
 
 ## 后端有、前端没有直接入口
 
-以下能力在 API 已有实现，但当前 Ops Console 没有清晰、可见、可验证的页面闭环，优先级按“运营影响 × 数据风险 × 无替代入口”排序。
+以下能力仍需逐项确认页面闭环；下表是审计候选，不代表当前没有入口或必须开发。
 
 ### 待复核：不能由静态候选集直接判定缺口
 
 | 能力 | 后端方法 | 当前风险 | 建议闭环 |
 |---|---|---|---|
 | 平台告警读取/确认 | `ops.alerts.list`, `ops.alert.ack` | 只在 overview/hydration 中出现，缺少专门告警工作台、筛选、确认结果反馈 | 建立“告警中心”：列表、详情、ack 审计、失败重试 |
-| 数据删除治理 | `ops.data.delete.list/cancel/approve` | 高风险写操作若隐藏在后台能力，运营无法查看待处理请求 | 单独“数据与隐私”页，审批前后状态、原因、审计、幂等证据 |
+| 数据删除治理 | `ops.data.delete.list/cancel/approve` | 已发现 hydration 与通用 decision helper；需运行验证状态、原因、审计和幂等反馈 | 以浏览器证据确认是否需要补强 |
 | 平台授权矩阵 | `ops.authorization.matrix.get` | 已发现 `PermissionMatrixSection` 调用；仍需浏览器验证展示、错误和权限边界 | 核验现有页面闭环后再决定是否补强 |
 | 授权角色/Grant 管理 | `ops.authorization.roles.list`, `ops.authorization.grants.list/issue/revoke` | 写入闭环容易成为信息孤岛 | 角色/临时授权页，显示有效期、用途、最大使用次数、撤销证据 |
 | 审计详情 | `ops.audit.detail`, `ops.audit.export` | 已发现域客户端和 `AuditPage` 链路；导出可用性与平台/workspace scope仍需运行验证 | 以浏览器证据确认是否存在真实缺口 |
 | Canonical backfill | `ops.canonical.backfill.*` | 批次/冲突/claim/resolve 是高风险运维能力，当前没有明显页面闭环 | “数据修复”页：dry-run、批次状态、冲突队列、claim/resolve、回滚证据 |
 | 存储对账 | `ops.storage.reconciliation.list` | 已有 `StoragePage` 和 hydration；需验证差异详情及失败态是否足够 | 以运行证据决定是否补充详情或 redrive |
 
-### P1：已具备后端域，前端入口不完整
+### 待核实：已具备后端域，前端覆盖程度未完成运行验收
 
 | 能力族 | 后端方法示例 | 缺口 |
 |---|---|---|
@@ -55,7 +55,7 @@
 | 营销队列 | `ops.marketing.queue.*`, image audit/reconcile | 有任务/内容域，图像归档、计费审计、重试和发布确认需独立状态闭环 |
 | 用户治理 | `ops.user.detail/suspend/activate/risk.transition/session.revoke` | 已接入；需保证冷启动和并发加载稳定，当前已发现并修复加载超时问题 |
 
-### P2：可能是后台聚合或迁移遗留
+### 待核实：可能是后台聚合或迁移遗留
 
 `ops.brand-units.summary`、`ops.stores.list`、`ops.tasks.summary`、`ops.growth.funnel`、`ops.model-usage.summary`、`ops.members.list` 等主要被 overview/hydration 使用。它们不一定需要独立页面，但必须满足：
 
@@ -116,7 +116,7 @@
 1. 固化 managed OIDC context provider，删除页面对 local/session storage 的直接依赖。
 2. 为 `ops.users.list`、`ops.session`、`ops.workspaces.list` 建立 route-critical 请求优先级和单独连接池预算。
 3. 建立统一 Ops request state/error/audit 组件。
-4. 补齐 P0：告警、数据删除、授权 grant、审计详情、canonical backfill、存储对账。
+4. 对候选能力补充真实桌面浏览器、权限拒绝和审计证据后，再决定是否需要开发。
 5. 商业工作台补齐 workspace/customer 时间线，把 access、entitlement、ledger、order、fulfillment 串为一条链。
 6. 建立自动契约审计：前端 RPC → contracts → API route → persistence → audit → UI evidence。
 7. 把生产 readiness、模型 relay evidence、外部连接和发布门禁接到同一运营证据视图。
@@ -163,3 +163,11 @@
 - `AuthorizationGovernanceSection` 已调用角色、grant 查询及 revoke/assign/issue 写操作。
 
 因此旧表中的这些条目只能保留为“运行态闭环待验收”，不能标为缺失入口或 P0 开发项。后续判断需要补充浏览器截图、真实权限拒绝、请求/审计证据，而不是再次依赖方法名集合差集。
+
+### 路由复核：审计导出与工作区切换
+
+`requiredWorkbenchForDomain("audit")` 固定返回 `platform`。`AuditPage` 在平台 scope 下使用 `listPlatform`，并禁用详情与导出；组件提示用户切换到具体工作区。`OpsConsoleController` 的导航逻辑支持先切换 workbench 再提交目标路由，因此这目前是有意的两步流程候选，不应直接判为缺陷。仍需真实桌面验收确认：平台会话确实能看到可用 workspace 切换器，切换后审计页重新加载 workspace 列表，并且 `audit.export` 权限拒绝有可见反馈。
+
+## 2026-09-06 运营表面审计脚本结果
+
+运行 `npm run audit:ops-surface` 得到：契约方法 108 个，前端引用 106 个，脚本标出的 `ops.data.delete.approve`、`ops.data.delete.cancel` 实际通过 `useOpsConsoleModel.ts` 的通用 decision helper 动态拼接方法名调用；`ops.data.delete.list` 也有 hydration 调用。因此这三项均不是缺失前端入口。该结果仍是静态引用证据，下一步需沿数据删除治理页面、鉴权和服务端状态机做人工链路及浏览器验证。此前 52 项差集不再作为覆盖率依据。

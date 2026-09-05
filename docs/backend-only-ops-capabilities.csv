@@ -1,53 +1,53 @@
 method,scan_status,review_note
-"ops.alerts.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.audit.detail",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.authorization.grants.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.authorization.matrix.get",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.authorization.roles.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.brand-units.summary",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.canonical.backfill.conflicts.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.canonical.backfill.create",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.canonical.backfill.get",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.canonical.backfill.pause",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.canonical.backfill.resume",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.canonical.backfill.run",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.access-blocks.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.addons.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.catalog-v2.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.coupons.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.entitlements.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.offers.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.orders-v2.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.points-ledger.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.rate-cards.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.rollouts.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.service-fulfillment.adjust",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.service-fulfillment.complete",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.service-fulfillment.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.service-fulfillment.schedule",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.service-fulfillment.start",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.commercial.timeline.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.data.delete.approve",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.data.delete.cancel",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.data.delete.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.growth.funnel",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.marketing.image.archive.audit",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.marketing.image.billing.audit",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.marketing.queue",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.marketing.summary",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.member.suspend",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.members.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.model-usage.summary",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.storage.reconciliation.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.stores.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.crm.export",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.sla.correction.create",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.sla.correction.decide",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.sla.report",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.ticket.assign",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.ticket.comment",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.ticket.create",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.ticket.get",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.ticket.transition",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.support.tickets.list",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
-"ops.tasks.summary",candidate_pending_manual_trace,"未发现 Ops Console 直接 rpc 调用；需确认域客户端/后台 hydration 是否间接覆盖"
+ops.alerts.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.audit.detail,frontend_reference_confirmed,domain client + AuditPage/useAuditCenter; runtime closure still needs browser evidence
+ops.authorization.grants.list,frontend_reference_confirmed,AuthorizationGovernanceSection; runtime closure still needs browser evidence
+ops.authorization.matrix.get,frontend_reference_confirmed,PermissionMatrixSection; runtime closure still needs browser evidence
+ops.authorization.roles.list,frontend_reference_confirmed,AuthorizationGovernanceSection; runtime closure still needs browser evidence
+ops.brand-units.summary,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.canonical.backfill.conflicts.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.canonical.backfill.create,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.canonical.backfill.get,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.canonical.backfill.pause,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.canonical.backfill.resume,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.canonical.backfill.run,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.access-blocks.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.addons.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.catalog-v2.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.coupons.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.entitlements.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.offers.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.orders-v2.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.points-ledger.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.rate-cards.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.rollouts.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.service-fulfillment.adjust,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.service-fulfillment.complete,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.service-fulfillment.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.service-fulfillment.schedule,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.service-fulfillment.start,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.commercial.timeline.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.data.delete.approve,frontend_reference_confirmed,generic data deletion decision helper + DataReadinessSection; runtime closure still needs browser evidence
+ops.data.delete.cancel,frontend_reference_confirmed,generic data deletion decision helper + DataReadinessSection; runtime closure still needs browser evidence
+ops.data.delete.list,frontend_reference_confirmed,useOpsConsoleModel hydration + DataReadinessSection; runtime closure still needs browser evidence
+ops.growth.funnel,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.marketing.image.archive.audit,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.marketing.image.billing.audit,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.marketing.queue,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.marketing.summary,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.member.suspend,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.members.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.model-usage.summary,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.storage.reconciliation.list,frontend_reference_confirmed,StoragePage + useOpsConsoleModel; runtime closure still needs browser evidence
+ops.stores.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.crm.export,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.sla.correction.create,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.sla.correction.decide,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.sla.report,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.ticket.assign,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.ticket.comment,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.ticket.create,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.ticket.get,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.ticket.transition,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.support.tickets.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
+ops.tasks.summary,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
