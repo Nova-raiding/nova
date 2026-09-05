@@ -338,6 +338,9 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
         // the durable worker claims them.  Publication is delivery evidence,
         // not a claimability gate; lease/unknown state remains authoritative.
         'unknown_at IS NULL',
+        // Events with durable error evidence require reconciliation/redrive;
+        // ordinary workers must not mutate their immutable terminal record.
+        'last_error IS NULL',
         "COALESCE(last_error->>'terminal', 'false') <> 'true'",
         'next_attempt_at <= $2::timestamptz',
         '(lease_until IS NULL OR lease_until <= $2::timestamptz)',
