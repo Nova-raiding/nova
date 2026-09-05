@@ -9873,6 +9873,7 @@ function isNativeMcpTransport(req: IncomingMessage, method: unknown) {
 export function isNativeMcpToolEnabled(method: string) {
   if (method.startsWith('ops.') || (MCP_NON_PRODUCTION_METHODS as readonly string[]).includes(method)) return false
   if (!MCP_METHOD_CONTRACTS.some(contract => contract.method === method)) return false
+  if (method === 'catalog.image.generate' && process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true') return true
   return resolveCommercialOperation(COMMERCIAL_OPERATION_REGISTRY, { surface: 'MCP', operation: method }).outcome === 'REGISTERED'
 }
 
