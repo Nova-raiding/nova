@@ -133,7 +133,7 @@ describe("Ops console marketing governance contract", () => {
     expect(app).not.toContain("access_token");
     expect(app).toContain("VITE_OPS_AUTH_MODE === 'oidc'");
     expect(app).toContain(
-      "credentials: managedOpsSession ? 'include' : 'same-origin'",
+      "credentials: managedOpsSession || localOpsSessionEnabled ? 'include' : 'same-origin'",
     );
   });
 
