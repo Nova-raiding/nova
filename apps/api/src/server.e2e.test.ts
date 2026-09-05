@@ -54,6 +54,33 @@ function generatedDecisionBody(title: string, detail: string, sellingPoints: str
 }
 
 describe('API HTTP vertical slice', () => {
+  it('exchanges the local operator token for an HttpOnly session cookie', async () => {
+    vi.stubEnv('OPS_LOCAL_SESSION_ENABLED', 'true')
+    vi.stubEnv('OPS_LOCAL_SESSION_TOKEN', 'pilot-local-token')
+    const base = await start()
+    const session = await fetch(`${base}/v1/ops/local-session`)
+    expect(session.status).toBe(204)
+    expect(session.headers.get('set-cookie')).toMatch(/^ops_local_session=.*HttpOnly/u)
+    const cookie = session.headers.get('set-cookie')!.split(';', 1)[0]!
+    const health = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json', 'x-workspace-id': 'ws_demo', 'x-ops-workbench': 'platform' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'local-cookie', method: 'ops.session', params: {} }),
+    }).then(json)
+    expect(health.error).toBeNull()
+    expect(health.data).toMatchObject({ result: { actor_id: 'actor_demo' } })
+  })
+
+  it('keeps the local operator session exchange disabled in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('OPS_LOCAL_SESSION_ENABLED', 'true')
+    vi.stubEnv('OPS_LOCAL_SESSION_TOKEN', 'pilot-local-token')
+    const base = await start()
+    const response = await fetch(`${base}/v1/ops/local-session`)
+    expect(response.status).toBe(404)
+    expect(response.headers.get('set-cookie')).toBeNull()
+  })
+
   it('exposes a read-only workspace-scoped canonical consistency dry-run without cutover', async () => {
     const base = await start()
     const workspaceId = `ws_canonical_consistency_${Date.now()}`
