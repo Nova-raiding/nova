@@ -103,6 +103,19 @@ export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boole
 }
 
 export const managedOpsSession = resolveManagedOpsSession(viteEnv);
+export const localOpsSessionEnabled = viteEnv.VITE_OPS_LOCAL_SESSION === "true" && !managedOpsSession;
+let localOpsSessionPromise: Promise<void> | undefined;
+
+async function ensureLocalOpsSession(): Promise<void> {
+  if (!localOpsSessionEnabled || localOpsSessionPromise) return localOpsSessionPromise;
+  localOpsSessionPromise = fetch(`${opsApiBase() || "/api"}/v1/ops/local-session`, { credentials: "include", cache: "no-store" }).then(response => {
+    if (!response.ok) throw new Error("本机安全连接未就绪，请确认本地 API 已启动");
+  }).catch(error => {
+    localOpsSessionPromise = undefined;
+    throw error;
+  });
+  return localOpsSessionPromise;
+}
 
 export function purgeLocalOpsCredentialsForManagedSession(
   storage: Pick<Storage, "removeItem">,
@@ -177,7 +190,7 @@ function normalizedConnectionConfig(value: unknown): OpsConnectionConfig | undef
   const actorId = typeof value.actorId === "string" ? value.actorId.trim() : "";
   const token = typeof value.token === "string" ? value.token.trim() : "";
   const workbench = normalizedWorkbench(value.workbench);
-  if (!apiBase || (workbench === "workspace" && !workspaceId) || (!managedOpsSession && !token)) return undefined;
+  if (!apiBase || (workbench === "workspace" && !workspaceId) || (!managedOpsSession && !localOpsSessionEnabled && !token)) return undefined;
   return { apiBase, workspaceId, actorId: managedOpsSession ? "" : actorId, token: managedOpsSession ? "" : token, workbench };
 }
 
@@ -330,14 +343,14 @@ export function opsApiBase(): string {
  * kept only in browser storage; production uses the OIDC gateway session.
  */
 export function hasOpsCredentials(): boolean {
-  return managedOpsSession || Boolean(readOpsConnectionConfig().token);
+  return managedOpsSession || localOpsSessionEnabled || Boolean(readOpsConnectionConfig().token);
 }
 
 export function hasOpsConnection(): boolean {
   const config = readOpsConnectionConfig();
   // The signed OIDC session supplies workbench and tenant scope server-side;
   // stale local UI workbench state must not disable managed API hydration.
-  const connected = managedOpsSession || Boolean(config.apiBase && (config.workbench === "platform" || config.workspaceId) && config.token);
+  const connected = managedOpsSession || Boolean(config.apiBase && (config.workbench === "platform" || config.workspaceId) && (localOpsSessionEnabled || config.token));
   recordOpsBootstrapTrace("connection", { connected, managed: managedOpsSession, hasApiBase: Boolean(config.apiBase), workbench: config.workbench, hasWorkspace: Boolean(config.workspaceId) });
   return connected;
 }
@@ -389,6 +402,7 @@ async function rpcAtWorkspace<T>(
     error.code = "API_NOT_CONFIGURED";
     throw error;
   }
+  await ensureLocalOpsSession();
   const connection = readOpsConnectionConfig();
   const workspaceId = workspaceOverride ?? connection.workspaceId;
   // The OIDC gateway is the platform boundary; it derives the authorized
@@ -425,7 +439,7 @@ async function rpcAtWorkspace<T>(
     recordOpsBootstrapTrace("rpc_fetch", { method, url: `${apiBase}/mcp` });
     const response = await fetch(`${apiBase}/mcp`, {
       method: "POST",
-      credentials: managedOpsSession ? "include" : "same-origin",
+    credentials: managedOpsSession || localOpsSessionEnabled ? "include" : "same-origin",
       headers,
       body: JSON.stringify({
         jsonrpc: "2.0",

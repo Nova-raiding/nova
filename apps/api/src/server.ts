@@ -5712,7 +5712,12 @@ async function authenticate(req: IncomingMessage) {
     return
   }
   const authorization = header(req, 'authorization')?.trim()
-  const token = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1]
+  const cookieToken = (header(req, 'cookie') ?? '')
+    .split(';')
+    .map(value => value.trim())
+    .find(value => value.startsWith('ops_local_session='))
+    ?.slice('ops_local_session='.length)
+  const token = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1] ?? cookieToken
   if (!token) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产请求必须携带有效 Bearer token', 401)
   let grants: Record<string, unknown>
   try {
@@ -15780,6 +15785,21 @@ export function imageGenerationReconciliationIdempotencyKey(input: {
 export async function route(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
   const path = url.pathname
+  // Local Ops Console bootstrap: the bearer stays in the API/container
+  // environment and is exchanged for an HttpOnly cookie. This route is
+  // deliberately unavailable in production and only enabled by the local
+  // Compose profile; the browser never receives or stores the token.
+  if (req.method === 'GET' && path === '/v1/ops/local-session') {
+    const enabled = process.env.OPS_LOCAL_SESSION_ENABLED === 'true' && !isProduction()
+    if (!enabled) { res.statusCode = 404; res.end('not found'); return }
+    const token = process.env.OPS_LOCAL_SESSION_TOKEN?.trim()
+    if (!token) { res.statusCode = 503; res.setHeader('content-type', 'application/json; charset=utf-8'); res.end(JSON.stringify({ error: 'OPS_LOCAL_SESSION_NOT_CONFIGURED' })); return }
+    res.statusCode = 204
+    res.setHeader('cache-control', 'no-store')
+    res.setHeader('set-cookie', `ops_local_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800`)
+    res.end()
+    return
+  }
   if (path === '/oauth/authorize' && req.method === 'GET') {
     if (isProduction()) { res.statusCode = 404; res.end('not found'); return }
     const redirect = url.searchParams.get('redirect_uri'); const state = url.searchParams.get('state') ?? ''

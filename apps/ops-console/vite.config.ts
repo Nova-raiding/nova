@@ -14,6 +14,9 @@ export default defineConfig({
     // environment mismatch can leave hasOpsConnection() false and prevent
     // the first ops.session request from ever reaching the gateway.
     'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE || ''),
+    // Local Compose obtains an HttpOnly session from the API; the browser
+    // never receives or stores the bearer token.
+    'import.meta.env.VITE_OPS_LOCAL_SESSION': JSON.stringify(process.env.VITE_OPS_LOCAL_SESSION || ''),
   },
   plugins: [react()],
   server: {
