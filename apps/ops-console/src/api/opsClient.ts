@@ -108,8 +108,10 @@ let localOpsSessionPromise: Promise<void> | undefined;
 
 async function ensureLocalOpsSession(): Promise<void> {
   if (!localOpsSessionEnabled || localOpsSessionPromise) return localOpsSessionPromise;
-  localOpsSessionPromise = fetch(`${opsApiBase() || "/api"}/v1/ops/local-session`, { credentials: "include", cache: "no-store" }).then(response => {
+  localOpsSessionPromise = fetch(`${opsApiBase() || "/api"}/v1/ops/local-session`, { credentials: "include", cache: "no-store" }).then(async response => {
     if (!response.ok) throw new Error("本机安全连接未就绪，请确认本地 API 已启动");
+    const body = await response.json().catch(() => null) as { workspace_id?: unknown } | null;
+    if (typeof body?.workspace_id === "string" && body.workspace_id.trim()) localStorage.setItem("ops_workspace_id", body.workspace_id.trim());
   }).catch(error => {
     localOpsSessionPromise = undefined;
     throw error;
@@ -201,7 +203,7 @@ function legacyConnectionConfig(): OpsConnectionConfig {
       storage.getItem("ops_api_base") ||
       viteEnv.VITE_API_BASE,
     ),
-    workspaceId: storage.getItem("ops_workspace_id")?.trim() ?? "",
+    workspaceId: storage.getItem("ops_workspace_id")?.trim() || (localOpsSessionEnabled ? "ws_demo" : ""),
     actorId: managedOpsSession ? "" : localStorage.getItem("ops_actor_id")?.trim() ?? "",
     token: managedOpsSession ? "" : localStorage.getItem("ops_api_token")?.trim() ?? "",
     workbench: normalizedWorkbench(storage.getItem(OPS_WORKBENCH_KEY)),
@@ -547,6 +549,7 @@ export async function opsRestGetWithMeta<T>(
     error.code = "API_NOT_CONFIGURED";
     throw error;
   }
+  await ensureLocalOpsSession();
   const connection = readOpsConnectionConfig();
   if (!connection.workspaceId && connection.workbench === "workspace") {
     const error = new Error("请先配置真实工作区 ID") as OpsRequestError;
@@ -573,7 +576,7 @@ export async function opsRestGetWithMeta<T>(
   try {
     const response = await fetch(`${apiBase}${path}`, {
       method: "GET",
-      credentials: managedOpsSession ? "include" : "same-origin",
+      credentials: managedOpsSession || localOpsSessionEnabled ? "include" : "same-origin",
       headers,
       signal: controller.signal,
     });
@@ -632,6 +635,7 @@ export async function opsRestPost<T>(path: string, body: Record<string, unknown>
   if (!path.startsWith("/v1/") || path.includes("#")) throw invalidConfig("运营 REST 路径必须位于 /v1/ 下");
   const apiBase = opsApiBase();
   if (!apiBase) { const error = new Error("运营 API 未配置") as OpsRequestError; error.code = "API_NOT_CONFIGURED"; throw error; }
+  await ensureLocalOpsSession();
   const connection = readOpsConnectionConfig();
   if (!connection.workspaceId && connection.workbench === "workspace") { const error = new Error("请先配置真实工作区 ID") as OpsRequestError; error.code = "OPS_WORKSPACE_REQUIRED"; throw error; }
   const headers: Record<string, string> = { "content-type": "application/json", "x-ops-workbench": connection.workbench };
@@ -642,7 +646,7 @@ export async function opsRestPost<T>(path: string, body: Record<string, unknown>
   if (options.signal?.aborted) abortFromCaller(); else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   let timedOut = false; const timeout = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, options.timeoutMs ?? OPS_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${apiBase}${path}`, { method: "POST", credentials: managedOpsSession ? "include" : "same-origin", headers, body: JSON.stringify(body), signal: controller.signal });
+    const response = await fetch(`${apiBase}${path}`, { method: "POST", credentials: managedOpsSession || localOpsSessionEnabled ? "include" : "same-origin", headers, body: JSON.stringify(body), signal: controller.signal });
     const raw = await readBoundedResponseText(response, options.maxResponseBytes ?? MAX_OPS_RESPONSE_BYTES);
     if (requestEpoch !== opsRequestEpoch) throw new DOMException("请求上下文已失效", "AbortError");
     let parsed: unknown; try { parsed = JSON.parse(raw); } catch { throw invalidResponse(`非 JSON 对象（HTTP ${response.status}）`, response.status); }

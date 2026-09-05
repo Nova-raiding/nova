@@ -157,6 +157,7 @@ services:
       # the bearer value never enters browser storage or form fields.
       OPS_LOCAL_SESSION_ENABLED: "true"
       OPS_LOCAL_SESSION_TOKEN: ${OPS_LOCAL_SESSION_TOKEN:-workspace-local-token}
+      OPS_LOCAL_SESSION_WORKSPACE_ID: ${OPS_LOCAL_SESSION_WORKSPACE_ID:-ws_demo}
       API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","bootstrap":true,"workbenches":["platform","workspace"],"roles":["platform_ops","workspace_owner","merchant_admin","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]},"workspace-local-token":{"workspaces":["*"],"actor_id":"workspace_admin_demo","bootstrap":true,"workbenches":["workspace"],"roles":["workspace_owner","merchant_admin"]}}'
       SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:-pilot-local-session-hash-secret}
       ALLOW_WILDCARD_WORKSPACE_GRANT: "true"

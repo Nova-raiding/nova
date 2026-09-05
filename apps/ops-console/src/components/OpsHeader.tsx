@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Alert, Button, Drawer, Input, Layout, Space, Tag, Typography, type InputRef } from "antd";
-import { describeOpsError, hasOpsConnection, hasOpsCredentials, readOpsConnectionConfig, saveOpsConnectionConfig, type OpsConnectionConfigInput } from "../api/opsClient.js";
+import { describeOpsError, hasOpsConnection, hasOpsCredentials, localOpsSessionEnabled, readOpsConnectionConfig, saveOpsConnectionConfig, type OpsConnectionConfigInput } from "../api/opsClient.js";
 import type { OpsDataSource } from "../types/ops.js";
 import type { OpsSession } from "../types/ops.js";
 import type { OpsWorkbench } from "../types/ops.js";
@@ -157,7 +157,7 @@ export function OpsHeader({
       </div>
       <div className="ops-connection-toolbar">
         <div className="ops-connection-summary">
-          <span className="ops-connection-summary-label">连接状态</span>
+          <span className="ops-connection-summary-label">{localOpsSessionEnabled ? "本机安全会话" : "连接状态"}</span>
           <Tag role="status" aria-live="polite" aria-busy={refreshing || undefined} data-state={connectionState} className="ops-status-tag" color={!hasOpsConnection() || connectionError ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
             {refreshing ? "正在刷新" : !hasOpsCredentials() ? "待配置" : !hasOpsConnection() ? "待填写工作区" : connectionError ? "连接失败" : sessionLoaded ? "已连接" : "读取中"}
           </Tag>
@@ -171,7 +171,7 @@ export function OpsHeader({
           aria-controls="ops-connection-fields"
           onClick={() => setConnectionOpen(open => !open)}
         >
-          {connectionOpen ? "收起登录配置" : "登录 / 连接"}
+          {connectionOpen ? "收起安全状态" : localOpsSessionEnabled ? "查看安全状态" : "登录 / 连接"}
         </Button>
       </div>
       <Drawer
@@ -235,7 +235,7 @@ export function OpsHeader({
             />
           </div>
         ) : null}
-        <label className="ops-connection-field">
+        {!localOpsSessionEnabled ? <label className="ops-connection-field">
           <span>运营 API 地址</span>
           <Input
             ref={apiBaseRef}
@@ -247,8 +247,8 @@ export function OpsHeader({
             }}
             placeholder="真实运营 API 地址"
           />
-        </label>
-        <label className="ops-connection-field">
+        </label> : null}
+        {!localOpsSessionEnabled ? <label className="ops-connection-field">
           <span>工作区 ID</span>
           <Input
             ref={workspaceIdRef}
@@ -263,7 +263,7 @@ export function OpsHeader({
             status={workspaceIdError ? "error" : undefined}
             {...workspaceFieldAccessibility(workspaceIdError)}
           />
-        </label>
+        </label> : null}
         {managedSession ? (
           <Tag color="green" className="ops-status-tag">SSO 托管会话</Tag>
         ) : (
@@ -271,10 +271,10 @@ export function OpsHeader({
             <Alert
               type="warning"
               showIcon
-              title="当前为本地验证环境"
-              description="这里使用本机 Docker 的演示数据，仅用于体验运营后台；生产环境会改用企业 SSO 登录。"
+              title="本机安全连接已托管"
+              description="凭据由本机 API 保管并通过 HttpOnly 会话使用，浏览器和表单不会看到 Token。生产环境会改用企业 SSO 登录。"
             />
-            <label className="ops-connection-field">
+            {!localOpsSessionEnabled ? <label className="ops-connection-field">
               <span>高级：操作员 ID</span>
               <Input
                 name="actorId"
@@ -283,26 +283,28 @@ export function OpsHeader({
                 onChange={(event) => setDraft(current => ({ ...current, actorId: event.target.value }))}
                 placeholder="操作员 ID"
               />
-            </label>
-            <label className="ops-connection-field">
-              <span>高级：运营 API Token</span>
-              <Input.Password
-                ref={tokenRef}
-                name="token"
-                autoComplete="current-password"
-                value={draft.token ?? ""}
-                placeholder={hasOpsCredentials() ? "已配置；留空保持不变" : "Bearer token（仅存本机）"}
-                onChange={(event) => {
-                  setDraft(current => ({ ...current, token: event.target.value }));
-                  setConfigError(undefined);
-                }}
-              />
-            </label>
+            </label> : null}
+            {localOpsSessionEnabled ? <Tag color="green" className="ops-status-tag">安全会话：自动连接本机 API</Tag> : (
+              <label className="ops-connection-field">
+                <span>高级：运营 API Token</span>
+                <Input.Password
+                  ref={tokenRef}
+                  name="token"
+                  autoComplete="current-password"
+                  value={draft.token ?? ""}
+                  placeholder={hasOpsCredentials() ? "已配置；留空保持不变" : "Bearer token（仅存本机）"}
+                  onChange={(event) => {
+                    setDraft(current => ({ ...current, token: event.target.value }));
+                    setConfigError(undefined);
+                  }}
+                />
+              </label>
+            )}
           </>
         )}
         <Tag role="status" aria-live="polite" data-state={connectionState} className="ops-status-tag" color={!hasOpsConnection() ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
           {!hasOpsCredentials()
-            ? "请配置真实 API Token"
+            ? localOpsSessionEnabled ? "正在建立本机安全连接" : "请配置真实 API Token"
             : !hasOpsConnection()
               ? "请配置真实工作区 ID"
             : sessionLoaded

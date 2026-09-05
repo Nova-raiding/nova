@@ -120,8 +120,8 @@ describe("OpsHeader accessibility", () => {
 
   it("uses the current Ant Design Alert title API in the connection drawer", async () => {
     const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
-    expect(source).toContain('title="当前为本地验证环境"');
-    expect(source).not.toContain('message="当前为本地验证环境"');
+    expect(source).toContain('title="本机安全连接已托管"');
+    expect(source).not.toContain('message="本机安全连接已托管"');
     expect(source).not.toContain('message="连接配置未保存"');
   });
 
@@ -154,10 +154,10 @@ describe("OpsHeader accessibility", () => {
     expect(markup).toContain("权限未验证");
   });
 
-  it("labels the local adapter as development-only in the diagnostic drawer", async () => {
+  it("labels the local adapter as an HttpOnly development session", async () => {
     const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
-    expect(source).toContain('title="当前为本地验证环境"');
-    expect(source).toContain('description="这里使用本机 Docker 的演示数据，仅用于体验运营后台；生产环境会改用企业 SSO 登录。"');
+    expect(source).toContain('title="本机安全连接已托管"');
+    expect(source).toContain("凭据由本机 API 保管并通过 HttpOnly 会话使用");
     expect(source).toContain("type=\"warning\"");
   });
 

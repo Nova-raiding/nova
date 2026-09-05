@@ -5712,11 +5712,13 @@ async function authenticate(req: IncomingMessage) {
     return
   }
   const authorization = header(req, 'authorization')?.trim()
-  const cookieToken = (header(req, 'cookie') ?? '')
+  const encodedCookieToken = (header(req, 'cookie') ?? '')
     .split(';')
     .map(value => value.trim())
     .find(value => value.startsWith('ops_local_session='))
     ?.slice('ops_local_session='.length)
+  let cookieToken: string | undefined
+  try { cookieToken = encodedCookieToken ? decodeURIComponent(encodedCookieToken) : undefined } catch { cookieToken = undefined }
   const token = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1] ?? cookieToken
   if (!token) throw new DomainError(ERROR_CODES.UNAUTHENTICATED, '生产请求必须携带有效 Bearer token', 401)
   let grants: Record<string, unknown>
@@ -15792,12 +15794,20 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (req.method === 'GET' && path === '/v1/ops/local-session') {
     const enabled = process.env.OPS_LOCAL_SESSION_ENABLED === 'true' && !isProduction()
     if (!enabled) { res.statusCode = 404; res.end('not found'); return }
+    const host = (header(req, 'host') ?? '').toLowerCase().split(':')[0]
+    const origin = (header(req, 'origin') ?? '').toLowerCase()
+    const loopbackHost = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+    const localOrigin = !origin || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')
+    const loopbackRequest = loopbackHost && localOrigin
+    if (!loopbackRequest) { res.statusCode = 404; res.end('not found'); return }
     const token = process.env.OPS_LOCAL_SESSION_TOKEN?.trim()
     if (!token) { res.statusCode = 503; res.setHeader('content-type', 'application/json; charset=utf-8'); res.end(JSON.stringify({ error: 'OPS_LOCAL_SESSION_NOT_CONFIGURED' })); return }
-    res.statusCode = 204
+    const workspaceId = process.env.OPS_LOCAL_SESSION_WORKSPACE_ID?.trim() || 'ws_demo'
+    res.statusCode = 200
+    res.setHeader('content-type', 'application/json; charset=utf-8')
     res.setHeader('cache-control', 'no-store')
     res.setHeader('set-cookie', `ops_local_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800`)
-    res.end()
+    res.end(JSON.stringify({ workspace_id: workspaceId, workbench: 'workspace' }))
     return
   }
   if (path === '/oauth/authorize' && req.method === 'GET') {

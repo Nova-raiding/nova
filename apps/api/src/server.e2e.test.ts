@@ -59,7 +59,8 @@ describe('API HTTP vertical slice', () => {
     vi.stubEnv('OPS_LOCAL_SESSION_TOKEN', 'pilot-local-token')
     const base = await start()
     const session = await fetch(`${base}/v1/ops/local-session`)
-    expect(session.status).toBe(204)
+    expect(session.status).toBe(200)
+    await expect(session.json()).resolves.toMatchObject({ workspace_id: 'ws_demo', workbench: 'workspace' })
     expect(session.headers.get('set-cookie')).toMatch(/^ops_local_session=.*HttpOnly/u)
     const cookie = session.headers.get('set-cookie')!.split(';', 1)[0]!
     const health = await fetch(`${base}/mcp`, {
