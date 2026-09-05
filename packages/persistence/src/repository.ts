@@ -334,7 +334,9 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
       const values: unknown[] = [scope, now]
       const filters = [
         'workspace_id = $1',
-        'published_at IS NULL',
+        // Events may be marked published by the transport publisher before
+        // the durable worker claims them.  Publication is delivery evidence,
+        // not a claimability gate; lease/unknown state remains authoritative.
         'unknown_at IS NULL',
         "COALESCE(last_error->>'terminal', 'false') <> 'true'",
         'next_attempt_at <= $2::timestamptz',
