@@ -182,7 +182,9 @@ export class HttpPaymentProvider implements PaymentProvider {
       const rawState = isRecord(payload) && typeof payload.state === 'string' ? payload.state.toLowerCase() : ''
       const state = rawState === 'success' || rawState === 'paid' || rawState === 'trade_success' ? 'paid' : rawState === 'closed' || rawState === 'cancelled' ? 'closed' : rawState === 'failed' || rawState === 'refunded' ? 'failed' : 'pending'
       const providerTradeId = isRecord(payload) && typeof payload.provider_trade_id === 'string' ? payload.provider_trade_id : isRecord(payload) && typeof payload.trade_no === 'string' ? payload.trade_no : undefined
-      const amountFen = isRecord(payload) && typeof payload.amount_fen === 'number' && Number.isSafeInteger(payload.amount_fen) ? payload.amount_fen : undefined
+      const rawAmountFen = isRecord(payload) ? payload.amount_fen : undefined
+      const amountFen = typeof rawAmountFen === 'number' && Number.isSafeInteger(rawAmountFen) && rawAmountFen > 0 ? rawAmountFen : undefined
+      if (state === 'paid' && amountFen === undefined) throw new Error('payment provider paid status must include a positive amount in fen')
       return { state, ...(providerTradeId ? { providerTradeId } : {}), ...(amountFen !== undefined ? { amountFen } : {}) }
     } finally { clearTimeout(timeout) }
   }

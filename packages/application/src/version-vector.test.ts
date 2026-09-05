@@ -244,15 +244,19 @@ describe('content version provenance vector', () => {
     expect(() => service.createTaskFromRequest({ workspaceId: 'ws_single_request', requestText: `请把${product.title}发布到淘宝，改成主图`, idempotencyKey: 'single-request-1' })).toThrowError(expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }))
   })
 
-  it('validates the complete task group before writing children and allows one product per platform', () => {
+  it('validates the complete task group before writing children and allows multiple products in one store', () => {
     const service = new MerchantService({ seedFixture: false })
     const taobaoA = service.importProduct({ workspaceId: 'ws_atomic_group', platform: 'taobao', title: '淘宝 A', stock: 1 })
     const taobaoB = service.importProduct({ workspaceId: 'ws_atomic_group', platform: 'taobao', title: '淘宝 B', stock: 1 })
     const before = service.tasks.size
     expect(() => service.createTaskGroup({ workspaceId: 'ws_atomic_group', entries: [{ productId: taobaoA.id, platform: 'taobao' }, { productId: taobaoB.id, platform: 'pinduoduo' }] })).toThrowError(expect.objectContaining({ code: 'PLATFORM_SCOPE_MISMATCH' }))
     expect(service.tasks.size).toBe(before)
-    expect(() => service.createTaskGroup({ workspaceId: 'ws_atomic_group', entries: [{ productId: taobaoA.id, platform: 'taobao' }, { productId: taobaoB.id, platform: 'taobao' }] })).toThrowError(expect.objectContaining({ code: 'TASK_GROUP_PLATFORM_DUPLICATE' }))
-    expect(service.tasks.size).toBe(before)
+    const group = service.createTaskGroup({ workspaceId: 'ws_atomic_group', entries: [{ productId: taobaoA.id, platform: 'taobao' }, { productId: taobaoB.id, platform: 'taobao' }] })
+    expect(group.tasks).toHaveLength(2)
+    expect(new Set(group.tasks.map(task => task.productId))).toEqual(new Set([taobaoA.id, taobaoB.id]))
+
+    expect(() => service.createTaskGroup({ workspaceId: 'ws_atomic_group', entries: [{ productId: taobaoA.id, platform: 'taobao' }, { productId: taobaoA.id, platform: 'taobao' }] })).toThrowError(expect.objectContaining({ code: 'TASK_GROUP_PLATFORM_DUPLICATE' }))
+    expect(service.tasks.size).toBe(before + 2)
   })
 
   it('bounds task groups before validating or creating child tasks', () => {

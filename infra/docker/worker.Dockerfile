@@ -28,11 +28,13 @@ COPY --from=build /app/dist ./dist
 # image so the freshness gate can inspect both images without starting them.
 COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations
 COPY --from=build /app/packages ./packages
+COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
 RUN mkdir -p node_modules/@merchant-marketing \
   && for package_dir in packages/*; do \
        package_name="$(node -p "require('./$package_dir/package.json').name" 2>/dev/null || true)"; \
        case "$package_name" in \
-         @merchant-marketing/*) ln -sfn "../../$package_dir" "node_modules/$package_name" ;; \
+         @merchant-marketing/*) \
+           ln -sfn "../../$package_dir" "node_modules/$package_name" ;; \
        esac; \
      done
 COPY --from=build /app/.release-source/worker.manifest /app/.release-source/worker.manifest

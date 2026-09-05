@@ -1,14 +1,28 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { server, service } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, service } from './server.js'
+
+const fixtureBases = new Set<string>()
+const fixtureFetch = globalThis.fetch
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  if (![...fixtureBases].some(base => url.startsWith(base))) return fixtureFetch(input, init)
+  const headers = new Headers(init?.headers)
+  headers.set('x-test-commercial-fixture', 'server-e2e')
+  return fixtureFetch(input, { ...init, headers })
+}
 
 type Envelope = { data: any; error: { code?: string; message?: string } | null }
 async function start() {
   await new Promise<void>((resolve, reject) => { const onError = (error: Error) => reject(error); server.once('error', onError); server.listen(0, () => { server.removeListener('error', onError); resolve() }) })
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('server did not bind')
-  return `http://127.0.0.1:${address.port}`
+  const base = `http://127.0.0.1:${address.port}`
+  fixtureBases.add(base)
+  return base
 }
 async function call(base: string, workspaceId: string, method: string, params: Record<string, unknown>, role?: string) {
+  await grantCreativePointsForTests(workspaceId)
+  grantContinuousFeatureEntitlementForTests(workspaceId)
   return await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, ...(role ? { 'x-role': role } : {}), ...(role === 'platform_ops' ? { 'x-ops-workbench': 'platform' } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }) }).then(response => response.json() as Promise<Envelope>)
 }
 
@@ -25,6 +39,8 @@ describe('new commercial and operations capabilities', () => {
 
   it('keeps six-platform authorization and multiple stores isolated by platform account', async () => {
     const base = await start(); const workspaceId = `ws_six_store_scope_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const platforms = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] as const
     const accounts = new Map<string, string>()
     for (const platform of platforms) {
@@ -243,6 +259,8 @@ describe('new commercial and operations capabilities', () => {
     expect(service.listProducts(mcpWorkspaceId)).toHaveLength(0)
 
     const restWorkspaceId = `ws_import_identity_rest_${Date.now()}`
+    await grantCreativePointsForTests(restWorkspaceId)
+    grantContinuousFeatureEntitlementForTests(restWorkspaceId)
     const rest = await fetch(`${base}/v1/products/import/batch`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-workspace-id': restWorkspaceId },

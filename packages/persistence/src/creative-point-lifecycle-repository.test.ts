@@ -38,8 +38,19 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     expect(client.sql).toEqual([])
   })
 
-  it('persists unknown provider outcome without settling or releasing the reservation', async () => {
+  it.each([
+    { usage: { modality: 'text', model: 'model-1', input_tokens: -1 }, cost: { currency: 'CNY', actual: 0.01 } },
+    { usage: { modality: 'text', model: 'model-1', input_tokens: 1 }, cost: { currency: 'CNY', actual: Number.NaN } },
+    { usage: [], cost: { currency: 'CNY', actual: 0.01 } },
+  ])('rejects invalid provider usage or cost evidence at persistence boundary: %j', async evidence => {
     const client = new Client()
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.recordProviderReceipt({ workspaceId: 'ws-1', operationId: 'operation-1', provider: 'relay', providerRequestId: 'request-invalid', outcome: 'succeeded', usage: evidence.usage as Record<string, unknown>, cost: evidence.cost, verifiedAt: '2026-09-02T00:00:00Z', receiptHash: 'a'.repeat(64), at: '2026-09-02T00:00:00Z' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_INPUT_INVALID' })
+    expect(client.sql).toEqual([])
+  })
+
+  it('persists unknown provider outcome without settling or releasing the reservation', async () => {
+    const client = new Client(sql => sql.includes('INSERT INTO creative_point_provider_receipts_v2') ? { rows: [{ operation_id: 'operation-1', provider: 'relay', outcome: 'unknown', receipt_hash: 'a'.repeat(64) }], rowCount: 1 } : { rows: [] })
     const repository = new PostgresCreativePointLifecycleRepository(pool(client))
     await repository.recordProviderReceipt({ workspaceId: 'ws-1', operationId: 'operation-1', provider: 'relay', providerRequestId: 'request-1', outcome: 'unknown', receiptHash: 'a'.repeat(64), at: '2026-09-02T00:00:00Z' })
     const sql = client.sql.join('\n')
@@ -47,5 +58,15 @@ describe('PostgresCreativePointLifecycleRepository', () => {
     expect(sql).not.toContain("status='settled'")
     expect(sql).not.toContain("status='released'")
     expect(sql).toContain('COMMIT')
+  })
+
+  it('rejects a provider receipt request id already bound to another operation', async () => {
+    const client = new Client(sql => {
+      if (sql.includes('INSERT INTO creative_point_provider_receipts_v2')) return { rows: [], rowCount: 0 }
+      if (sql.includes('SELECT operation_id,provider,outcome,receipt_hash')) return { rows: [{ operation_id: 'operation-other', provider: 'relay', outcome: 'succeeded', receipt_hash: 'b'.repeat(64) }] }
+      return { rows: [] }
+    })
+    const repository = new PostgresCreativePointLifecycleRepository(pool(client))
+    await expect(repository.recordProviderReceipt({ workspaceId: 'ws-1', operationId: 'operation-1', provider: 'relay', providerRequestId: 'request-1', outcome: 'succeeded', usage: { modality: 'text', model: 'model-1', total_tokens: 1 }, cost: { currency: 'CNY', actual: 0.01 }, verifiedAt: '2026-09-02T00:00:00Z', receiptHash: 'a'.repeat(64), at: '2026-09-02T00:00:00Z' })).rejects.toMatchObject({ code: 'CREATIVE_POINT_IDEMPOTENCY_CONFLICT' })
   })
 })

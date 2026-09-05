@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  grantContinuousFeatureEntitlementForTests,
+  grantCreativePointsForTests,
   server,
   service,
   setRuleRepositoryForTests,
@@ -7,6 +9,16 @@ import {
   type RuleRepositoryPort,
 } from './server.js'
 import type { PersistedRuleAudit, PersistedRuleVersion } from '../../../packages/persistence/src/index.js'
+
+const fixtureBases = new Set<string>()
+const fixtureFetch = globalThis.fetch
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  if (![...fixtureBases].some(base => url.startsWith(base))) return fixtureFetch(input, init)
+  const headers = new Headers(init?.headers)
+  headers.set('x-test-workspace-fixture', 'server-e2e')
+  return fixtureFetch(input, { ...init, headers })
+}
 
 type MemberRole = 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'
 type Envelope<T = unknown> = {
@@ -63,7 +75,9 @@ async function start() {
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
-  return `http://127.0.0.1:${address.port}`
+  const base = `http://127.0.0.1:${address.port}`
+  fixtureBases.add(base)
+  return base
 }
 
 async function configureBearerMembers(entries: Array<{
@@ -212,6 +226,10 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
     })
 
     const base = await start()
+    await grantCreativePointsForTests(workspaceA)
+    grantContinuousFeatureEntitlementForTests(workspaceA)
+    await grantCreativePointsForTests(workspaceB)
+    grantContinuousFeatureEntitlementForTests(workspaceB)
 
     expect(resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'workspace.interactive.confirm', {
       confirmation: 'I_CONFIRM_INTERACTIVE_WRITES',
@@ -226,9 +244,9 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
     expect(usersExport).toMatchObject({ filename: expect.stringMatching(/^ops-users-\d{4}-\d{2}-\d{2}\.json$/), count: 1, truncated: false })
     expect(JSON.parse(usersExport.content)).toEqual([expect.objectContaining({ external_subject: `content-owner-a-${suffix}`, workspace_id: workspaceA })])
 
-    const commercialExport = resultOf<any>(await callMcp(base, tokens.platformRulesA, workspaceA, 'ops.commercial.export', { format: 'json' }, workspaceA, 'platform'))
-    expect(commercialExport).toMatchObject({ filename: expect.stringMatching(/^ops-commercial-\d{4}-\d{2}-\d{2}\.json$/), counts: { offers: expect.any(Number), addons: expect.any(Number), coupons: expect.any(Number), rollouts: expect.any(Number) } })
-    expect(JSON.parse(commercialExport.content)).toEqual(expect.objectContaining({ offers: expect.any(Array), addons: expect.any(Array), coupons: expect.any(Array), rollouts: expect.any(Array), modelMarkup: expect.objectContaining({ multiplier: expect.any(Number) }) }))
+    const commercialExport = await callMcp(base, tokens.platformRulesA, workspaceA, 'ops.commercial.export', { format: 'json' }, workspaceA, 'platform')
+    expect(commercialExport.status).toBe(503)
+    expect(commercialExport.body.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
 
     const disabled = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'catalog.product.disable', {
       product_id: product.id,
@@ -255,11 +273,11 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
 
     const brand = resultOf<any>(await callMcp(base, tokens.ownerA, workspaceA, 'brand.get'))
     expect(brand).toMatchObject({ id: `brand_${workspaceA}`, name: `证据品牌-${suffix}`, positioning: '可信、克制' })
-    const tonePreview = resultOf<any[]>(await callMcp(base, tokens.ownerA, workspaceA, 'brand.tone.preview', {
+    const tonePreview = await callMcp(base, tokens.ownerA, workspaceA, 'brand.tone.preview', {
       topic: '秋季上新', product_id: product.id,
-    }))
-    expect(tonePreview).toHaveLength(3)
-    expect(tonePreview.map(item => item.id)).toEqual(['tone_a', 'tone_b', 'tone_c'])
+    })
+    expect(tonePreview.status).toBe(503)
+    expect(tonePreview.body.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
 
     const firstAssetText = `品牌事实 ${suffix}`
     const secondAssetText = `商品说明 ${suffix}`
@@ -315,9 +333,9 @@ describe('MCP content and workflow completion per-method HTTP evidence', () => {
     expect(split.skuIds).toHaveLength(2)
     expect(splitReplay).toMatchObject({ sourceTaskId: splitSourceTask.id, taskGroupId: split.taskGroupId, taskIds: split.taskIds, replayed: true })
 
-    const directions = resultOf<any[]>(await callMcp(base, tokens.ownerA, workspaceA, 'creative.directions', { task_id: sourceTask.id }))
-    expect(directions).toHaveLength(3)
-    expect(directions.map(item => item.id)).toEqual(['A', 'B', 'C'])
+    const directions = await callMcp(base, tokens.ownerA, workspaceA, 'creative.directions', { task_id: sourceTask.id })
+    expect(directions.status).toBe(503)
+    expect(directions.body.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
 
     const missingRequired = await callMcp(base, tokens.ownerA, workspaceA, 'catalog.product.disable', { product_id: product.id })
     const extraParameter = await callMcp(base, tokens.ownerA, workspaceA, 'brand.get', { unexpected: 'rejected' })

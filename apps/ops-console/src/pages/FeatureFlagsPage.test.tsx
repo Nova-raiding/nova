@@ -7,10 +7,13 @@ describe("FeatureFlagsPage environment configuration", () => {
   const source = readFileSync(new URL("./FeatureFlagsPage.tsx", import.meta.url), "utf8");
 
   it("moves focus to the announced page error and keeps a keyboard retry", () => {
-    expect(source).toContain("errorRef.current?.focus({ preventScroll: true })");
-    expect(source).toContain('tabIndex={-1} aria-label="功能开关错误摘要"');
-    expect(source).toContain('role="alert" aria-live="assertive" aria-atomic="true"');
-    expect(source).toContain('htmlType="button"');
+    expect(source).toContain('import { OpsPageError } from "../components/OpsPageError"');
+    expect(source).toContain('<OpsPageError error={model.error ?? ""} onRetry={() => void model.load()} />');
+  });
+
+  it("does not expose duplicate refresh or create actions during an active request", () => {
+    expect(source).toContain("disabled={model.loading || model.loadingMore || model.saving}");
+    expect(source).toContain("disabled={initialLoadFailed || model.saving}");
   });
 
   it("explains server-projected read-only and partially restricted states", () => {

@@ -63,14 +63,14 @@ describe('production config and rendered manifest binding gate', () => {
   it('binds the checked-in runtime and ingress contract in every production scale overlay', () => {
     const overlayConfig = {
       ...config(),
-      merchant_bearer_hostname: 'merchant.example.com',
-      public_endpoints: { app_base_url: 'https://merchant.example.com', ops_base_url: 'https://ops.merchant.example.com', oauth_callback_base_url: 'https://merchant.example.com/v1/oauth/callback' },
-      codex: { mcp: { base_url: 'https://merchant.example.com' } },
+      merchant_bearer_hostname: 'yxsona.com',
+      public_endpoints: { app_base_url: 'https://yxsona.com', ops_base_url: 'https://ops.yxsona.com', oauth_callback_base_url: 'https://yxsona.com/v1/oauth/callback' },
+      codex: { mcp: { base_url: 'https://yxsona.com' } },
       model_relay_base_url: 'https://model-relay.example.com/v1', text_model: 'merchant-main-text', image_model: 'merchant-main-image', image_edit_model: 'merchant-main-image-edit', ocr_model: 'merchant-vision-ocr', video_model: 'merchant-video',
       approved_requests_per_minute: 0, approved_tokens_per_minute: 0, maximum_task_cost_cny: '0.00',
-      object_storage_region: 'cn', object_storage_endpoint: 'https://s3.cn.example-provider.com', asset_display_base_url: 'https://merchant.example.com',
+      object_storage_region: 'cn', object_storage_endpoint: 'https://s3.cn.example-provider.com', asset_display_base_url: 'https://yxsona.com',
       lifecycle_policy_ref: 'vault://merchant-asset-lifecycle-policy', asset_scan_policy_version: '2026-08-30',
-      payment_checkout_base_url: 'https://payments.example.com/checkout', payment_provider_checkout_api_url: 'https://payments.example.com/v1/checkout', payment_provider_query_api_url: 'https://payments.example.com/v1/query', payment_provider_refund_api_url: 'https://payments.example.com/v1/refund', payment_provider_merchant_id: 'merchant-example', payment_callback_base_url: 'https://merchant.example.com/v1',
+      payment_checkout_base_url: 'https://payments.example.com/checkout', payment_provider_checkout_api_url: 'https://payments.example.com/v1/checkout', payment_provider_query_api_url: 'https://payments.example.com/v1/query', payment_provider_refund_api_url: 'https://payments.example.com/v1/refund', payment_provider_merchant_id: 'merchant-example', payment_callback_base_url: 'https://yxsona.com/v1',
       platform_rule_sync_manifest_url: 'https://rules.example.com/platform-rules/v1/manifest.json',
     }
     for (const overlay of ['pilot-50', 'wave-100', 'wave-250', 'target-500']) {

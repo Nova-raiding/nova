@@ -2,11 +2,12 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
 import { requirePublishAuthorizationSnapshot } from './server.js'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
 import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
+import { getHttpOperationPolicy } from '../../../packages/contracts/src/http-authz.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
@@ -90,6 +91,15 @@ describe('central commercial access gate', () => {
     expect(nativeMcpCommercialErrorData(new DomainError('INVALID_REQUEST', 'invalid', 400), request)).toBeUndefined()
   })
 
+  it('preserves non-commercial business error evidence for native MCP', () => {
+    expect(nativeMcpErrorData(new DomainError('CANONICAL_PRODUCT_MAPPING_REQUIRED', 'blocked', 409, { next_actions: ['canonical.product.consistency'] }), request)).toEqual({
+      code: 'CANONICAL_PRODUCT_MAPPING_REQUIRED',
+      details: { next_actions: ['canonical.product.consistency'] },
+      request_id: 'req_commercial_test',
+      trace_id: 'trace_commercial_test',
+    })
+  })
+
   it('derives native ChatGPT tool availability from the shared commercial registry', () => {
     expect(isNativeMcpToolEnabled('merchant.start')).toBe(true)
     expect(isNativeMcpToolEnabled('creative-points.balance.get')).toBe(true)
@@ -151,6 +161,20 @@ describe('central commercial access gate', () => {
     expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'completed')")
     expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'adjusted')")
     expect(fulfillment).not.toContain("case 'ops.commercial.service-fulfillment.cancel'")
+  })
+})
+
+describe('commercial access HTTP/MCP operation parity', () => {
+  it('dispatches the HTTP and native MCP access reads under their registered operation', () => {
+    const httpPolicy = getHttpOperationPolicy('GET', '/v1/commercial/access')
+    expect(httpPolicy).toMatchObject({ mcpMethod: 'commercial.access.get', authentication: 'identity' })
+    expect(getMcpMethodPolicy('commercial.access.get')).toMatchObject({ effect: 'read', scope: 'workspace' })
+
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("case 'commercial.access.get': {")
+    expect(source).toContain("surface: 'MCP', operation: 'commercial.access.get', workspace_id: workspaceId")
+    expect(source).toContain("if (req.method === 'GET' && path === '/v1/commercial/access')")
+    expect(source.match(/surface: 'MCP', operation: 'commercial\.access\.get', workspace_id: workspaceId/g)).toHaveLength(2)
   })
 })
 
@@ -431,6 +455,19 @@ describe('API application wiring', () => {
     const repaired = canonicalConsistencyApiReport({ workspaceId: 'ws_recheck', legacyProducts: [{ id: 'p1', workspaceId: 'ws_recheck', brandId: 'brand-1' }], canonicalProducts: [{ id: 'c1', workspaceId: 'ws_recheck', brandId: 'brand-1', legacyProductId: 'p1' }], listings: [], campaignItems: [], tasks: [] }, 'postgres', '2026-08-31T00:00:00.000Z')
     expect(canonicalConflictResolutionCheck({ conflict: { legacyProductId: 'p1', code: 'CANONICAL_BRAND_MISMATCH' }, report: repaired })).toEqual({ passed: true, findingCodes: [] })
     expect(canonicalConflictResolutionCheck({ conflict: { legacyProductId: 'p1', code: 'CANONICAL_ID_COLLISION' }, report: repaired })).toMatchObject({ passed: false })
+  })
+  it('refuses to close a dangling canonical legacy conflict using orphan evidence', () => {
+    const report = canonicalConsistencyApiReport({
+      workspaceId: 'ws_recheck_orphan',
+      legacyProducts: [],
+      canonicalProducts: [{ id: 'c1', workspaceId: 'ws_recheck_orphan', brandId: 'brand-1', legacyProductId: 'p_missing' }],
+      listings: [], campaignItems: [], tasks: [],
+    }, 'postgres', '2026-08-31T00:00:00.000Z')
+    expect(report.findings).toEqual([])
+    expect(canonicalConflictResolutionCheck({ conflict: { legacyProductId: 'p_missing', code: 'CANONICAL_LEGACY_PRODUCT_MISSING' }, report })).toEqual({
+      passed: false, findingCodes: ['CANONICAL_LEGACY_PRODUCT_ORPHAN'],
+    })
+    expect(canonicalConflictResolutionCheck({ conflict: { legacyProductId: 'p_other', code: 'CANONICAL_LEGACY_PRODUCT_MISSING' }, report })).toEqual({ passed: true, findingCodes: [] })
   })
   it('blocks canonical reads until one canonical product and one listing are verified', () => {
     expect(resolveCanonicalProductReadScope({ mode: 'legacy_shadow', candidates: [], listings: [] })).toBeUndefined()
@@ -742,7 +779,9 @@ describe('API application wiring', () => {
 
   it('uses the same customer-data grant boundary for HTTP and MCP transports', () => {
     expect(customerDataMethodForHttp('GET', '/v1/products')).toBe('catalog.search')
-    expect(customerDataMethodForHttp('GET', '/v1/assets/a1/products')).toBe('catalog.search')
+    expect(customerDataMethodForHttp('GET', '/v1/assets/a1/products')).toBe('asset.list')
+    expect(customerDataMethodForHttp('POST', '/v1/products/p1/confirm')).toBe('catalog.facts.confirm')
+    expect(customerDataMethodForHttp('GET', '/v1/products/p1/image-review')).toBe('catalog.image.review')
     expect(customerDataMethodForHttp('POST', '/v1/publish-jobs')).toBe('publish.confirm')
     expect(customerDataMethodForHttp('GET', '/v1/platform-accounts')).toBe('platform.store.list')
     expect(customerDataMethodForHttp('POST', '/v1/platform-accounts/taobao/authorize')).toBe('platform.connect')

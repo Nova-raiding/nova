@@ -24,6 +24,8 @@ describe("OpsSidebar navigation", () => {
     expect(markup).toContain("模型与计费");
     expect(markup).toContain("风险与系统");
     expect(markup).toContain("当前操作范围");
+    expect(markup).toContain('role="region" aria-labelledby="ops-scope-panel-title"');
+    expect(markup).toContain('id="ops-scope-panel-title"');
     expect(markup).toContain("平台级");
     expect(markup).toContain("正在查看平台聚合与控制面数据");
     expect(markup).toContain("未进入工作区");

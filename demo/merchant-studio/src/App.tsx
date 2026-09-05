@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
@@ -1948,7 +1948,7 @@ function Overview({
               <strong className="wallet-balance">
                 ¥{billing?.balance_cny ?? '—'}
               </strong>
-              <p>{billing?.model_access.message ?? '正在读取钱包状态…'}</p>
+              <p>{billing?.model_access?.message ?? '正在读取钱包状态…'}</p>
               <small>
                 余额、套餐额度、生成和平台发布分别判断；支付订单只有回调确认后才会到账。
               </small>
@@ -4441,7 +4441,7 @@ function Products({
         if (requestId === productsRequestId.current) {
           setRemoteProducts(null)
           setProductTotal(0)
-          setError(describeApiError(cause))
+          setError(`商品读取失败：${describeApiError(cause)} 当前不会执行任何外部写入。`)
         }
       })
       .finally(() => {
@@ -6199,7 +6199,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     }
   }
   const executionState = job?.executionState
-  const displayState = !job ? '' : executionState && ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown', 'dispatching'].includes(executionState) ? executionState : job.archiveState === 'pending' ? 'archiving' : job.archiveState === 'partial' ? 'partial_archive' : job.archiveState === 'external_unarchived' ? 'external_unarchived' : job.state
+  const displayState = !job ? '' : job.archiveState === 'pending' ? 'archiving' : job.archiveState === 'partial' ? 'partial_archive' : job.archiveState === 'external_unarchived' ? 'external_unarchived' : executionState && ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown', 'dispatching'].includes(executionState) ? executionState : job.state
   const displayStateLabels: Record<string, string> = { ...labels, archiving: '归档中，等待安全扫描', partial_archive: '部分归档，等待补偿', external_unarchived: '归档未确认，等待对账' }
   const displayStateTone = displayState === 'failed' || displayState === 'outcome_unknown' || displayState === 'external_unarchived' ? 'amber' : displayState === 'succeeded' && job?.archiveState === 'archived' ? 'green' : 'blue'
   const candidatePageData = getImageCandidatePage(job?.images?.map((src, index) => ({ src, index })) ?? [], candidatePage)
@@ -9637,13 +9637,13 @@ function PublishModal({
   useEffect(() => {
     loadingRef.current = loading
   }, [loading])
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!submitError) return
-    const firstFrame = window.requestAnimationFrame(() => {
-      errorRef.current?.focus()
-      window.requestAnimationFrame(() => errorRef.current?.focus())
-    })
-    return () => window.cancelAnimationFrame(firstFrame)
+    errorRef.current?.focus({ preventScroll: true })
+    const firstFrame = window.requestAnimationFrame(() => errorRef.current?.focus({ preventScroll: true }))
+    const secondFrame = window.requestAnimationFrame(() => window.requestAnimationFrame(() => errorRef.current?.focus({ preventScroll: true })))
+    const delayedFocus = window.setTimeout(() => errorRef.current?.focus({ preventScroll: true }), 120)
+    return () => { window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(secondFrame); window.clearTimeout(delayedFocus) }
   }, [submitError])
   useEffect(() => {
     cancelRef.current?.focus()

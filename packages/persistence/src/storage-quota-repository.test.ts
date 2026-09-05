@@ -37,4 +37,23 @@ describe('MemoryStorageQuotaRepository', () => {
     await expect(repository.reserve({ ...base, assetId: 'other_asset', reservationKey: 'same_key' })).rejects.toThrow('STORAGE_QUOTA_IDEMPOTENCY_CONFLICT')
     expect(await repository.release({ workspaceId: 'ws_other', reservationKey: 'same_key' })).toBeUndefined()
   })
+
+  it('rejects traversal and malformed object keys in physical deletion receipts', async () => {
+    const repository = new MemoryStorageQuotaRepository()
+    await repository.reserve({ ...base, reservationKey: 'receipt_key' })
+    await repository.settle({ workspaceId: base.workspaceId, reservationKey: 'receipt_key', actualBytes: 20 })
+    for (const objectKey of [
+      'clean/ws_storage/../other/object.bin',
+      'clean/ws_storage/asset_1/..\\object.bin',
+      'clean/ws_storage/asset_1/\u0000object.bin',
+      'clean/ws_other/asset_1/object.bin',
+      'clean/ws_storage',
+    ]) {
+      await expect(repository.releaseAfterPhysicalDeletion({
+        workspaceId: base.workspaceId,
+        reservationKey: 'receipt_key',
+        receipt: { objectKey, deletedAt: '2026-08-29T00:00:00.000Z', verification: 'delete_ack' },
+      })).rejects.toThrow('STORAGE_QUOTA_DELETION_RECEIPT_INVALID')
+    }
+  })
 })

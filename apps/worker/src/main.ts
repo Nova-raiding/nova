@@ -498,8 +498,11 @@ export function createApiExecutionAuthorizationGuard(config: Pick<WorkerConfig, 
     const envelope = await parseWorkerApiJson(response) as { data?: { authorization_recheck?: Record<string, unknown> } }
     const raw = envelope.data?.authorization_recheck
     if (!raw) throw new Error('execution authorization recheck evidence is missing')
+    if (!Array.isArray(raw.grant_ids) || raw.grant_ids.some((value) => typeof value !== 'string' || !value.trim())) {
+      throw new WorkerExecutionAuthorizationError('AUTHZ_EXECUTION_RECHECK_INVALID', 'execution authorization recheck grant_ids evidence is malformed', { retryable: true })
+    }
     return {
-      recheckId: String(raw.recheck_id ?? ''), actorId: String(raw.actor_id ?? ''), identityId: String(raw.identity_id ?? ''), workspaceId: String(raw.workspace_id ?? ''), workbench: raw.workbench === 'workspace' ? 'workspace' : '' as 'workspace', contextId: String(raw.context_id ?? ''), contextVersion: String(raw.context_version ?? ''), policyVersion: String(raw.policy_version ?? ''), grantRevision: String(raw.grant_revision ?? ''), grantIds: Array.isArray(raw.grant_ids) ? raw.grant_ids.filter((value): value is string => typeof value === 'string') : [], scopeHash: String(raw.scope_hash ?? ''), capability: String(raw.capability ?? '') as WorkerAuthorizationRecheck['capability'], resourceId: String(raw.resource_id ?? ''), resourceRevision: String(raw.resource_revision ?? ''), requestId: String(raw.request_id ?? ''), traceId: String(raw.trace_id ?? ''), authorized: raw.authorized === true, checkedAt: String(raw.checked_at ?? ''),
+      recheckId: String(raw.recheck_id ?? ''), actorId: String(raw.actor_id ?? ''), identityId: String(raw.identity_id ?? ''), workspaceId: String(raw.workspace_id ?? ''), workbench: raw.workbench === 'workspace' ? 'workspace' : '' as 'workspace', contextId: String(raw.context_id ?? ''), contextVersion: String(raw.context_version ?? ''), policyVersion: String(raw.policy_version ?? ''), grantRevision: String(raw.grant_revision ?? ''), grantIds: [...raw.grant_ids] as string[], scopeHash: String(raw.scope_hash ?? ''), capability: String(raw.capability ?? '') as WorkerAuthorizationRecheck['capability'], resourceId: String(raw.resource_id ?? ''), resourceRevision: String(raw.resource_revision ?? ''), requestId: String(raw.request_id ?? ''), traceId: String(raw.trace_id ?? ''), authorized: raw.authorized === true, checkedAt: String(raw.checked_at ?? ''),
     }
   })
 }
@@ -675,15 +678,15 @@ export type ImageGenerationReconciliationCandidate = {
   intentHash: string
   executionAttempt: number
   queryAttempt?: number
-  providerRequestId: string
-  executionState: 'provider_started' | 'outcome_unknown'
+  providerRequestId?: string
+  executionState: 'provider_reserved' | 'provider_dispatching' | 'provider_started' | 'outcome_unknown'
   actionId?: string
 }
 
 /** Stable per-observation key: replaying the same provider observation is safe,
  * while a changed response at the same query attempt remains a server-side
  * idempotency conflict instead of silently overwriting evidence. */
-export function imageReconciliationIdempotencyKey(input: Pick<ImageGenerationReconciliationCandidate, 'jobId' | 'eventId' | 'intentHash' | 'executionAttempt' | 'providerRequestId'> & { workspaceId: string; queryAttempt: number }) {
+export function imageReconciliationIdempotencyKey(input: { workspaceId: string; jobId: string; eventId: string; intentHash: string; executionAttempt: number; providerRequestId: string; queryAttempt: number }) {
   const canonical = JSON.stringify({
     version: 1,
     workspace_id: input.workspaceId.trim(),
@@ -722,7 +725,7 @@ function validateImageGenerationReconciliationEvidence(input: {
   if (!Number.isSafeInteger(input.candidate.executionAttempt) || input.candidate.executionAttempt < 1) throw new Error('image reconciliation evidence requires a positive execution attempt')
   const queryAttempt = input.candidate.queryAttempt ?? input.candidate.executionAttempt
   if (!Number.isSafeInteger(queryAttempt) || queryAttempt < 1) throw new Error('image reconciliation evidence requires a positive query attempt')
-  const providerRequestId = input.candidate.providerRequestId.trim()
+  const providerRequestId = input.candidate.providerRequestId?.trim() ?? ''
   if (!providerRequestId || providerRequestId.length > 512 || /[\u0000-\u001f\u007f]/u.test(providerRequestId)) throw new Error('image reconciliation evidence requires a valid provider request id')
   if (input.status.providerRequestId !== providerRequestId) throw new Error('image reconciliation status provider request id mismatch')
   if (!['processing', 'succeeded', 'failed', 'unknown'].includes(input.status.state)) throw new Error('image reconciliation status is invalid')
@@ -804,17 +807,17 @@ function imageReconciliationCandidates(page: unknown): ImageGenerationReconcilia
     const eventId = typeof item.event_id === 'string' ? item.event_id.trim() : ''
     const intentHash = typeof item.intent_hash === 'string' ? item.intent_hash.trim() : ''
     const providerRequestId = typeof item.provider_request_id === 'string' ? item.provider_request_id.trim() : ''
-    const executionState = item.execution_state === 'provider_started' || item.execution_state === 'outcome_unknown' ? item.execution_state : undefined
+    const executionState = item.execution_state === 'provider_reserved' || item.execution_state === 'provider_dispatching' || item.execution_state === 'provider_started' || item.execution_state === 'outcome_unknown' ? item.execution_state : undefined
     const executionAttempt = Number(item.execution_attempt ?? item.attempt ?? 0)
     const queryAttempt = Number(item.query_attempt ?? executionAttempt)
     const key = `${jobId}:${eventId}:${intentHash}:${executionAttempt}:${providerRequestId}`
     // Reservation and dispatch fences are pre-provider states. Keep them
     // observable to the API, but never query a Provider without an
     // authoritative request id. Unknown execution states fail closed too.
-    if (!jobId || !eventId || !executionState || !/^[a-f0-9]{64}$/u.test(intentHash) || !providerRequestId || !Number.isSafeInteger(executionAttempt) || executionAttempt < 1 || !Number.isSafeInteger(queryAttempt) || queryAttempt < 1 || seen.has(key)) return []
+    if (!jobId || !eventId || !executionState || !/^[a-f0-9]{64}$/u.test(intentHash) || ((executionState === 'provider_started' || executionState === 'outcome_unknown') && !providerRequestId) || !Number.isSafeInteger(executionAttempt) || executionAttempt < 1 || !Number.isSafeInteger(queryAttempt) || queryAttempt < 1 || seen.has(key)) return []
     seen.add(key)
     const actionId = typeof item.action_id === 'string' && item.action_id.trim() ? item.action_id.trim() : undefined
-    return [{ jobId, eventId, intentHash, executionAttempt, queryAttempt, providerRequestId, executionState, ...(actionId ? { actionId } : {}) }]
+    return [{ jobId, eventId, intentHash, executionAttempt, queryAttempt, ...(providerRequestId ? { providerRequestId } : {}), executionState, ...(actionId ? { actionId } : {}) }]
   })
 }
 
@@ -860,19 +863,21 @@ export async function reconcileImageGenerationWorkspace(input: Parameters<typeof
     const candidates = imageReconciliationCandidates(page)
     const statusResults: unknown[] = []
     if (input.queryStatus) for (const candidate of candidates) {
+      const providerRequestId = candidate.providerRequestId
+      if (!providerRequestId || candidate.executionState === 'provider_reserved' || candidate.executionState === 'provider_dispatching') continue
       const candidateKey = `${candidate.jobId}:${candidate.eventId}:${candidate.intentHash}:${candidate.executionAttempt}:${candidate.providerRequestId}`
       if (queriedCandidates.has(candidateKey)) continue
       queriedCandidates.add(candidateKey)
       let status: ImageGenerationReconciliationEvidence
       try {
-        const observed = await queryImageProviderStatus({ queryStatus: input.queryStatus, providerRequestId: candidate.providerRequestId, signal: input.signal, timeoutMs: input.queryTimeoutMs })
+        const observed = await queryImageProviderStatus({ queryStatus: input.queryStatus, providerRequestId, signal: input.signal, timeoutMs: input.queryTimeoutMs })
         status = { state: observed.state, providerRequestId: observed.providerRequestId, ...(observed.images ? { images: observed.images } : {}), evidence: observed.evidence }
       } catch (error) {
-        status = { ...statusEvidenceFromError(error), providerRequestId: candidate.providerRequestId }
+        status = { ...statusEvidenceFromError(error), providerRequestId }
       }
       statusResults.push(await postImageGenerationReconciliationStatus({ ...input, candidate, status }))
     }
-    results.push({ page, queried: candidates.length, statusResults })
+    results.push({ page, queried: candidates.filter(candidate => Boolean(candidate.providerRequestId) && (candidate.executionState === 'provider_started' || candidate.executionState === 'outcome_unknown')).length, statusResults })
     pages += 1
     cursor = typeof page.next_cursor === 'string' && page.next_cursor ? page.next_cursor : undefined
   } while (cursor && pages < maxPages)
@@ -1194,15 +1199,16 @@ export async function scannerOperationalMetrics(pool: SqlPool, workspaceIds: rea
       const result = await client.query<{ backlog: number | string; dead_letter: number | string; last_callback_accepted_at: Date | string | null }>(
         `SELECT
            count(*) FILTER (WHERE event.published_at IS NULL AND event.unknown_at IS NULL)::integer AS backlog,
-           count(*) FILTER (WHERE event.published_at IS NOT NULL AND event.last_error IS NOT NULL
-             AND (event.last_error->>'retryable'='false' OR event.attempts >= $3)
-             AND EXISTS (
+           count(*) FILTER (WHERE event.last_error IS NOT NULL
+             AND (event.last_error->>'terminal'='true' OR (event.published_at IS NOT NULL
+               AND (event.last_error->>'retryable'='false' OR event.attempts >= $3)
+               AND EXISTS (
                SELECT 1 FROM business_entity_snapshots snapshot
                 WHERE snapshot.workspace_id=event.workspace_id
                   AND snapshot.entity_type='asset'
                   AND snapshot.entity_id=event.payload->>'asset_id'
                   AND snapshot.payload->>'scanStatus'='quarantined'
-             ))::integer AS dead_letter,
+               ))))::integer AS dead_letter,
            max(attempt.callback_accepted_at) AS last_callback_accepted_at
          FROM outbox_events event
          LEFT JOIN asset_scan_attempts attempt ON attempt.workspace_id=event.workspace_id AND attempt.outbox_event_id=event.id
@@ -1397,7 +1403,10 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!providerOperationKey) throw new Error('image generation execution response is missing provider operation reservation')
     await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     imageUsageContexts.set(actionId, { runKey, contextHash: intentHash, ...(signal ? { signal } : {}) })
-    const input: ImageGenerationInput = { productTitle, direction, count, ...(typeof payload.category === 'string' && payload.category ? { category: payload.category } : {}), ...(payload.image_mode === 'create' || payload.image_mode === 'optimize' ? { mode: payload.image_mode } : {}), ...(Array.isArray(payload.source_asset_ids) ? { sourceAssetRefs: payload.source_asset_ids.filter((value): value is string => typeof value === 'string') } : {}), ...(payload.visual_brief && isObject(payload.visual_brief) ? { visualBrief: payload.visual_brief as ImageGenerationInput['visualBrief'] } : {}), usageContext: { workspaceId: event.workspaceId, actionId, runKey } }
+    const sourceRefs = Array.isArray(payload.source_asset_data_urls) && payload.source_asset_data_urls.length
+      ? payload.source_asset_data_urls.filter((value): value is string => typeof value === 'string')
+      : Array.isArray(payload.source_asset_ids) ? payload.source_asset_ids.filter((value): value is string => typeof value === 'string') : []
+    const input: ImageGenerationInput = { productTitle, direction, count, ...(typeof payload.category === 'string' && payload.category ? { category: payload.category } : {}), ...(payload.image_mode === 'create' || payload.image_mode === 'optimize' ? { mode: payload.image_mode } : {}), ...(sourceRefs.length ? { sourceImages: sourceRefs } : {}), ...(payload.visual_brief && isObject(payload.visual_brief) ? { visualBrief: payload.visual_brief as ImageGenerationInput['visualBrief'] } : {}), usageContext: { workspaceId: event.workspaceId, actionId, runKey } }
     try {
       let images: string[]
       try {
@@ -1429,6 +1438,10 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: 'IMAGE_GENERATION_CALLBACK_UNCERTAIN', errorMessage: error instanceof Error ? error.message : 'image callback outcome unknown', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
         throw error
       }
+      // The callback proves application acceptance; complete the execution
+      // lease only after that boundary succeeds. A failed completion remains
+      // replayable/reconcilable and must not be acknowledged as completed.
+      await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'completed', ownerToken, providerRequestId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
       return { images, intent_hash: intentHash }
     } catch (error) {
       throw error
@@ -1617,6 +1630,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         dependenciesReady = false
         await unlink(readyFile).catch(() => undefined)
         log({ level: 'error', message: 'worker poll failed; retrying', error: serializeError(error) })
+        rethrowPollFailureInOnceMode(config.once, error)
       }
       if (!config.once && !stopping) await sleep(!dependenciesReady ? config.dependencyCheckIntervalMs : config.role === 'automation' ? config.automationIntervalMs : config.pollIntervalMs)
     } while (!config.once && !stopping)
@@ -1643,6 +1657,10 @@ function parseWorkerRole(raw: string | undefined): WorkerRole {
 }
 
 function sleep(ms: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, ms)) }
+
+export function rethrowPollFailureInOnceMode(once: boolean, error: unknown): void {
+  if (once) throw error
+}
 
 function serializeError(error: unknown): { message: string; code?: string } {
   const candidate = error as { message?: unknown; code?: unknown }

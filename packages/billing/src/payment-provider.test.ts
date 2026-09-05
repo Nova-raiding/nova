@@ -95,6 +95,13 @@ describe('payment provider adapter', () => {
     expect(requestBody).not.toContain('server-only-key')
   })
 
+  it('rejects a paid query without a positive amount before it becomes payment evidence', async () => {
+    for (const payload of [{ state: 'paid' }, { state: 'paid', amount_fen: 0 }, { state: 'paid', amount_fen: -1 }, { state: 'paid', amount_fen: 1.5 }]) {
+      const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', queryEndpoint: 'https://payments.example/query', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response(JSON.stringify(payload), { status: 200 }) })
+      await expect(provider.queryStatus?.({ channel: 'alipay', orderId: 'order-amount', workspaceId: 'ws-amount' })).rejects.toThrow('positive amount')
+    }
+  })
+
   it('rejects an oversized payment provider response before parsing it', async () => {
     const provider = new HttpPaymentProvider({ endpoint: 'https://payments.example/checkout', apiKey: 'key', merchantId: 'merchant', fetch: async () => new Response('{}', { headers: { 'content-length': String(2 * 1024 * 1024) } }) })
     await expect(provider.createCheckout({ channel: 'wechat', orderId: 'order-1', idempotencyKey: 'key-1', workspaceId: 'ws-1', amountFen: 100, callbackUrl: 'https://merchant.example/callback', description: '充值' })).rejects.toThrow('safety limit')

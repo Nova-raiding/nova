@@ -57,7 +57,7 @@ describe('platform authorization audit PostgreSQL boundary', () => {
       }
       const created = await repository.append(input)
       expect(created).toMatchObject(input)
-      expect(await repository.append({ ...input, id: randomUUID(), result: 'deny' })).toEqual(created)
+      await expect(repository.append({ ...input, id: randomUUID(), result: 'deny' })).rejects.toMatchObject({ code: 'PLATFORM_AUTHZ_AUDIT_DECISION_CONFLICT' })
       expect(await repository.getByDecisionId(decisionId)).toEqual(created)
       expect(await repository.list({ actorId: input.actorId })).toEqual([created])
 

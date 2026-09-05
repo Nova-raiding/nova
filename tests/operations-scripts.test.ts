@@ -146,8 +146,62 @@ describe('deployment operation scripts', () => {
     const backup = join(directory, 'merchant.dump')
     writeFileSync(backup, 'not-a-real-dump')
     expect(() => run('infra/scripts/restore-postgres.sh', [], {
-      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_ALLOW_UNSIGNED_LOCAL: 'YES',
+      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'local', RESTORE_ALLOW_UNSIGNED_LOCAL: 'YES',
     })).toThrow(/checksum sidecar/)
+  })
+
+  it('requires post-restore migration, DB probe, API, worker, and plugin hooks before declaring success', () => {
+    const script = readFileSync('infra/scripts/restore-postgres.sh', 'utf8')
+    expect(script).toContain('RESTORE_MIGRATION_SCRIPT')
+    expect(script).toContain('RESTORE_DB_PROBE_SCRIPT')
+    expect(script).toContain('RESTORE_API_SMOKE_SCRIPT')
+    expect(script).toContain('RESTORE_WORKER_SMOKE_SCRIPT')
+    expect(script).toContain('RESTORE_PLUGIN_SMOKE_SCRIPT')
+    expect(script).toContain('require_executable_hook')
+    expect(script).toContain('verify-runtime-db-role.sh')
+    expect(script).toContain('migration, database role/RLS/ACL, API, worker, and plugin smoke gates passed')
+    expect(script.indexOf('pg_restore --clean')).toBeGreaterThan(script.indexOf('require_executable_hook RESTORE_PLUGIN_SMOKE_SCRIPT'))
+    expect(script.indexOf('migration, database role/RLS/ACL, API, worker, and plugin smoke gates passed')).toBeGreaterThan(script.indexOf('"$plugin_smoke_script"'))
+    expect(execFileSync('sh', ['-n', 'infra/scripts/restore-postgres.sh'], { encoding: 'utf8' })).toBe('')
+  })
+
+  it('rejects symbolic-link backups before verification', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'merchant-restore-symlink-'))
+    const backup = join(directory, 'merchant.dump')
+    const target = join(directory, 'real.dump')
+    writeFileSync(target, 'not-a-real-dump')
+    execFileSync('ln', ['-s', target, backup])
+    expect(() => run('infra/scripts/restore-postgres.sh', [], {
+      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'local', RESTORE_ALLOW_UNSIGNED_LOCAL: 'YES',
+    })).toThrow(/symbolic link/)
+  })
+
+  it('rejects a production restore when target identity equals the approved source', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'merchant-restore-identity-'))
+    const bin = join(directory, 'bin')
+    const backup = join(directory, 'merchant.dump')
+    const systemIdentifier = 'cluster-same'
+    const sourceIdentity = createHash('sha256').update(systemIdentifier).digest('hex')
+    execFileSync('mkdir', ['-p', bin])
+    writeFileSync(backup, 'signed-backup-placeholder')
+    const psql = join(bin, 'psql')
+    writeFileSync(psql, `#!/bin/sh\nprintf '%s\\n' '${systemIdentifier}'\n`)
+    chmodSync(psql, 0o755)
+    expect(() => run('infra/scripts/restore-postgres.sh', [], {
+      DATABASE_URL: 'postgresql://merchant@db.internal/merchant?sslmode=verify-full', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: sourceIdentity, PATH: `${bin}:${process.env.PATH ?? ''}`,
+    })).toThrow(/matches approved source/)
+  })
+
+  it('requires an explicit target environment and rejects production preflight on local targets', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'merchant-restore-environment-'))
+    const backup = join(directory, 'merchant.dump')
+    writeFileSync(backup, 'signed-backup-placeholder')
+    expect(() => run('infra/scripts/restore-postgres.sh', [], {
+      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_ALLOW_UNSIGNED_LOCAL: 'YES',
+    })).toThrow(/RESTORE_TARGET_ENVIRONMENT/)
+    expect(() => run('infra/scripts/restore-postgres.sh', [], {
+      DATABASE_URL: 'postgresql://merchant@127.0.0.1:5432/merchant?sslmode=require', BACKUP_FILE: backup, CONFIRM_RESTORE: 'YES', RESTORE_TARGET_ENVIRONMENT: 'production', RESTORE_TARGET_ISOLATED: 'YES', BACKUP_ATTESTATION_PATH: join(directory, 'missing-attestation.json'), EXPECTED_SOURCE_DATABASE_ID_SHA256: 'a'.repeat(64),
+    })).toThrow(/must not use localhost|loopback|unspecified/)
   })
 
   it('blocks deployment without immutable image and production connection metadata', () => {
@@ -368,7 +422,7 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('infra/kubernetes/base/ui.yaml', 'utf8')).toContain('secretKeyRef: {name: merchant-runtime-secrets, key: MERCHANT_UI_API_TOKEN}')
     expect(readFileSync('infra/kubernetes/secret-contract.example.yaml', 'utf8')).toContain('neverExposeSecretAsConfigMap')
     expect(readFileSync('infra/kubernetes/base/kustomization.yaml', 'utf8')).toContain('- migration.yaml')
-    expect(readFileSync('infra/kubernetes/base/ingress.yaml', 'utf8')).toContain('hosts: [merchant.example.com, ops.merchant.example.com]')
+    expect(readFileSync('infra/kubernetes/base/ingress.yaml', 'utf8')).toContain('hosts: [yxsona.com, ops.yxsona.com]')
     for (const profile of ['pilot-50', 'wave-100', 'wave-250', 'target-500']) {
       const overlay = readFileSync(`infra/kubernetes/overlays/${profile}/kustomization.yaml`, 'utf8')
       expect(overlay).toContain('digest: SET_API_IMAGE_DIGEST')
@@ -467,6 +521,15 @@ describe('deployment operation scripts', () => {
     const healthLocation = nginx.split('location = /healthz {')[1]?.split('}')[0] ?? ''
     expect(healthLocation).toContain('return 200 "ok\\n"')
     expect(healthLocation).not.toContain('try_files')
+  })
+
+  it('routes the public pilot API directly to the API without replacing caller identity', () => {
+    const gateway = readFileSync('infra/nginx/pilot-gateway.conf', 'utf8')
+    const apiLocation = gateway.split('location ^~ /api/ {')[1]?.split('}')[0] ?? ''
+    expect(apiLocation).toContain('proxy_pass http://api:8787')
+    expect(apiLocation).toContain('proxy_set_header Authorization $http_authorization')
+    expect(apiLocation).toContain('proxy_set_header X-Ops-Workbench $http_x_ops_workbench')
+    expect(apiLocation).not.toContain('MERCHANT_API_TOKEN')
   })
 
   it('keeps the API image build context complete for the TypeScript project references', () => {

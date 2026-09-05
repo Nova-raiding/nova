@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
+let api: typeof import('./server.js')
 let server: typeof import('./server.js').server
 
 async function start() {
@@ -16,12 +17,15 @@ async function start() {
 describe('durable sync failure projection', () => {
   beforeAll(async () => {
     process.env.CONNECTOR_FIXTURE_MODE = 'true'
-    server = (await import('./server.js')).server
+    api = await import('./server.js')
+    server = api.server
   })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())) })
 
   it('retains invalid page items as retryable failures instead of silently dropping them', async () => {
     const base = await start()
+    await api.grantCreativePointsForTests('ws_sync_failures')
+    api.grantContinuousFeatureEntitlementForTests('ws_sync_failures')
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_sync_failures' }
     const created = await fetch(`${base}/v1/sync-jobs`, { method: 'POST', headers, body: JSON.stringify({ platform: 'jd', mode: 'full' }) }).then(response => response.json()) as { data: { id: string } }
     const progress = await fetch(`${base}/v1/sync-jobs/${created.data.id}/progress`, { method: 'POST', headers, body: JSON.stringify({ page_number: 1, cursor: 'page-1', next_cursor: 'page-2', items: [{ remote_id: 'ok-1', title: '正常商品', stock: 1 }, { remote_id: 'bad-1', stock: 2 }] }) }).then(response => response.json()) as { data: { itemsUpserted: number; itemsFailed: number; failedItems: Array<{ code: string; retryable: boolean }> } }

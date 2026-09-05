@@ -65,6 +65,12 @@ describe("CanonicalProductConsistencySection", () => {
     expect(markup).toContain('canonical-consistency-action');
   });
 
+  it("renders backfilled findings as pending verification instead of crashing", () => {
+    const backfilled = { ...report.findings[1]!, status: "backfilled" as const };
+    const markup = renderToStaticMarkup(<CanonicalProductConsistencySection report={{ ...report, findings: [backfilled], counts: { verified: 0, legacy_only: 0, conflict: 0, blocked: 0 } }} />);
+    expect(markup).toContain("已回填待核验");
+  });
+
   it("renders every relationship segment and makes missing links explicit", () => {
     const markup = renderToStaticMarkup(<CanonicalRelationChain finding={report.findings[0]!} />);
     expect(markup).toContain('aria-label="商品关系链"');

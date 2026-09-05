@@ -633,6 +633,8 @@ export interface ContentVersion {
   brandSnapshot?: BrandProfile
   /** Immutable provenance vector required to reproduce and audit a delivery. */
   versionVector?: ContentVersionVector
+  /** Image references frozen with the content version for deterministic review. */
+  reviewImageReferences?: string[]
   state: 'draft' | 'review_required' | 'approved' | 'delivered'
   /** Delivery artifact lifecycle is separate from the immutable content state. */
   deliveryStatus?: 'active' | 'expired'
@@ -3394,7 +3396,7 @@ export class MerchantService {
       technical: { schemaValid: Boolean(version.body.title.trim() && version.body.detail.trim() && Array.isArray(version.body.sellingPoints) && reviewModules.every(module => module.key && module.factSourceIds.length) && (!rawBrief || Object.values(reviewBrief!).every(value => Array.isArray(value) ? value.length > 0 : value.trim()))) },
       ...(snapshot?.promotions ? { promotions: snapshot.promotions.map(promotion => ({ platform: promotion.platform, productId: promotion.productId, ...(promotion.accountId ? { accountId: promotion.accountId } : {}), skuIds: promotion.skuIds, ...(promotion.validFrom ? { validFrom: promotion.validFrom } : {}), ...(promotion.validTo ? { validTo: promotion.validTo } : {}), sourceId: `promotion:${promotion.id}` })), promotionContext: { platform: task.platform, productId: task.productId, ...(task.accountId ? { accountId: task.accountId } : {}), skuIds: snapshot.skuIds } } : {}),
       ...(brandSnapshot ? { brand: { forbiddenTerms: [...(brandSnapshot.forbiddenTerms ?? []), ...Object.values(brandSnapshot.visualRules?.restrictedSubjects ?? {}).flat()], sourceIds: [`brand:${brandSnapshot.id}:r${brandSnapshot.revision}`] } } : {}),
-    }), ...this.detailPageDecisionReviewFindings({ modules: rawModules, skuIds: version.versionVector?.skuIds ?? product?.skus?.map(sku => sku.id) ?? [], platform: task.platform }), ...brandVisualFindings, ...this.competitorReferenceReviewFindings(snapshot, version, product), ...(product?.images ? reviewProductImages(product.images) : [])]
+    }), ...this.detailPageDecisionReviewFindings({ modules: rawModules, skuIds: version.versionVector?.skuIds ?? product?.skus?.map(sku => sku.id) ?? [], platform: task.platform }), ...brandVisualFindings, ...this.competitorReferenceReviewFindings(snapshot, version, product), ...(product?.images !== undefined ? reviewProductImages(product.images) : version.reviewImageReferences !== undefined ? reviewProductImages(version.reviewImageReferences) : snapshot?.product.images !== undefined ? reviewProductImages(snapshot.product.images) : [])]
     const decisions = new Map((version.reviewDecisions ?? []).map(decision => [decision.key, decision]))
     return findings.map(item => {
       const decision = decisions.get(`${item.code}:${item.field}`)
@@ -3838,9 +3840,14 @@ export class MerchantService {
       if (entry.skuId && !product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '拆分 SKU 任务前必须先确认商品、价格、库存和图片事实', 409, { product_id: product.id, sku_id: entry.skuId })
       return product
     })
-    const targetKeys = input.entries.map((entry, index) => `${entry.platform}:${productsByEntry[index]?.accountId ?? entry.accountId ?? ''}:${entry.skuId ?? ''}`)
+    // A batch target is scoped to the concrete product as well as its store
+    // and SKU. Omitting productId makes two different products in the same
+    // platform/store look like a duplicate, which breaks the multi-product
+    // batch-generation flow. The exact same product/SKU target is still
+    // rejected below, preserving idempotent child-task semantics.
+    const targetKeys = input.entries.map((entry, index) => `${entry.platform}:${productsByEntry[index]?.accountId ?? entry.accountId ?? ''}:${entry.productId}:${entry.skuId ?? ''}`)
     const duplicateTarget = targetKeys.find((target, index) => targetKeys.indexOf(target) !== index)
-    if (duplicateTarget) throw new DomainError('TASK_GROUP_PLATFORM_DUPLICATE', '同一平台同一店铺只能选择一个商品；如需多店铺发布，请分别绑定不同 account_id', 409, { target: duplicateTarget })
+    if (duplicateTarget) throw new DomainError('TASK_GROUP_PLATFORM_DUPLICATE', '同一商品在同一平台、店铺和 SKU 范围内只能创建一个子任务；如需多店铺处理，请分别选择对应店铺', 409, { target: duplicateTarget })
     const canonicalEntries = input.entries.map((entry, index) => ({ platform: entry.platform, productId: entry.productId, accountId: productsByEntry[index]?.accountId ?? entry.accountId ?? null, region: entry.region ?? null, skuId: entry.skuId ?? null, brandId: entry.brandId ?? null, canonicalProductId: entry.canonicalProductId ?? null, listingId: entry.listingId ?? null })).sort((left, right) => `${left.platform}:${left.accountId ?? ''}:${left.productId}:${left.skuId ?? ''}`.localeCompare(`${right.platform}:${right.accountId ?? ''}:${right.productId}:${right.skuId ?? ''}`))
     const intentHash = hash({ requestText: normalizedRequestText, entries: canonicalEntries })
     if (prior) {
@@ -4111,6 +4118,7 @@ export class MerchantService {
     const version: ContentVersion = {
       id: id('cv'), taskId, version: this.nextContentVersionNumber(task.workspaceId, taskId),
       body: this.fixtureDraftBody(taskId),
+      ...(product.images !== undefined ? { reviewImageReferences: [...product.images] } : {}),
       factVersionIds,
       ruleVersionIds,
       ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}),
@@ -4238,6 +4246,9 @@ export class MerchantService {
       if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
         throw new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试并等待对账', 503, { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, ...((error as { providerIdempotencyKey?: unknown }).providerIdempotencyKey ? { provider_idempotency_key: String((error as { providerIdempotencyKey: unknown }).providerIdempotencyKey) } : {}) })
       }
+      if (code === 'CONTENT_SCHEMA_INVALID') {
+        throw new DomainError('CONTENT_SCHEMA_INVALID', '模型返回内容未通过结构与事实边界校验', 502)
+      }
       throw new DomainError('AI_GENERATION_FAILED', '内容生成服务暂时不可用，请稍后重试', 503)
     }
     const validatedGenerated = this.validateGeneratedBody(generated, 'content.generate', task.platform, product)
@@ -4293,6 +4304,9 @@ export class MerchantService {
       }
       if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') {
         throw new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试并等待对账', 503, { provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, ...((error as { providerIdempotencyKey?: unknown }).providerIdempotencyKey ? { provider_idempotency_key: String((error as { providerIdempotencyKey: unknown }).providerIdempotencyKey) } : {}) })
+      }
+      if (code === 'CONTENT_SCHEMA_INVALID') {
+        throw new DomainError('CONTENT_SCHEMA_INVALID', '模型返回内容未通过结构与事实边界校验', 502)
       }
       throw new DomainError('AI_GENERATION_FAILED', '内容生成服务暂时不可用，请稍后重试', 503)
     }
@@ -4356,7 +4370,11 @@ export class MerchantService {
     const decisionBlockers = this.detailDecisionDeliveryBlockers(version)
     if (decisionBlockers.length) throw new DomainError('REVIEW_BLOCKED', '详情页决策证据不完整，不能批准', 409, { findings: decisionBlockers })
     const findings = this.reviewContent(task.workspaceId, contentVersionId, rules)
-    if (isReviewBlocking(findings)) throw new DomainError('REVIEW_BLOCKED', '内容存在未解决的阻断检查项')
+    if (isReviewBlocking(findings)) {
+      // Preserve the fail-closed decision while returning the exact review
+      // findings needed by the Ops UI to explain and recover the blockage.
+      throw new DomainError('REVIEW_BLOCKED', '内容存在未解决的阻断检查项', 409, { findings: clone(findings) })
+    }
     const product = this.products.get(task.productId)
     if (!product || product.workspaceId !== task.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品快照不存在或不属于当前工作区', 404)
     if (version.visualSelection) this.validateVisualSelection(task, version, product)

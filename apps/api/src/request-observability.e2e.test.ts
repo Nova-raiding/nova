@@ -110,7 +110,7 @@ describe('API request observability wiring', () => {
     const base = await start()
     const path = '/v1/internal/automation/tick'
     const workspaceId = 'ws_worker_observed'
-    const proof = createWorkerRequestProof({ role: 'automation', secret: 'rotation-worker-signing-secret', method: 'POST', requestTarget: path, workspaceId, nonce: 'worker-observation-nonce-0001' })
+    const proof = createWorkerRequestProof({ role: 'automation', workerId: 'automation', secret: 'rotation-worker-signing-secret', method: 'POST', requestTarget: path, workspaceId, nonce: 'worker-observation-nonce-0001' })
     const response = await fetch(`${base}${path}`, { method: 'POST', headers: {
       authorization: 'Bearer rotation-worker-token', 'x-workspace-id': workspaceId, 'x-request-id': 'req-worker-observed', ...proof.headers,
     } })

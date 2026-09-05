@@ -140,7 +140,7 @@ function safeReturnTo(value: string | null): string {
 }
 
 function loginPage(csrf: string, returnTo: string, error = ''): string {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ops 安全登录</title><style>body{font:16px system-ui;background:#f5f7fb;margin:0;display:grid;min-height:100vh;place-items:center}.card{background:white;border:1px solid #d8dee9;border-radius:14px;padding:28px;width:min(88vw,380px);box-shadow:0 12px 36px #1f29371a}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;min-height:44px;font:inherit;border-radius:8px}input{border:1px solid #9ca3af;padding:10px}button{margin-top:20px;border:0;background:#155eef;color:white;font-weight:700}.error{color:#b42318}small{color:#667085}</style></head><body><main class="card"><h1>Merchant Ops Console</h1><p>本地 OIDC Gateway 安全登录</p>${error ? `<p class="error" role="alert">${htmlEscape(error)}</p>` : ''}<form method="post" action="/auth/login"><input type="hidden" name="csrf" value="${htmlEscape(csrf)}"><input type="hidden" name="return_to" value="${htmlEscape(returnTo)}"><label for="username">运营账号</label><input id="username" name="username" autocomplete="username" required><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit">安全登录</button></form><small>登录凭据和 OIDC 签名密钥仅存在于服务端环境变量。</small></main></body></html>`
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ops 安全登录</title><style>body{font:16px system-ui;background:#f5f7fb;margin:0;display:grid;min-height:100vh;place-items:center}.card{background:white;border:1px solid #d8dee9;border-radius:14px;padding:28px;width:min(88vw,380px);box-shadow:0 12px 36px #1f29371a}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;width:100%;min-height:44px;font:inherit;border-radius:8px}input{border:1px solid #9ca3af;padding:10px}.remember{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px}.remember input{width:18px;min-height:18px}.remember label{margin:0}button{margin-top:20px;border:0;background:#155eef;color:white;font-weight:700}.error{color:#b42318}small{color:#667085}</style></head><body><main class="card"><h1>Merchant Ops Console</h1><p>本地 OIDC Gateway 安全登录</p>${error ? `<p class="error" role="alert">${htmlEscape(error)}</p>` : ''}<form method="post" action="/auth/login"><input type="hidden" name="csrf" value="${htmlEscape(csrf)}"><input type="hidden" name="return_to" value="${htmlEscape(returnTo)}"><label for="username">运营账号</label><input id="username" name="username" autocomplete="username" required><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required><div class="remember"><input id="remember" name="remember" type="checkbox" value="1"><label for="remember">记住本次登录</label></div><button type="submit">安全登录</button></form><small>只保存签名会话，不保存密码；退出浏览器或撤销会话后仍需重新登录。</small></main></body></html>`
 }
 
 function sendHtml(res: ServerResponse, status: number, html: string, extra: Record<string, string | string[]> = {}): void {
@@ -247,11 +247,13 @@ export function createLocalOidcGateway(rawConfig: LocalOidcGatewayConfig): Serve
         const now = Math.floor(Date.now() / 1000)
         const identitySession = { sub: config.subject, sid: randomBytes(24).toString('base64url'), authTime: now, expiresAt: now + config.sessionTtlSeconds }
         const workspace = config.workspaceId || (config.workbench === 'workspace' ? await bootstrapWorkspace(config, identitySession) : '')
+        const remember = form.get('remember') === '1'
         const session: GatewaySession = { ...identitySession, workspace, csrf: randomBytes(24).toString('base64url') }
+        const cookieMaxAge = remember ? 60 * 60 * 24 * 30 : config.sessionTtlSeconds
         res.writeHead(303, {
           location: safeReturnTo(form.get('return_to')),
           'cache-control': 'no-store',
-          'set-cookie': [`${SESSION_COOKIE}=${encodeURIComponent(sessionCookie(session, config.sessionSecret))}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${config.sessionTtlSeconds}`, `${LOGIN_CSRF_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`],
+          'set-cookie': [`${SESSION_COOKIE}=${encodeURIComponent(sessionCookie(session, config.sessionSecret))}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${cookieMaxAge}`, `${LOGIN_CSRF_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`],
         }); res.end(); return
       }
       const session = readSession(req, config)

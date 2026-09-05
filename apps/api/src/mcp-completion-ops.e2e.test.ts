@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { creativePointsForTests, server, service, workspaceMembers } from './server.js'
+import { creativePointsForTests, grantContinuousFeatureEntitlementForTests, server, service, workspaceMembers } from './server.js'
 
 type WorkspaceRole = 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'
 type Envelope<T = unknown> = {
@@ -173,6 +173,8 @@ describe('MCP completion operations per-method HTTP evidence', () => {
       sourceId: `mcp-completion-order-${workspaceId}`,
       points: 10_000,
     })))
+    grantContinuousFeatureEntitlementForTests(workspaceA)
+    grantContinuousFeatureEntitlementForTests(workspaceB)
 
     const orders = resultOf<any[]>(await callMcp(base, tokens.ownerA, workspaceA, 'subscription.orders.list', { limit: '10' }))
     expect(orders).toEqual([])

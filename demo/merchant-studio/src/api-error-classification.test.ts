@@ -15,6 +15,7 @@ describe('merchant API error classification', () => {
   it('keeps model relay failures separate from platform OAuth failures', () => {
     expect(describeApiError(apiError('No available channel', 'MODEL_RELAY_NO_CHANNEL', 503))).toContain('没有可用的中转通道')
     expect(describeApiError(apiError('relay unavailable', 'MODEL_RELAY_NOT_CONFIGURED', 503))).toContain('模型服务尚未就绪')
+    expect(describeApiError(apiError('read unavailable', 'IMAGE_GENERATION_READ_UNAVAILABLE', 503))).toContain('read unavailable')
     expect(describeApiError(apiError('jd OAuth missing', 'NOT_CONFIGURED', 503))).toContain('该平台尚未配置')
   })
 

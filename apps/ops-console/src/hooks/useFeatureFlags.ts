@@ -13,6 +13,7 @@ export interface FeatureFlagsClient {
   save(input: FeatureFlagMutationRequest): Promise<{ flag: FeatureFlag; replayed: boolean }>;
   setEmergency(input: FeatureFlagEmergencyRequest): Promise<{ flag: FeatureFlag; replayed: boolean }>;
   events(flagId: string): Promise<FeatureFlagEvent[]>;
+  evaluate(input: { flagKey: string; environment: string; targetWorkspaceId?: string; identityId?: string }): Promise<Record<string, unknown>>;
 }
 
 export interface FeatureFlagFilters { environment?: string; query?: string }
@@ -28,6 +29,13 @@ export class FeatureFlagsRequestGate {
   invalidate() { this.sequence += 1; }
 }
 
+export class FeatureFlagsMutationGate {
+  private active = 0;
+  begin() { this.active += 1; }
+  end() { this.active = Math.max(0, this.active - 1); }
+  isActive() { return this.active > 0; }
+}
+
 export function useFeatureFlags(client: FeatureFlagsClient, initialFilters: FeatureFlagFilters = {}) {
   const [items, setItems] = useState<FeatureFlag[]>([]);
   const [filters, setFilters] = useState(initialFilters);
@@ -37,6 +45,16 @@ export function useFeatureFlags(client: FeatureFlagsClient, initialFilters: Feat
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const requests = useRef(new FeatureFlagsRequestGate());
+  const mutations = useRef(new FeatureFlagsMutationGate());
+
+  const beginMutation = () => {
+    mutations.current.begin();
+    setSaving(true);
+  };
+  const endMutation = () => {
+    mutations.current.end();
+    if (!mutations.current.isActive()) setSaving(false);
+  };
 
   const load = useCallback(async (cursor?: string) => {
     const request = requests.current.begin();
@@ -61,7 +79,7 @@ export function useFeatureFlags(client: FeatureFlagsClient, initialFilters: Feat
   useEffect(() => () => requests.current.invalidate(), []);
 
   const save = useCallback(async (input: FeatureFlagMutationRequest) => {
-    setSaving(true);
+    beginMutation();
     setError(undefined);
     try {
       const result = await client.save(input);
@@ -70,11 +88,11 @@ export function useFeatureFlags(client: FeatureFlagsClient, initialFilters: Feat
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "功能开关保存失败");
       throw cause;
-    } finally { setSaving(false); }
+    } finally { endMutation(); }
   }, [client]);
 
   const setEmergency = useCallback(async (input: FeatureFlagEmergencyRequest) => {
-    setSaving(true);
+    beginMutation();
     setError(undefined);
     try {
       const result = await client.setEmergency(input);
@@ -83,7 +101,7 @@ export function useFeatureFlags(client: FeatureFlagsClient, initialFilters: Feat
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "紧急开关操作失败");
       throw cause;
-    } finally { setSaving(false); }
+    } finally { endMutation(); }
   }, [client]);
 
   const loadEvents = useCallback((flagId: string) => client.events(flagId), [client]);

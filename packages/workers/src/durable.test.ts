@@ -220,6 +220,28 @@ describe('durable outbox dispatcher', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it('executes the authoritative payload returned by lease validation', async () => {
+    const queued = event({ id: 'evt_authoritative_payload', leaseToken: 'lease_1', leaseUntil: new Date(Date.now() + 30_000).toISOString(), payload: { taskId: 'queued' } })
+    const authoritative = { ...queued, payload: { taskId: 'authoritative' } }
+    const queue = new InMemoryQueue<DurableOutboxEvent>()
+    await queue.enqueue({ id: queued.id, value: queued })
+    const store: DurableOutboxStore = {
+      claimPending: async () => [],
+      validateLease: async () => authoritative,
+      renewLease: async () => authoritative,
+      ack: async () => authoritative,
+      recordFailure: async () => authoritative,
+      markUnknown: async () => authoritative,
+    }
+    const seen: unknown[] = []
+    const dispatcher = new DurableOutboxDispatcher(store, queue, async ({ event: received }) => {
+      seen.push(received.payload)
+      return { value: true }
+    })
+    await expect(dispatcher.dispatchOnce()).resolves.toMatchObject({ state: 'succeeded' })
+    expect(seen).toEqual([{ taskId: 'authoritative' }])
+  })
+
   it('discards a queue envelope whose id is not bound to the durable event', async () => {
     const store = new Store(event({ id: 'evt_authoritative' })); const queue = new InMemoryQueue<DurableOutboxEvent>()
     const handler = vi.fn(async () => ({ value: 'must-not-run' }))

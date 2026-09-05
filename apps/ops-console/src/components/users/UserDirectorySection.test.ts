@@ -78,6 +78,18 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain("已保留操作原因");
     expect(source).toContain('aria-describedby={actionError ? "user-access-error-title" : undefined}');
     expect(source).toContain('aria-describedby={actionError ? "bulk-suspend-error-title" : undefined}');
+    expect(source).toContain('aria-describedby="user-access-error-description"');
+    expect(source).toContain('aria-describedby="bulk-suspend-error-description"');
+  });
+
+  it("gives desktop directory controls stable, row-specific accessible names", () => {
+    const source = readFileSync(new URL("./UserDirectorySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain('aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`}');
+    expect(source).toContain('aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`}');
+    expect(source).toContain('aria-label={`撤销认证会话 ${row.id}`}');
+    expect(source).toContain('aria-label="按关键词筛选用户目录"');
+    expect(source).toContain('aria-label="按成员状态筛选用户目录"');
+    expect(source).toContain('aria-label="按工作区筛选用户目录"');
   });
 
   it("keeps directory refresh errors distinguishable and recoverable without stealing focus during background refresh", () => {
@@ -89,5 +101,7 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('model.userDirectory.items.length > 0 ? "已保留最近一次成功加载的用户目录');
     expect(source).toContain('aria-label="刷新用户目录"');
     expect(source).toContain('style={{ minHeight: 44 }}');
+    expect(source).toContain('aria-describedby="user-directory-error-description"');
+    expect(source).toContain('id="user-directory-error-description"');
   });
 });

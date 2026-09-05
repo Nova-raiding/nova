@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { server, service } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, service } from './server.js'
 
 type Envelope<T> = { data: T | null; error: { code: string; message: string } | null }
 
@@ -20,6 +20,8 @@ describe('historical asset preference API', () => {
   it('requires merchant reasons and exposes the saved preference through REST and MCP', async () => {
     const base = await start()
     const workspaceId = `ws_asset_preference_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'merchant-test' }
     const asset = service.registerAsset({ workspaceId, name: '历史主图.png', mimeType: 'image/png', sizeBytes: 9, sha256: '2'.repeat(64), storageKey: `quarantine/${workspaceId}/history.png` })
 

@@ -18,6 +18,8 @@ describe('feature flags repository', () => {
     ] }))
     expect(await repository.evaluate({ flagKey: 'checkout.new_flow', environment: 'production', identityId: 'user-allow', workspaceId: 'ws-deny' })).toMatchObject({ enabled: true, matchedBy: 'identity' })
     expect(await repository.evaluate({ flagKey: 'checkout.new_flow', environment: 'production', workspaceId: 'ws-deny' })).toMatchObject({ enabled: false, matchedBy: 'workspace' })
+    await repository.save(create({ key: 'workspace.only', idempotencyKey: 'workspace-only-01', targets: [{ type: 'workspace', value: 'ws-deny', enabled: false }] }))
+    expect(await repository.evaluate({ flagKey: 'workspace.only', environment: 'production', workspaceId: 'ws-other' })).toMatchObject({ enabled: true, matchedBy: 'default' })
     expect(await repository.evaluate({ flagKey: 'checkout.new_flow', environment: 'production', bucketSubject: 'stable-user' })).toMatchObject({ enabled: true, matchedBy: 'percentage' })
     const stopped = await repository.setEmergency({ id: saved.flag.id, disabled: true, expectedRevision: 1, actorId: 'root', reason: 'production incident stop', idempotencyKey: 'emergency-stop-01' })
     expect(await repository.evaluate({ flagKey: 'checkout.new_flow', environment: 'production', identityId: 'user-allow' })).toMatchObject({ enabled: false, matchedBy: 'emergency', revision: stopped.flag.revision })
@@ -41,7 +43,17 @@ describe('feature flags repository', () => {
     expect(first.items).toHaveLength(2)
     expect(second.items).toHaveLength(1)
     expect(new Set([...first.items, ...second.items].map(item => item.id)).size).toBe(3)
+    await expect(repository.list({ environment: 'staging', limit: 2, cursor: first.nextCursor })).rejects.toMatchObject({ code: 'FEATURE_FLAG_CURSOR_SCOPE_MISMATCH' })
+    await expect(repository.list({ environment: 'production', query: 'flag', limit: 2, cursor: first.nextCursor })).rejects.toMatchObject({ code: 'FEATURE_FLAG_CURSOR_SCOPE_MISMATCH' })
     await expect(repository.list({ cursor: 'invalid' })).rejects.toBeInstanceOf(FeatureFlagRepositoryError)
+  })
+
+  it('rejects numerically equivalent percentage targets', async () => {
+    const repository = new MemoryFeatureFlagsRepository()
+    await expect(repository.save(create({ key: 'rollout.duplicate', targets: [
+      { type: 'percentage', value: '1', enabled: true },
+      { type: 'percentage', value: '0001', enabled: false },
+    ] }))).rejects.toMatchObject({ code: 'FEATURE_FLAG_TARGET_DUPLICATE' })
   })
 
   it('keeps percentage buckets deterministic', () => {

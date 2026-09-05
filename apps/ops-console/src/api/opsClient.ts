@@ -78,6 +78,10 @@ type OpsAuthEnvironment = Readonly<Record<string, string | boolean | undefined>>
 const viteEnv = (import.meta as ImportMeta & { env: OpsAuthEnvironment }).env;
 
 export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boolean {
+  // Local Compose builds are still Vite production bundles, but they are
+  // explicitly isolated acceptance builds. Keep the local bearer adapter
+  // available only when both compile-time flags agree.
+  if (environment.VITE_OPS_BUILD_MODE === "local" && environment.VITE_OPS_AUTH_MODE === "local") return false;
   // Production assets must never expose the local Bearer/operator adapter,
   // even when a deployment accidentally injects a local-mode override.
   if (environment.PROD === true) return true;

@@ -35,7 +35,12 @@ export interface SqlClient {
     text: string,
     values?: readonly unknown[],
   ): Promise<SqlQueryResult<Row>>
-  release?: () => void
+  /**
+   * pg.Client.release accepts an error to destroy a connection that may still
+   * be inside a failed transaction. Adapters that do not need this signal can
+   * ignore the optional argument.
+   */
+  release?: (error?: Error) => void
 }
 
 export interface SqlPool {
@@ -232,6 +237,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
                     attempts, next_attempt_at, lease_token, lease_until, last_error, unknown_at
           FROM outbox_events
           WHERE workspace_id = $1 AND published_at IS NULL AND unknown_at IS NULL
+            AND COALESCE(last_error->>'terminal', 'false') <> 'true'
             AND next_attempt_at <= now()
           ORDER BY created_at ASC, id ASC
           LIMIT $2`,
@@ -330,6 +336,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
         'workspace_id = $1',
         'published_at IS NULL',
         'unknown_at IS NULL',
+        "COALESCE(last_error->>'terminal', 'false') <> 'true'",
         'next_attempt_at <= $2::timestamptz',
         '(lease_until IS NULL OR lease_until <= $2::timestamptz)',
       ]
@@ -433,8 +440,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
       const result = await client.query<OutboxRow>(
         `UPDATE outbox_events
             SET attempts = attempts + 1,
-                published_at = COALESCE(published_at, now()),
-                last_error = $4::jsonb,
+                last_error = COALESCE($4::jsonb, '{}'::jsonb) || '{"terminal":true}'::jsonb,
                 lease_token = NULL,
                 lease_until = NULL
           WHERE workspace_id = $1 AND id = $2 AND published_at IS NULL
@@ -544,6 +550,7 @@ export async function withWorkspaceTransaction<T>(
   const scope = requireWorkspaceScope(workspaceId)
   const client = await pool.connect()
   let committed = false
+  let releaseError: Error | undefined
   try {
     await client.query('BEGIN')
     await client.query(`SELECT set_config('app.workspace_id', $1, true)`, [scope])
@@ -553,10 +560,17 @@ export async function withWorkspaceTransaction<T>(
     return result
   } catch (error) {
     if (!committed) {
-      try { await client.query('ROLLBACK') } catch { /* preserve the original error */ }
+      try {
+        await client.query('ROLLBACK')
+      } catch (rollbackError) {
+        // A failed rollback means the client cannot safely return to the pool:
+        // pg will otherwise make the transaction state available to the next
+        // workspace request. Passing an error to release destroys that client.
+        releaseError = rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError))
+      }
     }
     throw error
   } finally {
-    client.release?.()
+    client.release?.(releaseError)
   }
 }

@@ -83,6 +83,7 @@ describe('Ops RBAC real HTTP product facts confirmation', () => {
       },
     })
     expect(denied.body.error?.details).not.toHaveProperty('product_id')
+    expect(denied.body.error?.details).toMatchObject({ capability: 'customer.content.update' })
     expect(denied.body.request_id).toMatch(/^req_/)
     expect(denied.body.trace_id).toBe(denied.body.request_id)
   })

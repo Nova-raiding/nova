@@ -621,10 +621,17 @@ paths:
       operationId: oauthCallback
       security: []
       parameters:
-        - { $ref: '#/components/parameters/WorkspaceId' }
         - { name: platform, in: path, required: true, schema: { $ref: '#/components/schemas/Platform' } }
         - { name: state, in: query, required: true, schema: { type: string } }
-        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: code, in: query, required: false, description: OAuth authorization code. Required when the provider did not return an error; the server returns OAUTH_CODE_REQUIRED when it is absent without an error response., schema: { type: string } }
+        - { name: error, in: query, required: false, description: Standard OAuth provider error code. When present, the callback is rejected and no platform account is created., schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: error_description, in: query, required: false, description: Provider-supplied error description. It is treated as untrusted display context and never authorizes the callback., schema: { type: string, maxLength: 2000 } }
+        - { name: error_uri, in: query, required: false, description: Provider documentation URI, if supplied., schema: { type: string, format: uri, maxLength: 2000 } }
+      description: |
+        Browser redirect callback for the platform OAuth flow. This route does
+        not accept Bearer or X-Workspace-Id authentication; the one-time state
+        value and PKCE verifier issued by the authenticated authorize request
+        are the authentication and workspace-binding boundary.
       responses:
         '200': { $ref: '#/components/responses/Envelope' }
         '400': { $ref: '#/components/responses/ErrorEnvelope' }
@@ -1104,6 +1111,7 @@ paths:
       operationId: mcpJsonRpc
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkspaceBootstrap' }
         - { $ref: '#/components/parameters/IdempotencyKeyOptional' }
       requestBody:
         required: true
@@ -1135,9 +1143,41 @@ components:
     WorkspaceId:
       name: X-Workspace-Id
       in: header
-      required: true
-      description: Server identity workspace scope. Local non-production may omit it and use ws_demo; production must not.
+      required: false
+      description: |
+        Server-selected tenant scope. This header is conditionally required, not
+        optional for production business traffic. In production, the authenticated
+        Bearer/OIDC grant must authorize the selected workspace and every request
+        except the explicitly documented first-run workspace.bootstrap exception
+        must provide this header. In local non-production mode, omission resolves
+        only to the ws_demo fixture fallback. It never enables a production
+        fallback, changes token identity, or authorizes cross-workspace access.
       schema: { type: string, minLength: 1 }
+      x-conditional-required:
+        production:
+          required: true
+          missing_header_error: WORKSPACE_SCOPE_REQUIRED
+          resolution: authenticated_grant_must_authorize_selected_workspace
+        local_non_production:
+          required: false
+          omission_resolution: ws_demo
+          fixture_only: true
+        oidc_bootstrap:
+          required: false
+          only_for:
+            method: workspace.bootstrap
+            header: X-Workspace-Bootstrap
+            header_value: 'true'
+          requires_authenticated_identity: true
+          creates_workspace_before_binding: true
+          applies_to_other_methods: false
+          omission_resolution: newly_created_workspace_id
+    WorkspaceBootstrap:
+      name: X-Workspace-Bootstrap
+      in: header
+      required: false
+      description: Explicit first-run OIDC bootstrap marker. Only workspace.bootstrap may use this marker without X-Workspace-Id; it is not a local fallback switch and is ignored/rejected for ordinary business methods.
+      schema: { type: string, enum: ['true'] }
     ActorId:
       name: X-Actor-Id
       in: header

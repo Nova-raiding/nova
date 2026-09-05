@@ -7,6 +7,17 @@ let service: typeof import('./server.js').service
 let securityAuditEventsForTests: typeof import('./server.js').securityAuditEventsForTests
 let setImageSelectionTicketRepositoryForTests: typeof import('./server.js').setImageSelectionTicketRepositoryForTests
 let imageSelectionEventsForTests: typeof import('./server.js').imageSelectionEventsForTests
+let grantCreativePointsForTests: typeof import('./server.js').grantCreativePointsForTests
+let grantContinuousFeatureEntitlementForTests: typeof import('./server.js').grantContinuousFeatureEntitlementForTests
+const fixtureBases = new Set<string>()
+const fixtureFetch = globalThis.fetch
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  if (![...fixtureBases].some(base => url.startsWith(base))) return fixtureFetch(input, init)
+  const headers = new Headers(init?.headers)
+  headers.set('x-test-commercial-fixture', 'server-e2e')
+  return fixtureFetch(input, { ...init, headers })
+}
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -16,15 +27,19 @@ async function start() {
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
-  return `http://127.0.0.1:${address.port}`
+  const base = `http://127.0.0.1:${address.port}`
+  fixtureBases.add(base)
+  return base
 }
 
 describe('product image review API', () => {
-  beforeAll(async () => { const module = await import('./server.js'); server = module.server; service = module.service; securityAuditEventsForTests = module.securityAuditEventsForTests; setImageSelectionTicketRepositoryForTests = module.setImageSelectionTicketRepositoryForTests; imageSelectionEventsForTests = module.imageSelectionEventsForTests })
+  beforeAll(async () => { const module = await import('./server.js'); server = module.server; service = module.service; securityAuditEventsForTests = module.securityAuditEventsForTests; setImageSelectionTicketRepositoryForTests = module.setImageSelectionTicketRepositoryForTests; imageSelectionEventsForTests = module.imageSelectionEventsForTests; grantCreativePointsForTests = module.grantCreativePointsForTests; grantContinuousFeatureEntitlementForTests = module.grantContinuousFeatureEntitlementForTests })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setImageSelectionTicketRepositoryForTests(); vi.unstubAllEnvs() })
 
   it('returns deterministic findings and external verification boundaries', async () => {
     const base = await start()
+    await grantCreativePointsForTests('ws_image_review')
+    grantContinuousFeatureEntitlementForTests('ws_image_review')
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_image_review' }
     const imported = await fetch(`${base}/v1/products/import`, { method: 'POST', headers, body: JSON.stringify({ platform: 'taobao', title: '主图检查商品', local_product_key: 'image-review', category: '服装', price: 99, stock: 5, images: ['http://unsafe.example/main.jpg'] }) }).then(response => response.json()) as { data: { id: string } }
     const reviewed = await fetch(`${base}/v1/products/${encodeURIComponent(imported.data.id)}/image-review`, { headers: { 'x-workspace-id': 'ws_image_review' } }).then(response => response.json()) as { data: { findings: Array<{ code: string; severity: string }>; externallyUnverified: string[] } }
@@ -34,6 +49,8 @@ describe('product image review API', () => {
 
   it('generates, stores and reviews main-image variants through MCP', async () => {
     const base = await start()
+    await grantCreativePointsForTests('ws_demo')
+    grantContinuousFeatureEntitlementForTests('ws_demo')
     vi.stubEnv('PUBLIC_ASSET_BASE_URL', base)
     vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_SECRET', 'test-asset-display-signing-secret-at-least-32-bytes')
     vi.stubEnv('ASSET_DISPLAY_URL_SIGNING_KEY_ID', 'test-primary')
@@ -139,6 +156,8 @@ describe('product image review API', () => {
   it('uses the same archive evidence gate for image reads and candidate selection', async () => {
     const base = await start()
     const workspaceId = `ws_image_integrity_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'integrity-e2e' }
     const product = service.importProduct({ workspaceId, platform: 'taobao', localProductKey: 'image-integrity', title: '归档一致性商品', stock: 3 })
     service.confirmProductFacts(workspaceId, product.id)
@@ -172,6 +191,8 @@ describe('product image review API', () => {
     setImageSelectionTicketRepositoryForTests(recordingRepository)
     const base = await start()
     const workspaceId = `ws_image_ticket_expiry_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const actorHeaders = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'ticket-owner' }
     const otherHeaders = { ...actorHeaders, 'x-actor-id': 'ticket-other' }
     const product = service.importProduct({ workspaceId, platform: 'taobao', localProductKey: 'ticket-expiry', title: '票据过期商品', stock: 2 })
@@ -196,6 +217,8 @@ describe('product image review API', () => {
   it('fails closed on protected product mutations before wallet usage or image job/provider work', async () => {
     const base = await start()
     const workspaceId = `ws_protected_product_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const product = service.importProduct({ workspaceId, platform: 'taobao', title: '受保护商品图片', category: '服装', stock: 6, price: 129 })
     service.confirmProductFacts(workspaceId, product.id)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
@@ -222,6 +245,8 @@ describe('product image review API', () => {
   it('rejects an explicitly selected platform or store that conflicts with the product', async () => {
     const base = await start()
     const workspaceId = `ws_visual_scope_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: 'store-taobao-a', localProductKey: 'visual-scope', title: '平台店铺边界商品', stock: 5, price: 99 })
     service.confirmProductFacts(workspaceId, product.id)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
@@ -233,6 +258,8 @@ describe('product image review API', () => {
 
   it('reviews and selects a candidate into a new version, then blocks unsupported platform image upload', async () => {
     const workspaceId = `ws_visual_select_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const product = service.importProduct({ workspaceId, platform: 'taobao', localProductKey: 'visual-select', title: '显式选图商品', stock: 8, images: ['https://example.com/original.jpg'], skus: [{ id: 'sku-visual-blue-m', name: '蓝色 / M', price: 129, stock: 8 }] })
     service.confirmProductFacts(workspaceId, product.id)
     const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao' })
@@ -291,6 +318,8 @@ describe('product image review API', () => {
     try {
       const base = await start()
       const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_image_asset_gate' }
+      await grantCreativePointsForTests('ws_image_asset_gate')
+      grantContinuousFeatureEntitlementForTests('ws_image_asset_gate')
       const imported = await fetch(`${base}/v1/products/import`, { method: 'POST', headers, body: JSON.stringify({ platform: 'taobao', title: '素材门禁商品', local_product_key: 'image-asset-gate', price: 99, stock: 5 }) }).then(response => response.json()) as { data: { id: string } }
       const confirmed = await fetch(`${base}/v1/products/${encodeURIComponent(imported.data.id)}/confirm`, { method: 'POST', headers, body: '{}' }).then(response => response.json()) as { data: { factsConfirmed: boolean } }
       expect(confirmed.data.factsConfirmed).toBe(true)
@@ -332,6 +361,8 @@ describe('product image review API', () => {
   it('creates fact-bound Banner, ad and video briefs without pretending to render media', async () => {
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_creative_brief' }
+    await grantCreativePointsForTests('ws_creative_brief')
+    grantContinuousFeatureEntitlementForTests('ws_creative_brief')
     const imported = await fetch(`${base}/v1/products/import`, { method: 'POST', headers, body: JSON.stringify({ platform: 'taobao', title: 'Brief 商品', local_product_key: 'brief-product', price: 129, stock: 8, skus: [{ id: 'sku-blue', name: '雾蓝/M', price: 129, stock: 8 }] }) }).then(response => response.json()) as { data: { id: string } }
     await fetch(`${base}/v1/products/${encodeURIComponent(imported.data.id)}/confirm`, { method: 'POST', headers, body: '{}' })
     const banner = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'creative.brief', params: { product_id: imported.data.id, asset_type: 'banner', platform: 'taobao', sku_ids_json: '["sku-blue"]' } }) }).then(response => response.json()) as { data: { result: { assetType: string; renderable: boolean; dimensions: { ratio: string; resolution: string }; layout: { productBinding: Array<{ skuId: string }> } } } }
@@ -352,6 +383,8 @@ describe('product image review API', () => {
   it('keeps brand and asset onboarding inside MCP', async () => {
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_mcp_assets' }
+    await grantCreativePointsForTests('ws_mcp_assets')
+    grantContinuousFeatureEntitlementForTests('ws_mcp_assets')
     const brand = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'brand.upsert', params: { name: '云朵品牌', positioning: '轻户外', tone_json: '["克制","清晰"]' } }) }).then(response => response.json()) as { data: { result: { name: string; revision: number } } }
     expect(brand.data.result).toMatchObject({ name: '云朵品牌', revision: 1 })
     const encoded = Buffer.from('title: 轻量外套\nmaterial: 防晒面料').toString('base64')
@@ -373,6 +406,8 @@ describe('product image review API', () => {
   it('rejects executable and signature-mismatched uploads before quarantine', async () => {
     const base = await start()
     const workspaceId = `ws_asset_gate_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-request-id': 'asset-security-request' }
     const executable = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'asset.upload', params: { name: 'logo.png', mime_type: 'image/png', content_base64: Buffer.from('MZ-not-an-image').toString('base64') } }) }).then(response => response.json()) as { error: { code: string } }
     expect(executable.error.code).toBe('ASSET_EXECUTABLE_REJECTED')

@@ -67,5 +67,7 @@ describe("UsersPage capability state", () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("不加载用户治理数据");
     expect(markup).not.toContain("角色 platform_admin");
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("当前会话没有用户治理读取能力");
   });
 });

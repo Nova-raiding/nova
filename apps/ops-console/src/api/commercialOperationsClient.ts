@@ -11,6 +11,10 @@ export const commercialOperationsMethods = {
   services: "ops.commercial.service-fulfillment.list",
 } as const;
 
+const operationId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+const serviceCommand = async (method: string, targetWorkspaceId: string, allocationId: string, expectedRevision: number, reason: string, extra: Record<string, string> = {}) => rpc(method, { target_workspace_id: targetWorkspaceId, allocation_id: allocationId, expected_revision: String(expectedRevision), idempotency_key: operationId("service_fulfillment"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }), ...extra });
+const createServiceAllocation = async (input: { workspace: string; order: string; entitlement: string; serviceType: string; unit: string; quantity: number; checksum: string; reason: string }) => rpc("ops.commercial.service-allocation.create", { target_workspace_id: input.workspace, order_snapshot_id: input.order, entitlement_snapshot_id: input.entitlement, service_type: input.serviceType, unit: input.unit, allocated_quantity: String(input.quantity), source_checksum: input.checksum, expected_revision: "0", idempotency_key: operationId("service_allocation_create"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) });
+
 export const commercialCapabilities = {
   accessRead: "commercial.access.read",
   accessRecover: "commercial.access.recover",
@@ -330,6 +334,13 @@ export const commercialOperationsClient = {
   orders: async (targetWorkspaceId: string, signal?: AbortSignal) => parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  proposePointAdjustment: async (targetWorkspaceId: string, pointsDelta: number, reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.propose", { target_workspace_id: targetWorkspaceId, points_delta: String(pointsDelta), expected_revision: "0", idempotency_key: operationId("point_adjust_propose"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
+  decidePointAdjustment: async (targetWorkspaceId: string, proposalId: string, decision: "approved" | "rejected", reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.decide", { target_workspace_id: targetWorkspaceId, proposal_id: proposalId, decision, idempotency_key: operationId("point_adjust_decide"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
+  scheduleService: (workspace: string, allocation: string, revision: number, scheduleAt: string, reason: string) => serviceCommand("ops.commercial.service-fulfillment.schedule", workspace, allocation, revision, reason, { schedule_at: scheduleAt }),
+  startService: (workspace: string, allocation: string, revision: number, reason: string) => serviceCommand("ops.commercial.service-fulfillment.start", workspace, allocation, revision, reason),
+  completeService: (workspace: string, allocation: string, revision: number, quantity: number, reason: string) => serviceCommand("ops.commercial.service-fulfillment.complete", workspace, allocation, revision, reason, { actual_quantity: String(quantity) }),
+  adjustService: (workspace: string, allocation: string, revision: number, eventId: string, quantity: number, reason: string) => serviceCommand("ops.commercial.service-fulfillment.adjust", workspace, allocation, revision, reason, { corrects_event_id: eventId, actual_quantity: String(quantity) }),
+  createServiceAllocation,
 };
 
 export type CommercialOperationsClient = typeof commercialOperationsClient;

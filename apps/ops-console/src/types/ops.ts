@@ -517,7 +517,7 @@ export type CanonicalProductConsistencyReport = {
   counts: Record<"verified" | "legacy_only" | "conflict" | "blocked", number>;
   findings: Array<{
     legacyProductId: string;
-    status: "verified" | "legacy_only" | "conflict" | "blocked";
+    status: "verified" | "backfilled" | "legacy_only" | "conflict" | "blocked";
     contractStatus?: "verified" | "backfilled" | "legacy_only" | "conflict" | "blocked" | "unknown" | "unavailable";
     productId?: string;
     codes: string[];

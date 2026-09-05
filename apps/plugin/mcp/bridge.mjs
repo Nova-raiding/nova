@@ -82,6 +82,7 @@ const COMMERCIAL_RECOVERY_METHODS = new Set([
   'subscription.get', 'subscription.orders.list', 'billing.status',
   'billing.recharge.get', 'billing.recharge.list', 'billing.transactions',
   'billing.export', 'workspace.data.export.request', 'workspace.data.export.get', 'workspace.data.delete.request', 'workspace.bootstrap',
+  'workspace.health', 'canonical.product.consistency', 'platform.mapping.preflight',
   'commercial.access.get', 'commercial.catalog.get', 'commercial.order.create', 'commercial.order.payment.get',
   'creative-points.balance.get', 'creative-points.statement.list',
 ])
@@ -93,14 +94,16 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get',
   'ops.commercial.model-markup.update',
   'subscription.order.create', 'subscription.change', 'billing.recharge.create',
-  'catalog.image.generate', 'multimodal.image.edit',
-  'ops.marketing.generation.retry', 'merchant.first_value',
+  // Image generation/editing stay visible to the merchant bridge. The API
+  // performs the authoritative entitlement, relay, cost and rights gates;
+  // hiding them here makes a configured local/relay workflow impossible.
+  'ops.marketing.generation.retry',
   'campaign.batch.generate', 'campaign.batch.retry_failed',
-  'catalog.title.optimize', 'catalog.image.retry', 'brand.extract',
+  'catalog.title.optimize', 'catalog.image.retry',
   'brand.tone.preview', 'task.understand', 'creative.directions',
-  'creative.brief', 'creative.preview', 'content.generate',
+  'content.generate',
   'content.codex.prepare', 'content.codex.commit', 'content.review',
-  'content.modify', 'automation.scan', 'automation.tick',
+  'content.modify',
   'multimodal.generate', 'multimodal.video.request',
   'workspace.commercial.get', 'workspace.commercial.update',
   'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund',
@@ -160,7 +163,7 @@ const METHODS = {
       properties: {
         requested_platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], description: '用户在当前消息中明确指定的平台' },
         requested_goal: { type: 'string', description: '用户在当前消息中明确提出的任务目标' },
-        attachment_count: { type: 'integer', minimum: 0, description: '当前消息携带的附件数量' },
+        attachment_count: { type: 'string', pattern: '^(?:[0-9]|1[0-9]|20)$', maxLength: 2, description: 'Number of ChatGPT attachments associated with this intent, encoded as a wire-level integer string from 0 through 20.' },
         idempotency_key: { type: 'string', minLength: 8, maxLength: 200, description: '同一开始意图重试时保持稳定；通常由插件自动生成' },
       },
       additionalProperties: false,
@@ -203,7 +206,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'campaign.batch.create': {
-    description: '为一个品和最多 50 个跨平台、跨店商品创建可恢复的批量运营计划；不会自动发布。',
+    description: '为最多 50 个商品创建可恢复的批量运营计划；支持单店铺商品 ID或跨平台、跨店铺目标；不会自动发布。',
     inputSchema: { type: 'object', properties: { brand_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, product_ids_json: { type: 'string', description: '兼容单店铺模式：1 至 50 个商品 ID 的 JSON 数组' }, targets_json: { type: 'string', description: '多目标模式：每项含 product_id 或 canonical_product_id、platform、account_id，可选 listing_id' }, idempotency_key: { type: 'string', description: '重试同一批量计划时保持不变' } }, required: ['brand_id'], additionalProperties: false },
   },
   'campaign.batch.list': {
@@ -215,7 +218,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { campaign_id: { type: 'string' } }, required: ['campaign_id'], additionalProperties: false },
   },
   'campaign.batch.generate': {
-    description: '启动可恢复的逐商品内容工作流；事实确认后自动续跑到待审核，每项仍需规则审核和人工批准。',
+    description: '启动可恢复的逐商品内容工作流；request_text 可指定主图、详情图、Banner 等素材要求；事实确认后自动续跑到待审核，每项仍需规则审核和人工批准。',
     inputSchema: { type: 'object', properties: { campaign_id: { type: 'string' }, request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['campaign_id'], additionalProperties: false },
   },
   'campaign.batch.pause': {
@@ -479,8 +482,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
   },
   'catalog.import.batch': {
-    description: '批量导入最多 50 个商品；每项明确平台和店铺，全部预校验通过后才写入。',
-    inputSchema: { type: 'object', properties: { products_json: { type: 'string', description: '商品对象数组 JSON' } }, required: ['products_json'], additionalProperties: false },
+    description: '批量导入最多 50 个商品；可传商品对象数组，或传已解析并由商家确认事实的 XLSX/CSV 商品表格素材；每项明确平台和店铺，全部预校验通过后才写入。',
+    inputSchema: { type: 'object', properties: { products_json: { type: 'string', description: '商品对象数组 JSON' }, source_asset_id: { type: 'string', description: '已解析且已由商家确认事实的 XLSX/CSV 商品表格素材' } }, oneOf: [{ required: ['products_json'] }, { required: ['source_asset_id'] }], additionalProperties: false },
   },
   'catalog.sku.update': { description: '独立修改商品 SKU 的名称、价格、库存、图片和规格；修改后必须重新确认商品事实。', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, sku_id: { type: 'string' }, name: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, expected_version: { type: 'string' } }, required: ['product_id', 'sku_id'], additionalProperties: false } },
   'catalog.product.update': { description: '修改商品级标题、类目、主副图、属性、卖点和店铺差异化；修改后必须重新确认商品事实。', inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_differentiation: { type: 'string' }, price: { type: 'string' }, expected_version: { type: 'string' } }, required: ['product_id'], additionalProperties: false } },
@@ -497,8 +500,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { product_id: { type: 'string' } }, required: ['product_id'], additionalProperties: false },
   },
   'catalog.image.generate': {
-    description: '根据已确认商品事实生成商品主图变体；返回可追踪的异步任务。',
-    inputSchema: { type: 'object', properties: { product_id: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '已上传且通过扫描/权益/AI 修改检查的商品图片素材 ID 数组 JSON；优化模式必填。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['product_id'], additionalProperties: false },
+    description: '根据已确认商品事实生成商品主图变体；用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。',
+    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '已上传且通过扫描/权益/AI 修改检查的商品图片素材 ID 数组 JSON；未绑定模式必填。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
   },
   'catalog.image.retry': {
     description: '安全重试尚未启动 Provider 且没有候选或对账证据的图片任务。',
@@ -687,7 +690,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
   },
   'task.group.create': {
-    description: '批量生成入口：为多个平台/店铺/SKU 创建彼此独立的营销子任务；同一平台同一店铺仅允许不同 sku_id 分别出现，每项可提供 region 以匹配素材权益地区。必须先从当前品和商品列表多选，不能跨品复用选择。',
+    description: '批量生成入口：为多个商品、平台、店铺或 SKU 创建彼此独立的营销子任务；同一商品在同一平台/店铺/SKU 下不可重复，不同商品可以属于同一店铺。必须先从当前品和商品列表多选，不能跨品复用选择。',
     inputSchema: { type: 'object', properties: { entries_json: { type: 'string' }, request_text: { type: 'string' } }, required: ['entries_json'], additionalProperties: false },
   },
   'creative.directions': {
@@ -1251,7 +1254,7 @@ function safeErrorDetails(details) {
     if (value && typeof value === 'object') {
       const nested = {}
       for (const [key, item] of Object.entries(value)) {
-        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version'].includes(key)) {
+        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version'].includes(key)) {
           const sanitized = sanitize(item, depth + 1)
           if (sanitized !== undefined) nested[key] = sanitized
         }
@@ -1260,7 +1263,7 @@ function safeErrorDetails(details) {
     }
     return undefined
   }
-  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
+  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
     const value = authorizationEvidenceKeys.includes(key) || correlationEvidenceKeys.includes(key)
       ? key === 'explicit_deny'
         ? evidenceBoolean(details[key])
@@ -1327,6 +1330,7 @@ function deploymentEnvironment() {
 
 function assertTransportConfiguration() {
   const environment = deploymentEnvironment()
+  const strictAuth = configuredEnv('MERCHANT_STRICT_AUTH').toLowerCase() === 'true'
   if (allowsLocalFixtureFallback() && ['production', 'staging', 'preview'].includes(environment)) {
     const error = new Error('fixture fallback is disabled outside local development')
     error.code = 'MCP_FIXTURE_DISABLED'
@@ -1334,18 +1338,18 @@ function assertTransportConfiguration() {
   }
   const endpoint = new URL(baseUrl())
   const loopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(endpoint.hostname)
-  if (allowsLocalFixtureFallback() && loopback) return
+  if (allowsLocalFixtureFallback() && loopback && !strictAuth) return
   if (!loopback && endpoint.protocol !== 'https:') {
     const error = new Error('remote MCP endpoint must use HTTPS')
     error.code = 'MCP_HTTPS_REQUIRED'
     throw error
   }
-  if (!loopback && !configuredEnv('MERCHANT_MCP_TOKEN')) {
+  if ((strictAuth || !loopback) && !configuredEnv('MERCHANT_MCP_TOKEN')) {
     const error = new Error('remote MCP authentication is not configured')
     error.code = 'MCP_AUTH_REQUIRED'
     throw error
   }
-  if (!loopback && configuredEnv('MERCHANT_STRICT_AUTH').toLowerCase() !== 'true') {
+  if (!loopback && !strictAuth) {
     const error = new Error('strict MCP authentication is not enabled')
     error.code = 'MCP_STRICT_AUTH_REQUIRED'
     throw error
@@ -1366,14 +1370,20 @@ function safeStructuredErrorMessage(error, code, details) {
   return userFacingErrorText(code, details)
 }
 
-function isProviderChannelUnavailable(status, remoteError) {
+const MODEL_PROVIDER_METHODS = new Set(['content.generate', 'catalog.image.generate', 'multimodal.generate', 'multimodal.video.request', 'multimodal.image.edit'])
+
+function isProviderChannelUnavailable(method, status, remoteError, rawResponseText = '') {
   if (status !== 503) return false
+  const details = remoteError && typeof remoteError === 'object' && remoteError.details && typeof remoteError.details === 'object' && !Array.isArray(remoteError.details) ? remoteError.details : undefined
+  if (details?.provider_executed === false) return false
   const message = typeof remoteError === 'string'
     ? remoteError
     : remoteError && typeof remoteError === 'object'
       ? [remoteError.message, remoteError.details?.message].filter(value => typeof value === 'string').join(' ')
-      : ''
-  return /no available channel for model/iu.test(message)
+      : rawResponseText
+  // A model 503 without explicit provider_executed=false is ambiguous. Never
+  // retry it from the bridge, even when the relay uses a non-standard message.
+  return MODEL_PROVIDER_METHODS.has(method) || /no available channel for model/iu.test(message)
 }
 
 function actionCards(method, result) {
@@ -1785,7 +1795,7 @@ function materializeExportArtifact(result) {
 async function responseJsonWithLimit(response) {
   const declared = Number(response.headers.get('content-length') ?? 0)
   if (Number.isFinite(declared) && declared > MAX_REMOTE_RESPONSE_BYTES) throw new Error('MCP gateway response exceeds the 36MB limit')
-  if (!response.body) return null
+  if (!response.body) return { payload: null, rawResponseText: '' }
   const reader = response.body.getReader()
   const chunks = []
   let total = 0
@@ -1799,7 +1809,8 @@ async function responseJsonWithLimit(response) {
     }
     chunks.push(Buffer.from(value))
   }
-  try { return JSON.parse(Buffer.concat(chunks, total).toString('utf8')) } catch { return null }
+  const rawResponseText = Buffer.concat(chunks, total).toString('utf8')
+  try { return { payload: JSON.parse(rawResponseText), rawResponseText } } catch { return { payload: null, rawResponseText } }
 }
 
 function materializeImageFiles(images) {
@@ -2044,6 +2055,10 @@ async function callRemote(method, params) {
   const headers = {
     accept: 'application/json',
     'content-type': 'application/json',
+    // Merchant MCP calls are always scoped to the merchant workbench. Without
+    // this explicit boundary the API's platform-console default can reject a
+    // valid merchant token before dispatching the business method.
+    'x-ops-workbench': 'workspace',
     ...(scopedWorkspaceId ? { 'x-workspace-id': scopedWorkspaceId } : {}),
   }
   if (method === 'workspace.bootstrap') headers['x-workspace-bootstrap'] = 'true'
@@ -2072,14 +2087,25 @@ async function callRemote(method, params) {
   const timeoutMs = Number(process.env.MERCHANT_MCP_TIMEOUT_MS ?? 180000)
   const maxAttempts = Math.max(1, Number(process.env.MERCHANT_MCP_RETRY_ATTEMPTS ?? 5))
   const retryDelayMs = Math.max(50, Number(process.env.MERCHANT_MCP_RETRY_DELAY_MS ?? 200))
-  const deadline = Date.now() + timeoutMs
+  // A very small timeout is useful in boundary tests, but Node may need one
+  // event-loop turn to establish the local connection. Give that first write
+  // a bounded startup window so it cannot be aborted before the API receives
+  // it; the write remains fail-closed once the request is in flight.
+  const startupGraceMs = timeoutMs < 100 ? 50 : 0
+  const deadline = Date.now() + timeoutMs + startupGraceMs
   const retrySafe = READ_ONLY_METHODS.has(method) || headers['idempotency-key'] !== undefined
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const remainingMs = deadline - Date.now()
       if (remainingMs <= 0) throw new Error('MCP gateway request timed out while waiting for the local API')
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), remainingMs)
+      // Start the per-request timeout at the fetch boundary. `deadline` also
+      // includes the bounded startup grace for very small test timeouts; using
+      // the remaining budget here would let startup/queueing time consume the
+      // actual network timeout and make the write-safety boundary flaky under
+      // load. Retries remain bounded by the overall deadline below.
+      const requestTimeoutMs = Math.min(timeoutMs, remainingMs)
+      const timer = setTimeout(() => controller.abort(), requestTimeoutMs)
       try {
         const response = await fetch(baseUrl(), {
           method: 'POST',
@@ -2088,7 +2114,10 @@ async function callRemote(method, params) {
           body: JSON.stringify({ jsonrpc: '2.0', id: `${Date.now()}-${Math.random()}`, method, params: { ...params, ...(scopedWorkspaceId ? { workspace_id: scopedWorkspaceId } : {}) } }),
           signal: controller.signal,
         })
-        const payload = await responseJsonWithLimit(response)
+        const responseBody = await responseJsonWithLimit(response)
+        const payload = responseBody?.payload
+        const rawResponseText = responseBody?.rawResponseText ?? ''
+        const boundedResponseSummary = rawResponseText.trim().slice(0, 500)
         // The API currently wraps the JSON-RPC envelope in `data`, while
         // gateways may also return a top-level error. Treat both locations as
         // the same protocol boundary so authz/evidence details are not
@@ -2098,16 +2127,17 @@ async function callRemote(method, params) {
         // message instead of the canonical error code. That response still
         // sits after the provider boundary: retrying an idempotent tool can
         // duplicate a request whose outcome the relay did not disclose.
-        const normalizedRemoteError = isProviderChannelUnavailable(response.status, remoteError)
+        const normalizedRemoteError = isProviderChannelUnavailable(method, response.status, remoteError, rawResponseText)
           ? {
               code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN',
-              message: typeof remoteError === 'string' ? remoteError : remoteError?.message ?? 'model provider channel is unavailable',
+              message: typeof remoteError === 'string' ? remoteError.slice(0, 500) : (remoteError?.message ?? boundedResponseSummary) || 'model provider channel is unavailable',
               details: {
                 ...(remoteError && typeof remoteError === 'object' && remoteError.details && typeof remoteError.details === 'object' ? remoteError.details : {}),
                 provider_status: response.status,
                 provider_outcome: 'unknown',
                 reconciliation_required: true,
                 next_action: 'query_provider',
+                ...(boundedResponseSummary ? { provider_error_summary: boundedResponseSummary } : {}),
               },
             }
           : remoteError
@@ -2134,7 +2164,13 @@ async function callRemote(method, params) {
         // The current API intentionally wraps its JSON-RPC result in the common
         // application envelope. Keep this adapter boundary in the plugin until
         // the API exposes native MCP transport responses.
-        const result = payload.data?.result
+        const wrappedResult = payload?.data && typeof payload.data === 'object' && Object.prototype.hasOwnProperty.call(payload.data, 'result')
+          ? payload.data.result
+          : undefined
+        const nativeResult = payload?.jsonrpc === '2.0' && Object.prototype.hasOwnProperty.call(payload, 'result')
+          ? payload.result
+          : undefined
+        const result = wrappedResult !== undefined ? wrappedResult : nativeResult
         if (result === undefined) throw new Error('MCP gateway response is missing data.result')
         requireRelayEvidence(method, result)
         if (method === 'workspace.bootstrap' && result && typeof result === 'object' && typeof result.workspaceId === 'string' && result.workspaceId.trim()) {
@@ -2146,6 +2182,13 @@ async function callRemote(method, params) {
         return result
       } catch (error) {
         const retryableNetworkError = error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')
+        const timedOutWrite = error instanceof Error && error.name === 'AbortError' && !READ_ONLY_METHODS.has(method)
+        if (timedOutWrite) {
+          throw Object.assign(new Error('MCP gateway request timed out before the write outcome was confirmed'), {
+            code: 'API_UNAVAILABLE',
+            details: { operation_status: 'unknown', retryable: false, timeout: true },
+          })
+        }
         if (!retrySafe || !retryableNetworkError || attempt === maxAttempts || Date.now() >= deadline) {
           if (retryableNetworkError && !retrySafe) {
             throw Object.assign(new Error('MCP gateway connection failed before the operation outcome was confirmed'), {
@@ -2195,6 +2238,9 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
   const rawImageUrls = Array.isArray(result.image_urls)
     ? result.image_urls.filter(image => typeof image === 'string' && (/^https:\/\//iu.test(image) || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(image)))
     : []
+  const rawDownloadUrls = Array.isArray(result.download_urls)
+    ? result.download_urls.filter(image => typeof image === 'string' && (/^https:\/\//iu.test(image) || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(image)))
+    : []
   const archived = String(job.archiveState ?? job.archive_state ?? '').toLowerCase() === 'archived'
   const requestedVisualRef = typeof args?.visual_ref === 'string' ? args.visual_ref.trim() : ''
   const requestedCandidate = requestedVisualRef
@@ -2205,11 +2251,14 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     ? result.job_id.trim()
     : typeof job.jobId === 'string' ? job.jobId.trim() : ''
   const expectedRevision = Number(job.revision)
+  const candidateSelectable = candidate => String(candidate?.scanStatus ?? candidate?.scan_status ?? '').toLowerCase() === 'clean'
+    && String(candidate?.reviewStatus ?? candidate?.review_status ?? '').toLowerCase() === 'passed'
   const requestedCandidateClean = Boolean(requestedCandidate) && String(requestedCandidate.scanStatus ?? requestedCandidate.scan_status ?? '').toLowerCase() === 'clean'
   const allCandidatesClean = candidates.length === rawImages.length && candidates.length > 0 && candidates.every(candidate => String(candidate.scanStatus ?? candidate.scan_status ?? '').toLowerCase() === 'clean')
   const deliverable = archived && rawImages.length > 0 && (requestedVisualRef ? rawImages.length === 1 && requestedCandidateClean : allCandidatesClean)
   const images = deliverable ? rawImages : []
   const imageUrls = deliverable && rawImageUrls.length === images.length ? rawImageUrls : []
+  const downloadUrls = deliverable && rawDownloadUrls.length === images.length ? rawDownloadUrls : imageUrls
   const multiple = images.length > 1
   const errorCode = typeof job.errorCode === 'string' ? job.errorCode : typeof job.error_code === 'string' ? job.error_code : ''
   const reconciliationRequired = Boolean(job.reconciliationRequired ?? job.reconciliation_required) || errorCode === 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED'
@@ -2279,9 +2328,9 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         candidates: visibleCandidates.map(candidate => ({
           ordinal: Number(candidate.ordinal),
           visual_ref: String(candidate.visualRef ?? candidate.visual_ref ?? ''),
-          selectable: String(candidate.scanStatus ?? candidate.scan_status ?? '').toLowerCase() === 'clean',
+          selectable: candidateSelectable(candidate),
           subject_label: safeImageSubjectLabel(result, job, candidate),
-          availability_label: String(candidate.scanStatus ?? candidate.scan_status ?? '').toLowerCase() === 'clean' ? '可用' : '不可用',
+          availability_label: candidateSelectable(candidate) ? '可用' : '待人工审核',
         })).filter(candidate => Number.isSafeInteger(candidate.ordinal) && candidate.ordinal > 0 && candidate.visual_ref),
       },
     } : {}),
@@ -2292,7 +2341,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       poll_request: { job_id: selectionJobId, max_attempts: 4, initial_delay_ms: 750, max_delay_ms: 4000 },
     } : {}),
     ...(deliverable && requestedVisualRef ? { display_request: { visual_ref: requestedVisualRef } } : deliverable && typeof args?.job_id === 'string' && args.job_id.trim() ? { display_request: { job_id: args.job_id.trim() } } : {}),
-    ...(imageUrls.length ? { image_urls: imageUrls, images } : images.length ? { images } : {}),
+    ...(imageUrls.length ? { image_urls: imageUrls, download_urls: downloadUrls, images } : images.length ? { images } : {}),
   }
 }
 
@@ -2505,7 +2554,7 @@ async function handle(request) {
     if (requestedProtocol && requestedProtocol !== PROTOCOL_VERSION) return jsonRpcError(id, -32602, `Unsupported MCP protocol version: ${String(requestedProtocol)}`, { supportedProtocolVersion: PROTOCOL_VERSION })
     return jsonRpc(id, {
       protocolVersion: PROTOCOL_VERSION,
-      capabilities: { tools: {}, resources: {} },
+      capabilities: { tools: {}, resources: {}, resourceTemplates: {} },
       serverInfo: { name: 'merchant-marketing', version: PLUGIN_VERSION || 'unversioned' },
       instructions: '先调用 merchant.start；需要诊断时再调用 workspace.health。发布前必须人工确认并调用 publish.prepare。',
     })
@@ -2519,6 +2568,9 @@ async function handle(request) {
       { uri: IMAGE_EDIT_UI_URI, name: '大麦图片局部编辑', title: '图片局部编辑区域标注', description: '在图片预览上拖拽或用键盘标注归一化编辑区域，并避开不可修改区域。', mimeType: 'text/html;profile=mcp-app' },
       { uri: IMAGE_CANDIDATE_CHOICE_UI_URI, name: '主图候选选择', title: '选择主图候选', description: '展示已归档且通过自动检查的主图候选；单张可直接确认，多张可选择一张。', mimeType: 'text/html;profile=mcp-app' },
     ] })
+  }
+  if (request.method === 'resources/templates/list') {
+    return jsonRpc(id, { resourceTemplates: [] })
   }
   if (request.method === 'resources/read') {
     if (request.params?.uri === CREATIVE_CHOICE_UI_URI) return jsonRpc(id, { contents: [{ uri: CREATIVE_CHOICE_UI_URI, mimeType: 'text/html;profile=mcp-app', text: creativeChoiceUiHtml(), _meta: { ui: { prefersBorder: true } } }] })

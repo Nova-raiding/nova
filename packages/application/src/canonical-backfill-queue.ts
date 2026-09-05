@@ -10,9 +10,13 @@ export interface CanonicalBackfillConflictQueueFailure {
  * reviewed their queued evidence.
  */
 export function canonicalBackfillRunCanRetry(lastResult: Record<string, unknown>): boolean {
-  return typeof lastResult.error === 'string'
-    && lastResult.error.trim().length > 0
-    && !Array.isArray(lastResult.conflicts)
+  if (typeof lastResult.error !== 'string' || lastResult.error.trim().length === 0) return false
+
+  // A result carrying a conflicts field must be structurally trustworthy. An
+  // unknown shape cannot prove that the run was an executor-only failure, so
+  // it must not be retried blindly.
+  if ('conflicts' in lastResult && !Array.isArray(lastResult.conflicts)) return false
+  return !('conflicts' in lastResult) || (Array.isArray(lastResult.conflicts) && lastResult.conflicts.length === 0)
 }
 
 /**

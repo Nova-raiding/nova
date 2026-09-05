@@ -3,7 +3,7 @@ import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Row, Segmented, 
 import { CheckCircleOutlined, ExclamationCircleOutlined, ReloadOutlined, WarningOutlined } from "@ant-design/icons";
 import type { CanonicalProductConsistencyReport } from "../../types/ops.js";
 
-type Status = "verified" | "legacy_only" | "conflict" | "blocked";
+type Status = "verified" | "backfilled" | "legacy_only" | "conflict" | "blocked";
 type PresentationReport = Omit<CanonicalProductConsistencyReport, "freshness"> & {
   generatedAt?: string | null;
   readMode?: "live" | "snapshot";
@@ -14,6 +14,7 @@ type PresentationReport = Omit<CanonicalProductConsistencyReport, "freshness"> &
 };
 const statusMeta: Record<Status, { label: string; color: string }> = {
   verified: { label: "已验证", color: "success" },
+  backfilled: { label: "已回填待核验", color: "processing" },
   legacy_only: { label: "仅旧商品", color: "warning" },
   conflict: { label: "存在冲突", color: "error" },
   blocked: { label: "已阻断", color: "warning" },
@@ -165,7 +166,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
         {report.generatedAt && <Typography.Text type="secondary">生成于：{report.generatedAt}</Typography.Text>}
       </Space>
       <Row gutter={[16, 16]}>
-        {(Object.keys(statusMeta) as Status[]).map(status => <Col xs={12} md={6} key={status}><Statistic title={statusMeta[status].label} value={report.counts[status]} /></Col>)}
+        {(Object.keys(statusMeta) as Status[]).map(status => <Col xs={12} md={6} key={status}><Statistic title={statusMeta[status].label} value={report.counts[status as keyof typeof report.counts] ?? 0} /></Col>)}
       </Row>
       <Space orientation="vertical" style={{ width: "100%", marginTop: 20 }} size={12}>
         <Typography.Text strong>商品级检查结果</Typography.Text>

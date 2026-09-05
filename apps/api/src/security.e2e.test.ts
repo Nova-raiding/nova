@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
+import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
 import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES } from '../../../packages/contracts/src/authz.js'
@@ -68,11 +69,46 @@ async function configureBearerMembers(entries: Array<{ token: string; workspaceI
   vi.stubEnv('API_AUTH_TOKENS', JSON.stringify(grants))
 }
 
+class MemoryRedisOAuthPort implements OAuthRedisPort {
+  private readonly records = new Map<string, { value: string; expiresAt: number }>()
+
+  async set(key: string, value: string, ttlSeconds: number): Promise<void> {
+    this.records.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 })
+  }
+
+  async get(key: string): Promise<string | null> {
+    const record = this.records.get(key)
+    if (!record) return null
+    if (Date.now() >= record.expiresAt) {
+      this.records.delete(key)
+      return null
+    }
+    return record.value
+  }
+
+  async eval(_script: string, keys: string[], args: string[]): Promise<unknown> {
+    const key = keys[0]
+    const raw = key ? await this.get(key) : null
+    if (!key || !raw) return ['missing', '']
+    let record: { workspaceId?: string; platform?: string; consumed?: boolean }
+    try { record = JSON.parse(raw) as { workspaceId?: string; platform?: string; consumed?: boolean } } catch { return ['invalid', ''] }
+    if (record.consumed !== false || typeof record.workspaceId !== 'string' || typeof record.platform !== 'string') return ['invalid', '']
+    if (record.workspaceId !== args[0] || record.platform !== args[1]) return ['scope', '']
+    this.records.delete(key)
+    return ['ok', raw]
+  }
+}
+
+function createRedisOAuthStateStoreForTests() {
+  return new RedisOAuthStateStore(new MemoryRedisOAuthPort())
+}
+
 beforeEach(() => vi.stubEnv('SESSION_ID_HASH_SECRET', 'test-session-hash-secret'))
 
 afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
   setAuthorizationRepositoryForTests(undefined)
+  setOAuthStateStoreForTests(undefined)
   vi.useRealTimers()
   vi.unstubAllEnvs()
 })
@@ -210,8 +246,8 @@ describe('security and access-control acceptance gates', () => {
       id: 'flag-authz', disabled: 'true', expected_revision: '1', idempotency_key: 'authz-emergency-1', reason: '验证紧急开关服务端拒绝',
     })
     expect(denied.error).toMatchObject({ code: 'FORBIDDEN', details: { capability: 'feature_flag.administer', policy_version: '2026-08-31.v2' } })
-    expect(await operationAudits.list(workspaceId)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ actorId: 'authz-ops', action: 'authz.decision', resourceType: 'mcp_method', resourceId: 'ops.feature-flag.emergency.set', after: expect.objectContaining({ decision_id: denied.error?.details?.decision_id, request_id: expect.any(String), trace_id: expect.any(String), result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' }) }),
+    expect(await platformAuthorizationAuditForTests.list({ actorId: 'authz-ops', method: 'ops.feature-flag.emergency.set', result: 'deny' })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ decisionId: denied.error?.details?.decision_id, actorId: 'authz-ops', method: 'ops.feature-flag.emergency.set', result: 'deny', reasonCode: 'AUTHZ_CAPABILITY_MISSING', requestId: expect.any(String), traceId: expect.any(String) }),
     ]))
   })
 
@@ -219,7 +255,7 @@ describe('security and access-control acceptance gates', () => {
     const workspaceId = `ws_authz_audit_failure_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'authz-audit-failure-token', workspaceId, actorId: 'authz-audit-failure-actor', role: 'platform_ops', gatewayRoles: ['platform_ops'] }])
-    const append = vi.spyOn(operationAudits, 'append').mockRejectedValueOnce(new Error('AUTHZ_AUDIT_SINK_UNAVAILABLE'))
+    const append = vi.spyOn(platformAuthorizationAuditForTests, 'append').mockRejectedValueOnce(new Error('AUTHZ_AUDIT_SINK_UNAVAILABLE'))
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       const base = await start()
@@ -234,8 +270,8 @@ describe('security and access-control acceptance gates', () => {
         code: 'AUTHZ_AUDIT_UNAVAILABLE',
         details: { decision_id: expect.any(String), policy_version: '2026-08-31.v2' },
       })
-      expect(append).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, actorId: 'authz-audit-failure-actor', action: 'authz.decision', resourceType: 'mcp_method', resourceId: 'ops.feature-flag.emergency.set', after: expect.objectContaining({ result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING' }) }))
-      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('AUTHZ_AUDIT_UNAVAILABLE'), expect.objectContaining({ message: 'AUTHZ_AUDIT_SINK_UNAVAILABLE' }))
+      expect(append).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'authz-audit-failure-actor', method: 'ops.feature-flag.emergency.set', result: 'deny', reasonCode: 'AUTHZ_CAPABILITY_MISSING', resourceType: expect.any(String), requestId: expect.any(String), traceId: expect.any(String) }))
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('AUTHZ_PLATFORM_AUDIT_UNAVAILABLE'), expect.objectContaining({ message: 'AUTHZ_AUDIT_SINK_UNAVAILABLE' }))
     } finally {
       append.mockRestore()
       consoleError.mockRestore()
@@ -646,6 +682,8 @@ describe('security and access-control acceptance gates', () => {
       'brand-http-ops-token': { workspaces: [workspaceId], actor_id: 'brand-http-ops', roles: ['platform_ops'], workbenches: ['platform'] },
       'brand-http-orphan-token': { workspaces: [workspaceId], actor_id: 'brand-http-orphan', workbenches: ['workspace'] },
     }))
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const base = await start()
     const call = (token: string, method: 'GET' | 'PUT', body?: Record<string, unknown>) => fetch(`${base}/v1/brand-profile`, {
       method,
@@ -737,15 +775,15 @@ describe('security and access-control acceptance gates', () => {
     ] as const
     for (const [method, params] of catalogWrites) {
       expect((await call('commercial-admin-token', method, params)).error?.code).toBe('FORBIDDEN')
-      expect((await call('commercial-platform-token', method, params)).error).toBeNull()
+      expect((await call('commercial-platform-token', method, params)).error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
     }
 
     const ownRollout = { offer_code: `offer-${suffix}`, target_workspace_id: workspaceId, percentage: '25', enabled: 'true', reason: '租户内灰度' }
     expect((await call('commercial-admin-token', 'ops.commercial.rollout.upsert', ownRollout)).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_WORKBENCH_MISMATCH' } })
     expect((await call('commercial-admin-token', 'ops.commercial.rollout.upsert', { ...ownRollout, target_workspace_id: otherWorkspaceId })).error?.code).toBe('FORBIDDEN')
     const { target_workspace_id: _targetWorkspaceId, ...globalRollout } = ownRollout
-    expect((await call('commercial-platform-token', 'ops.commercial.rollout.upsert', globalRollout)).data?.result).not.toHaveProperty('workspaceId')
-    expect((await call('commercial-platform-token', 'ops.commercial.rollout.upsert', { ...ownRollout, target_workspace_id: otherWorkspaceId })).error).toBeNull()
+    expect((await call('commercial-platform-token', 'ops.commercial.rollout.upsert', globalRollout)).error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    expect((await call('commercial-platform-token', 'ops.commercial.rollout.upsert', { ...ownRollout, target_workspace_id: otherWorkspaceId })).error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
   })
 
   it('globally suspends an identity, revokes its sessions, and does not revive old sessions on activation', async () => {
@@ -854,20 +892,20 @@ describe('security and access-control acceptance gates', () => {
     expect((await call('markup-owner-token', 'ops.commercial.model-markup.get')).error?.code).toBe('FORBIDDEN')
     expect((await call('markup-finance-token', 'ops.commercial.model-markup.update', { multiplier: '3.000', expected_revision: '1', reason: '越权修改' })).error?.code).toBe('FORBIDDEN')
     const current = await call('markup-platform-token', 'ops.commercial.model-markup.get')
-    expect(current.error).toBeNull()
-    const policy = current.data?.result as { multiplier: number; revision: number }
-    const updated = await call('markup-platform-token', 'ops.commercial.model-markup.update', { multiplier: policy.multiplier.toFixed(3), expected_revision: String(policy.revision), reason: '平台运营权限回归验证' })
-    expect(updated.error).toBeNull()
-    expect(updated.data?.result).toMatchObject({ multiplier: policy.multiplier, revision: policy.revision + 1, updatedBy: 'markup-platform' })
+    expect(current.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    expect((await call('markup-platform-token', 'ops.commercial.model-markup.update', { multiplier: '3.000', expected_revision: '1', reason: '平台运营权限回归验证' })).error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
   })
 
   it('redacts provider model costs from merchant reconciliation roles', async () => {
     const workspaceId = `ws_cost_redaction_${Date.now()}`
     vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('MCP_AUTHZ_MODE', 'enforce')
     await configureBearerMembers([
       { token: 'merchant-cost-token', workspaceId, actorId: 'merchant-cost-user', role: 'operator', gatewayRoles: ['operator'] },
       { token: 'finance-cost-token', workspaceId, actorId: 'finance-cost-user', role: 'finance', gatewayRoles: ['finance'] },
     ])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const base = await start()
     const call = (token: string) => fetch(`${base}/mcp`, {
       method: 'POST',
@@ -921,6 +959,8 @@ describe('security and access-control acceptance gates', () => {
       { token: 'sensitive-platform-token', workspaceId, actorId: 'sensitive-platform', role: 'platform_ops', gatewayRoles: ['platform_ops'] },
       { token: 'other-owner-token', workspaceId: otherWorkspaceId, actorId: 'other-owner', role: 'workspace_owner', gatewayRoles: ['workspace_owner'] },
     ])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const aliasAccount = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `alias-${Date.now()}`, credentialRef: 'vault://sensitive/alias' })
     const foreignAccount = service.registerPlatformAccount({ workspaceId: otherWorkspaceId, platform: 'taobao', remoteAccountId: `foreign-${Date.now()}`, credentialRef: 'vault://sensitive/foreign' })
     const revokeAccounts = new Map([
@@ -979,7 +1019,7 @@ describe('security and access-control acceptance gates', () => {
     expect((await call('sensitive-owner-token', 'brand-unit.product.create', { brand_id: 'sensitive_store_brand', product_id: 'sensitive_canonical_product', title: '店铺范围商品' })).error).toBeNull()
     expect((await call('sensitive-owner-token', 'brand-unit.listing.create', { brand_id: 'sensitive_store_brand', canonical_product_id: 'sensitive_canonical_product', platform: 'taobao', account_id: aliasAccount.id })).error).toBeNull()
     expect((await call('sensitive-owner-token', 'brand-unit.listing.create', { brand_id: 'sensitive_store_brand', canonical_product_id: 'sensitive_canonical_product', platform: 'taobao', account_id: foreignAccount.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'account' } })
-    expect((await call('sensitive-owner-token', 'platform.revoke', { platform: 'taobao', account_id: foreignAccount.id })).error?.code).toBe('PLATFORM_ACCOUNT_NOT_FOUND')
+    expect((await call('sensitive-owner-token', 'platform.revoke', { platform: 'taobao', account_id: foreignAccount.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH' } })
     const unchangedForeignAccount = service.getPlatformAccount(otherWorkspaceId, foreignAccount.id, 'taobao')
     expect(unchangedForeignAccount.tokenState).toBe('connected')
     expect(unchangedForeignAccount).not.toHaveProperty('storeAlias')
@@ -1015,6 +1055,8 @@ describe('security and access-control acceptance gates', () => {
     const publishSource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'brand-publish-source', title: '发布权限商品', stock: 4 })
     const legacyBrandOnlySource = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, localProductKey: 'legacy-brand-only-source', title: '仅旧字段商品', stock: 1 }) as typeof source & { brandId?: string }
     legacyBrandOnlySource.brandId = 'brand_access'
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const base = await start()
     const ownerHeaders = { authorization: 'Bearer brand-owner-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const editorHeaders = { authorization: 'Bearer brand-editor-token', 'content-type': 'application/json', 'x-workspace-id': workspaceId }
@@ -1040,7 +1082,7 @@ describe('security and access-control acceptance gates', () => {
     expect(ownUpload.error).toBeNull()
     const ownAssetId = ownUpload.data?.result.id as string
     expect((await mcp(editorHeaders, 4.2, 'asset.list', {})).data?.result.assets).toEqual(expect.arrayContaining([expect.objectContaining({ id: ownAssetId })]))
-    expect((await mcp(editorHeaders, 4.3, 'asset.preference.update', { asset_id: ownAssetId, verdict: 'unrated' })).error).toBeNull()
+    expect((await mcp(editorHeaders, 4.3, 'asset.preference.update', { asset_id: ownAssetId, verdict: 'unrated', reasons_json: '["商家尚未完成历史偏好确认"]' })).error).toBeNull()
 
     expect((await mcp(ownerHeaders, 5, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'viewer' })).error).toBeNull()
     expect((await mcp(editorHeaders, 5.1, 'brand-unit.access.grant', { brand_id: 'brand_access', external_subject: 'brand-editor', role: 'admin' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
@@ -1051,7 +1093,7 @@ describe('security and access-control acceptance gates', () => {
     expect((await mcp(ownerHeaders, 6.31, 'creative.brief', { product_id: legacyBrandOnlySource.id, asset_type: 'banner' })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     const imageJobsBeforeDeniedBrandCalls = service.imageGenerationJobs.size
     expect((await mcp(editorHeaders, 6.4, 'catalog.image.generate', { product_id: source.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `viewer-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
-    expect((await mcp(editorHeaders, 6.5, 'catalog.image.generate', { product_id: hiddenSource.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `hidden-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 6.5, 'catalog.image.generate', { product_id: hiddenSource.id, platform: 'taobao', direction: '保留商品本体并生成白底主图', mode: 'create', count: '1', idempotency_key: `hidden-image-${workspaceId}` })).error?.code).toBe('PRODUCT_NOT_FOUND')
     expect(service.imageGenerationJobs.size).toBe(imageJobsBeforeDeniedBrandCalls)
     const protectedProductBeforeDeniedUpdates = structuredClone(service.products.get(source.id))
     const hiddenProductBeforeDeniedUpdates = structuredClone(service.products.get(hiddenSource.id))
@@ -1077,7 +1119,7 @@ describe('security and access-control acceptance gates', () => {
     const hiddenGeneratedJob = service.enqueueImageGeneration({ workspaceId, productId: hiddenSource.id, idempotencyKey: `hidden-brand-image-${workspaceId}`, count: 1 })
     const hiddenGeneratedJobBeforeDeniedSelection = structuredClone(hiddenGeneratedJob)
     expect((await mcp(editorHeaders, 6.605, 'catalog.image.get', { job_id: generatedJob.id })).error).toBeNull()
-    expect((await mcp(editorHeaders, 6.606, 'catalog.image.get', { job_id: hiddenGeneratedJob.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(editorHeaders, 6.606, 'catalog.image.get', { job_id: hiddenGeneratedJob.id })).error?.code).toBe('PRODUCT_NOT_FOUND')
     expect((await mcp(editorHeaders, 6.61, 'catalog.image.select', { job_id: hiddenGeneratedJob.id, visual_ref: `dvis_${'C'.repeat(24)}`, expected_revision: String(hiddenGeneratedJob.revision), idempotency_key: `hidden-brand-select-${workspaceId}`, reason: '不应选择隐藏品牌候选图', confirmation_ticket_nonce_hash: 'b'.repeat(64), confirmation_ticket_intent_hash: 'c'.repeat(64) })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
     expect(service.imageGenerationJobs.get(hiddenGeneratedJob.id)).toEqual(hiddenGeneratedJobBeforeDeniedSelection)
     const imageJobsBeforeDeniedRetries = structuredClone([...service.imageGenerationJobs.entries()])
@@ -1100,8 +1142,8 @@ describe('security and access-control acceptance gates', () => {
     service.contentVersions.set('content_protected_brand', { id: 'content_protected_brand', taskId: protectedTask.id, version: 1, body: { title: '授权品牌内容', detail: '授权品牌详情', sellingPoints: [] }, factVersionIds: [], ruleVersionIds: [], state: 'draft', revision: 1 })
     service.contentVersions.set('content_hidden_brand', { id: 'content_hidden_brand', taskId: hiddenTask.id, version: 1, body: { title: '隐藏品牌内容', detail: '隐藏品牌详情', sellingPoints: [] }, factVersionIds: [], ruleVersionIds: [], state: 'draft', revision: 1 })
     const imageJobsBeforeMismatchedResources = structuredClone([...service.imageGenerationJobs.entries()])
-    expect((await mcp(ownerHeaders, 7.005, 'catalog.image.generate', { product_id: source.id, task_id: protectedTask.id, content_version_id: 'content_hidden_brand', direction: '不得跨任务生成', mode: 'create', count: '1', idempotency_key: `mismatched-resource-image-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
-    expect((await mcp(ownerHeaders, 7.006, 'catalog.image.generate', { product_id: hiddenSource.id, task_id: protectedTask.id, direction: '不得跨商品生成', mode: 'create', count: '1', idempotency_key: `mismatched-task-product-${workspaceId}` })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
+    expect((await mcp(ownerHeaders, 7.005, 'catalog.image.generate', { product_id: source.id, task_id: protectedTask.id, content_version_id: 'content_hidden_brand', direction: '不得跨任务生成', mode: 'create', count: '1', idempotency_key: `mismatched-resource-image-${workspaceId}` })).error).toMatchObject({ code: 'TASK_CONTENT_SCOPE_MISMATCH' })
+    expect((await mcp(ownerHeaders, 7.006, 'catalog.image.generate', { product_id: hiddenSource.id, task_id: protectedTask.id, direction: '不得跨商品生成', mode: 'create', count: '1', idempotency_key: `mismatched-task-product-${workspaceId}` })).error).toMatchObject({ code: 'TASK_PRODUCT_SCOPE_MISMATCH' })
     expect([...service.imageGenerationJobs.entries()]).toEqual(imageJobsBeforeMismatchedResources)
     expect((await mcp(editorHeaders, 7.01, 'task.timeline', { task_id: protectedTask.id })).error).toBeNull()
     expect((await mcp(editorHeaders, 7.02, 'task.timeline', { task_id: hiddenTask.id })).error).toMatchObject({ code: 'FORBIDDEN', details: { reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand' } })
@@ -1273,6 +1315,8 @@ describe('security and access-control acceptance gates', () => {
   it('binds bearer tokens to an allowlisted workspace in production', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'token-a', workspaceId: 'ws_bearer_auth' }])
+    await grantCreativePointsForTests('ws_bearer_auth')
+    grantContinuousFeatureEntitlementForTests('ws_bearer_auth')
     service.registerPlatformAccount({ workspaceId: 'ws_bearer_auth', platform: 'taobao', remoteAccountId: 'auth-store', credentialRef: 'vault://auth-store' })
     const base = await start()
     const missing = await fetch(`${base}/v1/products`, { headers: { 'x-workspace-id': 'ws_bearer_auth' } })
@@ -1289,6 +1333,8 @@ describe('security and access-control acceptance gates', () => {
     vi.stubEnv('OPS_AUTH_MODE', 'oidc')
     vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'oidc-test-secret')
     await workspaceMembers.upsert({ workspaceId: 'ws_oidc', externalSubject: 'oidc-user', displayName: 'oidc-user', role: 'merchant_admin', status: 'active', invitedBy: 'security-test' })
+    await grantCreativePointsForTests('ws_oidc')
+    grantContinuousFeatureEntitlementForTests('ws_oidc')
     service.registerPlatformAccount({ workspaceId: 'ws_oidc', platform: 'taobao', remoteAccountId: 'oidc-store', credentialRef: 'vault://oidc-store' })
     const base = await start()
     const path = '/v1/products'
@@ -1325,6 +1371,8 @@ describe('security and access-control acceptance gates', () => {
     // sets this to merchant.example.com in the Kubernetes ConfigMap.
     vi.stubEnv('MERCHANT_BEARER_HOSTNAME', '127.0.0.1')
     await configureBearerMembers([{ token: 'merchant-ui-token', workspaceId: 'ws_merchant_host' }])
+    await grantCreativePointsForTests('ws_merchant_host')
+    grantContinuousFeatureEntitlementForTests('ws_merchant_host')
     service.registerPlatformAccount({ workspaceId: 'ws_merchant_host', platform: 'taobao', remoteAccountId: 'merchant-host-store', credentialRef: 'vault://merchant-host-store' })
     const base = await start()
     const path = '/v1/products'
@@ -1449,6 +1497,9 @@ describe('security and access-control acceptance gates', () => {
   it('accepts six platform-specific HTTPS callback routes before enforcing connector readiness', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'token-a', workspaceId: 'ws_oauth_callbacks' }])
+    await grantCreativePointsForTests('ws_oauth_callbacks')
+    grantContinuousFeatureEntitlementForTests('ws_oauth_callbacks')
+    setOAuthStateStoreForTests({ store: createRedisOAuthStateStoreForTests(), satisfiesProductionRedisRequirement: true })
     vi.stubEnv('JD_OAUTH_REDIRECT_URI', 'https://merchant.test/v1/oauth/callback/jd')
     vi.stubEnv('TAOBAO_OAUTH_REDIRECT_URI', 'https://merchant.test/v1/oauth/callback/taobao')
     vi.stubEnv('TMALL_OAUTH_REDIRECT_URI', 'https://merchant.test/v1/oauth/callback/tmall')
@@ -1480,6 +1531,8 @@ describe('security and access-control acceptance gates', () => {
   it('requires a registered platform account for production task binding', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'token-a', workspaceId: 'ws_auth' }])
+    await grantCreativePointsForTests('ws_auth')
+    grantContinuousFeatureEntitlementForTests('ws_auth')
     const base = await start()
     service.registerPlatformAccount({ workspaceId: 'ws_auth', platform: 'taobao', remoteAccountId: 'remote-acct-1', credentialRef: 'vault://opaque' })
     service.products.set('prod_auth_1', { ...service.products.get('prod_fixture_1')!, id: 'prod_auth_1', workspaceId: 'ws_auth' })
@@ -1499,6 +1552,8 @@ describe('security and access-control acceptance gates', () => {
   it('rejects production publish before queueing when platform write readiness is incomplete', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'token-publish', workspaceId: 'ws_publish_gate' }])
+    await grantCreativePointsForTests('ws_publish_gate')
+    grantContinuousFeatureEntitlementForTests('ws_publish_gate')
     const productId = `prod_publish_gate_${Date.now()}`
     service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId: 'ws_publish_gate' })
     service.registerPlatformAccount({ workspaceId: 'ws_publish_gate', platform: 'taobao', remoteAccountId: 'remote-publish-gate', credentialRef: 'vault://opaque' })
@@ -1507,15 +1562,13 @@ describe('security and access-control acceptance gates', () => {
     const created = await fetch(`${base}/v1/tasks`, { method: 'POST', headers, body: JSON.stringify({ product_id: productId, platform: 'taobao', account_id: 'remote-publish-gate' }) }).then(response => response.json() as Promise<Envelope<{ id: string }>>)
     const taskId = created.data!.id
     const generationBeforeRecharge = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'content.generate', params: { task_id: taskId } }) }).then(response => response.json() as Promise<Envelope>)
-    expect(generationBeforeRecharge.error?.code).toBe('RECHARGE_REQUIRED')
+    expect(generationBeforeRecharge.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
     const restGenerationBeforeRecharge = await fetch(`${base}/v1/tasks/${taskId}/content`, { method: 'POST', headers }).then(async response => ({ status: response.status, body: await response.json() as Envelope }))
-    expect(restGenerationBeforeRecharge.status).toBe(402)
-    expect(restGenerationBeforeRecharge.body.error?.code).toBe('RECHARGE_REQUIRED')
+    expect(restGenerationBeforeRecharge.status).toBe(503)
+    expect(restGenerationBeforeRecharge.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
     const asyncGenerationBeforeRecharge = await fetch(`${base}/v1/tasks/${taskId}/content-jobs`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'security-generation-before-recharge' }, body: JSON.stringify({}) }).then(async response => ({ status: response.status, body: await response.json() as Envelope }))
-    expect(asyncGenerationBeforeRecharge.status).toBe(402)
-    expect(asyncGenerationBeforeRecharge.body.error?.code).toBe('RECHARGE_REQUIRED')
-    const batchBeforeRecharge = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'publish.batch.confirm', params: { batch_id: 'batch_not_created', confirmations_json: '[]' } }) }).then(response => response.json() as Promise<Envelope>)
-    expect(batchBeforeRecharge.error?.code).toBe('RECHARGE_REQUIRED')
+    expect(asyncGenerationBeforeRecharge.status).toBe(503)
+    expect(asyncGenerationBeforeRecharge.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers, body: JSON.stringify({ direction_id: 'A' }) })
     // Seed the content version directly after the mandatory production-plan
     // confirmation: model configuration is a separate gate, while this test
@@ -1563,6 +1616,8 @@ describe('security and access-control acceptance gates', () => {
   it('requires every production task entry to retain an explicit bound store', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'token-task-store', workspaceId: 'ws_task_store_gate' }])
+    await grantCreativePointsForTests('ws_task_store_gate')
+    grantContinuousFeatureEntitlementForTests('ws_task_store_gate')
     const productId = `prod_unbound_task_${Date.now()}`
     service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId: 'ws_task_store_gate', accountId: undefined })
     service.registerPlatformAccount({ workspaceId: 'ws_task_store_gate', platform: 'taobao', remoteAccountId: 'bound-store', credentialRef: 'vault://bound-store' })
@@ -1599,6 +1654,8 @@ describe('security and access-control acceptance gates', () => {
   it('revokes a production account locally before remote cleanup and blocks reuse', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     await configureBearerMembers([{ token: 'token-revoke', workspaceId: 'ws_revoke' }])
+    await grantCreativePointsForTests('ws_revoke')
+    await grantContinuousFeatureEntitlementForTests('ws_revoke')
     const productId = `prod_revoke_${Date.now()}`
     service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId: 'ws_revoke', accountId: 'remote-revoke' })
     service.registerPlatformAccount({ workspaceId: 'ws_revoke', platform: 'taobao', remoteAccountId: 'remote-revoke', credentialRef: 'vault://opaque' })
@@ -1774,7 +1831,10 @@ describe('security and access-control acceptance gates', () => {
   it('enforces a per-workspace request rate limit', async () => {
     vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '2')
     const base = await start()
-    const headers = { 'x-workspace-id': `ws_rate_${Date.now()}` }
+    const workspaceId = `ws_rate_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    await grantContinuousFeatureEntitlementForTests(workspaceId)
+    const headers = { 'x-workspace-id': workspaceId }
     await fetch(`${base}/v1/products`, { headers })
     await fetch(`${base}/v1/products`, { headers })
     const limited = await fetch(`${base}/v1/products`, { headers })
@@ -1790,6 +1850,10 @@ describe('security and access-control acceptance gates', () => {
     const owner = `ws_owner_${Date.now()}`
     const attacker = `${owner}_attacker`
     const productId = `prod_security_${Date.now()}`
+    await grantCreativePointsForTests(owner)
+    await grantContinuousFeatureEntitlementForTests(owner)
+    await grantCreativePointsForTests(attacker)
+    await grantContinuousFeatureEntitlementForTests(attacker)
     service.products.set(productId, { id: productId, workspaceId: owner, platform: 'taobao', storeName: 'owner', remoteId: 'remote', title: 'product', skuCount: 1, stock: 1, factsConfirmed: true, source: 'fixture', updatedAt: new Date().toISOString() })
     const account = service.registerPlatformAccount({ workspaceId: owner, platform: 'taobao', remoteAccountId: `security-owner-${Date.now()}`, credentialRef: 'fixture://security-owner' })
     const create = await fetch(`${base}/v1/tasks`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': owner }, body: JSON.stringify({ product_id: productId, platform: 'taobao', account_id: account.id }) }).then(response => response.json() as Promise<Envelope>)

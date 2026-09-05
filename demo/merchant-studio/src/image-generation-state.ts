@@ -46,5 +46,10 @@ export function imageGenerationRetryAllowed(input: { state?: string; executionSt
 export function isImageGenerationConfigurationError(error: unknown) {
   const candidate = error as { code?: unknown; status?: unknown } | undefined
   const code = typeof candidate?.code === 'string' ? candidate.code.trim().toUpperCase() : ''
-  return candidate?.status === 503 && /^(?:MODEL_RELAY|AI_GENERATION|IMAGE_GENERATION|IMAGE_EDIT|VIDEO_GENERATION)(?:_|$)/u.test(code)
+  return candidate?.status === 503 && [
+    'MODEL_RELAY_NOT_CONFIGURED',
+    'IMAGE_GENERATION_NOT_CONFIGURED',
+    'IMAGE_EDIT_NOT_CONFIGURED',
+    'VIDEO_GENERATION_NOT_CONFIGURED',
+  ].includes(code)
 }

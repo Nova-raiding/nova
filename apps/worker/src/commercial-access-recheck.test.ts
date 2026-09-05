@@ -15,14 +15,35 @@ function event(eventType = 'generation.requested', operation = 'generation.execu
 }
 
 describe('worker commercial recheck ordering', () => {
-  it('runs authorization, then commercial recheck, then the provider', async () => {
+  it('runs authorization, commercial recheck, final authorization, then the provider', async () => {
     const order: string[] = []
     const executionAuthorization = { assertAuthorized: vi.fn(async () => { order.push('authorization'); return {} as never }) } satisfies WorkerExecutionAuthorizationGuard
     const commercialAccess = { assertCommercialAccess: vi.fn(async () => { order.push('commercial'); return {} as never }) } satisfies WorkerCommercialAccessGuard
     const provider = vi.fn(async () => { order.push('provider'); return { body: 'ok' } as never })
     const handler = createOutboxHandler({ executionAuthorization, commercialAccess, generationRequested: provider })
     await handler({ event: event(), attempt: 1, now: Date.now() })
-    expect(order).toEqual(['authorization', 'commercial', 'provider'])
+    expect(order).toEqual(['authorization', 'commercial', 'authorization', 'provider'])
+  })
+
+  it('does not call the provider when authorization is revoked during commercial recheck', async () => {
+    let authorizationChecks = 0
+    const executionAuthorization = {
+      assertAuthorized: vi.fn(async () => {
+        authorizationChecks += 1
+        if (authorizationChecks === 2) throw Object.assign(new Error('grant revoked during admission'), { code: 'AUTHZ_EXECUTION_REVOKED', retryable: false, unknown: false })
+        return {} as never
+      }),
+    } satisfies WorkerExecutionAuthorizationGuard
+    const commercialAccess = { assertCommercialAccess: vi.fn(async () => undefined as never) } satisfies WorkerCommercialAccessGuard
+    const provider = vi.fn()
+    const handler = createOutboxHandler({ executionAuthorization, commercialAccess, generationRequested: provider })
+
+    await expect(handler({ event: event(), attempt: 1, now: Date.now() })).rejects.toMatchObject({
+      error: { code: 'AUTHZ_EXECUTION_REVOKED', retryable: false, unknown: false },
+    })
+    expect(executionAuthorization.assertAuthorized).toHaveBeenCalledTimes(2)
+    expect(commercialAccess.assertCommercialAccess).toHaveBeenCalledOnce()
+    expect(provider).not.toHaveBeenCalled()
   })
 
   it('does not call the provider when commercial readiness is stale or unavailable', async () => {

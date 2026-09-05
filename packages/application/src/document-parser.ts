@@ -42,6 +42,30 @@ function parseDelimitedText(text: string): ParsedDocumentFacts {
   }))
 }
 
+function parseCsvRows(text: string): ParsedDocumentFacts {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]!
+    if (character === '"') {
+      if (quoted && text[index + 1] === '"') { cell += '"'; index += 1 }
+      else quoted = !quoted
+    } else if (character === ',' && !quoted) { row.push(cell); cell = '' }
+    else if ((character === '\n' || character === '\r') && !quoted) {
+      if (character === '\r' && text[index + 1] === '\n') index += 1
+      row.push(cell); cell = ''
+      if (row.some(value => value.trim())) rows.push(row)
+      row = []
+    } else cell += character
+  }
+  if (cell || row.length) { row.push(cell); if (row.some(value => value.trim())) rows.push(row) }
+  if (rows.length < 2) throw new Error('CSV 必须包含表头和至少一行数据')
+  const header = rows[0]!.map(value => value.normalize('NFKC').trim())
+  return { format: 'csv', rows: rows.map(values => Object.fromEntries(header.map((name, index) => [name || `column_${index + 1}`, values[index] ?? '']))) }
+}
+
 async function parseXlsx(bytes: Uint8Array): Promise<ParsedDocumentFacts> {
   const zip = await JSZip.loadAsync(bytes)
   const sharedXml = zip.file('xl/sharedStrings.xml') ? await zip.file('xl/sharedStrings.xml')!.async('text') : ''
@@ -77,7 +101,8 @@ export async function parseDocumentFacts(input: { name: string; mimeType: string
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON 根节点必须是对象')
     return parsed as ParsedDocumentFacts
   }
-  if (mime.startsWith('text/') || /\.(csv|txt|md)$/u.test(name)) return parseDelimitedText(new TextDecoder().decode(input.body))
+  if (mime.includes('csv') || name.endsWith('.csv')) return parseCsvRows(new TextDecoder().decode(input.body))
+  if (mime.startsWith('text/') || /\.(txt|md)$/u.test(name)) return parseDelimitedText(new TextDecoder().decode(input.body))
   if (mime.includes('spreadsheet') || mime.includes('excel') || /\.(xlsx|xls)$/u.test(name)) return parseXlsx(input.body)
   if (mime.includes('wordprocessingml') || mime.includes('msword') || /\.(docx|doc)$/u.test(name)) {
     const result = await extractRawText({ buffer: Buffer.from(input.body) })

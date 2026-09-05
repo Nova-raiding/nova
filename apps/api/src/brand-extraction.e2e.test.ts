@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { server, service } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, service } from './server.js'
 
 type Envelope<T> = { data: T | null; error: { code: string; message: string } | null }
 
@@ -22,6 +22,8 @@ describe('brand extraction and explicit confirmation', () => {
   it('extracts read-only candidates and saves only merchant-confirmed fields', async () => {
     const base = await start()
     const workspaceId = `ws_brand_extract_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const asset = service.registerAsset({ workspaceId, name: '品牌手册.json', mimeType: 'application/json', sizeBytes: 128, sha256: 'b'.repeat(64), storageKey: `quarantine/${workspaceId}/brand.json` })
     service.updateAssetParse({ workspaceId, assetId: asset.id, state: 'succeeded', source: 'parser', facts: { 品牌名称: '云朵轻户外', 品牌定位: '城市轻户外', 品牌调性: ['克制', '清晰'], 品牌色: ['松石绿', '米白'] } })
@@ -43,13 +45,18 @@ describe('brand extraction and explicit confirmation', () => {
 
   it('rejects extraction before any brand material exists', async () => {
     const base = await start()
-    const response = await fetch(`${base}/v1/brand-profile/extract`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': `ws_empty_brand_${Date.now()}` }, body: '{}' }).then(json<any>)
+    const workspaceId = `ws_empty_brand_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const response = await fetch(`${base}/v1/brand-profile/extract`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: '{}' }).then(json<any>)
     expect(response.error?.code).toBe('BRAND_ASSETS_REQUIRED')
   })
 
   it('persists strong visual rules and blocks real generation entrypoints until font rights are approved', async () => {
     const base = await start()
     const workspaceId = `ws_brand_visual_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const invalid = await fetch(`${base}/v1/brand-profile`, { method: 'PUT', headers, body: JSON.stringify({ name: '视觉品牌', visual_rules: { colors: { primary: ['red'], secondary: [], forbidden: [] } } }) }).then(json<any>)
     expect(invalid.error?.code).toBe('BRAND_VISUAL_RULES_INVALID')

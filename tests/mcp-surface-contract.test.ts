@@ -36,12 +36,11 @@ const commercialDisabledMethods = new Set([
   'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert',
   'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.coupon.upsert', 'ops.commercial.rollouts.list',
   'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get', 'ops.commercial.model-markup.update',
-  'subscription.order.create', 'subscription.change', 'billing.recharge.create', 'catalog.image.generate',
-  'multimodal.image.edit', 'ops.marketing.generation.retry', 'merchant.first_value',
+  'subscription.order.create', 'subscription.change', 'billing.recharge.create', 'ops.marketing.generation.retry',
   'campaign.batch.generate', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.image.retry',
-  'brand.extract', 'brand.tone.preview', 'task.understand', 'creative.directions', 'creative.brief', 'creative.preview',
+  'brand.tone.preview', 'task.understand', 'creative.directions',
   'content.generate', 'content.codex.prepare', 'content.codex.commit', 'content.review', 'content.modify',
-  'automation.scan', 'automation.tick', 'multimodal.generate', 'multimodal.video.request', 'workspace.commercial.get',
+  'multimodal.generate', 'multimodal.video.request', 'workspace.commercial.get',
   'workspace.commercial.update', 'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund', 'billing.refund',
 ])
 
@@ -69,9 +68,10 @@ describe('MCP surface coverage', () => {
     const installedReadme = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/README.md', import.meta.url), 'utf8')
 
     expect(installedReadme).toBe(pluginReadme)
-    expect(rootReadme).toContain(`MCP 契约注册表为 ${MCP_METHODS.length} 个唯一方法，商家插件运行态为 ${merchantMethodCount} 个 MCP 工具`)
-    expect(status).toContain(`源码为 ${MCP_METHODS.length} 个唯一 MCP 方法、${merchantMethodCount} 个商家 bridge 工具`)
-    expect(pluginReadme).toContain(`tools/list\` 为 ${merchantMethodCount} 个 MCP 工具`)
+    expect(merchantMethodCount).toBe(140)
+    expect(rootReadme).toContain(`MCP 契约注册表为 ${MCP_METHODS.length} 个唯一方法，商家插件运行态为 140 个 MCP 工具`)
+    expect(status).toContain(`源码为 ${MCP_METHODS.length} 个唯一 MCP 方法、140 个商家 bridge 工具`)
+    expect(pluginReadme).toContain('tools/list` 为 140 个 MCP 工具')
   })
 
   it('keeps the 23 domain methods and four audit-center reads on the declared surface', () => {

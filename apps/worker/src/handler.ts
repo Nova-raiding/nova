@@ -77,7 +77,7 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
       })
     }
   }
-  const authorize = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
+  const recheckAuthorization = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
     let authorization
     try {
       authorization = await executionAuthorization.assertAuthorized(event, operation, signal)
@@ -97,8 +97,15 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
         ...(snapshot ? { decisionId: snapshot.decisionId, eventId: event.id, workspaceId: event.workspaceId, ...(snapshot.traceId ? { traceId: snapshot.traceId } : {}) } : { eventId: event.id, workspaceId: event.workspaceId }),
       })
     }
-    await commercialize(event, operation, signal)
     return authorization
+  }
+  const authorize = async (event: DurableOutboxEvent, operation: CriticalWorkerOperation, signal?: AbortSignal) => {
+    await recheckAuthorization(event, operation, signal)
+    await commercialize(event, operation, signal)
+    // Commercial admission can perform network and persistence work. Recheck
+    // after it completes so a grant revoked during that window cannot reach
+    // the provider connector.
+    return recheckAuthorization(event, operation, signal)
   }
   return async ({ event, signal }) => {
     throwIfLeaseLost(signal)
@@ -229,8 +236,15 @@ export function createOutboxHandler(options: WorkerHandlerOptions = {}): Durable
 
     if (['asset.uploaded', 'asset.generated_quarantined', 'asset.video_quarantined', 'asset.scan_redrive_requested'].includes(event.eventType) && options.scanRequested) {
       try {
-        if (event.eventType === 'asset.scan_redrive_requested') await authorize(event, 'asset.scan.execute', signal)
-        else await commercialize(event, 'asset.scan.execute', signal)
+        if (event.eventType === 'asset.scan_redrive_requested') {
+          // Redrives have an explicit persisted authorization snapshot. Keep
+          // its live check first so a malformed/expired authorization envelope
+          // fails with the authorization error before any commercial lookup.
+          // The scanner has no external provider side effect before this
+          // branch completes, so avoid a second identical check here.
+          await recheckAuthorization(event, 'asset.scan.execute', signal)
+          await commercialize(event, 'asset.scan.execute', signal)
+        } else await commercialize(event, 'asset.scan.execute', signal)
         const result = await options.scanRequested(event, projection, signal)
         throwIfLeaseLost(signal)
         return { value: result }

@@ -31,6 +31,14 @@ export function OpsWorkbenchSwitcher({
     if (wasSwitching.current && !switching) focusActiveWorkbenchControl(rootRef.current);
     wasSwitching.current = switching;
   }, [switching]);
+  // The workbench runtime is intentionally remounted when its authorization
+  // context changes. Restore focus after that remount as well, so a keyboard
+  // user can continue with ArrowLeft/ArrowRight without manually refocusing.
+  useEffect(() => {
+    if (switching) return undefined;
+    const frame = window.requestAnimationFrame(() => focusActiveWorkbenchControl(rootRef.current));
+    return () => window.cancelAnimationFrame(frame);
+  }, [switching, value]);
   const candidates = [...new Set(available)].filter(
     (candidate): candidate is OpsWorkbench => candidate === "platform" || candidate === "workspace",
   );

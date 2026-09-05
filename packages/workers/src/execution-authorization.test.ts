@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DurableOutboxEvent } from './durable.js'
-import { createExecutionAuthorizationGuard, createUnavailableExecutionAuthorizationGuard, executeAfterAuthorizationCheck, type WorkerAuthorizationSnapshot } from './execution-authorization.js'
+import { createExecutionAuthorizationGuard, createUnavailableExecutionAuthorizationGuard, executeAfterAuthorizationCheck, parseWorkerAuthorizationSnapshot, type WorkerAuthorizationSnapshot } from './execution-authorization.js'
 
 const now = Date.parse('2026-08-31T10:00:00.000Z')
 function event(overrides: Record<string, unknown> = {}): DurableOutboxEvent {
@@ -16,6 +16,23 @@ function event(overrides: Record<string, unknown> = {}): DurableOutboxEvent {
 }
 
 describe('worker execution-time authorization', () => {
+  it.each([
+    ['schema', { schema_version: 2 }],
+    ['scope hash', { scope_hash: 'not-a-sha256' }],
+    ['resource', { resource_id: 'publish_2' }],
+    ['workspace', { workspace_id: 'ws_b' }],
+    ['context', { context_id: 'workspace:ws_b' }],
+    ['capability', { capability: 'catalog.sync.execute' }],
+    ['authorized', { authorized: false }],
+    ['timestamp', { decided_at: 'not-a-timestamp' }],
+    ['grant ids', { grant_ids: ['grant_a', 2] }],
+  ])('rejects malformed %s snapshot directly at the parser boundary', (_field, override) => {
+    expect(() => parseWorkerAuthorizationSnapshot(event(override), 'publish.execute')).toThrowError(expect.objectContaining({
+      code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID',
+      retryable: false,
+    }))
+  })
+
   it('binds the enqueue snapshot to fresh authoritative execution evidence', async () => {
     const recheck = vi.fn(async ({ snapshot }: { snapshot: WorkerAuthorizationSnapshot }) => ({
       recheckId: 'decision_execute', actorId: snapshot.actorId, identityId: snapshot.identityId, workspaceId: 'ws_a', workbench: 'workspace' as const, contextId: 'workspace:ws_a', contextVersion: 'ctx_8', policyVersion: 'policy_4', grantRevision: 'grant_12', grantIds: snapshot.grantIds, scopeHash: snapshot.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish_1', resourceRevision: snapshot.resourceRevision, requestId: snapshot.requestId, traceId: snapshot.traceId, authorized: true, checkedAt: '2026-08-31T09:59:59.000Z',
@@ -23,6 +40,14 @@ describe('worker execution-time authorization', () => {
     const guard = createExecutionAuthorizationGuard(recheck, { now: () => now })
     await expect(guard.assertAuthorized(event(), 'publish.execute')).resolves.toMatchObject({ recheckId: 'decision_execute', authorized: true })
     expect(recheck).toHaveBeenCalledOnce()
+  })
+
+  it('accepts the same grant set regardless of ordering', async () => {
+    const recheck = vi.fn(async ({ snapshot }: { snapshot: WorkerAuthorizationSnapshot }) => ({
+      recheckId: 'decision_execute', actorId: snapshot.actorId, identityId: snapshot.identityId, workspaceId: 'ws_a', workbench: 'workspace' as const, contextId: 'workspace:ws_a', contextVersion: 'ctx_8', policyVersion: 'policy_4', grantRevision: 'grant_12', grantIds: ['grant_b', 'grant_a'], scopeHash: snapshot.scopeHash, capability: 'publish.execute' as const, resourceId: 'publish_1', resourceRevision: snapshot.resourceRevision, requestId: snapshot.requestId, traceId: snapshot.traceId, authorized: true, checkedAt: '2026-08-31T09:59:59.000Z',
+    }))
+    const guard = createExecutionAuthorizationGuard(recheck, { now: () => now })
+    await expect(guard.assertAuthorized(event({ grant_ids: ['grant_a', 'grant_b'] }), 'publish.execute')).resolves.toMatchObject({ authorized: true })
   })
 
   it('fails closed before recheck when the durable snapshot is missing or cross-tenant', async () => {

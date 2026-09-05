@@ -82,7 +82,8 @@ describe("Ops console marketing governance contract", () => {
     expect(model).toContain("authorizedOptional('workspace.commercial.get')");
     expect(model).toContain("authorizedOptional('workspace.health')");
     expect(model).toContain("authorizedOptional('ops.marketing.queue', marketingQueueParams(activeQueueFilters))");
-    expect(model).toContain("authorizedOptional('ops.alerts.list', alertListParams(activeAlertFilters, platformAlertScope))");
+    expect(model).toContain("deferredOptional('ops.alerts.list'");
+    expect(model).toContain('alertListParams(activeAlertFilters, platformAlertScope)');
     expect(app).toContain('export function marketingQueueParams(filters: QueueFilters)');
     expect(app).toContain('export function alertListParams(filters: AlertFilters, platformScope = false)');
     expect(app).toContain("平台告警筛选");
@@ -118,7 +119,8 @@ describe("Ops console marketing governance contract", () => {
 
   it("keeps platform operators on aggregate data sources", () => {
     expect(model).toContain("const platformOperator = resolvedAuthorization.scope.kind === 'platform';");
-    expect(model).toContain("platformOperator ? authorizedOptional('ops.audit.platform.list', { limit: '50' }) : authorizedOptional('ops.audit.list'");
+    expect(model).toContain("deferredOptional('ops.audit.platform.list'");
+    expect(model).toContain("authorizedOptional('ops.audit.list'");
     expect(model).toContain("platformOperator ? Promise.resolve(undefined) : authorizedOptional('ops.members.list')");
     expect(model).toContain("platformOperator ? Promise.resolve(undefined) : authorizedOptional('workspace.health')");
     expect(model).toContain("platformOperator ? Promise.resolve(undefined) : authorizedOptional('workspace.metrics')");

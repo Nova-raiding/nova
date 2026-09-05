@@ -7,6 +7,7 @@ import { LearningSuggestionsPanel } from "./knowledge/LearningSuggestionsPanel";
 import { MarketingQueuePanel } from "./knowledge/MarketingQueuePanel";
 import { UploadedAssetGovernance } from "./knowledge/UploadedAssetGovernance";
 import { DeliveryGovernancePanel } from "./knowledge/DeliveryGovernancePanel";
+import { ImageAuditPanel } from "./knowledge/ImageAuditPanel";
 
 interface KnowledgeGovernanceSectionProps {
   model: OpsConsoleModel;
@@ -100,6 +101,7 @@ export function KnowledgeGovernanceSection({
           },
         ]}
       />
+      <ImageAuditPanel />
       <UploadedAssetGovernance model={model} />
       <Alert
         type="info"

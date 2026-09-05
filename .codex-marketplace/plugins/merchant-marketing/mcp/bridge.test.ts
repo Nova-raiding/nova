@@ -11,6 +11,12 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { COMMERCIAL_OPERATION_REGISTRY, MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
 
 const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
+const TEST_DIRECTORY = fileURLToPath(new URL('.', import.meta.url))
+const MARKETPLACE_ROOT_MARKER = '/.codex-marketplace/'
+const REPOSITORY_ROOT = TEST_DIRECTORY.includes(MARKETPLACE_ROOT_MARKER)
+  ? TEST_DIRECTORY.slice(0, TEST_DIRECTORY.indexOf(MARKETPLACE_ROOT_MARKER))
+  : join(TEST_DIRECTORY, '../../..')
+const MARKETPLACE_BRIDGE_PATH = join(REPOSITORY_ROOT, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs')
 const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
 process.env.MERCHANT_ARTIFACT_DIR = TEST_ARTIFACT_DIR
 afterAll(async () => { await rm(TEST_ARTIFACT_DIR, { recursive: true, force: true }) })
@@ -80,12 +86,34 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
+  it('keeps merchant.start attachment_count aligned with the shared contract and byte-identical in marketplace', async () => {
+    const expectedSchema = MCP_METHOD_SCHEMAS['merchant.start'].properties.attachment_count
+    const sourceBytes = await readFile(BRIDGE_PATH)
+    const marketplaceBytes = await readFile(MARKETPLACE_BRIDGE_PATH)
+    expect(marketplaceBytes).toEqual(sourceBytes)
+
+    const listSchema = async (bridgePath: string) => {
+      const child = spawn(process.execPath, [bridgePath], { cwd: process.cwd(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] })
+      try {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+        const response = await nextLine(child.stdout)
+        return response.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').inputSchema.properties.attachment_count
+      } finally {
+        child.kill()
+      }
+    }
+
+    await expect(listSchema(BRIDGE_PATH)).resolves.toEqual(expectedSchema)
+    await expect(listSchema(MARKETPLACE_BRIDGE_PATH)).resolves.toEqual(expectedSchema)
+  })
+
   it('keeps the standalone recovery and disabled surfaces aligned with the shared exact registry', async () => {
     const enabledRecovery = COMMERCIAL_OPERATION_REGISTRY
       .filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && policy.enabled && policy.classification === 'RECOVERY_CONTROL')
       .map(policy => policy.operation)
     const disabledCommercial = COMMERCIAL_OPERATION_REGISTRY
       .filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && !policy.enabled)
+      .filter(policy => !['catalog.image.generate', 'multimodal.image.edit'].includes(policy.operation))
       .map(policy => policy.operation)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
@@ -250,10 +278,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.image.edit', arguments: { request_json: '{}' } } })}\n`)
       const imageEditResponse = await nextLine(child.stdout)
-      expect(imageEditResponse.result).toMatchObject({
-        isError: true,
-        structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' },
-      })
+      expect(imageEditResponse.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
       expect(imageEditResponse.result._meta).toBeUndefined()
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
@@ -880,7 +905,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260902004800' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {}, resources: {}, resourceTemplates: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260902004800' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -888,6 +913,8 @@ describe('Codex stdio MCP bridge', () => {
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-local-edit-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-candidate-choice-v15.html', mimeType: 'text/html;profile=mcp-app' }))
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'resources/templates/list' })}\n`)
+      expect((await nextLine(child.stdout)).result).toEqual({ resourceTemplates: [] })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'resources/read', params: { uri: 'ui://merchant-marketing/recharge-v1.html' } })}\n`)
       const rechargeUi = await nextLine(child.stdout)
       expect(rechargeUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' })
@@ -978,7 +1005,7 @@ describe('Codex stdio MCP bridge', () => {
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')
-      const disabledCommercial = new Set(COMMERCIAL_OPERATION_REGISTRY.filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && !policy.enabled).map(policy => policy.operation))
+      const disabledCommercial = new Set(COMMERCIAL_OPERATION_REGISTRY.filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && !policy.enabled).map(policy => policy.operation).filter(operation => !['catalog.image.generate', 'multimodal.image.edit'].includes(operation)))
       expect(listed.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([...new Set([...MCP_METHODS.filter(method => !method.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(method) && !disabledCommercial.has(method)), 'catalog.image.select'])].sort())
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.select')).toMatchObject({
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -1011,7 +1038,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').inputSchema.properties).toMatchObject({
         requested_platform: { type: 'string', enum: expect.arrayContaining(['jd']) },
         requested_goal: { type: 'string' },
-        attachment_count: { type: 'integer', minimum: 0 },
+        attachment_count: MCP_METHOD_SCHEMAS['merchant.start'].properties.attachment_count,
       })
       for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'publish.batch.get']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
@@ -1043,7 +1070,7 @@ describe('Codex stdio MCP bridge', () => {
         additionalProperties: false,
       })
       expect(workspaceMetrics.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'brand.extract')).toBeUndefined()
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'brand.extract')).toMatchObject({ name: 'brand.extract', annotations: { readOnlyHint: true } })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'brand-unit.list').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'campaign.batch.get').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'campaign.batch.create').inputSchema.required).toEqual(['brand_id'])
@@ -1082,6 +1109,7 @@ describe('Codex stdio MCP bridge', () => {
       const called = await nextLine(child.stdout)
       expect(called.result.isError).toBe(false)
       expect(requests[0]!.headers['x-workspace-id']).toBe('ws_test')
+      expect(requests[0]!.headers['x-ops-workbench']).toBe('workspace')
       expect(requests[0]!.body.method).toBe('workspace.metrics')
       expect(requests[0]!.body.params).toEqual({
         date_from: '2026-08-18T00:00:00+08:00',
@@ -1172,8 +1200,8 @@ describe('Codex stdio MCP bridge', () => {
       for await (const chunk of req) chunks.push(Buffer.from(chunk))
       const request = JSON.parse(Buffer.concat(chunks).toString('utf8'))
       const candidates = [
-        { visualRef: 'visual_secret_1', assetId: 'asset_secret_1', ordinal: 1, scanStatus: 'clean' },
-        { visualRef: 'visual_secret_2', assetId: 'asset_secret_2', ordinal: 2, scanStatus: request.params.job_id === 'job_dirty' ? 'quarantined' : 'clean' },
+        { visualRef: 'visual_secret_1', assetId: 'asset_secret_1', ordinal: 1, scanStatus: 'clean', reviewStatus: 'passed' },
+        { visualRef: 'visual_secret_2', assetId: 'asset_secret_2', ordinal: 2, scanStatus: request.params.job_id === 'job_dirty' ? 'quarantined' : 'clean', reviewStatus: 'passed' },
       ]
       const state = request.params.job_id === 'job_queued' ? 'queued' : request.params.job_id === 'job_failed' ? 'failed' : request.params.job_id === 'job_unknown' ? 'running' : undefined
       const result = request.params.visual_ref
@@ -1202,6 +1230,7 @@ describe('Codex stdio MCP bridge', () => {
         expected_input: { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 },
         selection_request: { job_id: 'job_secret', expected_revision: '7', candidates: [{ ordinal: 1, visual_ref: 'visual_secret_1', selectable: true, subject_label: '商品主体', availability_label: '可用' }, { ordinal: 2, visual_ref: 'visual_secret_2', selectable: true, subject_label: '商品主体', availability_label: '可用' }] },
         display_request: { job_id: 'job_secret' },
+        download_urls: [firstImageUrl, secondImageUrl],
       })
       expect(multiple.result.content[0]).toEqual({ type: 'text', text: '主图候选已准备好。' })
       expect(multiple.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(2)
@@ -1218,6 +1247,7 @@ describe('Codex stdio MCP bridge', () => {
         expected_input: { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 },
         selection_request: { job_id: 'job_secret', expected_revision: '7', candidates: [{ ordinal: 1, visual_ref: 'visual_secret_1', selectable: true, subject_label: '商品主体', availability_label: '可用' }] },
         display_request: { visual_ref: 'visual_secret_1' },
+        download_urls: [firstImageUrl],
       })
       expect(single.result.content[0]).toEqual({ type: 'text', text: '主图候选已准备好。' })
       expect(single.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(1)
@@ -1290,8 +1320,8 @@ describe('Codex stdio MCP bridge', () => {
     const images = ['data:image/png;base64,aW1hZ2Ux', 'data:image/png;base64,aW1hZ2Uy']
     const imageUrls = ['https://assets.example.test/candidate-1.png', 'https://assets.example.test/candidate-2.png']
     const candidates = [
-      { visualRef: 'visual_1', ordinal: 1, scanStatus: 'clean', subjectLabel: '白色运动鞋' },
-      { visualRef: 'visual_2', ordinal: 2, scanStatus: 'clean', subjectLabel: '白色运动鞋' },
+      { visualRef: 'visual_1', ordinal: 1, scanStatus: 'clean', reviewStatus: 'passed', subjectLabel: '白色运动鞋' },
+      { visualRef: 'visual_2', ordinal: 2, scanStatus: 'clean', reviewStatus: 'passed', subjectLabel: '白色运动鞋' },
     ]
     const tickets = {
       visual_1: { visual_ref: 'visual_1', nonce_hash: '1'.repeat(64), intent_hash: '2'.repeat(64), expires_at: '2099-01-01T00:00:00.000Z' },
@@ -1387,10 +1417,10 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
       const firstValue = listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.first_value')
-      expect(firstValue).toBeUndefined()
+      expect(firstValue).toMatchObject({ name: 'merchant.first_value', annotations: { readOnlyHint: true } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'merchant.first_value', arguments: { platform: 'taobao', account_id: 'acct_1', product_id: 'prod_1' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-      expect(requests).toEqual([])
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { preview: true } })
+      expect(requests).toHaveLength(1)
     } finally {
       child.kill()
       await close(server)
@@ -1944,7 +1974,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('does not return generated image bytes from a registry-disabled generation method', async () => {
+  it('forwards generated image bytes when the API authorizes the generation method', async () => {
     let requests = 0
     const server = createServer(async (_req, res) => {
       requests += 1
@@ -1963,9 +1993,8 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'product_1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-      expect(JSON.stringify(response.result)).not.toContain('PHN2Zy8+')
-      expect(requests).toBe(0)
+      expect(response.result).toMatchObject({ isError: false, structuredContent: { images: ['data:image/svg+xml;base64,PHN2Zy8+'] } })
+      expect(requests).toBe(1)
     } finally {
       child.kill()
       server.close()
@@ -2201,6 +2230,35 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('fails closed on a bare model-provider 503 without retrying an idempotent write', async () => {
+    let attempts = 0
+    const server = createServer(async (_req, res) => {
+      attempts += 1
+      res.writeHead(503, { 'content-type': 'text/plain' })
+      res.end('No available channel for model gpt-5.6-sol')
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.confirm', arguments: { task_id: 'task_1', confirmation_token: 'confirm_1' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { provider_status: 503, provider_outcome: 'unknown', reconciliation_required: true, next_action: 'query_provider', provider_error_summary: 'No available channel for model gpt-5.6-sol' } },
+      })
+      expect(response.result.structuredContent.details.provider_error_summary).toContain('No available channel for model gpt-5.6-sol')
+      expect(response.result.content[0].text).toContain('查询 Provider 状态或提交人工对账')
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('maps a relay 503 with no available model channel to unknown provider outcome', async () => {
     let attempts = 0
     const server = createServer(async (_req, res) => {
@@ -2285,6 +2343,37 @@ describe('Codex stdio MCP bridge', () => {
         },
       })
       expect(response.result.content[0].text).toBe('服务连接中断，尚未确认操作是否完成。请先查看任务状态，再决定是否重试。')
+      expect(attempts).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('does not retry an idempotent write after the bridge timeout makes its outcome unknown', async () => {
+    let attempts = 0
+    const server = createServer(async (_req, res) => {
+      attempts += 1
+      await new Promise(resolve => setTimeout(resolve, 200))
+      res.end(JSON.stringify({ data: { result: { status: 'ok' } } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_TIMEOUT_MS: '50', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '10' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
+      const confirmation = await nextLine(child.stdout)
+      expect(confirmation.result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: 'timeout safety' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: { code: 'API_UNAVAILABLE', details: { operation_status: 'unknown', retryable: false, timeout: true } },
+      })
+      expect(response.result.content[0].text).toContain('尚未确认操作是否完成')
       expect(attempts).toBe(1)
     } finally {
       child.kill()
@@ -2578,6 +2667,33 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('does not let strict auth bypass token verification for a loopback endpoint', async () => {
+    let requests = 0
+    const server = createServer((_req, res) => { requests += 1; res.writeHead(200).end('{}') })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'development',
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_WORKSPACE_ID: 'ws_test',
+        MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',
+        MERCHANT_STRICT_AUTH: 'true',
+        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
+      expect(requests).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it.each([
     [401, 'MCP_AUTH_REQUIRED', '当前服务配置尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'],
     [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
@@ -2654,6 +2770,32 @@ describe('Codex stdio MCP bridge', () => {
       })
       expect(response.result.content).toEqual([{ type: 'text', text: '当前账号没有执行这一步的权限。任务和已有内容已保留。' }])
       expect(requests).toBe(1)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('accepts a native JSON-RPC MCP success envelope from the configured endpoint', async () => {
+    const server = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 'upstream-1', result: { status: 'ok', workspace_id: 'ws_test' } }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result).toMatchObject({
+        isError: false,
+        structuredContent: {
+          conversation_state: { stage: 'connect_store', status: 'needs_input' },
+          expected_input: { kind: 'platform_selection' },
+        },
+      })
     } finally {
       child.kill()
       await close(server)

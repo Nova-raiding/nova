@@ -53,6 +53,19 @@ export function shouldConfirmWorkbenchTransition(
   return next !== current && unsavedLabels.length > 0;
 }
 
+export function workbenchSwitchWarning(
+  current: OpsWorkbench,
+  next: OpsWorkbench,
+  unsavedLabels: readonly string[],
+) {
+  const labels: Record<OpsWorkbench, string> = {
+    platform: "平台控制台",
+    workspace: "商家工作区",
+  };
+  const dirtyContent = unsavedLabels.join("、");
+  return `当前在${labels[current]}，切换到${labels[next]}将清除未保存内容：${dirtyContent}。该内容无法恢复。`;
+}
+
 export function opsSessionGateState(
   managed: boolean,
   sessionLoaded: boolean,
@@ -171,8 +184,6 @@ function Dashboard({
       canViewOpsDomain(domain, model.authorization);
     if (activeDomain === "rules" && activeWorkbench === "workspace" && canRead("rules"))
       void model.loadRules();
-    if (activeDomain === "finance" && activeWorkbench === "platform" && canRead("finance"))
-      void model.loadRechargeOrders();
     if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
     if (activeDomain === "users" && canRead("users")) void model.loadUsers();
   }, [activeDomain, model.canUserGovernance, model.opsSession?.actor_id]);
@@ -205,6 +216,7 @@ function Dashboard({
           managedSession={managedOpsSession}
           roles={model.opsSession?.roles}
           sessionLoaded={Boolean(model.opsSession)}
+          connectionError={sessionError}
           dataSource={model.dataSource}
           refreshing={model.loading}
           session={model.opsSession}
@@ -221,8 +233,6 @@ function Dashboard({
               void model.loadModelMarkup();
             if (canViewOpsDomain("rules", model.authorization))
               void model.loadRules();
-            if (canViewOpsDomain("finance", model.authorization))
-              void model.loadRechargeOrders();
             if (model.canUserGovernance && canViewOpsDomain("users", model.authorization))
               void model.loadUsers();
           }}
@@ -332,6 +342,7 @@ function OpsConsoleControllerContent() {
       <Modal
         open={Boolean(pendingWorkbench)}
         title="放弃未保存内容并切换工作台？"
+        aria-describedby="ops-workbench-switch-warning"
         okText="放弃并切换"
         cancelText="继续编辑"
         okButtonProps={{ danger: true }}
@@ -346,7 +357,9 @@ function OpsConsoleControllerContent() {
           commitWorkbench(target.next, target.pushHistory, target.prepare);
         }}
       >
-        当前未保存：{unsavedLabels.join("、")}。切换后这些内容会被清除且无法恢复。
+        <span id="ops-workbench-switch-warning" role="alert">
+          {pendingWorkbench ? workbenchSwitchWarning(activeWorkbench, pendingWorkbench.next, unsavedLabels) : ""}
+        </span>
       </Modal>
     </OpsAntAppBoundary>
   );

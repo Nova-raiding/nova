@@ -27,7 +27,7 @@ const validateTransition = (current: CanonicalBackfillRunStatus, next: Canonical
 const shouldClearCursor = (input: UpdateCanonicalBackfillRun) => input.status === 'completed' && input.cursorProductId === undefined
 const canRetryFailedRun = (run: CanonicalBackfillRun, nextStatus: CanonicalBackfillRunStatus) => {
   if (run.status !== 'failed' || nextStatus !== 'running') return
-  if (typeof run.lastResult.error !== 'string' || !run.lastResult.error.trim() || Array.isArray(run.lastResult.conflicts)) {
+  if (typeof run.lastResult.error !== 'string' || !run.lastResult.error.trim() || (Array.isArray(run.lastResult.conflicts) && run.lastResult.conflicts.length > 0) || ('conflicts' in run.lastResult && !Array.isArray(run.lastResult.conflicts))) {
     throw new CanonicalBackfillRunStateError(run.status, nextStatus)
   }
 }

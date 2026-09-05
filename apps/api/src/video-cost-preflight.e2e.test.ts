@@ -53,6 +53,7 @@ async function callMcp<T>(token: string, workspaceId: string, method: string, pa
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       'x-workspace-id': workspaceId,
+      'x-test-commercial-fixture': 'server-e2e',
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }),
   })
@@ -68,6 +69,8 @@ function resultOf<T>(response: Awaited<ReturnType<typeof callMcp<T>>>) {
 
 beforeAll(async () => {
   vi.stubEnv('NODE_ENV', 'test')
+  vi.stubEnv('CONNECTOR_FIXTURE_MODE', 'true')
+  vi.stubEnv('MERCHANT_TEST_APPROVED_RATES', 'true')
   vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
   vi.stubEnv('ALLOW_LOCAL_PAYMENT_FIXTURE', 'true')
   vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
@@ -117,6 +120,8 @@ describe('video cost preflight over the real HTTP boundary', () => {
       stock: 1,
     })
     api.service.confirmProductFacts(workspaceId, product.id)
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
 
     const recharge = resultOf<any>(await callMcp<any>(token, workspaceId, 'billing.recharge.create', {
       channel: 'wechat',

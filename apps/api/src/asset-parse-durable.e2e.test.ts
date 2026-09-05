@@ -55,6 +55,8 @@ describe('durable asset parse API wiring', () => {
   it('admits only one parser, returns BUSY with retry guidance, and replays durable facts without parser or duplicate debit', async () => {
     const base = await start()
     const workspaceId = `ws_parse_concurrent_${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     const assetId = await cleanImage(base, workspaceId, 'concurrent')
     const repository = new MemoryAssetParseRepository()
     let release!: (value: { facts: Record<string, unknown>; source: 'model_ocr' }) => void
@@ -93,6 +95,8 @@ describe('durable asset parse API wiring', () => {
     vi.stubEnv('ASSET_PARSE_TIMEOUT_MS', '20')
     vi.stubEnv('ASSET_PARSE_MAX_ATTEMPTS', '3')
 
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     const timeoutAssetId = await cleanImage(base, workspaceId, 'timeout')
     api.setAssetParseRuntimeForTests({ repository, parse: async () => await new Promise(() => undefined) })
     const timedOut = await mcp(base, workspaceId, 'asset.parse', { asset_id: timeoutAssetId })
@@ -128,6 +132,8 @@ describe('durable asset parse API wiring', () => {
   ] as const)('lets %s manual confirmation defeat an old parser %s outcome', async (endpoint, outcome) => {
     const base = await start()
     const workspaceId = `ws_parse_manual_race_${endpoint}_${outcome}_${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     const assetId = await cleanImage(base, workspaceId, `manual-race-${endpoint}-${outcome}`)
     const repository = new MemoryAssetParseRepository()
     let release!: () => void
@@ -159,6 +165,8 @@ describe('durable asset parse API wiring', () => {
   it.each(['mcp', 'rest'] as const)('does not mutate service when %s durable confirmation fails', async endpoint => {
     const base = await start()
     const workspaceId = `ws_parse_confirm_failure_${endpoint}_${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     const assetId = await cleanImage(base, workspaceId, `confirm-failure-${endpoint}`)
     const backing = new MemoryAssetParseRepository()
     const repository = new Proxy(backing, {

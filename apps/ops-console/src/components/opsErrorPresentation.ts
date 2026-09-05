@@ -12,6 +12,7 @@ export interface OpsErrorPresentation {
   decisionId?: string;
   reasonCode?: string;
   obligationsMissing?: string[];
+  findings?: Array<{ code: string; field?: string; message?: string }>;
   retryAfterSeconds?: number;
 }
 
@@ -123,6 +124,19 @@ function diagnostics(error: unknown, code: string | undefined) {
   const decisionId = typeof details?.decision_id === "string" && details.decision_id.trim() ? details.decision_id.trim() : undefined;
   const reasonCode = typeof details?.reason_code === "string" && details.reason_code.trim() ? details.reason_code.trim() : undefined;
   const obligationsMissing = normalizeDiagnosticTokens(details?.obligations_missing);
+  const findings = Array.isArray(details?.findings)
+    ? details.findings.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const value = item as Record<string, unknown>;
+      const findingCode = typeof value.code === "string" ? value.code.trim() : "";
+      if (!findingCode) return [];
+      return [{
+        code: findingCode,
+        ...(typeof value.field === "string" && value.field.trim() ? { field: value.field.trim() } : {}),
+        ...(typeof value.message === "string" && value.message.trim() ? { message: value.message.trim() } : {}),
+      }];
+    }).slice(0, 16)
+    : undefined;
   return {
     ...(code ? { code } : {}),
     ...(typeof value.requestId === "string" && value.requestId.trim() ? { requestId: value.requestId.trim() } : {}),
@@ -130,6 +144,7 @@ function diagnostics(error: unknown, code: string | undefined) {
     ...(decisionId ? { decisionId } : {}),
     ...(reasonCode ? { reasonCode } : {}),
     ...(obligationsMissing?.length ? { obligationsMissing } : {}),
+    ...(findings?.length ? { findings } : {}),
     ...(typeof value.retryAfterSeconds === "number" && Number.isFinite(value.retryAfterSeconds)
       ? { retryAfterSeconds: Math.max(0, Math.ceil(value.retryAfterSeconds)) }
       : {}),

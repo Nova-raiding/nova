@@ -26,8 +26,17 @@ describe('canonical backfill conflict queue safety', () => {
     })).toBe(false)
   })
 
+  it('allows an executor failure with an explicit empty conflict inventory to retry', () => {
+    expect(canonicalBackfillRunCanRetry({ error: 'temporary database timeout', conflicts: [] })).toBe(true)
+  })
+
   it('does not retry missing or malformed executor errors', () => {
     expect(canonicalBackfillRunCanRetry({})).toBe(false)
     expect(canonicalBackfillRunCanRetry({ error: 503 })).toBe(false)
+  })
+
+  it('fails closed when the conflicts field has an unknown shape', () => {
+    expect(canonicalBackfillRunCanRetry({ error: 'executor failed', conflicts: null })).toBe(false)
+    expect(canonicalBackfillRunCanRetry({ error: 'executor failed', conflicts: { code: 'MISSING_BRAND' } })).toBe(false)
   })
 })

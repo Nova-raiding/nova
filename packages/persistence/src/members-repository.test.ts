@@ -77,6 +77,23 @@ describe('PostgresMembersRepository', () => {
     expect(rows[0]).toMatchObject({ createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() })
     expect(query).toHaveBeenCalledWith("SELECT set_config('app.workspace_id', $1, true)", ['ws_1'])
   })
+
+  it('scopes each listMany workspace in its own transaction', async () => {
+    const calls: Array<{ sql: string; params?: unknown[] }> = []
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      calls.push({ sql, params })
+      if (sql.includes('FROM workspace_members')) return { rows: [{ id: 'member_1', workspaceId: params?.[0], externalSubject: 'user_1', displayName: '用户一', role: 'operator', status: 'active', invitedBy: 'admin', revision: 1, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }] }
+      return { rows: [] }
+    })
+    const client: SqlClient = { query: query as unknown as SqlClient['query'], release: vi.fn() }
+    const rows = await new PostgresMembersRepository({ connect: async () => client }).listMany(['ws_a', 'ws_a', 'ws_b'])
+
+    expect(rows.map(row => row.workspaceId)).toEqual(['ws_a', 'ws_b'])
+    expect(calls.filter(call => call.sql === 'BEGIN')).toHaveLength(2)
+    const scopes = calls.filter(call => call.sql.includes("set_config('app.workspace_id'"))
+    expect(scopes.map(call => call.params)).toEqual([['ws_a'], ['ws_b']])
+    expect(calls.filter(call => call.sql === 'COMMIT')).toHaveLength(2)
+  })
 })
 
 describe('MemoryMembersRepository', () => {

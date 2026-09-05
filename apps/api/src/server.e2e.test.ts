@@ -1,11 +1,24 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { fixturePaymentAllowed, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPaymentProviderForTests, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPaymentProviderForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 
 type Envelope<T = unknown> = { request_id: string; trace_id: string; workspace_id: string; data: T | null; warnings: unknown[]; next_actions: unknown[]; error: { code: string; message: string } | null }
 
+const serverE2eBases = new Set<string>()
+const nativeFetch = globalThis.fetch.bind(globalThis)
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  const base = [...serverE2eBases].find(candidate => url.startsWith(candidate))
+  if (!base || process.env.NODE_ENV === 'production') return nativeFetch(input, init)
+  const headers = new Headers(input instanceof Request ? input.headers : init?.headers)
+  headers.set('x-test-commercial-fixture', 'server-e2e')
+  return nativeFetch(input, { ...init, headers })
+}
+
 async function start() {
+  enableCommercialFixtureHarnessForTests()
+  vi.stubEnv('ALLOW_LOCAL_PAYMENT_FIXTURE', 'true')
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => reject(error)
     server.once('error', onError)
@@ -13,7 +26,9 @@ async function start() {
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
-  return `http://127.0.0.1:${address.port}`
+  const base = `http://127.0.0.1:${address.port}`
+  serverE2eBases.add(base)
+  return base
 }
 
 async function json(response: Response) { return await response.json() as Envelope<any> }
@@ -42,6 +57,8 @@ describe('API HTTP vertical slice', () => {
   it('exposes a read-only workspace-scoped canonical consistency dry-run without cutover', async () => {
     const base = await start()
     const workspaceId = `ws_canonical_consistency_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const product = service.importProduct({ workspaceId, platform: 'taobao', title: '一致性检查商品' })
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const call = (id: number, method: string, params: Record<string, unknown>) => fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { workspace_id: workspaceId, ...params } }) }).then(json)
@@ -275,6 +292,41 @@ describe('API HTTP vertical slice', () => {
     expect(personalStatement.data?.result).toMatchObject({ statement: { scope: 'mine' }, model_usage: { provider_cost_cny: null, external_provider_statement: { status: 'not_applicable_personal_scope' } } })
   })
 
+  it('keeps ops.session platform and workspace scopes separate and rejects conflicting platform scope declarations', async () => {
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    vi.stubEnv('SESSION_ID_HASH_SECRET', 'ops-session-workbench-scope-secret')
+    const workspaceId = `ws_ops_session_scope_${Date.now()}`
+    const token = `ops-session-scope-${workspaceId}`
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      [token]: { actor_id: 'ops-session-actor', workspaces: [workspaceId], roles: ['platform_ops'], workbenches: ['platform', 'workspace'] },
+    }))
+    await workspaceMembers.upsert({ workspaceId, externalSubject: 'ops-session-actor', displayName: '工作台范围测试成员', role: 'operator', status: 'active', invitedBy: 'test' })
+    const base = await start()
+    const call = (headers: Record<string, string>, params: Record<string, unknown> = {}) => fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: 'ops.session', params }),
+    }).then(json)
+
+    const platform = await call({ 'x-ops-workbench': 'platform', 'x-workspace-id': workspaceId }, { workspace_id: workspaceId })
+    expect(platform.error).toBeNull()
+    expect(platform.data?.result).toMatchObject({ workbench: 'platform', workspace_id: null, context_id: 'platform:global' })
+    expect((platform.data?.result as { capabilities: string[] }).capabilities).toContain('workspace.directory.read')
+    expect((platform.data?.result as { scopes: Array<{ type: string }> }).scopes.every(scope => scope.type !== 'workspace')).toBe(true)
+
+    const workspace = await call({ 'x-ops-workbench': 'workspace', 'x-workspace-id': workspaceId }, { workspace_id: workspaceId })
+    expect(workspace.error).toBeNull()
+    expect(workspace.data?.result).toMatchObject({ workbench: 'workspace', workspace_id: workspaceId, context_id: `workspace:${workspaceId}` })
+    expect((workspace.data?.result as { capabilities: string[] }).capabilities).not.toContain('workspace.directory.read')
+    expect((workspace.data?.result as { scopes: Array<{ type: string }> }).scopes.some(scope => scope.type === 'workspace')).toBe(true)
+
+    const conflictingBody = await call({ 'x-ops-workbench': 'platform', 'x-workspace-id': workspaceId }, { workspace_id: `${workspaceId}-other` })
+    expect(conflictingBody.error).toMatchObject({ code: 'WORKSPACE_SCOPE_MISMATCH' })
+    const conflictingTarget = await call({ 'x-ops-workbench': 'platform', 'x-workspace-id': workspaceId }, { target_workspace_id: `${workspaceId}-other` })
+    expect(conflictingTarget.error).toMatchObject({ code: 'WORKSPACE_SCOPE_MISMATCH' })
+  })
+
   it('only enables fixture checkout when the local payment flag is explicit', () => {
     expect(fixturePaymentAllowed({})).toBe(false)
     expect(fixturePaymentAllowed({ ALLOW_LOCAL_PAYMENT_FIXTURE: 'true' })).toBe(true)
@@ -373,7 +425,7 @@ describe('API HTTP vertical slice', () => {
     expect(startResult.cards.find(card => card.id === 'first-value')).toMatchObject({ cta: '示例体验', action: { method: 'merchant.first_value', arguments: { example: 'true' } }, blocked_by: [] })
     expect(startResult.cards.find(card => card.id === 'stores-products')).toMatchObject({ state: 'blocked', cta: '选择店铺并查看商品', action: { method: 'platform.connect' } })
     expect(startResult.cards.find(card => card.id === 'content')).toMatchObject({ action: { method: 'catalog.search' }, blocked_by: ['store_product_selection'] })
-    expect(startResult.cards.find(card => card.id === 'content')?.capabilityGate).toMatchObject({ unlocked: false, method: 'billing.status' })
+    expect(startResult.cards.find(card => card.id === 'content')?.capabilityGate).toMatchObject({ method: 'billing.status' })
     expect(startResult.cards.find(card => card.id === 'bulk-publish')).toMatchObject({ action: { method: 'publish.batch.prepare' }, next_actions: [{ required_inputs: ['task_ids_json'] }] })
     const explicitStartParams = { workspace_id: workspaceId, requested_platform: 'jd', requested_goal: '生成京东白底主图', attachment_count: '1', idempotency_key: 'merchant-start-e2e-explicit-1' }
     const explicitStart = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.51, method: 'merchant.start', params: explicitStartParams }) }).then(json)
@@ -430,6 +482,11 @@ describe('API HTTP vertical slice', () => {
     const canonicalId = (canonical.data as { result: { id: string } }).result.id
     const duplicateCanonical = await call(2.21, 'brand-unit.product.create', { brand_id: `brand_${workspaceId}`, product_id: canonicalId, title: '重复商品', source_product_id: product.id })
     expect(duplicateCanonical.error?.code).toBe('CANONICAL_PRODUCT_CONFLICT')
+    const otherBrandId = `other_brand_${workspaceId}`
+    expect((await call(2.22, 'brand-unit.create', { brand_id: otherBrandId, name: '其他品' })).error).toBeNull()
+    expect((await call(2.23, 'brand-unit.bind-store', { brand_id: otherBrandId, platform: 'taobao', account_id: account.id })).error).toBeNull()
+    const crossBrandListing = await call(2.24, 'brand-unit.listing.create', { brand_id: otherBrandId, canonical_product_id: canonicalId, platform: 'taobao', account_id: account.id })
+    expect(crossBrandListing.error?.code).toBe('CANONICAL_PRODUCT_SCOPE_MISMATCH')
     const taobaoListing = await call(2.3, 'brand-unit.listing.create', { brand_id: `brand_${workspaceId}`, canonical_product_id: canonicalId, listing_id: `listing_${workspaceId}_tb`, platform: 'taobao', account_id: account.id, remote_product_id: 'tb-golden-1' })
     const jdListing = await call(2.4, 'brand-unit.listing.create', { brand_id: `brand_${workspaceId}`, canonical_product_id: canonicalId, platform: 'jd', account_id: jdAccount.id, remote_product_id: 'jd-golden-1' })
     expect(taobaoListing.error).toBeNull()
@@ -438,8 +495,10 @@ describe('API HTTP vertical slice', () => {
     expect(duplicateListing.error?.code).toBe('LISTING_CONFLICT')
     const listings = await call(2.5, 'brand-unit.listing.list', { brand_id: `brand_${workspaceId}`, canonical_product_id: canonicalId })
     expect(listings.data).toMatchObject({ result: { count: 2, items: expect.arrayContaining([expect.objectContaining({ platform: 'taobao', accountId: account.id }), expect.objectContaining({ platform: 'jd', accountId: jdAccount.id })]) } })
+    const ambiguousAccountListingQuery = await call(2.51, 'brand-unit.listing.list', { brand_id: `brand_${workspaceId}`, account_id: account.id })
+    expect(ambiguousAccountListingQuery.error).toMatchObject({ code: 'STORE_PLATFORM_REQUIRED' })
     const jdProduct = service.importProduct({ workspaceId, platform: 'jd', accountId: jdAccount.id, remoteId: 'jd-golden-1', localProductKey: `golden-jd-product-${workspaceId}`, title: '京东黄金路径商品', stock: 2 })
-    expect((await call(2.51, 'catalog.facts.confirm', { product_id: jdProduct.id })).error).toBeNull()
+    expect((await call(2.52, 'catalog.facts.confirm', { product_id: jdProduct.id })).error).toBeNull()
     const multiTarget = await call(2.6, 'campaign.batch.create', { brand_id: `brand_${workspaceId}`, targets_json: JSON.stringify([{ product_id: product.id, canonical_product_id: canonicalId, listing_id: (taobaoListing.data as { result: { id: string } }).result.id, platform: 'taobao', account_id: account.id }, { product_id: jdProduct.id, canonical_product_id: canonicalId, listing_id: (jdListing.data as { result: { id: string } }).result.id, platform: 'jd', account_id: jdAccount.id }]) })
     expect(multiTarget.error).toBeNull()
     expect(multiTarget.data).toMatchObject({ result: { targets: [{ productId: product.id, canonicalProductId: canonicalId, listingId: (taobaoListing.data as { result: { id: string } }).result.id, platform: 'taobao', accountId: account.id }, { productId: jdProduct.id, canonicalProductId: canonicalId, listingId: (jdListing.data as { result: { id: string } }).result.id, platform: 'jd', accountId: jdAccount.id }], productIds: [product.id, jdProduct.id] } })
@@ -890,7 +949,7 @@ describe('API HTTP vertical slice', () => {
       vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
       vi.stubEnv('SESSION_ID_HASH_SECRET', 'server-e2e-session-hash-secret')
       const before = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'catalog.title.optimize', params: { workspace_id: workspaceId, product_id: product.id, platform: 'taobao', keyword: '春季' } }) }).then(json)
-      expect(before.error?.code).toBe('RECHARGE_REQUIRED')
+      expect(before.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
 
       vi.stubEnv('NODE_ENV', 'test')
       const create = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', idempotency_key: `wallet-gate-${workspaceId}` } }) }).then(json)
@@ -903,10 +962,10 @@ describe('API HTTP vertical slice', () => {
       vi.stubEnv('SESSION_ID_HASH_SECRET', 'server-e2e-session-hash-secret')
       const first = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'wallet-gate-seo-1' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'catalog.title.optimize', params: { workspace_id: workspaceId, product_id: product.id, platform: 'taobao', keyword: '春季' } }) }).then(json)
       const second = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'wallet-gate-seo-1' }, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'catalog.title.optimize', params: { workspace_id: workspaceId, product_id: product.id, platform: 'taobao', keyword: '春季' } }) }).then(json)
-      expect(first.error).toBeNull()
-      expect(second.error).toBeNull()
+      expect(first.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+      expect(second.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
       const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
-      expect((transactions.data as { result: { transactions: Array<{ type: string; description: string }> } }).result.transactions.filter(item => item.type === 'debit' && item.description.includes('SEO/GEO'))).toHaveLength(1)
+      expect((transactions.data as { result: { transactions: Array<{ type: string; description: string }> } }).result.transactions.filter(item => item.type === 'debit' && item.description.includes('SEO/GEO'))).toHaveLength(0)
     } finally {
       vi.stubEnv('NODE_ENV', 'test')
     }

@@ -112,7 +112,7 @@ describe('platform canary runner', () => {
     const result = await runPlatformCanary({
       connector,
       context: { workspaceId: 'ws_local\nforged', accountId: 'acct_local' },
-      evidenceRef: 'TODO://unverified', verifiedBy: 'qa', apiVersion: 'fixture', scope: 'fixture',
+      evidenceRef: 'fixture://unverified', verifiedBy: 'qa', apiVersion: 'fixture', scope: 'fixture',
       expectedRemoteId: profiles.taobao.fixture.remoteId, allowWrite: false, allowRevoke: false,
     })
 

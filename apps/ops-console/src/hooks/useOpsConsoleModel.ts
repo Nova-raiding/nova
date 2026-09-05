@@ -92,6 +92,7 @@ export const OPS_BACKGROUND_HYDRATION_POLICY = {
   "ops.marketing.summary": "marketing.summary.read",
   "ops.model-usage.summary": "billing.platform.read",
   "billing.model-usage.statement": "billing.workspace.read",
+  "ops.commercial.access.summary": "commercial.access.read",
   "ops.commercial.offers.list": "commercial.read",
   "ops.commercial.addons.list": "commercial.read",
   "ops.commercial.coupons.list": "commercial.read",
@@ -444,6 +445,9 @@ export function useOpsConsoleModel() {
   const [dataSetErrors, setDataSetErrors] = useState<Record<string, string>>({});
   const [dataSetErrorEvidenceByMethod, setDataSetErrorEvidence] = useState<Record<string, Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details">>>({});
   const loadCoordinatorRef = useRef(new OpsLoadCoordinator());
+  const rulesLoadCoordinatorRef = useRef(new OpsLoadCoordinator());
+  const rechargeOrdersLoadCoordinatorRef = useRef(new OpsLoadCoordinator());
+  const modelMarkupLoadCoordinatorRef = useRef(new OpsLoadCoordinator());
   const automationScopeRequestRef = useRef(0);
   const identityOperationKeysRef = useRef(new IdempotencyOperationKeys());
   const [memberForm] = Form.useForm();
@@ -472,6 +476,9 @@ export function useOpsConsoleModel() {
   // what the new projection allows.
   const clearAuthorizationScopedData = () => {
     loadCoordinatorRef.current.begin();
+    rulesLoadCoordinatorRef.current.invalidate();
+    rechargeOrdersLoadCoordinatorRef.current.invalidate();
+    modelMarkupLoadCoordinatorRef.current.invalidate();
     loadInFlightKeysRef.current.clear();
     cancelUserRequests();
     setSettings(undefined);
@@ -488,6 +495,7 @@ export function useOpsConsoleModel() {
     setReconciliation(undefined);
     setRechargeOrders(undefined);
     setRechargeOrdersError("");
+    setRechargeOrdersLoading(false);
     setOffers([]);
     setAddons([]);
     setCoupons([]);
@@ -503,6 +511,7 @@ export function useOpsConsoleModel() {
     setModelStatus(undefined);
     setRules([]);
     setRuleSyncStatuses([]);
+    setRuleSyncLoading(false);
     setKnowledgeRules([]);
     setKnowledgeAssets([]);
     setLearningSuggestions([]);
@@ -602,6 +611,12 @@ export function useOpsConsoleModel() {
         method: OpsBackgroundHydrationMethod,
         params: Record<string, string> = {},
       ) => allowedHydrationMethods.has(method) ? optional(method, params) : Promise.resolve(undefined);
+      const deferredOptional = (
+        method: OpsBackgroundHydrationMethod,
+        params: Record<string, string> = {},
+      ) => allowedHydrationMethods.has(method)
+        ? new Promise<Rpc["result"] | undefined>((resolve) => window.setTimeout(() => resolve(optional(method, params)), 300))
+        : Promise.resolve(undefined);
       const hasCustomerDataRole = resolvedAuthorization.canAny(["customer.content.read", "marketing.queue.read"]);
       // A local bearer can carry platform roles while the operator is still
       // on the workspace workbench. The request context, not raw roles, is
@@ -609,6 +624,21 @@ export function useOpsConsoleModel() {
       const platformOperator = resolvedAuthorization.scope.kind === 'platform';
       const platformAlertScope = platformOperator && resolvedAuthorization.can("marketing.summary.read");
       const platformStoreScope = platformOperator && resolvedAuthorization.can("platform.settings.read");
+      const commercialAccessAvailable = resolvedAuthorization.can("commercial.access.read");
+      const commercialTargetWorkspaceId = localStorage.getItem("ops_workspace_id")?.trim() ?? "";
+      const commercialAccessSummary = platformOperator && commercialAccessAvailable
+        ? commercialTargetWorkspaceId ? await authorizedOptional("ops.commercial.access.summary", { target_workspace_id: commercialTargetWorkspaceId }) : undefined
+        : undefined;
+      const commercialAccessDecision = commercialAccessSummary as {
+        allowed?: boolean;
+        error_code?: string;
+        error?: { code?: string };
+      } | undefined;
+      const commercialOperationAvailable = commercialAccessAvailable
+        && import.meta.env.VITE_OPS_BUILD_MODE !== "local"
+        && commercialAccessDecision?.allowed === true
+        && !commercialAccessDecision.error_code
+        && !commercialAccessDecision.error?.code;
       const [
         sessionResult,
         result,
@@ -648,8 +678,10 @@ export function useOpsConsoleModel() {
         // falls back to an empty workspace and renders every mutation form
         // disabled.
         sessionAttempted ? Promise.resolve(resolvedSession) : optional("ops.session"),
-        platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.commercial.get"),
-        platformOperator ? authorizedOptional("ops.audit.platform.list", { limit: "50" }) : authorizedOptional("ops.audit.list", {
+        platformOperator || import.meta.env.VITE_OPS_BUILD_MODE === "local"
+          ? Promise.resolve(undefined)
+          : authorizedOptional("workspace.commercial.get"),
+        platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "50" }) : authorizedOptional("ops.audit.list", {
           ...(localStorage.getItem("ops_workspace_id")?.trim() ? { workspace_id: localStorage.getItem("ops_workspace_id")!.trim() } : {}),
           limit: "50",
         }),
@@ -658,19 +690,19 @@ export function useOpsConsoleModel() {
           ? new Promise<void>((resolve) => window.setTimeout(resolve, 1_500)).then(() => authorizedOptional("ops.workspaces.list", { offset: "0", limit: "20" }))
           : Promise.resolve(undefined),
         platformStoreScope ? authorizedOptional("ops.stores.list", { platform_scope: "platform" }) : Promise.resolve(undefined),
-        platformStoreScope ? authorizedOptional("ops.brand-units.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformStoreScope ? deferredOptional("ops.brand-units.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("canonical.product.consistency"),
-        platformStoreScope ? authorizedOptional("ops.tasks.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
-        platformStoreScope ? authorizedOptional("ops.marketing.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
-        platformStoreScope ? authorizedOptional("ops.model-usage.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformStoreScope ? deferredOptional("ops.tasks.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformStoreScope ? deferredOptional("ops.marketing.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformStoreScope ? deferredOptional("ops.model-usage.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("billing.model-usage.statement", { limit: "50" }),
-        platformOperator ? authorizedOptional("ops.commercial.offers.list") : Promise.resolve(undefined),
-        platformOperator ? authorizedOptional("ops.commercial.addons.list") : Promise.resolve(undefined),
-        platformOperator ? authorizedOptional("ops.commercial.coupons.list") : Promise.resolve(undefined),
-        platformOperator ? authorizedOptional("ops.commercial.rollouts.list") : Promise.resolve(undefined),
-        platformOperator ? authorizedOptional("ops.growth.funnel", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.offers.list") : Promise.resolve(undefined),
+        platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.addons.list") : Promise.resolve(undefined),
+        platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.coupons.list") : Promise.resolve(undefined),
+        platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.rollouts.list") : Promise.resolve(undefined),
+        platformOperator ? deferredOptional("ops.growth.funnel", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.health"),
-        platformOperator ? authorizedOptional("ops.alerts.list", alertListParams(activeAlertFilters, platformAlertScope)) : Promise.resolve(undefined),
+        platformOperator ? deferredOptional("ops.alerts.list", alertListParams(activeAlertFilters, platformAlertScope)) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.data.delete.list", { limit: "50" }),
         !platformOperator && allowedHydrationMethods.has("platform.model.status") ? (async () => {
           try {
@@ -697,7 +729,10 @@ export function useOpsConsoleModel() {
           : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("automation.policy.get"),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("automation.policy.list"),
-        platformOperator ? Promise.resolve(undefined) : authorizedOptional("automation.scan"),
+        // Scanning is an explicit, potentially billable action. Do not run it
+        // during page hydration while commercial access is unknown/blocked;
+        // the user-facing scan action remains responsible for its own gate.
+        Promise.resolve(undefined),
       ]);
       if (!loadCoordinatorRef.current.isCurrent(loadRequest)) return;
       setDataSetErrors(failedDataSetErrors);
@@ -857,11 +892,13 @@ export function useOpsConsoleModel() {
   };
   const loadRules = async () => {
     if (!hasOpsConnection()) return;
+    const request = rulesLoadCoordinatorRef.current.begin();
     setRuleSyncLoading(true);
     const [rulesResult, syncResult] = await Promise.allSettled([
       rpc("rule.list"),
       rpc("rule.sync.status"),
     ]);
+    if (!rulesLoadCoordinatorRef.current.isCurrent(request)) return;
     setDataSetErrors(previous => {
       const next = { ...previous };
       if (rulesResult.status === "fulfilled") delete next["rule.list"];
@@ -1242,8 +1279,13 @@ export function useOpsConsoleModel() {
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = result.filename;
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
       anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      window.setTimeout(() => {
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      }, 0);
       message.success(result.truncated ? "已导出前 5000 条用户成员关系，请继续缩小筛选范围" : "用户目录已导出");
       return true;
     } catch (cause) {
@@ -1482,22 +1524,23 @@ export function useOpsConsoleModel() {
   const loadRechargeOrders = async (state = rechargeOrderStateFilter) => {
     if (!hasOpsConnection()) return false;
     const requestId = ++rechargeOrdersRequestRef.current;
+    const scopeRequest = rechargeOrdersLoadCoordinatorRef.current.begin();
     setRechargeOrderStateFilter(state);
     setRechargeOrdersLoading(true);
     setRechargeOrdersError("");
     try {
       const result = await rpc("billing.recharge.list", rechargeOrderListParams(state));
-      if (requestId === rechargeOrdersRequestRef.current)
+      if (requestId === rechargeOrdersRequestRef.current && rechargeOrdersLoadCoordinatorRef.current.isCurrent(scopeRequest))
         setRechargeOrders(result as unknown as RechargeOrderList);
       return true;
     } catch (cause) {
-      if (requestId === rechargeOrdersRequestRef.current) {
+      if (requestId === rechargeOrdersRequestRef.current && rechargeOrdersLoadCoordinatorRef.current.isCurrent(scopeRequest)) {
         setRechargeOrdersError(describeOpsError(cause));
         setRechargeOrders({ orders: [] });
       }
       return false;
     } finally {
-      if (requestId === rechargeOrdersRequestRef.current)
+      if (requestId === rechargeOrdersRequestRef.current && rechargeOrdersLoadCoordinatorRef.current.isCurrent(scopeRequest))
         setRechargeOrdersLoading(false);
     }
   };
@@ -1799,7 +1842,9 @@ export function useOpsConsoleModel() {
   };
   const createCompetitor = async (values: {
     competitorName: string;
-    sourceJson: string;
+    sourceUrl: string;
+    sourceTitle: string;
+    accessedAt: string;
     summary: string;
     structureJson: string;
     sellingPointsJson: string;
@@ -1811,14 +1856,13 @@ export function useOpsConsoleModel() {
     }
     try {
       [
-        values.sourceJson,
-        values.structureJson,
+      values.structureJson,
         values.sellingPointsJson,
         values.expressionJson,
       ].forEach((value) => JSON.parse(value));
       await rpc("knowledge.competitor.create", {
         competitor_name: values.competitorName,
-        source_json: values.sourceJson,
+        source_json: JSON.stringify({ url: values.sourceUrl, title: values.sourceTitle, accessedAt: values.accessedAt }),
         summary: values.summary,
         structure_json: values.structureJson,
         selling_points_json: values.sellingPointsJson,
@@ -1991,10 +2035,22 @@ export function useOpsConsoleModel() {
     }
   };
   const loadModelMarkup = async () => {
+    const request = modelMarkupLoadCoordinatorRef.current.begin();
     try {
+      if (import.meta.env.VITE_OPS_BUILD_MODE === "local") {
+        if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(undefined);
+        return;
+      }
+      const access = await rpc("ops.commercial.access.summary", { target_workspace_id: opsWorkspaceId }) as { error_code?: string };
+      if (!modelMarkupLoadCoordinatorRef.current.isCurrent(request)) return;
+      if (access.error_code === "COMMERCIAL_OPERATION_DISABLED") {
+        setModelMarkup(undefined);
+        return;
+      }
       const value = await rpc("ops.commercial.model-markup.get");
-      setModelMarkup(value as unknown as ModelMarkupPolicy);
+      if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(value as unknown as ModelMarkupPolicy);
     } catch (cause) {
+      if (!modelMarkupLoadCoordinatorRef.current.isCurrent(request)) return;
       message.error(
         cause instanceof Error ? cause.message : "计费倍率加载失败",
       );

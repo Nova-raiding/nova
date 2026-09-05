@@ -23,7 +23,9 @@ export class FakePlatformConnector implements PlatformConnector {
   async authorize(input: AuthorizeInput): Promise<AuthorizeResult> {
     this.throwFault('authorize')
     if (!this.options.configured) return { ok: false, platform: this.platform, mode: 'not_configured', code: 'NOT_CONFIGURED', message: `${this.platform} official API is not configured` }
-    return { ok: true, platform: this.platform, mode: 'fixture', authorizationUrl: `https://fixture.invalid/${this.platform}/authorize?state=${encodeURIComponent(input.state)}` }
+    // Fixture authorization is completed server-side by the local shortcut in
+    // `platform.connect`; never expose a dead external URL to the ChatGPT UI.
+    return { ok: true, platform: this.platform, mode: 'fixture', message: '本地 Fixture 演练无需打开外部链接，服务端将自动完成模拟授权。' }
   }
   async exchangeCode(input: { code: string; state: string; codeVerifier?: string; workspaceId?: string }): Promise<CredentialRef> {
     this.throwFault('exchangeCode'); if (!this.options.configured) this.notConfigured()

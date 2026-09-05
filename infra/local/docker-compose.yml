@@ -8,8 +8,12 @@ x-worker-environment: &worker-environment
   NODE_ENV: production
   DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
   REDIS_URL: redis://redis:6379
-  WORKER_WORKSPACES: ${WORKER_WORKSPACES:-auto}
-  WORKER_POLL_INTERVAL_MS: 500
+  # The local database contains historical QA workspaces. Do not make every
+  # local reconcile cycle fan out across that archive; production/staging can
+  # explicitly set WORKER_WORKSPACES=auto when catalog-wide reconciliation is
+  # intended.
+  WORKER_WORKSPACES: ${WORKER_WORKSPACES:-ws_demo,workspace_demo,demo-workspace}
+  WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-1000}
   STORAGE_RECONCILIATION_INTERVAL_MS: ${STORAGE_RECONCILIATION_INTERVAL_MS:-900000}
   WORKER_BATCH_SIZE: 100
   WORKER_WORKSPACE_BATCH_SIZE: 10
@@ -19,7 +23,9 @@ x-worker-environment: &worker-environment
   AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-90000}
   WORKER_API_TIMEOUT_MS: ${WORKER_API_TIMEOUT_MS:-360000}
   WORKER_DEPENDENCY_CHECK_INTERVAL_MS: ${WORKER_DEPENDENCY_CHECK_INTERVAL_MS:-10000}
-  WORKER_DB_POOL_MAX: 5
+  # Keep the local six-worker stack below the Postgres connection budget;
+  # browser acceptance must not starve API transactions.
+  WORKER_DB_POOL_MAX: ${WORKER_DB_POOL_MAX:-3}
   WORKER_DB_CONNECTION_TIMEOUT_MS: 3000
   WORKER_API_BASE_URL: http://api:8787
   OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
@@ -118,7 +124,8 @@ services:
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
       OPS_DATABASE_URL: postgres://merchant_ops:merchant_ops_local_only@postgres:5432/merchant
       REDIS_URL: redis://redis:6379
-      DB_POOL_MAX: 20
+      DB_POOL_MAX: ${DB_POOL_MAX:-8}
+      OPS_DB_POOL_MAX: ${OPS_DB_POOL_MAX:-3}
       RUN_MIGRATIONS_ON_STARTUP: "false"
       MAX_ACTIVE_JOBS_PER_WORKSPACE: ${MAX_ACTIVE_JOBS_PER_WORKSPACE:-3}
       REQUEST_BODY_LIMIT_BYTES: 52428800
@@ -152,6 +159,10 @@ services:
       # Local Compose defaults to the six-platform connector mock. Release
       # simulation and production manifests keep fixture mode disabled.
       CONNECTOR_FIXTURE_MODE: ${CONNECTOR_FIXTURE_MODE:-true}
+      # Enable the explicitly local fixture rate card so ChatGPT can exercise
+      # image generation without a real merchant subscription. This flag is
+      # ignored by production manifests and never authorizes real publishing.
+      MERCHANT_TEST_APPROVED_RATES: ${MERCHANT_TEST_APPROVED_RATES:-true}
       PERSISTENCE_MODE: ${PERSISTENCE_MODE:-postgres}
       ALLOW_LOCAL_PAYMENT_FIXTURE: "true"
       PLUGIN_WRITE_ENABLED: "false"
@@ -195,7 +206,7 @@ services:
       MODEL_RELAY_COST_EVIDENCE: ${MODEL_RELAY_COST_EVIDENCE:-false}
       MODEL_RELAY_TEXT_COST_EVIDENCE: ${MODEL_RELAY_TEXT_COST_EVIDENCE:-false}
       MODEL_RELAY_OCR_COST_EVIDENCE: ${MODEL_RELAY_OCR_COST_EVIDENCE:-false}
-      MODEL_RELAY_IMAGE_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_COST_EVIDENCE:-false}
+      MODEL_RELAY_IMAGE_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_COST_EVIDENCE:-true}
       MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE:-false}
       MODEL_RELAY_VIDEO_COST_EVIDENCE: ${MODEL_RELAY_VIDEO_COST_EVIDENCE:-false}
       MODEL_RELAY_PRICING_DERIVATION_ENABLED: ${MODEL_RELAY_PRICING_DERIVATION_ENABLED:-true}
@@ -229,7 +240,7 @@ services:
       # A scanner configured for real callbacks must not advertise API
       # readiness while the callback trust root is absent. This catches stale
       # local containers after .env changes before uploads become pending.
-      test: ["CMD-SHELL", "(test \"$${ASSET_SCANNER_MODE}\" != clamav_worker || test -n \"$${ASSET_SCAN_TRUSTED_PUBLIC_KEYS}\") && wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "(test \"$${NODE_ENV}\" != production || test \"$${ASSET_SCANNER_MODE}\" != clamav_worker || test -n \"$${ASSET_SCAN_TRUSTED_PUBLIC_KEYS}\") && wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -253,6 +264,7 @@ services:
       # customer-data bypass explicit on the replica so both API instances
       # enforce the same local acceptance policy.
       LOCAL_COMPOSE: "true"
+      MERCHANT_TEST_APPROVED_RATES: ${MERCHANT_TEST_APPROVED_RATES:-true}
       # The replica must use the same durable authorization/member projection
       # as the primary. Without this override `extends` falls back to the
       # in-memory repository and browser requests become replica-dependent.
@@ -280,6 +292,10 @@ services:
       MODEL_RELAY_ALLOWED_HOSTS: ${MODEL_RELAY_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
       IMAGE_ARTIFACT_ALLOWED_HOSTS: ${IMAGE_ARTIFACT_ALLOWED_HOSTS:-ai.wormholexyz.xyz}
       MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
+      MODEL_RELAY_IMAGE_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_COST_EVIDENCE:-true}
+      MODEL_RELAY_PRICING_DERIVATION_ENABLED: ${MODEL_RELAY_PRICING_DERIVATION_ENABLED:-true}
+      MODEL_RELAY_PRICING_GROUP: ${MODEL_RELAY_PRICING_GROUP:-SVIP}
+      MODEL_RELAY_IMAGE_PRICING_GROUP: ${MODEL_RELAY_IMAGE_PRICING_GROUP:-SVIP}
       AI_MODEL: ${AI_MODEL:-}
       AI_THINKING_MODE: ${AI_THINKING_MODE:-}
       AI_MAX_INPUT_TOKENS: ${AI_MAX_INPUT_TOKENS:-4000}
@@ -358,7 +374,9 @@ services:
       CLAMAV_MAX_FILE_BYTES: ${CLAMAV_MAX_FILE_BYTES:-52428800}
       SCANNER_HEARTBEAT_INTERVAL_MS: ${SCANNER_HEARTBEAT_INTERVAL_MS:-5000}
       SCANNER_HEARTBEAT_TTL_SECONDS: ${SCANNER_HEARTBEAT_TTL_SECONDS:-15}
-      SCANNER_DEFINITIONS_MAX_AGE_SECONDS: ${SCANNER_DEFINITIONS_MAX_AGE_SECONDS:-86400}
+      # Local acceptance tolerates an unchanged upstream signature database
+      # for 48h; production manifests keep the stricter 24h gate.
+      SCANNER_DEFINITIONS_MAX_AGE_SECONDS: ${SCANNER_DEFINITIONS_MAX_AGE_SECONDS:-172800}
       SCANNER_EICAR_MAX_AGE_SECONDS: ${SCANNER_EICAR_MAX_AGE_SECONDS:-900}
       SCANNER_CALLBACK_MAX_AGE_SECONDS: ${SCANNER_CALLBACK_MAX_AGE_SECONDS:-86400}
       SCANNER_MINIMUM_READY_INSTANCES: ${SCANNER_MINIMUM_READY_INSTANCES:-1}
@@ -384,6 +402,7 @@ services:
       # Check hourly so a once-daily scheduler cannot cross the strict
       # 24-hour signature freshness gate between checks.
       FRESHCLAM_CHECKS: "24"
+      CLAMAV_DEFINITIONS_MAX_AGE_SECONDS: ${CLAMAV_DEFINITIONS_MAX_AGE_SECONDS:-172800}
       HTTP_PROXY: ${CONTAINER_HTTP_PROXY:-}
       HTTPS_PROXY: ${CONTAINER_HTTPS_PROXY:-}
     expose: ["3310"]
@@ -397,7 +416,7 @@ services:
       - clamav-database:/var/lib/clamav
       - ./clamav-supervisor.sh:/opt/merchant/clamav-supervisor.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "clamdscan --ping 1 >/dev/null 2>&1 && version=$$(clamdscan --version) && published=$${version#*/*/} && published_epoch=$$(date -d \"$$published\" +%s) && [ $$(( $$(date +%s) - $$published_epoch )) -le 86400 ]"]
+      test: ["CMD-SHELL", "clamdscan --ping 1 >/dev/null 2>&1 && version=$$(clamdscan --version) && published=$${version#*/*/} && published_epoch=$$(date -d \"$$published\" +%s) && [ $$(( $$(date +%s) - $$published_epoch )) -le $${CLAMAV_DEFINITIONS_MAX_AGE_SECONDS} ]"]
       interval: 15s
       timeout: 10s
       retries: 20

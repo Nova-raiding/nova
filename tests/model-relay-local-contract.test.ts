@@ -56,10 +56,10 @@ describe('local model relay contract', () => {
 
     await expect(emitRelayUsage(
       async () => {},
-      { id: 'provider-request-1', usage: { total_tokens: 3 } },
+      { id: 'provider-request-1', usage: { total_tokens: 3, cost_cny: 0.01 } },
       new Headers(),
       { modality: 'text', model: 'text-v1', context: { providerAttemptId: 'attempt-cost' } },
-    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'sink' })
 
     await expect(emitRelayUsage(
       async () => {},
@@ -72,7 +72,7 @@ describe('local model relay contract', () => {
   it.each(modalities)('requires complete usage/cost/request identity evidence for %s', async modality => {
     const sinkRecords: unknown[] = []
     const usage = await emitRelayUsage(
-      record => { sinkRecords.push(record) },
+      record => { sinkRecords.push(record); return { recorded: true, costEvidence: true } },
       { id: `completion-${modality}`, provider_request_id: `provider-${modality}`, usage: { total_tokens: 3, cost_cny: 0.01 } },
       new Headers(),
       { modality, model: `${modality}-v1`, context: { workspaceId: 'ws-test', providerAttemptId: `attempt-${modality}` } },

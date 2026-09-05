@@ -155,6 +155,17 @@ describe("OpsPageError", () => {
     expect(markup).toContain("mfa, approval");
   });
 
+  it("renders bounded review findings returned by the server", () => {
+    const error = Object.assign(new Error("blocked"), {
+      code: "REVIEW_BLOCKED",
+      details: { findings: [{ code: "MISSING_BRAND", field: "brand", message: "品牌证据缺失" }] },
+    });
+    const markup = renderToStaticMarkup(<OpsPageError error={error} />);
+    expect(markup).toContain("审核阻断项");
+    expect(markup).toContain("MISSING_BRAND");
+    expect(markup).toContain("品牌证据缺失");
+  });
+
   it("trims and bounds server-projected denial evidence", () => {
     const error = Object.assign(new Error("forbidden"), {
       code: "FORBIDDEN",

@@ -36,12 +36,12 @@ describe('relay usage normalization', () => {
   })
 
   it('normalizes provider usage and request identity inside the API envelope result', () => {
-    const usage = parseRelayUsage({ data: { result: { request_id: 'request_result', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10, cost_cny: '0.02' } } } }, new Headers(), { modality: 'text', model: 'relay-text' })
+    const usage = parseRelayUsage({ data: { result: { request_id: 'request_result', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 }, cost_cny: '0.02' } } }, new Headers(), { modality: 'text', model: 'relay-text' })
     expect(usage).toMatchObject({ providerRequestId: 'request_result', inputTokens: 7, outputTokens: 3, totalTokens: 10, costCny: 0.02, metadata: { usage_observed: true } })
   })
 
   it('records an unmetered provider response instead of silently losing cost evidence', () => {
-    expect(parseRelayUsage({ data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ modality: 'image', model: 'image-v1', metadata: { usage_observed: false } })
+    expect(parseRelayUsage({ data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ modality: 'image', model: 'image-v1', metadata: { usage_observed: true } })
   })
 
   it('does not treat a cost-only response as usage evidence', async () => {
@@ -63,7 +63,7 @@ describe('relay usage normalization', () => {
   it('marks usage as recorded only after the sink succeeds', async () => {
     let metadataAtSink: Record<string, unknown> | undefined
     const usage = await emitRelayUsage(
-      value => { metadataAtSink = { ...(value.metadata ?? {}) } },
+      value => { metadataAtSink = { ...(value.metadata ?? {}) }; return { recorded: true, costEvidence: true } },
       { id: 'req_recorded', usage: { total_tokens: 3, cost_cny: 0.01 } },
       new Headers(),
       { modality: 'text', model: 'merchant-v1', context: { workspaceId: 'ws_usage', actionId: 'action_recorded', providerAttemptId: 'attempt_recorded' } },
@@ -89,7 +89,7 @@ describe('relay usage normalization', () => {
       { id: 'req_unrecorded_cost', usage: { total_tokens: 3 } },
       new Headers({ 'x-request-id': 'request_unrecorded_cost' }),
       { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_unrecorded_cost' } },
-    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost' })
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'sink' })
   })
 
   it('fails closed on a malformed settlement receipt even when provider cost exists', async () => {
@@ -141,7 +141,7 @@ describe('relay usage normalization', () => {
       missing === 'usage' ? { id: payload.id } : payload,
       new Headers(),
       { modality: 'text', model: 'relay-text', context: { providerAttemptId: `attempt_${missing}` } },
-    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing })
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: missing === 'usage' ? 'usage' : 'cost' })
   })
 
   it('fails closed when production settlement sink is missing', async () => {
@@ -151,6 +151,15 @@ describe('relay usage normalization', () => {
       new Headers(),
       { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_missing_sink' } },
     )).rejects.toBeInstanceOf(ModelUsageEvidenceMissingError)
+  })
+
+  it('fails closed when a sink records nothing even if the provider returned cost', async () => {
+    await expect(emitRelayUsage(
+      async () => {},
+      { id: 'req_unrecorded', usage: { total_tokens: 3, cost_cny: 0.01 } },
+      new Headers(),
+      { modality: 'text', model: 'relay-text', context: { providerAttemptId: 'attempt_unrecorded' } },
+    )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'sink' })
   })
 
   it('fails closed when metering has no provider request or attempt identity', async () => {

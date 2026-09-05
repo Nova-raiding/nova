@@ -127,7 +127,6 @@ function relayResponse() {
   harness.modelCalls += 1
   const usage: Record<string, number> = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
   if (harness.costCny !== undefined) usage.cost_cny = harness.costCny
-  const factSourceId = 'product:usage-settlement:v1'
   return new Response(JSON.stringify({
     id: harness.providerRequestId,
     choices: [{ message: { content: JSON.stringify({
@@ -135,22 +134,27 @@ function relayResponse() {
       detail: '只使用已确认商品事实的测试文案。',
       sellingPoints: ['事实可追溯'],
       modules: [{
-        key: 'facts',
-        title: '商品事实',
-        purpose: '展示已确认商品事实',
-        body: '只使用已确认商品事实的测试文案。',
-        factSourceIds: [factSourceId],
+        key: 'verified-fact',
+        title: '事实卖点',
+        purpose: '验证结算链路',
+        body: '基于已确认事实生成测试内容。',
+        factSourceIds: ['fixture:confirmed-fact'],
         contentKind: 'fact',
         decisionContract: {
-          buyerQuestion: '商品信息是否有事实依据？',
-          pageTask: '展示可追溯的商品事实',
-          claim: { text: '商品信息来自已确认事实', factSourceIds: [factSourceId], platforms: ['taobao'], limitations: ['仅用于模型用量结算回归'] },
-          evidence: { type: 'parameter', sourceIds: [factSourceId], status: 'verified' },
-          visualContract: { requiredElements: ['商品事实'], protectedElements: [], prohibitedImplications: ['不得编造未确认事实'], accessibilityText: '已确认商品事实' },
+          buyerQuestion: '商品有什么特点？',
+          pageTask: '展示已确认事实',
+          claim: { text: '事实可追溯', factSourceIds: ['fixture:confirmed-fact'], platforms: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'], limitations: [] },
+          evidence: { type: 'parameter', sourceIds: ['fixture:confirmed-fact'], status: 'verified' },
+          visualContract: { requiredElements: ['商品主体'], protectedElements: [], prohibitedImplications: [], accessibilityText: '事实可追溯' },
           priority: 1,
           optional: false,
         },
       }],
+      brief: {
+        platform: 'taobao', placement: '商品详情页', targetDimensions: '按目标平台版位规范配置，未配置时由设计确认',
+        visualHierarchy: ['商品主体'], productImageGuidance: '展示商品主体', logoSafety: '不得修改标识', headline: '结算测试标题',
+        subheadline: '事实可追溯', coreSellingPoint: '事实可追溯', cta: '了解更多', textDensity: 'standard', safeArea: '保留安全区', protectedAreas: ['商品主体'],
+      },
     }) } }],
     usage,
   }), { status: 200, headers: { 'content-type': 'application/json', 'x-request-id': harness.providerRequestId } })
@@ -173,7 +177,6 @@ async function generate(workspaceId: string, actionId: string) {
     skuCount: product.skuCount,
     price: product.price,
     category: product.category,
-    attributes: product.attributes,
   })
   api.service.confirmProductFacts(workspaceId, owned.id)
   return api.service.generateOneSentenceText({ workspaceId, productId: owned.id, prompt: '生成一句事实安全文案', actionId })
@@ -407,6 +410,8 @@ describe('API model usage settlement invariants', () => {
     const fallbackActionId = `image:${actionId.slice('image-addon:'.length)}`
     const runKey = `task:${actionId}`
     const providerRequestId = `addon-receipt-${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     await harness.modelUsage!.reserveDailyBudget({ workspaceId, reservationKey: actionId, runKey, modality: 'image', model: 'relay-image-test', estimateCny: 1, estimateVersion: 'test-v1', dailyLimitCny: 100, runLimitCny: 10 })
     await harness.actionLedger!.record({
       workspaceId,
@@ -461,6 +466,8 @@ describe('API model usage settlement invariants', () => {
     const workspaceId = `ws_entitlement_reconcile_${Date.now()}`
     const actionId = `image:entitlement-reconcile-${Date.now()}`
     const providerRequestId = `entitlement-provider-${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     await authorizeAction(workspaceId, actionId, 'entitlement')
     const pending = await harness.modelUsage!.record({ workspaceId, actionId, budgetReservationKey: actionId, budgetRunKey: actionId, modality: 'text', model: 'relay-text-test', providerRequestId, costCny: 0.02, customerChargeCny: 0, markupMultiplier: 1, pricingPolicyRevision: 1, settlementStatus: 'pending_wallet' })
 
@@ -564,6 +571,8 @@ describe('API model usage settlement invariants', () => {
 
   it('returns authoritative decisions and requires reason plus evidence for manual resolution', async () => {
     const workspaceId = `ws_manual_resolution_${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     const pending = await harness.modelUsage!.record({ workspaceId, modality: 'text', model: 'relay-text', providerRequestId: `req-manual-${Date.now()}`, settlementStatus: 'pending_cost' })
     const retryable = await harness.modelUsage!.record({ workspaceId, modality: 'text', model: 'relay-text', providerRequestId: `req-retry-${Date.now()}`, costCny: 0.02, customerChargeCny: 0.05, settlementStatus: 'pending_wallet' })
     vi.stubEnv('NODE_ENV', 'test')

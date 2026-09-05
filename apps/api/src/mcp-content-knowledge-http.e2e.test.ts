@@ -106,6 +106,10 @@ describe('content and knowledge MCP methods over real HTTP', () => {
       api.workspaceMembers.upsert({ workspaceId, externalSubject: actors.owner, displayName: actors.owner, role: 'workspace_owner', status: 'active', invitedBy: 'mcp-http-e2e' }),
       api.workspaceMembers.upsert({ workspaceId, externalSubject: actors.operator, displayName: actors.operator, role: 'operator', status: 'active', invitedBy: 'mcp-http-e2e' }),
     ])
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
+    await api.grantCreativePointsForTests(foreignWorkspaceId)
+    api.grantContinuousFeatureEntitlementForTests(foreignWorkspaceId)
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
       [tokens.rules]: { workspaces: [workspaceId], actor_id: actors.rules, roles: ['workspace_owner', 'rules_admin'] },
       [tokens.owner]: { workspaces: [workspaceId], actor_id: actors.owner, roles: ['workspace_owner'] },
@@ -251,13 +255,14 @@ describe('content and knowledge MCP methods over real HTTP', () => {
     }))
     expect(reference).toMatchObject({ referenceMode: 'differentiation_only', compliance: { originalTextCopied: false, competitorBrandReused: false } })
 
-    const recharge = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'billing.recharge.create', {
+    const recharge = await callMcp(tokens.rules, workspaceId, 'billing.recharge.create', {
       channel: 'alipay',
       amount_cny: '10.00',
       idempotency_key: `video-wallet-${suffix}`,
-    }))
-    resultOf(await callMcp(tokens.rules, workspaceId, 'billing.recharge.get', { order_id: recharge.id, confirm_test_payment: 'true' }))
-    const videoRequest = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'multimodal.video.request', {
+    })
+    expect(recharge.status).toBe(503)
+    expect(recharge.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    const videoRequest = await callMcp(tokens.rules, workspaceId, 'multimodal.video.request', {
       prompt: '生成基于已确认商品事实的通勤场景短视频',
       output: 'rendering',
       context_json: JSON.stringify({
@@ -265,12 +270,10 @@ describe('content and knowledge MCP methods over real HTTP', () => {
         product: { id: product.id, version: String(product.version) },
         rules: [{ id: rule.id, version: rule.version }],
       }),
-    }))
-    expect(videoRequest).toMatchObject({ rendering: { status: 'queued', providerJobId: 'video-job-http-e2e' } })
-
-    const video = resultOf<any>(await callMcp(tokens.rules, workspaceId, 'multimodal.video.get', { provider_job_id: 'video-job-http-e2e' }))
-    expect(video).toMatchObject({ provider_job_id: 'video-job-http-e2e', status: 'completed', videoUrl: 'https://cdn.example.test/video-job-http-e2e.mp4', execution: { providerExecuted: true } })
-    expect(videoRelay.getStatus).toHaveBeenCalledWith('video-job-http-e2e')
+    })
+    expect(videoRequest.status).toBe(503)
+    expect(videoRequest.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    expect(videoRelay.generate).not.toHaveBeenCalled()
 
     const missingRequired = await callMcp(tokens.rules, workspaceId, 'generation.get')
     expect(missingRequired.status).toBe(400)

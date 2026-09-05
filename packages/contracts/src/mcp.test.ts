@@ -181,7 +181,9 @@ describe('MCP method contract', () => {
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].required).toEqual(['brand_id', 'platform', 'account_id'])
     expect(MCP_METHOD_SCHEMAS['brand-unit.bind-store'].properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
     expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].required).toEqual(['brand_id'])
-    expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].properties.product_ids_json).toEqual({ type: 'string' })
+    expect(MCP_METHOD_SCHEMAS['campaign.batch.create'].properties.product_ids_json).toMatchObject({ type: 'string', description: expect.stringContaining('1 至 50') })
+    expect(MCP_METHOD_SCHEMAS['campaign.batch.generate'].properties.request_text).toMatchObject({ type: 'string', description: expect.stringContaining('素材类型') })
+    expect(MCP_METHOD_SCHEMAS['catalog.import.batch'].requiredAnyOf).toEqual(['products_json', 'source_asset_id'])
     expect(MCP_METHOD_SCHEMAS['ops.user.detail'].required).toBeUndefined()
     expect(MCP_METHOD_SCHEMAS['ops.user.risk.transition']).toMatchObject({
       required: ['identity_id', 'risk_level', 'risk_decision', 'expected_revision', 'idempotency_key', 'reason'],

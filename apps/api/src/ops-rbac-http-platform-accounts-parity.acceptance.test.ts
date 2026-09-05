@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { creativePointsForTests, operationAudits, server, setAuthorizationRepositoryForTests, service, workspaceMembers } from './server.js'
+import { creativePointsForTests, grantContinuousFeatureEntitlementForTests, operationAudits, server, setAuthorizationRepositoryForTests, service, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 
 type Envelope = {
@@ -160,6 +160,7 @@ describe('Ops HTTP/MCP platform account list parity', () => {
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
     service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `platform-accounts-${workspaceId}`, credentialRef: `vault://platform-accounts/${workspaceId}` })
     await creativePointsForTests.grant({ workspaceId, idempotencyKey: `platform-accounts-allow-${workspaceId}`, sourceType: 'test_fixture', sourceId: `platform-accounts-allow-${workspaceId}`, points: 100 })
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     configureToken('platform-accounts-allow-token', actorId, [workspaceId])
     const base = await start()
 
@@ -253,6 +254,7 @@ describe('Ops HTTP/MCP platform account list parity', () => {
     const localAccount = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `revoke-local-${workspaceId}`, credentialRef: `vault://revoke/${workspaceId}` })
     const foreignAccount = service.registerPlatformAccount({ workspaceId: foreignWorkspaceId, platform: 'taobao', remoteAccountId: `revoke-foreign-${foreignWorkspaceId}`, credentialRef: `vault://revoke/${foreignWorkspaceId}` })
     await creativePointsForTests.grant({ workspaceId, idempotencyKey: `revoke-scope-${workspaceId}`, sourceType: 'test_fixture', sourceId: `revoke-scope-${workspaceId}`, points: 100 })
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     configureToken('revoke-scope-owner-token', actorId, [workspaceId])
     const base = await start()
 
@@ -268,5 +270,30 @@ describe('Ops HTTP/MCP platform account list parity', () => {
     expect(mcp.body.error).toMatchObject({ code: 'FORBIDDEN', details: { required_scope: 'account', reason_code: 'AUTHZ_SCOPE_MISMATCH' } })
     expect(JSON.stringify(mcp.body)).not.toContain(foreignWorkspaceId)
     expect(JSON.stringify(mcp.body)).not.toContain(foreignAccount.id)
+  })
+
+  it('denies a foreign account selector over both HTTP and MCP before revoke handling', async () => {
+    const workspaceId = `ws_revoke_foreign_${Date.now()}`
+    const foreignWorkspaceId = `${workspaceId}_foreign`
+    const actorId = `revoke-foreign-owner-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `revoke-local-${workspaceId}`, credentialRef: `vault://revoke/${workspaceId}` })
+    const foreignAccount = service.registerPlatformAccount({ workspaceId: foreignWorkspaceId, platform: 'taobao', remoteAccountId: `revoke-foreign-${foreignWorkspaceId}`, credentialRef: `vault://revoke/${foreignWorkspaceId}` })
+    configureToken('revoke-foreign-owner-token', actorId, [workspaceId])
+    const base = await start()
+
+    const [http, mcp] = await Promise.all([
+      callRevokeHttp(base, 'revoke-foreign-owner-token', workspaceId, 'taobao', foreignAccount.id),
+      callRevokeMcp(base, 'revoke-foreign-owner-token', workspaceId, 'taobao', foreignAccount.id),
+    ])
+
+    for (const result of [http, mcp]) {
+      expect(result.response.status, JSON.stringify(result.body)).toBe(403)
+      expect(result.body).toMatchObject({ data: null, error: { code: 'FORBIDDEN', details: { required_scope: 'account', reason_code: 'AUTHZ_SCOPE_MISMATCH' } } })
+      expect(result.body.request_id).toMatch(/^req_/)
+      expect(result.body.trace_id).toBe(result.body.request_id)
+      expect(JSON.stringify(result.body)).not.toContain(foreignWorkspaceId)
+      expect(JSON.stringify(result.body)).not.toContain(foreignAccount.id)
+    }
   })
 })

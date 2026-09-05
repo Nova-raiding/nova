@@ -600,7 +600,16 @@ export function describeApiError(error: unknown) {
   if (code === 'MCP_TRANSPORT_CLOSED' || /\btransport closed\b|\beconnreset\b/iu.test(message)) return '大麦连接已中断。已有任务和商品数据已保留；请重新连接后先确认任务状态，避免重复提交。'
   if (code === 'MODEL_RELAY_NO_CHANNEL') return '当前模型没有可用的中转通道。当前操作未确认完成；请切换到已验证可用的模型并新建会话。'
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '模型请求结果尚未确认，可能已经产生结果；请先查询模型状态或提交人工对账，确认前不会重复生成、扣费或发布。'
-  if (/^(?:MODEL_RELAY|AI_GENERATION|IMAGE_GENERATION|IMAGE_EDIT|VIDEO_GENERATION)(?:_|$)/u.test(code)) return '模型服务尚未就绪。当前操作未确认完成，系统不会生成、扣费或发布；请先恢复中转模型配置。'
+  if ([
+    'MODEL_RELAY_NOT_CONFIGURED',
+    'IMAGE_GENERATION_NOT_CONFIGURED',
+    'IMAGE_GENERATION_PROVIDER_NOT_CONFIGURED',
+    'IMAGE_GENERATION_CALLBACK_CONFIG_MISSING',
+    'IMAGE_GENERATION_DURABLE_NOT_CONFIGURED',
+    'IMAGE_EDIT_NOT_CONFIGURED',
+    'VIDEO_GENERATION_NOT_CONFIGURED',
+  ].includes(code)) return '模型服务尚未就绪。当前操作未确认完成，系统不会生成、扣费或发布；请先恢复中转模型配置。'
+  if (code === 'IMAGE_GENERATION_READ_UNAVAILABLE' && message) return message
   if (isNotConfigured(error)) return '该平台尚未配置官方 API 或授权，当前不会执行任何外部写入。'
   if (apiError?.status === 503) return '服务暂不可用。当前操作未确认完成；请先检查 API、模型中转和插件连接状态。'
   if (message) return message

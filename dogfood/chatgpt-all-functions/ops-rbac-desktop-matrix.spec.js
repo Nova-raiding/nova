@@ -100,6 +100,8 @@ test('covers platform and workspace workbenches through keyboard switching', asy
   await switcher.focus()
   await page.keyboard.press('ArrowRight')
   await expect(page.getByRole('radio', { name: '商家工作区' })).toBeChecked({ timeout: 20_000 })
+  await expect(page.getByRole('radio', { name: '商家工作区' })).toBeEnabled({ timeout: 20_000 })
+  await page.getByRole('radio', { name: '商家工作区' }).focus()
   await page.keyboard.press('ArrowLeft')
   await expect(page.getByRole('radio', { name: '平台控制台' })).toBeChecked({ timeout: 20_000 })
 })

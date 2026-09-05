@@ -50,7 +50,9 @@ export const HTTP_OPERATION_POLICIES = [
   identity('GET', '/v1/brand-profile', 'brand.get'),
   identity('PUT', '/v1/brand-profile', 'brand.upsert'),
   identity('POST', '/v1/brand-profile/extract', 'brand.extract'),
-  identity('GET', '/v1/image-generation-jobs', 'catalog.image.get'),
+  // The collection is workspace-scoped and filtered by accessible products in
+  // the handler; an individual job remains brand-scoped below.
+  identity('GET', '/v1/image-generation-jobs', 'catalog.search'),
   identity('GET', '/v1/image-generation-jobs/{jobId}', 'catalog.image.get'),
   identity('GET', '/v1/assets', 'asset.list'),
   identity('POST', '/v1/assets', 'asset.upload'),
@@ -80,7 +82,9 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/sync-jobs/{jobId}/result', 'worker'),
   identity('POST', '/v1/sync-jobs/{jobId}/retry-failed', 'sync.retry_failed'),
   identity('GET', '/v1/products', 'catalog.search'),
-  identity('GET', '/v1/products/{productId}/image-review', 'catalog.image.get'),
+  // The endpoint runs deterministic checks and persists authenticity evidence;
+  // it is a read transport with the write semantics of catalog.image.review.
+  identity('GET', '/v1/products/{productId}/image-review', 'catalog.image.review'),
   identity('POST', '/v1/products/{productId}/confirm', 'catalog.facts.confirm'),
   identity('POST', '/v1/products/import/batch', 'catalog.import.batch'),
   identity('POST', '/v1/products/import', 'catalog.import'),

@@ -260,13 +260,20 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
 export async function main() {
   if (process.argv.includes('--probe')) {
     const results: ProbeResult[] = []
+    const requestedModalities = process.argv.find((argument) => argument.startsWith('--modalities='))?.slice('--modalities='.length).split(',').map(value => value.trim()).filter(Boolean) ?? ['text', 'image', 'image_edit', 'ocr', 'video']
+    const modalities = requestedModalities.filter((modality): modality is ProbeResult['modality'] => ['text', 'image', 'image_edit', 'ocr', 'video'].includes(modality))
+    if (modalities.length !== requestedModalities.length || modalities.length === 0) {
+      console.error(JSON.stringify({ state: 'blocked', reason: 'modalities must be a non-empty comma-separated subset of text,image,image_edit,ocr,video' }))
+      process.exitCode = 2
+      return
+    }
     if (!base || (!key && !videoKey)) {
       console.error(JSON.stringify({ state: 'blocked', reason: !base ? 'MODEL_RELAY_BASE_URL missing' : 'MODEL_RELAY_API_KEY and VIDEO_MODEL_RELAY_API_KEY missing' }))
       process.exitCode = 1
     } else {
       try {
         if (!relaySecurity) throw new Error('MODEL_RELAY_BASE_URL/ALLOWED_HOSTS 不满足 relay 安全配置')
-        for (const modality of ['text', 'image', 'image_edit', 'ocr', 'video'] as const) results.push(await probe(modality))
+        for (const modality of modalities) results.push(await probe(modality))
         // The evidence contract stores the relay origin; each result carries its
         // endpoint path. This keeps /v1 configuration paths out of the origin
         // field and makes generated evidence compatible with its validator.
@@ -282,7 +289,7 @@ export async function main() {
       }
     }
   } else {
-    console.error('使用 --probe 才会发起真实中转请求；媒体请求还需要 MODEL_RELAY_CANARY_CONFIRM=true。')
+    console.error('使用 --probe 才会发起真实中转请求；可用 --modalities=text,ocr 分阶段探测；媒体请求还需要 MODEL_RELAY_CANARY_CONFIRM=true。')
     process.exitCode = 2
   }
 }

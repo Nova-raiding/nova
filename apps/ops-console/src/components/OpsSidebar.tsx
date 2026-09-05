@@ -163,9 +163,9 @@ export function OpsSidebar({
         </div>
       </div>
       <div className="sider-caption">平台运营控制面</div>
-      <div className="ops-scope-panel" aria-label="当前平台与租户范围">
+      <div className="ops-scope-panel" role="region" aria-labelledby="ops-scope-panel-title">
         <div className="ops-scope-heading">
-          <div className="ops-scope-title">当前操作范围</div>
+          <div id="ops-scope-panel-title" className="ops-scope-title">当前操作范围</div>
           <span className="ops-scope-badge">{scopePresentation.badge}</span>
         </div>
         <div className="ops-scope-status" role="status" aria-live="polite">

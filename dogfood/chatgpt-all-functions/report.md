@@ -1,8 +1,33 @@
 # ChatGPT 浏览器全功能测试报告
 
-- 最近复验：2026-08-29（Asia/Shanghai）
+- 最近复验：2026-09-04（Asia/Shanghai）
 - 测试对象：Merchant Studio `http://127.0.0.1:18081`、Ops Console `http://127.0.0.1:18082`
-- 方式：Google Chrome + Playwright，从浏览器真实点击、输入、截图并记录 console、请求失败、HTTP 错误和 JSON-RPC 业务错误。
+- 方式：桌面 Chrome + Playwright，从浏览器真实点击、输入、截图并记录 console、请求失败、HTTP 错误和 JSON-RPC 业务错误。移动端不属于本项目需求或上线阻断项。
+
+## 2026-09-04 当前权威验收结论
+
+本节覆盖旧历史记录；后文 2026-08-29 及更早数字仅保留为历史证据，不得与本次结果合并计算。
+
+- 桌面 ChatGPT/商家与 Ops 浏览器全量矩阵：58 个场景，55 passed、3 skipped、0 failed。
+- 跳过项均有明确前置条件：两个商家角色场景需要真实 workspace-only token，一个成员治理场景需要 workspace-only merchant token；不是测试失败。
+- 正向覆盖：Merchant 全页面、商品/任务/发布/图片、真实数据加载、RBAC 工作台、用户目录、错误恢复和脏表单保护。
+- 反向覆盖：无凭据、401/403/404/500、空数据与失败数据区分、模型未就绪、权限/工作区错配、撤销确认、重复提交和请求超时。
+- 全仓测试：641 个测试文件，4059 passed、64 skipped、0 failed；完整构建通过。
+- 发布门禁：112 个 gate 文件，528 passed、9 skipped、0 failed；这是代码与门禁逻辑通过，不等于生产外部证据已齐备。
+- 新启动 bridge 的宿主等价 smoke：工具清单 138 个，包含 `merchant.start`，不包含任何 `ops.*`；`merchant.start`、`workspace.health`、`brand.get`、`asset.list` 只读调用均返回 MCP 业务响应。
+- MCP 资源发现兼容性复验：补齐 `resources/templates/list` 空模板响应及 `resourceTemplates` capability；桥接回归 85/85 通过。当前已安装 ChatGPT 宿主会话仍返回 `Transport closed`，因此宿主内加载证据保持阻断，不以本地 bridge smoke 代替。
+
+## 测试方案与执行顺序
+
+1. 梳理入口：先列出 Merchant Studio 与 Ops Console 的页面、MCP/HTTP/Worker 表面、权限角色和外部依赖。
+2. 正向路径：逐页打开、刷新、深链、输入、筛选、分页、提交，验证可见状态、请求范围、持久化回读和审计字段。
+3. 反向路径：逐项注入缺配置、无权限、跨工作区、空结果、服务错误、超时、重复点击和过期 revision，验证 fail-closed、错误可恢复和不泄露数据。
+4. 运行态：在 Docker/Postgres/Redis/worker 健康时执行，观察连接池、CPU、timeout、容器 healthcheck 和 `/readyz`。
+5. 上线门禁：运行 typecheck、单元/API/MCP/release gates、桌面浏览器回归和构建；生产 OAuth、支付、云存储、告警、容量及宿主证据必须独立满足。
+
+## 当前未完成的外部验收
+
+宿主 MCP transport 当前需要新建 ChatGPT 会话重新加载；浏览器运行时没有可用会话，无法检查阿里云页面。本机虽安装 Alibaba Cloud CLI，但没有配置文件或访问凭据。当前本地环境为 fixture/local，生产 gate 保持 `NO-GO`。未在缺少服务器规格、预算和明确授权时创建阿里云付费订单。
 
 ## 2026-08-29 最终复验快照
 

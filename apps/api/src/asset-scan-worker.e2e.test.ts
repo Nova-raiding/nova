@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ASSET_SCAN_RECEIPT_SCHEMA, parseAssetScanReceipt, signAssetScanReceipt } from '../../../packages/security/src/asset-scan-receipt.js'
-import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, server, service, workspaceMembers } from './server.js'
+import { assetContinuationReadyEventsForTests, assetScanJobIdForTests, creativePointsForTests, grantContinuousFeatureEntitlementForTests, server, service, workspaceMembers } from './server.js'
 
 type Envelope<T> = { data: T; error: { code: string } | null }
 
@@ -82,6 +82,7 @@ beforeAll(async () => {
     sourceId: 'asset-scan-worker-e2e',
     points: 100,
   })
+  grantContinuousFeatureEntitlementForTests(workspaceId)
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')

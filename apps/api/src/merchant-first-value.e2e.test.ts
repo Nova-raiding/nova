@@ -121,7 +121,7 @@ describe('merchant.first_value API', () => {
       headers: { authorization: 'Bearer first-value-test-token', 'content-type': 'application/json', 'x-workspace-id': productionWorkspace },
       body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'merchant.first_value', params: { workspace_id: productionWorkspace, product_id: productionProduct.id, platform: 'taobao', account_id: productionAccount.id } }),
     }).then(response => response.json() as Promise<Envelope<RpcResult>>)
-    expect(revoked.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+    expect(revoked.error).toMatchObject({ code: 'PLATFORM_ACCOUNT_REAUTH_REQUIRED' })
   })
 
   it('does not allow an explicitly scoped product to cross workspace boundaries', async () => {

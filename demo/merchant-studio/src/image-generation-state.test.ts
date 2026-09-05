@@ -25,6 +25,7 @@ describe('image generation execution presentation', () => {
   it('classifies relay configuration failures without widening the blocker to generic 503s', () => {
     expect(isImageGenerationConfigurationError({ status: 503, code: 'MODEL_RELAY_NOT_CONFIGURED' })).toBe(true)
     expect(isImageGenerationConfigurationError({ status: 503, code: 'IMAGE_GENERATION_NOT_CONFIGURED' })).toBe(true)
+    expect(isImageGenerationConfigurationError({ status: 503, code: 'IMAGE_GENERATION_READ_UNAVAILABLE' })).toBe(false)
     expect(isImageGenerationConfigurationError({ status: 503, code: 'STORE_ONBOARDING_REQUIRED' })).toBe(false)
     expect(isImageGenerationConfigurationError({ status: 500, code: 'MODEL_RELAY_NOT_CONFIGURED' })).toBe(false)
   })

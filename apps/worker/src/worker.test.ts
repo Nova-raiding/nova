@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, runAutomationMaintenance, workerQueueKey } from './main.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, workerQueueKey } from './main.js'
 import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
@@ -72,6 +72,11 @@ const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
 }
 
 describe('worker production entry', () => {
+  it('propagates poll failures in once mode for a non-zero process exit', () => {
+    const failure = new Error('dependency unavailable')
+    expect(() => rethrowPollFailureInOnceMode(true, failure)).toThrow(failure)
+    expect(() => rethrowPollFailureInOnceMode(false, failure)).not.toThrow()
+  })
   it('bounds workspace maintenance concurrency and preserves settled results', async () => {
     let active = 0
     let peak = 0
@@ -103,6 +108,17 @@ describe('worker production entry', () => {
     }) as unknown as typeof fetch
     const event = { id: 'evt_generation_auth', workspaceId: 'ws_a', aggregateId: 'gen_auth', eventType: 'generation.requested', sequence: 1, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_generation_auth', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_auth', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
     await expect(createApiExecutionAuthorizationGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token' }, fetcher).assertAuthorized(event, 'generation.execute')).resolves.toMatchObject({ recheckId: 'recheck_generation_auth', scopeHash: 'a'.repeat(64) })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed when the authority returns malformed grant evidence', async () => {
+    const checkedAt = new Date().toISOString()
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ data: { authorization_recheck: {
+      recheck_id: 'recheck_malformed_grants', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_2', policy_version: 'policy_2', grant_revision: 'membership:identity_1:0', grant_ids: [2], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_malformed_grants', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, checked_at: checkedAt,
+    } } }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch
+    const event = { id: 'evt_generation_malformed_grants', workspaceId: 'ws_a', aggregateId: 'gen_malformed_grants', eventType: 'generation.requested', sequence: 1, createdAt: checkedAt, payload: { authorization_snapshot: { schema_version: 1, decision_id: 'decision_generation_malformed_grants', actor_id: 'test_actor', identity_id: 'identity_1', workspace_id: 'ws_a', workbench: 'workspace', context_id: 'workspace:ws_a', context_version: 'ctx_1', policy_version: 'policy_1', grant_revision: 'membership:identity_1:0', grant_ids: [], scope_hash: 'a'.repeat(64), capability: 'generation.execute', resource_id: 'gen_malformed_grants', resource_revision: 'resource_1', request_id: 'request_1', trace_id: 'trace_1', authorized: true, decided_at: checkedAt } } }
+    await expect(createApiExecutionAuthorizationGuard({ apiBaseUrl: 'https://api.example.test', apiToken: 'worker-token' }, fetcher).assertAuthorized(event, 'generation.execute'))
+      .rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_RECHECK_INVALID', retryable: true })
     expect(fetcher).toHaveBeenCalledOnce()
   })
 
@@ -352,6 +368,15 @@ describe('worker production entry', () => {
     const result = await handler({ event: { id: 'evt_image_generation', workspaceId: 'ws_a', aggregateId: 'img_1', eventType: 'image.generation.requested', sequence: 1, payload: { job_id: 'img_1', intent_hash: 'a'.repeat(64) }, createdAt: new Date().toISOString() }, attempt: 1, now: Date.now() })
     expect(handled).toEqual(['evt_image_generation'])
     expect(result).toEqual({ value: { provider_request_id: 'provider_1', images: ['data:image/png;base64,aA=='] } })
+  })
+
+  it('keeps image execution completion after the accepted result callback', async () => {
+    const source = await readFile(new URL('./main.ts', import.meta.url), 'utf8')
+    const callback = source.indexOf("await postImageGenerationResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, result: { intent_hash: intentHash, owner_token: ownerToken, provider_request_id: providerRequestId, images },")
+    const completed = source.indexOf("operation: 'completed', ownerToken, providerRequestId", callback)
+    expect(callback).toBeGreaterThanOrEqual(0)
+    expect(completed).toBeGreaterThan(callback)
+    expect(source).toContain("operation: 'outcome_unknown', ownerToken, errorCode: 'IMAGE_GENERATION_CALLBACK_UNCERTAIN'")
   })
 
   it('rejects malformed image callbacks before network I/O', async () => {
@@ -936,6 +961,19 @@ describe('worker production entry', () => {
     })
     expect(requests).toHaveLength(1)
     expect(requests[0]).toMatchObject({ provider_state: 'unknown', provider_request_id: 'provider_2', provider_status: 'timeout', error_code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN' })
+  })
+
+  it('keeps pre-provider dispatch fences visible without querying a provider', async () => {
+    const queried: string[] = []
+    const result = await reconcileImageGenerationWorkspace({
+      apiBaseUrl: 'https://api.test', apiToken: 'worker-token', workspaceId: 'ws_a', queryStatus: async (providerRequestId) => { queried.push(providerRequestId); return { state: 'processing', providerRequestId, evidence: { observedAt: '2026-08-31T00:00:00.000Z', source: 'provider_status' } } },
+      fetcher: async (input) => {
+        if (String(input).endsWith('/reconciliation')) return new Response(JSON.stringify({ pending_executions: [{ job_id: 'job_reserved', event_id: 'event_reserved', intent_hash: 'd'.repeat(64), execution_attempt: 1, execution_state: 'provider_reserved' }, { job_id: 'job_started', event_id: 'event_started', intent_hash: 'e'.repeat(64), execution_attempt: 1, execution_state: 'provider_started', provider_request_id: 'provider_started' }] }), { status: 200 })
+        return new Response(JSON.stringify({ data: { accepted: true }, error: null }), { status: 200 })
+      },
+    })
+    expect(queried).toEqual(['provider_started'])
+    expect(result.results[0]).toMatchObject({ queried: 1 })
   })
 
   it('enforces the status query timeout when the provider ignores abort signals', async () => {

@@ -13,14 +13,14 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: merchant-api, app.kubernetes.io/part-of: merchant-marketing-codex}
       annotations:
-        merchant.example.com/config-sha256: sha256:48b45ef5d3075be4bd216160f30b3c91451a8209186658a9ae7442e4e4a74977
+        merchant.example.com/config-sha256: sha256:1fe4910d23639a723d5d12c1853a59285e8b7fa9da7bbf77779fe94be5d856ea
     spec:
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: api
-          image: merchant-api:0.1.0
+          image: merchant-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           imagePullPolicy: IfNotPresent
           ports: [{name: http, containerPort: 8787}]
           envFrom:

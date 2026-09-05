@@ -1,0 +1,2 @@
+file appendonly.aof.30.base.rdb seq 30 type b
+file appendonly.aof.30.incr.aof seq 30 type i

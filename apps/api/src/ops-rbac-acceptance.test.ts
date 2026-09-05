@@ -237,7 +237,7 @@ describe('Ops RBAC backend API acceptance contracts', () => {
     // 503 proves the HTTP policy allowed the request into the route.
     expect(allowed.status).toBe(503)
     expect(allowedBody.data).toBeNull()
-    expect(allowedBody.error).toMatchObject({ code: 'NOT_CONFIGURED' })
+    expect(allowedBody.error).toMatchObject({ code: 'OAUTH_STATE_STORE_UNAVAILABLE' })
 
     const denied = await fetch(`${base}/v1/platform-accounts/taobao/authorize`, {
       method: 'POST',

@@ -51,6 +51,8 @@ export interface CommercialAccessRequest extends CommercialOperationRef {
   readonly workspace_id: string
   /** Workers may pin the revision captured when work was admitted. */
   readonly required_access_revision?: string
+  /** Test-only registry injection for the real HTTP fixture harness. */
+  readonly registry?: readonly CommercialOperationPolicy[]
 }
 
 interface CommercialAccessDecisionTrace {
@@ -149,7 +151,7 @@ export class CommercialAccessService {
     const trace = this.#createTrace()
 
     const ref: CommercialOperationRef = { surface: request.surface, operation: request.operation }
-    const resolution = resolveCommercialOperation(this.#registry, ref)
+    const resolution = resolveCommercialOperation(request.registry ?? this.#registry, ref)
     if (resolution.outcome !== 'REGISTERED') return { ...trace, ...resolution }
     const policy = resolution.policy
     if (policy.domain !== 'COMMERCIAL') return { ...trace, outcome: 'DENY_NON_COMMERCIAL', policy }

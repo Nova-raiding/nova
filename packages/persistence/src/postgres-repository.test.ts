@@ -123,13 +123,14 @@ describe('PostgresOutboxRepository', () => {
 
   it('persists a terminal dead letter so it cannot be claimed again', async () => {
     const client = new RecordingClient()
-    client.enqueue(); client.enqueue(); client.enqueue(row({ published_at: '2026-08-28T15:30:00.000Z', attempts: 2, last_error: { code: 'GENERATION_JOB_TERMINAL', retryable: false } })); client.enqueue()
+    client.enqueue(); client.enqueue(); client.enqueue(row({ published_at: null, attempts: 2, last_error: { code: 'GENERATION_JOB_TERMINAL', retryable: false, terminal: true } })); client.enqueue()
     const module = await loadCurrentRepositoryModule()
     const repository = new module.PostgresOutboxRepository(new RecordingPool(client))
     const failure = { code: 'GENERATION_JOB_TERMINAL', message: 'already failed', retryable: false, unknown: false }
     const event = await repository.deadLetter('ws_1', 'evt_1', failure, 'lease_1')
-    expect(event.publishedAt).toBe('2026-08-28T15:30:00.000Z')
-    const update = client.calls.find(call => call.text.includes('published_at = COALESCE'))
+    expect(event.publishedAt).toBeUndefined()
+    const update = client.calls.find(call => call.text.includes('last_error = COALESCE'))
+    expect(update?.text).not.toContain('published_at =')
     expect(update?.values).toEqual(['ws_1', 'evt_1', 'lease_1', JSON.stringify(failure)])
   })
 

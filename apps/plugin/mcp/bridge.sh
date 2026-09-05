@@ -25,7 +25,6 @@ load_launchctl_env() {
 if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1; then
   for name in \
     NODE_ENV \
-    DEPLOY_ENV \
     MERCHANT_MCP_BASE_URL \
     MERCHANT_WORKSPACE_ID \
     MERCHANT_MCP_TOKEN \
@@ -40,6 +39,11 @@ if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v launchctl >/de
   do
     load_launchctl_env "$name"
   done
+  # An explicit process NODE_ENV is authoritative. Do not let a stale
+  # launchd-only DEPLOY_ENV=development downgrade a production invocation.
+  if [ -z "${DEPLOY_ENV:-}" ] && [ -z "${NODE_ENV:-}" ]; then
+    load_launchctl_env DEPLOY_ENV
+  fi
 fi
 
 lower_value() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FeatureFlagsRequestGate, featureFlagListRequest } from "./useFeatureFlags.js";
+import { FeatureFlagsMutationGate, FeatureFlagsRequestGate, featureFlagListRequest } from "./useFeatureFlags.js";
 
 describe("feature flag request gate", () => {
   it("prevents a stale filter response from replacing the latest page", () => {
@@ -15,5 +15,15 @@ describe("feature flag request gate", () => {
   it("preserves local_demo when loading the seeded local environment", () => {
     expect(featureFlagListRequest({ environment: "local_demo" })).toEqual({ environment: "local_demo", limit: 50 });
     expect(featureFlagListRequest({ environment: "local_demo" }, "next-page")).toEqual({ environment: "local_demo", cursor: "next-page", limit: 50 });
+  });
+
+  it("keeps the mutation busy state active until every concurrent operation finishes", () => {
+    const gate = new FeatureFlagsMutationGate();
+    gate.begin();
+    gate.begin();
+    gate.end();
+    expect(gate.isActive()).toBe(true);
+    gate.end();
+    expect(gate.isActive()).toBe(false);
   });
 });

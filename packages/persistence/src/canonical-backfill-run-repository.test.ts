@@ -44,6 +44,13 @@ describe('canonical backfill run repository', () => {
     await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })).rejects.toBeInstanceOf(CanonicalBackfillRunStateError)
   })
 
+  it('retries an executor failure with an explicit empty conflict inventory', async () => {
+    const repository = new MemoryCanonicalBackfillRunRepository()
+    const run = await repository.create({ workspaceId: 'ws_empty_conflicts_retry', dryRun: false, createdBy: 'ops', reason: '无冲突执行重试' })
+    const failed = await repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: run.revision, status: 'failed', lastResult: { error: 'temporary database timeout', conflicts: [] } })
+    await expect(repository.update({ id: run.id, workspaceId: run.workspaceId, expectedRevision: failed.revision, status: 'running' })).resolves.toMatchObject({ status: 'running' })
+  })
+
   it('clears a stale resume cursor once the run completes', async () => {
     const repository = new MemoryCanonicalBackfillRunRepository()
     const run = await repository.create({ workspaceId: 'ws_cursor_clear', dryRun: false, createdBy: 'ops', reason: '完成后清理断点' })

@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
+let api: typeof import('./server.js')
 let server: typeof import('./server.js').server
 
 async function start() {
@@ -14,12 +15,14 @@ async function start() {
 }
 
 describe('task answers API', () => {
-  beforeAll(async () => { server = (await import('./server.js')).server })
+  beforeAll(async () => { api = await import('./server.js'); server = api.server })
   afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())) })
 
   it('persists answers supplied during task creation', async () => {
     const base = await start()
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_task_answers' }
+    await api.grantCreativePointsForTests('ws_task_answers')
+    api.grantContinuousFeatureEntitlementForTests('ws_task_answers')
     const imported = await fetch(`${base}/v1/products/import`, { method: 'POST', headers, body: JSON.stringify({ platform: 'taobao', title: '回答测试商品', local_product_key: 'answer-test', category: '服装', price: 99, stock: 5 }) }).then(response => response.json()) as { data: { id: string } }
     const created = await fetch(`${base}/v1/tasks`, { method: 'POST', headers, body: JSON.stringify({ product_id: imported.data.id, platform: 'taobao', answers: { confirm_facts: true, goal: '春季上新' } }) }).then(response => response.json()) as { data: { id: string; version: number; answers: Record<string, unknown>; missingQuestions: unknown[]; state: string } }
     expect(created.data).toMatchObject({

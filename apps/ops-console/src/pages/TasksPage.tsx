@@ -4,7 +4,7 @@ import { AlertFiltersSection } from "../components/tasks/AlertFiltersSection";
 import { KnowledgeGovernanceSection } from "../components/tasks/KnowledgeGovernanceSection";
 import { MarketingQueueFiltersSection } from "../components/tasks/MarketingQueueFiltersSection";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { Alert, Card, Col, Row, Statistic } from "antd";
+import { Alert, Button, Card, Col, Row, Statistic } from "antd";
 
 interface TasksPageProps {
   model: OpsConsoleModel;
@@ -29,6 +29,7 @@ export function TasksPage({ model }: TasksPageProps) {
       eyebrow="CONTENT OPERATIONS"
       title="任务与内容"
       description="治理知识、素材、生成任务和发布异常；平台规则在独立规则中心维护。"
+      actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新任务</Button>}
       nextStep={taskError ? "先修复数据读取问题并重试；空列表不能解释为没有任务。" : "先查看需要处理的任务，再进入素材、规则或发布异常的对应处置。"}
     >
       <OpsPageError error={taskError ?? ""} onRetry={() => void model.load()} />

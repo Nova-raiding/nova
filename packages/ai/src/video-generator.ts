@@ -93,6 +93,10 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
     assertRelayBaseUrl(options.baseUrl)
     validateVideoRelayPath(options.path, 'generation')
     validateVideoRelayPath(options.statusPath, 'status')
+    // Keep direct construction subject to the same billing boundary as the
+    // environment factory. Otherwise an out-of-range/NaN duration could be
+    // sent to the relay while a different value is attached to usage evidence.
+    this.options = { ...options, durationSeconds: videoDurationSeconds(options.durationSeconds === undefined ? undefined : String(options.durationSeconds)) }
     this.fetchImpl = options.fetch ?? fetch
   }
 

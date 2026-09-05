@@ -80,10 +80,10 @@ const chargedInventory = COMMERCIAL_OPERATION_REGISTRY.filter(policy =>
   policy.domain === 'COMMERCIAL' && policy.classification === 'POINT_CHARGED')
 
 describe('commercial registry generated zero-side-effect E1 matrix', () => {
-  it('covers every current enabled MCP/HTTP business entry from the shared registry', () => {
+  it('covers every current enabled MCP/HTTP/WORKER business entry from the shared registry', () => {
     const ids = enabledBusiness.map(policyId)
     expect(enabledBusiness.length, inventoryDiagnostic(enabledBusiness)).toBeGreaterThan(0)
-    expect(new Set(enabledBusiness.map(policy => policy.surface))).toEqual(new Set(['MCP', 'HTTP']))
+    expect(new Set(enabledBusiness.map(policy => policy.surface))).toEqual(new Set(['MCP', 'HTTP', 'WORKER']))
     expect(new Set(ids).size, `duplicate operation ID; ${inventoryDiagnostic(enabledBusiness)}`).toBe(ids.length)
   })
 

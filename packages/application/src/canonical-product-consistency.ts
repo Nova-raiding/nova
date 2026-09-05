@@ -151,6 +151,8 @@ export interface CampaignItemLinkInput {
   id: string
   workspaceId: string
   brandId: string
+  /** Optional campaign identity; required for validating an explicit task link. */
+  campaignId?: string
   /** Legacy campaign rows may predate canonical/listing backfill. */
   canonicalProductId?: string
   listingId?: string
@@ -164,6 +166,8 @@ export interface LegacyTaskLinkInput {
   workspaceId: string
   productId: string
   brandId?: string
+  /** Optional campaign identity carried by task projections. */
+  campaignId?: string
   canonicalProductId?: string
   listingId?: string
   campaignItemId?: string
@@ -268,6 +272,8 @@ export interface CanonicalChainConsistencyReport {
 export interface CanonicalChainOrphanFinding {
   entityType: 'canonical_product' | 'listing' | 'campaign_item' | 'task' | 'publish_job'
   entityId: string
+  /** Legacy identity when the orphan originates from a canonical mapping. */
+  legacyProductId?: string
   status: 'conflict' | 'blocked'
   codes: string[]
   blocking?: CanonicalBlockingDetail
@@ -441,7 +447,7 @@ export function buildCanonicalChainConsistencyReport(input: CanonicalChainConsis
     if (!canonical.legacyProductId?.trim()) {
       orphanFindings.push({ entityType: 'canonical_product', entityId: canonical.id, status: 'blocked', codes: ['CANONICAL_LEGACY_MAPPING_MISSING'] })
     } else if (!productIds.has(canonical.legacyProductId)) {
-      orphanFindings.push({ entityType: 'canonical_product', entityId: canonical.id, status: 'blocked', codes: ['CANONICAL_LEGACY_PRODUCT_ORPHAN'] })
+      orphanFindings.push({ entityType: 'canonical_product', entityId: canonical.id, legacyProductId: canonical.legacyProductId, status: 'blocked', codes: ['CANONICAL_LEGACY_PRODUCT_ORPHAN'] })
     }
   }
   for (const listing of scopedListings) if (!canonicalIds.has(listing.canonicalProductId)) orphanFindings.push({ entityType: 'listing', entityId: listing.id, status: 'blocked', codes: ['LISTING_CANONICAL_ORPHAN'] })
@@ -472,9 +478,13 @@ export function buildCanonicalChainConsistencyReport(input: CanonicalChainConsis
       ...(!task ? ['PUBLISH_TASK_ORPHAN'] : []),
       ...(task && !task.canonicalProductId ? ['PUBLISH_CANONICAL_SCOPE_MISSING'] : []),
       ...(task && !task.listingId ? ['PUBLISH_LISTING_SCOPE_MISSING'] : []),
+      ...(task && (!job.platform || !task.platform) ? ['PUBLISH_PLATFORM_SCOPE_MISSING'] : []),
       ...(task && job.platform && task.platform && job.platform !== task.platform ? ['PUBLISH_PLATFORM_SCOPE_MISMATCH'] : []),
+      ...(task && (!job.accountId || !task.accountId) ? ['PUBLISH_ACCOUNT_SCOPE_MISSING'] : []),
       ...(task && job.accountId && task.accountId && job.accountId !== task.accountId ? ['PUBLISH_ACCOUNT_SCOPE_MISMATCH'] : []),
+      ...(task && (!job.canonicalProductId || !task.canonicalProductId) ? ['PUBLISH_CANONICAL_SCOPE_MISSING'] : []),
       ...(task && job.canonicalProductId && task.canonicalProductId !== job.canonicalProductId ? ['PUBLISH_CANONICAL_SCOPE_MISMATCH'] : []),
+      ...(task && (!job.listingId || !task.listingId) ? ['PUBLISH_LISTING_SCOPE_MISSING'] : []),
       ...(task && job.listingId && task.listingId !== job.listingId ? ['PUBLISH_LISTING_SCOPE_MISMATCH'] : []),
     ]
     if (codes.length) orphanFindings.push({ entityType: 'publish_job', entityId: job.id, status: 'conflict', codes: sorted(codes) })
@@ -537,6 +547,16 @@ export function buildCanonicalChainConsistencyReport(input: CanonicalChainConsis
       if (task.canonicalProductId && task.canonicalProductId !== canonical?.id) codes.push('TASK_CANONICAL_SCOPE_MISMATCH')
       if (task.listingId && !listingIds.includes(task.listingId)) codes.push('TASK_LISTING_SCOPE_MISMATCH')
       if (task.campaignItemId && !campaignItemIds.includes(task.campaignItemId)) codes.push('TASK_CAMPAIGN_ITEM_SCOPE_MISMATCH')
+      const campaignItem = task.campaignItemId ? scopedCampaignItems.find(item => item.id === task.campaignItemId) : undefined
+      if (campaignItem && (
+        campaignItem.brandId !== (task.brandId ?? legacy.brandId)
+        || campaignItem.canonicalProductId !== task.canonicalProductId
+        || campaignItem.listingId !== task.listingId
+        || (campaignItem.platform && campaignItem.platform !== task.platform)
+        || (campaignItem.accountId && campaignItem.accountId !== task.accountId)
+      )) codes.push('TASK_CAMPAIGN_ITEM_SCOPE_MISMATCH')
+      const hasCampaignIdentity = Boolean(campaignItem?.campaignId?.trim() || task.campaignId?.trim())
+      if (campaignItem && hasCampaignIdentity && campaignItem.campaignId?.trim() !== task.campaignId?.trim()) codes.push('CAMPAIGN_ID_SCOPE_MISMATCH')
       if (task.platform && legacy.platform && task.platform !== legacy.platform) codes.push('TASK_PLATFORM_MISMATCH')
       if (task.accountId && legacy.accountId && task.accountId !== legacy.accountId) codes.push('TASK_ACCOUNT_MISMATCH')
       codes.push(...(publishJobCodesByTask.get(task.id) ?? []))

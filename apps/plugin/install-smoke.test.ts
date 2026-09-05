@@ -16,6 +16,7 @@ const inheritedRuntimeEnv = [
   'MERCHANT_MCP_BASE_URL',
   'MERCHANT_WORKSPACE_ID',
   'MERCHANT_MCP_TOKEN',
+  'MERCHANT_STRICT_AUTH',
   'MERCHANT_ALLOW_FIXTURE_FALLBACK',
   'MERCHANT_MCP_WRITE_ENABLED',
   'MERCHANT_RULE_APPROVAL_TOKEN',
@@ -135,6 +136,32 @@ describe('Codex plugin installation package', () => {
     })
     expect(result.status).toBe(78)
     expect(result.stderr).toContain(expectedMessage)
+  })
+
+  it('does not let a stale launchd deployment environment downgrade explicit production', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-production-'))
+    const launchctl = resolve(directory, 'launchctl')
+    const uname = resolve(directory, 'uname')
+    writeFileSync(launchctl, `#!/bin/sh
+case "$2" in
+  DEPLOY_ENV) printf '%s' 'development' ;;
+esac
+`)
+    writeFileSync(uname, `#!/bin/sh
+printf '%s\n' Darwin
+`)
+    chmodSync(launchctl, 0o755)
+    chmodSync(uname, 0o755)
+    try {
+      const result = spawnSync('sh', [resolve(root, 'mcp/bridge.sh')], {
+        encoding: 'utf8',
+        env: { PATH: `${directory}:/usr/bin:/bin`, NODE_ENV: 'production', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true' },
+      })
+      expect(result.status).toBe(78)
+      expect(result.stderr).toContain('MERCHANT_ALLOW_FIXTURE_FALLBACK=true')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it('renders an accessible ChatGPT creative-point recovery card without client-authored payment actions', () => {

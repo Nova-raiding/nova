@@ -11,7 +11,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, fsGroup: 101, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: ui
-          image: merchant-ui:0.1.0
+          image: merchant-ui@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
           ports: [{name: http, containerPort: 8080}]
           env:
             - name: MERCHANT_API_TOKEN

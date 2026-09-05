@@ -1,8 +1,9 @@
 import { Alert, Button, Input, Modal, Select, Space, Typography } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { managedOpsSession } from "../api/opsClient";
 import { OpsPage } from "../components/OpsPage";
+import { OpsPageError } from "../components/OpsPageError";
 import { FeatureFlagAuditDrawer } from "../components/feature-flags/FeatureFlagAuditDrawer";
 import { FeatureFlagEditor, LOCAL_FEATURE_FLAG_ENVIRONMENTS, MANAGED_FEATURE_FLAG_ENVIRONMENTS, featureFlagEnvironmentOptions } from "../components/feature-flags/FeatureFlagEditor";
 import { FeatureFlagsTable } from "../components/feature-flags/FeatureFlagsTable";
@@ -28,24 +29,24 @@ export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {
   const environmentConfig = getFeatureFlagEnvironmentConfig(managedOpsSession);
   const model = useFeatureFlags(client, { environment: environmentConfig.defaultEnvironment });
   const [editing, setEditing] = useState<FeatureFlag | "new">(); const [audit, setAudit] = useState<FeatureFlag>(); const [emergencyTarget, setEmergencyTarget] = useState<FeatureFlag>(); const [emergencyReason, setEmergencyReason] = useState("");
-  const auditTriggerRef = useRef<HTMLElement | null>(null);
-  const errorRef = useRef<HTMLDivElement>(null);
+  const auditTriggerRef = useRef<HTMLElement | null>(null); const [evaluation, setEvaluation] = useState<Record<string, unknown>>(); const [evaluationFlag, setEvaluationFlag] = useState(""); const [evaluationWorkspace, setEvaluationWorkspace] = useState("");
   const initialLoadFailed = Boolean(model.error && !model.loading && model.items.length === 0);
   const permissionNotice = featureFlagPermissionNotice(canWrite, canEmergency);
-  useEffect(() => {
-    if (model.error) errorRef.current?.focus({ preventScroll: true });
-  }, [model.error]);
   return <OpsPage eyebrow="FEATURE FLAGS" title="功能开关" description="按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。">
-    {model.error && <div ref={errorRef} tabIndex={-1} aria-label="功能开关错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="功能开关操作失败" description={model.error} action={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试</Button>} /></div>}
+    <OpsPageError error={model.error ?? ""} onRetry={() => void model.load()} />
     {permissionNotice ? <Alert type="info" showIcon role="status" title="当前为受限操作状态" description={permissionNotice} /> : null}
     <Space wrap aria-label="功能开关筛选">
       <Input.Search allowClear aria-label="搜索开关键或说明" placeholder="搜索开关键或说明" style={{ width: 280 }} onSearch={query => model.setFilters({ ...model.filters, query })} />
       <Select aria-label="功能开关环境筛选" value={model.filters.environment} style={{ width: 200 }} onChange={environment => model.setFilters({ ...model.filters, environment })} options={featureFlagEnvironmentOptions(environmentConfig.environments)} />
-      <Button style={{ minHeight: 44 }} icon={<ReloadOutlined aria-hidden />} onClick={() => void model.load()}>刷新</Button>
-      {canWrite && <Button style={{ minHeight: 44 }} type="primary" disabled={initialLoadFailed} title={initialLoadFailed ? "请先修复工作区配置并刷新开关" : undefined} icon={<PlusOutlined aria-hidden />} onClick={() => setEditing("new")}>新建开关</Button>}
+      <Button style={{ minHeight: 44 }} disabled={model.loading || model.loadingMore || model.saving} icon={<ReloadOutlined aria-hidden />} onClick={() => void model.load()}>刷新</Button>
+      {canWrite && <Button style={{ minHeight: 44 }} type="primary" disabled={initialLoadFailed || model.saving} title={initialLoadFailed ? "请先修复工作区配置并刷新开关" : undefined} icon={<PlusOutlined aria-hidden />} onClick={() => setEditing("new")}>新建开关</Button>}
+      <Input aria-label="评估开关键" placeholder="评估 flag key" value={evaluationFlag} onChange={event => setEvaluationFlag(event.target.value)} />
+      <Input aria-label="评估 workspace" placeholder="target workspace（可选）" value={evaluationWorkspace} onChange={event => setEvaluationWorkspace(event.target.value)} />
+      <Button disabled={!evaluationFlag.trim()} onClick={() => void client.evaluate({ flagKey: evaluationFlag.trim(), environment: model.filters.environment ?? environmentConfig.defaultEnvironment, ...(evaluationWorkspace.trim() ? { targetWorkspaceId: evaluationWorkspace.trim() } : {}) }).then(setEvaluation).catch(error => setEvaluation({ error: error instanceof Error ? error.message : "评估失败" }))}>评估</Button>
     </Space>
+    {evaluation && <Alert type={typeof evaluation.error === "string" ? "error" : "info"} showIcon title="Feature Flag 评估结果" description={<Typography.Text code>{JSON.stringify(evaluation)}</Typography.Text>} />}
     {initialLoadFailed ? <Typography.Text type="secondary" role="status">功能开关数据尚未取得，请重试；当前状态不能解释为没有功能开关。</Typography.Text> : <FeatureFlagsTable items={model.items} loading={model.loading} canWrite={canWrite} canEmergency={canEmergency} onEdit={setEditing} onAudit={(flag, trigger) => { auditTriggerRef.current = trigger; setAudit(flag); }} onEmergency={flag => { setEmergencyTarget(flag); setEmergencyReason(""); }} />}
-    {model.nextCursor && <Button style={{ minHeight: 44 }} loading={model.loadingMore} onClick={() => void model.load(model.nextCursor)}>加载更多</Button>}
+    {model.nextCursor && <Button style={{ minHeight: 44 }} disabled={model.loading || model.loadingMore || model.saving} loading={model.loadingMore} onClick={() => void model.load(model.nextCursor)}>加载更多</Button>}
     <FeatureFlagEditor open={Boolean(editing)} flag={editing === "new" ? undefined : editing} saving={model.saving} defaultEnvironment={model.filters.environment ?? environmentConfig.defaultEnvironment} environments={environmentConfig.environments} onCancel={() => setEditing(undefined)} onSave={model.save} />
     <FeatureFlagAuditDrawer flag={audit} loadEvents={model.loadEvents} returnFocusTo={auditTriggerRef.current} onClose={() => setAudit(undefined)} />
     <Modal open={Boolean(emergencyTarget)} title={emergencyTarget?.emergencyDisabled ? "恢复功能开关？" : "紧急关闭功能开关？"} okText={emergencyTarget?.emergencyDisabled ? "确认恢复" : "紧急关闭"} okButtonProps={{ danger: !emergencyTarget?.emergencyDisabled, disabled: emergencyReason.trim().length < 3, loading: model.saving }} cancelText="取消" onCancel={() => setEmergencyTarget(undefined)} onOk={async () => { if (!emergencyTarget) return; await model.setEmergency({ id: emergencyTarget.id, disabled: !emergencyTarget.emergencyDisabled, expectedRevision: emergencyTarget.revision, idempotencyKey: crypto.randomUUID(), reason: emergencyReason.trim() }); setEmergencyTarget(undefined); }}>

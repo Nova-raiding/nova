@@ -14,6 +14,10 @@ RUN node infra/scripts/generate-container-source-manifest.mjs generate api /app 
   /app/.release-source/worker.manifest /app/.release-source/worker.manifest.sha256
 RUN --mount=type=cache,id=merchant-npm-cache,target=/root/.npm,sharing=locked \
   npm ci --prefer-offline --no-audit --fund=false
+# Build the published workspace declarations before the root composite build.
+# The application package resolves contracts through its package export and
+# therefore requires contracts/dist/*.d.ts to exist inside the image.
+RUN npm run build --workspace @merchant-marketing/contracts
 RUN npm run build
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
@@ -32,6 +36,7 @@ COPY --from=build /app/dist ./dist
 COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations
 COPY --from=build /app/apps/plugin ./apps/plugin
 COPY --from=build /app/packages ./packages
+COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
 # The runtime install happens before workspace sources are copied, so npm
 # cannot create links for private @merchant-marketing packages. Compiled code
 # may legitimately import their public exports; wire those package roots after
@@ -40,7 +45,8 @@ RUN mkdir -p node_modules/@merchant-marketing \
   && for package_dir in packages/*; do \
        package_name="$(node -p "require('./$package_dir/package.json').name" 2>/dev/null || true)"; \
        case "$package_name" in \
-         @merchant-marketing/*) ln -sfn "../../$package_dir" "node_modules/$package_name" ;; \
+         @merchant-marketing/*) \
+           ln -sfn "../../$package_dir" "node_modules/$package_name" ;; \
        esac; \
      done
 COPY --from=build /app/.release-source/api.manifest /app/.release-source/api.manifest

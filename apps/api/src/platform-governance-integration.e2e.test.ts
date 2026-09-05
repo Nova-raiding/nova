@@ -124,6 +124,10 @@ describe('platform governance integrations over the real MCP HTTP route', () => 
     await api.workspaceMembers.upsert({ workspaceId, externalSubject: `owner-${suffix}`, displayName: '映射所有者', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
     await api.workspaceMembers.upsert({ workspaceId, externalSubject: `mapping-reader-${suffix}`, displayName: '映射规则读者', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
     await api.workspaceMembers.upsert({ workspaceId: otherWorkspace, externalSubject: `mapping-other-${suffix}`, displayName: '其他租户规则读者', role: 'workspace_owner', status: 'active', invitedBy: 'test' })
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
+    await api.grantCreativePointsForTests(otherWorkspace)
+    api.grantContinuousFeatureEntitlementForTests(otherWorkspace)
     const product = api.service.importProduct({ workspaceId, platform: 'taobao', title: '映射商品', stock: 1 })
     const task = api.service.createTask({ workspaceId, productId: product.id, platform: 'taobao' })
 

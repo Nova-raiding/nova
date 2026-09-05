@@ -6,6 +6,32 @@ import type { ScannerHeartbeat } from '../../../packages/workers/src/scanner-hea
 import { EICAR_SELF_TEST_BYTES, ScannerHeartbeatController } from './scanner-heartbeat.js'
 
 describe('scanner heartbeat controller', () => {
+  it('requires real callback acceptance for readiness even after execution admission opens', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'scanner-bootstrap-'))
+    const readyFile = join(directory, 'ready')
+    let acceptedAt: string | undefined
+    let configured = false
+    const options = {
+      instanceId: 'bootstrap', readyFile,
+      scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected' as const, target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) },
+      redis: { publish: async () => undefined, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => acceptedAt },
+      thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86400, minimumReadyInstances: 1 },
+      intervalMs: 5000, get callbackConfigured() { return configured },
+      dependencyProbe: async () => ({ databaseReady: true, apiReady: true }),
+      queueProbe: async () => ({ backlog: 1, deadLetter: 0 }),
+      now: () => new Date('2026-08-30T10:00:00.000Z'),
+    }
+    const controller = new ScannerHeartbeatController(options)
+    await controller.tick()
+    expect(controller.canProcessScans()).toBe(false)
+    configured = true
+    expect(await controller.tick()).toMatchObject({ ready: false, recoveryCapable: false, callback: { capable: false } })
+    expect(controller.canProcessScans()).toBe(true)
+    await expect(stat(readyFile)).rejects.toMatchObject({ code: 'ENOENT' })
+    acceptedAt = '2026-08-30T09:59:59.000Z'
+    expect(await controller.tick()).toMatchObject({ ready: true, callback: { capable: true } })
+    expect(JSON.parse(await readFile(readyFile, 'utf8')).ready).toBe(true)
+  })
   it('publishes real probe evidence and immediately revokes the ready marker on dependency loss', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-'))
     const readyFile = join(directory, 'ready')
@@ -38,11 +64,12 @@ describe('scanner heartbeat controller', () => {
     expect(await controller.tick()).toMatchObject({ ready: false, checks: { databaseReady: true, apiReady: true, redisReady: true }, clamav: { reachable: false }, callback: { capable: true }, queue: { backlog: 4, deadLetter: 2 }, failure: { code: 'CLAMAV_CONNECTION_ERROR' } })
   })
 
-  it('stays unready until a recent accepted API callback exists', async () => {
+  it('can process the first real scan while remaining unready until its callback is accepted', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'scanner-heartbeat-'))
     const controller = new ScannerHeartbeatController({ instanceId: 'scan-b', readyFile: join(directory, 'ready'), scanner: { version: async () => 'ClamAV 1.4.2/28108/Sat Aug 30 09:30:00 2026', scan: async () => ({ status: 'infected', target: 'stream', signature: 'Eicar-Test-Signature', raw: 'FOUND' }) }, redis: { publish: async () => undefined, remove: async () => undefined, recordCallbackAccepted: async () => undefined, lastCallbackAcceptedAt: async () => undefined }, thresholds: { ttlSeconds: 15, definitionsMaxAgeSeconds: 86_400, eicarMaxAgeSeconds: 900, callbackMaxAgeSeconds: 86_400, minimumReadyInstances: 1 }, intervalMs: 5000, callbackConfigured: true, dependencyProbe: async () => ({ databaseReady: true, apiReady: true }), queueProbe: async () => ({ backlog: 0, deadLetter: 0 }), now: () => new Date('2026-08-30T10:00:00.000Z') })
     expect(await controller.tick()).toMatchObject({ ready: false, callback: { configured: true, capable: false } })
-    expect(controller.canProcessScans()).toBe(false)
+    await expect(stat(join(directory, 'ready'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(controller.canProcessScans()).toBe(true)
   })
 
   it('blocks business scans when ClamAV definitions exceed the freshness threshold', async () => {

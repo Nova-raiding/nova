@@ -11,6 +11,7 @@ type Envelope = {
 
 let assetRoot = ''
 let base = ''
+let api: typeof import('./server.js')
 let server: typeof import('./server.js').server
 
 async function json(response: Response) {
@@ -22,7 +23,8 @@ describe('asset download durability boundary', () => {
     assetRoot = await mkdtemp(join(tmpdir(), 'merchant-asset-download-'))
     vi.stubEnv('ASSET_STORAGE_ROOT', assetRoot)
     vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
-    ;({ server } = await import('./server.js'))
+    api = await import('./server.js')
+    ;({ server } = api)
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error)
       server.once('error', onError)
@@ -44,6 +46,8 @@ describe('asset download durability boundary', () => {
 
   it('serves present bytes and returns a typed non-500 response when persisted metadata outlives them', async () => {
     const workspaceId = `ws_asset_download_${Date.now()}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     const bytes = new TextEncoder().encode('container-compatible asset bytes')
     const sha256 = createHash('sha256').update(bytes).digest('hex')
     const headers = { 'x-workspace-id': workspaceId }

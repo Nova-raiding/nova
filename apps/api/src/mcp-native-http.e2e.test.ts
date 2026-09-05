@@ -80,15 +80,15 @@ describe('native ChatGPT MCP HTTP transport', () => {
           code: 'CREATIVE_POINTS_UNAVAILABLE',
           request_id: 'req_native_points',
           trace_id: 'trace_native_points',
+          classification: 'POINT_REQUIRED_NO_CHARGE',
           balance_state: 'unknown',
           available_points: null,
           quoted_points: null,
-          access_revision: null,
-          rate_card_version: null,
-          classification: 'POINT_REQUIRED_NO_CHARGE',
           registry_version: 'commercial-operation-registry.v1',
-          next_actions: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
           retryable: true,
+          rate_card_version: null,
+          access_revision: null,
+          next_actions: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
         },
       },
     })
@@ -113,14 +113,18 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const base = await start()
     const response = await fetch(`${base}/mcp`, {
       method: 'POST',
-      headers: { ...headers, accept: 'application/json, text/event-stream' },
+      headers: { ...headers, accept: 'application/json, text/event-stream', 'x-request-id': 'req_unknown_native', 'x-trace-id': 'trace_unknown_native' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 'ping-1', method: 'ping', params: {} }),
     })
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       jsonrpc: '2.0',
       id: 'ping-1',
-      error: { code: -32601, message: '不支持的原生 MCP 方法: ping' },
+      error: {
+        code: -32601,
+        message: '不支持的原生 MCP 方法: ping',
+        data: { code: 'MCP_METHOD_NOT_FOUND', details: {}, request_id: 'req_unknown_native', trace_id: 'trace_unknown_native' },
+      },
     })
   })
 

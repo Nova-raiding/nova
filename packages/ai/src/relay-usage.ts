@@ -138,7 +138,8 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // arbitrary recursive traversal could accidentally treat unrelated data as
   // metering evidence.
   const result = data && record(data.result) ? data.result : undefined
-  const usage = record(root.usage) ? root.usage : data && record(data.usage) ? data.usage : nestedData && record(nestedData.usage) ? nestedData.usage : result && record(result.usage) ? result.usage : undefined
+  const metadata = record(root.metadata) ? root.metadata : undefined
+  const usage = record(root.usage) ? root.usage : data && record(data.usage) ? data.usage : nestedData && record(nestedData.usage) ? nestedData.usage : result && record(result.usage) ? result.usage : metadata && record(metadata.usage) ? metadata.usage : undefined
   const inputTokens = tokenFrom(usage?.prompt_tokens) ?? tokenFrom(usage?.input_tokens) ?? tokenFrom(usage?.inputTokens)
   const outputTokens = tokenFrom(usage?.completion_tokens) ?? tokenFrom(usage?.output_tokens) ?? tokenFrom(usage?.outputTokens)
   const reportedTotal = tokenFrom(usage?.total_tokens) ?? tokenFrom(usage?.totalTokens)
@@ -147,7 +148,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     : reportedTotal ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined)
   // Raw quota is deliberately excluded: without a versioned unit, exchange
   // rate and pricing formula it is not currency evidence.
-  const costCny = firstNumber(usage?.cost_cny, usage?.costCny, root.cost_cny, root.costCny, data?.cost_cny, data?.costCny, nestedData?.cost_cny, nestedData?.costCny)
+  const costCny = firstNumber(usage?.cost_cny, usage?.costCny, root.cost_cny, root.costCny, data?.cost_cny, data?.costCny, nestedData?.cost_cny, nestedData?.costCny, result?.cost_cny, result?.costCny)
   const providerRequestId = evidenceIdentity(headers.get('x-oneapi-request-id'))
     || evidenceIdentity(headers.get('x-request-id'))
     || evidenceIdentity(headers.get('x-provider-request-id'))
@@ -162,7 +163,15 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     || evidenceIdentity(result?.request_id)
   // Cost is not usage. A relay that reports only a price has not provided
   // enough metering evidence to settle a model call safely.
-  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined
+  // Image relays commonly meter by generated image units rather than tokens.
+  // Treat a positive output_image_count as usage evidence; the pricing client
+  // then derives currency from the frozen billing_units context.
+  const outputImageCount = firstNumber(usage?.output_image_count, usage?.outputImageCount, root.output_image_count, data?.output_image_count, result?.output_image_count, metadata?.output_image_count)
+  // A successful image response is itself metering evidence when the relay
+  // omits token/usage metadata: each returned image is one billable unit and
+  // the caller supplies the requested count as the bounded billing context.
+  const imageResultObserved = defaults.modality === 'image' && ((Array.isArray(root.data) && root.data.length > 0) || (data && Array.isArray(data.data) && data.data.length > 0))
+  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || (defaults.modality === 'image' && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
     ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}),
@@ -188,7 +197,14 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
 }
 
 export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: unknown, headers: Headers, defaults: { modality: RelayUsageModality; model: string; context?: RelayUsageContext }) {
-  const usage = parseRelayUsage(payload, headers, defaults)
+  let usage = parseRelayUsage(payload, headers, defaults)
+  // Some OpenAI-compatible image relays return only `{data:[...]}` and omit
+  // all usage metadata. The returned artifact count is still bounded,
+  // provider-controlled evidence for one image unit.
+  if (!usage && defaults.modality === 'image' && record(payload)) {
+    const items = Array.isArray(payload.data) ? payload.data : record(payload.data) && Array.isArray(payload.data.data) ? payload.data.data : []
+    if (items.length > 0) usage = { modality: 'image', model: defaults.model, ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}), ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}), ...(defaults.context?.runKey ? { runKey: defaults.context.runKey } : {}), ...(defaults.context?.providerAttemptId ? { providerAttemptId: defaults.context.providerAttemptId } : {}), providerRequestId: headers.get('x-oneapi-request-id') ?? undefined, observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: defaults.context?.billingUnits ?? items.length } }
+  }
   if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
   if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity')
   if (!sink) throw new ModelUsageEvidenceMissingError('sink')
@@ -202,7 +218,10 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   // A sink may be implemented outside this package (or arrive through a
   // JavaScript boundary), so the TypeScript receipt type is not enough at
   // runtime. Never turn a malformed receipt into a successful settlement.
-  if (usage.costCny !== undefined && settlementReceipt !== undefined && (settlementReceipt.recorded !== true || settlementReceipt.costEvidence !== true)) {
+  if (settlementReceipt?.recorded !== true || settlementReceipt?.costEvidence !== true) {
+    // Prefer the actionable financial-evidence diagnostic when the provider
+    // omitted currency; settlement is still rejected below this boundary.
+    if (settlementReceipt === undefined && usage.costCny === undefined) throw new ModelUsageEvidenceMissingError('cost')
     throw new ModelUsageEvidenceMissingError('sink')
   }
   // Some relays return tokens but omit currency. Only a trusted settlement
@@ -211,8 +230,8 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   // A cost attestation is only meaningful when the sink also confirms that
   // the usage record was durably recorded. Do not let a malformed or stale
   // adapter response turn derived pricing into a successful settlement.
-  const settlementRecorded = settlementReceipt?.recorded === true
-  if (usage.costCny === undefined && (!settlementRecorded || settlementReceipt?.costEvidence !== true)) throw new ModelUsageEvidenceMissingError('cost')
+  const settlementRecorded = settlementReceipt.recorded === true
+  if (usage.costCny === undefined && (!settlementRecorded || settlementReceipt.costEvidence !== true)) throw new ModelUsageEvidenceMissingError('cost')
   usage.metadata = { ...(usage.metadata ?? {}), ...(usage.costCny === undefined ? { cost_evidence: 'settlement_sink' } : {}), settlement: 'recorded' satisfies RelayUsageSettlement }
   return usage
 }

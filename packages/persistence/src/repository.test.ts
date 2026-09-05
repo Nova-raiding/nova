@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { InMemoryOutbox, requireWorkspaceScope, TenantScopeError } from './repository.js'
+import { InMemoryOutbox, requireWorkspaceScope, TenantScopeError, withWorkspaceTransaction, type SqlClient, type SqlPool } from './repository.js'
 
 describe('tenant-scoped outbox', () => {
   it('deduplicates the same aggregate event and never accepts an empty scope', () => {
@@ -32,5 +32,36 @@ describe('tenant-scoped outbox', () => {
     const page = outbox.listWorkspaceEventsAfter('ws_1', { createdAt: pivot.createdAt, eventId: pivot.id })
     expect(page.map(item => item.id)).toEqual(ordered.slice(1).map(item => item.id))
     expect(outbox.listWorkspaceEventsAfter('ws_2', undefined)).toEqual([])
+  })
+
+  it('destroys a pooled client when rollback fails instead of leaking its transaction scope', async () => {
+    const releaseErrors: Array<Error | undefined> = []
+    const failedClient: SqlClient = {
+      async query(sql) {
+        if (sql === 'ROLLBACK') throw new Error('rollback connection failure')
+        return { rows: [] }
+      },
+      release(error) { releaseErrors.push(error) },
+    }
+    const replacementQueries: string[] = []
+    const replacementClient: SqlClient = {
+      async query(sql) {
+        replacementQueries.push(sql)
+        return { rows: [] }
+      },
+      release(error) { releaseErrors.push(error) },
+    }
+    const clients = [failedClient, replacementClient]
+    const pool: SqlPool = { connect: async () => clients.shift()! }
+
+    await expect(withWorkspaceTransaction(pool, 'ws_a', async client => {
+      await client.query('SELECT leaked_scope')
+      throw new Error('work failed')
+    })).rejects.toThrow('work failed')
+
+    expect(releaseErrors[0]?.message).toBe('rollback connection failure')
+    await withWorkspaceTransaction(pool, 'ws_b', async client => { await client.query('SELECT replacement') })
+    expect(replacementQueries).toEqual(['BEGIN', "SELECT set_config('app.workspace_id', $1, true)", 'SELECT replacement', 'COMMIT'])
+    expect(releaseErrors[1]).toBeUndefined()
   })
 })

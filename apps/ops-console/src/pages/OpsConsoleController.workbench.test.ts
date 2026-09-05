@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { commitOpsWorkbenchTransition, shouldConfirmWorkbenchTransition } from "./OpsConsoleController.js";
+import { commitOpsWorkbenchTransition, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
 import { hasRuleDraftChanges } from "../components/tasks/RuleCenterSection.js";
 
 describe("ops workbench transition", () => {
@@ -35,6 +35,12 @@ describe("ops workbench transition", () => {
     expect(shouldConfirmWorkbenchTransition("workspace", "platform", ["事故创建表单"])).toBe(true);
     expect(shouldConfirmWorkbenchTransition("workspace", "platform", [])).toBe(false);
     expect(shouldConfirmWorkbenchTransition("workspace", "workspace", ["规则草稿表单"])).toBe(false);
+  });
+
+  it("names both workbench boundaries and every draft that will be discarded", () => {
+    expect(workbenchSwitchWarning("workspace", "platform", ["事故创建表单", "规则草稿表单"])).toBe(
+      "当前在商家工作区，切换到平台控制台将清除未保存内容：事故创建表单、规则草稿表单。该内容无法恢复。",
+    );
   });
 
   it("recovers rule draft dirtiness from values after touched metadata is remounted", () => {

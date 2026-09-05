@@ -153,9 +153,56 @@ describe('canonical product consistency report', () => {
       entityType: 'publish_job',
       entityId: 'publish_unbound',
       status: 'conflict',
-      codes: ['PUBLISH_CANONICAL_SCOPE_MISSING', 'PUBLISH_LISTING_SCOPE_MISSING'],
+      codes: expect.arrayContaining(['PUBLISH_CANONICAL_SCOPE_MISSING', 'PUBLISH_LISTING_SCOPE_MISSING', 'PUBLISH_PLATFORM_SCOPE_MISSING', 'PUBLISH_ACCOUNT_SCOPE_MISSING']),
     }))
     expect(report.status).toBe('attention_required')
+  })
+
+  it('blocks publish jobs with incomplete platform or account scope', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      publishJobs: [{ id: 'publish_incomplete', workspaceId: 'ws_1', taskId: 'task_1', canonicalProductId: 'canonical_1', listingId: 'listing_1' }],
+    })
+    expect(report.orphanFindings).toContainEqual(expect.objectContaining({
+      entityType: 'publish_job', entityId: 'publish_incomplete', status: 'conflict',
+      codes: expect.arrayContaining(['PUBLISH_PLATFORM_SCOPE_MISSING', 'PUBLISH_ACCOUNT_SCOPE_MISSING']),
+    }))
+  })
+
+  it('blocks a task whose campaign item scope drifts', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      campaignItems: [{ ...base.campaignItems[0], accountId: 'store_other' }],
+    })
+    expect(report.findings.find(item => item.legacyProductId === 'legacy_1')).toMatchObject({
+      status: 'conflict', codes: expect.arrayContaining(['CAMPAIGN_SCOPE_MISMATCH', 'TASK_CAMPAIGN_ITEM_SCOPE_MISMATCH']),
+    })
+  })
+
+  it('marks an explicit cross-campaign task relation as conflict and fails closed', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      campaignItems: [{ ...base.campaignItems[0], campaignId: 'campaign-a' }],
+      tasks: [{ ...base.tasks[0], campaignId: 'campaign-b' }],
+    })
+
+    expect(report.findings.find(item => item.legacyProductId === 'legacy_1')).toMatchObject({
+      status: 'conflict',
+      codes: expect.arrayContaining(['CAMPAIGN_ID_SCOPE_MISMATCH']),
+    })
+    expect(report.counts.conflict).toBe(1)
+  })
+
+  it('fails closed when an explicit campaign identity is only present on one side', () => {
+    const report = buildCanonicalChainConsistencyReport({
+      ...base,
+      campaignItems: [{ ...base.campaignItems[0], campaignId: 'campaign-a' }],
+    })
+
+    expect(report.findings.find(item => item.legacyProductId === 'legacy_1')).toMatchObject({
+      status: 'conflict',
+      codes: expect.arrayContaining(['CAMPAIGN_ID_SCOPE_MISMATCH']),
+    })
   })
 
   it('does not report a canonical-only root as clean during legacy cutover', () => {

@@ -6,6 +6,10 @@ export class OpsLoadCoordinator {
     return this.latestRequest;
   }
 
+  invalidate() {
+    return this.begin();
+  }
+
   isCurrent(request: number) {
     return request === this.latestRequest;
   }

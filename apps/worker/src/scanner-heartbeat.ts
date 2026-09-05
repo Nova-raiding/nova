@@ -55,7 +55,11 @@ export class ScannerHeartbeatController {
    */
   canProcessScans(): boolean {
     const heartbeat = this.latestHeartbeat
-    if (!heartbeat || !Object.values(heartbeat.checks).every(Boolean) || !heartbeat.clamav.reachable || !heartbeat.clamav.engineVersion || !heartbeat.clamav.definitionsVersion || !heartbeat.clamav.definitionsPublishedAt || !heartbeat.eicar.passed || !heartbeat.callback.configured || !heartbeat.callback.capable || heartbeat.failure) return false
+    // Requiring callback.capable here deadlocks a new installation: only
+    // processing a real outbox event can produce the first accepted callback.
+    // This admits execution, NOT readiness or asset promotion. The API still
+    // verifies the signed receipt and real event/object binding before release.
+    if (!heartbeat || !Object.values(heartbeat.checks).every(Boolean) || !heartbeat.clamav.reachable || !heartbeat.clamav.engineVersion || !heartbeat.clamav.definitionsVersion || !heartbeat.clamav.definitionsPublishedAt || !heartbeat.eicar.passed || !heartbeat.callback.configured || heartbeat.failure) return false
     const now = this.options.now?.() ?? new Date()
     const eicarAt = heartbeat.eicar.checkedAt ? Date.parse(heartbeat.eicar.checkedAt) : Number.NaN
     if (!Number.isFinite(eicarAt) || now.getTime() - eicarAt > this.options.thresholds.eicarMaxAgeSeconds * 1000) return false

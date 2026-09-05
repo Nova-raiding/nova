@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { commercialQueryUrl, commercialViewUrl, readCommercialQuery, readCommercialTargetWorkspace, readCommercialView } from "./useCommercialOperations.js";
+import { canLoadCommercialView, commercialQueryUrl, commercialViewUrl, readCommercialQuery, readCommercialTargetWorkspace, readCommercialView } from "./useCommercialOperations.js";
 import type { AuthorizationProjection } from "../authz/authorization.js";
 
 describe("commercial operations deep links", () => {
+  it("gates every view before a request can be constructed", () => {
+    const denied = { can: () => false } as unknown as AuthorizationProjection;
+    expect(canLoadCommercialView(denied, "ws_1", "orders")).toBe(false);
+    expect(canLoadCommercialView(denied, "", "orders")).toBe(false);
+    const allowed = { can: (capability: string) => capability === "commercial.order.read" } as unknown as AuthorizationProjection;
+    expect(canLoadCommercialView(allowed, "ws_1", "orders")).toBe(true);
+  });
   it("defaults invalid or missing views to the recovery queue", () => {
     expect(readCommercialView("")).toBe("blocks");
     expect(readCommercialView("?view=legacy-wallet")).toBe("blocks");

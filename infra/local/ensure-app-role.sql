@@ -13,6 +13,14 @@ BEGIN
 END
 $$;
 
+DO $$
+BEGIN
+  IF to_regclass('public.workspace_service_allocations') IS NOT NULL THEN
+    REVOKE ALL ON TABLE workspace_service_allocations, workspace_service_fulfillment_events FROM merchant_app;
+  END IF;
+END
+$$;
+
 GRANT CONNECT ON DATABASE merchant TO merchant_app;
 GRANT USAGE ON SCHEMA public TO merchant_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO merchant_app;
@@ -89,8 +97,14 @@ BEGIN
   END IF;
 END
 $$;
-REVOKE ALL ON FUNCTION public.worker_active_workspace_catalog() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.worker_active_workspace_catalog() TO merchant_app;
+DO $$
+BEGIN
+  IF to_regprocedure('public.worker_active_workspace_catalog()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.worker_active_workspace_catalog() FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.worker_active_workspace_catalog() TO merchant_app;
+  END IF;
+END
+$$;
 
 -- The database owner may be provisioned separately in a local bootstrap.
 -- Guard these defaults so role setup remains rerunnable without broadening
@@ -167,6 +181,16 @@ BEGIN
     EXECUTE 'REVOKE ALL ON TABLE platform_authorization_audit FROM merchant_app';
     EXECUTE 'GRANT SELECT, INSERT ON TABLE platform_authorization_audit TO merchant_ops';
     EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE platform_authorization_audit FROM merchant_ops';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.workspace_service_allocations') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE workspace_service_allocations, workspace_service_fulfillment_events FROM merchant_app';
+    EXECUTE 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE workspace_service_allocations, workspace_service_fulfillment_events FROM merchant_ops';
+    EXECUTE 'GRANT SELECT ON TABLE workspace_service_allocations, workspace_service_fulfillment_events TO merchant_ops';
   END IF;
 END
 $$;

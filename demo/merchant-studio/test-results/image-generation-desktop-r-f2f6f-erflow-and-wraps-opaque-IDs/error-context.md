@@ -1,0 +1,109 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - button "跳到主要内容" [ref=e4] [cursor=pointer]
+  - complementary "商家工作区导航" [ref=e5]:
+    - generic [ref=e11]:
+      - strong [ref=e12]: Merchant Studio
+      - generic [ref=e13]: 商家营销助手
+    - navigation "主导航" [ref=e14]:
+      - generic [ref=e15]: 工作台
+      - button "运营概览" [ref=e16] [cursor=pointer]:
+        - img [ref=e17] [cursor=pointer]
+        - generic [ref=e22] [cursor=pointer]: 运营概览
+      - button "商品与资产" [ref=e23] [cursor=pointer]:
+        - img [ref=e24] [cursor=pointer]
+        - generic [ref=e34] [cursor=pointer]: 商品与资产
+      - button "营销任务" [ref=e35] [cursor=pointer]:
+        - img [ref=e36] [cursor=pointer]
+        - generic [ref=e39] [cursor=pointer]: 营销任务
+      - button "发布中心" [ref=e40] [cursor=pointer]:
+        - img [ref=e41] [cursor=pointer]
+        - generic [ref=e46] [cursor=pointer]: 发布中心
+      - button "规则与检查" [ref=e47] [cursor=pointer]:
+        - img [ref=e48] [cursor=pointer]
+        - generic [ref=e51] [cursor=pointer]: 规则与检查
+    - navigation "新会话入口" [ref=e52]:
+      - generic [ref=e53]: 新会话
+      - button "知识库 品牌资料与规则依据" [ref=e54] [cursor=pointer]:
+        - img [ref=e55] [cursor=pointer]
+        - generic [ref=e57] [cursor=pointer]:
+          - text: 知识库
+          - generic [ref=e58] [cursor=pointer]: 品牌资料与规则依据
+      - button "商品 选择平台商品开始任务" [ref=e59] [cursor=pointer]:
+        - img [ref=e60] [cursor=pointer]
+        - generic [ref=e63] [cursor=pointer]:
+          - text: 商品
+          - generic [ref=e64] [cursor=pointer]: 选择平台商品开始任务
+      - button "图片 主图、副图与视觉检查" [ref=e65] [cursor=pointer]:
+        - img [ref=e66] [cursor=pointer]
+        - generic [ref=e70] [cursor=pointer]:
+          - text: 图片
+          - generic [ref=e71] [cursor=pointer]: 主图、副图与视觉检查
+      - button "素材 上传并确认权益与事实" [ref=e72] [cursor=pointer]:
+        - img [ref=e73] [cursor=pointer]
+        - generic [ref=e75] [cursor=pointer]:
+          - text: 素材
+          - generic [ref=e76] [cursor=pointer]: 上传并确认权益与事实
+    - region "当前商品上下文" [ref=e77]:
+      - generic [ref=e78]: 当前上下文
+      - paragraph [ref=e79]: 尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。
+    - generic [ref=e80]:
+      - button "帮助与诊断" [ref=e81] [cursor=pointer]:
+        - img [ref=e82] [cursor=pointer]
+        - generic [ref=e85] [cursor=pointer]: 帮助与诊断
+      - button "工作区信息" [ref=e86] [cursor=pointer]:
+        - img [ref=e87] [cursor=pointer]
+        - generic [ref=e90] [cursor=pointer]: 工作区信息
+      - generic [ref=e91]:
+        - generic [ref=e92]:
+          - generic [ref=e93]: 工作区容量
+          - generic [ref=e94]: 实时读取
+        - generic [ref=e96]: 由当前套餐与云端配置决定，请在账务入口查看
+  - generic [ref=e98]:
+    - banner [ref=e99]:
+      - generic [ref=e100]:
+        - generic [ref=e101]: 云朵轻户外 · 离线演示工作区
+        - heading "营销任务" [level=1] [ref=e102]
+      - generic [ref=e103]:
+        - generic [ref=e104]:
+          - img [ref=e105]
+          - generic [ref=e108]: 全局搜索
+          - textbox "搜索商品" [ref=e109]
+          - generic [ref=e110]: ⌘ K
+        - button "查看系统健康" [ref=e111] [cursor=pointer]:
+          - text: 系统健康
+          - generic [ref=e113] [cursor=pointer]: 未读取
+        - button "查看工作区信息" [ref=e114] [cursor=pointer]: 林
+    - status [ref=e115]:
+      - generic [ref=e117]:
+        - generic [ref=e118]: 当前为离线演示模式
+        - generic [ref=e119]: 未配置 API 地址，不会读取或写入真实店铺数据；配置后再开始真实操作。
+      - button "查看连接说明" [ref=e120] [cursor=pointer]
+    - main [active] [ref=e121]:
+      - generic [ref=e122]:
+        - alert "图片任务暂不可用" [ref=e123]:
+          - strong [ref=e124]: 图片任务暂不可用
+          - generic [ref=e125]: 尚未配置商家 API 或模型中转，系统不会读取、生成或扣费。请联系管理员完成测试环境配置后，再刷新此页面。
+        - generic [ref=e126]:
+          - generic [ref=e127]:
+            - generic [ref=e128]: TASK QUEUE
+            - heading "营销任务" [level=2] [ref=e129]
+            - paragraph [ref=e130]: 从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。
+          - generic [ref=e131]: 0 个任务
+        - region "批量任务控制" [ref=e132]:
+          - generic [ref=e133]:
+            - generic [ref=e134]:
+              - generic [ref=e135]: ADVANCED CONTROL
+              - heading "批量任务控制" [level=3] [ref=e136]
+              - paragraph [ref=e137]: 暂停、恢复或重试失败项属于高级操作；打开后从当前工作区的批量计划列表选择。
+            - generic [ref=e138]:
+              - button "选择商品开始任务" [ref=e139] [cursor=pointer]
+              - button "打开高级控制" [disabled] [ref=e140]
+        - generic [ref=e141]:
+          - img [ref=e142]
+          - text: 配置 API 后可读取真实任务列表。
+  - status [ref=e145]:
+    - img [ref=e146]
+```

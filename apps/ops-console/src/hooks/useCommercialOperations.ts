@@ -128,6 +128,18 @@ export function readCommercialTargetWorkspace(search: string, authorization: Aut
     : "";
 }
 
+export function canLoadCommercialView(
+  authorization: AuthorizationProjection,
+  targetWorkspaceId: string,
+  view: CommercialView,
+): boolean {
+  return Boolean(targetWorkspaceId.trim()) && authorization.can(commercialViewCapability[view]);
+}
+
+function isForbiddenError(error: CommercialLoadError): boolean {
+  return error.httpStatus === 403 || error.code === "FORBIDDEN" || error.code === "HTTP_403";
+}
+
 export function commercialViewUrl(location: Pick<Location, "pathname" | "search" | "hash">, view: CommercialView): string {
   const params = new URLSearchParams(location.search);
   params.set("view", view);
@@ -212,6 +224,10 @@ export function useCommercialOperations(
       setSummary({ status: "forbidden" });
       return;
     }
+    if (!targetWorkspaceId) {
+      setSummary({ status: "forbidden" });
+      return;
+    }
     const controller = new AbortController();
     summaryControllerRef.current = controller;
     setSummary({ status: "loading" });
@@ -219,15 +235,21 @@ export function useCommercialOperations(
       const result = await client.summary(targetWorkspaceId, controller.signal);
       if (request === summaryRequestRef.current) setSummary({ status: "ready", data: result });
     } catch (cause) {
-      if (request === summaryRequestRef.current && !(cause instanceof DOMException && cause.name === "AbortError")) setSummary({ status: "error", error: errorEvidence(cause) });
+      if (request === summaryRequestRef.current && !(cause instanceof DOMException && cause.name === "AbortError")) {
+        const error = errorEvidence(cause);
+        setSummary({ status: isForbiddenError(error) ? "forbidden" : "error", error });
+      }
     }
   }, [authorization, client, targetWorkspaceId]);
 
   const loadView = useCallback(async (target: CommercialView = view) => {
-    const capability = commercialViewCapability[target];
-    if (!authorization.can(capability)) {
+    if (!canLoadCommercialView(authorization, targetWorkspaceId, target)) {
       controllerRef.current?.abort();
       requestRef.current += 1;
+      setData((current) => ({ ...current, [target]: { status: "forbidden" } }));
+      return;
+    }
+    if (!targetWorkspaceId) {
       setData((current) => ({ ...current, [target]: { status: "forbidden" } }));
       return;
     }
@@ -248,7 +270,10 @@ export function useCommercialOperations(
       setData((current) => ({ ...current, [target]: { status: "ready", data: result } }));
     } catch (cause) {
       if (request !== requestRef.current || cause instanceof DOMException && cause.name === "AbortError") return;
-      setData((current) => ({ ...current, [target]: { status: "error", data: current[target].data, error: errorEvidence(cause) } }));
+      const error = errorEvidence(cause);
+      setData((current) => ({ ...current, [target]: isForbiddenError(error)
+        ? { status: "forbidden", error }
+        : { status: "error", data: current[target].data, error } }));
     }
   }, [authorization, client, privateSkuReadable, targetWorkspaceId, view]);
 
@@ -264,6 +289,7 @@ export function useCommercialOperations(
     privateSkuReadable,
     canRecover: authorization.can(commercialCapabilities.accessRecover),
     canAdjustPoints: authorization.can(commercialCapabilities.pointAdjust),
+    canApprovePoints: authorization.can("commercial.point.adjust.approve"),
     canDraftCatalog: authorization.can(commercialCapabilities.catalogDraft),
     canPublishCatalog: authorization.can(commercialCapabilities.catalogPublish),
     canGrantPrivateSku: authorization.can(commercialCapabilities.privateSkuGrant),
@@ -273,7 +299,7 @@ export function useCommercialOperations(
     canWriteService: authorization.can(commercialCapabilities.serviceWrite),
   }), [authorization, privateSkuReadable]);
 
-  return { view, setView, query: queryState, setQuery, summary, data, loadSummary, loadView, permissions };
+  return { view, setView, query: queryState, setQuery, summary, data, loadSummary, loadView, permissions, targetWorkspaceId, client };
 }
 
 export type CommercialOperationsController = ReturnType<typeof useCommercialOperations>;

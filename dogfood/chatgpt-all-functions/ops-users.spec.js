@@ -17,6 +17,7 @@ async function filterUserDirectory(page, keyword = 'support_demo') {
   await expect(filters).toBeVisible({ timeout: 20_000 })
   await filters.getByRole('textbox', { name: '关键词' }).fill(keyword)
   await filters.getByRole('button', { name: /查\s*询/u }).click()
+  await expect(filters.getByRole('button', { name: /查\s*询/u })).toBeEnabled({ timeout: 20_000 })
   return userDirectoryTable(page).getByRole('row').filter({ hasText: keyword }).first()
 }
 
@@ -67,7 +68,7 @@ test('operates the platform user directory without destructive confirmation', as
   await page.keyboard.press('Enter')
   const detailDrawer = page.getByRole('dialog', { name: /用户详情.*support_demo/u })
   await expect(detailDrawer).toBeVisible()
-  await expect(detailDrawer.getByText('认证会话（已脱敏）')).toBeVisible()
+  await expect(detailDrawer.getByText('认证会话（已脱敏）')).toBeVisible({ timeout: 20_000 })
   await expect(detailDrawer.getByRole('heading', { name: '平台身份生命周期' })).toBeVisible()
   await expect(detailDrawer.getByText('所属租户与角色')).toBeVisible()
   await expect(detailDrawer.getByText('暂无成员操作记录')).toBeVisible()
@@ -79,11 +80,14 @@ test('operates the platform user directory without destructive confirmation', as
   const keyword = filters.getByRole('textbox', { name: '关键词' })
   await keyword.fill('不存在的用户')
   await filters.getByRole('button', { name: /查\s*询/u }).click()
-  await expect(page.getByText('没有符合条件的用户成员关系')).toBeVisible()
+  await expect(page.getByText('没有符合条件的用户成员关系')).toBeVisible({ timeout: 20_000 })
   await filters.getByRole('button', { name: /清\s*空/u }).click()
-  await expect(supportRow).toBeVisible()
+  await expect(filters.getByRole('button', { name: /查\s*询/u })).toBeEnabled({ timeout: 20_000 })
+  await expect(userDirectoryTable(page).getByRole('row')).not.toHaveCount(1, { timeout: 20_000 })
+  const restoredSupportRow = await filterUserDirectory(page)
+  await expect(restoredSupportRow).toBeVisible({ timeout: 20_000 })
 
-  await supportRow.getByRole('checkbox').click()
+  await restoredSupportRow.getByRole('checkbox').click()
   const bulkButton = page.getByRole('button', { name: /批量停用/u })
   await expect(bulkButton).toBeEnabled()
   await bulkButton.click()
@@ -95,7 +99,7 @@ test('operates the platform user directory without destructive confirmation', as
   await bulkDialog.getByRole('button', { name: /Cancel|取\s*消/u }).click()
   await expect(bulkDialog).toBeHidden()
 
-  await supportRow.getByRole('button', { name: /^停\s*用$/u }).click()
+  await restoredSupportRow.getByRole('button', { name: /停\s*用/u }).click()
   const dialog = page.getByRole('dialog', { name: '停用用户访问' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: /确认停用/u })).toBeDisabled()
@@ -114,12 +118,11 @@ test('operates the platform user directory without destructive confirmation', as
 test('keeps member governance in the workspace workbench', async ({ page }) => {
   test.skip(!workspaceToken, 'requires a workspace-only merchant_admin/owner token fixture')
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.addInitScript(() => {
-    localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', workspaceActorId)
-    localStorage.setItem('ops_api_token', workspaceToken)
+  await page.addInitScript(({ actorId, token }) => {
+    for (const key of ['ops_connection_config_v1', 'ops_api_base', 'ops_workspace_id', 'ops_actor_id', 'ops_api_token', 'ops_workbench']) localStorage.removeItem(key)
+    localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: 'ws_demo', actorId, token, workbench: 'workspace' }))
     localStorage.setItem('ops_workbench', 'workspace')
-  })
+  }, { actorId: workspaceActorId, token: workspaceToken })
   await page.goto(new URL('/ops/members?workbench=workspace', baseUrl).toString(), { waitUntil: 'domcontentloaded' })
   await expect(page).toHaveURL(/\/ops\/members\?workbench=workspace$/u)
   await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()

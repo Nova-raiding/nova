@@ -140,6 +140,7 @@ export type CampaignManifestErrorCode =
   | 'CAMPAIGN_INVALID_TRANSITION'
   | 'CAMPAIGN_IDEMPOTENCY_INVALID'
   | 'CAMPAIGN_IDEMPOTENCY_CONFLICT'
+  | 'CAMPAIGN_TASK_SCOPE_MISMATCH'
 
 export class CampaignManifestError extends Error {
   constructor(readonly code: CampaignManifestErrorCode, message: string, readonly path?: string) {

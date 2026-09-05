@@ -11,7 +11,7 @@ describe('image generator', () => {
   it('queries provider status fail-closed and returns verified artifacts', async () => {
     let method = ''
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => { method = String(init?.method); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'completed', data: [{ url: 'https://cdn.example/one.png' }] } }), { status: 200 }) },
     })
     await expect(generator.queryStatus!('provider-1')).resolves.toMatchObject({ state: 'succeeded', providerRequestId: 'provider-1', images: ['https://cdn.example/one.png'], evidence: { source: 'provider_status', providerStatus: 'completed' } })
@@ -19,13 +19,13 @@ describe('image generator', () => {
   })
 
   it('does not convert an unrecognized provider status into processing', async () => {
-    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined, fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'new_protocol_state' } }), { status: 200 }) })
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-1', status: 'new_protocol_state' } }), { status: 200 }) })
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
   })
 
   it('rejects a mismatched provider request id even when the provider reports failure', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: { id: 'provider-other', status: 'failed' } }), { status: 200 }),
     })
     await expect(generator.queryStatus!('provider-1')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', reconciliationRequired: true })
@@ -33,7 +33,7 @@ describe('image generator', () => {
 
   it('maps URL and base64 provider results into safe image references', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ url: 'https://cdn.example/one.png' }, { b64_json: 'aGVsbG8=' }] }), { status: 200 }),
     })
     await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 2 })).resolves.toEqual(['https://cdn.example/one.png', 'data:image/png;base64,aGVsbG8='])
@@ -42,7 +42,7 @@ describe('image generator', () => {
   it('passes workspace-scoped source asset references to the model relay', async () => {
     let requestBody: Record<string, unknown> | undefined
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
         return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
@@ -55,7 +55,7 @@ describe('image generator', () => {
   it('injects platform DNA and confirmed SKU/marketing context without asking the model to invent copy', async () => {
     let requestBody: Record<string, unknown> | undefined
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async (_url, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
         return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
@@ -90,16 +90,16 @@ describe('image generator', () => {
 
   it('allows a provider-specific image path while rejecting absolute paths', async () => {
     let endpoint = ''
-    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined, path: '/v1/image/generate', fetch: async url => { endpoint = String(url); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), path: '/v1/image/generate', fetch: async url => { endpoint = String(url); return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
     await generator.generate({ productTitle: '外套', direction: '白底', count: 1 })
     expect(endpoint).toBe('https://relay.example/v1/image/generate')
-    expect(() => new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined, path: 'https://evil.example/generate' })).toThrow('safe relative path')
+    expect(() => new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), path: 'https://evil.example/generate' })).toThrow('safe relative path')
   })
 
   it('sends approved source image bytes to the relay image-to-image endpoint', async () => {
     let body: Record<string, unknown> | undefined
     let endpoint = ''
-    const generator = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', usageSink: () => undefined, fetch: async (url, init) => { endpoint = String(url); body = JSON.parse(String(init?.body)) as Record<string, unknown>; return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
+    const generator = new OpenAICompatibleImageEditGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'edit-model', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (url, init) => { endpoint = String(url); body = JSON.parse(String(init?.body)) as Record<string, unknown>; return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 }) } })
     await expect(generator.generate({ prompt: '优化背景', sourceImages: [{ bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' }], region: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 } })).resolves.toHaveLength(1)
     expect(endpoint).toBe('https://relay.example/images/generations')
     expect(body).toMatchObject({ image: ['data:image/png;base64,AQID'], image_mode: 'optimize', edit_region: { x: 0.1, y: 0.2, width: 0.5, height: 0.4 }, size: '1024x1024', response_format: 'url' })
@@ -107,7 +107,7 @@ describe('image generator', () => {
 
   it('rejects an oversized model relay response before parsing it', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response('{"data":[]}', { headers: { 'content-length': String(33 * 1024 * 1024) } }),
     })
     await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1 })).rejects.toThrow('safety limit')
@@ -116,7 +116,7 @@ describe('image generator', () => {
   it('uses a stable provider idempotency key and marks network ambiguity for reconciliation', async () => {
     const keys: string[] = []
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: (async (_url, init) => {
         const headers = init?.headers as (Record<string, string> & { get?: (name: string) => string | null }) | undefined
         keys.push(headers?.['idempotency-key'] ?? headers?.get?.('idempotency-key') ?? '')
@@ -138,7 +138,7 @@ describe('image generator', () => {
   it('uses the durable provider operation reservation verbatim', async () => {
     let key = ''
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: (async (_url, init) => {
         const headers = init?.headers as Record<string, string>
         key = headers['idempotency-key'] ?? ''
@@ -151,7 +151,7 @@ describe('image generator', () => {
 
   it('classifies a client-side image generation timeout as an unknown provider outcome', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined, timeoutMs: 1,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), timeoutMs: 1,
       fetch: ((_url, init) => new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('timed out', 'AbortError')), { once: true })
       })) as typeof fetch,
@@ -162,7 +162,7 @@ describe('image generator', () => {
 
   it('aborts an in-flight relay request when the worker lease signal is cancelled', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined, timeoutMs: 60_000,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), timeoutMs: 60_000,
       fetch: ((_url, init) => new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('lease lost', 'AbortError')), { once: true })
       })) as typeof fetch,
@@ -175,7 +175,7 @@ describe('image generator', () => {
 
   it('classifies an explicit image provider rejection as failed', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response('invalid request', { status: 400 }),
     })
     const rejectionError = await generator.generate({ productTitle: '外套', direction: '白底', count: 1, usageContext: { actionId: 'image:request_rejected' } }).catch(error => error as Record<string, unknown>)
@@ -184,7 +184,7 @@ describe('image generator', () => {
 
   it('classifies an explicit provider timeout response as an unknown outcome', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response('gateway timeout', { status: 504 }),
     })
     const timeoutError = await generator.generate({ productTitle: '外套', direction: '白底', count: 1, usageContext: { actionId: 'image:request_504' } }).catch(error => error as Record<string, unknown>)
@@ -193,7 +193,7 @@ describe('image generator', () => {
 
   it('keeps an accepted but malformed image response pending reconciliation', async () => {
     const generator = new OpenAICompatibleImageGenerator({
-      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => undefined,
+      baseUrl: 'https://image.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
       fetch: async () => new Response('{not-json', { status: 200 }),
     })
     const error = await generator.generate({ productTitle: '外套', direction: '白底', count: 1, usageContext: { actionId: 'image:request_malformed' } }).catch(reason => reason as Record<string, unknown>)

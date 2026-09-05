@@ -11,7 +11,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, fsGroup: 101, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: ops-ui
-          image: merchant-ops-ui:0.1.0
+          image: merchant-ops-ui@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
           ports: [{name: http, containerPort: 8080}]
           env: [{name: OPS_API_UPSTREAM, value: http://merchant-api:8787}, {name: OPS_API_RESOLVER, value: kube-dns.kube-system.svc.cluster.local}]
           resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 256Mi}}

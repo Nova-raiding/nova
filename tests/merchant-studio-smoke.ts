@@ -27,7 +27,9 @@ type ItemsPage<T> = { items: T[]; total: number; limit: number; offset: number }
 const apiUrl = (process.env.SMOKE_API_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, '')
 const uiUrl = (process.env.SMOKE_UI_URL ?? 'http://127.0.0.1:18081').replace(/\/$/, '')
 const workspaceId = process.env.SMOKE_WORKSPACE_ID ?? 'ws_demo'
-const token = process.env.SMOKE_API_TOKEN ?? 'pilot-local-token'
+// Keep the default aligned with infra/local/docker-compose.yml. Production
+// and staging callers must always provide SMOKE_API_TOKEN explicitly.
+const token = process.env.SMOKE_API_TOKEN ?? 'workspace-local-token'
 const mode = process.env.SMOKE_MODE ?? 'production'
 const requireFullFlow = process.env.SMOKE_REQUIRE_FULL_FLOW === 'true' || mode === 'fixture'
 const platforms: Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
@@ -151,7 +153,8 @@ async function main() {
       return { platform, result }
     } catch (error) {
       if (!accountByPlatform.get(platform)?.readEnabled) {
-        expectError(error, 'NOT_CONFIGURED', `unconfigured ${platform} sync`)
+        const accountState = accountByPlatform.get(platform)?.state
+        expectError(error, accountState === 'revoked' || accountState === 'refresh_required' ? 'PLATFORM_ACCOUNT_REAUTH_REQUIRED' : 'NOT_CONFIGURED', `${accountState === 'revoked' || accountState === 'refresh_required' ? 'reauthorization-required' : 'unconfigured'} ${platform} sync`)
         return { platform, blocked: true }
       }
       throw error

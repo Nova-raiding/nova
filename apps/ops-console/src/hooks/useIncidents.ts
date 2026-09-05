@@ -20,6 +20,7 @@ export interface IncidentFilters { status?: IncidentStatus; severity?: IncidentS
 
 export interface IncidentsClient {
   list(input: IncidentFilters & { limit: number; cursor?: string; platformScope?: boolean }): Promise<IncidentPage<OpsIncident>>
+  get(incidentId: string): Promise<OpsIncident>
   timeline(input: { incidentId: string; limit: number; cursor?: string }): Promise<IncidentPage<IncidentTimelineEntry>>
   create(input: { title: string; summary: string; severity: IncidentSeverity; commanderId?: string; affectedComponents: string[]; affectedWorkspaceIds: string[]; idempotencyKey: string }): Promise<IncidentMutationResult>
   comment(input: { incidentId: string; expectedRevision: number; body: string; idempotencyKey: string }): Promise<IncidentMutationResult>
@@ -98,8 +99,9 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
     setDetailLoading(true)
     setError('')
     try {
-      const page = await client.timeline({ incidentId: incident.id, limit: 200 })
+      const [detail, page] = await Promise.all([client.get(incident.id), client.timeline({ incidentId: incident.id, limit: 200 })])
       if (!detailRequests.current.isCurrent(request)) return
+      setSelected(detail)
       setTimeline(page.items)
       setTimelineNextCursor(page.nextCursor)
     } catch (cause) {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { auditSources, parseAuditCenterQuery, parseAuditPlatformQuery, type AuditAccessRole, type AuditCenterExport, type AuditCenterQuery, type AuditSource } from '../../../../packages/contracts/src/ops/audit-center.js'
+import { auditSources, parseAuditCenterQuery, parseAuditPlatformQuery, type AuditAccessRole, type AuditCenterExport, type AuditCenterPage, type AuditCenterQuery, type AuditSource } from '../../../../packages/contracts/src/ops/audit-center.js'
 import type { AuditCenterRepository } from '../../../../packages/persistence/src/audit-center-repository.js'
 
 export interface AuditCenterPrincipal { actorId: string; roles: readonly AuditAccessRole[]; authorizedWorkspaceIds: readonly string[] }
@@ -21,7 +21,12 @@ export class AuditCenterService {
     if (!principal.actorId.trim() || !principal.roles.includes('platform_ops')) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'platform audit permission is required')
     const query = parseAuditPlatformQuery(rawQuery)
     const authorized = [...new Set(workspaceIds.map(value => value.trim()).filter(Boolean))]
-    const pages = await Promise.all(authorized.map(workspaceId => this.repository.list({ ...query, workspaceId })))
+    const pages: AuditCenterPage[] = []
+    const batchSize = 8
+    for (let offset = 0; offset < authorized.length; offset += batchSize) {
+      const batch = authorized.slice(offset, offset + batchSize)
+      pages.push(...await Promise.all(batch.map(workspaceId => this.repository.list({ ...query, workspaceId }))))
+    }
     const records = pages.flatMap(page => page.records).sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.workspaceId.localeCompare(left.workspaceId) || right.id.localeCompare(left.id))
     const totalRecords = pages.reduce((sum, page) => sum + page.totalRecords, 0)
     return { records: records.slice(0, query.limit), totalRecords, truncated: totalRecords > query.limit }

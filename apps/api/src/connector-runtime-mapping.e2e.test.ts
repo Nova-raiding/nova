@@ -95,6 +95,8 @@ describe('API ConnectorRuntime durable mapping preflight wiring', () => {
   it('requires an exact persisted approval for connector sync and isolates tenants', async () => {
     const suffix = randomUUID().slice(0, 8)
     const workspaceId = `ws_connector_mapping_${suffix}`
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
     const account = api.service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `remote-account-${suffix}`, credentialRef: `vault://connector/${suffix}` })
     const connector = api.connectorRuntime.connector('taobao')
     const page = await connector.syncProducts({ workspaceId, accountId: account.id })
@@ -117,6 +119,8 @@ describe('API ConnectorRuntime durable mapping preflight wiring', () => {
     expect((synced.body.data as { result: { products: Array<{ remoteId: string }> } }).result.products).toEqual(expect.arrayContaining([expect.objectContaining({ remoteId: raw.remoteId })]))
 
     const otherWorkspace = `ws_connector_mapping_other_${suffix}`
+    await api.grantCreativePointsForTests(otherWorkspace)
+    api.grantContinuousFeatureEntitlementForTests(otherWorkspace)
     const otherAccount = api.service.registerPlatformAccount({ workspaceId: otherWorkspace, platform: 'taobao', remoteAccountId: `other-account-${suffix}`, credentialRef: `vault://connector/other/${suffix}` })
     api.service.importProduct({ workspaceId: otherWorkspace, platform: 'taobao', accountId: otherAccount.id, remoteId: raw.remoteId, title: raw.title, stock: raw.stock, price: raw.price, category: raw.category })
     const crossTenant = await mcp(otherWorkspace, 'catalog.sync', { platform: 'taobao', account_id: otherAccount.id })

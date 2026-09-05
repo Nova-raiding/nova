@@ -13,10 +13,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: [merchant.example.com, ops.merchant.example.com]
+    - hosts: [yxsona.com, ops.yxsona.com]
       secretName: merchant-tls
   rules:
-    - host: merchant.example.com
+    - host: yxsona.com
       http:
         paths:
           - path: /v1/internal
@@ -37,7 +37,7 @@ spec:
           - path: /
             pathType: Prefix
             backend: {service: {name: merchant-ui, port: {name: http}}}
-    - host: ops.merchant.example.com
+    - host: ops.yxsona.com
       http:
         paths:
           - path: /v1/internal

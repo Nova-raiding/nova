@@ -12,7 +12,7 @@ const pricing = {
 }
 
 function client(payload = pricing) {
-  const fetch = vi.fn(async (url: string | URL | Request) => new Response(JSON.stringify(String(url).endsWith('/api/pricing') ? payload : { data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83, quota_display_type: 'CNY' } })))
+  const fetch = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify(String(url).endsWith('/api/pricing') ? payload : { data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83, quota_display_type: 'CNY' } })))
   return { value: new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'SVIP', fetch }), fetch }
 }
 
@@ -25,6 +25,7 @@ describe('RelayPricingClient', () => {
     })
     await value.quote({ modality: 'ocr', model: 'deepseek-v4-pro', inputTokens: 1, outputTokens: 1, observedAt: new Date().toISOString() })
     expect(fetch).toHaveBeenCalledTimes(2)
+    for (const call of fetch.mock.calls) expect(call[1]?.headers).toMatchObject({ authorization: 'Bearer secret' })
   })
 
   it('applies fixed image price, count and SVIP ratio', async () => {
@@ -34,7 +35,7 @@ describe('RelayPricingClient', () => {
 
   it('uses modality-specific groups without falling back to default', async () => {
     const payload = { ...pricing, data: pricing.data.map(item => ({ ...item, enable_groups: item.model_name === 'deepseek-v4-pro' ? ['VIP'] : ['SVIP'] })) }
-    const fetch = vi.fn(async (url: string | URL | Request) => new Response(JSON.stringify(String(url).endsWith('/api/pricing') ? payload : { data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83 } })))
+    const fetch = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify(String(url).endsWith('/api/pricing') ? payload : { data: { quota_per_unit: 500_000, usd_exchange_rate: 6.83 } })))
     const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'SVIP', modalityGroups: { text: 'VIP' }, fetch })
     await expect(value.quote({ modality: 'text', model: 'deepseek-v4-pro', inputTokens: 100, outputTokens: 10, observedAt: new Date().toISOString() })).resolves.toMatchObject({ metadata: { pricing_group: 'VIP', group_ratio: 0.85 } })
     await expect(value.quote({ modality: 'ocr', model: 'deepseek-v4-pro', inputTokens: 1, outputTokens: 1, observedAt: new Date().toISOString() })).rejects.toMatchObject({ code: 'MODEL_PRICING_GROUP_UNAVAILABLE' })

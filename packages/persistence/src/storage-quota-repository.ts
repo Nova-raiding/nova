@@ -71,8 +71,17 @@ function validateSettlement(input: Parameters<StorageQuotaRepository['settle']>[
 function validatePhysicalDeletion(input: Parameters<StorageQuotaRepository['releaseAfterPhysicalDeletion']>[0]) {
   const workspaceId = requireWorkspaceScope(input.workspaceId)
   const receipt = input.receipt
-  if (!input.reservationKey.trim() || !receipt || !receipt.objectKey.trim() || !['delete_ack', 'head_absent'].includes(receipt.verification) || !Number.isFinite(Date.parse(receipt.deletedAt)) || !receipt.objectKey.startsWith(`quarantine/${workspaceId}/`) && !receipt.objectKey.startsWith(`clean/${workspaceId}/`)) throw new Error('STORAGE_QUOTA_DELETION_RECEIPT_INVALID')
+  if (!input.reservationKey.trim() || !receipt || !isSafePhysicalObjectKey(receipt.objectKey, workspaceId) || !['delete_ack', 'head_absent'].includes(receipt.verification) || !Number.isFinite(Date.parse(receipt.deletedAt))) throw new Error('STORAGE_QUOTA_DELETION_RECEIPT_INVALID')
   return workspaceId
+}
+
+function isSafePhysicalObjectKey(objectKey: unknown, workspaceId: string): objectKey is string {
+  if (typeof objectKey !== 'string' || !objectKey.trim() || objectKey.startsWith('/') || objectKey.includes('\\') || /[\u0000-\u001f\u007f\r\n]/u.test(objectKey)) return false
+  const parts = objectKey.split('/')
+  return parts.length >= 3
+    && (parts[0] === 'quarantine' || parts[0] === 'clean')
+    && parts[1] === workspaceId
+    && parts.every(part => part.length > 0 && part !== '.' && part !== '..')
 }
 
 const now = () => new Date().toISOString()

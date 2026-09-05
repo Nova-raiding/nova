@@ -33,6 +33,8 @@ import {
   type CommercialOperationsController,
   type CommercialView,
 } from "../../hooks/useCommercialOperations.js";
+import { PointAdjustmentPanel } from "./PointAdjustmentPanel.js";
+import { ServiceFulfillmentPanel } from "./ServiceFulfillmentPanel.js";
 
 const dash = (value: string | number | null | undefined) => value === null || value === undefined || value === "" ? "—" : String(value);
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
@@ -69,12 +71,14 @@ export function CommercialErrorSummary({ error, onRetry }: { error: NonNullable<
   const summaryRef = useRef<HTMLDivElement>(null);
   useEffect(() => { summaryRef.current?.focus({ preventScroll: false }); }, [error]);
   const conflict = error.httpStatus === 409 || error.code.includes("CONFLICT");
+  const forbidden = error.httpStatus === 403 || error.code === "FORBIDDEN" || error.code === "HTTP_403";
+  const unavailableStatus = error.httpStatus === 503 ? "503" : "UNAVAILABLE";
   const revision = errorRevision(error.details);
   return <div ref={summaryRef} className="commercial-error-summary" role="alert" tabIndex={-1} aria-labelledby="commercial-error-title">
     <Alert
       type={conflict ? "warning" : "error"}
       showIcon
-      title={<span id="commercial-error-title">{conflict ? "Revision conflict · 409" : `当前视图 UNAVAILABLE · ${error.code}`}</span>}
+      title={<span id="commercial-error-title">{conflict ? "Revision conflict · 409" : forbidden ? `当前视图 FORBIDDEN · 403` : `当前视图 ${unavailableStatus} · ${error.code}`}</span>}
       description={<Space orientation="vertical" size={2}>
         <span>{error.message}</span>
         {revision ? <Typography.Text>{revision}。已保留当前筛选与输入，请刷新后重新确认。</Typography.Text> : null}
@@ -88,7 +92,7 @@ export function CommercialErrorSummary({ error, onRetry }: { error: NonNullable<
 }
 
 export function CommercialAccessStatusBar({ state, onRetry }: { state: CommercialDataState<CommercialAccessSummary>; onRetry: () => void }) {
-  if (state.status === "forbidden") return <Alert type="warning" showIcon title="商业准入摘要不可用" description={<>BLOCKED：当前会话缺少 <Typography.Text code>commercial.access.read</Typography.Text>，页面不会使用旧任务额度或钱包代替。</>} />;
+  if (state.status === "forbidden") return <Alert type="warning" showIcon title={state.error?.httpStatus === 403 ? "商业准入访问被拒绝 · 403" : "商业准入摘要不可用"} description={state.error ? state.error.message : <>BLOCKED：当前会话缺少 <Typography.Text code>commercial.access.read</Typography.Text>，页面不会使用旧任务额度或钱包代替。</>} />;
   if (state.status === "loading" || state.status === "idle") return <div className="commercial-access-status" aria-label="正在读取商业准入状态" aria-busy="true"><Skeleton active paragraph={{ rows: 1 }} title={false} /></div>;
   if (state.status === "error") return <Alert role="alert" type="error" showIcon title={`商业准入状态 UNAVAILABLE · ${state.error?.code ?? "COMMERCIAL_OPERATIONS_UNAVAILABLE"}`} description={<Space orientation="vertical" size={2}><span>{state.error?.message}</span>{state.error?.requestId ? <Typography.Text code>request {state.error.requestId}</Typography.Text> : null}</Space>} action={<Button onClick={onRetry}>重试</Button>} />;
   const value = state.data;
@@ -110,11 +114,14 @@ export function CommercialAccessStatusBar({ state, onRetry }: { state: Commercia
 }
 
 function DataBoundary<T>({ state, capability, onRetry, children }: { state: CommercialDataState<T>; capability: string; onRetry: () => void; children: (data: T) => ReactNode }) {
-  if (state.status === "forbidden") return <Alert type="warning" showIcon title="当前视图已阻断" description={<>BLOCKED：服务端未授予 <Typography.Text code>{capability}</Typography.Text>。未授权时不会发起该数据请求。</>} />;
+  if (state.status === "forbidden") return <Alert type="warning" showIcon title={state.error?.httpStatus === 403 ? "当前视图访问被拒绝 · 403" : "当前视图已阻断"} description={state.error ? state.error.message : <>BLOCKED：服务端未授予 <Typography.Text code>{capability}</Typography.Text>。未授权时不会发起该数据请求。</>} />;
   if ((state.status === "idle" || state.status === "loading") && !state.data) return <div aria-busy="true" aria-label="正在加载商业运营数据"><Skeleton active paragraph={{ rows: 8 }} /></div>;
   return (
     <Space orientation="vertical" size="middle" className="full-width">
-      {state.status === "error" && state.error ? <CommercialErrorSummary error={state.error} onRetry={onRetry} /> : null}
+      {state.status === "error" && state.error ? <>
+        <CommercialErrorSummary error={state.error} onRetry={onRetry} />
+        {state.data ? <Alert type="warning" showIcon title="以下为上次成功数据" description="当前服务端结果不可用，列表和数量不是实时结果，请勿据此执行账务操作。" /> : null}
+      </> : null}
       {state.data ? children(state.data) : state.status === "error" ? null : <Empty description="服务端已返回空结果" />}
     </Space>
   );
@@ -335,7 +342,7 @@ function OrdersTable({ state, controller }: { state: CommercialOperationsControl
       { key: "request", label: "Request ID", children: <Typography.Text code>{dash(selection.selected.requestId)}</Typography.Text> },
     ]} />
   </Space> : null}</Drawer>
-  {controller.permissions.canReconcilePayment ? <Alert type="warning" showIcon title="支付对账写入 API 尚未接入" description="页面不会把 payment success 伪装成 grant 或 RECOVERED；命令接口就绪前保持 BLOCKED。" /> : null}</>}</DataBoundary>;
+  {controller.permissions.canReconcilePayment ? <Alert type="warning" showIcon title="支付对账操作入口尚未接入" description="服务端能力存在但当前页面保持只读；不会把 payment success 伪装成 grant 或 RECOVERED。" /> : null}</>}</DataBoundary>;
 }
 
 function RatesTable({ state, controller }: { state: CommercialOperationsController["data"]["rates"]; controller: CommercialOperationsController }) {
@@ -357,7 +364,7 @@ function ServicesTable({ state, controller }: { state: CommercialOperationsContr
     { title: "排期", dataIndex: "scheduleAt", width: 180, sorter: (a, b) => String(a.scheduleAt).localeCompare(String(b.scheduleAt)), ...controlledSort(controller, "scheduleAt"), render: time }, { title: "状态", dataIndex: "status", width: 120, render: value => <StateTag value={value} /> },
     { title: "负责人", dataIndex: "ownerLabel", width: 150, render: dash }, { title: "证据", dataIndex: "evidenceLabel", width: 260, render: dash }, { title: "更新时间", dataIndex: "updatedAt", width: 180, render: time },
   ]} />
-  {controller.permissions.canWriteService ? <Alert type="warning" showIcon title="履约写入 API 尚未接入" description="在服务端提供独立 capability、reason、revision 和审计契约前保持只读 BLOCKED。" /> : null}</>}</DataBoundary>;
+  {controller.permissions.canWriteService ? <Alert type="warning" showIcon title="履约写入操作入口尚未接入" description="服务端已有独立 capability、reason、revision 和审计契约；当前页面仍保持只读，避免绕过证据提交。" /> : null}</>}</DataBoundary>;
 }
 
 function renderView(view: CommercialView, controller: CommercialOperationsController) {
@@ -376,6 +383,8 @@ export function CommercialOperationsWorkspace({ controller }: { controller: Comm
   return (
     <Space orientation="vertical" size="middle" className="full-width commercial-operations-workspace">
       <CommercialAccessStatusBar state={controller.summary} onRetry={() => void controller.loadSummary()} />
+      <PointAdjustmentPanel controller={controller} />
+      <ServiceFulfillmentPanel controller={controller} />
       <Tabs activeKey={controller.view} onChange={key => controller.setView(key as CommercialView)} items={commercialViews.map(view => ({ key: view, label: commercialViewLabels[view] }))} />
       <section className="commercial-view" aria-labelledby={`commercial-view-${controller.view}`}>
         <Typography.Title ref={viewHeadingRef} tabIndex={-1} id={`commercial-view-${controller.view}`} level={4}>{commercialViewLabels[controller.view]}</Typography.Title>

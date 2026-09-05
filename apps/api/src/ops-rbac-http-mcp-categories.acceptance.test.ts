@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { operationAudits, server, service, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, operationAudits, server, service, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 
@@ -82,6 +82,8 @@ describe('Ops RBAC HTTP/MCP catalog categories parity', () => {
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
     service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `categories-parity-store-${workspaceId}`, credentialRef: `vault://categories-parity/${workspaceId}` })
     configureTokens(workspaceId, actorId, `unused-denied-${Date.now()}`)
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const base = await start()
 
     const [http, mcp] = await Promise.all([

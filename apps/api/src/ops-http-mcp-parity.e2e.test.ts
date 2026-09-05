@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
-import { server, service, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, service, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
 
 type Envelope<T = unknown> = {
   request_id?: string
@@ -64,6 +64,8 @@ describe('Ops HTTP/MCP authorization parity', () => {
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'ops-http-mcp-parity' })
     service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `parity-store-${workspaceId}`, credentialRef: `vault://parity/${workspaceId}` })
     configureToken('merchant-allow-token', actorId, workspaceId, 'merchant_admin', ['workspace'])
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const base = await start()
 
     const http = await callHttp(base, 'merchant-allow-token', workspaceId)

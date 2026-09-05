@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { server } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server } from './server.js'
 
 type Envelope<T = unknown> = { data: T | null; error: { code: string; message: string } | null }
 
@@ -23,6 +23,8 @@ describe('REST task creation idempotency', () => {
 
   it('replays one task for one intent and rejects key reuse with different input', async () => {
     const base = await start()
+    await grantCreativePointsForTests('ws_demo')
+    grantContinuousFeatureEntitlementForTests('ws_demo')
     const idempotencyKey = `merchant-route-${Date.now()}`
     const headers = { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }
     const create = (body: Record<string, unknown>) => fetch(`${base}/v1/tasks`, { method: 'POST', headers, body: JSON.stringify({ product_id: 'prod_fixture_1', platform: 'taobao', idempotency_key: idempotencyKey, ...body }) })
@@ -45,6 +47,8 @@ describe('REST task creation idempotency', () => {
 
   it('rejects an oversized idempotency key before creating a task', async () => {
     const base = await start()
+    await grantCreativePointsForTests('ws_demo')
+    grantContinuousFeatureEntitlementForTests('ws_demo')
     const response = await fetch(`${base}/v1/tasks`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ product_id: 'prod_fixture_1', platform: 'taobao', idempotency_key: 'x'.repeat(201) }) })
     const body = await response.json() as Envelope
     expect(response.status).toBe(400)

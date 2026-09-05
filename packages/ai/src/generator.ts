@@ -453,7 +453,7 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
           messages.push({ role: 'user', content: repairMessage })
         }
       }
-      throw new Error('CONTENT_SCHEMA_INVALID: 模型结构化内容修复失败')
+      throw Object.assign(new Error('CONTENT_SCHEMA_INVALID: 模型结构化内容修复失败'), { code: 'CONTENT_SCHEMA_INVALID' })
     } finally {
       clearTimeout(timeout)
       callerSignal?.removeEventListener('abort', abortFromCaller)

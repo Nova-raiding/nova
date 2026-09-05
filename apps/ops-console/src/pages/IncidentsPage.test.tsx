@@ -5,7 +5,7 @@ import { IncidentsPage } from './IncidentsPage.js'
 import { createAuthorizationProjection } from '../authz/authorization.js'
 
 const client: IncidentsClient = {
-  list: async () => ({ items: [] }), timeline: async () => ({ items: [] }),
+  list: async () => ({ items: [] }), get: async () => { throw new Error('unused') }, timeline: async () => ({ items: [] }),
   create: async () => { throw new Error('unused') }, comment: async () => { throw new Error('unused') },
   transition: async () => { throw new Error('unused') }, assignCommander: async () => { throw new Error('unused') }, updateScope: async () => { throw new Error('unused') },
 }

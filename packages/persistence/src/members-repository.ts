@@ -67,23 +67,22 @@ export class PostgresMembersRepository implements MembersRepository {
   async listMany(workspaceIds: readonly string[]) {
     const uniqueIds = [...new Set(workspaceIds.map(id => requireWorkspaceScope(id)))]
     if (!uniqueIds.length) return []
-    const client = await this.pool.connect()
     const rows: WorkspaceMember[] = []
-    try {
-      for (const workspaceId of uniqueIds) {
-        await client.query('BEGIN')
-        try {
-          await client.query(`SELECT set_config('app.workspace_id', $1, true)`, [workspaceId])
+    let cursor = 0
+    const workerCount = Math.min(8, uniqueIds.length)
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = cursor++
+        if (index >= uniqueIds.length) return
+        const workspaceId = uniqueIds[index]!
+        const members = await withWorkspaceTransaction(this.pool, workspaceId, async client => {
           const result = await client.query<WorkspaceMemberRow>(`SELECT id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", identity_id AS "identityId", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_members WHERE workspace_id=$1 ORDER BY created_at ASC`, [workspaceId])
-          rows.push(...result.rows.map(memberFromRow))
-          await client.query('COMMIT')
-        } catch (error) {
-          try { await client.query('ROLLBACK') } catch { /* preserve original error */ }
-          throw error
-        }
+          return result.rows.map(memberFromRow)
+        })
+        rows.push(...members)
       }
-      return rows
-    } finally { client.release?.() }
+    }))
+    return rows
   }
   async upsert(input: { workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; invitedBy: string }) { requireWorkspaceScope(input.workspaceId); return withWorkspaceTransaction(this.pool, input.workspaceId, async client => { const result = await client.query<WorkspaceMemberRow>(`INSERT INTO workspace_members (id, workspace_id, external_subject, display_name, role, status, invited_by) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (workspace_id, external_subject) DO UPDATE SET display_name=$4, role=$5, status=$6, invited_by=$7, revision=workspace_members.revision+1, updated_at=now() RETURNING id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", revision, created_at AS "createdAt", updated_at AS "updatedAt"`, [randomUUID(), input.workspaceId, input.externalSubject, input.displayName, input.role, input.status, input.invitedBy]); return memberFromRow(result.rows[0]!) }) }
   async suspend(input: { workspaceId: string; externalSubject: string; actorId: string; reason: string }) { requireWorkspaceScope(input.workspaceId); return withWorkspaceTransaction(this.pool, input.workspaceId, async client => { const result = await client.query<WorkspaceMemberRow>(`UPDATE workspace_members SET status='suspended', revision=revision+1, updated_at=now() WHERE workspace_id=$1 AND external_subject=$2 RETURNING id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", revision, created_at AS "createdAt", updated_at AS "updatedAt"`, [input.workspaceId, input.externalSubject]); if (!result.rows[0]) throw new Error('MEMBER_NOT_FOUND'); return memberFromRow(result.rows[0]) }) }

@@ -51,7 +51,7 @@ describe('daily model budget provider boundary', () => {
     expect(source.match(/observeLegacyImageEntitlementShadow\(\{ workspaceId, kind: 'image_generation' \}\)/gu)).toHaveLength(3)
     expect(source).not.toContain('consumeEntitlement(')
     expect(source).not.toContain('debitPluginWallet(')
-    expect(source).toContain('const zeroCustomerChargeAuthorization = true')
+    expect(source).toContain("const zeroCustomerChargeAuthorization = durableAuthorization?.settlement === 'included_quota' || durableAuthorization?.settlement === 'entitlement'")
     expect(source).toContain('if (usage.costCny === undefined && relayPricing)')
     expect(source).toContain('if (usage.costCny === undefined)')
     expect(source).toContain("action.settlement === 'entitlement' || action.settlement === 'included_quota'")

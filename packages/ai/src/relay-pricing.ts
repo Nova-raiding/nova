@@ -124,7 +124,10 @@ export class RelayPricingClient {
     if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(origin, this.options.relaySecurity)
     const [pricing, status] = await Promise.all([
       json(this.fetchImpl, `${origin}/api/pricing`, this.options.apiKey).then(parsePricing),
-      json(this.fetchImpl, `${origin}/api/status`).then(parseStatus),
+      // Pricing and currency conversion are one authenticated relay snapshot.
+      // Do not let the status half of the snapshot cross the boundary without
+      // the same credential as the pricing half.
+      json(this.fetchImpl, `${origin}/api/status`, this.options.apiKey).then(parseStatus),
     ])
     this.snapshot = { pricing, status, expiresAt: Date.now() + (this.options.ttlMs ?? 60_000) }
     return this.snapshot

@@ -120,8 +120,8 @@ describe("OpsHeader accessibility", () => {
 
   it("uses the current Ant Design Alert title API in the connection drawer", async () => {
     const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
-    expect(source).toContain('title="本地开发适配器"');
-    expect(source).not.toContain('message="本地开发适配器"');
+    expect(source).toContain('title="当前为本地验证环境"');
+    expect(source).not.toContain('message="当前为本地验证环境"');
     expect(source).not.toContain('message="连接配置未保存"');
   });
 
@@ -156,8 +156,8 @@ describe("OpsHeader accessibility", () => {
 
   it("labels the local adapter as development-only in the diagnostic drawer", async () => {
     const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
-    expect(source).toContain('title="本地开发适配器"');
-    expect(source).toContain('description="仅用于本机 Docker 验证；不会代表生产 OIDC 身份，也不能作为生产上线证据。"');
+    expect(source).toContain('title="当前为本地验证环境"');
+    expect(source).toContain('description="这里使用本机 Docker 的演示数据，仅用于体验运营后台；生产环境会改用企业 SSO 登录。"');
     expect(source).toContain("type=\"warning\"");
   });
 
@@ -165,6 +165,25 @@ describe("OpsHeader accessibility", () => {
     const markup = renderToStaticMarkup(<OpsHeader managedSession sessionLoaded={false} refreshing onRefresh={() => undefined} />);
     expect(markup).toContain("正在刷新");
     expect(markup).toContain('aria-busy="true"');
+  });
+
+  it("surfaces the last session failure and keeps an in-drawer recovery action", async () => {
+    saveOpsConnectionConfig({ apiBase: "http://127.0.0.1:8787", workspaceId: "ws_demo", token: "pilot-local-token" });
+    const markup = renderToStaticMarkup(
+      <OpsHeader
+        managedSession={false}
+        sessionLoaded={false}
+        connectionError="OIDC 会话已过期"
+        onRefresh={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('data-state="error"');
+    expect(markup).toContain("连接失败");
+    const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./OpsHeader.tsx", import.meta.url), "utf8"));
+    expect(source).toContain('title="最近一次连接失败"');
+    expect(source).toContain("<span>{connectionError}</span>");
+    expect(source).toContain(">重试权限验证</Button>");
   });
 
   it("does not nest the connection status live region inside another live region", () => {

@@ -13,6 +13,15 @@ describe("OpsLoadCoordinator", () => {
     expect(committed).toEqual(["newer"]);
   });
 
+  it("invalidates an in-flight section load when its scope is cleared", () => {
+    const coordinator = new OpsLoadCoordinator();
+    const oldRequest = coordinator.begin();
+    coordinator.invalidate();
+    const update = () => undefined;
+
+    expect(coordinator.commit(oldRequest, update)).toBe(false);
+  });
+
   it("preserves existing section data on failure but accepts a successful empty result", () => {
     let rows = ["existing"];
 

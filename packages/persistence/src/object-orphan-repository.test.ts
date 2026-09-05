@@ -15,7 +15,7 @@ describe('MemoryObjectOrphanRepository', () => {
 
   it('claims ready rows with a lease token and blocks unleased completion', async () => {
     const repository = new MemoryObjectOrphanRepository()
-    const first = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'a', reason: 'test' })
+    const first = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/file', reason: 'test' })
     const claimTime = new Date().toISOString()
     const claimed = await repository.claimPending('ws_1', { now: claimTime, leaseMs: 10_000 })
 
@@ -28,10 +28,11 @@ describe('MemoryObjectOrphanRepository', () => {
 
   it('does not claim future or leased rows and allows a new worker after lease expiry', async () => {
     const repository = new MemoryObjectOrphanRepository()
+    const future = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/future', reason: 'test' })
+    const futureTime = new Date().toISOString()
+    await repository.markRetry({ workspaceId: 'ws_1', id: future.id, error: 'wait', nextAttemptAt: new Date(Date.parse(futureTime) + 86_400_000).toISOString() })
+    const ready = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/ready', reason: 'test' })
     const claimTime = new Date().toISOString()
-    const future = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'future', reason: 'test' })
-    await repository.markRetry({ workspaceId: 'ws_1', id: future.id, error: 'wait', nextAttemptAt: new Date(Date.parse(claimTime) + 86_400_000).toISOString() })
-    const ready = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'ready', reason: 'test' })
     const first = await repository.claimPending('ws_1', { now: claimTime, leaseMs: 10_000 })
     expect(first.map(row => row.id)).toEqual([ready.id])
     expect(await repository.claimPending('ws_1', { now: new Date(Date.parse(claimTime) + 5_000).toISOString(), leaseMs: 10_000 })).toEqual([])
@@ -46,7 +47,7 @@ describe('MemoryObjectOrphanRepository', () => {
 
   it('re-enqueues a delayed or manual-attention orphan for immediate retry', async () => {
     const repository = new MemoryObjectOrphanRepository()
-    const queued = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'stuck', reason: 'initial failure', lastError: 'first timeout' })
+    const queued = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/stuck', reason: 'initial failure', lastError: 'first timeout' })
     const claimed = await repository.claimPending('ws_1', { now: queued.nextAttemptAt, leaseMs: 10_000 })
     await repository.markRetry({
       workspaceId: 'ws_1',
@@ -57,7 +58,7 @@ describe('MemoryObjectOrphanRepository', () => {
       manualAttention: true,
     })
 
-    const replay = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'stuck', reason: 'new cleanup signal', lastError: 'retry now' })
+    const replay = await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/stuck', reason: 'new cleanup signal', lastError: 'retry now' })
     expect(replay).toMatchObject({ id: queued.id, state: 'pending', attempts: 3, lastError: 'retry now' })
     expect(Date.parse(replay.nextAttemptAt)).toBeGreaterThanOrEqual(Date.parse(replay.updatedAt) - 1_000)
     expect(await repository.claimPending('ws_1', { now: replay.nextAttemptAt, leaseMs: 10_000 })).toHaveLength(1)
@@ -65,10 +66,17 @@ describe('MemoryObjectOrphanRepository', () => {
 
   it('does not cross workspace boundaries and validates claim options', async () => {
     const repository = new MemoryObjectOrphanRepository()
-    await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'a', reason: 'test' })
+    await repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/file', reason: 'test' })
     await expect(repository.claimPending('ws_2')).resolves.toEqual([])
     await expect(repository.claimPending('ws_1', { limit: 0 })).rejects.toThrow('invalid orphan claim limit')
     await expect(repository.claimPending('ws_1', { leaseMs: 999 })).rejects.toThrow('invalid orphan lease duration')
     await expect(repository.claimPending('ws_1', { now: 'not-a-date' })).rejects.toThrow('invalid orphan claim time')
+  })
+
+  it('rejects unsafe or cross-workspace object keys before queueing deletion', async () => {
+    const repository = new MemoryObjectOrphanRepository()
+    await expect(repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_2/a/file', reason: 'test' })).rejects.toThrow('ORPHAN_INPUT_INVALID')
+    await expect(repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/../file', reason: 'test' })).rejects.toThrow('ORPHAN_INPUT_INVALID')
+    await expect(repository.enqueue({ workspaceId: 'ws_1', objectKey: 'clean/ws_1/a/file', reason: ' ' })).rejects.toThrow('ORPHAN_INPUT_INVALID')
   })
 })

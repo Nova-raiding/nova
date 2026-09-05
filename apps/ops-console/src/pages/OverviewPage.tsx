@@ -5,6 +5,7 @@ import { DataReadinessSection } from "../components/sections/overview/DataReadin
 import { ModelServiceSummary } from "../components/models/ModelServiceSummary";
 import { StorageReconciliationSummary } from "../components/storage/StorageReconciliationSummary";
 import { PlatformReadinessSection } from "../components/sections/overview/PlatformReadinessSection";
+import { Button } from "antd";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import type { OpsDomain } from "../navigation/opsNavigation";
 
@@ -28,6 +29,7 @@ export function OverviewPage({ model, onNavigate }: OverviewPageProps) {
       eyebrow="OVERVIEW"
       title="运营总览"
       description="查看套餐、模型、平台告警和上线状态。"
+      actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新总览</Button>}
     >
       <OpsPageError error={overviewError ?? ""} onRetry={() => void model.load()} />
       <CommercialOverviewSection model={model} />

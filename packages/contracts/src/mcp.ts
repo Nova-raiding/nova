@@ -310,6 +310,8 @@ export interface McpParamsSchema {
   readonly type: 'object'
   readonly properties: Readonly<Record<string, McpFieldSchema>>
   readonly required?: readonly string[]
+  /** At least one of these fields must be supplied for mutually exclusive input modes. */
+  readonly requiredAnyOf?: readonly string[]
   readonly additionalProperties: false
 }
 
@@ -484,10 +486,12 @@ const reasonProperty: McpFieldSchema = boundedString(1000, 3, 'Auditable operato
 const params = (
   properties: Readonly<Record<string, McpFieldSchema>>,
   required: readonly string[] = [],
+  requiredAnyOf: readonly string[] = [],
 ): McpParamsSchema => ({
   type: 'object',
   properties: { workspace_id: workspaceProperty, ...properties },
   ...(required.length ? { required } : {}),
+  ...(requiredAnyOf.length ? { requiredAnyOf } : {}),
   additionalProperties: false,
 })
 
@@ -583,8 +587,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.canonical.backfill.conflict.resolve', description: 'Resolve or dismiss one canonical backfill conflict. Resolved MISSING_BRAND requires explicit brand and source-version CAS remediation.', params: params({ conflict_id: boundedString(200, 1), expected_revision: positiveIntegerString, status: { type: 'string', enum: ['resolved', 'dismissed'] }, resolution_note: boundedString(1_000, 3), reason: boundedString(1_000, 3), remediation_type: { type: 'string', enum: ['set_legacy_brand'] }, brand_id: boundedString(200, 1), expected_product_version: positiveIntegerString, reference: boundedString(500, 1) }, ['conflict_id', 'expected_revision', 'status', 'resolution_note', 'reason']) },
   {
     method: 'campaign.batch.create',
-    description: '为一个品创建最多 50 个商品、平台和店铺目标的持久化批量运营计划；创建本身不会生成或发布。',
-    params: params({ brand_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, product_ids_json: { type: 'string' }, targets_json: { type: 'string', description: '多个商品/平台/店铺目标的 JSON 数组；每项含 product_id 或 canonical_product_id、platform、account_id，可选 listing_id' }, idempotency_key: { type: 'string', description: '重试同一批量计划时保持不变' } }, ['brand_id']),
+    description: '为最多 50 个商品创建持久化批量运营计划；可指定单店铺商品 ID，或指定多个商品/平台/店铺目标；创建本身不会生成或发布。',
+    params: params({ brand_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string' }, product_ids_json: { type: 'string', description: '单平台单店铺模式：1 至 50 个商品 ID 的 JSON 数组。' }, targets_json: { type: 'string', description: '多品多平台/多店铺模式：多个目标的 JSON 数组；每项含 product_id 或 canonical_product_id、platform、account_id，可选 listing_id。' }, idempotency_key: { type: 'string', description: '重试同一批量计划时保持不变' } }, ['brand_id']),
   },
   {
     method: 'campaign.batch.list',
@@ -598,8 +602,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'campaign.batch.generate',
-    description: '激活逐商品持久化工作流并创建确定性内容任务；逐项停在事实、方向、方案、审核或发布确认节点，不会越过人工门禁。',
-    params: params({ campaign_id: { type: 'string' }, request_text: { type: 'string' }, idempotency_key: { type: 'string' } }, ['campaign_id']),
+    description: '激活逐商品持久化工作流并创建确定性内容任务；request_text 可承载主图、详情图、Banner 等素材要求；逐项停在事实、方向、方案、审核或发布确认节点，不会越过人工门禁。',
+    params: params({ campaign_id: { type: 'string' }, request_text: { type: 'string', description: '本批任务的素材类型、风格和约束，例如“为每个商品生成白底主图”。' }, idempotency_key: { type: 'string' } }, ['campaign_id']),
   },
   {
     method: 'campaign.batch.pause',
@@ -886,8 +890,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'catalog.import.batch',
-    description: '批量导入最多 50 个商品；每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
-    params: params({ products_json: { type: 'string', description: '商品对象数组 JSON；每项包含 platform、account_id、title 及可选 SKU/价格/库存/素材/属性；asset_ids 可绑定已上传素材。' } }, ['products_json']),
+    description: '批量导入最多 50 个商品；可提交商品对象 JSON，或提交已解析且商家确认过的 XLSX/CSV 表格素材；每项必须明确平台和已授权店铺，全部预校验通过后才写入商品档案。',
+    params: params({
+      products_json: { type: 'string', description: '商品对象数组 JSON；每项包含 platform、account_id、title 及可选 SKU/价格/库存/素材/属性；asset_ids 可绑定已上传素材。' },
+      source_asset_id: { type: 'string', description: '已解析且商家确认过的 XLSX/CSV 商品表格素材 ID。' },
+    }, [], ['products_json', 'source_asset_id']),
   },
   { method: 'catalog.sku.update', description: '独立修改商品 SKU 的名称、价格、库存、图片和规格；修改后必须重新确认商品事实。', params: params({ product_id: { type: 'string' }, sku_id: { type: 'string' }, name: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, expected_version: { type: 'string' } }, ['product_id', 'sku_id']) },
   { method: 'catalog.product.update', description: '修改商品级标题、类目、主副图、属性、卖点和店铺差异化；修改后必须重新确认商品事实。', params: params({ product_id: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, images_json: { type: 'string' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_differentiation: { type: 'string' }, price: { type: 'string' }, expected_version: { type: 'string' } }, ['product_id']) },
@@ -909,7 +916,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'catalog.image.generate',
     description: 'Generate product main/secondary image candidates from confirmed product facts and a selected visual direction; candidates remain unapproved until reviewed.',
-    params: params({ product_id: { type: 'string' }, platform: platformProperty, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '已上传且通过扫描/权益/AI 修改检查的商品图片素材 ID 数组 JSON；优化模式必填。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, ['product_id']),
+    params: params({ product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: platformProperty, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '已上传且通过扫描/权益/AI 修改检查的商品图片素材 ID 数组 JSON；未绑定模式必填。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }),
   },
   {
     method: 'catalog.image.retry',
@@ -1442,6 +1449,9 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
     if (typeof paramsObject[required] !== 'string' || !paramsObject[required].trim()) {
       errors.push(`params.${required} is required`)
     }
+  }
+  if (schema.requiredAnyOf && !schema.requiredAnyOf.some(key => typeof paramsObject[key] === 'string' && paramsObject[key].trim())) {
+    errors.push(`params.${schema.requiredAnyOf.join(' or ')} is required`)
   }
   for (const [key, field] of Object.entries(paramsObject)) {
     const definition = schema.properties[key]

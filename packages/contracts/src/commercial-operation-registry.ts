@@ -133,6 +133,8 @@ export const MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS = [
 
 export const MCP_RECOVERY_ENABLED_METHODS = [
   'workspace.bootstrap',
+  'workspace.health',
+  'canonical.product.consistency',
   'commercial.access.get',
   'commercial.catalog.get',
   'commercial.order.create',
@@ -149,6 +151,7 @@ export const MCP_RECOVERY_ENABLED_METHODS = [
   'workspace.data.export.request',
   'workspace.data.export.get',
   'workspace.data.delete.request',
+  'platform.mapping.preflight',
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_RECOVERY_DISABLED_METHODS = [
@@ -164,29 +167,27 @@ export const MCP_POINT_CHARGED_DISABLED_METHODS = [
   'catalog.image.generate',
   'multimodal.image.edit',
   'ops.marketing.generation.retry',
-  'merchant.first_value',
   'campaign.batch.generate',
   'campaign.batch.retry_failed',
   'catalog.title.optimize',
   'catalog.image.retry',
-  'brand.extract',
   'brand.tone.preview',
   'task.understand',
   'creative.directions',
-  'creative.brief',
-  'creative.preview',
   'content.generate',
   'content.codex.prepare',
   'content.codex.commit',
   'content.review',
   'content.modify',
-  'automation.scan',
-  'automation.tick',
   'multimodal.generate',
   'multimodal.video.request',
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
+  'merchant.first_value',
+  'brand.extract',
+  'creative.brief',
+  'creative.preview',
   'ops.marketing.asset_scan.retry',
   'ops.marketing.visual.review',
   'ops.marketing.publish.acknowledge',
@@ -199,13 +200,11 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'brand-unit.listing.create',
   'brand-unit.listing.list',
   'brand-unit.access.grant',
-  'canonical.product.consistency',
   'campaign.batch.create',
   'campaign.batch.list',
   'campaign.batch.get',
   'campaign.batch.pause',
   'campaign.batch.resume',
-  'workspace.health',
   'workspace.interactive.confirm',
   'workspace.metrics',
   'billing.reconciliation',
@@ -213,7 +212,6 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'billing.reconciliation.run',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
-  'platform.mapping.preflight',
   'platform.model.status',
   'workspace.deactivate',
   'workspace.activate',
@@ -286,6 +284,8 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'automation.policy.list',
   'automation.policy.update',
   'automation.pause',
+  'automation.scan',
+  'automation.tick',
   'publish.confirm',
   'publish.get',
   'knowledge.rule.create',
@@ -431,6 +431,31 @@ export const HTTP_MACHINE_INFRASTRUCTURE_OPERATIONS = [
   'http:POST:/mcp',
 ] as const satisfies readonly string[]
 
+/** Exact Worker action inventory used by the durable outbox handler. */
+export const WORKER_RUNTIME_OPERATIONS = [
+  'generation.execute',
+  'image_generation.execute',
+  'catalog.sync.execute',
+  'asset.scan.execute',
+  'asset.continuation.execute',
+  'publish.execute',
+  'publish.reconcile',
+] as const
+
+const workerRegistry = defineCommercialOperationRegistry([
+  { surface: 'WORKER' as const, operation: 'generation.execute', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_CHARGED' as const, rate_action: 'generation.execute' },
+  { surface: 'WORKER' as const, operation: 'image_generation.execute', domain: 'COMMERCIAL' as const, enabled: true, classification: 'POINT_CHARGED' as const, rate_action: 'image_generation.execute' },
+  ...['catalog.sync.execute', 'asset.scan.execute', 'asset.continuation.execute', 'publish.execute'].map(operation => ({
+    surface: 'WORKER' as const,
+    operation,
+    domain: 'COMMERCIAL' as const,
+    enabled: true,
+    classification: 'POINT_REQUIRED_NO_CHARGE' as const,
+    rate_action: null,
+  })),
+  { surface: 'WORKER' as const, operation: 'publish.reconcile', domain: 'COMMERCIAL' as const, enabled: true, classification: 'RECOVERY_CONTROL' as const, rate_action: null },
+])
+
 
 function mcpPolicies(
   methods: readonly McpMethod[],
@@ -509,11 +534,13 @@ export const COMMERCIAL_OPERATION_REGISTRY_VERSION = 'commercial-operation-regis
 export const COMMERCIAL_OPERATION_REGISTRY = defineCommercialOperationRegistry([
   ...mcpRegistry,
   ...httpRegistry,
+  ...workerRegistry,
 ])
 
 export const COMMERCIAL_OPERATION_RUNTIME_MANIFEST = [
   ...MCP_METHODS.map(operation => ({ surface: 'MCP' as const, operation })),
   ...HTTP_OPERATION_POLICIES.map(({ operation }) => ({ surface: 'HTTP' as const, operation })),
+  ...WORKER_RUNTIME_OPERATIONS.map(operation => ({ surface: 'WORKER' as const, operation })),
 ] satisfies readonly CommercialOperationRef[]
 
 export const COMMERCIAL_OPERATION_REGISTRY_COVERAGE = assertCommercialOperationRegistryTotality(

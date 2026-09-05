@@ -22,6 +22,8 @@ export interface ImageGenerationInput {
   }
   /** Workspace-scoped uploaded asset references resolved by the model relay. */
   sourceAssetRefs?: string[]
+  /** Resolved image pixels (data URLs) for faithful image-to-image optimization. */
+  sourceImages?: string[]
   /** Whether to create a new concept or optimize the supplied product assets. */
   mode?: 'create' | 'optimize'
   usageContext?: RelayUsageContext
@@ -103,27 +105,42 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const brief = input.visualBrief
       const platform = brief?.platform?.trim().toLowerCase()
       const platformDna = platform ? PLATFORM_VISUAL_DNA[platform] ?? `目标平台为 ${platform}，使用适合移动端商品详情页的高转化信息层级。` : '使用适合移动端商品详情页的高转化信息层级。'
+      const placement = brief?.placement?.trim() || '商品详情页运营图'
+      const slotGuidance = /主图|listing|hero/iu.test(placement)
+        ? '槽位为商品主图：只展示单件商品正面，商品占画面主体，白底或极浅灰背景，不做营销海报。'
+        : /细节|detail/iu.test(placement)
+          ? '槽位为商品细节图：只放大展示原图中可验证的材质、结构或接口，不新增不可见功能。'
+          : /场景|lifestyle|使用/iu.test(placement)
+            ? '槽位为使用场景图：允许真实环境和人物，但商品颜色、款式、比例必须严格跟随参考图。'
+            : '槽位为详情页模块图：只完成一个明确任务，背景、文案和装饰服从商品事实。'
       const skuLabels = boundedList(brief?.skuLabels, 12, 80)
       const sellingPoints = boundedList(brief?.sellingPoints, 6, 120)
       const styleKeywords = boundedList(brief?.styleKeywords, 8, 80)
       const copy = [brief?.headline, brief?.subheadline, brief?.cta].map(value => value?.trim()).filter(Boolean).map(value => value!.slice(0, 120))
+      const isMainImage = /主图|白底/iu.test(input.direction) || /主图/iu.test(brief?.placement ?? '')
       const prompt = [
         `生成电商商品运营视觉：商品是“${input.productTitle}”，${input.category ? `类目是“${input.category}”，` : ''}模式：${input.mode ?? 'create'}。`,
         modeInstruction,
-        `版位：${brief?.placement?.trim() || '商品详情页运营图'}。${platformDna}`,
+        `版位：${placement}。${platformDna}${slotGuidance}`,
         `风格方向：${input.direction}。${styleKeywords.length ? `品牌/风格关键词：${styleKeywords.join('、')}。` : ''}`,
         skuLabels.length ? `只展示已确认的 SKU 标签：${skuLabels.join('、')}。` : '',
         sellingPoints.length ? `围绕已确认卖点组织视觉层级：${sellingPoints.join('；')}。` : '',
         copy.length ? `已确认的短文案仅作为排版参考：${copy.join('｜')}。` : '',
-        '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。',
+        isMainImage
+          ? '电商主图必须使用纯白无缝背景，主体完整居中，禁止任何文字、信息卡片、水印、Logo 臆造、边框、道具和复杂场景。'
+          : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。',
         '商品本体、Logo、包装、SKU 对应关系和已确认事实不可改变；不要编造价格、折扣、认证、功效、销量、评论或配件。',
         '中文长文案和精确事实文字不要交给模型直接绘制；为后置排版保留清晰安全区，并返回适合叠加真实文案的构图。',
-        '商品主体清晰完整，避免纯白空背景、无信息的极简海报、随机英文、乱码和不可读的小字。',
+        isMainImage
+          ? '商品主体清晰完整，保持原图中的浅蓝色、连帽结构、袖子和正背面款式，不得改色、换款、增加图案或生成文字。'
+          : '商品主体清晰完整，避免无信息的极简海报、随机英文、乱码和不可读的小字。',
       ].filter(Boolean).join('')
       const sourceAssetRefs = [...new Set((input.sourceAssetRefs ?? []).map(ref => ref.trim()).filter(Boolean))].slice(0, 10)
+      const sourceImages = (input.sourceImages ?? []).filter(image => /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(image)).slice(0, 10)
       const requestBody = JSON.stringify({
         model: this.options.model,
         prompt,
+        ...(isMainImage ? { negative_prompt: '文字，中文文字，英文文字，乱码，信息卡片，标签，水印，臆造Logo，品牌标识，边框，道具，人物，复杂场景，渐变背景，阴影过重，裁切，缺失袖子，变形衣物，改色，换款' } : {}),
         n: input.count,
         size: this.options.size ?? '1024x1024',
         ...(this.options.quality ? { quality: this.options.quality } : {}),
@@ -131,6 +148,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         response_format: this.options.responseFormat ?? 'b64_json',
         image_mode: input.mode ?? 'create',
         ...(sourceAssetRefs.length ? { source_asset_refs: sourceAssetRefs } : {}),
+        ...(sourceImages.length ? { image: sourceImages } : {}),
       })
       const providerKey = options.providerOperationKey?.trim() || providerIdempotencyKey({ operation: 'image_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
       if (providerKey.length > 255 || /[\u0000-\u001f\u007f]/u.test(providerKey)) throw new Error('provider operation key is invalid')
@@ -152,7 +170,6 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       let payload: unknown
       try { payload = JSON.parse(responseText) as unknown }
       catch (error) { throwProviderOutcomeUnknown(providerKey, 'image provider response parsing', error) }
-      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, billingUnits: input.count, providerAttemptId: providerKey } })
       if (!record(payload) || !Array.isArray(payload.data)) throwProviderOutcomeUnknown(providerKey, 'image provider response without data')
       const images = payload.data.flatMap(item => {
         if (!record(item)) return []
@@ -161,6 +178,14 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         return []
       }).slice(0, input.count)
       if (images.length !== input.count) throwProviderOutcomeUnknown(providerKey, 'image provider incomplete result')
+      // Preserve the real provider artifact even when the asynchronous usage
+      // callback is temporarily unavailable; the worker/API keep it marked
+      // pending settlement and block publication until reconciliation.
+      try {
+        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, billingUnits: input.count, providerAttemptId: providerKey } })
+      } catch (error) {
+        if (!['MODEL_USAGE_SETTLEMENT_PENDING', 'MODEL_USAGE_COST_MISSING', 'MODEL_USAGE_EVIDENCE_MISSING'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
+      }
       return images
     } finally {
       clearTimeout(timeout)

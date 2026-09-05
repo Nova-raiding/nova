@@ -69,13 +69,47 @@ const validate = (input: PlatformAuthorizationAuditInput): PlatformAuthorization
 })
 
 const clone = <T>(value: T): T => structuredClone(value)
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+const sameDecision = (left: PlatformAuthorizationAudit, right: PlatformAuthorizationAudit) => canonicalJson({
+  decisionId: left.decisionId, policyVersion: left.policyVersion, actorId: left.actorId, workbench: left.workbench,
+  capability: left.capability, method: left.method, result: left.result, reasonCode: left.reasonCode,
+  resourceType: left.resourceType, resourceId: left.resourceId, resourceScope: left.resourceScope,
+  requestId: left.requestId, traceId: left.traceId, evidence: left.evidence,
+}) === canonicalJson({
+  decisionId: right.decisionId, policyVersion: right.policyVersion, actorId: right.actorId, workbench: right.workbench,
+  capability: right.capability, method: right.method, result: right.result, reasonCode: right.reasonCode,
+  resourceType: right.resourceType, resourceId: right.resourceId, resourceScope: right.resourceScope,
+  requestId: right.requestId, traceId: right.traceId, evidence: right.evidence,
+})
+
+export class PlatformAuthorizationAuditConflictError extends Error {
+  readonly code = 'PLATFORM_AUTHZ_AUDIT_DECISION_CONFLICT'
+  constructor() { super('authorization decision id was reused with different audit facts'); this.name = 'PlatformAuthorizationAuditConflictError' }
+}
+
+export class PlatformAuthorizationAuditConnectionProbeError extends Error {
+  readonly code = 'PLATFORM_AUTHZ_AUDIT_CONNECTION_PROBE_FAILED'
+  constructor() {
+    super('platform authorization audit requires the merchant_ops role and platform_ops session scope')
+    this.name = 'PlatformAuthorizationAuditConnectionProbeError'
+  }
+}
 
 export class MemoryPlatformAuthorizationAuditRepository implements PlatformAuthorizationAuditRepository {
   private readonly rows = new Map<string, PlatformAuthorizationAudit>()
   async append(input: PlatformAuthorizationAuditInput) {
     const row = validate(input)
     const existing = this.rows.get(row.decisionId)
-    if (existing) return clone(existing)
+    if (existing) {
+      if (!sameDecision(existing, row)) throw new PlatformAuthorizationAuditConflictError()
+      return clone(existing)
+    }
     this.rows.set(row.decisionId, row)
     return clone(row)
   }
@@ -104,6 +138,13 @@ async function withPlatformTransaction<T>(pool: SqlPool, callback: (client: SqlC
   try {
     await client.query('BEGIN')
     await client.query(`SELECT set_config('app.platform_scope', 'platform_ops', true)`)
+    const probe = await client.query<{ current_user?: unknown; platform_scope?: unknown }>(
+      `SELECT current_user AS current_user, current_setting('app.platform_scope', true) AS platform_scope`,
+    )
+    const identity = probe.rows[0]
+    if (probe.rows.length !== 1 || identity?.current_user !== 'merchant_ops' || identity.platform_scope !== 'platform_ops') {
+      throw new PlatformAuthorizationAuditConnectionProbeError()
+    }
     const value = await callback(client)
     await client.query('COMMIT')
     return value
@@ -122,7 +163,9 @@ export class PostgresPlatformAuthorizationAuditRepository implements PlatformAut
       if (result.rows[0]) return map(result.rows[0])
       const existing = await client.query<AuditRow>(`SELECT ${projection} FROM platform_authorization_audit WHERE decision_id=$1`, [row.decisionId])
       if (!existing.rows[0]) throw new Error('PLATFORM_AUTHZ_AUDIT_APPEND_FAILED')
-      return map(existing.rows[0])
+      const existingValue = map(existing.rows[0])
+      if (!sameDecision(existingValue, row)) throw new PlatformAuthorizationAuditConflictError()
+      return existingValue
     })
   }
   async getByDecisionId(decisionId: string) {

@@ -12,6 +12,7 @@ import { opsRestPost, rpc } from "../api/opsClient.js";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { platformLabels, platforms, type Platform } from "../types/ops";
 import type { OpsDomain } from "../navigation/opsNavigation";
+import { Button } from "antd";
 
 interface StoresPageProps {
   model: OpsConsoleModel;
@@ -45,6 +46,7 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
       eyebrow="STORE OPERATIONS"
       title="平台连接汇总"
       description="平台运营查看平台级连接健康，并通过受控支持入口处理客户问题。"
+      actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新连接</Button>}
     >
       <OpsPageError error={storeLoadError || automationLoadError || ""} onRetry={() => void model.load()} />
       <PlatformSummarySection stores={model.storeDirectory} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} onOpenSupport={() => onNavigate("support")} platformLabels={platformLabels} />

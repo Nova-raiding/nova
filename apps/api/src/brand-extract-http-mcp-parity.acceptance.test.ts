@@ -101,14 +101,14 @@ describe('brand extraction HTTP/MCP parity', () => {
       callMcp(base, 'brand-extract-allow-token', workspaceId, asset.id),
     ])
 
-    expect(http.response.status, JSON.stringify(http.body)).toBe(503)
-    expect(mcp.response.status, JSON.stringify(mcp.body)).toBe(503)
+    expect(http.response.status, JSON.stringify(http.body)).toBe(428)
+    expect(mcp.response.status, JSON.stringify(mcp.body)).toBe(428)
     expect(http.body.data).toBeNull()
     expect(mcp.body.data).toBeNull()
-    expect(http.body.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
-    expect(mcp.body.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
-    expect(http.body.error?.details?.next_actions).toEqual(['commercial.access.get', 'creative-points.balance.get'])
-    expect(mcp.body.error?.details?.next_actions).toEqual(['commercial.access.get', 'creative-points.balance.get'])
+    expect(http.body.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+    expect(mcp.body.error).toMatchObject({ code: 'STORE_ONBOARDING_REQUIRED' })
+    expect(http.body.error?.details?.next_actions).toEqual(['调用 workspace.health 查看六平台授权入口', '选择平台后调用 platform.connect', '授权回调完成后重新调用 workspace.health'])
+    expect(mcp.body.error?.details?.next_actions).toEqual(['调用 workspace.health 查看六平台授权入口', '选择平台后调用 platform.connect', '授权回调完成后重新调用 workspace.health'])
     for (const body of [http.body, mcp.body]) {
       expect(body.request_id).toMatch(/^req_/)
       expect(body.trace_id).toBe(body.request_id)

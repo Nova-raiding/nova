@@ -70,15 +70,15 @@ describe('Codex relay configuration renderer', () => {
     ]))
   })
 
-  it('fails closed when the relay is OpenAI-compatible but not compatible with the Codex App model catalog', async () => {
+  it('accepts a standard OpenAI catalog without the optional Codex mirror', async () => {
     const environment = {
       DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
       AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
     }
     const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
     const result = validateCodexRelay(config, environment)
-    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({ object: 'list', data: [{ id: 'responses-model' }] })))
-    expect(result.errors).toContain('Codex host relay /models 与当前 Codex App 目录契约不兼容：缺少顶层 models 数组')
+    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({ object: 'list', data: [{ id: 'responses-model', supported_endpoint_types: ['openai-response'] }] })))
+    expect(result.errors).toEqual([])
   })
 
   it('accepts a catalog that declares the selected model in both supported directory shapes', async () => {
@@ -108,7 +108,6 @@ describe('Codex relay configuration renderer', () => {
     })))
     expect(result.errors).toEqual(expect.arrayContaining([
       'Codex host relay 当前 host model 未声明 openai-response 能力：responses-model',
-      'Codex host relay Codex models[] 未声明当前 host model slug：responses-model',
     ]))
   })
 })

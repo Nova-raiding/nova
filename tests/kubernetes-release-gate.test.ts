@@ -112,6 +112,25 @@ function productionScannerManifest(mutate?: (manifest: Record<string, any>) => v
 }
 
 describe('structured Kubernetes release image gate', () => {
+  it('requires every base workload image to use an immutable digest and keeps base rendering compatible', () => {
+    const baseFiles = [
+      'infra/kubernetes/base/api.yaml',
+      'infra/kubernetes/base/migration.yaml',
+      'infra/kubernetes/base/workers.yaml',
+      'infra/kubernetes/base/ui.yaml',
+      'infra/kubernetes/base/ops-ui.yaml',
+    ]
+    const base = baseFiles.map(path => readFileSync(path, 'utf8')).join('\n---\n')
+    const images = [...base.matchAll(/\bimage:\s*["']?([^\s"',}\]]+)/gu)].map(match => match[1]!)
+    expect(images.length).toBeGreaterThan(0)
+    expect(images.every(image => /^\S+@sha256:[0-9a-f]{64}$/u.test(image))).toBe(true)
+
+    const rendered = execFileSync('kustomize', ['build', 'infra/kubernetes/base'], { encoding: 'utf8', stdio: 'pipe' })
+    const renderedImages = [...rendered.matchAll(/\bimage:\s*["']?([^\s"',}\]]+)/gu)].map(match => match[1]!)
+    expect(renderedImages.length).toBe(images.length)
+    expect(renderedImages.every(image => /^\S+@sha256:[0-9a-f]{64}$/u.test(image))).toBe(true)
+  })
+
   it('renders every production scale overlay with effective immutable image replacements and passes the release validator', () => {
     const overlayImageDigests = { ...imageDigests, clamav: 'sha256:761f6c99b8d9134b39431f8c200189cda749b17310091561bfa8b732f32bfada' }
     const replacements: Record<string, string> = {

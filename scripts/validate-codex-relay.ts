@@ -102,15 +102,10 @@ export async function probeCodexRelayCatalog(
     }
     const catalog = payload as Record<string, unknown>
     if (!Array.isArray(catalog.data)) result.errors.push('Codex host relay /models 缺少 OpenAI data 数组')
-    // Codex App 0.151 dynamically refreshes the provider catalog from this
-    // additional field. A relay can satisfy the public OpenAI data[] contract
-    // yet still leave the desktop app on a stale cross-provider model cache.
-    if (!Array.isArray(catalog.models)) result.errors.push('Codex host relay /models 与当前 Codex App 目录契约不兼容：缺少顶层 models 数组')
     const openAiModel = objectEntries(catalog.data).find(entry => entry.id === result.model)
-    const codexModel = objectEntries(catalog.models).find(entry => entry.slug === result.model)
     if (!openAiModel) result.errors.push(`Codex host relay OpenAI data[] 未声明当前 host model：${result.model}`)
     else if (!supportsResponses(openAiModel)) result.errors.push(`Codex host relay 当前 host model 未声明 openai-response 能力：${result.model}`)
-    if (!codexModel) result.errors.push(`Codex host relay Codex models[] 未声明当前 host model slug：${result.model}`)
+    if (Array.isArray(catalog.models) && !objectEntries(catalog.models).some(entry => entry.slug === result.model)) result.errors.push(`Codex host relay Codex models[] 未声明当前 host model slug：${result.model}`)
   } catch (error) {
     result.errors.push(`Codex host relay /models 探测失败：${error instanceof Error && error.name === 'TimeoutError' ? '请求超时' : '连接失败'}`)
   }

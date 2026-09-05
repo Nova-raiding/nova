@@ -18,6 +18,8 @@ RUN set -eu; \
     esac
 
 FROM validate AS build
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
+ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 COPY package.json package-lock.json ./
 COPY tsconfig.json tsconfig.json
 COPY apps/ops-console/package.json apps/ops-console/package.json

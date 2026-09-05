@@ -12,6 +12,7 @@ interface OpsHeaderProps {
   roles?: string[];
   sessionLoaded: boolean;
   onRefresh: () => void;
+  connectionError?: string;
   dataSource?: OpsDataSource;
   refreshing?: boolean;
   session?: OpsSession;
@@ -74,6 +75,7 @@ export function OpsHeader({
   roles,
   sessionLoaded,
   onRefresh,
+  connectionError,
   dataSource,
   refreshing = false,
   session,
@@ -104,6 +106,8 @@ export function OpsHeader({
     ? "missing-credentials"
     : !hasOpsConnection()
       ? "missing-workspace"
+      : connectionError
+        ? "error"
       : sessionLoaded
         ? "ready"
         : "loading";
@@ -154,19 +158,20 @@ export function OpsHeader({
       <div className="ops-connection-toolbar">
         <div className="ops-connection-summary">
           <span className="ops-connection-summary-label">连接状态</span>
-          <Tag role="status" aria-live="polite" aria-busy={refreshing || undefined} data-state={connectionState} className="ops-status-tag" color={!hasOpsConnection() ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
-            {refreshing ? "正在刷新" : !hasOpsCredentials() ? "待配置" : !hasOpsConnection() ? "待填写工作区" : sessionLoaded ? "已连接" : "读取中"}
+          <Tag role="status" aria-live="polite" aria-busy={refreshing || undefined} data-state={connectionState} className="ops-status-tag" color={!hasOpsConnection() || connectionError ? "orange" : managedSession && !sessionLoaded ? "orange" : "blue"}>
+            {refreshing ? "正在刷新" : !hasOpsCredentials() ? "待配置" : !hasOpsConnection() ? "待填写工作区" : connectionError ? "连接失败" : sessionLoaded ? "已连接" : "读取中"}
           </Tag>
         </div>
         <Button
           ref={connectionToggleRef}
           type="default"
           className="ops-connection-toggle"
+          aria-label="连接诊断 / 登录配置"
           aria-expanded={connectionOpen}
           aria-controls="ops-connection-fields"
           onClick={() => setConnectionOpen(open => !open)}
         >
-          {connectionOpen ? "收起连接诊断" : "连接诊断"}
+          {connectionOpen ? "收起登录配置" : "登录 / 连接"}
         </Button>
       </div>
       <Drawer
@@ -207,7 +212,18 @@ export function OpsHeader({
         }}
       >
       <p id={connectionDescriptionId} className="sr-only">修改本机运营 API 连接配置后保存并刷新。连接失败时请修正字段并重试。</p>
-      <Space orientation="vertical" size="middle" className="full-width">
+        <Space orientation="vertical" size="middle" className="full-width">
+        {connectionError ? (
+          <Alert
+            role="alert"
+            aria-live="assertive"
+            type="error"
+            showIcon
+            title="最近一次连接失败"
+            description={<><span>{connectionError}</span><span>未取得新的运营会话；请修复连接或认证后重试。</span></>}
+            action={<Button htmlType="button" style={{ minHeight: 44 }} loading={refreshing} disabled={refreshing} onClick={onRefresh}>重试权限验证</Button>}
+          />
+        ) : null}
         {configError ? (
           <div ref={configErrorRef} tabIndex={-1} aria-label="连接配置错误" className="ops-config-error-summary">
             <Alert
@@ -255,11 +271,11 @@ export function OpsHeader({
             <Alert
               type="warning"
               showIcon
-              title="本地开发适配器"
-              description="仅用于本机 Docker 验证；不会代表生产 OIDC 身份，也不能作为生产上线证据。"
+              title="当前为本地验证环境"
+              description="这里使用本机 Docker 的演示数据，仅用于体验运营后台；生产环境会改用企业 SSO 登录。"
             />
             <label className="ops-connection-field">
-              <span>操作员 ID</span>
+              <span>高级：操作员 ID</span>
               <Input
                 name="actorId"
                 autoComplete="username"
@@ -269,7 +285,7 @@ export function OpsHeader({
               />
             </label>
             <label className="ops-connection-field">
-              <span>运营 API Token</span>
+              <span>高级：运营 API Token</span>
               <Input.Password
                 ref={tokenRef}
                 name="token"

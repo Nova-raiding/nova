@@ -220,6 +220,11 @@ export const featureFlagsClient: FeatureFlagsClient = {
     reason: input.reason,
   })),
   events: async (flagId: string) => parseFeatureFlagEvents(await rpc("ops.feature-flag.events", { flag_id: flagId, limit: "100" })),
+  evaluate: async input => {
+    const value = await rpc("ops.feature-flag.evaluate", { flag_key: input.flagKey, environment: input.environment, ...(input.targetWorkspaceId ? { target_workspace_id: input.targetWorkspaceId } : {}), ...(input.identityId ? { identity_id: input.identityId } : {}) });
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("功能开关评估返回无效");
+    return value as Record<string, unknown>;
+  },
 };
 
 export const incidentsClient: IncidentsClient = {
@@ -230,6 +235,11 @@ export const incidentsClient: IncidentsClient = {
     ...(input.cursor ? { cursor: input.cursor } : {}),
     limit: String(input.limit),
   })),
+  get: async (incidentId: string) => {
+    const value = await rpc("ops.incident.get", { incident_id: incidentId });
+    if (!incident(value)) fail("事故详情", "incident");
+    return value as import("../hooks/useIncidents.js").OpsIncident;
+  },
   timeline: async (input) => parseIncidentTimelinePage(await rpc("ops.incident.timeline", { incident_id: input.incidentId, limit: String(input.limit), ...(input.cursor ? { cursor: input.cursor } : {}) })),
   create: async (input) => parseIncidentMutation(await rpc("ops.incident.create", {
     title: input.title, summary: input.summary, severity: input.severity,

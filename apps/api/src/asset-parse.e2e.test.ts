@@ -29,6 +29,8 @@ describe('asset parsing', () => {
   })
 
   async function uploadAutomaticallyScanned(base: string, workspace: string, name: string, contentType: string, body: BodyInit) {
+    await api.grantCreativePointsForTests(workspace)
+    api.grantContinuousFeatureEntitlementForTests(workspace)
     const response = await fetch(`${base}/v1/assets/upload`, {
       method: 'POST',
       headers: { 'x-workspace-id': workspace, 'content-type': contentType, 'x-asset-name': name },

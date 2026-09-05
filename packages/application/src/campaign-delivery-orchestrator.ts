@@ -119,6 +119,11 @@ export class CampaignDeliveryOrchestratorAdapter {
     const paused = row.state === 'paused'
     if (operation === 'retry_failed') {
       const selected = request.itemIds?.length ? new Set(request.itemIds) : undefined
+      if (selected) {
+        const durableItemIds = new Set(row.items.map(item => item.id))
+        const unknownItemId = [...selected].find(itemId => !durableItemIds.has(itemId))
+        if (unknownItemId) throw new CampaignManifestError('CAMPAIGN_ITEM_NOT_FOUND', `retry_failed item ${unknownItemId} 不属于该 campaign`, 'itemIds')
+      }
       for (const [index, durableItem] of row.items.entries()) {
         if ((!selected || selected.has(durableItem.id)) && (durableItem.state === 'failed' || durableItem.state === 'paused' || deliveryItems[index]!.publish.status === 'failed')) {
           throw new CampaignManifestError('CAMPAIGN_INVALID_TRANSITION', `retry_failed 未推进 item ${durableItem.id}`, `items[${index}].state`)

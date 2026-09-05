@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTHZ_POLICY_VERSION } from '../../../packages/contracts/src/authz.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
-import { operationAudits, server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, operationAudits, server, setAuthorizationRepositoryForTests, workspaceMembers } from './server.js'
 
 type Envelope = {
   request_id?: string
@@ -84,6 +84,8 @@ describe('Ops RBAC HTTP/MCP rules parity', () => {
     const workspaceId = `ws_rules_parity_allow_${Date.now()}`
     const actorId = `rules-parity-allow-${Date.now()}`
     await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'acceptance-test' })
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     configureTokens(workspaceId, actorId, `unused-denied-${Date.now()}`)
     const base = await start()
 

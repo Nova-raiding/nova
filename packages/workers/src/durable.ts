@@ -311,7 +311,7 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
   async dispatchOnce(): Promise<DurableDispatchResult<E>> {
     const message = await this.queue.dequeue()
     if (!message) return { state: 'empty' }
-    const event = message.value
+    let event = message.value
     // The queue envelope is part of the durable execution identity. A
     // transport bug or poisoned message must never make us execute one event
     // while acknowledging another id; discard only the malformed delivery so
@@ -329,6 +329,9 @@ export class DurableOutboxDispatcher<E extends DurableOutboxEvent = DurableOutbo
 
     try {
       const leasedEvent = await this.store.validateLease(event.workspaceId, event.id, leaseToken, new Date(this.now()).toISOString())
+      // The queue is only a delivery hint. The lease validation response is
+      // the authoritative durable payload and must be the one executed.
+      event = leasedEvent
       // A transport can deliver a duplicate after the first delivery was
       // acknowledged (for example, when a Redis claim was copied before the
       // processing entry was removed). The database is authoritative: do not

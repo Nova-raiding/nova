@@ -1,4 +1,4 @@
-import { Alert, Card, Col, Row, Statistic } from "antd";
+import { Alert, Button, Card, Col, Row, Statistic } from "antd";
 import { ModelMarkupPanel } from "../components/finance/ModelMarkupPanel";
 import { ModelStatusSection } from "../components/models/ModelStatusSection";
 import { ModelChannelMatrix } from "../components/models/ModelChannelMatrix";
@@ -19,6 +19,7 @@ export function ModelsPage({ model }: ModelsPageProps) {
       eyebrow="MODEL SERVICES"
       title="模型服务"
       description="集中查看文本、图片、编辑、OCR 与视频能力的最终 readiness、成本证据和上线阻断。"
+      actions={<Button type="primary" loading={model.loading || model.modelStatusLoading} onClick={() => void model.load()}>刷新模型状态</Button>}
       nextStep={modelError ? "先恢复模型状态读取；在 readiness 未确认前保持所有生成能力阻断。" : "先处理阻断项，再核对成本证据与五模态 readiness。"}
     >
       <OpsPageError error={modelError ?? ""} onRetry={() => void model.load()} />

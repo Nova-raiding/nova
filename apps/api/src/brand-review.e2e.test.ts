@@ -1,6 +1,16 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests } from './server.js'
 
 let server: typeof import('./server.js').server
+const fixtureBases = new Set<string>()
+const fixtureFetch = globalThis.fetch
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  if (![...fixtureBases].some(base => url.startsWith(base))) return fixtureFetch(input, init)
+  const headers = new Headers(init?.headers)
+  headers.set('x-test-commercial-fixture', 'server-e2e')
+  return fixtureFetch(input, { ...init, headers })
+}
 
 async function start() {
   await new Promise<void>((resolve, reject) => {
@@ -10,7 +20,9 @@ async function start() {
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
-  return `http://127.0.0.1:${address.port}`
+  const base = `http://127.0.0.1:${address.port}`
+  fixtureBases.add(base)
+  return base
 }
 
 describe('brand-bound content review', () => {
@@ -20,6 +32,8 @@ describe('brand-bound content review', () => {
   it('auto-binds the workspace brand revision and returns a blocking brand finding over REST/MCP', async () => {
     const base = await start()
     const workspaceId = `ws_brand_review_${Date.now()}`
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
     const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const brand = await fetch(`${base}/v1/brand-profile`, { method: 'PUT', headers, body: JSON.stringify({ name: '云朵', forbidden_terms: ['顶级'] }) }).then(response => response.json()) as { data: { id: string; revision: number } }
     const product = await fetch(`${base}/v1/products/import`, { method: 'POST', headers, body: JSON.stringify({ platform: 'taobao', title: '品牌审核商品', local_product_key: 'brand-review', price: 199, stock: 8 }) }).then(response => response.json()) as { data: { id: string } }

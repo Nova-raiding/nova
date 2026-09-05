@@ -26,6 +26,7 @@ describe('HTTP authorization policy registry', () => {
     const readTransportWriteOperations = new Set([
       'http:GET:/v1/content-versions/{contentVersionId}/review',
       'http:GET:/v1/content-versions/{contentVersionId}/export',
+      'http:GET:/v1/products/{productId}/image-review',
     ])
 
     for (const policy of HTTP_OPERATION_POLICIES) {
@@ -58,6 +59,7 @@ describe('HTTP authorization policy registry', () => {
     expect(getHttpOperationPolicy('POST', '/v1/internal/support/sla-scan')).toMatchObject({ authentication: 'worker' })
     expect(getHttpOperationPolicy('POST', '/v1/internal/support/sla-report')).toMatchObject({ authentication: 'worker' })
     expect(getHttpOperationPolicy('GET', '/v1/tasks/task-1/approve')).toBeUndefined()
+    expect(getHttpOperationPolicy('GET', '/v1/products/product-1/image-review')).toMatchObject({ mcpMethod: 'catalog.image.review', authentication: 'identity' })
     expect(getHttpOperationPolicy('POST', '/v1/tasks/task-1/approve/extra')).toBeUndefined()
   })
 

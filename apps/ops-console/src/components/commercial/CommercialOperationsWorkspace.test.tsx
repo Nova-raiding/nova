@@ -6,6 +6,18 @@ import { commercialBlockDisplayState, CommercialAccessStatusBar, CommercialError
 const query = { view: "blocks", record: "", status: "", query: "", page: 1, sort: "", order: "" } as const;
 
 describe("CommercialOperationsWorkspace", () => {
+  it("keeps service fulfillment commands evidence-bound and revision-protected", async () => {
+    const source = await import("node:fs").then(fs => fs.readFileSync(new URL("../../api/commercialOperationsClient.ts", import.meta.url), "utf8"));
+    expect(source).toContain('ops.commercial.service-fulfillment.schedule');
+    expect(source).toContain('ops.commercial.service-fulfillment.start');
+    expect(source).toContain('ops.commercial.service-fulfillment.complete');
+    expect(source).toContain('ops.commercial.service-fulfillment.adjust');
+    expect(source).toContain("expected_revision: String(expectedRevision)");
+    expect(source).toContain("evidence_json");
+    expect(source).toContain('ops.commercial.service-allocation.create');
+    expect(source).toContain('expected_revision: "0"');
+    expect(source).toContain('source_checksum');
+  });
   it("renders unknown as unavailable and never as zero", () => {
     const html = renderToStaticMarkup(<CommercialAccessStatusBar state={{ status: "ready", data: {
       decisionId: "cad_1", workspaceId: "ws_1", balanceState: "unknown", availablePoints: null,
@@ -74,6 +86,24 @@ describe("CommercialOperationsWorkspace", () => {
     expect(html).toContain("req_409");
     expect(html).toContain("refresh_decision");
     expect(html).toContain('role="alert"');
+  });
+
+  it("renders explicit 403 and 503 states without presenting an empty result", () => {
+    const forbidden = renderToStaticMarkup(<CommercialErrorSummary error={{ message: "无权访问", code: "FORBIDDEN", httpStatus: 403 }} onRetry={vi.fn()} />);
+    expect(forbidden).toContain("FORBIDDEN · 403");
+    const unavailable = renderToStaticMarkup(<CommercialErrorSummary error={{ message: "服务不可用", code: "UPSTREAM_UNAVAILABLE", httpStatus: 503 }} onRetry={vi.fn()} />);
+    expect(unavailable).toContain("当前视图 503 · UPSTREAM_UNAVAILABLE");
+    expect(unavailable).not.toContain("服务端已返回空结果");
+  });
+
+  it("labels retained rows as stale after a transient failure", () => {
+    const controller = {
+      view: "blocks", setView: vi.fn(), loadSummary: vi.fn(), loadView: vi.fn(), query, setQuery: vi.fn(),
+      summary: { status: "error", error: { message: "服务不可用", code: "UPSTREAM_UNAVAILABLE", httpStatus: 503 } },
+      data: { blocks: { status: "error", data: { total: 1, items: [] }, error: { message: "服务不可用", code: "UPSTREAM_UNAVAILABLE", httpStatus: 503 } }, entitlements: { status: "idle" }, ledger: { status: "idle" }, catalog: { status: "idle" }, orders: { status: "idle" }, rates: { status: "idle" }, services: { status: "idle" } },
+      permissions: { privateSkuReadable: false, canRecover: false, canAdjustPoints: false, canDraftCatalog: false, canPublishCatalog: false, canGrantPrivateSku: false, canReconcilePayment: false, canDraftRate: false, canApproveRate: false, canWriteService: false },
+    } as unknown as CommercialOperationsController;
+    expect(renderToStaticMarkup(<CommercialOperationsWorkspace controller={controller} />)).toContain("以下为上次成功数据");
   });
 
   it("keeps every commercial recovery state distinct with text and an icon", () => {

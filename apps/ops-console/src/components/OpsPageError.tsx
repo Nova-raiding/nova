@@ -49,7 +49,7 @@ export function OpsPageError({
         ? <Button size="small" style={{ minHeight: 44 }} aria-label="重试加载运营数据" onClick={onRetry}>重试</Button>
         : <Button size="small" style={{ minHeight: 44 }} aria-label="刷新运营后台页面" onClick={() => window.location.reload()}>刷新页面</Button>;
 
-  const hasDiagnostics = Boolean(presentation.code || presentation.requestId || presentation.traceId || presentation.decisionId || presentation.reasonCode || presentation.obligationsMissing?.length);
+  const hasDiagnostics = Boolean(presentation.code || presentation.requestId || presentation.traceId || presentation.decisionId || presentation.reasonCode || presentation.obligationsMissing?.length || presentation.findings?.length);
   return (
     <div ref={errorRef} tabIndex={-1} className="ops-page-error" data-state="error" data-recovery={presentation.recovery === "contact_support" && presentation.code && ["FORBIDDEN", "MEMBER_NOT_ACTIVE", "MEMBER_SUSPENDED", "HTTP_403"].includes(presentation.code) ? "permission" : presentation.recovery}>
       <Alert
@@ -71,6 +71,7 @@ export function OpsPageError({
                   {presentation.decisionId ? <><dt>决策 ID</dt><dd><code>{presentation.decisionId}</code></dd></> : null}
                   {presentation.reasonCode ? <><dt>决策原因</dt><dd><code>{presentation.reasonCode}</code></dd></> : null}
                   {presentation.obligationsMissing?.length ? <><dt>缺失义务</dt><dd><code>{presentation.obligationsMissing.join(", ")}</code></dd></> : null}
+                  {presentation.findings?.length ? <><dt>审核阻断项</dt><dd><ul>{presentation.findings.map((finding) => <li key={`${finding.code}:${finding.field ?? ""}`}><code>{finding.code}</code>{finding.field ? `（${finding.field}）` : ""}{finding.message ? `：${finding.message}` : ""}</li>)}</ul></dd></> : null}
                 </dl>
               </details>
             ) : null}

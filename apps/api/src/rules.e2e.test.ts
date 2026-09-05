@@ -1,8 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { server, service, setRuleRepositoryForTests, workspaceMembers, type RuleRepositoryPort } from './server.js'
+import { grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, server, service, setRuleRepositoryForTests, workspaceMembers, type RuleRepositoryPort } from './server.js'
 import type { PersistedRuleAudit, PersistedRuleVersion } from '../../../packages/persistence/src/index.js'
 
 type Envelope<T = unknown> = { workspace_id: string; data: T | null; error: { code: string; message: string } | null }
+
+const ruleE2eBases = new Set<string>()
+const ruleNativeFetch = globalThis.fetch.bind(globalThis)
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+  const base = [...ruleE2eBases].find(candidate => url.startsWith(candidate))
+  if (!base) return ruleNativeFetch(input, init)
+  const headers = new Headers(input instanceof Request ? input.headers : init?.headers)
+  headers.set('x-test-commercial-fixture', 'server-e2e')
+  return ruleNativeFetch(input, { ...init, headers })
+}
 
 class MemoryRuleRepository implements RuleRepositoryPort {
   readonly versions: PersistedRuleVersion[] = []
@@ -44,7 +55,9 @@ async function start() {
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('server did not bind')
-  return `http://127.0.0.1:${address.port}`
+  const base = `http://127.0.0.1:${address.port}`
+  ruleE2eBases.add(base)
+  return base
 }
 
 async function json(response: Response) { return await response.json() as Envelope<any> }
@@ -63,13 +76,15 @@ describe('durable rule-center HTTP boundary', () => {
     vi.stubEnv('NODE_ENV', 'staging')
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
       'reader-token': { workspaces: ['ws_rules'], roles: [], actor_id: 'reader_1' },
-      'admin-token': { workspaces: ['ws_rules'], roles: ['rules_admin'], actor_id: 'admin_1' },
+      'admin-token': { workspaces: ['ws_rules'], roles: ['rules_admin'], workbenches: ['platform', 'workspace'], actor_id: 'admin_1' },
     }))
     vi.stubEnv('RULE_APPROVAL_TOKENS', JSON.stringify({
       'approval-token': { workspaces: ['ws_rules'], actor_id: 'reviewer_2' },
     }))
     await workspaceMembers.upsert({ workspaceId: 'ws_rules', externalSubject: 'reader_1', displayName: '规则读者', role: 'operator', status: 'active', invitedBy: 'test' })
     await workspaceMembers.upsert({ workspaceId: 'ws_rules', externalSubject: 'admin_1', displayName: '规则管理员', role: 'merchant_admin', status: 'active', invitedBy: 'test' })
+    await grantCreativePointsForTests('ws_rules')
+    grantContinuousFeatureEntitlementForTests('ws_rules')
     const base = await start()
     const body = {
       name: '商品合规规则', version: '2.0.0', scope: 'global', status: 'active', source_kind: 'legal_review',
@@ -81,7 +96,7 @@ describe('durable rule-center HTTP boundary', () => {
     const deniedRole = await fetch(`${base}/v1/rules/catalog/versions`, { method: 'POST', headers: readerHeaders, body: JSON.stringify(body) }).then(json)
     expect(deniedRole.error?.code).toBe('FORBIDDEN')
 
-    const adminHeaders = { authorization: 'Bearer admin-token', 'x-workspace-id': 'ws_rules', 'content-type': 'application/json' }
+    const adminHeaders = { authorization: 'Bearer admin-token', 'x-workspace-id': 'ws_rules', 'x-ops-workbench': 'platform', 'content-type': 'application/json' }
     const missingApprovalToken = await fetch(`${base}/v1/rules/catalog/versions`, { method: 'POST', headers: adminHeaders, body: JSON.stringify(body) }).then(json)
     expect(missingApprovalToken.error?.code).toBe('RULE_APPROVAL_REQUIRED')
     expect(repository.versions).toHaveLength(0)
@@ -98,7 +113,7 @@ describe('durable rule-center HTTP boundary', () => {
     expect(listed.data).toHaveLength(1)
     const listedPage = await fetch(`${base}/v1/rules?pack_id=catalog&limit=1&offset=0`, { headers: readerHeaders }).then(json)
     expect(listedPage.data).toMatchObject({ items: [expect.objectContaining({ id: (listed.data as Array<{ id: string }>)[0]?.id })], total: 1, limit: 1, offset: 0 })
-    const audit = await fetch(`${base}/v1/rules/audit?pack_id=catalog`, { headers: adminHeaders }).then(json)
+    const audit = await fetch(`${base}/v1/rules/audit?pack_id=catalog`, { headers: { ...adminHeaders, 'x-ops-workbench': 'workspace' } }).then(json)
     expect(audit.error).toBeNull()
     expect(audit.data).toHaveLength(1)
 

@@ -5,14 +5,9 @@ describe("SupportPage desktop loading and error contract", () => {
   it("focuses the recoverable error summary and exposes stable screen-reader relationships", async () => {
     const source = await readFile(new URL("./SupportPage.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("errorRef.current?.focus({ preventScroll: true })");
-    expect(source).toContain('tabIndex={-1} role="alert"');
-    expect(source).toContain('aria-live="assertive"');
-    expect(source).toContain('aria-atomic="true"');
-    expect(source).toContain("aria-labelledby={errorTitleId}");
-    expect(source).toContain("aria-describedby={errorDescriptionId}");
-    expect(source).toContain('htmlType="button"');
-    expect(source).toContain('aria-label="重试客服数据"');
+    expect(source).toContain('import { OpsPageError } from "../components/OpsPageError.js"');
+    expect(source).toContain('<OpsPageError error={model.error ?? ""} onRetry={() => void model.reload()} />');
+    expect(source).toContain("onRetry={() => void model.reload()}");
   });
 
   it("keeps the page aligned with the queue's initial-load distinction", async () => {

@@ -15,6 +15,7 @@ import {
   MCP_RECOVERY_DISABLED_METHODS,
   MCP_RECOVERY_ENABLED_METHODS,
   ROLE_CAPABILITIES,
+  WORKER_RUNTIME_OPERATIONS,
   assertCommercialOperationRegistryTotality,
   getMcpMethodPolicy,
   resolveCommercialOperation,
@@ -26,11 +27,16 @@ const resolveHttp = (operation: string) => resolveCommercialOperation(COMMERCIAL
 describe('complete commercial operation registry E1 totality', () => {
   it('classifies every current MCP and HTTP operation exactly once', () => {
     expect(COMMERCIAL_OPERATION_REGISTRY_COVERAGE).toEqual({
-      registered: MCP_METHODS.length + HTTP_OPERATION_POLICIES.length,
-      manifest_operations: MCP_METHODS.length + HTTP_OPERATION_POLICIES.length,
-      by_surface: { MCP: MCP_METHODS.length, HTTP: HTTP_OPERATION_POLICIES.length, WORKER: 0 },
+      registered: MCP_METHODS.length + HTTP_OPERATION_POLICIES.length + WORKER_RUNTIME_OPERATIONS.length,
+      manifest_operations: MCP_METHODS.length + HTTP_OPERATION_POLICIES.length + WORKER_RUNTIME_OPERATIONS.length,
+      by_surface: { MCP: MCP_METHODS.length, HTTP: HTTP_OPERATION_POLICIES.length, WORKER: WORKER_RUNTIME_OPERATIONS.length },
     })
-    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(386)
+    expect(COMMERCIAL_OPERATION_REGISTRY).toHaveLength(MCP_METHODS.length + HTTP_OPERATION_POLICIES.length + WORKER_RUNTIME_OPERATIONS.length)
+  })
+
+  it('fails totality when a real Worker action is removed from the runtime manifest', () => {
+    const withoutWorker = COMMERCIAL_OPERATION_RUNTIME_MANIFEST.filter(ref => ref.surface !== 'WORKER' || ref.operation !== 'image_generation.execute')
+    expect(() => assertCommercialOperationRegistryTotality(withoutWorker, COMMERCIAL_OPERATION_REGISTRY)).toThrow('stale classifications: WORKER:image_generation.execute')
   })
 
   it('fails CI totality when a new runtime method has no reviewed classification', () => {
@@ -183,6 +189,6 @@ describe('complete commercial operation registry E1 totality', () => {
   })
 
   it('publishes a deterministic reviewed-registry checksum', () => {
-    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:4d49e319')
+    expect(COMMERCIAL_OPERATION_REGISTRY_CHECKSUM).toBe('fnv1a32:c075d591')
   })
 })

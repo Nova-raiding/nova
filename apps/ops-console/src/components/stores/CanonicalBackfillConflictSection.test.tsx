@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CanonicalBackfillConflictSection, canSubmitConflictResolution, conflictEvidenceSummary } from "./CanonicalBackfillConflictSection.js";
 import type { CanonicalBackfillConflict } from "../../types/ops.js";
@@ -40,5 +41,21 @@ describe("CanonicalBackfillConflictSection", () => {
   it("keeps the evidence summary tied to the conflict revision", () => {
     const row = { id: "c-1", workspaceId: "ws-1", runId: "run-1", legacyProductId: "legacy-1", code: "AMBIGUOUS", canonicalIds: ["canonical-1"], status: "claimed", revision: 3, createdAt: "2026-08-31T00:00:00Z", updatedAt: "2026-08-31T00:00:00Z" } satisfies CanonicalBackfillConflict;
     expect(conflictEvidenceSummary(row)).toEqual({ legacyProductId: "legacy-1", runId: "run-1", conflictCode: "AMBIGUOUS", revision: 3, canonicalIds: ["canonical-1"] });
+  });
+
+  it("guards queue mutations against duplicate in-flight submissions", () => {
+    const source = readFileSync(new URL("./CanonicalBackfillConflictSection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("operationInFlightRef");
+    expect(source).toContain("if (operationInFlightRef.current) return");
+    expect(source).toContain("disabled={loading}");
+  });
+
+  it("exposes bounded batch controls without silently enabling destructive writes", () => {
+    const source = readFileSync(new URL("./CanonicalBackfillConflictSection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("创建 dry-run 批次");
+    expect(source).toContain('ops.canonical.backfill.pause');
+    expect(source).toContain('ops.canonical.backfill.resume');
+    expect(source).toContain('ops.canonical.backfill.run');
+    expect(source).toContain('dry_run: "true"');
   });
 });

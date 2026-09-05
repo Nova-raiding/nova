@@ -36,4 +36,20 @@ describe("PageHeader", () => {
     expect(markup).not.toContain("ops-page-heading-actions");
     expect(markup).not.toContain("ops-conversation-step");
   });
+
+  it("renders page actions in the shared desktop action region", () => {
+    const markup = renderToStaticMarkup(
+      <PageHeader
+        eyebrow="OVERVIEW"
+        title="运营总览"
+        description="查看运营数据。"
+        headingId="overview-heading"
+        descriptionId="overview-description"
+        actions={<button type="button">刷新总览</button>}
+      />,
+    );
+
+    expect(markup).toContain('class="ops-page-heading-actions"');
+    expect(markup).toContain("刷新总览");
+  });
 });

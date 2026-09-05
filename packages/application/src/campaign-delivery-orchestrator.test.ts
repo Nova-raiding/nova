@@ -79,4 +79,18 @@ describe('CampaignDeliveryOrchestratorAdapter durable row boundary', () => {
     const staleRetry = new CampaignDeliveryOrchestratorAdapter({ execute: async () => ({ row, deliveryItems: [item] }) })
     await expect(staleRetry.retryFailed({ workspaceId: row.workspaceId, campaignId: row.id, itemIds: [row.items![0]!.id] })).rejects.toMatchObject({ code: 'CAMPAIGN_INVALID_TRANSITION' })
   })
+
+  it('rejects retry targets that are not members of the durable campaign', async () => {
+    const row = durableRow()
+    const item = deliveryItem()
+    const adapter = new CampaignDeliveryOrchestratorAdapter({
+      execute: async () => ({ row: structuredClone(row), deliveryItems: [structuredClone(item)] }),
+    })
+
+    await expect(adapter.retryFailed({
+      workspaceId: row.workspaceId,
+      campaignId: row.id,
+      itemIds: ['campaign-item-foreign'],
+    })).rejects.toMatchObject({ code: 'CAMPAIGN_ITEM_NOT_FOUND' })
+  })
 })

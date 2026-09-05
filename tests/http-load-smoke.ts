@@ -73,6 +73,8 @@ export async function runHttpConcurrencySmoke(workspaces = 50): Promise<HttpSmok
       const workspaceId = `ws_http_smoke_${runId}_${index}`
       const productId = `prod_http_smoke_${runId}_${index}`
       const account = api.service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `http-smoke-${runId}-${index}`, credentialRef: 'fixture://http-smoke' })
+      await api.grantCreativePointsForTests(workspaceId)
+      api.grantContinuousFeatureEntitlementForTests(workspaceId)
       const product: Product = {
         id: productId,
         workspaceId,

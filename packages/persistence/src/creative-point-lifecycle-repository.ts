@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { requireWorkspaceScope, type SqlClient, type SqlPool, withWorkspaceTransaction } from './repository.js'
+
+const validEvidenceRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+const finiteNonNegative = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0
+const validUsageEvidence = (value: unknown): boolean => {
+  if (!validEvidenceRecord(value) || typeof value.modality !== 'string' || !['text', 'image', 'image_edit', 'ocr', 'video'].includes(value.modality) || typeof value.model !== 'string' || !value.model.trim()) return false
+  for (const key of ['input_tokens', 'output_tokens', 'total_tokens'] as const) if (value[key] !== undefined && (!finiteNonNegative(value[key]) || !Number.isSafeInteger(value[key]))) return false
+  return true
+}
+const validCostEvidence = (value: unknown): boolean => validEvidenceRecord(value) && value.currency === 'CNY' && finiteNonNegative(value.actual)
 import { CreativePointRepositoryError, type CreativePointBalance } from './creative-point-repository.js'
 
 type MutationInput = { workspaceId: string; idempotencyKey: string; at: string }
@@ -98,9 +107,26 @@ export class PostgresCreativePointLifecycleRepository {
   async recordProviderReceipt(input: CreativePointProviderReceiptInput): Promise<void> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const observedAt = at(input.at); required(input.operationId, 'operationId'); required(input.provider, 'provider'); required(input.providerRequestId, 'providerRequestId')
     if (!/^[0-9a-f]{64}$/u.test(input.receiptHash)) throw new TypeError('receiptHash must be sha256 hex')
-    if (input.outcome === 'succeeded' && (!input.usage || !input.cost || !input.verifiedAt)) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'successful provider receipt requires verified usage and cost')
+    if (input.outcome === 'succeeded') {
+      if (!input.usage || !input.cost || !input.verifiedAt) throw new CreativePointRepositoryError('CREATIVE_POINT_BALANCE_UNKNOWN', 'successful provider receipt requires verified usage and cost')
+      if (!validUsageEvidence(input.usage) || !validCostEvidence(input.cost) || Number.isNaN(Date.parse(input.verifiedAt))) throw new CreativePointRepositoryError('CREATIVE_POINT_INPUT_INVALID', 'successful provider receipt requires valid usage, finite non-negative cost and verifiedAt')
+    }
     await withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      await client.query(`INSERT INTO creative_point_provider_receipts_v2 (id,workspace_id,operation_id,provider,provider_request_id,outcome,usage,cost,receipt_hash,verified_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10::timestamptz,$11::timestamptz) ON CONFLICT (provider,provider_request_id) DO NOTHING`, [`cppr_${randomUUID()}`, workspaceId, input.operationId, input.provider, input.providerRequestId, input.outcome, input.usage ? JSON.stringify(input.usage) : null, input.cost ? JSON.stringify(input.cost) : null, input.receiptHash, input.verifiedAt ? at(input.verifiedAt) : null, observedAt])
+      const inserted = await client.query<{ operation_id: string; provider: string; outcome: string; receipt_hash: string }>(`INSERT INTO creative_point_provider_receipts_v2 (id,workspace_id,operation_id,provider,provider_request_id,outcome,usage,cost,receipt_hash,verified_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10::timestamptz,$11::timestamptz) ON CONFLICT (provider,provider_request_id) DO NOTHING RETURNING operation_id,provider,outcome,receipt_hash`, [`cppr_${randomUUID()}`, workspaceId, input.operationId, input.provider, input.providerRequestId, input.outcome, input.usage ? JSON.stringify(input.usage) : null, input.cost ? JSON.stringify(input.cost) : null, input.receiptHash, input.verifiedAt ? at(input.verifiedAt) : null, observedAt])
+      if (inserted.rowCount) return
+      const existing = await client.query<{ operation_id: string; provider: string; outcome: string; receipt_hash: string }>(`SELECT operation_id,provider,outcome,receipt_hash FROM creative_point_provider_receipts_v2 WHERE provider=$1 AND provider_request_id=$2`, [input.provider, input.providerRequestId])
+      const row = existing.rows[0]
+      if (!row || row.operation_id !== input.operationId || row.provider !== input.provider || row.outcome !== input.outcome || row.receipt_hash !== input.receiptHash) throw new CreativePointRepositoryError('CREATIVE_POINT_IDEMPOTENCY_CONFLICT', 'provider receipt identity is already bound to a different operation or evidence')
+    })
+  }
+
+  async getProviderReceipt(input: { workspaceId: string; operationId: string; provider: string; providerRequestId: string }): Promise<{ operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; verifiedAt: string | null } | null> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId); required(input.operationId, 'operationId'); required(input.provider, 'provider'); required(input.providerRequestId, 'providerRequestId')
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const result = await client.query<{ operationId: string; provider: string; providerRequestId: string; outcome: 'succeeded' | 'failed' | 'unknown'; usage: Record<string, unknown> | null; cost: Record<string, unknown> | null; verifiedAt: string | Date | null }>(`SELECT operation_id AS "operationId",provider,provider_request_id AS "providerRequestId",outcome,usage,cost,verified_at AS "verifiedAt" FROM creative_point_provider_receipts_v2 WHERE workspace_id=$1 AND operation_id=$2 AND provider=$3 AND provider_request_id=$4`, [workspaceId, input.operationId, input.provider, input.providerRequestId])
+      const row = result.rows[0]
+      if (!row) return null
+      return { ...row, verifiedAt: row.verifiedAt instanceof Date ? row.verifiedAt.toISOString() : row.verifiedAt }
     })
   }
 

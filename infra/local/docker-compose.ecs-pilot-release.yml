@@ -1,0 +1,16 @@
+# Pilot-only release identity. This file is intentionally not used by
+# production Kubernetes deployment. Values are generated from the exact pilot
+# Compose render and image inventory by the deployment operator.
+services:
+  api:
+    environment:
+      RELEASE_ID: ${PILOT_RELEASE_ID:-pilot-20260905}
+      RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
+      RELEASE_MANIFEST_SHA256: ${PILOT_RELEASE_MANIFEST_SHA256:?PILOT_RELEASE_MANIFEST_SHA256 is required}
+      RELEASE_IMAGE_SET_DIGEST: ${PILOT_RELEASE_IMAGE_SET_DIGEST:?PILOT_RELEASE_IMAGE_SET_DIGEST is required}
+  api-replica:
+    environment:
+      RELEASE_ID: ${PILOT_RELEASE_ID:-pilot-20260905}
+      RELEASE_GIT_SHA: ${PILOT_RELEASE_GIT_SHA:?PILOT_RELEASE_GIT_SHA is required}
+      RELEASE_MANIFEST_SHA256: ${PILOT_RELEASE_MANIFEST_SHA256:?PILOT_RELEASE_MANIFEST_SHA256 is required}
+      RELEASE_IMAGE_SET_DIGEST: ${PILOT_RELEASE_IMAGE_SET_DIGEST:?PILOT_RELEASE_IMAGE_SET_DIGEST is required}
