@@ -1,0 +1,14 @@
+page,workbench,primary_components,read_path,write_path,closure_risk
+overview,both,OverviewPage+ModelServiceSummary,ops.session+overview hydration,route navigation,stale aggregates can look successful
+users,platform,UsersPage+UserDirectorySection,ops.users.list+ops.user.detail,ops.user.suspend/activate/risk/session,route-critical query competes with hydration
+members,workspace,MembersPage,ops.members.list,ops.member.upsert/suspend,scope and role changes need audit drilldown
+support,workspace,SupportPage,ops.support.tickets.list,ops.support.ticket.*+sla.*,SLA correction/export evidence must be visible
+incidents,workspace,IncidentsPage,ops.incidents.list/get/timeline,ops.incident.*,commander/scope actions need timeline confirmation
+tasks,workspace,TasksPage,ops.tasks.summary,task/domain clients,summary-to-task drilldown must be verified
+stores,platform,StoresPage,ops.stores.list,connector/domain clients,OAuth readiness lacks unified remediation path
+rules,workspace,RulesPage,knowledge.rule.list,rule publish/sync,revision and sync evidence must be linked
+models,platform,ModelsPage+ModelStatusSection,platform.model.status+usage,model policy/markup, runtime vs release evidence needs one traceable detail
+feature-flags,platform,FeatureFlagsPage,ops.feature-flags.list/evaluate,upsert/emergency/events,emergency changes need audit and rollback visibility
+storage,platform,StoragePage,ops.storage.reconciliation.list,redrive/domain clients,object/KMS/scanner blockers are fragmented
+finance,platform,FinancePage,ops.finance.search/detail,finance export/refund paths,ledger evidence and write confirmation are split
+audit,platform,AuditPage,ops.audit.platform.list/detail,ops.audit.export,request/trace links need consistent UI
