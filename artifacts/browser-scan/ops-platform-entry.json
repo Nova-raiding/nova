@@ -1,0 +1,10 @@
+{
+  "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 未识别\n工作区范围\n未识别\n数据与操作仅限当前工作区\nWORKSPACE OPERATIONS\n商业与平台控制台\n权限未验证\n授权状态：未验证，正在等待服务端授权\n身份 未验证\n平台控制台\n工作区 · 未识别\n策略 未返回\n平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。\n登录 / 连接\n无法验证运营权限\n部分数据集刷新失败（ops.session）。页面保留上次成功数据，这些值可能已过期：商家 Bearer 边界固定为 workspace 工作台。为保护运营数据，当前会话已拒绝所有页面与动作。\n重试权限验证",
+  "errors": [
+    {
+      "url": "http://127.0.0.1:18082/api/mcp",
+      "status": 403,
+      "body": "{\"request_id\":\"req_b1dfab26-7e90-4d84-b8e3-455c0de208a2\",\"trace_id\":\"req_b1dfab26-7e90-4d84-b8e3-455c0de208a2\",\"workspace_id\":\"ws_demo\",\"data\":null,\"warnings\":[],\"next_actions\":[],\"error\":{\"code\":\"AUTHZ_WORKBENCH_FORBIDDEN\",\"message\":\"商家 Bearer 边界固定为 workspace 工作台\"}}"
+    }
+  ]
+}

@@ -3,13 +3,34 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   base: process.env.VITE_BASE || '/',
+  define: {
+    // Keep acceptance/prod auth mode deterministic in the emitted bundle;
+    // relying only on ambient import.meta.env made isolated OIDC E2E fall
+    // back to the local merchant workspace path.
+    'import.meta.env.VITE_OPS_AUTH_MODE': JSON.stringify(process.env.VITE_OPS_AUTH_MODE || ''),
+    'import.meta.env.VITE_OPS_BUILD_MODE': JSON.stringify(process.env.VITE_OPS_BUILD_MODE || ''),
+    // Keep the managed OIDC runner's same-origin API boundary deterministic
+    // in both dev and production builds. Without an explicit value, a Vite
+    // environment mismatch can leave hasOpsConnection() false and prevent
+    // the first ops.session request from ever reaching the gateway.
+    'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE || ''),
+  },
   plugins: [react()],
   server: {
+    hmr: process.env.VITE_OPS_E2E !== 'true',
     proxy: {
       '/api': {
         target: process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8787',
         changeOrigin: true,
-        rewrite: path => path.replace(/^\/api/u, ''),
+        // The local OIDC gateway owns the `/api/*` boundary and uses it to
+        // distinguish authenticated UI traffic from static assets.  Stripping
+        // the prefix makes `/api/mcp` arrive as `/mcp`, bypassing the gateway
+        // session proof path.  Direct API targets still expect the historical
+        // `/mcp` path, so only rewrite when explicitly targeting the API port.
+        rewrite: path => {
+          const target = process.env.VITE_API_PROXY_TARGET || ''
+          return /:(8787|8797)(?:\/|$)/u.test(target) ? path.replace(/^\/api/u, '') : path
+        },
       },
     },
   },

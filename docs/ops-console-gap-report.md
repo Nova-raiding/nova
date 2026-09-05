@@ -11,6 +11,8 @@
 
 `mcp-surface-contract.test.ts` 的 138/140 差异已定位并修复：测试误把 `catalog.image.generate`、`multimodal.image.edit` 列为 disabled，但 bridge 设计为让它们可见、由 API 执行商业准入；现已恢复精确 140 断言。MCP surface 与插件 manifest 专项 18 项通过。真实桌面业务验收、上线配置和同一部署版本的证据仍须逐项复核，不应将全部剩余工作归结为 Computer Use 故障。
 
+浏览器 E2E 复验：首次全量 30 项中 1 项失败，根因是 Merchant Studio 启动探测 `platform.model.status` 被商业准入 unknown 错误拦截，产生 503；已将该只读诊断加入商业校验延期白名单，并修正过时的源码结构断言。第二次实际 Playwright 全量结果为 29 passed、1 skipped、0 failed，覆盖 Merchant Studio、Ops Console、数据安全、发布恢复和用户治理场景。该结果是本地浏览器/fixture E2E，不等价于真实 ChatGPT.app 宿主 canary。
+
 本报告包含排障过程中的历史快照；历史快照不能覆盖下面的最新状态。当前 pilot 的有效证据是：公网 `/api/healthz=200`、`/api/readyz=200`、`/api/releasez=200` 且 `ready=true`；ECS 14 个容器 healthy；workspace MCP 的 `tools/list` 与只读 `merchant.first_value` 已成功；platform token 在 workspace workbench 下被 `AUTHZ_WORKBENCH_FORBIDDEN` 拒绝。扫描素材 `asset_368a5c9a-8135-400e-be5e-972322d8c0e2` 已取得 API 接受的签名回执，heartbeat `ready=true`、`callback.capable=true`、backlog=0。
 
 这些证据只证明 pilot 和指定测试租户的运行闭环，不证明正式生产发布，也不证明真实 ChatGPT.app 已完成插件安装、对话调用和图片选择旅程。真实宿主证据仍是上线阻断项。

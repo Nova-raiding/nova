@@ -1,6 +1,7 @@
 import { expect, test, chromium } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { openPlatformConsole } from './ops-auth.js'
 
 test.setTimeout(120_000)
 const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
@@ -8,12 +9,6 @@ const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 test('inventory Ops Console through the real browser UI', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
-  await context.addInitScript(() => {
-    localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'actor_demo')
-    localStorage.setItem('ops_api_token', 'pilot-local-token')
-    localStorage.setItem('ops_workbench', 'platform')
-  })
   const page = await context.newPage()
   const consoleMessages = []
   const requestFailures = []
@@ -27,7 +22,8 @@ test('inventory Ops Console through the real browser UI', async () => {
     try { body = (await response.text()).slice(0, 5_000) } catch {}
     badResponses.push({ method: response.request().method(), url: response.url(), status: response.status(), requestBody: response.request().postData(), body })
   })
-  const response = await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await openPlatformConsole(page)
+  const response = await page.goto(process.env.OPS_OIDC_BASE_URL, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(6_000)
   await page.screenshot({ path: resolve('screenshots', 'ops-console.png'), fullPage: true })
   const inventory = await page.evaluate(() => ({
@@ -89,6 +85,7 @@ test('turns an authenticated-session 401 into a reauthentication gate', async ()
   const page = await context.newPage()
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await expect(page.getByText('无法验证运营权限', { exact: true })).toBeVisible({ timeout: 20_000 })
+  await page.getByText('查看失败详情（供管理员排查）', { exact: true }).click()
   await expect(page.getByText('运营登录已失效或尚未登录', { exact: false }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: '重试权限验证' })).toBeVisible()
   expect(sessionRequests).toBe(1)

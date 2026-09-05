@@ -9,6 +9,7 @@ export const commercialOperationsMethods = {
   orders: "ops.commercial.orders-v2.list",
   rates: "ops.commercial.rate-cards.list",
   services: "ops.commercial.service-fulfillment.list",
+  timeline: "ops.commercial.timeline.list",
 } as const;
 
 const operationId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -184,6 +185,21 @@ export interface ServiceFulfillmentItem {
   updatedAt: string | null;
 }
 
+export interface CommercialTimelineEvent {
+  id: string;
+  workspaceId: string;
+  kind: string;
+  status: string;
+  occurredAt: string;
+  operationId: string | null;
+  traceId: string | null;
+  requestId: string | null;
+  actorId: string | null;
+  reason: string | null;
+  resourceId: string | null;
+  evidence: RecordValue;
+}
+
 export interface CommercialPage<T> { items: T[]; total: number }
 
 export function parseCommercialAccessSummary(value: unknown): CommercialAccessSummary {
@@ -325,6 +341,20 @@ export function parseServices(value: unknown): CommercialPage<ServiceFulfillment
   })) };
 }
 
+export function parseCommercialTimeline(value: unknown): CommercialPage<CommercialTimelineEvent> {
+  const method = commercialOperationsMethods.timeline;
+  const page = pageRows(value, method);
+  return { total: page.total, items: page.rows.map((row) => ({
+    id: requiredText(row, method, "id", "id"), workspaceId: requiredText(row, method, "workspace_id", "workspace_id", "workspaceId"),
+    kind: requiredText(row, method, "kind", "kind", "event_type", "eventType"), status: requiredText(row, method, "status", "status"),
+    occurredAt: requiredText(row, method, "occurred_at", "occurred_at", "occurredAt", "created_at", "createdAt"),
+    operationId: optionalText(pick(row, "operation_id", "operationId")), traceId: optionalText(pick(row, "trace_id", "traceId")),
+    requestId: optionalText(pick(row, "request_id", "requestId")), actorId: optionalText(pick(row, "actor_id", "actorId")),
+    reason: optionalText(row.reason), resourceId: optionalText(pick(row, "resource_id", "resourceId")),
+    evidence: object(row.evidence) ? row.evidence : {},
+  })) };
+}
+
 export const commercialOperationsClient = {
   summary: async (targetWorkspaceId: string, signal?: AbortSignal) => parseCommercialAccessSummary(await rpc(commercialOperationsMethods.accessSummary, { target_workspace_id: targetWorkspaceId }, { signal })),
   blocks: async (targetWorkspaceId: string, signal?: AbortSignal) => parseAccessBlocks(await rpc(commercialOperationsMethods.accessBlocks, { target_workspace_id: targetWorkspaceId, status: "open", limit: "100" }, { signal })),
@@ -334,6 +364,12 @@ export const commercialOperationsClient = {
   orders: async (targetWorkspaceId: string, signal?: AbortSignal) => parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
+  timeline: async (targetWorkspaceId: string, inputOrSignal?: { from?: string; to?: string; status?: string } | AbortSignal, signal?: AbortSignal) => {
+    const isSignal = typeof AbortSignal !== "undefined" && inputOrSignal instanceof AbortSignal;
+    const input = isSignal ? {} : (inputOrSignal as { from?: string; to?: string; status?: string } | undefined ?? {});
+    const requestSignal = isSignal ? inputOrSignal : signal;
+    return parseCommercialTimeline(await rpc(commercialOperationsMethods.timeline, { target_workspace_id: targetWorkspaceId, limit: "200", ...(input.from ? { from_at: input.from } : {}), ...(input.to ? { to_at: input.to } : {}), ...(input.status ? { status: input.status } : {}) }, { signal: requestSignal }));
+  },
   proposePointAdjustment: async (targetWorkspaceId: string, pointsDelta: number, reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.propose", { target_workspace_id: targetWorkspaceId, points_delta: String(pointsDelta), expected_revision: "0", idempotency_key: operationId("point_adjust_propose"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
   decidePointAdjustment: async (targetWorkspaceId: string, proposalId: string, decision: "approved" | "rejected", reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.decide", { target_workspace_id: targetWorkspaceId, proposal_id: proposalId, decision, idempotency_key: operationId("point_adjust_decide"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
   scheduleService: (workspace: string, allocation: string, revision: number, scheduleAt: string, reason: string) => serviceCommand("ops.commercial.service-fulfillment.schedule", workspace, allocation, revision, reason, { schedule_at: scheduleAt }),

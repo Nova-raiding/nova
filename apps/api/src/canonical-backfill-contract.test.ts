@@ -2,7 +2,9 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Pool } from 'pg'
 
 const fixturePool = new Pool({ connectionString: process.env.DATABASE_URL ?? 'postgres://merchant_app:merchant_app_local_only@127.0.0.1:54329/merchant' })
-const baseUrl = process.env.CANONICAL_BACKFILL_API_BASE_URL ?? 'http://127.0.0.1:8787'
+// 127.0.0.1 is configured as the merchant bearer hostname in local compose;
+// localhost reaches the same API while selecting the platform auth boundary.
+const baseUrl = process.env.CANONICAL_BACKFILL_API_BASE_URL ?? 'http://localhost:8787'
 
 type RpcBody<T = unknown> = {
   data: { result: T } | null

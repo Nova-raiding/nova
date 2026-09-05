@@ -31,7 +31,10 @@ describe("local creative-point seed runtime contract", () => {
       availablePoints: expect.stringMatching(/^[1-9][0-9]*$/),
       reservedPoints: "0",
       settledPoints: "0",
-      revision: "1",
+      // The API seeds the authoritative row after persistence initialization;
+      // a second idempotent seed advances the revision while preserving the
+      // balance values this contract cares about.
+      revision: expect.stringMatching(/^[1-9][0-9]*$/),
     })
   }, 15_000)
 })

@@ -1,0 +1,53 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 工作区
+        - status [ref=e19]: 正在操作工作区 未识别
+        - generic [ref=e20]:
+          - generic [ref=e21]: 工作区范围
+          - strong [ref=e22]: 未识别
+        - generic [ref=e23]: 数据与操作仅限当前工作区
+      - navigation "平台运营功能导航"
+  - generic [ref=e24]:
+    - banner [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e27]: WORKSPACE OPERATIONS
+        - heading "商业与平台控制台" [level=2] [ref=e28]
+        - region "当前身份与权限范围" [ref=e29]:
+          - generic [ref=e30]:
+            - img [ref=e32]:
+              - img [ref=e33]
+            - strong [ref=e37]: 权限未验证
+            - status [ref=e39]: 授权状态：未验证，正在等待服务端授权
+            - generic [ref=e41]: 身份 未验证
+            - generic [ref=e43]: 商家工作区
+            - generic [ref=e45]: 工作区 · 未识别
+            - generic [ref=e47]: 策略 未返回
+          - status [ref=e48]: 商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。
+      - button "连接诊断 / 登录配置" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51] [cursor=pointer]: 登录 / 连接
+    - main [ref=e52]:
+      - status [ref=e53]
+      - alert "无法验证运营权限" [active] [ref=e54]:
+        - generic [ref=e55]:
+          - img "close-circle" [ref=e57]:
+            - img [ref=e58]
+          - heading "无法验证运营权限" [level=1] [ref=e61]
+          - generic [ref=e62]: 部分数据集刷新失败（ops.session）。页面保留上次成功数据，这些值可能已过期：运营登录已失效或尚未登录。请先完成 SSO 登录，再点击“刷新数据”。。为保护运营数据，当前会话已拒绝所有页面与动作。
+          - button "重试权限验证" [ref=e64] [cursor=pointer]:
+            - generic [ref=e65] [cursor=pointer]: 重试权限验证
+```

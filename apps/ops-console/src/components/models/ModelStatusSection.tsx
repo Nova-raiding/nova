@@ -65,6 +65,14 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
         {modelStatus?.relay?.host ?? "-"}，TPM {modelStatus?.quotas.tpm ?? "-"}，发布元数据{" "}
         {modelStatus?.release_metadata_ready ? "已就绪" : "未就绪"}。
       </Typography.Paragraph>
+      <Alert
+        type={modelStatus?.release_metadata_ready && modelStatus.state === "ready" ? "success" : "warning"}
+        showIcon
+        title="运行时 readiness 与发布证据分别核验"
+        description={modelStatus?.release_metadata_ready && modelStatus.state === "ready"
+          ? "当前模型运行时和发布元数据均已返回就绪；生产写入仍需通过支付、平台、存储、宿主和完整 release evidence 门禁。"
+          : "中转站已配置不等于生产可用。运行时状态和 release evidence 必须分别通过；任一项缺失时生成与生产写入保持阻断。"}
+      />
       <ModelReadinessTable status={modelStatus} />
       {modelError ? (
         <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true">

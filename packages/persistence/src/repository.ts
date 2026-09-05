@@ -334,9 +334,10 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
       const values: unknown[] = [scope, now]
       const filters = [
         'workspace_id = $1',
-        // Events may be marked published by the transport publisher before
-        // the durable worker claims them.  Publication is delivery evidence,
-        // not a claimability gate; lease/unknown state remains authoritative.
+        // Published events are terminal delivery evidence. They must never be
+        // leased or updated again because migration 109 makes that evidence
+        // immutable; recovery uses a new outbox event instead.
+        'published_at IS NULL',
         'unknown_at IS NULL',
         // Events with durable error evidence require reconciliation/redrive;
         // ordinary workers must not mutate their immutable terminal record.

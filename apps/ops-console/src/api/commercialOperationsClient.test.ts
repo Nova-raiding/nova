@@ -4,6 +4,7 @@ import {
   parseCatalog,
   parseCommercialAccessSummary,
   parseLedger,
+  parseCommercialTimeline,
 } from "./commercialOperationsClient.js";
 
 describe("commercial operations DTO parsers", () => {
@@ -41,5 +42,10 @@ describe("commercial operations DTO parsers", () => {
       benefits_summary: "服务端权益", approval_state: "draft",
     }] });
     expect(result.items[0]?.visibility).toBe("private");
+  });
+
+  it("requires correlation and audit-safe fields on timeline events", () => {
+    const result = parseCommercialTimeline({ items: [{ id: "model-usage:u1", workspace_id: "ws_1", kind: "model.usage", status: "settled", occurred_at: "2026-09-05T00:00:00Z", operation_id: "op_1", trace_id: "trace_1", request_id: "req_1", actor_id: "worker", reason: "settled", resource_id: "u1", evidence: { cost_cny: 0.1 } }] });
+    expect(result.items[0]).toMatchObject({ operationId: "op_1", traceId: "trace_1", requestId: "req_1", actorId: "worker" });
   });
 });

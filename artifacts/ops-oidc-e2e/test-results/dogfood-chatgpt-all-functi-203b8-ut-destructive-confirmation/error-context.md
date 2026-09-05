@@ -1,0 +1,278 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 平台级
+        - status [ref=e19]: 正在查看平台聚合与控制面数据
+        - generic [ref=e20]:
+          - generic [ref=e21]: 平台范围
+          - strong [ref=e22]: 全平台
+        - generic [ref=e23]:
+          - generic [ref=e24]: 工作区上下文
+          - strong [ref=e25]: 未进入工作区
+        - generic [ref=e26]: 客户内容默认不可见；进入工作区需受控授权
+      - navigation "平台运营功能导航" [ref=e27]:
+        - region "平台治理" [ref=e28]:
+          - heading "平台治理" [level=2] [ref=e29]
+          - button "总览" [ref=e30] [cursor=pointer]:
+            - img "safety-certificate" [ref=e31] [cursor=pointer]:
+              - img [ref=e32] [cursor=pointer]
+            - text: 总览
+          - button "用户与租户" [ref=e34] [cursor=pointer]:
+            - img "team" [ref=e35] [cursor=pointer]:
+              - img [ref=e36] [cursor=pointer]
+            - text: 用户与租户
+          - button "成员与权限" [ref=e38] [cursor=pointer]:
+            - img "usergroup-add" [ref=e39] [cursor=pointer]:
+              - img [ref=e40] [cursor=pointer]
+            - text: 成员与权限
+          - button "客服与 CRM" [ref=e42] [cursor=pointer]:
+            - img "customer-service" [ref=e43] [cursor=pointer]:
+              - img [ref=e44] [cursor=pointer]
+            - text: 客服与 CRM
+          - button "事故中心" [ref=e46] [cursor=pointer]:
+            - img "alert" [ref=e47] [cursor=pointer]:
+              - img [ref=e48] [cursor=pointer]
+            - text: 事故中心
+        - region "商家运营" [ref=e50]:
+          - heading "商家运营" [level=2] [ref=e51]
+          - button "任务与内容" [ref=e52] [cursor=pointer]:
+            - img "cloud-sync" [ref=e53] [cursor=pointer]:
+              - img [ref=e54] [cursor=pointer]
+            - text: 任务与内容
+          - button "平台连接" [ref=e57] [cursor=pointer]:
+            - img "global" [ref=e58] [cursor=pointer]:
+              - img [ref=e59] [cursor=pointer]
+            - text: 平台连接
+          - button "平台规则" [ref=e61] [cursor=pointer]:
+            - img "read" [ref=e62] [cursor=pointer]:
+              - img [ref=e63] [cursor=pointer]
+            - text: 平台规则
+        - region "模型与计费" [ref=e65]:
+          - heading "模型与计费" [level=2] [ref=e66]
+          - button "模型服务" [ref=e67] [cursor=pointer]:
+            - img "robot" [ref=e68] [cursor=pointer]:
+              - img [ref=e69] [cursor=pointer]
+            - text: 模型服务
+          - button "账务与退款" [ref=e71] [cursor=pointer]:
+            - img "dollar" [ref=e72] [cursor=pointer]:
+              - img [ref=e73] [cursor=pointer]
+            - text: 账务与退款
+        - region "风险与系统" [ref=e75]:
+          - heading "风险与系统" [level=2] [ref=e76]
+          - button "功能开关" [ref=e77] [cursor=pointer]:
+            - img "experiment" [ref=e78] [cursor=pointer]:
+              - img [ref=e79] [cursor=pointer]
+            - text: 功能开关
+          - button "存储与对账" [ref=e81] [cursor=pointer]:
+            - img "cloud-server" [ref=e82] [cursor=pointer]:
+              - img [ref=e83] [cursor=pointer]
+            - text: 存储与对账
+          - button "审计中心" [ref=e87] [cursor=pointer]:
+            - img "file-search" [ref=e88] [cursor=pointer]:
+              - img [ref=e89] [cursor=pointer]
+            - text: 审计中心
+      - button "通过客服与 CRM 受控支持客户问题" [ref=e91] [cursor=pointer]: 受控支持入口
+  - generic [ref=e92]:
+    - banner [ref=e93]:
+      - generic [ref=e94]:
+        - generic [ref=e95]: WORKSPACE OPERATIONS
+        - heading "商业与平台控制台" [level=2] [ref=e96]
+        - region "当前身份与权限范围" [ref=e97]:
+          - generic [ref=e98]:
+            - img [ref=e100]:
+              - img [ref=e101]
+            - strong [ref=e105]: 平台运营
+            - status [ref=e107]: 授权状态：已由服务端验证
+            - generic [ref=e109]: 身份 actor_demo
+            - generic "切换运营工作台" [ref=e111]:
+              - generic [ref=e112]: 工作台
+              - generic [ref=e113]: 主动选择后将重新验证对应工作台的服务端授权范围；切换期间控件暂不可用。
+              - radiogroup "当前运营工作台，请主动选择" [ref=e114]:
+                - generic [ref=e115]:
+                  - generic [ref=e116] [cursor=pointer]:
+                    - radio "平台控制台" [checked]
+                  - generic [ref=e118] [cursor=pointer]:
+                    - radio "商家工作区"
+            - generic [ref=e121]: 平台全局
+            - generic [ref=e123]: 策略 2026-08-31.v2
+          - status [ref=e124]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+      - button "连接诊断 / 登录配置" [ref=e126] [cursor=pointer]:
+        - generic [ref=e127] [cursor=pointer]: 登录 / 连接
+    - main [ref=e128]:
+      - status [ref=e129]
+      - status [ref=e130]:
+        - img "exclamation-circle" [ref=e132]:
+          - img [ref=e133]
+        - generic [ref=e135]:
+          - generic [ref=e136]: 部分运营数据未刷新
+          - generic [ref=e137]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+      - region "用户与租户" [ref=e138]:
+        - generic [ref=e139]:
+          - generic [ref=e140]:
+            - generic [ref=e141]: PLATFORM GOVERNANCE
+            - heading "用户与租户" [level=3] [ref=e142]
+            - generic [ref=e143]: 按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。
+          - button "loading 刷新目录" [ref=e145] [cursor=pointer]:
+            - generic:
+              - img "loading"
+            - generic [ref=e146] [cursor=pointer]: 刷新目录
+          - status [ref=e147]:
+            - strong [ref=e149]: 当前下一步
+            - generic [ref=e150]: 先确认服务端能力投影与当前工作区范围，再执行需要原因、修订号和审计的治理操作。
+        - generic [ref=e151]:
+          - alert [ref=e154]:
+            - img "close-circle" [ref=e156]:
+              - img [ref=e157]
+            - generic [ref=e159]:
+              - generic [ref=e160]: 无法加载运营数据
+              - paragraph [ref=e163]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+            - button "重试加载运营数据" [ref=e165] [cursor=pointer]:
+              - generic [ref=e166] [cursor=pointer]: 重 试
+          - status [ref=e168]:
+            - img "info-circle" [ref=e170]:
+              - img [ref=e171]
+            - generic [ref=e173]:
+              - generic [ref=e174]: 用户治理能力已由服务端确认
+              - generic [ref=e175]: 页面分区、只读状态和写入入口均依据 ops.session 返回的 capability projection；页面不会从角色名称推断权限。
+          - generic "用户治理工作区" [ref=e178]:
+            - tablist [ref=e179]:
+              - generic [ref=e181]:
+                - tab "用户目录" [selected] [ref=e183] [cursor=pointer]
+                - tab "租户治理" [ref=e185] [cursor=pointer]
+                - tab "权限与角色" [ref=e187] [cursor=pointer]
+            - tabpanel "用户目录" [ref=e190]:
+              - alert [ref=e192]:
+                - img "close-circle" [ref=e194]:
+                  - img [ref=e195]
+                - generic [ref=e197]:
+                  - generic [ref=e198]: 无法加载运营数据
+                  - paragraph [ref=e201]: 运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+                - button "重试加载运营数据" [ref=e203] [cursor=pointer]:
+                  - generic [ref=e204] [cursor=pointer]: 重 试
+              - generic [ref=e205]:
+                - generic [ref=e209]:
+                  - generic [ref=e211]: 用户身份
+                  - generic [ref=e214]: "0"
+                - generic [ref=e218]:
+                  - generic [ref=e220]: 成员关系
+                  - generic [ref=e223]: "0"
+                - generic [ref=e227]:
+                  - generic [ref=e229]: 涉及租户
+                  - generic [ref=e232]: "0"
+              - generic [ref=e233]:
+                - generic [ref=e236]: 用户目录
+                - generic [ref=e237]:
+                  - form "用户目录筛选" [ref=e238]:
+                    - generic [ref=e240]:
+                      - generic "关键词" [ref=e242]: "关键词 :"
+                      - textbox "按关键词筛选用户目录" [ref=e247]
+                    - generic [ref=e250]:
+                      - generic "状态" [ref=e252]: "状态 :"
+                      - generic [ref=e256] [cursor=pointer]:
+                        - generic [ref=e257] [cursor=pointer]:
+                          - generic: 全部状态
+                          - combobox "按成员状态筛选用户目录" [ref=e258] [cursor=pointer]
+                        - img "down" [ref=e260] [cursor=pointer]:
+                          - img [ref=e261] [cursor=pointer]
+                    - generic [ref=e264]:
+                      - generic "租户" [ref=e266]: "租户 :"
+                      - textbox "按工作区筛选用户目录" [ref=e271]
+                    - generic [ref=e278]:
+                      - button "查 询" [ref=e280] [cursor=pointer]:
+                        - generic [ref=e281] [cursor=pointer]: 查 询
+                      - button "清 空" [ref=e283] [cursor=pointer]:
+                        - generic [ref=e284] [cursor=pointer]: 清 空
+                      - button "导出当前筛选" [ref=e286] [cursor=pointer]:
+                        - generic [ref=e287] [cursor=pointer]: 导出当前筛选
+                      - button "批量停用（0）" [disabled] [ref=e289]:
+                        - generic: 批量停用（0）
+                  - alert "用户目录错误摘要" [ref=e291]:
+                    - alert [ref=e292]:
+                      - img "close-circle" [ref=e294]:
+                        - img [ref=e295]
+                      - generic [ref=e297]:
+                        - generic [ref=e298]: 用户目录加载失败
+                        - generic [ref=e300]: 运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+                      - button "刷新用户目录" [ref=e302] [cursor=pointer]:
+                        - generic [ref=e303] [cursor=pointer]: 刷新用户目录
+                  - table "用户目录数据表" [ref=e310]:
+                    - rowgroup [ref=e323]:
+                      - row "Select all 身份标识 显示名 租户 角色 数据来源 套餐 / 消耗 成员状态 租户状态 创建时间 操作" [ref=e324]:
+                        - columnheader "Select all" [ref=e325]:
+                          - generic [ref=e327]:
+                            - generic:
+                              - checkbox "Select all" [disabled]
+                        - columnheader "身份标识" [ref=e328]
+                        - columnheader "显示名" [ref=e329] [cursor=pointer]:
+                          - generic [ref=e330] [cursor=pointer]:
+                            - generic [ref=e331] [cursor=pointer]: 显示名
+                            - generic [ref=e333] [cursor=pointer]:
+                              - img [ref=e334] [cursor=pointer]:
+                                - img [ref=e335] [cursor=pointer]
+                              - img [ref=e337] [cursor=pointer]:
+                                - img [ref=e338] [cursor=pointer]
+                        - columnheader "租户" [ref=e340]
+                        - columnheader "角色" [ref=e341]
+                        - columnheader "数据来源" [ref=e342]
+                        - columnheader "套餐 / 消耗" [ref=e343]
+                        - columnheader "成员状态" [ref=e344] [cursor=pointer]:
+                          - generic [ref=e345] [cursor=pointer]:
+                            - generic [ref=e346] [cursor=pointer]: 成员状态
+                            - generic [ref=e348] [cursor=pointer]:
+                              - img [ref=e349] [cursor=pointer]:
+                                - img [ref=e350] [cursor=pointer]
+                              - img [ref=e352] [cursor=pointer]:
+                                - img [ref=e353] [cursor=pointer]
+                        - columnheader "租户状态" [ref=e355]
+                        - columnheader "创建时间" [ref=e356] [cursor=pointer]:
+                          - generic [ref=e357] [cursor=pointer]:
+                            - generic [ref=e358] [cursor=pointer]: 创建时间
+                            - generic [ref=e360] [cursor=pointer]:
+                              - img [ref=e361] [cursor=pointer]:
+                                - img [ref=e362] [cursor=pointer]
+                              - img [ref=e364] [cursor=pointer]:
+                                - img [ref=e365] [cursor=pointer]
+                        - columnheader "操作" [ref=e367]
+                    - rowgroup [ref=e368]:
+                      - generic [ref=e370]:
+                        - generic:
+                          - checkbox [disabled]
+                      - generic [ref=e371]:
+                        - generic [ref=e372]: 显示名
+                        - generic [ref=e374]:
+                          - img [ref=e375]:
+                            - img [ref=e376]
+                          - img [ref=e378]:
+                            - img [ref=e379]
+                      - generic [ref=e381]:
+                        - generic [ref=e382]: 成员状态
+                        - generic [ref=e384]:
+                          - img [ref=e385]:
+                            - img [ref=e386]
+                          - img [ref=e388]:
+                            - img [ref=e389]
+                      - generic [ref=e391]:
+                        - generic [ref=e392]: 创建时间
+                        - generic [ref=e394]:
+                          - img [ref=e395]:
+                            - img [ref=e396]
+                          - img [ref=e398]:
+                            - img [ref=e399]
+                      - row "没有符合条件的用户成员关系" [ref=e401]:
+                        - cell "没有符合条件的用户成员关系" [ref=e402]:
+                          - generic [ref=e403]: 没有符合条件的用户成员关系
+```

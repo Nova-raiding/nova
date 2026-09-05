@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Form } from "antd";
-import { describeOpsError, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, rpc, rpcForWorkspace } from "../api/opsClient.js";
+import { describeOpsError, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, recordOpsBootstrapTrace, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type {
   Platform,
   Settings,
@@ -546,7 +546,7 @@ export function useOpsConsoleModel() {
     setLoading(true);
     setModelStatusLoading(true);
     setError("");
-    if (!hasOpsConnection()) {
+    if (!managedOpsSession && !hasOpsConnection()) {
       loadInFlightKeysRef.current.delete(loadKey);
       setLoading(false);
       setModelStatusLoading(false);
@@ -625,9 +625,11 @@ export function useOpsConsoleModel() {
       const platformAlertScope = platformOperator && resolvedAuthorization.can("marketing.summary.read");
       const platformStoreScope = platformOperator && resolvedAuthorization.can("platform.settings.read");
       const commercialAccessAvailable = resolvedAuthorization.can("commercial.access.read");
-      const commercialTargetWorkspaceId = localStorage.getItem("ops_workspace_id")?.trim() ?? "";
-      const commercialAccessSummary = platformOperator && commercialAccessAvailable
-        ? commercialTargetWorkspaceId ? await authorizedOptional("ops.commercial.access.summary", { target_workspace_id: commercialTargetWorkspaceId }) : undefined
+      const commercialTargetWorkspaceId = resolvedSession?.workspace_id?.trim()
+        || (managedOpsSession ? sessionStorage : localStorage).getItem("ops_workspace_id")?.trim()
+        || "";
+      const commercialAccessSummary = platformOperator && commercialAccessAvailable && commercialTargetWorkspaceId
+        ? await authorizedOptional("ops.commercial.access.summary", { target_workspace_id: commercialTargetWorkspaceId })
         : undefined;
       const commercialAccessDecision = commercialAccessSummary as {
         allowed?: boolean;
@@ -917,11 +919,17 @@ export function useOpsConsoleModel() {
   };
   const opsRoleKey = opsSession?.roles.join("|") ?? "";
   useEffect(() => {
-    if (!hasOpsConnection()) {
+    recordOpsBootstrapTrace("load_effect", { managed: managedOpsSession, roleKey: Boolean(opsRoleKey) });
+    // The OIDC gateway is the connection boundary in managed mode; it does
+    // not require a bearer token or a persisted local connection record.
+    // Local bearer mode keeps the explicit connection guard.
+    if (!managedOpsSession && !hasOpsConnection()) {
+      recordOpsBootstrapTrace("load_skipped", { reason: "no_connection" });
       setLoading(false);
       setModelStatusLoading(false);
       return;
     }
+    recordOpsBootstrapTrace("load_started", { managed: managedOpsSession });
     void load();
   }, [managedOpsSession, opsRoleKey]);
   useEffect(() => () => cancelUserRequests(), []);
@@ -2038,6 +2046,10 @@ export function useOpsConsoleModel() {
     const request = modelMarkupLoadCoordinatorRef.current.begin();
     try {
       if (import.meta.env.VITE_OPS_BUILD_MODE === "local") {
+        if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(undefined);
+        return;
+      }
+      if (!opsWorkspaceId) {
         if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(undefined);
         return;
       }

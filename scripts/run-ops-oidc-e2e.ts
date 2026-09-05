@@ -33,7 +33,10 @@ async function ready(url: string) {
   throw new Error(`Local service did not become ready: ${url}`)
 }
 const gateway = createLocalOidcGateway({
-  uiUpstream: `http://127.0.0.1:${uiPort}`, apiUpstream: `http://localhost:${apiPort}`,
+  // The API child binds IPv4 loopback explicitly. Keep the gateway upstream
+  // on the same address family; `localhost` may resolve to ::1 on macOS and
+  // leave the browser stuck at the unverified OIDC session state.
+  uiUpstream: `http://127.0.0.1:${uiPort}`, apiUpstream: `http://127.0.0.1:${apiPort}`,
   username: 'ops-browser-e2e', password, sessionSecret: randomBytes(32).toString('hex'),
   oidcSigningSecret: signingSecret, issuer: 'http://127.0.0.1/local-test-idp', subject: 'actor_demo',
   // Platform operations still carries an explicit workspace context for the
@@ -43,13 +46,22 @@ const gateway = createLocalOidcGateway({
 try {
   launch(resolve('node_modules/.bin/tsx'), ['apps/api/src/server.ts'], {
     ...process.env, ...serviceEnv, PORT: String(apiPort), OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: signingSecret,
+    // The local gateway is the only identity boundary for this acceptance
+    // run; never let a copied merchant-host override select bearer auth.
+    MERCHANT_BEARER_HOSTNAME: '',
     DATABASE_URL: hostUrl(serviceEnv.DATABASE_URL!, 54329), OPS_DATABASE_URL: hostUrl(serviceEnv.OPS_DATABASE_URL!, 54329),
-    REDIS_URL: hostUrl(serviceEnv.REDIS_URL!, 63799), RUN_MIGRATIONS_ON_STARTUP: 'false', REQUEST_OBSERVABILITY_LOGS: 'false',
+    REDIS_URL: hostUrl(serviceEnv.REDIS_URL!, 63799), RUN_MIGRATIONS_ON_STARTUP: 'false', REQUEST_OBSERVABILITY_LOGS: process.env.OPS_E2E_REQUEST_LOGS ?? 'true',
     ALLOWED_ORIGINS: `http://127.0.0.1:${gatewayPort}`, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
   }, 'api')
-  launch(resolve('node_modules/.bin/vite'), ['--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts', 'apps/ops-console'], {
-    ...process.env, VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: `http://127.0.0.1:${gatewayPort}`, VITE_OPS_AUTH_MODE: 'oidc',
-  }, 'ui')
+  const uiEnvironment = {
+    ...process.env, VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: `http://127.0.0.1:${gatewayPort}`, VITE_OPS_AUTH_MODE: 'oidc', VITE_OPS_BUILD_MODE: 'oidc', VITE_OPS_TRACE: 'true', VITE_OPS_E2E: 'true',
+  }
+  const uiOutput = resolve(evidenceDir, 'ui-dist')
+  const build = launch(resolve('node_modules/.bin/vite'), ['build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
+  const buildCode = await new Promise<number>(resolve => build.on('exit', code => resolve(code ?? 1)))
+  if (buildCode !== 0) throw new Error(`Ops UI build failed; see ${evidenceDir}/ui-build.error.log`)
+  // Exercise the emitted application without a development HMR client.
+  launch(resolve('node_modules/.bin/vite'), ['preview', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui')
   await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`), ready(`http://127.0.0.1:${uiPort}/`)])
   await new Promise<void>(resolve => gateway.listen(gatewayPort, '127.0.0.1', resolve))
   const requested = process.argv.slice(2)

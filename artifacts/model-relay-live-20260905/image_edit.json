@@ -1,0 +1,24 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260905",
+  "generated_at": "2026-09-05T12:22:51.112Z",
+  "environment": "production",
+  "simulated": false,
+  "relay": "https://ai.wormholexyz.xyz",
+  "results": [
+    {
+      "modality": "image_edit",
+      "endpoint": "/images/generations",
+      "model": "qwen-image-3.0",
+      "httpStatus": 200,
+      "providerRequestId": "202609051221500594264798268d9d6tEbP3ihx",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.1590707,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready"
+    }
+  ]
+}

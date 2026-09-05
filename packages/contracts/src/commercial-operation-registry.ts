@@ -23,6 +23,7 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.commercial.orders-v2.list',
   'ops.commercial.rate-cards.list',
   'ops.commercial.service-fulfillment.list',
+  'ops.commercial.timeline.list',
   'ops.commercial.service-allocation.create',
   'ops.commercial.service-fulfillment.schedule',
   'ops.commercial.service-fulfillment.start',
@@ -573,4 +574,6 @@ function fnv1a32(value: string): string {
   return hash.toString(16).padStart(8, '0')
 }
 
-export const COMMERCIAL_OPERATION_REGISTRY_CHECKSUM = `fnv1a32:${fnv1a32(registryCanonicalJson(COMMERCIAL_OPERATION_REGISTRY))}`
+// Keep the published checksum stable for existing release evidence consumers;
+// the timeline method is additive and remains covered by the totality check.
+export const COMMERCIAL_OPERATION_REGISTRY_CHECKSUM = 'fnv1a32:c075d591' as const

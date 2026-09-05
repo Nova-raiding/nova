@@ -76,8 +76,20 @@ export function describeOpsError(error: unknown): string {
 type OpsAuthEnvironment = Readonly<Record<string, string | boolean | undefined>>;
 
 const viteEnv = (import.meta as ImportMeta & { env: OpsAuthEnvironment }).env;
+const opsTraceEnabled = viteEnv.VITE_OPS_TRACE === "true";
+
+export function recordOpsBootstrapTrace(event: string, details: Record<string, unknown> = {}): void {
+  if (!opsTraceEnabled || typeof window === "undefined") return;
+  const target = window as Window & { __OPS_BOOTSTRAP_TRACE__?: Array<Record<string, unknown>> };
+  const trace = target.__OPS_BOOTSTRAP_TRACE__ ?? (target.__OPS_BOOTSTRAP_TRACE__ = []);
+  trace.push({ event, ...details });
+}
 
 export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boolean {
+  // An explicit OIDC build must never fall back to the local bearer adapter.
+  // This is especially important for isolated Vite acceptance runners where
+  // auth mode can be transformed separately from the build mode.
+  if (environment.VITE_OPS_BUILD_MODE === "oidc") return true;
   // Local Compose builds are still Vite production bundles, but they are
   // explicitly isolated acceptance builds. Keep the local bearer adapter
   // available only when both compile-time flags agree.
@@ -303,7 +315,13 @@ function requestError(payload: RpcErrorPayload | undefined, response: Response, 
 }
 
 export function opsApiBase(): string {
-  return readOpsConnectionConfig().apiBase;
+  const configured = readOpsConnectionConfig().apiBase;
+  // Managed OIDC deployments always own a same-origin /api boundary. Keep
+  // the session usable when a stale connection-config entry was purged during
+  // login; local bearer mode still requires an explicit configured base.
+  const resolved = configured || (managedOpsSession ? "/api" : "");
+  recordOpsBootstrapTrace("api_base", { configured: Boolean(configured), resolved, managed: managedOpsSession });
+  return resolved;
 }
 
 /**
@@ -317,7 +335,11 @@ export function hasOpsCredentials(): boolean {
 
 export function hasOpsConnection(): boolean {
   const config = readOpsConnectionConfig();
-  return Boolean(config.apiBase && (config.workbench === "platform" || config.workspaceId) && (managedOpsSession || config.token));
+  // The signed OIDC session supplies workbench and tenant scope server-side;
+  // stale local UI workbench state must not disable managed API hydration.
+  const connected = managedOpsSession || Boolean(config.apiBase && (config.workbench === "platform" || config.workspaceId) && config.token);
+  recordOpsBootstrapTrace("connection", { connected, managed: managedOpsSession, hasApiBase: Boolean(config.apiBase), workbench: config.workbench, hasWorkspace: Boolean(config.workspaceId) });
+  return connected;
 }
 
 async function readBoundedResponseText(
@@ -369,15 +391,20 @@ async function rpcAtWorkspace<T>(
   }
   const connection = readOpsConnectionConfig();
   const workspaceId = workspaceOverride ?? connection.workspaceId;
-  if (!workspaceId && connection.workbench === "workspace") {
+  // The OIDC gateway is the platform boundary; it derives the authorized
+  // scope from the signed session and must not inherit stale workspace UI
+  // state from a previous local-bearer session.
+  const workbench = managedOpsSession ? "platform" : connection.workbench;
+  if (!workspaceId && workbench === "workspace") {
     const error = new Error("请先配置真实工作区 ID") as OpsRequestError;
     error.code = "OPS_WORKSPACE_REQUIRED";
     throw error;
   }
   const headers: Record<string, string> = {
     "content-type": "application/json",
-    "x-ops-workbench": connection.workbench,
+    "x-ops-workbench": workbench,
   };
+  recordOpsBootstrapTrace("rpc_prepare", { method, apiBase, workbench, hasWorkspace: Boolean(workspaceId) });
   if (workspaceId) headers["x-workspace-id"] = workspaceId;
   if (!managedOpsSession) {
     if (connection.actorId) headers["x-actor-id"] = connection.actorId;
@@ -395,6 +422,7 @@ async function rpcAtWorkspace<T>(
     options.timeoutMs ?? OPS_REQUEST_TIMEOUT_MS,
   );
   try {
+    recordOpsBootstrapTrace("rpc_fetch", { method, url: `${apiBase}/mcp` });
     const response = await fetch(`${apiBase}/mcp`, {
       method: "POST",
       credentials: managedOpsSession ? "include" : "same-origin",
@@ -429,6 +457,7 @@ async function rpcAtWorkspace<T>(
     if (data === undefined) throw invalidResponse("result 不能为 undefined", response.status);
     return data === null ? { state: "empty", data: null, meta } : { state: "data", data, meta };
   } catch (cause) {
+    recordOpsBootstrapTrace("rpc_error", { method, message: cause instanceof Error ? cause.message : String(cause) });
     if (timedOut) {
       const error = new Error("运营 API 请求超时") as OpsRequestError;
       error.code = "API_REQUEST_TIMEOUT";

@@ -1,9 +1,10 @@
 import { expect, test, chromium } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { openPlatformConsole } from './ops-auth.js'
 
 test.setTimeout(240_000)
-const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
+const baseUrl = process.env.OPS_OIDC_BASE_URL ?? process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
 // Platform operations and workspace administration are separate workbenches.
 // Member governance is intentionally not part of the platform walk: it is
 // only exercised with a workspace membership fixture below.
@@ -56,7 +57,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
       } catch {}
     }
   })
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await openPlatformConsole(page)
   await page.waitForTimeout(5_000)
   const pages = []
   const shots = resolve('screenshots', 'ops-pages')
@@ -96,7 +97,9 @@ test('walk every Ops Console section through the real browser UI', async () => {
   const unexpectedRpcErrors = rpcErrors.filter((entry) => entry.error?.code !== 'MEMBER_ROLE_MISMATCH')
   expect(unexpectedRpcErrors).toEqual([])
   expect(requestFailures).toEqual([])
-  expect(consoleErrors.filter((message) => !message.includes('status of 403 (Forbidden)'))).toEqual([])
+  expect(consoleErrors.filter((message) =>
+    !message.includes('status of 403 (Forbidden)'),
+  )).toEqual([])
   // Stop page-owned polling/request work before tearing down the context.
   // Waiting on context.close() directly can hang after the full domain walk
   // when a page still has an in-flight background query, turning a clean
@@ -124,7 +127,7 @@ test('does not report model configuration success when model status fails', asyn
     await route.continue()
   })
   const page = await context.newPage()
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await openPlatformConsole(page)
   await expect(page.getByText('状态不可用').first()).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('平台模型配置完整')).toHaveCount(0)
   await context.close()

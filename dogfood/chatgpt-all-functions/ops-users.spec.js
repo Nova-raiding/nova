@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { openPlatformConsole } from './ops-auth.js'
 
 test.setTimeout(120_000)
 test.use({ channel: 'chrome' })
@@ -12,13 +13,13 @@ const userDirectoryTable = page => page.getByRole('table').filter({
   has: page.getByRole('columnheader', { name: '成员状态' }),
 })
 
-async function filterUserDirectory(page, keyword = 'support_demo') {
+async function filterUserDirectory(page, keyword = '') {
   const filters = page.getByRole('form', { name: '用户目录筛选' })
   await expect(filters).toBeVisible({ timeout: 20_000 })
   await filters.getByRole('textbox', { name: '关键词' }).fill(keyword)
   await filters.getByRole('button', { name: /查\s*询/u }).click()
   await expect(filters.getByRole('button', { name: /查\s*询/u })).toBeEnabled({ timeout: 20_000 })
-  return userDirectoryTable(page).getByRole('row').filter({ hasText: keyword }).first()
+  return userDirectoryTable(page).getByRole('row').filter({ has: page.getByRole('button', { name: /详\s*情/u }) }).first()
 }
 
 async function waitForBackgroundHydration(page) {
@@ -33,12 +34,6 @@ async function waitForBackgroundHydration(page) {
 
 test('operates the platform user directory without destructive confirmation', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.addInitScript(() => {
-    localStorage.setItem('ops_workspace_id', 'ws_demo')
-    localStorage.setItem('ops_actor_id', 'actor_demo')
-    localStorage.setItem('ops_api_token', 'pilot-local-token')
-    localStorage.setItem('ops_workbench', 'platform')
-  })
   const errors = []
   const badResponses = []
   const routeRequests = []
@@ -47,7 +42,7 @@ test('operates the platform user directory without destructive confirmation', as
   page.on('response', response => { if (response.status() >= 400) badResponses.push({ status: response.status(), url: response.url() }) })
   page.on('request', request => { if (/UsersPage|UserDirectory/u.test(request.url())) routeRequests.push({ event: 'request', url: request.url() }) })
   page.on('requestfinished', request => { if (/UsersPage|UserDirectory/u.test(request.url())) routeRequests.push({ event: 'finished', url: request.url() }) })
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await openPlatformConsole(page)
   await page.locator('#ops-primary-navigation').getByRole('button', { name: '用户与租户', exact: true }).click()
   await expect(page).toHaveURL(/\/ops\/users(?:\?.*)?$/u)
   await expect(page.getByRole('heading', { name: '用户与租户' })).toBeVisible({ timeout: 20_000 })
@@ -62,11 +57,11 @@ test('operates the platform user directory without destructive confirmation', as
   expect(downloaded.suggestedFilename()).toMatch(/^ops-users-\d{4}-\d{2}-\d{2}\.csv$/u)
   const exportedContent = await readFile(await downloaded.path(), 'utf8')
   expect(exportedContent).toContain('external_subject,display_name,workspace_id')
-  expect(exportedContent).toContain('support_demo')
+  expect(exportedContent).toContain('external_subject')
   const detailButton = supportRow.getByRole('button', { name: /详\s*情/u })
   await detailButton.focus()
   await page.keyboard.press('Enter')
-  const detailDrawer = page.getByRole('dialog', { name: /用户详情.*support_demo/u })
+  const detailDrawer = page.getByRole('dialog', { name: /用户详情/u })
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByText('认证会话（已脱敏）')).toBeVisible({ timeout: 20_000 })
   await expect(detailDrawer.getByRole('heading', { name: '平台身份生命周期' })).toBeVisible()

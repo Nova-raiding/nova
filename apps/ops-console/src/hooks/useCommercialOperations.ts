@@ -14,10 +14,11 @@ import {
   type CreativePointLedgerEntry,
   type CreativePointRateItem,
   type ServiceFulfillmentItem,
+  type CommercialTimelineEvent,
 } from "../api/commercialOperationsClient.js";
 import type { OpsRequestError } from "../types/ops.js";
 
-export const commercialViews = ["blocks", "entitlements", "ledger", "catalog", "orders", "rates", "services"] as const;
+export const commercialViews = ["blocks", "entitlements", "ledger", "catalog", "orders", "rates", "services", "timeline"] as const;
 export type CommercialView = typeof commercialViews[number];
 
 export const commercialViewLabels: Readonly<Record<CommercialView, string>> = {
@@ -28,6 +29,7 @@ export const commercialViewLabels: Readonly<Record<CommercialView, string>> = {
   orders: "订单与支付",
   rates: "创意点费率",
   services: "服务履约",
+  timeline: "工作区商业时间线",
 };
 
 export const commercialViewCapability: Readonly<Record<CommercialView, string>> = {
@@ -38,6 +40,7 @@ export const commercialViewCapability: Readonly<Record<CommercialView, string>> 
   orders: commercialCapabilities.orderRead,
   rates: commercialCapabilities.rateRead,
   services: commercialCapabilities.serviceRead,
+  timeline: commercialCapabilities.accessRead,
 };
 
 export interface CommercialLoadError {
@@ -64,11 +67,12 @@ export interface CommercialDataMap {
   orders: CommercialPage<CommercialOrderItem>;
   rates: CommercialPage<CreativePointRateItem>;
   services: CommercialPage<ServiceFulfillmentItem>;
+  timeline: CommercialPage<CommercialTimelineEvent>;
 }
 
 const initialDataStates = (): { [K in CommercialView]: CommercialDataState<CommercialDataMap[K]> } => ({
   blocks: { status: "idle" }, entitlements: { status: "idle" }, ledger: { status: "idle" }, catalog: { status: "idle" },
-  orders: { status: "idle" }, rates: { status: "idle" }, services: { status: "idle" },
+  orders: { status: "idle" }, rates: { status: "idle" }, services: { status: "idle" }, timeline: { status: "idle" },
 });
 
 function errorEvidence(cause: unknown): CommercialLoadError {
@@ -263,6 +267,8 @@ export function useCommercialOperations(
       if (target === "catalog") {
         const catalog = await client.catalog(targetWorkspaceId, privateSkuReadable, controller.signal);
         result = privateSkuReadable ? catalog : { ...catalog, items: catalog.items.filter((item) => item.visibility !== "private") };
+      } else if (target === "timeline") {
+        result = await client.timeline(targetWorkspaceId, controller.signal);
       } else {
         result = await client[target](targetWorkspaceId, controller.signal);
       }

@@ -141,7 +141,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     const base = await start()
     const response = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'initialize', params: {} }) })
     expect(response.status).toBe(401)
-    expect(response.headers.get('www-authenticate')).toBe('Bearer')
+    expect(response.headers.get('www-authenticate')).toMatch(/^Bearer(?:\s|$)/)
     expect((await response.json()).error.code).toBe('UNAUTHENTICATED')
   })
 })

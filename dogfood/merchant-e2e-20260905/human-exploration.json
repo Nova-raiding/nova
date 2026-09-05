@@ -1,0 +1,898 @@
+{
+  "steps": [
+    {
+      "name": "全局搜索输入并回车",
+      "url": "http://127.0.0.1:18081/merchant/products?q=%E8%BD%BB%E4%BA%91",
+      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建独立任务组\n同步全部店铺\n至少选择 2 个商品 + 平台 + 店铺目标\nCURRENT SCOPE\n全部平台\n→\n全部店铺\n先用上方筛选确定平台和店铺，再选择商品。素材库只处理上传、解析和权益确认。\nCANONICAL STATUS\n规范商品状态\n\n只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。\n\n重新检查\n新鲜度未知\n服务端没有提供报告新鲜度，不能据此判断已通过。\n标准链待处理\n6 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n当前工作区待处理：6 项\n标准链状态尚未确认\n平台 / 店铺\n待处理\n4 / 6 个商品身份已核对\n下一步：确认平台和店铺身份\n商品\n待处理\n6 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n批量任务\n待处理\n已选择 0 个目标\n下一步：至少选择 2 个商品 / 平台 / 店铺\n素材关系\n待处理\n当前未确认素材绑定\n下一步：打开商品关系逐个确认\n规则预检\n待真实流程\n需在任务内容生成后由服务端检查\n下一步：进入任务并等待规则检查结果\n发布状态\n待真实流程\n未有已批准内容，不可判断发布状态\n下一步：完成生成、审核和二次发布确认\nBATCH WORKFLOW\n批量入口只创建任务组\n已选择 0 个目标 · 至少选择 2 个商品 + 平台 + 店铺目标\n1 选择商品/平台/店铺\n2 创建独立子任务\n3 逐个生成 → 审核 → 发布\n已发现 6 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。\n搜索商品\n按平台筛选\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n按店铺筛选\n全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\ndouyin 店铺 · 抖音\n全部 6\n待确认 —\n任务组\t商品\t平台\t店铺\t素材关系\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\ntmall 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t520\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n1 SKU\n\t抖音\t\ndouyin 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n3 SKU\n\t淘宝\t\n导入店铺\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n服务端数据\t120\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n8 SKU\n\t淘宝\t\n云朵轻户外\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n显示 1–6 / 6 个匹配商品\n上一页第 1 / 1 页下一页",
+      "controls": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "运营概览",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "营销任务",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "发布中心",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "知识库\n品牌资料与规则依据",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "商品\n选择平台商品开始任务",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "图片\n主图、副图与视觉检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "素材\n上传并确认权益与事实",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "工作区信息",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "搜索商品",
+          "disabled": false,
+          "value": "轻云"
+        },
+        {
+          "text": "系统健康\n在线",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "林",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "查看健康状态",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "导入待创建商品",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "创建独立任务组",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "同步全部店铺",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "重新检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "搜索商品或平台",
+          "disabled": false,
+          "value": "轻云"
+        },
+        {
+          "text": "全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音",
+          "disabled": false,
+          "value": "all"
+        },
+        {
+          "text": "全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\ndouyin 店铺 · 抖音",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "全部 6",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "待确认 —",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套｜旗舰店（tmall 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（douyin 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（导入店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（云朵轻户外）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "上一页",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "下一页",
+          "disabled": true,
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "选择两个商品，核对批量创建门禁",
+      "url": "http://127.0.0.1:18081/merchant/products",
+      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建独立任务组\n同步全部店铺\n至少选择 2 个商品 + 平台 + 店铺目标\nCURRENT SCOPE\n全部平台\n→\n全部店铺\n先用上方筛选确定平台和店铺，再选择商品。素材库只处理上传、解析和权益确认。\nCANONICAL STATUS\n规范商品状态\n\n只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。\n\n重新检查\n新鲜度未知\n服务端没有提供报告新鲜度，不能据此判断已通过。\n标准链待处理\n6 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n当前工作区待处理：6 项\n标准链状态尚未确认\n平台 / 店铺\n待处理\n4 / 6 个商品身份已核对\n下一步：确认平台和店铺身份\n商品\n待处理\n6 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n批量任务\n待处理\n已选择 0 个目标\n下一步：至少选择 2 个商品 / 平台 / 店铺\n素材关系\n待处理\n当前未确认素材绑定\n下一步：打开商品关系逐个确认\n规则预检\n待真实流程\n需在任务内容生成后由服务端检查\n下一步：进入任务并等待规则检查结果\n发布状态\n待真实流程\n未有已批准内容，不可判断发布状态\n下一步：完成生成、审核和二次发布确认\nBATCH WORKFLOW\n批量入口只创建任务组\n已选择 0 个目标 · 至少选择 2 个商品 + 平台 + 店铺目标\n1 选择商品/平台/店铺\n2 创建独立子任务\n3 逐个生成 → 审核 → 发布\n已发现 6 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。\n搜索商品\n按平台筛选\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n按店铺筛选\n全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\ndouyin 店铺 · 抖音\n全部 6\n待确认 —\n任务组\t商品\t平台\t店铺\t素材关系\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\ntmall 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t520\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n1 SKU\n\t抖音\t\ndouyin 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n3 SKU\n\t淘宝\t\n导入店铺\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n服务端数据\t120\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n8 SKU\n\t淘宝\t\n云朵轻户外\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n显示 1–6 / 6 个匹配商品\n上一页第 1 / 1 页下一页",
+      "controls": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "运营概览",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "营销任务",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "发布中心",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "知识库\n品牌资料与规则依据",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "商品\n选择平台商品开始任务",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "图片\n主图、副图与视觉检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "素材\n上传并确认权益与事实",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "工作区信息",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "搜索商品",
+          "disabled": false,
+          "value": "轻云"
+        },
+        {
+          "text": "系统健康\n在线",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "林",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "查看健康状态",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "导入待创建商品",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "创建独立任务组",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "同步全部店铺",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "重新检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "搜索商品或平台",
+          "disabled": false,
+          "value": "轻云"
+        },
+        {
+          "text": "全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音",
+          "disabled": false,
+          "value": "all"
+        },
+        {
+          "text": "全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\ndouyin 店铺 · 抖音",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "全部 6",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "待确认 —",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套｜旗舰店（tmall 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（douyin 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（导入店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（云朵轻户外）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "上一页",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "下一页",
+          "disabled": true,
+          "value": ""
+        }
+      ]
+    },
+    {
+      "name": "操作失败现场",
+      "url": "http://127.0.0.1:18081/merchant/products",
+      "text": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n商品与资产\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\nCOMMERCE FACTS\n一处管理商品事实与来源\n\n平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。\n\n导入待创建商品\n创建独立任务组\n同步全部店铺\n至少选择 2 个商品 + 平台 + 店铺目标\nCURRENT SCOPE\n全部平台\n→\n全部店铺\n先用上方筛选确定平台和店铺，再选择商品。素材库只处理上传、解析和权益确认。\nCANONICAL STATUS\n规范商品状态\n\n只展示服务端已确认的商品关系；读取失败、过期或未验证都不会被标记为通过。\n\n重新检查\n新鲜度未知\n服务端没有提供报告新鲜度，不能据此判断已通过。\n标准链待处理\n6 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n当前工作区待处理：6 项\n标准链状态尚未确认\n平台 / 店铺\n待处理\n4 / 6 个商品身份已核对\n下一步：确认平台和店铺身份\n商品\n待处理\n6 个当前范围商品，标准链结果尚未取得\n下一步：打开商品关系并完成标准链核验\n批量任务\n待处理\n已选择 0 个目标\n下一步：至少选择 2 个商品 / 平台 / 店铺\n素材关系\n待处理\n当前未确认素材绑定\n下一步：打开商品关系逐个确认\n规则预检\n待真实流程\n需在任务内容生成后由服务端检查\n下一步：进入任务并等待规则检查结果\n发布状态\n待真实流程\n未有已批准内容，不可判断发布状态\n下一步：完成生成、审核和二次发布确认\nBATCH WORKFLOW\n批量入口只创建任务组\n已选择 0 个目标 · 至少选择 2 个商品 + 平台 + 店铺目标\n1 选择商品/平台/店铺\n2 创建独立子任务\n3 逐个生成 → 审核 → 发布\n已发现 6 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。\n搜索商品\n按平台筛选\n全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音\n按店铺筛选\n全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\ndouyin 店铺 · 抖音\n全部 6\n待确认 —\n任务组\t商品\t平台\t店铺\t素材关系\t事实来源\t可售库存\t状态\t\n操作\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n2 SKU\n\t淘宝\t\ntaobao 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n事实已确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套｜旗舰店\n1 SKU\n\t天猫\t\ntmall 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t520\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n1 SKU\n\t抖音\t\ndouyin 店铺\n店铺身份已确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n待确认标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n3 SKU\n\t淘宝\t\n导入店铺\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n服务端数据\t120\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n\n\t\n轻云防晒外套 2026\n8 SKU\n\t淘宝\t\n云朵轻户外\n店铺身份待确认\n\t\n未绑定素材\n查看关系\n\t\n演示数据\t1,286\t\n目标商品缺少完整店铺身份，已阻止继续操作。请重新同步商品后再试。标准链未取得\n\t主图检查生成图片\n创建任务\n显示 1–6 / 6 个匹配商品\n上一页第 1 / 1 页下一页",
+      "controls": [
+        {
+          "text": "跳到主要内容",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "运营概览",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "商品与资产",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "营销任务",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "发布中心",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "规则与检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "知识库\n品牌资料与规则依据",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "商品\n选择平台商品开始任务",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "图片\n主图、副图与视觉检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "素材\n上传并确认权益与事实",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "帮助与诊断",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "工作区信息",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "打开主菜单",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "搜索商品",
+          "disabled": false,
+          "value": "轻云"
+        },
+        {
+          "text": "系统健康\n在线",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "林",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "查看健康状态",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "导入待创建商品",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "创建独立任务组",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "同步全部店铺",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "重新检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "搜索商品或平台",
+          "disabled": false,
+          "value": "轻云"
+        },
+        {
+          "text": "全部平台\n京东\n淘宝\n天猫\n拼多多\n小红书\n抖音",
+          "disabled": false,
+          "value": "all"
+        },
+        {
+          "text": "全部店铺\njd 店铺 · 京东\ntaobao 店铺 等 3 个店铺名 · 淘宝\ntaobao 店铺 · 淘宝\ntmall 店铺 · 天猫\npinduoduo 店铺 · 拼多多\n小红书未验证 Fixture · 小红书\ndouyin 店铺 · 抖音",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "全部 6",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "待确认 —",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（taobao 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套｜旗舰店（tmall 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（douyin 店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（导入店铺）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "选择轻云防晒外套 2026（云朵轻户外）加入任务组",
+          "disabled": true,
+          "value": "on"
+        },
+        {
+          "text": "查看关系",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "主图检查",
+          "disabled": false,
+          "value": ""
+        },
+        {
+          "text": "生成图片",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "创建任务",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "上一页",
+          "disabled": true,
+          "value": ""
+        },
+        {
+          "text": "下一页",
+          "disabled": true,
+          "value": ""
+        }
+      ]
+    }
+  ],
+  "errors": [
+    "locator.click: Timeout 8000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '下一页', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button disabled>下一页</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    15 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/merchant-e2e-20260905/human-exploration.mjs:20:56"
+  ]
+}

@@ -221,9 +221,14 @@ async function bootstrapWorkspace(config: Required<LocalOidcGatewayConfig>, sess
 
 export function createLocalOidcGateway(rawConfig: LocalOidcGatewayConfig): Server {
   const config = validatedConfig(rawConfig)
+  const trace = process.env.LOCAL_OIDC_TRACE === 'true'
+  const audit = (event: string, details: Record<string, unknown> = {}) => {
+    if (trace) process.stderr.write(`${JSON.stringify({ event: `oidc.gateway.${event}`, ...details })}\n`)
+  }
   return createServer(async (req, res) => {
     try {
       const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1')
+      audit('request', { method: req.method, path: requestUrl.pathname })
       if (requestUrl.pathname === '/healthz') {
         res.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store' }); res.end('ok\n'); return
       }
@@ -257,7 +262,7 @@ export function createLocalOidcGateway(rawConfig: LocalOidcGatewayConfig): Serve
         }); res.end(); return
       }
       const session = readSession(req, config)
-      if (!session) { redirectToLogin(req, res); return }
+      if (!session) { audit('redirect_login', { path: requestUrl.pathname }); redirectToLogin(req, res); return }
       if (requestUrl.pathname === '/auth/session' && req.method === 'GET') {
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
         res.end(JSON.stringify({ subject: session.sub, workspaceId: session.workspace, expiresAt: new Date(session.expiresAt * 1000).toISOString(), amr: config.amr }))
@@ -276,11 +281,14 @@ export function createLocalOidcGateway(rawConfig: LocalOidcGatewayConfig): Serve
           res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify({ error: { code: 'AUTHZ_WORKBENCH_FORBIDDEN', message: 'workbench does not match the configured OIDC gateway session' } })); return
         }
         const target = `${requestUrl.pathname.slice(4) || '/'}${requestUrl.search}`
+        audit('proxy_api', { path: requestUrl.pathname, target, workbench: config.workbench, workspace: session.workspace || undefined })
         const bytes = await bodyBytes(req)
         const headers = forwardedHeaders(req.headers)
         const proof = oidcProofHeaders(config, { method: req.method ?? 'GET', target, workspace: session.workspace, workbench: config.workbench, subject: session.sub, sid: session.sid, authTime: session.authTime, expiresAt: session.expiresAt, body: bytes })
         proof.forEach((value, name) => headers.set(name, value))
-        await proxy(req, res, config.apiUpstream, target, headers, bytes); return
+        try { await proxy(req, res, config.apiUpstream, target, headers, bytes) }
+        catch (error) { audit('proxy_api_error', { target, message: error instanceof Error ? error.message : String(error) }); throw error }
+        return
       }
       await proxy(req, res, config.uiUpstream, `${requestUrl.pathname}${requestUrl.search}`, forwardedHeaders(req.headers)); return
     } catch (error) {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, accessDeniedEvidence, accessDeniedReasonCode, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, OpsSessionRecoveryGuidance, accessDeniedEvidence, accessDeniedReasonCode, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
 import { openBrandStore } from "./StoresPage.js";
 
 describe("selectStoreScope", () => {
@@ -50,6 +50,16 @@ describe("desktop keyboard navigation", () => {
 });
 
 describe("managed session gate", () => {
+  it("gives the correct recovery path for managed and local identities while retaining diagnostics", () => {
+    const managed = renderToStaticMarkup(createElement(OpsSessionRecoveryGuidance, { managed: true, error: "AUTHZ_WORKBENCH_FORBIDDEN" }));
+    expect(managed).toContain("组织登录入口");
+    expect(managed).not.toContain("管理员提供的运营凭据");
+    const local = renderToStaticMarkup(createElement(OpsSessionRecoveryGuidance, { managed: false, error: "AUTHZ_WORKBENCH_FORBIDDEN" }));
+    expect(local).toContain("右上角“登录 / 连接”");
+    expect(local).toContain("商家登录凭据不能用于平台运营控制台");
+    expect(local).toContain("<details>");
+    expect(local).toContain("AUTHZ_WORKBENCH_FORBIDDEN");
+  });
   it("blocks deep links when ops.session failed instead of treating them as loading or empty", () => {
     expect(opsSessionGateState(true, false, "OIDC session projection failed")).toBe("blocked");
     expect(opsSessionGateState(true, false)).toBe("loading");

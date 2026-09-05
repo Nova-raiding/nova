@@ -19,6 +19,16 @@ import { normalizeDiagnosticTokens } from "../components/opsErrorPresentation.js
 
 const { Content } = Layout;
 
+export function OpsSessionRecoveryGuidance({ managed, error }: { managed: boolean; error?: string }) {
+  return <div>
+    <p>当前身份尚未通过运营权限验证，暂时无法打开运营页面或执行操作。</p>
+    {managed ? <p>请返回组织登录入口，使用获授权的运营账号重新登录，再回到此页点击“重试权限验证”。如果仍无法进入，请联系管理员核对账号的运营权限和工作区。</p>
+      : <p>请点击右上角“登录 / 连接”，核对工作区，并使用管理员提供的运营凭据保存并刷新。商家登录凭据不能用于平台运营控制台；如无运营凭据，请联系管理员开通。</p>}
+    <p>若刚刚恢复网络或管理员已更新权限，可直接重试。</p>
+    <details><summary>查看失败详情（供管理员排查）</summary><p>{error ?? "权限会话加载失败"}</p></details>
+  </div>;
+}
+
 export function commitOpsWorkbenchTransition(
   next: OpsWorkbench,
   pushHistory: boolean,
@@ -256,8 +266,8 @@ function Dashboard({
               <Result
                 status="error"
                 title={<h1 id="ops-session-error-title" className="ops-result-heading">无法验证运营权限</h1>}
-                subTitle={`${sessionError ?? "权限会话加载失败"}。为保护运营数据，当前会话已拒绝所有页面与动作。`}
-                extra={<Button type="primary" aria-label="重试权限验证" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试权限验证</Button>}
+                subTitle={<OpsSessionRecoveryGuidance managed={managedOpsSession} error={sessionError} />}
+                extra={<Button type="primary" aria-label="重试权限验证" style={{ minHeight: 44 }} loading={model.loading} disabled={model.loading} onClick={() => void model.load()}>重试权限验证</Button>}
               />
             </div>
           ) : sessionGate === "loading" ? (

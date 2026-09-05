@@ -1,0 +1,82 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260905",
+  "generated_at": "2026-09-05T12:23:00.109Z",
+  "environment": "production",
+  "simulated": false,
+  "relay": "https://ai.wormholexyz.xyz",
+  "results": [
+    {
+      "modality": "text",
+      "endpoint": "/chat/completions",
+      "model": "glm-5.2",
+      "httpStatus": 200,
+      "providerRequestId": "202609051220372074987078268d9d6AWCvkYV6",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.00028686,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready"
+    },
+    {
+      "modality": "image",
+      "endpoint": "/images/generations",
+      "model": "qwen-image-3.0",
+      "httpStatus": 200,
+      "providerRequestId": "202609051220470306832768268d9d6JBUif3xr",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.1590707,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready"
+    },
+    {
+      "modality": "image_edit",
+      "endpoint": "/images/generations",
+      "model": "qwen-image-3.0",
+      "httpStatus": 200,
+      "providerRequestId": "202609051221500594264798268d9d6tEbP3ihx",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.1590707,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready"
+    },
+    {
+      "modality": "ocr",
+      "endpoint": "/chat/completions",
+      "model": "glm-5.3-flash",
+      "httpStatus": 200,
+      "providerRequestId": "202609051220414183769908268d9d6kcAmR8nt",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 0.00010928,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready"
+    },
+    {
+      "modality": "video",
+      "endpoint": "/video/generations/{job_id}",
+      "model": "wan3.0-video",
+      "httpStatus": 200,
+      "providerRequestId": "202609051220220691636068268d9d6zQFy30Bi",
+      "providerJobId": "task_2qyIzNtAY0IBw3r7KsBi8f8NlTAMY4FJ",
+      "usageObserved": true,
+      "costObserved": true,
+      "costSource": "relay_pricing_snapshot",
+      "costCny": 544.265625,
+      "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "pricingGroup": "VIP",
+      "state": "ready"
+    }
+  ],
+  "expires_at": "2026-09-06T12:23:10.446Z"
+}

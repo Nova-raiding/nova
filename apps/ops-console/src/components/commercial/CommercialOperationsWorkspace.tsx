@@ -24,6 +24,7 @@ import type {
   CreativePointLedgerEntry,
   CreativePointRateItem,
   ServiceFulfillmentItem,
+  CommercialTimelineEvent,
 } from "../../api/commercialOperationsClient.js";
 import {
   commercialViewCapability,
@@ -367,6 +368,31 @@ function ServicesTable({ state, controller }: { state: CommercialOperationsContr
   {controller.permissions.canWriteService ? <Alert type="warning" showIcon title="履约写入操作入口尚未接入" description="服务端已有独立 capability、reason、revision 和审计契约；当前页面仍保持只读，避免绕过证据提交。" /> : null}</>}</DataBoundary>;
 }
 
+function TimelineTable({ state, controller }: { state: CommercialOperationsController["data"]["timeline"]; controller: CommercialOperationsController }) {
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const items = useMemo(() => filteredRows(state.data?.items ?? [], controller).filter((item) => {
+    const at = Date.parse(item.occurredAt);
+    return (!fromDate || at >= Date.parse(`${fromDate}T00:00:00Z`)) && (!toDate || at <= Date.parse(`${toDate}T23:59:59.999Z`));
+  }).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [state.data?.items, controller.query.query, controller.query.status, fromDate, toDate]);
+  const selection = useDeepLinkedSelection(items, controller);
+  return <DataBoundary state={state} capability={commercialViewCapability.timeline} onRetry={() => void controller.loadView("timeline")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} controller={controller} onRefresh={() => void controller.loadView("timeline")} showStatus /><Space wrap><Typography.Text type="secondary">时间范围</Typography.Text><Input type="date" aria-label="时间范围起始" value={fromDate} onChange={event => setFromDate(event.target.value)} /><Typography.Text type="secondary">至</Typography.Text><Input type="date" aria-label="时间范围结束" value={toDate} onChange={event => setToDate(event.target.value)} /><Typography.Text type="secondary">Workspace：{controller.targetWorkspaceId || "未选择"}</Typography.Text></Space><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} locale={{ emptyText: emptyForFilter(controller, "商业时间线事件") }} dataSource={items} scroll={{ x: 1540 }} columns={[
+    { title: "时间", dataIndex: "occurredAt", fixed: "left", width: 190, render: time },
+    { title: "事件", dataIndex: "kind", width: 220, render: value => <StateTag value={value} /> },
+    { title: "状态", dataIndex: "status", width: 140, render: value => <StateTag value={value} /> },
+    { title: "Workspace", dataIndex: "workspaceId", width: 180, render: value => <Typography.Text code>{value}</Typography.Text> },
+    { title: "Operation", dataIndex: "operationId", width: 190, render: value => <Typography.Text code>{dash(value)}</Typography.Text> },
+    { title: "Trace", dataIndex: "traceId", width: 190, render: value => <Typography.Text code>{dash(value)}</Typography.Text> },
+    { title: "操作者", dataIndex: "actorId", width: 150, render: dash },
+    { title: "操作", fixed: "right", width: 90, render: (_, row) => <Button size="small" onClick={event => selection.open(row, event.currentTarget)} aria-label={`查看商业时间线事件 ${row.id}`}>详情</Button> },
+  ]} /><Drawer title="商业时间线证据" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Descriptions bordered size="small" column={1} items={[
+    { key: "id", label: "事件 ID", children: <Typography.Text code>{selection.selected.id}</Typography.Text> },
+    { key: "correlation", label: "Operation / Trace / Request", children: <Typography.Text code>{dash(selection.selected.operationId)} / {dash(selection.selected.traceId)} / {dash(selection.selected.requestId)}</Typography.Text> },
+    { key: "actor", label: "操作者", children: dash(selection.selected.actorId) }, { key: "reason", label: "原因", children: dash(selection.selected.reason) },
+    { key: "evidence", label: "证据", children: Object.keys(selection.selected.evidence).length ? <Typography.Text code>{JSON.stringify(selection.selected.evidence)}</Typography.Text> : "未返回" },
+  ]} /> : null}</Drawer></>}</DataBoundary>;
+}
+
 function renderView(view: CommercialView, controller: CommercialOperationsController) {
   if (view === "blocks") return <BlockTable state={controller.data.blocks} controller={controller} />;
   if (view === "entitlements") return <EntitlementTable state={controller.data.entitlements} controller={controller} />;
@@ -374,6 +400,7 @@ function renderView(view: CommercialView, controller: CommercialOperationsContro
   if (view === "catalog") return <CatalogTable state={controller.data.catalog} controller={controller} />;
   if (view === "orders") return <OrdersTable state={controller.data.orders} controller={controller} />;
   if (view === "rates") return <RatesTable state={controller.data.rates} controller={controller} />;
+  if (view === "timeline") return <TimelineTable state={controller.data.timeline} controller={controller} />;
   return <ServicesTable state={controller.data.services} controller={controller} />;
 }
 

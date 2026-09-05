@@ -35,7 +35,8 @@ export function ModelServiceSummary({ status, loading, onOpen }: ModelServiceSum
             {loading && !status ? "加载中" : status?.state ?? "状态不可用"}
           </Tag>
           <Typography.Text type="secondary">
-            Provider 配置不代表可用，最终状态同时受成本证据与计费组门禁控制。
+            运行时状态与发布证据分别核验；Provider 配置不代表生产可用。当前 release metadata{" "}
+            {status?.release_metadata_ready ? "已就绪" : "未就绪"}，完整发布门禁仍由服务端决定。
           </Typography.Text>
         </Col>
       </Row>
