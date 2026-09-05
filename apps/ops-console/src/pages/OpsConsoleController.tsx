@@ -196,10 +196,10 @@ function Dashboard({
       void model.loadRules();
     if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
     if (activeDomain === "users" && canRead("users")) {
-      // The platform directory is a route-critical query. Cancel overview
-      // hydration before loading it so cold Redis/Postgres runs cannot starve
-      // the user list behind optional aggregate requests.
-      model.cancelUserRequests();
+      // loadUsers owns cancellation for its previous directory request. Do
+      // not cancel here: this effect can rerun when the session projection
+      // settles, and aborting the just-started request makes a healthy API
+      // response look like a timeout in the directory.
       void model.loadUsers();
     }
   }, [activeDomain, model.canUserGovernance, model.opsSession?.actor_id]);
