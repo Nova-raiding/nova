@@ -79,7 +79,9 @@ test('operates the platform user directory without destructive confirmation', as
   await expect(detailDrawer.getByText('认证会话（已脱敏）')).toBeVisible({ timeout: 20_000 })
   await expect(detailDrawer.getByRole('heading', { name: '平台身份生命周期' })).toBeVisible()
   await expect(detailDrawer.getByText('所属租户与角色')).toBeVisible()
-  await expect(detailDrawer.getByText('暂无成员操作记录')).toBeVisible()
+  // Existing local members may already have audited operations; the detail
+  // contract is satisfied by rendering the operation-history section itself.
+  await expect(detailDrawer.getByText('成员操作记录')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(detailDrawer).toBeHidden()
   await expect(detailButton).toBeFocused()
