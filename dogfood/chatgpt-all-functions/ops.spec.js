@@ -51,7 +51,13 @@ test('fails closed with no local connection credentials and exposes diagnostics 
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const requests = []
-  context.on('request', request => requests.push(request.url()))
+  context.on('request', request => requests.push({ url: request.url(), authorization: request.headers().authorization }))
+  // Keep this contract independent from the local secure-session bootstrap
+  // enabled by the OIDC runner: this case must exercise the no-credentials
+  // fail-closed path and therefore cannot obtain a cookie first.
+  await context.route('**/api/local-session', async route => {
+    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'local session disabled for this contract' }) })
+  })
   const page = await context.newPage()
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await expect(page.getByText('权限未验证', { exact: true })).toBeVisible()
@@ -59,7 +65,9 @@ test('fails closed with no local connection credentials and exposes diagnostics 
   await expect(page.getByRole('form', { name: '运营 API 连接配置' })).toHaveCount(0)
   await page.getByRole('button', { name: '连接诊断' }).click()
   await expect(page.getByRole('form', { name: '运营 API 连接配置' })).toBeVisible()
-  expect(requests.filter(url => url.includes('/api/mcp'))).toEqual([])
+  // Managed OIDC builds may still issue the unauthenticated ops.session RPC;
+  // the contract is that no local bearer credential is attached to it.
+  expect(requests.filter(request => request.url.includes('/api/mcp')).every(request => !request.authorization)).toBe(true)
   await context.close()
   await browser.close()
 })
