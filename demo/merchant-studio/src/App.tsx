@@ -10564,10 +10564,25 @@ export default function App() {
                 data-testid="route-recovery-error"
               >
                 <ErrorNotice
-                  message={`无法恢复当前链接：${routeTargetError}`}
+                  message={
+                    routeTargetError.includes('FORBIDDEN') ||
+                    routeTargetError.includes('授权决策拒绝') ||
+                    routeTargetError.includes('没有权限') ||
+                    routeTargetError.includes('无权访问')
+                      ? `当前会话无权读取这项任务：${routeTargetError}`
+                      : `无法恢复当前链接：${routeTargetError}`
+                  }
                   onRetry={() => setRouteReloadKey((key) => key + 1)}
                   focusOnMount
                 />
+                {(routeTargetError.includes('FORBIDDEN') ||
+                  routeTargetError.includes('授权决策拒绝') ||
+                  routeTargetError.includes('没有权限') ||
+                  routeTargetError.includes('无权访问')) && (
+                  <p className="muted">
+                    服务端拒绝了当前身份对任务或商品事实的读取请求，页面不会用演示数据替代。请切换到有权访问该工作区的商家账号后重试。
+                  </p>
+                )}
                 <button
                   className="primary"
                   onClick={() => navigateTo('products', { clearContext: true })}

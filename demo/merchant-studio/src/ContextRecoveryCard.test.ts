@@ -17,6 +17,13 @@ describe('context recovery copy', () => {
     })
   })
 
+  it('explains authorization failures without falling back to demo data', () => {
+    expect(recoveryCopy('FORBIDDEN: 当前身份授权决策拒绝 customer.content.read')).toMatchObject({
+      title: '当前会话无权读取这项任务',
+      primary: '返回商品与素材范围',
+    })
+  })
+
   it('keeps unknown failures recoverable by reload', () => {
     expect(recoveryCopy('网络暂时不可用')).toMatchObject({
       title: '这项任务暂时无法继续',
