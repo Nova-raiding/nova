@@ -19,6 +19,7 @@ export type ModelReadinessRow = {
 export function modelReadinessRows(
   status: Pick<ModelStatus, "model_readiness"> | undefined,
 ): ModelReadinessRow[] {
+  if (!status) return [];
   return capabilities.map(({ key, label }) => {
     const readiness = status?.model_readiness?.[key];
     return {

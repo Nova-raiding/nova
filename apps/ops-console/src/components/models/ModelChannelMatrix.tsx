@@ -20,6 +20,7 @@ export type ModelChannelRow = {
 };
 
 export function modelChannelRows(status: ModelStatus | undefined): ModelChannelRow[] {
+  if (!status) return [];
   return modalityConfig.map((config) => {
     const readiness = status?.model_readiness?.[config.key];
     return {
@@ -40,14 +41,14 @@ interface ModelChannelMatrixProps {
 
 export function ModelChannelMatrix({ status }: ModelChannelMatrixProps) {
   const rows = modelChannelRows(status);
-  const groupEvidenceReady = rows.every((row) => row.costEvidence);
+  const groupEvidenceReady = rows.length > 0 && rows.every((row) => row.costEvidence);
 
   return (
     <Card title="模型渠道与 SVIP 上线门禁">
       <Alert
-        type={groupEvidenceReady ? "success" : "warning"}
+        type={!status ? "info" : groupEvidenceReady ? "success" : "warning"}
         showIcon
-        title={groupEvidenceReady ? "全部模态已有实际计费组成本证据" : "部分模态缺少实际计费组成本证据"}
+        title={!status ? "暂无模型状态数据" : groupEvidenceReady ? "全部模态已有实际计费组成本证据" : "部分模态缺少实际计费组成本证据"}
         description="控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。"
       />
       <Table<ModelChannelRow>

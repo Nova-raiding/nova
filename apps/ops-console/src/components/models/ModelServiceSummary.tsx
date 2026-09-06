@@ -25,10 +25,10 @@ export function ModelServiceSummary({ status, loading, onOpen }: ModelServiceSum
     >
       <Row gutter={[16, 16]} align="middle">
         <Col xs={12} md={6}>
-          <Statistic title="已就绪能力" value={readyCount} suffix={`/ ${rows.length}`} />
+          <Statistic title="已就绪能力" value={status ? readyCount : "暂无数据"} suffix={status ? `/ ${rows.length}` : undefined} />
         </Col>
         <Col xs={12} md={6}>
-          <Statistic title="阻断能力" value={blockedCount} />
+          <Statistic title="阻断能力" value={status ? blockedCount : "暂无数据"} />
         </Col>
         <Col xs={24} md={12}>
           <Tag color={!status ? "default" : status.state === "ready" ? "green" : "red"}>
