@@ -2974,6 +2974,10 @@ export async function enforceMcpCommercialAccess(req: IncomingMessage, workspace
 }
 
 export async function enforceHttpCommercialAccess(req: IncomingMessage, workspaceId: string, operation: string) {
+  // Keep local HTTP/BFF reads aligned with the MCP fixture path. Without this
+  // idempotent seed, a fresh PostgreSQL-backed demo container reports an
+  // unknown creative-point balance until an MCP write happens first.
+  await ensureLocalFixtureCreativePoints(workspaceId)
   const result = await commercialAccessService.decide({
     surface: 'HTTP', operation, workspace_id: workspaceId,
     ...((fixtureCommercialTestMode || (testCommercialFixtureHarnessEnabled && header(req, 'x-test-commercial-fixture') === 'server-e2e')) ? { registry: fixtureCommercialRegistry } : {}),
@@ -15968,6 +15972,23 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   }
   const httpCommercialValidationDeferred = (req.method === 'PUT' && /^\/v1\/assets\/[^/]+\/preference$/u.test(path))
     || (req.method === 'POST' && path === '/v1/brand-profile/extract')
+    // Product inventory is a customer-content read. It must remain usable
+    // while commercial access is still being classified; no model call or
+    // points reservation happens on this collection endpoint.
+    || (req.method === 'GET' && path === '/v1/products')
+    // Asset metadata and the merchant brand profile are read-only workspace
+    // data. Commercial access must not turn a catalog read into a wallet
+    // failure while the access decision is still being classified.
+    || (req.method === 'GET' && path === '/v1/assets')
+    || (req.method === 'GET' && path === '/v1/brand-profile')
+    // Opening an already-authorized asset only reads its archived bytes; it
+    // does not invoke a model or consume creative points.
+    || (req.method === 'GET' && /^\/v1\/assets\/[^/]+\/download$/u.test(path))
+    // Image review is a deterministic, read-only checker on the merchant
+    // surface. It does not call a model or consume creative points; applying
+    // the commercial gate here turns a valid authorization into a misleading
+    // wallet error before the findings can be returned.
+    || (req.method === 'GET' && /^\/v1\/products\/[^/]+\/image-review$/u.test(path))
     || ((req.method === 'GET' && /^\/v1\/content-versions\/[^/]+\/review$/u.test(path)) || (req.method === 'POST' && /^\/v1\/content-versions\/[^/]+\/review-decisions$/u.test(path)))
   if (httpOperationPolicy && requestWorkspace !== 'unknown' && !workerRoute && !assetScannerRoute && !infrastructureProbe && !isOAuthCallback && !isOAuthAuthorization && !paymentCallbackMatch && !httpCommercialValidationDeferred) {
     await enforceHttpCommercialAccess(req, requestWorkspace, httpOperationPolicy.operation)
