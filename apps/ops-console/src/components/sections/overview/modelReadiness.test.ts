@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { modelCostReadiness, modelReadinessRows } from "./modelReadiness.js";
 
 describe("model readiness presentation", () => {
+  it("keeps missing server status as an empty result", () => {
+    expect(modelReadinessRows(undefined)).toEqual([]);
+  });
+
   it("does not treat a configured provider as final readiness", () => {
     const rows = modelReadinessRows({
       model_readiness: {
