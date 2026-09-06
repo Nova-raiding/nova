@@ -7,7 +7,7 @@ interface KnowledgeRulesPanelProps {
 }
 
 export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
-  const { canRules, createKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
+  const { canKnowledge, createKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
     model;
 
   return (
@@ -20,7 +20,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
           const first = errorFields[0]?.name;
           if (first) knowledgeRuleForm.scrollToField(first, { block: "center", focus: true });
         }}
-        disabled={!canRules}
+        disabled={!canKnowledge}
         style={{ marginBottom: 16 }}
         aria-label="录入知识规则"
       >
@@ -81,7 +81,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
             options={[{ value: "draft", label: "草稿" }, { value: "active", label: "生效" }, { value: "inactive", label: "停用" }, { value: "archived", label: "归档" }]}
           />
         </Form.Item>
-        <Button disabled={!canRules} type="primary" htmlType="submit">
+        <Button disabled={!canKnowledge} type="primary" htmlType="submit">
           录入知识规则
         </Button>
       </Form>

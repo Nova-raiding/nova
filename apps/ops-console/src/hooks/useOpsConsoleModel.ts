@@ -963,6 +963,8 @@ export function useOpsConsoleModel() {
   const canModelMarkup = authorization.canAny(["commercial.read", "commercial.update"]);
   const canKnowledge = authorization.can("customer.content.update");
   const canCompetitor = authorization.can("customer.content.update");
+  // Knowledge rules are workspace content and may be drafted by content
+  // operators. Platform rule lifecycle actions remain gated by canRules.
   const canRules = authorization.canAny(["rule.update", "rule.publish.approve"]);
   const canQueue = authorization.can("marketing.queue.update");
   const canMembers = authorization.can("workspace.member.manage");
@@ -989,8 +991,8 @@ export function useOpsConsoleModel() {
     status: "active" | "inactive" | "expired",
     options?: { reason?: string; approvalRef?: string; approvedBy?: string; approvedAt?: string },
   ) => {
-    if (!canRules) {
-      message.error("当前会话为只读，缺少规则管理员权限");
+    if (!canKnowledge) {
+      message.error("当前会话为只读，缺少知识库编辑权限");
       return false;
     }
     if (ruleMutationInFlight.current) return false;
