@@ -4352,8 +4352,7 @@ function ProductAssetRelationDialog({
                 : '未绑定素材'}
             </StatusChip>
             <span>
-              仅展示商品 API
-              返回的已绑定素材；本页不会新增、修改或推断绑定关系。
+              已绑定关系来自商品 API；可在下方选择通过安全扫描的素材进行绑定或解除绑定，所有变更都会写入审计。
             </span>
           </div>
           <div className="relation-summary" data-testid="canonical-product-relation">
@@ -4370,7 +4369,7 @@ function ProductAssetRelationDialog({
           {relation.boundIds.length === 0 && (
             <div className="empty-inline">
               <FolderOpen size={16} />
-              素材库中尚未记录该商品的默认素材。请在商品导入/编辑入口完成服务端绑定后再刷新。
+              素材库中尚未记录该商品的默认素材。可在下方选择通过安全扫描的素材完成绑定。
             </div>
           )}
           {relation.boundIds.length > 0 && (
