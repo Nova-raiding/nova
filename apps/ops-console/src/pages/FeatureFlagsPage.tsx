@@ -22,7 +22,7 @@ export function featureFlagPermissionNotice(canWrite: boolean, canEmergency: boo
 export function getFeatureFlagEnvironmentConfig(managedSession: boolean) {
   return managedSession
     ? { defaultEnvironment: "production", environments: MANAGED_FEATURE_FLAG_ENVIRONMENTS }
-    : { defaultEnvironment: "local_demo", environments: LOCAL_FEATURE_FLAG_ENVIRONMENTS };
+    : { defaultEnvironment: "development", environments: LOCAL_FEATURE_FLAG_ENVIRONMENTS };
 }
 
 export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {

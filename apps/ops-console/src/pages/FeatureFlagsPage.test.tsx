@@ -23,9 +23,9 @@ describe("FeatureFlagsPage environment configuration", () => {
     expect(featureFlagPermissionNotice(true, true)).toBeUndefined();
   });
 
-  it("defaults local builds to the seeded local_demo environment", () => {
+  it("defaults local builds to a real managed environment instead of seeded demo data", () => {
     const config = getFeatureFlagEnvironmentConfig(false);
-    expect(config.defaultEnvironment).toBe("local_demo");
+    expect(config.defaultEnvironment).toBe("development");
     expect(config.environments).toContain("local_demo");
   });
 
