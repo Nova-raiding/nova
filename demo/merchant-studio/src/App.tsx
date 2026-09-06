@@ -2692,11 +2692,22 @@ function AssetLibrary({
   const visibleAssets =
     assets?.filter((asset) => assetMatchesEntry(asset.mimeType, assetEntry)) ??
     []
+  // In the image workspace, put the largest verified candidates first. The
+  // archive contains legacy callback markers that are labelled image/png but
+  // are not decodable image bytes; keeping those rows ahead of real pictures
+  // makes the page look empty even when valid assets are available.
+  const orderedAssets =
+    assetEntry === 'images'
+      ? [...visibleAssets].sort((left, right) => {
+          const cleanDelta = Number(right.scanStatus === 'clean') - Number(left.scanStatus === 'clean')
+          return cleanDelta || right.sizeBytes - left.sizeBytes
+        })
+      : visibleAssets
   // Keep the desktop workspace usable when a workspace contains a long
   // historical archive. Metadata is still fetched for counts and actions, but
   // rendering thousands of cards at once makes every button hard to reach and
   // causes the browser to issue unnecessary thumbnail work.
-  const renderedAssets = visibleAssets.slice(0, 100)
+  const renderedAssets = orderedAssets.slice(0, 100)
   const load = async () => {
     if (!baseUrl) {
       setLoading(false)
@@ -2767,13 +2778,19 @@ function AssetLibrary({
     // row creates a burst of guaranteed 403s (and can trip the relay limiter).
     // Keep the grid responsive and let the explicit "打开并阅读" action deal
     // with anything outside this safe preview subset.
-    const imageAssets = visibleAssets
+    // Some historical scanner callback records declare image/png but contain
+    // only a tiny callback marker rather than a decodable image.  Prioritise
+    // larger objects and verify the browser can decode the bytes before
+    // putting a thumbnail into the grid; metadata alone is not proof that an
+    // image is renderable.
+    const imageAssets = orderedAssets
       .filter(
         (asset) =>
           asset.scanStatus === 'clean' &&
           asset.mimeType.toLowerCase().startsWith('image/'),
       )
-      .slice(0, 12)
+      .sort((left, right) => right.sizeBytes - left.sizeBytes)
+      .slice(0, 24)
     const previews = new Map<string, string>()
     let nextIndex = 0
     const worker = async () => {
@@ -2785,6 +2802,16 @@ function AssetLibrary({
           const blob = await fetchAssetBlob(baseUrl, asset.id, controller.signal)
           if (!blob.type.startsWith('image/')) continue
           const url = URL.createObjectURL(blob)
+          const valid = await new Promise<boolean>((resolve) => {
+            const probe = new Image()
+            probe.onload = () => resolve(true)
+            probe.onerror = () => resolve(false)
+            probe.src = url
+          })
+          if (!valid) {
+            URL.revokeObjectURL(url)
+            continue
+          }
           objectUrls.push(url)
           previews.set(asset.id, url)
         } catch {
@@ -4206,6 +4233,10 @@ function ProductAssetRelationDialog({
   const relation = product
     ? resolveProductAssetRelation(product, assets)
     : { boundIds: [], matchedAssets: [], missingAssetIds: [] }
+  const selectableAssets = assets.filter(
+    (asset) =>
+      !relation.boundIds.includes(asset.id) && asset.scanStatus === 'clean',
+  )
   const reload = () => {
     setLoading(true)
     setError('')
@@ -4394,13 +4425,16 @@ function ProductAssetRelationDialog({
               onChange={(event) => setSelectedAssetId(event.target.value)}
             >
               <option value="">选择素材后绑定</option>
-              {assets
-                .filter((asset) => !relation.boundIds.includes(asset.id))
-                .map((asset) => (
+              {selectableAssets.map((asset) => (
                   <option key={asset.id} value={asset.id}>
                     {asset.name}
                   </option>
-                ))}
+              ))}
+              {!selectableAssets.length && (
+                <option value="" disabled>
+                  暂无通过安全扫描的可绑定素材
+                </option>
+              )}
             </select>
             <button
               className="secondary"
@@ -4413,6 +4447,11 @@ function ProductAssetRelationDialog({
               绑定素材
             </button>
           </div>
+          {!selectableAssets.length && (
+            <small className="asset-error">
+              当前素材均未通过安全扫描；扫描完成后点击“刷新状态”，再回来绑定。
+            </small>
+          )}
           <div className="relation-note">
             <Link2 size={15} />
             <span>
