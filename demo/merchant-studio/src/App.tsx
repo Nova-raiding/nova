@@ -4794,7 +4794,7 @@ function Products({
     if (!Number.isInteger(count) || count < 1 || count > 6) { setImageGenerationError('候选数量必须是 1–6。'); setImageGenerationErrorField('count'); return }
     setImageGenerationBusy(true); setImageGenerationError(''); setImageGenerationErrorField(null)
     try {
-      const result = await generateProductImages(baseUrl, { product_id: imageGenerationTarget.productId, platform: imageGenerationTarget.platform, ...(imageGenerationTarget.accountId ? { account_id: imageGenerationTarget.accountId } : {}), direction, mode: imageGenerationMode, count, idempotency_key: `merchant-studio-image-${imageGenerationTarget.productId}-${imageGenerationTarget.platform}-${count}-${direction}` })
+      const result = await generateProductImages(baseUrl, { product_id: imageGenerationTarget.productId, platform: imageGenerationTarget.platform, ...(imageGenerationTarget.accountId ? { account_id: imageGenerationTarget.accountId } : {}), direction, mode: imageGenerationMode, count: String(count), idempotency_key: `merchant-studio-image-${imageGenerationTarget.productId}-${imageGenerationTarget.platform}-${count}-${direction}` })
       setImageGenerationTarget(null)
       window.location.href = `${window.location.pathname}?image_job=${encodeURIComponent(result.job_id)}`
     } catch (cause) { setImageGenerationError(describeApiError(cause)); setImageGenerationErrorField(null) }

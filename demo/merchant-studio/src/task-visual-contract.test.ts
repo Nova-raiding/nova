@@ -64,6 +64,8 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('aria-busy={loading}')
     expect(app).toContain('const currentJobId = job?.jobId ?? jobId')
     expect(app).toContain('fetchImageGenerationJob(baseUrl, currentJobId)')
+    expect(app).toContain('count: String(count)')
+    expect(api).toContain("mode: 'create' | 'optimize'; count: string")
   })
 
   it('keeps the conversation readable in the desktop task layout', () => {
