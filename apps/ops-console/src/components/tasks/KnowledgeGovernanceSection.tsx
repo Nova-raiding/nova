@@ -4,10 +4,6 @@ import { AssetRightsPanel } from "./knowledge/AssetRightsPanel";
 import { CompetitorReferencesPanel } from "./knowledge/CompetitorReferencesPanel";
 import { KnowledgeRulesPanel } from "./knowledge/KnowledgeRulesPanel";
 import { LearningSuggestionsPanel } from "./knowledge/LearningSuggestionsPanel";
-import { MarketingQueuePanel } from "./knowledge/MarketingQueuePanel";
-import { UploadedAssetGovernance } from "./knowledge/UploadedAssetGovernance";
-import { DeliveryGovernancePanel } from "./knowledge/DeliveryGovernancePanel";
-import { ImageAuditPanel } from "./knowledge/ImageAuditPanel";
 
 interface KnowledgeGovernanceSectionProps {
   model: OpsConsoleModel;
@@ -23,19 +19,11 @@ export function KnowledgeGovernanceSection({
     knowledgeAssets,
     knowledgeRules,
     learningSuggestions,
-    marketingQueue,
-    workspaceMetrics,
   } = model;
   const pendingAssetCount = knowledgeAssets.filter(
     (item) =>
       item.approvalStatus !== "approved" || item.rightsStatus !== "cleared",
   ).length;
-  const queueCount =
-    marketingQueue.generation.length +
-    marketingQueue.publish.length +
-    marketingQueue.visuals.length +
-    marketingQueue.batches.length +
-    marketingQueue.uploadedAssetRisks.length;
 
   return (
     <Card
@@ -63,10 +51,7 @@ export function KnowledgeGovernanceSection({
           <Statistic title="竞品参考" value={competitors.length} />
         </Col>
         <Col xs={12} md={6}>
-          <Statistic
-            title="生成失败"
-            value={workspaceMetrics?.jobs?.generationFailed ?? 0}
-          />
+          <Statistic title="待确认学习" value={learningSuggestions.length} />
         </Col>
       </Row>
       <Tabs
@@ -91,20 +76,8 @@ export function KnowledgeGovernanceSection({
             label: "竞品参考",
             children: <CompetitorReferencesPanel model={model} />,
           },
-          {
-            key: "queue",
-            label: `任务队列（${queueCount}）`,
-            children: <MarketingQueuePanel model={model} />,
-          },
-          {
-            key: "delivery",
-            label: "交付证据",
-            children: <DeliveryGovernancePanel model={model} />,
-          },
         ]}
       />
-      <ImageAuditPanel />
-      <UploadedAssetGovernance model={model} />
       <Alert
         type="info"
         showIcon

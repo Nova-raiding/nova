@@ -2,6 +2,7 @@ import { OpsPage } from "../components/OpsPage";
 import { OpsPageError } from "../components/OpsPageError";
 import { AlertFiltersSection } from "../components/tasks/AlertFiltersSection";
 import { MarketingQueueFiltersSection } from "../components/tasks/MarketingQueueFiltersSection";
+import { OperationalGovernanceSection } from "../components/tasks/OperationalGovernanceSection";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { Alert, Button, Card, Col, Row, Statistic } from "antd";
 
@@ -72,15 +73,7 @@ export function TasksPage({ model }: TasksPageProps) {
           title="平台运营使用聚合治理数据"
           description="客户商品、素材、知识和内容队列属于工作区范围；平台运营台只展示跨工作区的任务、视觉审核、素材风险和学习建议汇总。需要处理具体内容时，请进入对应工作区的授权运营会话。"
         />
-      ) : canReadCustomerContent ? (
-        <Alert
-          showIcon
-          type="info"
-          style={{ marginTop: 16 }}
-          title="知识库已独立"
-          description="知识规则、资产权益、学习建议和竞品参考已集中到左侧“知识库”，任务页只保留生成、发布和异常队列。"
-        />
-      ) : null}
+      ) : canReadCustomerContent ? <OperationalGovernanceSection model={model} /> : null}
     </OpsPage>
   );
 }
