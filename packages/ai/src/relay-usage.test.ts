@@ -35,6 +35,11 @@ describe('relay usage normalization', () => {
     expect(usage).not.toHaveProperty('costCny')
   })
 
+  it('treats an accepted video job with provider identity as bounded request evidence', () => {
+    const usage = parseRelayUsage({ data: { id: 'video_job_1', status: 'queued' } }, new Headers({ 'x-request-id': 'video_request_1' }), { modality: 'video', model: 'video-v1', context: { durationSeconds: 5 } })
+    expect(usage).toMatchObject({ providerRequestId: 'video_request_1', metadata: { usage_observed: true, video_request_accepted: true, duration_seconds: 5 } })
+  })
+
   it('normalizes provider usage and request identity inside the API envelope result', () => {
     const usage = parseRelayUsage({ data: { result: { request_id: 'request_result', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 }, cost_cny: '0.02' } } }, new Headers(), { modality: 'text', model: 'relay-text' })
     expect(usage).toMatchObject({ providerRequestId: 'request_result', inputTokens: 7, outputTokens: 3, totalTokens: 10, costCny: 0.02, metadata: { usage_observed: true } })

@@ -171,7 +171,9 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // omits token/usage metadata: each returned image is one billable unit and
   // the caller supplies the requested count as the bounded billing context.
   const imageResultObserved = defaults.modality === 'image' && ((Array.isArray(root.data) && root.data.length > 0) || (data && Array.isArray(data.data) && data.data.length > 0))
-  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || (defaults.modality === 'image' && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved
+  const videoEvidenceNode = data ?? result ?? nestedData ?? root
+  const videoRequestAccepted = defaults.modality === 'video' && Boolean(providerRequestId || defaults.context?.providerAttemptId) && Boolean(videoEvidenceNode && ['id', 'task_id', 'job_id'].some(key => typeof videoEvidenceNode[key] === 'string' && videoEvidenceNode[key].trim()))
+  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || (defaults.modality === 'image' && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved || videoRequestAccepted
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
     ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}),
@@ -189,6 +191,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     observedAt: new Date().toISOString(),
     metadata: {
       usage_observed: usageObserved,
+      ...(videoRequestAccepted ? { video_request_accepted: true } : {}),
       ...(defaults.context?.billingUnits ? { billing_units: defaults.context.billingUnits } : {}),
       ...(defaults.context?.durationSeconds ? { duration_seconds: defaults.context.durationSeconds } : {}),
       ...(typeof root.id === 'string' && root.id.trim() ? { provider_response_id: root.id.trim() } : {}),
