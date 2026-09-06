@@ -2692,6 +2692,11 @@ function AssetLibrary({
   const visibleAssets =
     assets?.filter((asset) => assetMatchesEntry(asset.mimeType, assetEntry)) ??
     []
+  // Keep the desktop workspace usable when a workspace contains a long
+  // historical archive. Metadata is still fetched for counts and actions, but
+  // rendering thousands of cards at once makes every button hard to reach and
+  // causes the browser to issue unnecessary thumbnail work.
+  const renderedAssets = visibleAssets.slice(0, 100)
   const load = async () => {
     if (!baseUrl) {
       setLoading(false)
@@ -2757,19 +2762,40 @@ function AssetLibrary({
     }
     const controller = new AbortController()
     const objectUrls: string[] = []
-    const imageAssets = visibleAssets.slice(0, 60)
-    void Promise.allSettled(imageAssets.map(async (asset) => {
-      const blob = await fetchAssetBlob(baseUrl, asset.id, controller.signal)
-      if (!blob.type.startsWith('image/')) return
-      const url = URL.createObjectURL(blob)
-      objectUrls.push(url)
-      return [asset.id, url] as const
-    })).then(results => {
+    // Only clean image objects can be downloaded by the API.  Older assets
+    // may still be quarantined or have an expired object, so attempting every
+    // row creates a burst of guaranteed 403s (and can trip the relay limiter).
+    // Keep the grid responsive and let the explicit "打开并阅读" action deal
+    // with anything outside this safe preview subset.
+    const imageAssets = visibleAssets
+      .filter(
+        (asset) =>
+          asset.scanStatus === 'clean' &&
+          asset.mimeType.toLowerCase().startsWith('image/'),
+      )
+      .slice(0, 12)
+    const previews = new Map<string, string>()
+    let nextIndex = 0
+    const worker = async () => {
+      while (!controller.signal.aborted) {
+        const index = nextIndex++
+        const asset = imageAssets[index]
+        if (!asset) return
+        try {
+          const blob = await fetchAssetBlob(baseUrl, asset.id, controller.signal)
+          if (!blob.type.startsWith('image/')) continue
+          const url = URL.createObjectURL(blob)
+          objectUrls.push(url)
+          previews.set(asset.id, url)
+        } catch {
+          // Quarantined or expired objects remain represented by their status
+          // card; a failed thumbnail must not block the rest of the grid.
+        }
+      }
+    }
+    void Promise.all(Array.from({ length: Math.min(2, imageAssets.length) }, () => worker())).then(() => {
       if (controller.signal.aborted) return
-      const previews = Object.fromEntries(results
-        .filter((result): result is PromiseFulfilledResult<readonly [string, string]> => result.status === 'fulfilled' && Boolean(result.value))
-        .map(result => result.value))
-      setAssetPreviews(previews)
+      setAssetPreviews(Object.fromEntries(previews))
     })
     return () => {
       controller.abort()
@@ -3744,7 +3770,7 @@ function AssetLibrary({
         )}
         {!loading && !error && !!visibleAssets.length && (
           <div className="asset-grid">
-            {visibleAssets.map((asset) => (
+            {renderedAssets.map((asset) => (
               <article
                 className={`asset-card ${asset.preference?.verdict ?? ''}`}
                 key={asset.id}
@@ -4008,6 +4034,11 @@ function AssetLibrary({
                 </div>
               </article>
             ))}
+            {visibleAssets.length > renderedAssets.length && (
+              <div className="info-notice" role="status">
+                当前分类共 {visibleAssets.length} 项，先展示前 {renderedAssets.length} 项；可使用搜索或筛选缩小范围后继续操作。
+              </div>
+            )}
           </div>
         )}
       </div>
