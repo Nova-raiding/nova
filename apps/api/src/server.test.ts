@@ -111,6 +111,12 @@ describe('central commercial access gate', () => {
     expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)
   })
 
+  it('keeps local fixture video tools available only behind the approved development gate', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain("['catalog.image.generate', 'multimodal.video.request', 'multimodal.video.get'].includes(method)")
+    expect(source).toContain("process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true'")
+  })
+
   it('keeps V2 order recovery server-owned and leaves legacy arbitrary recharge disabled', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     expect(source).toContain("case 'commercial.order.create':")

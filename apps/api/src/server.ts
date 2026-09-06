@@ -15441,7 +15441,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'knowledge.rule.create': {
       try {
-        const actorId = requireRuleAdmin(req).actorId
+        // Workspace reviewers have the same rule draft capability exposed by
+        // the Ops Console. Keep workspace owners without rule governance
+        // capability blocked, while allowing the canonical reviewer role.
+        const actorId = requireOperationsRole(req, ['rules_admin', 'reviewer'])
         const target = Object.fromEntries(['platform', 'category', 'brand', 'store', 'campaign'].filter(key => typeof params[key] === 'string' && String(params[key]).trim()).map(key => [key, String(params[key]).trim()]))
         const rule = knowledgeForWorkspace(workspaceId).createRule({
           workspaceId, name: required(params, 'name'), content: required(params, 'content'), scope: required(params, 'scope') as import('../../../packages/knowledge/src/index.js').RuleScope,
