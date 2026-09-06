@@ -57,7 +57,7 @@ describe("operations navigation", () => {
   });
 
   it("lets platform operations reach every domain and local owner mode stay compatible", () => {
-    const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "support.ticket.read", "incident.read", "marketing.summary.read", "platform.settings.read", "rule.read", "model.status.read", "feature_flag.read", "storage.reconciliation.read", "billing.platform.read", "audit.read"]);
+    const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "support.ticket.read", "incident.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read", "model.status.read", "feature_flag.read", "storage.reconciliation.read", "billing.platform.read", "audit.read"]);
     expect(visibleOpsDomains(all)).toEqual(opsDomains);
     expect(visibleOpsDomains(authorization([], false))).toEqual([]);
   });
@@ -65,7 +65,7 @@ describe("operations navigation", () => {
   it("does not expose platform-only domains to a workspace owner", () => {
     const visible = visibleOpsDomains(authorization(["workspace.summary.read", "workspace.member.read", "support.ticket.read", "incident.read", "customer.content.read", "store.connection.read", "rule.read", "model.status.read", "billing.workspace.read", "audit.read"]));
     expect(visible).toEqual([
-      "overview", "members", "support", "incidents", "tasks", "stores", "rules", "models", "storage", "finance", "audit",
+      "overview", "members", "support", "incidents", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "audit",
     ]);
     expect(visible).not.toContain("users");
     expect(visible).not.toContain("feature-flags");

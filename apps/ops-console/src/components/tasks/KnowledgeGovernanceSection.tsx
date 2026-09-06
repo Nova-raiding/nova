@@ -11,10 +11,12 @@ import { ImageAuditPanel } from "./knowledge/ImageAuditPanel";
 
 interface KnowledgeGovernanceSectionProps {
   model: OpsConsoleModel;
+  title?: string;
 }
 
 export function KnowledgeGovernanceSection({
   model,
+  title = "营销能力运营治理",
 }: KnowledgeGovernanceSectionProps) {
   const {
     competitors,
@@ -39,7 +41,7 @@ export function KnowledgeGovernanceSection({
     <Card
       id="ops-domain-tasks"
       className="ops-section-anchor"
-      title="营销能力运营治理"
+      title={title}
       extra={
         <Tag
           color={

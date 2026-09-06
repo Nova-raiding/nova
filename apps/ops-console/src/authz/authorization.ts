@@ -40,6 +40,7 @@ export const domainReadCapabilities: Readonly<Record<OpsDomain, readonly OpsCapa
   support: ["support.ticket.read", "support.ticket.update"],
   incidents: ["incident.read", "incident.update", "incident.administer"],
   tasks: ["marketing.summary.read", "marketing.queue.read", "customer.content.read"],
+  knowledge: ["customer.content.read"],
   stores: ["platform.settings.read", "store.connection.read"],
   rules: ["rule.read", "platform.media_spec.read"],
   models: ["model.status.read", "model.cost.read", "model.policy.update"],

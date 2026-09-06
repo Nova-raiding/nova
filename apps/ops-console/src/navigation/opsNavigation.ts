@@ -7,6 +7,7 @@ export const opsDomains = [
   "support",
   "incidents",
   "tasks",
+  "knowledge",
   "stores",
   "rules",
   "models",
@@ -21,7 +22,7 @@ export type OpsDomain = (typeof opsDomains)[number];
 /** Domains with one authoritative workbench; deep links must use that context. */
 export function requiredWorkbenchForDomain(domain: OpsDomain): "platform" | "workspace" | undefined {
   if (["users", "stores", "models", "feature-flags", "storage", "finance", "audit"].includes(domain)) return "platform";
-  if (["members", "tasks", "rules", "support", "incidents"].includes(domain)) return "workspace";
+  if (["members", "tasks", "knowledge", "rules", "support", "incidents"].includes(domain)) return "workspace";
   return undefined;
 }
 
@@ -46,7 +47,7 @@ export function domainFromLocation(
   location: Pick<Location, "hash" | "pathname">,
 ): OpsDomain {
   const pathDomain = location.pathname
-    .match(/\/ops\/(?:governance|overview|users|members|support|incidents|tasks|stores|rules|models|feature-flags|storage|finance|audit)\/?$/u)?.[0]
+    .match(/\/ops\/(?:governance|overview|users|members|support|incidents|tasks|knowledge|stores|rules|models|feature-flags|storage|finance|audit)\/?$/u)?.[0]
     .split("/")
     .filter(Boolean)
     .at(-1);
@@ -64,7 +65,7 @@ export function urlForDomain(
   domain: OpsDomain,
 ): string {
   const currentOpsRoute =
-    /\/ops\/(?:governance|overview|users|members|support|incidents|tasks|stores|rules|models|feature-flags|storage|finance|audit)\/?$/u;
+    /\/ops\/(?:governance|overview|users|members|support|incidents|tasks|knowledge|stores|rules|models|feature-flags|storage|finance|audit)\/?$/u;
   const basePath = currentOpsRoute.test(location.pathname)
     ? location.pathname.replace(currentOpsRoute, "")
     : location.pathname.replace(/\/$/u, "");

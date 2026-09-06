@@ -115,7 +115,7 @@ describe("authorization projection", () => {
   it("maps a real canonical server projection across all 13 domains", () => {
     const capabilities = [
       "platform.summary.read", "identity.read", "workspace.member.read", "support.ticket.read",
-      "incident.read", "marketing.summary.read", "platform.settings.read", "rule.read",
+      "incident.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read",
       "model.status.read", "feature_flag.read", "storage.reconciliation.read", "billing.platform.read", "audit.read",
     ];
     const authorization = createAuthorizationProjection(session(["platform_ops"], {

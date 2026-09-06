@@ -59,7 +59,7 @@ import { CampaignManifestError, type CampaignDeliveryManifestInput } from '../..
 import { LocalObjectStorage, ObjectStorageError, ObjectStoragePartialWriteError, S3CompatibleObjectStorage, withObjectStorageReadRetry, runReconciliationCycle, type CloudObjectTransport, type ObjectStoragePort, type PutQuarantineObjectInput, MemoryReconciliationStatusStore, type ReconciliationReport, type ReconciliationStatusStore, type DurableObjectReference, type ObjectInventoryEntry } from '../../../packages/storage/src/index.js'
 import { checkDurableArchiveReference } from '../../../packages/storage/src/archive-lifecycle-contract.js'
 import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES, CAPABILITIES, COMMERCIAL_OPERATION_REGISTRY, COMMERCIAL_OPERATION_REGISTRY_VERSION, MCP_METHODS, MCP_METHOD_CONTRACTS, MCP_METHOD_POLICIES, MCP_NON_PRODUCTION_METHODS, MCP_POINT_CHARGED_DISABLED_METHODS, MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS, MCP_RECOVERY_DISABLED_METHODS, MCP_LEGACY_OPS_COMMERCIAL_DISABLED_METHODS, capabilitiesForRoles, canonicalizeRole, evaluateAuthorizationDecision, evaluatePermissionAtoms, getHttpOperationPolicy, getMcpMethodPolicy, resolveCanonicalRoles, resolveCommercialOperation, ERROR_CODES, isCommercialAccessErrorCode, isCommercialPurchaseErrorCode, isMcpMethod, validateMcpRequest, validateImageGenerationCallbackResult, type ApiEnvelope, type AuthorizationDecision, type AuthorizationDecisionMode, type AuthorizationObligation, type CanonicalRole, type CapabilityId, type CommercialAccessDecision, type HttpOperationPolicy, type McpRequest, type OpsWorkbench, type PermissionAtom } from '../../../packages/contracts/src/index.js'
-import { KnowledgeError, KnowledgeModule, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
+import { KnowledgeError, KnowledgeModule, type AssetEntry, type LearningSuggestion, type RuleEntry } from '../../../packages/knowledge/src/index.js'
 import { cleanObjectStorageOrphans } from '../../../packages/workers/src/object-orphan-cleaner.js'
 import { parseWorkerCommercialAccessSnapshot, type WorkerCommercialAccessRecheck, type WorkerCommercialAccessSnapshot } from '../../../packages/workers/src/commercial-access.js'
 import { planSupportSlaScan } from '../../../packages/workers/src/support-sla-scan.js'
@@ -335,6 +335,7 @@ const imageGenerator = rawImageGenerator ? {
 
 export const KNOWLEDGE_CONTEXT_LIMITS = {
   softRules: 24,
+  approvedAssets: 24,
   confirmedLearningSuggestions: 8,
 } as const
 
@@ -359,6 +360,7 @@ function newestKnowledgeFirst<T extends { id: string; updatedAt: string }>(items
  */
 export function buildBoundedKnowledgeGenerationContext(input: {
   rules: readonly RuleEntry[]
+  assets?: readonly AssetEntry[]
   learningSuggestions: readonly LearningSuggestion[]
   competitorReference?: KnowledgeCompetitorReference
 }): KnowledgeGenerationContext {
@@ -374,9 +376,10 @@ export function buildBoundedKnowledgeGenerationContext(input: {
   })
   const selectedLearningIds = new Set(newestKnowledgeFirst(input.learningSuggestions).slice(0, KNOWLEDGE_CONTEXT_LIMITS.confirmedLearningSuggestions).map(({ item }) => item.id))
   const selectedLearningSuggestions = newestKnowledgeFirst(input.learningSuggestions.filter(item => selectedLearningIds.has(item.id))).map(({ item }) => item)
+  const selectedAssets = newestKnowledgeFirst((input.assets ?? []).filter(asset => asset.approvalStatus === 'approved' && asset.rightsStatus === 'cleared')).slice(0, KNOWLEDGE_CONTEXT_LIMITS.approvedAssets).map(({ item }) => item)
   return {
     rules: selectedRules.map(rule => ({ id: rule.id, content: rule.content, version: rule.version, sourceReference: rule.source.reference, ...(rule.effectiveFrom ? { effectiveFrom: rule.effectiveFrom } : {}), ...(rule.effectiveTo ? { effectiveTo: rule.effectiveTo } : {}) })),
-    assets: [],
+    assets: selectedAssets.map(asset => ({ id: asset.id, kind: asset.kind, name: asset.name, content: asset.content, revision: asset.revision, confirmed: false as const })),
     confirmedLearningSuggestions: selectedLearningSuggestions.map(item => ({ id: item.id, summary: item.summary, proposedRule: { content: item.proposedRule.content, scope: item.proposedRule.scope, version: item.proposedRule.version } })),
     ...(input.competitorReference ? { competitorReferences: [input.competitorReference] } : {}),
   }
@@ -397,6 +400,7 @@ const service = new MerchantService({
   maxActiveJobsPerWorkspace: Number.isFinite(maxActiveJobsPerWorkspace) && maxActiveJobsPerWorkspace > 0 ? maxActiveJobsPerWorkspace : 3,
   knowledgeContextProvider: ({ workspaceId, platform, category, brand, store, competitorReference, asOf }) => buildBoundedKnowledgeGenerationContext({
     rules: knowledgeForWorkspace(workspaceId).findApplicableRules({ platform, ...(category ? { category } : {}), ...(brand ? { brand } : {}), ...(store ? { store } : {}) }, asOf, workspaceId),
+    assets: knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId }),
     learningSuggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId, 'confirmed'),
     ...(competitorReference ? { competitorReference } : {}),
   }),
@@ -17674,7 +17678,19 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (req.method === 'GET' && imageGenerationJobGetMatch) {
     const workspaceId = resolveWorkspace(req)
     await hydrateWorkspace(workspaceId)
-    const job = service.getImageGenerationJob(workspaceId, decodeURIComponent(imageGenerationJobGetMatch[1]!))
+    let job = service.getImageGenerationJob(workspaceId, decodeURIComponent(imageGenerationJobGetMatch[1]!))
+    // Scanner promotion can finish after the Provider callback. The callback
+    // leaves the job pending until every output is clean; promote that durable
+    // state on the REST read as well as the MCP read path so the merchant UI
+    // does not remain stuck on a queued task after scanning completes.
+    const outputsClean = (job.outputs ?? []).length > 0 && (job.outputs ?? []).every(output => {
+      const asset = output.assetId ? service.assets.get(output.assetId) : undefined
+      return Boolean(asset && asset.scanStatus === 'clean' && !asset.storageKey.startsWith('quarantine/'))
+    })
+    if (job.archiveState !== 'archived' && outputsClean) {
+      job = service.archiveImageGenerationOutputs(workspaceId, job.id, job.outputs ?? [], 'archived')
+      await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
+    }
     const execution = await persistence.imageGenerationExecutions?.get({ workspaceId, jobId: job.id })
     const images = imageJobOutputsAreClean(job) ? await readArchivedGeneratedImages(workspaceId, job) : []
     return send(res, 200, workspaceId, {

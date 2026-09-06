@@ -194,6 +194,8 @@ function Dashboard({
       canViewOpsDomain(domain, model.authorization);
     if (activeDomain === "rules" && activeWorkbench === "workspace" && canRead("rules"))
       void model.loadRules();
+    if (activeDomain === "knowledge" && activeWorkbench === "workspace" && canRead("knowledge"))
+      void model.load();
     if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
     if (activeDomain === "users" && canRead("users")) {
       // loadUsers owns cancellation for its previous directory request. Do

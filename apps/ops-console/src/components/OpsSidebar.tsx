@@ -13,6 +13,7 @@ import {
   ExperimentOutlined,
   MenuOutlined,
   CloudServerOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
 import { Layout } from "antd";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -57,6 +58,7 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; icon: ReactNod
     { domain: "support", label: "客服与 CRM", icon: <CustomerServiceOutlined /> },
     { domain: "incidents", label: "事故中心", icon: <AlertOutlined /> },
     { domain: "tasks", label: "任务与内容", icon: <CloudSyncOutlined /> },
+    { domain: "knowledge", label: "知识库", icon: <DatabaseOutlined /> },
     { domain: "stores", label: "平台连接", icon: <GlobalOutlined /> },
     { domain: "rules", label: "平台规则", icon: <ReadOutlined /> },
     { domain: "models", label: "模型服务", icon: <RobotOutlined /> },
@@ -68,7 +70,7 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; icon: ReactNod
 
 export const navigationGroups: Array<{ key: string; label: string; items: readonly OpsDomain[] }> = [
   { key: "governance", label: "平台治理", items: ["overview", "users", "members", "support", "incidents"] },
-  { key: "merchant-operations", label: "商家运营", items: ["tasks", "stores", "rules"] },
+  { key: "merchant-operations", label: "商家运营", items: ["tasks", "knowledge", "stores", "rules"] },
   { key: "model-billing", label: "模型与计费", items: ["models", "finance"] },
   { key: "risk-system", label: "风险与系统", items: ["feature-flags", "storage", "audit"] },
 ];

@@ -29,6 +29,9 @@ export const opsPageRegistry: Record<OpsDomain, OpsDomainPage> = {
   tasks: lazy(() =>
     import("../pages/TasksPage.js").then(({ TasksPage }) => ({ default: TasksPage })),
   ),
+  knowledge: lazy(() =>
+    import("../pages/KnowledgePage.js").then(({ KnowledgePage }) => ({ default: KnowledgePage })),
+  ),
   stores: lazy(() =>
     import("../pages/StoresPage.js").then(({ StoresPage }) => ({ default: StoresPage })),
   ),

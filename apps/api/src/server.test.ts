@@ -712,6 +712,19 @@ describe('API application wiring', () => {
     expect(reconciliation).toContain('execution_attempt: execution.attempt')
   })
 
+  it('repairs scanner-completed image archives on the REST job read path', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const start = source.indexOf("const imageGenerationJobGetMatch = path.match")
+    const end = source.indexOf("const generationJobDeferMatch", start)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    const detail = source.slice(start, end)
+    expect(detail).toContain('let job = service.getImageGenerationJob')
+    expect(detail).toContain("job.archiveState !== 'archived' && outputsClean")
+    expect(detail).toContain("service.archiveImageGenerationOutputs(workspaceId, job.id, job.outputs ?? [], 'archived')")
+    expect(detail).toContain("persistSnapshot(workspaceId, 'image_generation_job', job")
+  })
+
   it('accepts only Worker-owned Provider evidence and reuses archive/CAS transitions', () => {
     const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
     const start = source.indexOf('const imageGenerationEvidenceMatch = path.match')
@@ -824,6 +837,23 @@ describe('API application wiring', () => {
     expect(first.confirmedLearningSuggestions).toHaveLength(KNOWLEDGE_CONTEXT_LIMITS.confirmedLearningSuggestions)
     expect(first.confirmedLearningSuggestions.map(item => item.id)).toEqual(['learning-09', 'learning-08', 'learning-07', 'learning-06', 'learning-05', 'learning-04', 'learning-03', 'learning-02'])
     expect(second).toEqual(first)
+  })
+
+  it('passes only approved and rights-cleared knowledge assets to generation context', () => {
+    const asset = (id: string, approvalStatus: string, rightsStatus: string, updatedAt: string) => ({
+      id, workspaceId: 'ws_knowledge', kind: 'brand', name: id, content: { claim: id }, tags: [],
+      approvalStatus, rightsStatus, revision: 2, createdAt: updatedAt, updatedAt,
+    }) as never
+    const context = buildBoundedKnowledgeGenerationContext({
+      rules: [],
+      learningSuggestions: [],
+      assets: [
+        asset('approved', 'approved', 'cleared', '2026-09-02T00:00:00.000Z'),
+        asset('pending', 'pending', 'cleared', '2026-09-03T00:00:00.000Z'),
+        asset('unknown-rights', 'approved', 'unknown', '2026-09-04T00:00:00.000Z'),
+      ],
+    })
+    expect(context.assets.map(item => item.id)).toEqual(['approved'])
   })
 
   it('aggregates products and sync jobs once per account for the store directory', () => {
