@@ -4944,7 +4944,15 @@ function Products({
     try {
       const result = await generateProductImages(baseUrl, { product_id: imageGenerationTarget.productId, platform: imageGenerationTarget.platform, ...(imageGenerationTarget.accountId ? { account_id: imageGenerationTarget.accountId } : {}), direction, mode: imageGenerationMode, count: String(count), idempotency_key: `merchant-studio-image-${imageGenerationTarget.productId}-${imageGenerationTarget.platform}-${count}-${direction}` })
       setImageGenerationTarget(null)
-      window.location.href = `${window.location.pathname}?image_job=${encodeURIComponent(result.job_id)}`
+      // The job panel lives in the task workspace.  The old URL preserved the
+      // current /merchant/products path, so a successful generation appeared
+      // to do nothing and the user could not inspect the real job state.
+      const taskUrl = new URL(
+        urlForMerchantRoute(window.location, { page: 'task' }),
+        window.location.origin,
+      )
+      taskUrl.searchParams.set('image_job', result.job_id)
+      window.location.href = `${taskUrl.pathname}${taskUrl.search}`
     } catch (cause) { setImageGenerationError(describeApiError(cause)); setImageGenerationErrorField(null) }
     finally { setImageGenerationBusy(false) }
   }
