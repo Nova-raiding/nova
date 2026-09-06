@@ -44,7 +44,7 @@ describe("CommercialOperationsWorkspace", () => {
     const html = renderToStaticMarkup(<CommercialOperationsWorkspace controller={controller} />);
     expect(html).toContain("阻断与恢复");
     expect(html).toContain("commercial.access.read");
-    expect(html).toContain("BLOCKED");
+    expect(html).toContain("暂无商业准入数据");
     expect(html).not.toContain("人民币钱包");
   });
 

@@ -93,7 +93,7 @@ export function CommercialErrorSummary({ error, onRetry }: { error: NonNullable<
 }
 
 export function CommercialAccessStatusBar({ state, onRetry }: { state: CommercialDataState<CommercialAccessSummary>; onRetry: () => void }) {
-  if (state.status === "forbidden") return <Alert type="warning" showIcon title={state.error?.httpStatus === 403 ? "商业准入访问被拒绝 · 403" : "商业准入摘要不可用"} description={state.error ? state.error.message : <>BLOCKED：当前会话缺少 <Typography.Text code>commercial.access.read</Typography.Text>，页面不会使用旧任务额度或钱包代替。</>} />;
+  if (state.status === "forbidden") return <Alert type={state.error ? "warning" : "info"} showIcon title={state.error?.httpStatus === 403 ? "商业准入访问被拒绝 · 403" : "暂无商业准入数据"} description={state.error ? state.error.message : <>当前会话未授予 <Typography.Text code>commercial.access.read</Typography.Text>；服务端未返回商业准入数据，页面保持空状态。</>} />;
   if (state.status === "loading" || state.status === "idle") return <div className="commercial-access-status" aria-label="正在读取商业准入状态" aria-busy="true"><Skeleton active paragraph={{ rows: 1 }} title={false} /></div>;
   if (state.status === "error") return <Alert role="alert" type="error" showIcon title={`商业准入状态 UNAVAILABLE · ${state.error?.code ?? "COMMERCIAL_OPERATIONS_UNAVAILABLE"}`} description={<Space orientation="vertical" size={2}><span>{state.error?.message}</span>{state.error?.requestId ? <Typography.Text code>request {state.error.requestId}</Typography.Text> : null}</Space>} action={<Button onClick={onRetry}>重试</Button>} />;
   const value = state.data;
@@ -115,7 +115,7 @@ export function CommercialAccessStatusBar({ state, onRetry }: { state: Commercia
 }
 
 function DataBoundary<T>({ state, capability, onRetry, children }: { state: CommercialDataState<T>; capability: string; onRetry: () => void; children: (data: T) => ReactNode }) {
-  if (state.status === "forbidden") return <Alert type="warning" showIcon title={state.error?.httpStatus === 403 ? "当前视图访问被拒绝 · 403" : "当前视图已阻断"} description={state.error ? state.error.message : <>BLOCKED：服务端未授予 <Typography.Text code>{capability}</Typography.Text>。未授权时不会发起该数据请求。</>} />;
+  if (state.status === "forbidden") return <Alert type={state.error ? "warning" : "info"} showIcon title={state.error?.httpStatus === 403 ? "当前视图访问被拒绝 · 403" : "暂无此视图数据"} description={state.error ? state.error.message : <>服务端未授予 <Typography.Text code>{capability}</Typography.Text>；未授权时不会发起数据请求，列表保持为空。</>} />;
   if ((state.status === "idle" || state.status === "loading") && !state.data) return <div aria-busy="true" aria-label="正在加载商业运营数据"><Skeleton active paragraph={{ rows: 8 }} /></div>;
   return (
     <Space orientation="vertical" size="middle" className="full-width">
