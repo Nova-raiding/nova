@@ -85,7 +85,10 @@ export function urlForMerchantRoute(
     ? location.pathname.replace(merchantRoutePattern, '')
     : location.pathname.replace(/\/$/u, '')
   const params = new URLSearchParams(location.search)
-  for (const key of ['q', 'section', 'product_id', 'platform', 'account_id', 'intent']) params.delete(key)
+  // image_job is a transient deep-link consumed by the task workspace.  It
+  // must not leak into later navigation (for example when opening the task
+  // list or publish center), otherwise the old job panel reappears unexpectedly.
+  for (const key of ['q', 'section', 'product_id', 'platform', 'account_id', 'intent', 'image_job']) params.delete(key)
 
   let path = `${basePath}/merchant/${route.page === 'task' ? 'tasks' : route.page}`
   if (route.page === 'products' && route.searchQuery?.trim()) params.set('q', route.searchQuery.trim())

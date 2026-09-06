@@ -39,6 +39,7 @@ describe('Merchant Studio navigation', () => {
     expect(urlForMerchantRoute({ pathname: '/merchant/products', search: '?source=codex' }, { page: 'task', target: { kind: 'task', taskId: 'task/one' } })).toBe('/merchant/tasks/task%2Fone?source=codex')
     expect(urlForMerchantRoute({ pathname: '/merchant/tasks', search: '' }, { page: 'task', target: { kind: 'product', productId: 'prod-1', platform: 'taobao', accountId: 'acct-1' } })).toBe('/merchant/tasks/new?product_id=prod-1&platform=taobao&account_id=acct-1')
     expect(urlForMerchantRoute({ pathname: '/merchant/tasks', search: '' }, { page: 'task', target: { kind: 'product', productId: 'prod-1', intentKey: 'intent-1' } })).toBe('/merchant/tasks/new?product_id=prod-1&intent=intent-1')
+    expect(urlForMerchantRoute({ pathname: '/merchant/tasks', search: '?image_job=imggen-1&source=browser' }, { page: 'publish' })).toBe('/merchant/publish?source=browser')
   })
 
   it('falls back safely for unknown or malformed routes', () => {
