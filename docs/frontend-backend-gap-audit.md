@@ -171,3 +171,9 @@
 ## 2026-09-06 运营表面审计脚本结果
 
 运行 `npm run audit:ops-surface` 得到：契约方法 108 个，前端引用 106 个，脚本标出的 `ops.data.delete.approve`、`ops.data.delete.cancel` 实际通过 `useOpsConsoleModel.ts` 的通用 decision helper 动态拼接方法名调用；`ops.data.delete.list` 也有 hydration 调用。因此这三项均不是缺失前端入口。该结果仍是静态引用证据，下一步需沿数据删除治理页面、鉴权和服务端状态机做人工链路及浏览器验证。此前 52 项差集不再作为覆盖率依据。
+
+## 2026-09-06 ChatGPT 插件与桌面验收结果
+
+商家插件相关的真实浏览器场景共 25 项，通过 25 项，覆盖 Merchant Studio 漫游、交互校验、发布确认与重试、模型中转可见性、真实数据失败关闭、任务与同步流程。
+
+Ops 专用 runner 最终结果为 7 通过、1 跳过；覆盖全平台页面巡检、模型状态失败关闭、无凭据连接诊断、401 重新认证、平台导航和用户目录治理。跳过项是需要独立 workspace token fixture 的工作区成员治理。全量聚合命令仍可能在没有 OIDC runner 环境变量时出现前置失败，因此验收结果以专用 runner 的真实桌面会话为准，不能把环境前置失败当成插件功能缺陷。
