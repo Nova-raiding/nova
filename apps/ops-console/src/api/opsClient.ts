@@ -193,7 +193,13 @@ function normalizedConnectionConfig(value: unknown): OpsConnectionConfig | undef
   const token = typeof value.token === "string" ? value.token.trim() : "";
   const workbench = normalizedWorkbench(value.workbench);
   if (!apiBase || (workbench === "workspace" && !workspaceId) || (!managedOpsSession && !localOpsSessionEnabled && !token)) return undefined;
-  return { apiBase, workspaceId, actorId: managedOpsSession ? "" : actorId, token: managedOpsSession ? "" : token, workbench };
+  return {
+    apiBase,
+    workspaceId,
+    actorId: managedOpsSession || localOpsSessionEnabled ? "" : actorId,
+    token: managedOpsSession || localOpsSessionEnabled ? "" : token,
+    workbench,
+  };
 }
 
 function legacyConnectionConfig(): OpsConnectionConfig {
@@ -205,7 +211,11 @@ function legacyConnectionConfig(): OpsConnectionConfig {
     ),
     workspaceId: storage.getItem("ops_workspace_id")?.trim() || (localOpsSessionEnabled ? "ws_demo" : ""),
     actorId: managedOpsSession ? "" : localStorage.getItem("ops_actor_id")?.trim() ?? "",
-    token: managedOpsSession ? "" : localStorage.getItem("ops_api_token")?.trim() ?? "",
+    // Local Compose sessions exchange the server-held token for an HttpOnly
+    // cookie. Never reuse a stale Bearer token from an earlier workspace
+    // session, otherwise it wins over the cookie and can force platform
+    // requests through the workspace-only authorization boundary.
+    token: managedOpsSession || localOpsSessionEnabled ? "" : localStorage.getItem("ops_api_token")?.trim() ?? "",
     workbench: normalizedWorkbench(storage.getItem(OPS_WORKBENCH_KEY)),
   };
 }
