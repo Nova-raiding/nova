@@ -215,6 +215,11 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   try {
     settlementReceipt = await sink(usage)
   } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      const code = (error as { code?: unknown })?.code
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[model-usage-settlement]', code ?? 'UNKNOWN', message)
+    }
     if (['MODEL_USAGE_COST_MISSING', 'MODEL_TASK_COST_ACTUAL_EXCEEDED', 'MODEL_DAILY_COST_ACTUAL_EXCEEDED'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
     throw new ModelUsageSettlementPendingError(relayUsageReceiptKey(usage))
   }

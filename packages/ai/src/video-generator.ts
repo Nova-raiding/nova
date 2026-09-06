@@ -170,7 +170,9 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
 function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerationResult {
   const root = record(payload) ? payload : undefined
   const relayCode = root && (typeof root.code === 'number' || typeof root.code === 'string') ? String(root.code).trim() : undefined
-  if (relayCode && relayCode !== '0' && relayCode !== '200') {
+  // New API's video endpoint returns the literal string `success` for a
+  // successful envelope (while OpenAI-compatible relays use 0/200).
+  if (relayCode && !['0', '200', 'success'].includes(relayCode.toLowerCase())) {
     if (providerKey) throw new ProviderRequestFailedError(providerKey, 200, `video relay rejected the job with code ${relayCode}`)
     throw new Error(`video relay rejected the job with code ${relayCode}`)
   }

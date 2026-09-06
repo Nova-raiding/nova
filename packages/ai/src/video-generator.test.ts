@@ -72,6 +72,14 @@ describe('video generator relay', () => {
     await expect(rejected.getStatus('job_nested')).rejects.toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed' })
   })
 
+  it('accepts New API string success envelopes while a video job is in progress', async () => {
+    const generator = new OpenAICompatibleVideoGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: (async () => new Response(JSON.stringify({ code: 'success', data: { task_id: 'job_new_api', status: 'IN_PROGRESS', progress: '30%' } }), { status: 200 })) as typeof fetch,
+    })
+    await expect(generator.getStatus('job_new_api')).resolves.toEqual({ status: 'queued', providerJobId: 'job_new_api' })
+  })
+
   it('does not trust a completed status without an HTTPS artifact', async () => {
     const generator = new OpenAICompatibleVideoGenerator({
       baseUrl: 'https://relay.example', apiKey: 'relay-secret', model: 'video-v1', usageSink: () => ({ recorded: true, costEvidence: true }),

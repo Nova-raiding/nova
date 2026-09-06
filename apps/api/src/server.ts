@@ -363,6 +363,7 @@ export function buildBoundedKnowledgeGenerationContext(input: {
   assets?: readonly AssetEntry[]
   learningSuggestions: readonly LearningSuggestion[]
   competitorReference?: KnowledgeCompetitorReference
+  brandPreference?: { id: string; preferences: Record<string, unknown>; version: string; revision: number }
 }): KnowledgeGenerationContext {
   const softRuleIds = new Set(newestKnowledgeFirst(input.rules.filter(rule => !isHardKnowledgeRule(rule))).slice(0, KNOWLEDGE_CONTEXT_LIMITS.softRules).map(({ item }) => item.id))
   const selectedRules = input.rules.filter(rule => isHardKnowledgeRule(rule) || softRuleIds.has(rule.id)).sort((left, right) => {
@@ -381,6 +382,7 @@ export function buildBoundedKnowledgeGenerationContext(input: {
     rules: selectedRules.map(rule => ({ id: rule.id, content: rule.content, version: rule.version, sourceReference: rule.source.reference, ...(rule.effectiveFrom ? { effectiveFrom: rule.effectiveFrom } : {}), ...(rule.effectiveTo ? { effectiveTo: rule.effectiveTo } : {}) })),
     assets: selectedAssets.map(asset => ({ id: asset.id, kind: asset.kind, name: asset.name, content: asset.content, revision: asset.revision, confirmed: false as const })),
     confirmedLearningSuggestions: selectedLearningSuggestions.map(item => ({ id: item.id, summary: item.summary, proposedRule: { content: item.proposedRule.content, scope: item.proposedRule.scope, version: item.proposedRule.version } })),
+    ...(input.brandPreference ? { brandPreference: { id: input.brandPreference.id, preferences: structuredClone(input.brandPreference.preferences), version: input.brandPreference.version, revision: input.brandPreference.revision } } : {}),
     ...(input.competitorReference ? { competitorReferences: [input.competitorReference] } : {}),
   }
 }
@@ -402,6 +404,7 @@ const service = new MerchantService({
     rules: knowledgeForWorkspace(workspaceId).findApplicableRules({ platform, ...(category ? { category } : {}), ...(brand ? { brand } : {}), ...(store ? { store } : {}) }, asOf, workspaceId),
     assets: knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId }),
     learningSuggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId, 'confirmed'),
+    ...(knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId)?.status === 'active' ? { brandPreference: knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId) } : {}),
     ...(competitorReference ? { competitorReference } : {}),
   }),
 })
@@ -1925,7 +1928,8 @@ function ruleRepository() { return ruleRepositoryOverride ?? persistence.rules }
 function iso(value: string | Date) { return typeof value === 'string' ? value : new Date(String(value)).toISOString() }
 function publicRule(version: PersistedRuleVersion) {
   const lifecycleStatus = version.status === 'active' ? 'published' : version.status === 'inactive' ? 'disabled' : version.status
-  return { id: version.id, workspaceId: version.workspaceId, packId: version.packId, name: version.name, version: version.version, scope: version.scope, status: version.status, lifecycleStatus, createdBy: version.createdBy, updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind, reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt) }, checksum: version.checksum, revision: version.revision, ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity } : {}), ...(version.action ? { action: version.action } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
+  const verified = !version.sourceReference.startsWith('manual://') && version.createdBy === 'signed-rule-sync'
+  return { id: version.id, workspaceId: version.workspaceId, packId: version.packId, name: version.name, version: version.version, scope: version.scope, status: version.status, lifecycleStatus, createdBy: version.createdBy, updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind, reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt), trust: verified ? 'verified' : 'unverified' }, checksum: version.checksum, revision: version.revision, ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity } : {}), ...(version.action ? { action: version.action } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
 }
 
 function rulePackProjection(version: PersistedRuleVersion): RulePack {
@@ -1943,16 +1947,16 @@ async function rulePacksForWorkspace(workspaceId: string) {
 
 const lastPlatformRuleSync = new Map<string, number>()
 
-export async function syncSignedPlatformRules(workspaceId: string) {
+export async function syncSignedPlatformRules(workspaceId: string, options: { force?: boolean } = {}) {
   const manifestUrl = process.env.PLATFORM_RULE_SYNC_MANIFEST_URL?.trim()
   const signingSecret = process.env.PLATFORM_RULE_SYNC_SIGNING_SECRET?.trim()
-  const intervalHours = Math.max(1, Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 24))
+  const intervalHours = Math.max(1, Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168))
   if (!manifestUrl || !signingSecret) return { state: 'not_configured' as const, imported: 0, activated: 0, reason: !manifestUrl ? 'manifest_url_missing' : 'signing_secret_missing' }
   const repository = ruleRepository()
   if (!repository) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '规则定时同步需要持久化规则仓储', 503)
   if (!repository.insertVersionWithAudit || !repository.transitionStatusWithAudit) throw new DomainError('RULE_REPOSITORY_ATOMIC_SYNC_UNAVAILABLE', '规则仓储不支持原子导入和激活', 503)
   const last = lastPlatformRuleSync.get(workspaceId)
-  if (last && Date.now() - last < intervalHours * 3_600_000) return { state: 'not_due' as const, imported: 0, activated: 0, next_sync_at: new Date(last + intervalHours * 3_600_000).toISOString() }
+  if (!options.force && last && Date.now() - last < intervalHours * 3_600_000) return { state: 'not_due' as const, imported: 0, activated: 0, next_sync_at: new Date(last + intervalHours * 3_600_000).toISOString() }
   await assertOutboundUrl(manifestUrl, { environment: process.env.NODE_ENV })
   const response = await fetch(manifestUrl, { headers: { accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(15_000) })
   if (!response.ok) throw new DomainError('RULE_MANIFEST_FETCH_FAILED', `签名规则清单返回 HTTP ${response.status}`, 503)
@@ -1999,6 +2003,9 @@ async function persistedRules(workspaceId: string, fillMissingDefaults = false) 
   if (!repository) return undefined
   const rows = await repository.list(workspaceId)
   if (rows.length && !fillMissingDefaults) return rows.map(publicRule)
+  // Production must never manufacture platform policy. Only a verified,
+  // signed manifest may populate the durable rule repository there.
+  if (isProduction()) return rows.map(publicRule)
   // Bootstrap only the first request for a new workspace. This keeps the
   // durable rule center usable after migration without silently changing the
   // in-memory fixture registry used by local tests.
@@ -6906,6 +6913,10 @@ function workspacePlatformStatus(workspaceId: string) {
       return {
         platform,
         state,
+        // Keep the overview honest: a connected account in fixture mode is
+        // not a real OAuth/API connection and must never render as such.
+        dataMode: fixtureMode ? 'fixture' : account && account.tokenState === 'connected' && connectorRuntime.canRead(platform) ? 'official_api' : account ? 'account_record_only' : 'unavailable',
+        simulated: fixtureMode,
         ...(account ? { accountId: account.id, ...(account.storeAlias ? { storeAlias: account.storeAlias } : {}) } : {}),
         ...platformAccessFlags(platform, account),
         readiness: workspaceConnectorReadiness(platform),
@@ -9884,7 +9895,7 @@ function isNativeMcpTransport(req: IncomingMessage, method: unknown) {
 export function isNativeMcpToolEnabled(method: string) {
   if (method.startsWith('ops.') || (MCP_NON_PRODUCTION_METHODS as readonly string[]).includes(method)) return false
   if (!MCP_METHOD_CONTRACTS.some(contract => contract.method === method)) return false
-  if (method === 'catalog.image.generate' && process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true') return true
+  if (['catalog.image.generate', 'multimodal.video.request', 'multimodal.video.get'].includes(method) && process.env.NODE_ENV === 'development' && process.env.CONNECTOR_FIXTURE_MODE === 'true' && process.env.MERCHANT_TEST_APPROVED_RATES === 'true') return true
   return resolveCommercialOperation(COMMERCIAL_OPERATION_REGISTRY, { surface: 'MCP', operation: method }).outcome === 'REGISTERED'
 }
 
@@ -14183,8 +14194,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       return result(filterRules(service.ruleCenter.list({ includeInactive: includeLifecycleStates })))
     }
     case 'rule.sync.status': {
-      const intervalHours = typeof params.interval_hours === 'string' && Number.isFinite(Number(params.interval_hours)) ? Number(params.interval_hours) : Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 24)
+      const intervalHours = typeof params.interval_hours === 'string' && Number.isFinite(Number(params.interval_hours)) ? Number(params.interval_hours) : Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168)
       return result(platformRuleSyncStatus(await rulePacksForWorkspace(workspaceId), { intervalHours, manifestUrl: process.env.PLATFORM_RULE_SYNC_MANIFEST_URL, signingSecretConfigured: Boolean(process.env.PLATFORM_RULE_SYNC_SIGNING_SECRET?.trim()) }))
+    }
+    case 'rule.sync.now': {
+      const sync = await syncSignedPlatformRules(workspaceId, { force: true })
+      return result({ sync, statuses: platformRuleSyncStatus(await rulePacksForWorkspace(workspaceId), { intervalHours: Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168), manifestUrl: process.env.PLATFORM_RULE_SYNC_MANIFEST_URL, signingSecretConfigured: Boolean(process.env.PLATFORM_RULE_SYNC_SIGNING_SECRET?.trim()) }) })
     }
     case 'rule.history': {
       const packId = required(params, 'pack_id')
@@ -15508,10 +15523,34 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return result(knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId, ...(typeof params.kind === 'string' ? { kind: params.kind as 'brand' | 'customer' } : {}), ...(typeof params.text === 'string' ? { text: params.text } : {}), ...(tags ? { tags } : {}) }))
       } catch (error) { if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400); throw error }
     }
+    case 'knowledge.brand.preference.get': {
+      try {
+        requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops', 'knowledge_reader'])
+        return result(knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId) ?? null)
+      } catch (error) { if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400); throw error }
+    }
+    case 'knowledge.brand.preference.update': {
+      try {
+        const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'platform_ops', 'knowledge_editor'])
+        const preferences = JSON.parse(required(params, 'preferences_json')) as Record<string, unknown>
+        const current = knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId)
+        const updated = knowledgeForWorkspace(workspaceId).updateBrandPreference({
+          workspaceId, preferences, version: required(params, 'version'), updatedBy: actorId,
+          ...(typeof params.status === 'string' ? { status: params.status as 'draft' | 'active' | 'archived' } : {}),
+          ...(typeof params.source === 'string' ? { source: params.source } : {}),
+          ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}),
+        })
+        await persistEvent(workspaceId, updated.id, 'knowledge.brand.preference.updated', updated.revision, updated as unknown as Record<string, unknown>)
+        await recordOperationAudit({ workspaceId, actorId, action: 'knowledge.brand.preference.update', resourceType: 'brand_preference', resourceId: updated.id, before: current ? current as unknown as Record<string, unknown> : {}, after: updated as unknown as Record<string, unknown>, reason: '商家品牌偏好版本更新' })
+        return result(updated)
+      } catch (error) { if (error instanceof SyntaxError) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'preferences_json 必须是合法 JSON 对象', 400); if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400); throw error }
+    }
     case 'knowledge.feedback.record': {
       try {
+        const actorId = requestActor(req)
         const feedback = knowledgeForWorkspace(workspaceId).recordFeedback({ workspaceId, kind: required(params, 'kind') as 'feedback' | 'platform_rejection', ...(typeof params.platform === 'string' ? { platform: params.platform } : {}), ...(typeof params.content_id === 'string' ? { contentId: params.content_id } : {}), reason: required(params, 'reason'), ...(typeof params.details === 'string' ? { details: params.details } : {}), ...(typeof params.metadata_json === 'string' ? { metadata: JSON.parse(params.metadata_json) as Record<string, string> } : {}) })
-        await persistEvent(workspaceId, feedback.id, 'knowledge.feedback.recorded', 1, feedback as unknown as Record<string, unknown>)
+        await persistEvent(workspaceId, feedback.id, 'knowledge.feedback.recorded', 1, { ...feedback as unknown as Record<string, unknown>, actor_id: actorId })
+        await recordOperationAudit({ workspaceId, actorId, action: 'knowledge.feedback.record', resourceType: 'knowledge_feedback', resourceId: feedback.id, before: {}, after: feedback as unknown as Record<string, unknown>, reason: feedback.reason })
         return result({ feedback, suggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId).filter(item => item.feedbackId === feedback.id) })
       } catch (error) { if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400); throw error }
     }
@@ -15723,6 +15762,19 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const videoRequestKey = suppliedVideoRequestKey || randomUUID()
       const walletDebitKey = `video:${videoRequestKey}`
       const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey
+      // Persist the authorization before calling the provider. Model usage
+      // receipts carry this action key and the ledger enforces the FK, so a
+      // successful provider request can be settled durably and idempotently.
+      await recordActionSettlement({
+        workspaceId,
+        actionKey: walletDebitKey,
+        actionKind: 'model_video',
+        settlement: 'included_quota',
+        amountFen: 0,
+        actorId: requestActor(req),
+        description: '商品视频生成（商品展示、卖点字幕与剪辑）',
+        settlementStatus: 'authorized',
+      })
       await observeLegacyWalletShadow(workspaceId)
       let rendering: Awaited<ReturnType<NonNullable<typeof videoGenerator>['generate']>> | undefined
       let generatedPlan: Awaited<ReturnType<typeof service.generateOneSentenceText>> | undefined
