@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Alert, Breadcrumb, Button, Card, Space, Statistic, Tag } from 'antd'
 import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
@@ -1444,6 +1445,14 @@ function Overview({
   } | null>(null)
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null)
   const [metricsError, setMetricsError] = useState('')
+  const entitlementLabel = (id: string, item?: { state?: string; label?: string }) => {
+    if (item?.label) return item.label
+    if (item?.state === 'available') return '可用'
+    if (id === 'platform_publish') return '暂不可发布'
+    if (id === 'generation') return '暂不可生成'
+    return '待确认'
+  }
+  const modelAccessMessage = billing?.model_access?.message ?? (billing?.model_access?.access_state === 'included_quota_available' ? '模型额度可用，具体生成仍受内容与平台门禁约束。' : billing ? '模型能力状态待确认。' : '正在读取钱包状态…')
   const loadAccounts = () => {
     if (!baseUrl) return
     const requestId = ++accountsRequestId.current
@@ -1458,7 +1467,7 @@ function Overview({
         if (requestId === accountsRequestId.current) {
           setAccounts(null)
           setAccountsError(
-            `店铺发现失败：${describeApiError(error)}。为避免同步到错误店铺，已停止全部同步。`,
+            `平台连接读取失败：${describeApiError(error)}。当前不会执行店铺同步；请重试或检查平台连接。`,
           )
         }
       })
@@ -1474,7 +1483,7 @@ function Overview({
     setSyncJobsError('')
     fetchSyncJobs(baseUrl)
       .then(setSyncJobs)
-      .catch((error) => setSyncJobsError(describeApiError(error)))
+      .catch((error) => setSyncJobsError(`同步记录暂时无法读取：${describeApiError(error)}。不会改变已有任务或店铺授权状态。`))
   }
   useEffect(() => {
     loadSyncJobs()
@@ -1484,7 +1493,7 @@ function Overview({
     setBillingError('')
     fetchBillingStatus(baseUrl)
       .then(setBilling)
-      .catch((error) => setBillingError(describeApiError(error)))
+      .catch((error) => setBillingError(`钱包状态暂时无法读取：${describeApiError(error)}。不会改变余额或订单状态。`))
   }
   useEffect(() => {
     loadBilling()
@@ -1937,42 +1946,55 @@ function Overview({
                   : 'amber'
               }
             >
-              {billing?.capability_entitlements?.balance.label ?? '读取中…'}
+              {entitlementLabel('balance', billing?.capability_entitlements?.balance)}
             </StatusChip>
           </div>
           {billingError && (
             <ErrorNotice message={billingError} onRetry={loadBilling} compact />
           )}
           <div className="wallet-content">
-            <div>
-              <strong className="wallet-balance">
-                ¥{billing?.balance_cny ?? '—'}
-              </strong>
-              <p>{billing?.model_access?.message ?? '正在读取钱包状态…'}</p>
-              <small>
+            <Card className="wallet-summary-card" bordered={false}>
+              <div className="wallet-summary">
+                <div>
+                  <span className="wallet-label">可用余额</span>
+                  <Statistic
+                    className="wallet-statistic"
+                    value={billing?.balance_cny ?? 0}
+                    precision={2}
+                    prefix="¥"
+                    loading={!billing && !billingError}
+                  />
+                    <p>{modelAccessMessage}</p>
+                </div>
+                <Space direction="vertical" align="end" size={8}>
+                  <Tag color={billing?.capability_entitlements?.balance.state === 'available' ? 'green' : 'gold'}>
+                    {billing?.capability_entitlements?.balance.label ?? '读取中…'}
+                  </Tag>
+                  {billing?.capability_entitlements?.balance.state !== 'available' && (
+                    <Button
+                      type="primary"
+                      onClick={() => {
+                        setRechargeAmount('100')
+                        setRechargeError('')
+                        setRechargeOpen(true)
+                      }}
+                    >
+                      创建充值订单
+                    </Button>
+                  )}
+                </Space>
+              </div>
+              <small className="wallet-note">
                 余额、套餐额度、生成和平台发布分别判断；支付订单只有回调确认后才会到账。
               </small>
-            </div>
-            {billing?.capability_entitlements?.balance.state !==
-              'available' && (
-              <button
-                className="primary"
-                onClick={() => {
-                  setRechargeAmount('100')
-                  setRechargeError('')
-                  setRechargeOpen(true)
-                }}
-              >
-                创建充值订单
-              </button>
-            )}
+            </Card>
           </div>
           {billing?.capability_entitlements && (
             <div className="wallet-entitlement-grid" aria-label="能力状态">
               {Object.entries(billing.capability_entitlements).map(
                 ([id, item]) => (
-                  <div className="wallet-entitlement" key={id}>
-                    <b>
+                  <Card className="wallet-entitlement" size="small" key={id} bordered>
+                    <div className="wallet-entitlement-head"><b>
                       {(
                         {
                           balance: '余额',
@@ -1985,15 +2007,16 @@ function Overview({
                     <StatusChip
                       tone={item.state === 'available' ? 'green' : 'amber'}
                     >
-                      {item.label}
+                      {entitlementLabel(id, item)}
                     </StatusChip>
+                    </div>
                     <small>
-                      {item.reason}
+                      {item.reason ?? '服务端尚未返回说明。'}
                       {'platform' in item && item.platform
                         ? `（${item.platform} · ${item.store ?? '店铺'}）`
                         : ''}
                     </small>
-                  </div>
+                  </Card>
                 ),
               )}
             </div>
@@ -4235,6 +4258,17 @@ function ProductAssetRelationDialog({
               返回的已绑定素材；本页不会新增、修改或推断绑定关系。
             </span>
           </div>
+          <div className="relation-summary" data-testid="canonical-product-relation">
+            <StatusChip tone={product.canonical_scope?.verification_status === 'verified' ? 'green' : 'amber'}>
+              <Link2 size={12} />
+              {product.canonical_scope?.verification_status === 'verified' ? '标准链已验证' : '标准链未取得'}
+            </StatusChip>
+            <span>
+              {product.canonical_scope?.canonical_product_id
+                ? `规范商品：${product.canonical_scope.canonical_product_id}${product.canonical_scope.listing_id ? ` · 店铺刊登：${product.canonical_scope.listing_id}` : ''}`
+                : '当前没有规范商品映射或店铺刊登关系；请由平台运营完成标准链核验。'}
+            </span>
+          </div>
           {relation.boundIds.length === 0 && (
             <div className="empty-inline">
               <FolderOpen size={16} />
@@ -4919,6 +4953,11 @@ function Products({
         items={consistencyItems}
         errorMessage={productListUnavailable ? '商品列表暂不可用，规范商品状态无法确认。' : undefined}
         onRefresh={loadProducts}
+        onResolveCanonical={() => {
+          const firstProduct = visible[0]
+          if (firstProduct) setRelationProductId(firstProduct.id)
+          else loadProducts()
+        }}
         refreshing={loading}
       />
       <section
@@ -5219,6 +5258,7 @@ function Products({
                           className="text-button"
                           onClick={() => checkImages(product.id)}
                           disabled={!baseUrl || productListUnavailable}
+                          title={!baseUrl ? '尚未连接商家 API' : productListUnavailable ? '商品列表读取失败，请先重试' : '读取服务端主图检查结果'}
                         >
                           主图检查
                         </button>
@@ -5226,7 +5266,7 @@ function Products({
                           className="text-button"
                           onClick={() => { setImageGenerationError(''); setImageGenerationErrorField(null); setImageGenerationMode(product.sourceAssetIds.length ? 'optimize' : 'create'); setImageGenerationTarget(target); setImageGenerationCount('1') }}
                           disabled={!baseUrl || productListUnavailable || Boolean(identityError) || Boolean(canonicalUnverified) || !product.factsConfirmed}
-                          title={!product.factsConfirmed ? '请先确认商品事实' : canonicalUnverified ? canonicalCopy.detail : undefined}
+                          title={!baseUrl ? '尚未连接商家 API' : identityError ?? (!product.factsConfirmed ? '请先确认商品事实' : canonicalUnverified ? canonicalCopy.detail : undefined)}
                         >
                           生成图片 <ImageIcon size={14} />
                         </button>
@@ -6204,6 +6244,9 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   const displayStateTone = displayState === 'failed' || displayState === 'outcome_unknown' || displayState === 'external_unarchived' ? 'amber' : displayState === 'succeeded' && job?.archiveState === 'archived' ? 'green' : 'blue'
   const candidatePageData = getImageCandidatePage(job?.images?.map((src, index) => ({ src, index })) ?? [], candidatePage)
   const focusImageError = () => document.getElementById('image-job-error')?.focus()
+  const backToTaskQueue = () => {
+    window.location.href = window.location.pathname
+  }
   const retrySafeImageJob = async () => {
     if (!baseUrl || !job || !imageGenerationRetryAllowed({ state: job.state, executionState: job.executionState, nextActionAllowed: job.nextAction?.allowed })) return
     setRetrying(true)
@@ -6221,6 +6264,9 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   </div>
   const isTerminal = job?.state === 'succeeded' || job?.state === 'failed'
   return <section className="panel image-generation-job-panel" aria-labelledby="image-job-title" aria-busy={loading}>
+    <div className="task-breadcrumb" aria-label="任务位置">
+      <Breadcrumb items={[{ title: <Button type="link" size="small" onClick={backToTaskQueue}>营销任务</Button> }, { title: '图片生成任务' }]} />
+    </div>
     <div className="detail-section-head"><div><span className="section-kicker">IMAGE JOB</span><h3 id="image-job-title">图片生成任务</h3></div><StatusChip tone={displayStateTone}>{loading && !job ? '读取中…' : displayStateLabels[displayState] ?? '状态待确认'}</StatusChip></div>
     <div className="info-notice" role="status" aria-live="polite" aria-atomic="true">{job ? `任务 ${job.jobId} · 商品 ${job.productId} · 最后更新 ${new Date(job.updatedAt).toLocaleString('zh-CN', { hour12: false })}` : '正在读取任务状态…'}</div>
     {configurationError && <div ref={imageJobConfigurationErrorRef} id="image-job-config-error" className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-error-title" aria-describedby="image-job-config-error-description"><strong id="image-job-config-error-title">模型中转配置尚未就绪</strong><span id="image-job-config-error-description">API 返回配置阻断（{error}）。系统不会生成、扣费或发布；请联系管理员完成测试环境模型中转配置后，再刷新任务状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setConfigurationError(false); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
