@@ -95,6 +95,7 @@ import {
   parseAsset,
   preparePublish,
   requestApi,
+  requestMcp,
   reviewContent,
   reviewProductImages,
   retryImageGeneration,
@@ -1078,12 +1079,17 @@ function Sidebar({
           <div className="nav-label">工作台</div>
           {navItems.map((item) => {
             const Icon = item.icon
+            // Product sub-workspaces (knowledge, images and assets) are
+            // mutually exclusive entry points. Do not leave the parent
+            // "商品与资产" item highlighted at the same time as one of its
+            // children; the sidebar should always communicate one location.
+            const active = page === item.id && !(item.id === 'products' && activeEntry)
             return (
               <button
                 key={item.id}
-                className={page === item.id ? 'active' : ''}
+                className={active ? 'active' : ''}
                 onClick={() => closeForAction(() => setPage(item.id))}
-                aria-current={page === item.id ? 'page' : undefined}
+                aria-current={active ? 'page' : undefined}
               >
                 <Icon size={19} />
                 <span>{item.label}</span>
@@ -1968,7 +1974,7 @@ function Overview({
                 </div>
                 <Space direction="vertical" align="end" size={8}>
                   <Tag color={billing?.capability_entitlements?.balance.state === 'available' ? 'green' : 'gold'}>
-                    {billing?.capability_entitlements?.balance.label ?? '读取中…'}
+                    {entitlementLabel('balance', billing?.capability_entitlements?.balance)}
                   </Tag>
                   {billing?.capability_entitlements?.balance.state !== 'available' && (
                     <Button
@@ -2740,11 +2746,36 @@ function AssetLibrary({
     void load()
   }, [baseUrl])
   useEffect(() => {
-    // Preview bytes are fetched only after the merchant explicitly chooses
-    // “打开并阅读”. This keeps expired/quarantined objects from generating a
-    // wall of failed requests while the asset catalog is being scanned.
-    setAssetPreviews({})
-  }, [assets])
+    // Image thumbnails are part of the image workspace, so load them from the
+    // authenticated asset endpoint when that tab is explicitly opened. Keep
+    // the full-materials and knowledge tabs metadata-only to avoid fetching a
+    // large archive unnecessarily; the card's “打开并阅读” action remains the
+    // explicit path for non-image files.
+    if (!baseUrl || assetEntry !== 'images' || !assetStorageReady) {
+      setAssetPreviews({})
+      return
+    }
+    const controller = new AbortController()
+    const objectUrls: string[] = []
+    const imageAssets = visibleAssets.slice(0, 60)
+    void Promise.allSettled(imageAssets.map(async (asset) => {
+      const blob = await fetchAssetBlob(baseUrl, asset.id, controller.signal)
+      if (!blob.type.startsWith('image/')) return
+      const url = URL.createObjectURL(blob)
+      objectUrls.push(url)
+      return [asset.id, url] as const
+    })).then(results => {
+      if (controller.signal.aborted) return
+      const previews = Object.fromEntries(results
+        .filter((result): result is PromiseFulfilledResult<readonly [string, string]> => result.status === 'fulfilled' && Boolean(result.value))
+        .map(result => result.value))
+      setAssetPreviews(previews)
+    })
+    return () => {
+      controller.abort()
+      objectUrls.forEach(url => URL.revokeObjectURL(url))
+    }
+  }, [assetEntry, assetStorageReady, assets, baseUrl])
   useEffect(() => {
     const rules = brand?.visualRules
     setVisualLogoIds(rules?.logo?.assetIds ?? [])
@@ -3808,9 +3839,14 @@ function AssetLibrary({
                     <button
                       className="text-button"
                       onClick={() => void openAsset(asset)}
-                      disabled={!baseUrl || !assetStorageReady}
+                      disabled={!baseUrl || !assetStorageReady || asset.scanStatus !== 'clean'}
+                      title={!baseUrl ? '商家 API 未连接' : !assetStorageReady ? '对象存储未配置' : asset.scanStatus !== 'clean' ? '安全扫描通过后才能读取素材正文' : undefined}
                     >
-                      {assetStorageReady ? '打开并阅读' : '存储未配置'}
+                      {!assetStorageReady
+                        ? '存储未配置'
+                        : asset.scanStatus !== 'clean'
+                          ? '等待安全扫描'
+                          : '打开并阅读'}
                     </button>
                     <button
                       data-testid={`asset-product-usage-open-${asset.id}`}
@@ -4434,6 +4470,7 @@ function Products({
   const imageGenerationErrorRef = useRef<HTMLDivElement>(null)
   const imageGenerationConfigRef = useRef<HTMLDivElement>(null)
   const [relationProductId, setRelationProductId] = useState('')
+  const [canonicalFreshness, setCanonicalFreshness] = useState<'fresh' | 'expired' | 'unknown'>('unknown')
   const productListRef = useRef<HTMLElement>(null)
   const imageModelReady = modelStatusRead && modelStatus?.state === 'ready' && modelStatus.capabilities?.image_generation !== false
   const imageModelBlocker = !baseUrl
@@ -4482,6 +4519,14 @@ function Products({
         if (requestId === productsRequestId.current) setLoading(false)
       })
   }
+  useEffect(() => {
+    if (!baseUrl) { setCanonicalFreshness('unknown'); return }
+    let active = true
+    void requestMcp<{ freshness?: 'fresh' | 'expired' | 'unknown' }>(baseUrl, 'canonical.product.consistency')
+      .then((report) => { if (active) setCanonicalFreshness(report.freshness ?? 'unknown') })
+      .catch(() => { if (active) setCanonicalFreshness('unknown') })
+    return () => { active = false }
+  }, [baseUrl])
   const loadAccounts = () => {
     const requestId = ++accountsRequestId.current
     if (!baseUrl) {
@@ -4951,6 +4996,7 @@ function Products({
       </section>
       <CanonicalConsistencyPanel
         items={consistencyItems}
+        freshness={canonicalFreshness}
         errorMessage={productListUnavailable ? '商品列表暂不可用，规范商品状态无法确认。' : undefined}
         onRefresh={loadProducts}
         onResolveCanonical={() => {
@@ -5264,20 +5310,31 @@ function Products({
                         </button>
                         <button
                           className="text-button"
-                          onClick={() => { setImageGenerationError(''); setImageGenerationErrorField(null); setImageGenerationMode(product.sourceAssetIds.length ? 'optimize' : 'create'); setImageGenerationTarget(target); setImageGenerationCount('1') }}
-                          disabled={!baseUrl || productListUnavailable || Boolean(identityError) || Boolean(canonicalUnverified) || !product.factsConfirmed}
+                          onClick={() => {
+                            if (canonicalUnverified) {
+                              setError(`暂不能生成图片：${canonicalCopy.detail}。请先点击“打开商品关系并核验”。`)
+                              return
+                            }
+                            setImageGenerationError(''); setImageGenerationErrorField(null); setImageGenerationMode(product.sourceAssetIds.length ? 'optimize' : 'create'); setImageGenerationTarget(target); setImageGenerationCount('1')
+                          }}
+                          disabled={!baseUrl || productListUnavailable || Boolean(identityError) || !product.factsConfirmed}
                           title={!baseUrl ? '尚未连接商家 API' : identityError ?? (!product.factsConfirmed ? '请先确认商品事实' : canonicalUnverified ? canonicalCopy.detail : undefined)}
                         >
                           生成图片 <ImageIcon size={14} />
                         </button>
                         <button
                           className="text-button"
-                          onClick={() => onSelectTarget(target)}
+                          onClick={() => {
+                            if (canonicalUnverified) {
+                              setError(`暂不能创建任务：${canonicalCopy.detail}。请先点击“打开商品关系并核验”。`)
+                              return
+                            }
+                            onSelectTarget(target)
+                          }}
                           disabled={
                             !baseUrl ||
                             productListUnavailable ||
-                            Boolean(identityError) ||
-                            Boolean(canonicalUnverified)
+                            Boolean(identityError)
                           }
                           title={
                             identityError ??
@@ -7253,7 +7310,10 @@ function TaskWorkspace({
   // Keep the conversation mounted while a recoverable request error is shown.
   // The recovery card owns the next action; the thread remains the user's
   // source of context instead of disappearing on failure.
-  const taskContextBlocked = taskStateBlocked
+  // A recovery error is a terminal state for this render pass. Keep the
+  // recovery card as the single source of truth instead of showing the normal
+  // conversation thread with a contradictory “待分析需求” status behind it.
+  const taskContextBlocked = Boolean(error) || taskStateBlocked
   useEffect(() => {
     if (taskStateBlocked && !error)
       setError('任务状态暂时无法确认，已暂停当前操作。请重新读取任务状态。')
@@ -7265,6 +7325,15 @@ function TaskWorkspace({
     [taskList],
   )
   const imageJobId = new URLSearchParams(window.location.search).get('image_job')?.trim()
+  useEffect(() => {
+    // An image job is a standalone entry route. Once a concrete marketing
+    // task is restored, remove the stale query marker so the URL and page
+    // agree about which workflow is active.
+    if (!target || !imageJobId) return
+    const url = new URL(window.location.href)
+    url.searchParams.delete('image_job')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [target, imageJobId])
   useEffect(() => {
     if (!timelineOpen) return
     timelineCloseRef.current?.focus()
