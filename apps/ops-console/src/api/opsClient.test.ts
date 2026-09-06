@@ -69,10 +69,11 @@ describe("workspace RPC boundary", () => {
       headers: expect.objectContaining({
         authorization: "Bearer pilot-local-token",
         "x-actor-id": "actor_demo",
-        "x-workspace-id": "ws_demo",
         "x-ops-workbench": "platform",
       }),
     }));
+    const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(request[1].headers).not.toHaveProperty("x-workspace-id");
   });
 
   it("opens a platform session without inventing or sending a tenant workspace", async () => {

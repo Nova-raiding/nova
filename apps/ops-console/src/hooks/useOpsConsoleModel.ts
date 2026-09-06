@@ -706,7 +706,7 @@ export function useOpsConsoleModel() {
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.health"),
         platformOperator ? deferredOptional("ops.alerts.list", alertListParams(activeAlertFilters, platformAlertScope)) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.data.delete.list", { limit: "50" }),
-        !platformOperator && allowedHydrationMethods.has("platform.model.status") ? (async () => {
+        (platformOperator || allowedHydrationMethods.has("platform.model.status")) ? (async () => {
           try {
             const value = await scheduledRpc("platform.model.status");
             setModelStatus(value as unknown as ModelStatus);
@@ -916,6 +916,34 @@ export function useOpsConsoleModel() {
     if (rulesResult.status === "rejected" || syncResult.status === "rejected") setError("规则数据加载失败，请重试；空列表不代表没有平台规则。");
     else setError("");
     setRuleSyncLoading(false);
+  };
+  const syncRulesNow = async () => {
+    if (!canRules) {
+      message.error("当前会话为只读，立即更新需要规则管理员权限");
+      return false;
+    }
+    if (ruleMutationInFlight.current) return false;
+    ruleMutationInFlight.current = true;
+    setRuleSyncLoading(true);
+    try {
+      const response = await rpc("rule.sync.now", {});
+      const sync = (response as { sync?: { state?: string; imported?: number; activated?: number; reason?: string } }).sync;
+      if (sync?.state === "not_configured") {
+        message.warning("平台规则同步未配置签名清单地址或验签密钥，未导入任何规则");
+      } else if (sync?.state === "succeeded") {
+        message.success(`平台规则已更新：导入 ${sync.imported ?? 0} 个版本，激活 ${sync.activated ?? 0} 个版本`);
+      } else {
+        message.info("平台规则同步已完成检查，当前没有新的版本");
+      }
+      await loadRules();
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "平台规则立即更新失败");
+      return false;
+    } finally {
+      ruleMutationInFlight.current = false;
+      setRuleSyncLoading(false);
+    }
   };
   const opsRoleKey = opsSession?.roles.join("|") ?? "";
   useEffect(() => {
@@ -2493,6 +2521,7 @@ export function useOpsConsoleModel() {
     competitorForm,
     load,
     loadRules,
+    syncRulesNow,
     loadRechargeOrders,
     queryRechargeOrder,
     enabledCount,

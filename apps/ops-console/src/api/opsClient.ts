@@ -431,7 +431,10 @@ async function rpcAtWorkspace<T>(
     "x-ops-workbench": workbench,
   };
   recordOpsBootstrapTrace("rpc_prepare", { method, apiBase, workbench, hasWorkspace: Boolean(workspaceId) });
-  if (workspaceId) headers["x-workspace-id"] = workspaceId;
+  // Platform-scoped requests must not carry the last workspace context. The
+  // API treats that combination as a workbench mismatch and rejects otherwise
+  // valid platform capabilities (for example platform.model.status).
+  if (workspaceId && workbench === "workspace") headers["x-workspace-id"] = workspaceId;
   if (!managedOpsSession) {
     if (connection.actorId) headers["x-actor-id"] = connection.actorId;
     if (connection.token) headers.authorization = `Bearer ${connection.token}`;
