@@ -8,6 +8,17 @@ coverage/
 *.tsbuildinfo
 .gstack/
 
+# Local browser acceptance reruns and generated bundles are evidence inputs,
+# not source artifacts. Keep named, reviewed evidence directories trackable.
+artifacts/ops-oidc-e2e-rerun*/
+artifacts/ops-oidc-e2e-final*/
+artifacts/ops-oidc-e2e-no-creds*/
+artifacts/ops-oidc-e2e-opsall*/
+artifacts/ops-oidc-e2e-regression*/
+artifacts/ops-oidc-e2e-users-retry*/
+artifacts/ops-oidc-platform*/
+artifacts/ops-oidc-e2e/ui-dist/assets/
+
 # TypeScript outputs belong in dist/. Keeping emitted artifacts beside src/*.ts
 # makes NodeNext/Vitest resolve stale JavaScript ahead of the authoritative TS.
 packages/*/src/**/*.js
