@@ -101,12 +101,20 @@ test('walk every Ops Console section through the real browser UI', async () => {
     !message.includes('status of 403 (Forbidden)'),
   )).toEqual([])
   // Stop page-owned polling/request work before tearing down the context.
-  // Waiting on context.close() directly can hang after the full domain walk
-  // when a page still has an in-flight background query, turning a clean
-  // browser run into a misleading test timeout.
-  await page.close()
-  await context.close()
-  await browser.close()
+  // A background fetch can keep Playwright's close promise pending after the
+  // full domain walk, so bound teardown and avoid turning a clean walk into a
+  // four-minute test timeout.
+  const closeWithDeadline = async (close, deadlineMs = 5_000) => {
+    let timer
+    await Promise.race([
+      close().catch(() => undefined),
+      new Promise(resolve => { timer = setTimeout(resolve, deadlineMs) }),
+    ])
+    clearTimeout(timer)
+  }
+  await closeWithDeadline(() => page.close())
+  await closeWithDeadline(() => context.close())
+  await closeWithDeadline(() => browser.close())
 })
 
 test('does not report model configuration success when model status fails', async () => {
