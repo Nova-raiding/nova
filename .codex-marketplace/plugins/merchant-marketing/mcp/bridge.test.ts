@@ -35,6 +35,14 @@ describe('relay evidence contract', () => {
       execution: { simulated: false, providerExecuted: true, providerRequestId: 'relay-req-1', usage: { total_tokens: 12 }, cost_cny: 0 },
     }, { environment: 'production', fixtureFallback: false })).not.toThrow()
   })
+
+  it.each([-0.01, 'NaN', 'Infinity', 'not-a-number'])('rejects invalid cost evidence: %s', (cost) => {
+    expect(() => assertRelayEvidence('content.generate', {
+      execution: { simulated: false, providerExecuted: true, providerRequestId: 'relay-req-invalid-cost', usage: { total_tokens: 12 }, cost_cny: cost },
+    }, { environment: 'production', fixtureFallback: false })).toThrowError(expect.objectContaining({
+      code: 'MODEL_RELAY_EVIDENCE_REQUIRED', details: { operation_status: 'blocked', missing: ['cost_cny'] },
+    }))
+  })
 })
 
 const MERCHANT_HIDDEN_METHODS = new Set([
@@ -653,6 +661,38 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('does not turn a read-only catalog request into an upload prompt', async () => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        currentStep: { id: 'provide-product', state: 'ready' },
+        action_cards: [{ method: 'asset.upload', label: '上传商品图片' }],
+      } }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: '查看店铺和商品目录' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.structuredContent).toMatchObject({
+        conversation_state: {
+          stage: 'choose_product',
+          primary_action: { method: 'catalog.search', label: '选择店铺查看商品' },
+        },
+        question: '你要处理哪个店铺或商品？',
+        expected_input: { kind: 'platform_store_or_product_selection' },
+      })
+      expect(response.result.content[0].text).not.toContain('上传商品图片')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it('exposes exactly one structured merchant action', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
@@ -905,7 +945,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {}, resources: {}, resourceTemplates: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260902004800' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {}, resources: {}, resourceTemplates: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260907102000' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -2354,13 +2394,13 @@ describe('Codex stdio MCP bridge', () => {
     let attempts = 0
     const server = createServer(async (_req, res) => {
       attempts += 1
-      await new Promise(resolve => setTimeout(resolve, 200))
+      await new Promise(resolve => setTimeout(resolve, 400))
       res.end(JSON.stringify({ data: { result: { status: 'ok' } } }))
     })
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_TIMEOUT_MS: '50', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '10' },
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_TIMEOUT_MS: '150', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '10' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
