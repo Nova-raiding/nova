@@ -49,7 +49,7 @@ export function RuleSyncStatusSection({
               loading={loading}
               disabled={loading || !canSync}
               aria-busy={loading}
-              aria-label={canSync ? "立即更新平台规则" : "立即更新平台规则（需要工作区内容编辑权限）"}
+              aria-label={canSync ? "立即更新平台规则" : "立即更新平台规则（需要规则治理权限）"}
               style={{ minHeight: 44, marginRight: 8 }}
               onClick={onSyncNow}
             >

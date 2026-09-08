@@ -31,7 +31,7 @@ export function RulesPage({ model }: RulesPageProps) {
         statuses={model.ruleSyncStatuses}
         error={model.error}
         onRefresh={() => void model.loadRules()}
-        canSync={model.canKnowledge}
+        canSync={model.canRules}
         onSyncNow={() => void model.syncRulesNow()}
       />
       <RuleCenterSection model={model} />

@@ -1,6 +1,6 @@
 import { exposeNonProductionMethods, MCP_METHODS, MCP_NON_PRODUCTION_METHODS, type McpMethod } from './mcp.js'
 
-export const AUTHZ_POLICY_VERSION = '2026-09-07.v1' as const
+export const AUTHZ_POLICY_VERSION = '2026-09-08.v1' as const
 
 export const CAPABILITIES = [
   'authorization.session.read',
@@ -503,7 +503,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('store.connection.update', 'account', 'customer_metadata', ['platform.store.alias.set']),
   read('customer.content.read', 'workspace', 'customer_content', ['brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get', 'catalog.search', 'catalog.categories', 'rule.list', 'rule.sync.status', 'rule.history', 'asset.list', 'brand.get', 'catalog.sync.get', 'deliverable.list', 'task.history', 'feedback.list', 'creative.directions', 'publish.batch.get', 'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'multimodal.video.get', 'catalog.image.get']),
   read('customer.content.read', 'brand', 'customer_content', ['generation.get', 'publish.get', 'task.timeline', 'content.versions', 'content.diff', 'creative.brief', 'creative.preview']),
-  write('customer.content.update', 'workspace', 'customer_content', ['brand-unit.create', 'campaign.batch.create', 'campaign.batch.generate', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.title.accept', 'catalog.import', 'catalog.import.batch', 'catalog.sku.update', 'catalog.facts.confirm', 'sync.retry_failed', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.generation.confirm', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'task.create', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'task.clone', 'creative.directions.update', 'content.codex.prepare', 'content.codex.commit', 'ops.marketing.generation.retry', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.brand.preference.update', 'knowledge.feedback.record', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.reference', 'catalog.image.generate', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'rule.sync.now']),
+  write('customer.content.update', 'workspace', 'customer_content', ['brand-unit.create', 'campaign.batch.create', 'campaign.batch.generate', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.title.accept', 'catalog.import', 'catalog.import.batch', 'catalog.sku.update', 'catalog.facts.confirm', 'sync.retry_failed', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.generation.confirm', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'task.create', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'task.clone', 'creative.directions.update', 'content.codex.prepare', 'content.codex.commit', 'ops.marketing.generation.retry', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.brand.preference.update', 'knowledge.feedback.record', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.reference', 'catalog.image.generate', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request']),
   write('rule.update', 'workspace', 'customer_content', ['knowledge.rule.create', 'knowledge.rule.update']),
   write('customer.content.update', 'brand', 'customer_content', ['catalog.product.disable', 'catalog.product.enable']),
   write('customer.content.update', 'account', 'customer_content', ['brand-unit.bind-store', 'brand-unit.listing.create']),
@@ -515,7 +515,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('automation.read', 'workspace', 'customer_metadata', ['automation.policy.get', 'automation.policy.list', 'automation.scan']),
   write('automation.update', 'workspace', 'customer_metadata', ['automation.policy.update', 'automation.tick', 'automation.pause']),
   write('rule.publish.approve', 'platform', 'customer_content', ['rule.publish'], 'mutation', ['reason']),
-  write('rule.update', 'platform', 'customer_metadata', ['rule.status']),
+  write('rule.update', 'platform', 'customer_metadata', ['rule.status', 'rule.sync.now']),
   write('customer.content.update', 'workspace', 'customer_content', ['feedback.submit']),
 ]
 
