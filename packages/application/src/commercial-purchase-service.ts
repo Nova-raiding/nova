@@ -36,10 +36,14 @@ export class CommercialPurchaseService {
     required(request.workspace_id, 'workspace_id'); required(request.actor_id, 'actor_id'); required(request.sku_code, 'sku_code'); required(request.idempotency_key, 'idempotency_key'); required(request.reason, 'reason')
     const sku = await this.catalog.resolveApprovedExecutableSku({ workspace_id: request.workspace_id, sku_code: request.sku_code, actor_id: request.actor_id })
     if (!sku || sku.lifecycle !== 'approved' || sku.executable !== true || sku.blockers.length > 0 || !Number.isFinite(Date.parse(sku.effective_at)) || Date.parse(sku.effective_at) > Date.now()) {
-      throw new CommercialPurchaseError('COMMERCIAL_PURCHASE_UNAVAILABLE', 'approved executable commercial SKU is unavailable')
+      throw new CommercialPurchaseError(request.purchase_kind === 'onboarding_once' ? 'ONBOARDING_PURCHASE_UNAVAILABLE' : 'COMMERCIAL_PURCHASE_UNAVAILABLE', 'approved executable commercial SKU is unavailable')
     }
     if (sku.kind === 'private_trial') throw new CommercialPurchaseError('PRIVATE_PURCHASE_UNAVAILABLE', 'private purchase eligibility and accounting policy remain unresolved')
-    const expected = request.purchase_kind === 'point_pack' ? 'point_pack' : 'monthly'
+    const expected = request.purchase_kind === 'onboarding_once'
+      ? 'onboarding'
+      : request.purchase_kind === 'point_pack'
+        ? 'point_pack'
+        : 'monthly'
     if (sku.kind !== expected) throw new CommercialPurchaseError('COMMERCIAL_PURCHASE_KIND_MISMATCH', 'purchase kind does not match approved SKU kind')
     return this.orders.createFromServerSnapshot({ workspace_id: request.workspace_id, actor_id: request.actor_id, purchase_kind: request.purchase_kind, server_snapshot_ref: sku.server_snapshot_ref, server_snapshot: sku.server_snapshot, idempotency_key: request.idempotency_key, reason: request.reason })
   }

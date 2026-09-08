@@ -1,4 +1,4 @@
-export type CommercialPurchaseKind = 'purchase' | 'upgrade' | 'point_pack'
+export type CommercialPurchaseKind = 'purchase' | 'upgrade' | 'onboarding_once' | 'point_pack'
 
 /** Client intent: deliberately contains no amount, currency, points or benefits. */
 export interface CommercialPurchaseCreateRequest {
@@ -32,6 +32,7 @@ export interface CommercialPurchaseOrderView {
 
 export const COMMERCIAL_PURCHASE_ERROR_CODES = [
   'COMMERCIAL_PURCHASE_UNAVAILABLE',
+  'ONBOARDING_PURCHASE_UNAVAILABLE',
   'COMMERCIAL_PURCHASE_KIND_MISMATCH',
   'PRIVATE_PURCHASE_UNAVAILABLE',
   'COMMERCIAL_ORDER_NOT_FOUND',
