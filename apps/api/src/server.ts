@@ -5568,6 +5568,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,
     method,
+    policy,
     atoms: decisionAtoms,
     satisfiedObligations: satisfiedAuthorizationObligations(params, req),
     resourceScope,
@@ -5608,6 +5609,7 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
 export function registeredMcpAuthorizationDecision(input: {
   decisionId: string
   method: string
+  policy?: NonNullable<ReturnType<typeof getMcpMethodPolicy>>
   atoms: readonly PermissionAtom[]
   satisfiedObligations?: readonly AuthorizationObligation[]
   resourceScope?: Parameters<typeof evaluatePermissionAtoms>[0]['resourceScope']
@@ -5615,7 +5617,7 @@ export function registeredMcpAuthorizationDecision(input: {
   mode: AuthorizationDecisionMode
   now?: string
 }) {
-  const policy = getMcpMethodPolicy(input.method)
+  const policy = input.policy ?? getMcpMethodPolicy(input.method)
   if (!policy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前方法缺少服务端授权策略，已拒绝执行', 503, authorizationPolicyUnavailableDetails({ transport: 'mcp', method: input.method }))
   return evaluatePermissionAtoms({
     decisionId: input.decisionId,
