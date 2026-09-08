@@ -323,7 +323,10 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
     const scope = requireWorkspaceScope(workspaceId)
     const limit = options.limit ?? 100
     const leaseMs = options.leaseMs ?? 30_000
-    const now = options.now ?? new Date().toISOString()
+    // Use the database clock when callers do not provide a deterministic
+    // probe time.  App and PostgreSQL clocks can differ by a few milliseconds;
+    // using a client timestamp can otherwise miss rows inserted by `now()`.
+    const now = options.now ?? null
     if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit must be a positive integer')
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new RangeError('leaseMs must be a positive integer')
     const eventTypes = options.eventTypes?.filter(Boolean)
@@ -339,12 +342,13 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
         // immutable; recovery uses a new outbox event instead.
         'published_at IS NULL',
         'unknown_at IS NULL',
-        // Events with durable error evidence require reconciliation/redrive;
-        // ordinary workers must not mutate their immutable terminal record.
-        'last_error IS NULL',
+        // A normal retry keeps its error evidence after releasing the lease.
+        // Reclaim only explicit, non-unknown retries; malformed/legacy errors
+        // still require reconciliation rather than an automatic side effect.
+        "(last_error IS NULL OR (last_error->'retryable' = 'true'::jsonb AND COALESCE(last_error->'unknown', 'false'::jsonb) = 'false'::jsonb))",
         "COALESCE(last_error->>'terminal', 'false') <> 'true'",
-        'next_attempt_at <= $2::timestamptz',
-        '(lease_until IS NULL OR lease_until <= $2::timestamptz)',
+        'next_attempt_at <= COALESCE($2::timestamptz, now())',
+        '(lease_until IS NULL OR lease_until <= COALESCE($2::timestamptz, now()))',
       ]
       if (eventTypes) {
         values.push(eventTypes)
@@ -367,7 +371,7 @@ export class PostgresOutboxRepository implements DurableOutboxRepository {
          )
          UPDATE outbox_events AS event
             SET lease_token = $${leaseTokenIndex},
-                lease_until = $2::timestamptz + ($${leaseMsIndex} * interval '1 millisecond')
+                lease_until = COALESCE($2::timestamptz, now()) + ($${leaseMsIndex} * interval '1 millisecond')
            FROM candidates
           WHERE event.id = candidates.id
          RETURNING event.id, event.workspace_id, event.aggregate_id, event.event_type, event.sequence,

@@ -1,0 +1,9 @@
+{
+  "webmRetained": true,
+  "mp4Retained": true,
+  "failureFrameRetained": true,
+  "conversionExit": 0,
+  "frameExit": 0,
+  "source": "existing shot-scraper recording, no new browser interaction",
+  "verdict": "FAIL"
+}

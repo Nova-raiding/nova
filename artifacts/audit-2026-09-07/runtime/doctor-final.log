@@ -1,0 +1,74 @@
+
+> merchant-marketing-codex@0.1.1 dev:doctor
+> tsx scripts/dev-doctor.ts
+
+Developer doctor (local): 37 pass / 16 warn / 0 fail
+PASS node: Node 22.23.2
+PASS npm: npm 10.9.8
+PASS git_worktree: Git worktree 可用
+PASS docker: Docker daemon 可用
+PASS docker_compose: Docker Compose 可用
+PASS docker_buildx: Docker buildx 可用
+PASS file:package-lock.json: package-lock.json 存在
+PASS file:infra/local/docker-compose.yml: infra/local/docker-compose.yml 存在
+PASS file:apps/ops-console/vite.config.ts: apps/ops-console/vite.config.ts 存在
+PASS file:apps/plugin/.codex-plugin/plugin.json: apps/plugin/.codex-plugin/plugin.json 存在
+PASS browser_runner: Playwright QA runner 与 Chrome 可用
+PASS model_relay: 业务模型中转配置存在（值已隐藏）
+PASS identity_session_hash: 平台身份会话指纹密钥已注入（值已隐藏）
+WARN host_model_relay: 宿主 Codex 认证/中转合同未就绪；容器配置不代表宿主可调用
+     -> 使用 ChatGPT 会员登录宿主 Codex，或按 ~/.codex/config.toml 中 provider 的 env_key 注入宿主密钥；随后运行 npm run codex:relay:validate。
+WARN plugin_bridge: Bridge endpoint/token 合同未就绪
+     -> 设置根 origin MERCHANT_MCP_BASE_URL；远程环境同时从 Secret Manager 注入 MERCHANT_MCP_TOKEN，禁止在输出中显示 token。
+PASS worker_callback_auth: 所有 Worker callback endpoint/token/signing 配置存在（值已隐藏）
+WARN ops_api_base: 当前 shell 未设置 VITE_API_BASE；npm run dev:ops-console 会自动使用 /api
+     -> 手工启动 Ops Console 时设置 VITE_API_BASE=/api。
+WARN production_config: 未提供非示例 PRODUCTION_CONFIG_PATH
+     -> 渲染真实生产配置并运行 npm run infra:launch-preflight。
+PASS container:api: api: Up 18 minutes (healthy)
+PASS container:api-replica: api-replica: Up 37 minutes (healthy)
+PASS container:worker-sync: worker-sync: Up 37 minutes (healthy)
+PASS container:worker-generation: worker-generation: Up 18 minutes (healthy)
+PASS container:worker-publish: worker-publish: Up 37 minutes (healthy)
+PASS container:worker-reconcile: worker-reconcile: Up 37 minutes (healthy)
+PASS container:worker-automation: worker-automation: Up 37 minutes (healthy)
+PASS container:worker-scan: worker-scan: Up 18 minutes (healthy)
+PASS container:postgres: postgres: Up 37 minutes (healthy)
+PASS container:redis: redis: Up 25 minutes (healthy)
+PASS container:ui: ui: Up 37 minutes (healthy)
+PASS container:ops-ui: ops-ui: Up 37 minutes (healthy)
+PASS container:clamav: clamav: Up 37 minutes (healthy)
+PASS runtime:api: api http://127.0.0.1:8787/healthz -> HTTP 200
+PASS runtime:api_ready: api_ready http://127.0.0.1:8787/readyz -> HTTP 200
+PASS runtime:merchant_ui: merchant_ui http://127.0.0.1:18081/ -> HTTP 200
+PASS runtime:ops_ui: ops_ui http://127.0.0.1:18082/ -> HTTP 200
+PASS commercial:persistence: 商业持久化 ready=true
+WARN commercial:payment: 支付 mode=fixture, ready=false, reasons=provider_adapters_incomplete,checkout_endpoint_must_use_https,provider_checkout_api_must_use_https,provider_query_api_must_use_https,provider_api_key_missing,provider_merchant_id_missing,provider_refund_api_must_use_https,callback_endpoint_must_use_https,callback_secret_missing,reconciliation_disabled,refund_disabled
+     -> 配置真实 provider、验签、防重、查询与对账；fixture 不得标记生产 ready。
+WARN commercial:platform_oauth: 平台 OAuth ready=false, missing=jd,taobao,tmall,pinduoduo,xiaohongshu,douyin, blocked=none
+     -> 补齐六平台官方 OAuth、回调地址、凭据提供器与只读/写入授权；未配置时保持 fail-closed。
+WARN commercial:model_relay: 五模态中转与成本门禁 ready=false
+     -> 逐模态配置真实中转鉴权、usage、cost 与错误证据。
+PASS commercial:model_relay_contract: relay contract ready=true, costGate=true, blocked=none, providerMissing=none
+WARN commercial:object_storage: 对象存储 mode=local, ready=false
+     -> 配置真实对象存储/KMS/scanner 证据；local 模式不满足生产门禁。
+WARN commercial:scanner: scanner ready=false
+     -> 配置非 fixture scanner、签名回执和新鲜度证据；仅容器存活不满足生产门禁。
+WARN commercial:alerts: 生产告警 ready=false
+     -> 注入告警 webhook/secret 并验证真实投递。
+WARN commercial:production_gate: mode=fixture, writes=false, productionGate=false
+     -> 未满足真实支付、平台、存储、容量和证据前保持 writes disabled / NO-GO。
+PASS commercial:migration_tail: 数据库迁移尾=162, source=162
+PASS commercial:database_security: 创意点 FORCE RLS=9/9, missing=none, merchant_app bypass=false
+PASS commercial:catalog: 目录版本=7, executable=0
+WARN commercial:executable_catalog: 已批准可执行目录版本=0
+     -> 业务/财务批准前目录保持不可执行；禁止用草稿开放收款或业务能力。
+WARN commercial:approved_rate: 已批准可执行费率=0
+     -> 财务/业务批准前保持 RATE_CARD_UNAVAILABLE，禁止工程自行批准。
+PASS commercial:point_projection: 点数投影 workspace=128
+WARN runtime:release: releasez -> HTTP 200, ready=false
+     -> 注入与当前不可变发布一致的版本、迁移、图像 digest 和证据元数据。
+WARN release:model_relay_evidence: MODEL_RELAY_EVIDENCE_PATH 未提供；无法验证 relay 503/usage/cost 证据
+     -> 运行真实 relay canary，生成并绑定五模态 release evidence。
+WARN release:codex_app_error_recovery: CODEX_APP_HOST_EVIDENCE_PATH 未提供；无法验证 ChatGPT/Codex App 的 503 错误恢复证据
+     -> 补采外部宿主 error_recovery 场景证据，禁止用本地/fixture 代替。

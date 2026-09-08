@@ -13,9 +13,20 @@
 .capability-pill.amber { background: var(--amber-soft); color: var(--amber); }
 .capability-pill.blue { background: var(--blue-soft); color: var(--blue); }
 .capability-note { margin: 0 16px 14px; }
-.wallet-entitlement-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 16px 14px; }
-.wallet-entitlement { display: flex; flex-direction: column; gap: 6px; border: 1px solid #e8ece8; border-radius: 8px; padding: 9px; background: #fbfcfb; }
-.wallet-entitlement b { font-size: 10px; }
+.wallet-content { padding: 0 16px 12px; }
+.wallet-summary-card { border: 1px solid #e1e8e1 !important; border-radius: 14px !important; background: linear-gradient(135deg,#fbfdfb 0%,#f4faf4 100%); }
+.wallet-summary-card .ant-card-body { padding: 16px 18px 13px; }
+.wallet-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.wallet-label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+.wallet-statistic .ant-statistic-content { color: var(--ink); font-size: 30px; font-weight: 800; line-height: 1.1; }
+.wallet-statistic .ant-statistic-content-prefix { margin-right: 2px; font-size: 18px; }
+.wallet-summary p { margin: 8px 0 0; color: #43564b; font-size: 12px; }
+.wallet-note { display: block; margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.wallet-entitlement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 16px 14px; }
+.wallet-entitlement { min-height: 92px; border-color: #e0e8e1 !important; border-radius: 11px !important; background: #fff; }
+.wallet-entitlement .ant-card-body { padding: 12px; }
+.wallet-entitlement-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wallet-entitlement b { font-size: 12px; }
 .wallet-entitlement small { color: var(--muted); line-height: 1.45; }
 .issue-queue-list { display: grid; gap: 8px; padding: 0 16px 10px; }
 .issue-queue-item { display: flex; align-items: center; gap: 10px; border: 1px solid #ecefeb; border-radius: 9px; padding: 10px; }
@@ -26,4 +37,4 @@
 .issue-queue-copy span { font-size: 10px; }
 .issue-queue-copy small { font-size: 9px; }
 .issue-queue-more { display: block; padding: 0 16px 14px; }
-@media (max-width: 700px) { .capability-grid { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .capability-grid { grid-template-columns: 1fr; } .wallet-summary { align-items: flex-start; flex-direction: column; } .wallet-summary > .ant-space { align-items: flex-start !important; flex-direction: row !important; } .wallet-entitlement-grid { grid-template-columns: 1fr; } }

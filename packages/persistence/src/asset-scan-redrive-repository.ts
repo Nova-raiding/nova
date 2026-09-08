@@ -218,7 +218,7 @@ export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepos
     const assetIds = options.assetIds === undefined ? undefined : [...new Set(options.assetIds.map(id => text(id, 1, 255)))]
     if (assetIds?.length === 0 || (assetIds && assetIds.length > 100)) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_INPUT_INVALID')
     return withWorkspaceTransaction(this.pool, scope, async client => {
-      const rows = (await client.query<FailureRow>(`SELECT o.${eventProjection.split(',').join(',o.')},s.entity_version AS asset_revision,s.payload AS asset_payload FROM outbox_events o JOIN business_entity_snapshots s ON s.workspace_id=o.workspace_id AND s.entity_type='asset' AND s.entity_id=o.aggregate_id WHERE o.workspace_id=$1 AND o.event_type = ANY($2::text[]) AND o.published_at IS NOT NULL AND o.unknown_at IS NULL AND o.lease_token IS NULL AND o.lease_until IS NULL AND o.last_error IS NOT NULL AND (COALESCE(o.last_error->>'retryable','') = 'false' OR o.attempts >= $3) AND ($4::text[] IS NULL OR o.aggregate_id = ANY($4::text[])) ORDER BY o.created_at DESC,o.id DESC LIMIT $5`, [scope, [...SCAN_EVENT_TYPES], options.scanMaxAttempts, assetIds ?? null, limit])).rows
+      const rows = (await client.query<FailureRow>(`SELECT o.${eventProjection.split(',').join(',o.')},s.entity_version AS asset_revision,s.payload AS asset_payload FROM outbox_events o JOIN business_entity_snapshots s ON s.workspace_id=o.workspace_id AND s.entity_type='asset' AND s.entity_id=o.aggregate_id WHERE o.workspace_id=$1 AND o.event_type = ANY($2::text[]) AND (o.published_at IS NOT NULL OR o.last_error->'terminal' = 'true'::jsonb) AND o.unknown_at IS NULL AND o.lease_token IS NULL AND o.lease_until IS NULL AND o.last_error IS NOT NULL AND (COALESCE(o.last_error->>'retryable','') = 'false' OR o.attempts >= $3) AND ($4::text[] IS NULL OR o.aggregate_id = ANY($4::text[])) ORDER BY o.created_at DESC,o.id DESC LIMIT $5`, [scope, [...SCAN_EVENT_TYPES], options.scanMaxAttempts, assetIds ?? null, limit])).rows
       const failures: AssetScanRetryableFailure[] = []
       for (const row of rows) {
         const asset = object(row.asset_payload)
@@ -284,7 +284,9 @@ export class PostgresAssetScanRedriveRepository implements AssetScanRedriveRepos
       const legacyAuthWiring = isRecoverableLegacyWorkerAuthWiring(oldEvent.event_type, oldFailure, oldPayload)
       const legacyCommercialWiring = isRecoverableLegacyCommercialWiring(oldEvent.event_type, oldFailure, oldPayload)
       const recoverable = typeof oldFailure?.code === 'string' && (RECOVERABLE_SCAN_FAILURE_CODES.has(oldFailure.code) || legacyExpired || legacyAuthWiring || legacyCommercialWiring)
-      const terminal = oldEvent.published_at !== null && oldEvent.unknown_at === null && oldEvent.lease_token === null && oldEvent.lease_until === null && Boolean(oldFailure) && recoverable && (oldFailure.retryable === false || Number(oldEvent.attempts) >= input.scanMaxAttempts)
+      // Current dead letters carry a terminal flag without a delivery timestamp;
+      // retain compatibility with historical published dead-letter evidence.
+      const terminal = (oldEvent.published_at !== null || oldFailure?.terminal === true) && oldEvent.unknown_at === null && oldEvent.lease_token === null && oldEvent.lease_until === null && Boolean(oldFailure) && recoverable && (oldFailure.retryable === false || Number(oldEvent.attempts) >= input.scanMaxAttempts)
       if (!terminal) throw new AssetScanRedriveError('ASSET_SCAN_REDRIVE_NOT_DEAD_LETTER')
 
       const competing = (await client.query<RedriveRow>(`SELECT id,workspace_id,recovery_key,asset_id,old_outbox_event_id,new_outbox_event_id,expected_asset_revision,source_revision_before,source_revision_after,actor_id,reason,scan_max_attempts,audit_id FROM asset_scan_redrives WHERE workspace_id=$1 AND old_outbox_event_id=$2`, [input.workspaceId, input.deadLetterOutboxEventId])).rows[0]

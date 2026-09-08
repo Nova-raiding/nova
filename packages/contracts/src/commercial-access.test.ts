@@ -41,10 +41,10 @@ describe('commercial operation registry E1 contract', () => {
     for (const operation of ['merchant.start', 'platform.connect', 'catalog.sync', 'content.export']) {
       expect(policy(operation)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'POINT_REQUIRED_NO_CHARGE' } })
     }
-    expect(policy('catalog.image.generate')).toMatchObject({ outcome: 'DENY_DISABLED', policy: { classification: 'POINT_CHARGED', rate_action: 'catalog.image.generate' } })
-    expect(policy('multimodal.image.edit')).toMatchObject({ outcome: 'DENY_DISABLED', policy: { classification: 'POINT_CHARGED', rate_action: 'multimodal.image.edit' } })
-    expect(policy('content.generate')).toMatchObject({ outcome: 'DENY_DISABLED' })
-    expect(policy('multimodal.video.request')).toMatchObject({ outcome: 'DENY_DISABLED' })
+    expect(policy('catalog.image.generate')).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, classification: 'POINT_CHARGED', rate_action: 'image.generate.standard' } })
+    expect(policy('multimodal.image.edit')).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, classification: 'POINT_CHARGED', rate_action: 'image.edit.annotation' } })
+    expect(policy('content.generate')).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, classification: 'POINT_CHARGED', rate_action: 'text.generate' } })
+    expect(policy('multimodal.video.request')).toMatchObject({ outcome: 'REGISTERED', policy: { enabled: true, classification: 'POINT_CHARGED', rate_action: 'video.generate.standard_15s' } })
   })
 
   it('uses only the three approved classifications and defaults unknown operations to deny', () => {

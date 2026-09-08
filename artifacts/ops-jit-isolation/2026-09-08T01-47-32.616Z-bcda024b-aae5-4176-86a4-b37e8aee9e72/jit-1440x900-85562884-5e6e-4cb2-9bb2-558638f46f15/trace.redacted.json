@@ -1,0 +1,354 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "isolated_live_oidc_ui_rpc",
+  "raw_browser_trace_saved": false,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "fixture": {
+    "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+    "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+    "actor_ref": "sha256:7ecfcabb9a47f93ed09a",
+    "approver_ref": "sha256:a604554a7f48e04624e3"
+  },
+  "status": "passed",
+  "events": [
+    {
+      "at": "2026-09-08T01:47:39.737Z",
+      "event": "step",
+      "name": "signed_oidc_login_and_grant_capabilities"
+    },
+    {
+      "at": "2026-09-08T01:47:41.778Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.session",
+        "subject_ref": null,
+        "grant_ref": null,
+        "resource_scope": null,
+        "capabilities": null,
+        "approver_ref": null,
+        "reason_present": false,
+        "ticket_present": false
+      },
+      "response": {
+        "status": 200,
+        "error_code": null,
+        "result": {
+          "actor_ref": "sha256:7ecfcabb9a47f93ed09a",
+          "workbench": "platform",
+          "authorization_revision": 2,
+          "capabilities": [
+            "audit.export",
+            "audit.read",
+            "authorization.grant.manage",
+            "authorization.grant.read",
+            "authorization.role.manage",
+            "authorization.role.read",
+            "authorization.session.read",
+            "automation.read",
+            "billing.export",
+            "commercial.access.read",
+            "commercial.catalog.read",
+            "commercial.entitlement.read",
+            "commercial.order.read",
+            "commercial.point.adjust",
+            "commercial.point.adjust.approve",
+            "commercial.point.read",
+            "commercial.private_sku.read",
+            "commercial.rate.read",
+            "commercial.read",
+            "commercial.service_fulfillment.read",
+            "feature_flag.administer",
+            "feature_flag.read",
+            "feature_flag.update",
+            "identity.read",
+            "identity.session.revoke",
+            "identity.update",
+            "incident.read",
+            "marketing.summary.read",
+            "model.cost.read",
+            "model.status.read",
+            "platform.media_spec.read",
+            "platform.settings.read",
+            "platform.summary.read",
+            "storage.reconciliation.read",
+            "support.ticket.read",
+            "workspace.delete.execute",
+            "workspace.directory.read",
+            "workspace.status.update"
+          ]
+        }
+      }
+    },
+    {
+      "at": "2026-09-08T01:47:42.231Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.authorization.grants.list",
+        "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+        "grant_ref": null,
+        "target_workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+        "resource_scope": null,
+        "capabilities": null,
+        "approver_ref": null,
+        "reason_present": false,
+        "ticket_present": false
+      },
+      "response": {
+        "status": 200,
+        "error_code": null,
+        "result": {
+          "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+          "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+          "authorization_revision": 0,
+          "grants": []
+        }
+      }
+    },
+    {
+      "at": "2026-09-08T01:47:42.238Z",
+      "event": "step",
+      "name": "issue_exact_workspace_read_grant_from_form"
+    },
+    {
+      "at": "2026-09-08T01:47:42.433Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.authorization.grant.issue",
+        "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+        "grant_ref": null,
+        "target_workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+        "resource_scope": {
+          "workspace_ids": [
+            "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585"
+          ]
+        },
+        "capabilities": [
+          "customer.content.read"
+        ],
+        "access_mode": "read",
+        "grant_kind": "support",
+        "max_uses": "2",
+        "expected_authorization_revision": "0",
+        "approver_ref": "sha256:a604554a7f48e04624e3",
+        "approved_at": "2026-09-08T01:47:42.285Z",
+        "expires_at": "2026-09-08T01:57:42.285Z",
+        "reason_present": true,
+        "ticket_present": true
+      },
+      "response": {
+        "status": 200,
+        "error_code": null,
+        "result": {
+          "grant_ref": "sha256:bd73339287825cb0a1a7",
+          "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+          "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+          "access_mode": "read",
+          "capabilities": [
+            "customer.content.read"
+          ],
+          "resource_scope": {
+            "workspace_ids": [
+              "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585"
+            ]
+          },
+          "use_count": 0,
+          "max_uses": 2,
+          "revision": 1,
+          "authorization_revision": 1,
+          "issued_at": "2026-09-08T01:47:42.400Z",
+          "expires_at": "2026-09-08T01:57:42.285Z",
+          "revoked_at": null
+        }
+      }
+    },
+    {
+      "at": "2026-09-08T01:47:42.488Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.authorization.grants.list",
+        "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+        "grant_ref": null,
+        "target_workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+        "resource_scope": null,
+        "capabilities": null,
+        "approver_ref": null,
+        "reason_present": false,
+        "ticket_present": false
+      },
+      "response": {
+        "status": 200,
+        "error_code": null,
+        "result": {
+          "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+          "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+          "authorization_revision": 1,
+          "grants": [
+            {
+              "grant_ref": "sha256:bd73339287825cb0a1a7",
+              "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+              "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+              "access_mode": "read",
+              "capabilities": [
+                "customer.content.read"
+              ],
+              "resource_scope": {
+                "workspace_ids": [
+                  "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585"
+                ]
+              },
+              "use_count": 0,
+              "max_uses": 2,
+              "revision": 1,
+              "authorization_revision": 1,
+              "issued_at": "2026-09-08T01:47:42.400Z",
+              "expires_at": "2026-09-08T01:57:42.285Z",
+              "revoked_at": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": "2026-09-08T01:47:42.497Z",
+      "event": "step",
+      "name": "explicit_refresh_preserves_persisted_grant_and_revision"
+    },
+    {
+      "at": "2026-09-08T01:47:42.659Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.authorization.grants.list",
+        "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+        "grant_ref": null,
+        "target_workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+        "resource_scope": null,
+        "capabilities": null,
+        "approver_ref": null,
+        "reason_present": false,
+        "ticket_present": false
+      },
+      "response": {
+        "status": 200,
+        "error_code": null,
+        "result": {
+          "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+          "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+          "authorization_revision": 1,
+          "grants": [
+            {
+              "grant_ref": "sha256:bd73339287825cb0a1a7",
+              "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+              "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+              "access_mode": "read",
+              "capabilities": [
+                "customer.content.read"
+              ],
+              "resource_scope": {
+                "workspace_ids": [
+                  "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585"
+                ]
+              },
+              "use_count": 0,
+              "max_uses": 2,
+              "revision": 1,
+              "authorization_revision": 1,
+              "issued_at": "2026-09-08T01:47:42.400Z",
+              "expires_at": "2026-09-08T01:57:42.285Z",
+              "revoked_at": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": "2026-09-08T01:47:42.845Z",
+      "event": "screenshot",
+      "name": "issued-and-refreshed.png"
+    },
+    {
+      "at": "2026-09-08T01:47:42.846Z",
+      "event": "step",
+      "name": "confirm_revoke_with_current_revisions_and_reason"
+    },
+    {
+      "at": "2026-09-08T01:47:43.019Z",
+      "event": "screenshot",
+      "name": "revoke-confirmation.png"
+    },
+    {
+      "at": "2026-09-08T01:47:43.470Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.authorization.grant.revoke",
+        "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+        "grant_ref": "sha256:bd73339287825cb0a1a7",
+        "resource_scope": null,
+        "capabilities": null,
+        "expected_revision": "1",
+        "expected_authorization_revision": "1",
+        "approver_ref": null,
+        "reason_present": true,
+        "ticket_present": false
+      },
+      "response": {
+        "status": 200,
+        "error_code": null,
+        "result": {
+          "grant_ref": "sha256:bd73339287825cb0a1a7",
+          "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+          "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+          "access_mode": "read",
+          "capabilities": [
+            "customer.content.read"
+          ],
+          "resource_scope": {
+            "workspace_ids": [
+              "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585"
+            ]
+          },
+          "use_count": 0,
+          "max_uses": 2,
+          "revision": 2,
+          "authorization_revision": 2,
+          "issued_at": "2026-09-08T01:47:42.400Z",
+          "expires_at": "2026-09-08T01:57:42.285Z",
+          "revoked_at": "2026-09-08T01:47:43.445Z"
+        }
+      }
+    },
+    {
+      "at": "2026-09-08T01:47:43.497Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.authorization.grants.list",
+        "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+        "grant_ref": null,
+        "target_workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+        "resource_scope": null,
+        "capabilities": null,
+        "approver_ref": null,
+        "reason_present": false,
+        "ticket_present": false
+      },
+      "response": {
+        "status": 200,
+        "error_code": null,
+        "result": {
+          "subject_ref": "sha256:a45ac58c7ddaa19e3a7a",
+          "workspace_id": "ws_ops_fixture_bfa652ec5ac34d52add4ba82479db585",
+          "authorization_revision": 2,
+          "grants": []
+        }
+      }
+    },
+    {
+      "at": "2026-09-08T01:47:43.730Z",
+      "event": "screenshot",
+      "name": "revoked-and-removed.png"
+    }
+  ],
+  "finished_at": "2026-09-08T01:47:43.731Z"
+}

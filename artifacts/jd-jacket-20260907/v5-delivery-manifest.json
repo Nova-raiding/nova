@@ -1,0 +1,52 @@
+[
+  {
+    "file": "multipart-result.png",
+    "sha256": "738ca4acb5531ce96588f0406c294e363d0b19d4efca47efe333eac4ec153611",
+    "bytes": 934508
+  },
+  {
+    "file": "banners-final-1.png",
+    "sha256": "d8d8a14179f8ca6ece13705b172c85039b0891c333a598cee26edc5024c1aa8e",
+    "bytes": 1215204
+  },
+  {
+    "file": "banners-final-2.png",
+    "sha256": "e271cd0700c09a75d2f9c1dd4c3342a26a35a78c4740ebc1984724df7a8be48e",
+    "bytes": 1212854
+  },
+  {
+    "file": "banners-final-3.png",
+    "sha256": "2cb0b9a6dfd1528c20c6c1b18e70d21d2d705a2eab9a081ae5effe7a0ce0e71d",
+    "bytes": 1277029
+  },
+  {
+    "file": "banners-final-4.png",
+    "sha256": "7780450544f065be8d77affa4a6b254c7831e4ac8b4cb74892065360db32d4f0",
+    "bytes": 1222772
+  },
+  {
+    "file": "editorial-1.png",
+    "sha256": "a000b24dced23565ab53a8619efcce34852b89e8c4f11c3bae8800eae8662d11",
+    "bytes": 1107228
+  },
+  {
+    "file": "detail-design-1.png",
+    "sha256": "08ccae14c183d1400de5fe6911dbb2e0361e9b34b398ec26e572ecccc916b14c",
+    "bytes": 1182888
+  },
+  {
+    "file": "detail-final-1.png",
+    "sha256": "f9897b788f71ef77364b8250501a0ac0d4c8c1cb763d8ac16786eaeeb9d305e0",
+    "bytes": 1133814
+  },
+  {
+    "file": "完整详情页长图-v5.png",
+    "sha256": "4b88ec469abbf2f1f6b897f2445ceff448f57a6623bf1e643a89c99166699c94",
+    "bytes": 3021590
+  },
+  {
+    "file": "商品展示-四镜头-v2.mp4",
+    "sha256": "e28fb7fd93040e88dfda490f31cfd224d98ff37f178aeb393c8a5ababf770ae3",
+    "bytes": 26052991
+  }
+]

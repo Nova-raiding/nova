@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 
 const videoProvider = vi.hoisted(() => ({
   generate: vi.fn(async () => ({ status: 'queued' as const, providerJobId: 'video-provider-must-not-run' })),
@@ -91,6 +92,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (api?.server.listening) await new Promise<void>(resolve => api.server.close(() => resolve()))
+  api?.setRuleRepositoryForTests(undefined)
   vi.unstubAllEnvs()
 })
 
@@ -120,6 +122,9 @@ describe('video cost preflight over the real HTTP boundary', () => {
       stock: 1,
     })
     api.service.confirmProductFacts(workspaceId, product.id)
+    api.setRuleRepositoryForTests(await trustedPlatformRuleTestRepository(workspaceId, 'taobao'))
+    vi.stubEnv('PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://rules.example.com/platform-rule-manifest.json')
+    vi.stubEnv('PLATFORM_RULE_SYNC_SIGNING_SECRET', 'video-cost-preflight-signing-secret')
     await api.grantCreativePointsForTests(workspaceId)
     api.grantContinuousFeatureEntitlementForTests(workspaceId)
 
@@ -162,4 +167,21 @@ describe('video cost preflight over the real HTTP boundary', () => {
     expect(after.balance_cny).toBe(before.balance_cny)
     expect(after.action_entitlement).toEqual(before.action_entitlement)
   })
+})
+
+
+it('rejects fabricated and cross-workspace candidate video sources before calling the relay', async () => {
+  vi.stubEnv('NODE_ENV', 'test')
+  const workspaceId = `ws_video_candidate_${Date.now()}`
+  const token = `candidate-token-${Date.now()}`
+  const actorId = 'candidate-video-owner'
+  vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ [token]: { workspaces: [workspaceId], actor_id: actorId, roles: ['workspace_owner'] } }))
+  await api.workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'workspace_owner', status: 'active', invitedBy: 'test' })
+  const product = api.service.importProduct({ workspaceId: `${workspaceId}_other`, platform: 'jd', localProductKey: 'foreign-video', title: '其他工作区商品', stock: 1 })
+  const before = videoProvider.generate.mock.calls.length
+  for (const productId of ['missing-product', product.id]) {
+    const response = await callMcp(token, workspaceId, 'multimodal.video.request', { output: 'rendering', prompt: '展示商品', context_json: JSON.stringify({ candidateOnly: true, brand: null, product: { id: productId, version: '1' }, rules: [] }), idempotency_key: `candidate-${productId}` })
+    expect(response.body.error?.code).toBe('VIDEO_CANDIDATE_SOURCE_REQUIRED')
+  }
+  expect(videoProvider.generate.mock.calls.length).toBe(before)
 })

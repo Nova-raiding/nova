@@ -1,0 +1,29 @@
+[
+  {
+    "id": "task_eLlMuZxQWdhf4iW2MGQYJSkN2gO1lToD",
+    "http_status": 200,
+    "status": "FAILURE",
+    "reason": "task failed, code: InvalidParameter, message: Field required: input.media.0.url & Input should be 'first_frame': input.media.0.type",
+    "quota": 0,
+    "upstream_task_id": "59b84347-d662-43b6-893d-7a821d5710d6",
+    "upstream_request_id": "2a9c68ff-8370-97a9-8e06-77693b6c643c"
+  },
+  {
+    "id": "task_XKkFvYprL62JemrykLCCAIdBlPTjTD8C",
+    "http_status": 200,
+    "status": "FAILURE",
+    "reason": "task failed, code: InvalidParameter, message: Field required: input.media.0.url & Input should be 'first_frame': input.media.0.type",
+    "quota": 0,
+    "upstream_task_id": "ff854d6d-68ce-47c2-ae1e-fe3da2d7b5f9",
+    "upstream_request_id": "48bc8bb6-fa2d-90ff-aecd-01d5f4713313"
+  },
+  {
+    "id": "task_VsklbpxCQ7iEEPzT3sgrdu8G3eJ26vEW",
+    "http_status": 200,
+    "status": "FAILURE",
+    "reason": "task failed, code: InvalidParameter, message: Field required: input.media.0.url & Input should be 'first_frame': input.media.0.type",
+    "quota": 0,
+    "upstream_task_id": "3175e67a-39bd-4191-a596-8cfab3fad894",
+    "upstream_request_id": "6dc84813-8ec5-9601-89af-c6ecc05874af"
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "runId": "38292313-419e-467e-b076-eba41c44ff91",
+  "postgresVersion": "17.11",
+  "filesPassed": 6,
+  "filesExpected": 6,
+  "testsPassed": 8,
+  "testsExpected": 8,
+  "testsSkipped": 0,
+  "runtimeErrors": 0,
+  "runnerSha256": "a8d88d1cb9cc2220d9f2bb7ccee80373a79a6b11b04062d53f1834d70c624e8c",
+  "resultSha256": "f7e75954fc4db0dcf7a3ca6c9ca1798cce52250b5056c4075edcae6e71f26127",
+  "vitestReportSha256": "9d5d7ee1b5ead93c1bba160f0678fc1a600aa5f52b260cd75bd5f12a26fecee0",
+  "postDisposalExactIdInspect": {
+    "exitCode": 1,
+    "postgresId": "4f56d7610c09fa26c7424d90cdddb5e784f7d0caa1d8c914f85bafe577aba336",
+    "redisId": "a34356ed5ea74c67bbbf8b8b899618aca98633bd6dc4b436441a2be94f9dd7a9",
+    "stderr": "error: no such object: 4f56d7610c09fa26c7424d90cdddb5e784f7d0caa1d8c914f85bafe577aba336\nerror: no such object: a34356ed5ea74c67bbbf8b8b899618aca98633bd6dc4b436441a2be94f9dd7a9",
+    "conclusion": "Both run-owned auto-remove containers are absent after exact-ID disposal; no shared container was inspected."
+  },
+  "scopeNote": "Repository, RLS, migration, and redrive database acceptance only. This report does not independently prove the ChatGPT plugin, live OIDC HTTP, desktop UI, or commercial model flow."
+}

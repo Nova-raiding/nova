@@ -38,6 +38,21 @@ export interface AuthenticityEvidence {
   findings: DeliveryFinding[];
 }
 
+export interface DeliveryGateCheck {
+  status: DeliveryEvidenceStatus;
+  reason: string;
+  evidenceRef?: string;
+}
+
+export interface DeliveryEvidenceGate {
+  status: DeliveryEvidenceStatus;
+  authenticityGate: DeliveryGateCheck;
+  realRender: DeliveryGateCheck;
+  ocr: DeliveryGateCheck;
+  humanAttestation: DeliveryGateCheck;
+  bundleHash: DeliveryGateCheck;
+}
+
 export interface DeliveryReadiness {
   generatedAt: string;
   status: DeliveryEvidenceStatus;
@@ -46,6 +61,7 @@ export interface DeliveryReadiness {
     bundles: DeliveryEvidenceStatus;
     authenticity: DeliveryEvidenceStatus;
   };
+  gate: DeliveryEvidenceGate;
   mappingPreflights: MappingPreflightEvidence[];
   bundles: BundleVerificationEvidence[];
   authenticity: AuthenticityEvidence[];
@@ -65,13 +81,15 @@ const mappingEvidence = (value: unknown): value is MappingPreflightEvidence => c
 const bundleVerification = (value: unknown): value is { valid: boolean; manifestHash: string; artifactSha256: string } | undefined => value === undefined || (object(value) && typeof value.valid === "boolean" && text(value.manifestHash) && text(value.artifactSha256));
 const bundleEvidence = (value: unknown): value is BundleVerificationEvidence => commonEvidence(value) && text(value.taskId) && text(value.productId) && bundleVerification(value.verification);
 const authenticityEvidence = (value: unknown): value is AuthenticityEvidence => commonEvidence(value) && text(value.jobId) && text(value.productId);
+const gateCheck = (value: unknown): value is DeliveryGateCheck => object(value) && status(value.status) && text(value.reason) && (value.evidenceRef === undefined || text(value.evidenceRef));
+const deliveryGate = (value: unknown): value is DeliveryEvidenceGate => object(value) && status(value.status) && gateCheck(value.authenticityGate) && gateCheck(value.realRender) && gateCheck(value.ocr) && gateCheck(value.humanAttestation) && gateCheck(value.bundleHash);
 
 export function parseDeliveryReadiness(value: unknown): DeliveryReadiness | null {
   if (value === null) return null;
   if (!object(value) || !text(value.generatedAt) || !status(value.status) || !object(value.dimensions))
     throw new Error("交付治理接口返回了无效响应（状态或时间）");
   const dimensions = value.dimensions;
-  if (!status(dimensions.mapping) || !status(dimensions.bundles) || !status(dimensions.authenticity))
+  if (!status(dimensions.mapping) || !status(dimensions.bundles) || !status(dimensions.authenticity) || !deliveryGate(value.gate))
     throw new Error("交付治理接口返回了无效响应（dimensions）");
   if (!Array.isArray(value.mappingPreflights) || !value.mappingPreflights.every(mappingEvidence))
     throw new Error("交付治理接口返回了无效响应（mappingPreflights）");

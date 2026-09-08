@@ -2,9 +2,9 @@
 
 日期：2026-08-26
 
-> 当前校正（2026-08-30）：本地 Docker API 已实际读取到业务 relay 地址、密钥和五类模型配置，且本地 healthz 显示模型配置就绪；这不等于 Codex App 宿主 provider 已切换，也不等于正式生产成本结算和发布证据已完成。当前宿主 `~/.codex/config.toml` 的 `model_provider` 仍需与其 provider section 对齐，生产环境仍必须提供正式配置、签名证据和 settled cost receipt。
+> 当前校正（2026-09-06）：本地 Docker API 已实际读取到业务 relay 地址、密钥和五类模型配置；用户级 `~/.codex/config.toml` 已将宿主 provider 对齐为 `damai_relay`，模型为真实目录中的 `glm-5.2`。这不等于正式生产成本结算和发布证据已完成，生产环境仍必须提供正式配置、签名证据和 settled cost receipt。
 
-> 实际协议探测（2026-08-30）：中转站 `/v1/models` 将 `glm-5.2` 标记为支持 `openai-response`，但使用 Keychain 中的中转凭据发送最小标准 `/v1/responses` 请求时返回 `500 convert_request_failed`（`not implemented`）。因此本机已保留 `damai_relay` provider section，但没有切换宿主顶层 `model_provider`；在供应商实现 Responses 转换并完成真实回归前，不得把宿主 relay 标记为可用。
+> 实际协议探测（2026-09-06）：中转站 `/v1/models` 返回 `glm-5.2`（标准 `openai` 能力标记），使用 Keychain 中的中转凭据发送最小标准 `/v1/responses` 请求返回 HTTP 200，并带 usage。Codex CLI 使用同一配置完成最小真实对话；ChatGPT 桌面端完全重启后读取到 `glm-5.2 (大麦中转)`。配置命令同时写入仅包含该已验证模型的本地 `model_catalog_json` 快照，避免中转站缺少 Codex 专用 `models[]` 镜像时产生刷新警告。
 
 > 2026-08-31 真实业务 relay 探测：`/chat/completions` 的 text 与 OCR 均返回 HTTP 200，并取得 provider request ID、usage 和 pricing snapshot 成本证据；image、image_edit、video 按脚本的成本保护保持 `not_run_cost_guard`，因此五模态仍不能标记为完整通过。
 
@@ -113,8 +113,8 @@ VIDEO_MODEL=REPLACE_WITH_VIDEO_MODEL
 
 ## 目前还缺什么
 
-当前机器的 Codex 用户配置存在 `model_provider = "openai"`，但没有对应的 `[model_providers.openai]`；实际可见的是其他 provider section，因此宿主校验失败。与此同时，业务 relay 的本地容器配置已经就绪，但宿主进程不会自动继承 Docker Compose 环境。需要将宿主 `model_provider`、对应 provider section 和 `env_key` 对齐，并在正式环境提供 HTTPS 中转站、Responses API 兼容证明、Codex 兼容模型 ID、业务五模态模型 ID，以及可核验的成本结算回执。
+宿主 provider 和业务 relay 已完成本机配置与真实最小请求验证。中转站仍可补充 Codex 目录兼容的 `models[]` 镜像；在此之前，安装脚本使用本地快照保持宿主目录稳定。正式环境仍必须提供 HTTPS 中转站、五模态模型 ID、签名能力证据和可核验的成本结算回执。
 
-## 2026-08-31 当前环境复核
+## 2026-09-06 当前环境复核
 
-执行 `npm run codex:relay:validate` 按 fail-closed 规则失败，缺少宿主 provider section/base URL/`wire_api=responses`/`env_key`，以及业务 relay URL、Key 和五类模型 ID。该失败是预期的安全阻断，不能迁移到 `doc/done`；未执行真实 canary，也未生成伪造的模型成本证据。
+执行 `npm run codex:relay:validate` 通过：`host_provider=damai_relay`、`host_endpoint=ai.wormholexyz.xyz`、`business_relay=ai.wormholexyz.xyz`。最小 `/v1/responses` 和 Codex CLI 对话均返回成功；正式五模态生产能力仍以服务端创意点、成本和发布证据门禁为准。

@@ -1,0 +1,68 @@
+
+> merchant-marketing-codex@0.1.1 build:ops-console
+> npm run build --workspace merchant-ops-console
+
+
+> merchant-ops-console@0.1.0 build
+> tsc -b && vite build
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 3212 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                     3.13 kB │ gzip:   0.88 kB
+dist/assets/antd-runtime-B5BXDqMa.css               2.98 kB │ gzip:   1.13 kB
+dist/assets/index-CUrHIguO.css                     17.70 kB │ gzip:   4.34 kB
+dist/assets/antd-row-BL1WRQpn.js                    0.06 kB │ gzip:   0.07 kB
+dist/assets/antd-button-BNF1kcme.js                 0.06 kB │ gzip:   0.08 kB
+dist/assets/react-CznXPbDH.js                       0.43 kB │ gzip:   0.30 kB
+dist/assets/rolldown-runtime-CbXtAM7H.js            0.58 kB │ gzip:   0.36 kB
+dist/assets/modelReadiness-DQTR_EiA.js              0.60 kB │ gzip:   0.41 kB
+dist/assets/antd-modal-Cv8Jq8Fx.js                  1.38 kB │ gzip:   0.75 kB
+dist/assets/antd-layout-Bfq6y6Qc.js                 1.55 kB │ gzip:   0.81 kB
+dist/assets/antd-flex-lvTMAemD.js                   2.08 kB │ gzip:   0.99 kB
+dist/assets/antd-col-C_kNbA1T.js                    2.74 kB │ gzip:   1.42 kB
+dist/assets/antd-statistic-CN3vljwX.js              4.14 kB │ gzip:   1.92 kB
+dist/assets/antd-divider-REcPrfl1.js                4.59 kB │ gzip:   1.75 kB
+dist/assets/antd-runtime-jtEwEp76.js                5.11 kB │ gzip:   2.24 kB
+dist/assets/antd-config-provider-DhJDKSob.js        5.18 kB │ gzip:   2.21 kB
+dist/assets/StoragePage-DFbYV-nB.js                 6.44 kB │ gzip:   2.83 kB
+dist/assets/antd-timeline-ByZyIbE5.js               6.63 kB │ gzip:   2.53 kB
+dist/assets/antd-switch-ZDYOg5jx.js                 7.50 kB │ gzip:   2.61 kB
+dist/assets/antd-checkbox-DoNvoSRY.js               7.54 kB │ gzip:   3.14 kB
+dist/assets/antd-descriptions-ByCpc6NT.js           7.87 kB │ gzip:   2.79 kB
+dist/assets/antd-tag-BkE95Q6H.js                    8.50 kB │ gzip:   3.32 kB
+dist/assets/antd-alert--GAh5lpF.js                  8.67 kB │ gzip:   3.37 kB
+dist/assets/antd-segmented-BhxcnL3s.js              9.24 kB │ gzip:   3.53 kB
+dist/assets/ModelsPage-2dk54ov8.js                 10.21 kB │ gzip:   3.92 kB
+dist/assets/antd-radio-2vWaTFj4.js                 10.94 kB │ gzip:   3.71 kB
+dist/assets/RulesPage-DpEnQ4Hy.js                  11.46 kB │ gzip:   4.65 kB
+dist/assets/antd-drawer-nyOOGbS5.js                14.33 kB │ gzip:   5.53 kB
+dist/assets/KnowledgePage-9a2nXslS.js              15.27 kB │ gzip:   5.17 kB
+dist/assets/CommercialReadinessPanel-C7D-qoND.js   15.60 kB │ gzip:   4.81 kB
+dist/assets/MembersPage-C4FMn6R1.js                16.35 kB │ gzip:   6.16 kB
+dist/assets/AuditPage-DPNkgmq3.js                  16.73 kB │ gzip:   5.78 kB
+dist/assets/antd-typography-DUcBaEEB.js            17.23 kB │ gzip:   6.80 kB
+dist/assets/IncidentsRoute-B0GuOcji.js             17.38 kB │ gzip:   5.84 kB
+dist/assets/FeatureFlagsRoute-Dp79u3NZ.js          18.62 kB │ gzip:   6.91 kB
+dist/assets/antd-input-number-p8Eb3o5w.js          19.60 kB │ gzip:   7.12 kB
+dist/assets/OverviewPage-DFEJN0g9.js               22.87 kB │ gzip:   8.09 kB
+dist/assets/SupportRoute-DWf-Iy0J.js               24.50 kB │ gzip:   8.44 kB
+dist/assets/antd-form-BY7Ac67c.js                  26.56 kB │ gzip:  10.32 kB
+dist/assets/antd-steps-C3QZOOCP.js                 29.96 kB │ gzip:   8.58 kB
+dist/assets/antd-result-CL6NfCGF.js                33.84 kB │ gzip:  10.41 kB
+dist/assets/antd-input-DEYkoYOm.js                 43.32 kB │ gzip:  13.15 kB
+dist/assets/FinancePage-C8Jkx9Kn.js                45.42 kB │ gzip:  12.15 kB
+dist/assets/StoresPage-ygKiGvWb.js                 49.04 kB │ gzip:  14.69 kB
+dist/assets/antd-icons-DKvCnXwP.js                 53.61 kB │ gzip:  12.08 kB
+dist/assets/antd-dropdown-DQE_gHMb.js              58.70 kB │ gzip:  17.28 kB
+dist/assets/antd-app-DA9OGGOB.js                   65.63 kB │ gzip:  21.33 kB
+dist/assets/TasksPage-CyikpUQE.js                  66.82 kB │ gzip:  19.52 kB
+dist/assets/antd-card-BUBWGrbs.js                  74.28 kB │ gzip:  23.07 kB
+dist/assets/antd-list-x65YnW-K.js                 105.07 kB │ gzip:  33.72 kB
+dist/assets/antd-table-nMPm07Wo.js                133.95 kB │ gzip:  42.80 kB
+dist/assets/index-DYlOmlV6.js                     189.86 kB │ gzip:  56.80 kB
+dist/assets/antd-_util-COzEKQu4.js                404.38 kB │ gzip: 135.24 kB
+
+✓ built in 654ms

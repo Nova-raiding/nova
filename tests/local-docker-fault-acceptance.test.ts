@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { LOCAL_DOCKER_REQUIRED_SERVICES, validateLocalFaultEvidence } from './fault-acceptance.js'
+import { requireIsolatedLocalRuntime, type LocalRuntimeTestContext } from './local-runtime-test-safety.js'
 
-const compose = ['compose', '-p', 'local', '--env-file', '.env', '-f', 'infra/local/docker-compose.yml']
+let runtime: LocalRuntimeTestContext
+beforeEach(() => { runtime = requireIsolatedLocalRuntime() })
 const redisService = 'redis'
-const healthUrl = 'http://127.0.0.1:8787/healthz'
 
 type HealthEnvelope = {
   request_id?: string
@@ -17,7 +18,8 @@ type RuntimeService = { service: string; state: string; health: string }
 type ComposeContainer = { Service?: string; State?: string; Health?: string }
 
 function docker(args: string[]) {
-  return execFileSync('docker', [...compose, ...args], {
+  if (args[0] === 'stop' || args[0] === 'start') runtime.assertIsolated()
+  return execFileSync('docker', [...runtime.dockerArgs, ...runtime.composeArgs, ...args], {
     cwd: process.cwd(),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -46,7 +48,7 @@ async function waitForHealthyRuntime(timeoutMs = 15_000): Promise<RuntimeService
 }
 
 async function health(): Promise<{ status: number; body: HealthEnvelope }> {
-  const response = await fetch(healthUrl, { headers: { 'x-request-id': 'local-fault-acceptance' } })
+  const response = await fetch(`${runtime.apiBaseUrl}/healthz`, { redirect: 'error', signal: AbortSignal.timeout(10_000), headers: { 'x-request-id': `runtime-fault-${runtime.runId}` } })
   return { status: response.status, body: await response.json() as HealthEnvelope }
 }
 
@@ -108,7 +110,7 @@ describe('local Docker fault acceptance', () => {
       }
       expect(validateLocalFaultEvidence(evidence)).toEqual([])
     } finally {
-      // Restore the shared local stack even if an assertion or probe fails.
+      // Restore only the re-attested isolated target, never the shared stack.
       docker(['start', redisService])
       await waitFor(result => result.status === 200 && result.body.data?.redis?.ready === true)
     }

@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "response": {
+    "request_id": "req_1f71f87a-6c2b-4da7-b2bb-c3bff450eeb7",
+    "trace_id": "req_1f71f87a-6c2b-4da7-b2bb-c3bff450eeb7",
+    "workspace_id": "ws_demo",
+    "data": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "scope": "workspace",
+        "selection": null,
+        "products": [],
+        "product_actions": [],
+        "total": 0,
+        "limit": 50,
+        "offset": 0,
+        "emptyState": {
+          "title": "暂时没有找到商品",
+          "reason": "当前工作区还没有可见商品，或筛选条件没有匹配结果",
+          "nextActions": [
+            "选择具体店铺后重新查询",
+            "同步或导入商品"
+          ]
+        }
+      }
+    },
+    "warnings": [],
+    "next_actions": [],
+    "error": null
+  }
+}

@@ -61,16 +61,16 @@ const READ_ONLY_METHODS = new Set([
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
   'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'workspace.data.export.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
-  'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.crm.export',
+  'ops.support.tickets.list', 'ops.support.ticket.get',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
   'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify',
   'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
-  'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
+  'rule.list', 'rule.sync.status', 'rule.sync.now', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
-  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list', 'automation.scan',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list', 'automation.scan',
 ])
 // Generated from packages/contracts COMMERCIAL_MCP_FOUNDATION_POLICIES.
 // Keep this standalone snapshot exact: bridge contract tests compare every
@@ -104,11 +104,17 @@ const COMMERCIAL_DISABLED_METHODS = new Set([
   'content.generate',
   'content.codex.prepare', 'content.codex.commit', 'content.review',
   'content.modify',
-  'multimodal.generate', 'multimodal.video.request',
+  'multimodal.generate',
   'workspace.commercial.get', 'workspace.commercial.update',
   'workspace.usage.get', 'billing.usage.consume', 'billing.usage.refund',
-  'billing.refund',
+  'billing.refund', 'multimodal.video.request',
 ])
+// Explicit local relay acceptance only; server authorization and cost gates still apply.
+if (process.env.MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES === 'true' && !['production', 'staging', 'preview'].includes(deploymentEnvironment())) {
+  try {
+    if (['127.0.0.1', 'localhost', '[::1]'].includes(new URL(process.env.MERCHANT_MCP_BASE_URL ?? '').hostname)) COMMERCIAL_DISABLED_METHODS.delete('multimodal.video.request')
+  } catch { /* Missing connection stays closed. */ }
+}
 const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
@@ -271,7 +277,7 @@ const METHODS = {
   },
   'commercial.order.create': {
     description: '基于服务端当前批准且可执行的 SKU 创建 V2 购买、升级或创意点包订单；金额、币种、点数和权益只能由服务端快照决定。',
-    inputSchema: { type: 'object', properties: { purchase_kind: { type: 'string', enum: ['purchase', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['purchase_kind', 'sku_code', 'idempotency_key', 'reason'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { purchase_kind: { type: 'string', enum: ['purchase', 'onboarding_once', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, required: ['purchase_kind', 'sku_code', 'idempotency_key', 'reason'], additionalProperties: false },
   },
   'commercial.order.payment.get': {
     description: '查询当前工作区 V2 订单支付与权益状态；仅服务端订单事实有效。只读。',
@@ -293,13 +299,12 @@ const METHODS = {
   'ops.members.list': { description: '查看工作区成员和角色。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'ops.session': { description: '查看当前运营会话身份、角色和工作区授权范围；不返回凭据。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'ops.workspaces.list': { description: '查看当前运营者授权工作区的汇总。只读。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  'ops.support.tickets.list': { description: '查看一个授权工作区内的有界客服工单队列。只读。', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, assignee_id: boundedString(256), customer_id: boundedString(256), query: boundedString(200), cursor_json: boundedString(2000), limit: pageLimit100 }, additionalProperties: false } },
+  'ops.support.tickets.list': { description: '查看一个授权工作区内的有界客服工单队列。只读。', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, sla_state: { type: 'string', enum: ['on_track', 'at_risk', 'breached', 'met'] }, assignee_id: boundedString(256), customer_id: boundedString(256), query: boundedString(200), cursor_json: boundedString(2000), limit: pageLimit100 }, additionalProperties: false } },
   'ops.support.ticket.get': { description: '查看一张客服工单和不可变事件历史。只读。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36) }, required: ['ticket_id'], additionalProperties: false } },
   'ops.support.ticket.create': { description: '创建带幂等键的客服工单。', inputSchema: { type: 'object', properties: { subject: boundedString(200, 3), description: boundedString(10000), priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, customer_id: boundedString(256), customer_name: boundedString(200), customer_email: boundedString(320), related_order_id: boundedString(256), related_task_id: boundedString(256), tags_json: boundedString(2000), idempotency_key: idempotencyKeyProperty }, required: ['subject', 'description', 'priority', 'customer_id', 'customer_name', 'idempotency_key'], additionalProperties: false } },
   'ops.support.ticket.assign': { description: '按 revision 和幂等键分配客服工单。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), assignee_id: boundedString(256), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['ticket_id', 'assignee_id', 'expected_revision', 'idempotency_key'], additionalProperties: false } },
   'ops.support.ticket.transition': { description: '按受控生命周期流转工单并记录原因。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, reason: boundedString(1000, 3), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['ticket_id', 'status', 'reason', 'expected_revision', 'idempotency_key'], additionalProperties: false } },
   'ops.support.ticket.comment': { description: '向工单追加内部或客户可见评论。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), body: boundedString(10000), visibility: { type: 'string', enum: ['internal', 'customer'] }, expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['ticket_id', 'body', 'visibility', 'expected_revision', 'idempotency_key'], additionalProperties: false } },
-  'ops.support.crm.export': { description: '导出最多 5000 条脱敏 CRM 投影，不含内部评论。只读。', inputSchema: { type: 'object', properties: { limit: exportLimit5000 }, additionalProperties: false } },
   'ops.incidents.list': { description: '查看有界事故列表。只读。', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['investigating', 'identified', 'monitoring', 'resolved'] }, severity: { type: 'string', enum: ['sev1', 'sev2', 'sev3', 'sev4'] }, limit: pageLimit100, cursor: boundedString(1000) }, additionalProperties: false } },
   'ops.incident.get': { description: '查看一个事故。只读。', inputSchema: { type: 'object', properties: { incident_id: boundedString(160) }, required: ['incident_id'], additionalProperties: false } },
   'ops.incident.timeline': { description: '查看事故的不可变时间线。只读。', inputSchema: { type: 'object', properties: { incident_id: boundedString(160), limit: pageLimit200, cursor: boundedString(1000) }, required: ['incident_id'], additionalProperties: false } },
@@ -500,8 +505,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { product_id: { type: 'string' } }, required: ['product_id'], additionalProperties: false },
   },
   'catalog.image.generate': {
-    description: '根据已确认商品事实生成商品主图变体；用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。',
-    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '已上传且通过扫描/权益/AI 修改检查的商品图片素材 ID 数组 JSON；未绑定模式必填。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
+    description: '根据已确认商品事实生成商品主图变体；用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。独立上传图片生成时不要先调用 asset.parse，也不要把自动解析出的品类当作商品事实；仅使用用户消息中的描述和图片本身；用户已要求制作时直接生成未绑定候选，不重复询问商用权或 AI 修改许可，不自动批准素材权益。',
+    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已通过可信安全扫描的上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1024x3072', '1024x4096'], description: '单次画布尺寸；完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
   },
   'catalog.image.retry': {
     description: '安全重试尚未启动 Provider 且没有候选或对账证据的图片任务。',
@@ -530,6 +535,10 @@ const METHODS = {
   'rule.sync.status': {
     description: '查看六个平台规则来源、版本新鲜度和可信清单配置状态。',
     inputSchema: { type: 'object', properties: { interval_hours: { type: 'string' } }, additionalProperties: false },
+  },
+  'rule.sync.now': {
+    description: '立即检查并同步已签名的平台规则清单；未配置可信清单时会明确阻断。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'rule.history': {
     description: '查看规则包的不可变历史版本。',
@@ -813,6 +822,10 @@ const METHODS = {
     description: '录入平台、品类、品牌、店铺或大促节点规则，形成可追溯的规则版本。',
     inputSchema: { type: 'object', properties: { name: { type: 'string' }, content: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, scope_value: { type: 'string' }, platform: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' }, store: { type: 'string' }, campaign: { type: 'string' }, source_kind: { type: 'string', enum: ['official', 'internal', 'merchant', 'observed', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, version: { type: 'string' }, severity: { type: 'string', enum: ['info', 'warning', 'error'] }, action: { type: 'string', enum: ['warn', 'block', 'require_confirmation', 'suggest'] }, owner_id: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'inactive', 'archived'] }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, tags_json: { type: 'string' } }, required: ['name', 'content', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'version', 'status'], additionalProperties: false },
   },
+  'knowledge.rule.update': {
+    description: '更新工作区规则版本、状态、严重级别或命中动作，并保留审计记录。',
+    inputSchema: { type: 'object', properties: { rule_id: { type: 'string' }, name: { type: 'string' }, content: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'inactive', 'archived', 'expired'] }, severity: { type: 'string', enum: ['info', 'warning', 'error'] }, action: { type: 'string', enum: ['warn', 'block', 'require_confirmation', 'suggest'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, tags_json: { type: 'string' } }, required: ['rule_id'], additionalProperties: false },
+  },
   'knowledge.rule.list': {
     description: '查询当前可用的平台、品类、品牌、店铺和大促规则。只读。',
     inputSchema: { type: 'object', properties: { scope: { type: 'string' }, scope_value: { type: 'string' }, status: { type: 'string' }, as_of: { type: 'string' }, platform: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' }, store: { type: 'string' }, campaign: { type: 'string' }, text: { type: 'string' } }, additionalProperties: false },
@@ -828,6 +841,14 @@ const METHODS = {
   'knowledge.asset.list': {
     description: '查询当前工作区的品牌资产和客户资产。只读。',
     inputSchema: { type: 'object', properties: { kind: { type: 'string', enum: ['brand', 'customer'] }, text: { type: 'string' }, tags_json: { type: 'string' } }, additionalProperties: false },
+  },
+  'knowledge.brand.preference.get': {
+    description: '读取当前工作区的品牌语气、风格和表达偏好。只读。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  'knowledge.brand.preference.update': {
+    description: '保存当前工作区的品牌偏好版本，并保留修改人和审计记录。',
+    inputSchema: { type: 'object', properties: { preferences_json: { type: 'string', contentMediaType: 'application/json', jsonShape: 'object' }, version: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'archived'] }, source: { type: 'string' }, expected_revision: { type: 'string' } }, required: ['preferences_json', 'version'], additionalProperties: false },
   },
   'knowledge.feedback.record': {
     description: '记录客户反馈或平台驳回，并生成待确认的规范学习建议。',
@@ -1114,10 +1135,28 @@ function detailDecisionSummary(method, result) {
 }
 
 function userFacingToolText(method, result) {
+  const points = result && typeof result === 'object' && !Array.isArray(result) && result.creative_points && typeof result.creative_points === 'object'
+    ? result.creative_points
+    : undefined
+  const pointsText = points
+    ? `创意点：可用 ${points.balance_state === 'known' && Number.isSafeInteger(points.available_points) ? points.available_points : '未知'}；本次预估 ${Number.isSafeInteger(points.quoted_points) ? points.quoted_points : '未知'}；已消耗 ${Number.isSafeInteger(points.consumed_points) ? points.consumed_points : '未知'}；结算 ${typeof points.settlement_status === 'string' ? points.settlement_status : '待确认'}`
+    : ''
   const decisionSummary = detailDecisionSummary(method, result)
   if (decisionSummary) return decisionSummary
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
+  }
+  if (method === 'catalog.search' && Array.isArray(result.products)) {
+    if (!result.products.length) return '当前查询未找到商品，请调整商品名称或 SKU 条件。'
+    const skuCount = result.products.reduce((count, product) => count + (Array.isArray(product.skus) ? product.skus.length : 0), 0)
+    return `已读取 ${result.products.length} 个商品${skuCount ? `，包含 ${skuCount} 个 SKU` : ''}。`
+  }
+  if (method === 'multimodal.video.request' || method === 'multimodal.video.get') {
+    const video = result.rendering && typeof result.rendering === 'object' ? result.rendering : result
+    if (video.status === 'queued') return '视频正在生成，无需重新提交。'
+    if (video.status === 'completed') return (video.archiveState ?? video.archive_state) === 'archived'
+      ? '视频已生成并通过自动安全检查，可下载查看。'
+      : '视频已生成，正在自动检查文件。'
   }
   const merchantStatus = result.merchant_status && typeof result.merchant_status === 'object' ? result.merchant_status : undefined
   if (merchantStatus) {
@@ -1133,11 +1172,11 @@ function userFacingToolText(method, result) {
     return [summary, question].filter(Boolean).join('\n')
   }
   if (method === 'catalog.image.get' && result.candidate_state) {
-    if (result.candidate_state.presentation === 'component') return '主图候选已准备好。'
-    if (typeof result.question === 'string' && result.question.trim()) return result.question.trim()
-    return typeof result.completed_summary === 'string' && result.completed_summary.trim()
+    if (result.candidate_state.presentation === 'component') return ['主图候选已准备好。', pointsText].filter(Boolean).join('\n')
+    if (typeof result.question === 'string' && result.question.trim()) return [result.question.trim(), pointsText].filter(Boolean).join('\n')
+    return [typeof result.completed_summary === 'string' && result.completed_summary.trim()
       ? result.completed_summary.trim()
-      : '主图候选仍在自动检查，通过后会继续，无需操作。'
+      : '主图候选仍在自动检查，通过后会继续，无需操作。', pointsText].filter(Boolean).join('\n')
   }
   const explicitContext = method === 'merchant.start' && result.ui && typeof result.ui === 'object' && !Array.isArray(result.ui)
     ? result.ui.recognized_context
@@ -1168,10 +1207,13 @@ function userFacingToolText(method, result) {
   const attachmentHint = Array.isArray(result.images) && result.images.length
     ? `已生成 ${result.images.length} 个图片附件。`
     : ''
-  return [pendingSummary, attachmentHint, uniqueActions.length ? `下一步：${uniqueActions.join('；')}` : ''].filter(Boolean).join('\n')
+  return [pendingSummary, attachmentHint, pointsText, uniqueActions.length ? `下一步：${uniqueActions.join('；')}` : ''].filter(Boolean).join('\n')
 }
 
 function userFacingErrorText(code, details) {
+  if (code === 'MCP_CONFIGURATION_REQUIRED') return '插件连接配置尚未加载，本次未向后端发送请求。请先完成连接配置；若配置刚更新，请重新加载插件连接。已有图片和视频无需重新上传。'
+  if (code === 'STORE_SELECTION_REQUIRED') return '还没有选定店铺。先调用 workspace.health 查看可用店铺，或明确提供 platform + account_id；已导入的商品和 SKU 不会丢失。'
+  if (code === 'MODEL_PROVIDER_REQUEST_FAILED' && /input\.media|first_frame/u.test(String(details?.provider_error_summary ?? ''))) return '视频尚未生成：视频服务未能正确接收参考图，需修复中转渠道的首帧映射。原图已保留，无需重新上传。'
   const retryable = new Set(['API_STARTING', 'API_UNAVAILABLE', 'RATE_LIMITED', 'MCP_GATEWAY_ERROR'])
   if (code === 'INTERACTIVE_WRITE_DISABLED' || code === 'INTERACTIVE_CONFIRMATION_REQUIRED') {
     return '这一步需要你的明确确认。确认后可以继续，未执行任何写操作。'
@@ -1199,6 +1241,10 @@ function userFacingErrorText(code, details) {
     return '平台暂时无法确认本次生成结果，已安全停止。当前任务和已有产物已保留，没有重复调用、扣费或发布；平台恢复后可继续。'
   }
   if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次模型请求结果尚未确认，已安全停止。请先查询 Provider 状态或提交人工对账；在确认前不会重试、扣费或发布。'
+  if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
+    const reason = typeof details?.provider_error_summary === 'string' ? `（${details.provider_error_summary}）` : ''
+    return `图片模型请求被中转服务拒绝${reason}。未生成新图片、未重复扣费；请更换可用模型或稍后重试。`
+  }
   if (code === 'MCP_HTTPS_REQUIRED') return '当前服务的安全连接尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_STRICT_AUTH_REQUIRED') return '当前服务的安全鉴权尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'
   if (code === 'MCP_GATEWAY_ERROR' && typeof details?.safe_message === 'string') return details.safe_message
@@ -1215,6 +1261,20 @@ function userFacingErrorText(code, details) {
 }
 
 function toolErrorPresentation(method, args, code, details) {
+  if (code === 'MCP_CONFIGURATION_REQUIRED') {
+    const missing = Array.isArray(details?.missing) && details.missing.length
+      ? details.missing.join('、')
+      : '服务地址或工作区配置'
+    return {
+      text: `大麦连接配置未加载（缺少${missing}）。请重新加载插件连接或重启 ChatGPT；已保存的商品、SKU 和素材不会丢失。本次未向后端发送请求。`,
+      recovery: {
+        state: 'configuration_required',
+        user_action_required: true,
+        preserved: ['uploaded_assets', 'confirmed_facts', 'saved_products', 'saved_skus'],
+        resume_message: '继续',
+      },
+    }
+  }
   if (method === 'platform.connect' && code === 'NOT_CONFIGURED') {
     const platform = merchantPlatformLabel(args?.platform) || '当前平台'
     return {
@@ -1551,11 +1611,22 @@ function merchantConversationProjection(method, result, args = {}) {
     || String(currentStep.state ?? '').toLowerCase() === 'in_progress' && Number(explicitContext.attachment_count ?? 0) > 0
     || result?.automation?.asset_scan === 'automatic' && Number(explicitContext.attachment_count ?? 0) > 0
   )
+  // A read-only catalog/status intent must never be sent back to the upload
+  // step merely because the API's generic explicit-intent projection defaults
+  // to `provide-product`. Keep the conversation at store/product selection;
+  // the next turn can then select a concrete platform + account scope.
+  const readOnlyCatalogIntent = method === 'merchant.start'
+    && !scanning
+    && /(?:查看|查询|列出|目录|店铺状态|商品列表|库存|连接状态)/u.test(String(explicitContext.requested_goal ?? ''))
   const stage = scanning
     ? 'automatic_scan'
+    : readOnlyCatalogIntent
+      ? 'choose_product'
     : rawStage || (method === 'workspace.health' ? stores.length ? 'choose_store_or_product' : 'connect_store' : 'start')
   const workspaceUnavailable = String(result?.workspace?.status ?? '').toLowerCase() === 'disabled'
-  const action = firstMerchantAction(result)
+  const action = readOnlyCatalogIntent
+    ? { method: 'catalog.search', label: '选择店铺查看商品' }
+    : firstMerchantAction(result)
   const storeOptions = stores.map((store, index) => {
     const simulated = store.dataMode === 'fixture' || store.state === 'fixture'
     const status = simulated
@@ -1698,6 +1769,7 @@ function toolContent(method, result) {
   result = actionCards(method, result)
   if (method === 'asset.upload') {
     const status = assetScanStatus(result)
+    if (status !== 'blocked' && (result?.rights_status === 'rejected' || result?.rights_scope === 'unusable')) return [{ type: 'text', text: '这张图片的使用权益受限，请换用其他已授权图片。' }]
     if (status === 'clean' && result?.generation_continuation?.state === 'awaiting_confirmation') return [{ type: 'text', text: '图片已通过自动安全检查。请确认你有权将这张图片用于商业主图并允许 AI 编辑；确认后开始生成吗？' }]
     if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
     if (status === 'blocked') return [{ type: 'text', text: '这张图片暂时不能继续使用。素材已安全保留；平台会在你重新提交图片时自动复检，无需人工处理或提交扫描结果。' }]
@@ -1986,7 +2058,7 @@ async function confirmInteractiveWrites(args) {
 
 function baseUrl() {
   const value = configuredEnv('MERCHANT_MCP_BASE_URL') || (allowsLocalFixtureFallback() ? 'http://127.0.0.1:8790' : '')
-  if (!value) throw new Error('MERCHANT_MCP_BASE_URL is required; refusing to use the local fixture fallback unless MERCHANT_ALLOW_FIXTURE_FALLBACK=true')
+  if (!value) throw Object.assign(new Error('MCP configuration is missing'), { code: 'MCP_CONFIGURATION_REQUIRED', details: { operation_status: 'blocked', retryable: false, missing: ['MERCHANT_MCP_BASE_URL'] } })
   const parsed = new URL(value)
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('MERCHANT_MCP_BASE_URL must use http or https')
   if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') throw new Error('MERCHANT_MCP_BASE_URL must use https in production')
@@ -1996,7 +2068,7 @@ function baseUrl() {
 
 function workspaceId() {
   const value = configuredEnv('MERCHANT_WORKSPACE_ID') || loadWorkspaceBinding() || (allowsLocalFixtureFallback() ? 'ws_demo' : '')
-  if (!value) throw new Error('MERCHANT_WORKSPACE_ID is required; refusing to use ws_demo unless MERCHANT_ALLOW_FIXTURE_FALLBACK=true')
+  if (!value) throw Object.assign(new Error('MCP configuration is missing'), { code: 'MCP_CONFIGURATION_REQUIRED', details: { operation_status: 'blocked', retryable: false, missing: ['MERCHANT_WORKSPACE_ID'] } })
   return value
 }
 
@@ -2210,6 +2282,8 @@ async function callRemote(method, params) {
 
 function assetScanStatus(value) {
   const status = String(value?.scanStatus ?? value?.scan_status ?? '').trim().toLowerCase()
+  if (status === 'blocked') return status
+  if (value?.display?.primaryStatus === 'awaiting_scan' || value?.display?.primary_status === 'awaiting_scan') return 'quarantined'
   if (status === 'clean' || status === 'blocked' || status === 'quarantined') return status
   return 'quarantined'
 }
@@ -2260,13 +2334,39 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
   const imageUrls = deliverable && rawImageUrls.length === images.length ? rawImageUrls : []
   const downloadUrls = deliverable && rawDownloadUrls.length === images.length ? rawDownloadUrls : imageUrls
   const multiple = images.length > 1
-  const errorCode = typeof job.errorCode === 'string' ? job.errorCode : typeof job.error_code === 'string' ? job.error_code : ''
-  const reconciliationRequired = Boolean(job.reconciliationRequired ?? job.reconciliation_required) || errorCode === 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED'
-  const rawJobState = String(job.state ?? '').toLowerCase()
+  // The API keeps durable execution evidence at the response envelope level
+  // (`execution_state`, `reconciliation_required`) while the historical job
+  // snapshot lives under `job`. Read both locations. Without this fallback an
+  // outcome_unknown provider response was incorrectly rendered as an endless
+  // queued task, making users wait indefinitely.
+  const errorCode = typeof job.errorCode === 'string'
+    ? job.errorCode
+    : typeof job.error_code === 'string'
+      ? job.error_code
+      : typeof result.error_code === 'string' ? result.error_code : ''
+  const reconciliationRequired = Boolean(
+    job.reconciliationRequired
+      ?? job.reconciliation_required
+      ?? result.reconciliationRequired
+      ?? result.reconciliation_required,
+  ) || errorCode === 'IMAGE_ARTIFACT_RECONCILIATION_REQUIRED' || String(result.execution_state ?? '').toLowerCase() === 'outcome_unknown'
+  const rawJobState = String(job.state ?? result.state ?? '').toLowerCase()
+  const executionState = String(result.execution_state ?? job.executionState ?? job.execution_state ?? '').toLowerCase()
+  const archivePendingAfterExecution = executionState === 'completed' && !deliverable
+  const createdAtRaw = job.createdAt ?? job.created_at ?? result.created_at ?? result.createdAt
+  const createdAtMs = typeof createdAtRaw === 'string' ? Date.parse(createdAtRaw) : Number.NaN
+  const pollBudgetMs = 5 * 60 * 1000
+  const pollBudgetExceeded = Number.isFinite(createdAtMs)
+    && Date.now() - createdAtMs >= pollBudgetMs
+    && (rawJobState === 'queued' || rawJobState === 'processing' || rawJobState === 'running' || archivePendingAfterExecution)
   const candidateLifecycle = deliverable
     ? 'ready'
     : reconciliationRequired
       ? 'unknown'
+      : pollBudgetExceeded
+        ? 'unknown'
+      : archivePendingAfterExecution
+        ? 'processing'
       : rawJobState === 'failed'
         ? 'failed'
         : rawJobState === 'queued'
@@ -2295,6 +2395,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       recovery: {
         retryable: candidateLifecycle === 'failed',
         reconciliation_required: reconciliationRequired,
+        ...(pollBudgetExceeded ? { poll_budget_exhausted: true, poll_budget_seconds: 300 } : {}),
       },
     },
     completed_summary: multiple
@@ -2304,7 +2405,9 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         : candidateLifecycle === 'failed'
           ? '本次主图生成未完成，可以回到对话重新生成。'
           : candidateLifecycle === 'unknown'
-            ? '图片结果尚未确认，请先查询任务状态，不会自动重复生成。'
+            ? pollBudgetExceeded
+              ? '图片任务已超过 5 分钟仍未完成，已停止自动等待。请查询任务状态或稍后手动重试，不会自动重复生成。'
+              : '图片结果尚未确认，请先查询任务状态，不会自动重复生成。'
             : candidateLifecycle === 'queued'
               ? '图片任务已排队，完成后会继续，无需重复提交。'
             : '主图候选仍在自动检查，通过后会继续，无需操作。',
@@ -2340,6 +2443,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     ...((candidateLifecycle === 'queued' || candidateLifecycle === 'processing') && selectionJobId ? {
       poll_request: { job_id: selectionJobId, max_attempts: 4, initial_delay_ms: 750, max_delay_ms: 4000 },
     } : {}),
+    ...(pollBudgetExceeded && selectionJobId ? { poll_budget: { exhausted: true, max_wait_seconds: 300, job_id: selectionJobId } } : {}),
     ...(deliverable && requestedVisualRef ? { display_request: { visual_ref: requestedVisualRef } } : deliverable && typeof args?.job_id === 'string' && args.job_id.trim() ? { display_request: { job_id: args.job_id.trim() } } : {}),
     ...(imageUrls.length ? { image_urls: imageUrls, download_urls: downloadUrls, images } : images.length ? { images } : {}),
   }
@@ -2349,13 +2453,17 @@ function merchantAssetSummary(asset) {
   if (!asset || typeof asset !== 'object' || Array.isArray(asset)) return undefined
   const scanStatus = assetScanStatus(asset)
   const blocked = scanStatus === 'blocked'
+  const rightsStatus = typeof asset.rightsStatus === 'string' ? asset.rightsStatus : typeof asset.rights_status === 'string' ? asset.rights_status : undefined
+  const rightsScope = typeof asset.rightsScope === 'string' ? asset.rightsScope : typeof asset.rights_scope === 'string' ? asset.rights_scope : undefined
+  const rightsBlocked = rightsStatus === 'rejected' || rightsScope === 'unusable'
+  const rawReadiness = typeof asset.readiness?.status === 'string' ? asset.readiness.status : typeof asset.status === 'string' ? asset.status : undefined
   const display = asset.display && typeof asset.display === 'object' && !Array.isArray(asset.display)
     ? {
-        primary_status: typeof asset.display.primaryStatus === 'string' ? asset.display.primaryStatus : 'unknown',
-        label: typeof asset.display.label === 'string' ? asset.display.label : '当前暂不可用',
-        source_state: typeof asset.display.sourceState === 'string' ? asset.display.sourceState : undefined,
-        reasons: Array.isArray(asset.display.reasons) ? asset.display.reasons.filter(reason => typeof reason === 'string').map(sanitizeMerchantAction) : [],
-        next_action: asset.display.nextAction && typeof asset.display.nextAction === 'object' ? {
+        primary_status: blocked ? 'scan_blocked' : rightsBlocked ? 'rights_blocked' : scanStatus !== 'clean' ? 'awaiting_scan' : typeof asset.display.primaryStatus === 'string' ? asset.display.primaryStatus : 'unknown',
+        label: blocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : scanStatus !== 'clean' ? '正在安全检查' : typeof asset.display.label === 'string' ? asset.display.label : '当前暂不可用',
+        source_state: blocked || rightsBlocked ? 'blocked' : typeof asset.display.sourceState === 'string' ? asset.display.sourceState : undefined,
+        reasons: blocked || rightsBlocked ? [] : Array.isArray(asset.display.reasons) ? asset.display.reasons.filter(reason => typeof reason === 'string').map(sanitizeMerchantAction) : [],
+        next_action: scanStatus === 'clean' && !rightsBlocked && asset.display.nextAction && typeof asset.display.nextAction === 'object' ? {
           method: typeof asset.display.nextAction.method === 'string' ? asset.display.nextAction.method : undefined,
           label: typeof asset.display.nextAction.label === 'string' ? sanitizeMerchantAction(asset.display.nextAction.label) : undefined,
           allowed: asset.display.nextAction.allowed === true,
@@ -2370,10 +2478,11 @@ function merchantAssetSummary(asset) {
     created_at: typeof asset.createdAt === 'string' ? asset.createdAt : typeof asset.created_at === 'string' ? asset.created_at : undefined,
     source: typeof asset.source === 'string' ? asset.source : undefined,
     scan_status: scanStatus,
-    rights_status: typeof asset.rightsStatus === 'string' ? asset.rightsStatus : typeof asset.rights_status === 'string' ? asset.rights_status : undefined,
-    readiness_status: typeof asset.readiness?.status === 'string' ? asset.readiness.status : typeof asset.status === 'string' ? asset.status : undefined,
+    rights_status: rightsStatus,
+    rights_scope: rightsScope,
+    readiness_status: rightsBlocked || blocked && rawReadiness ? 'blocked' : rawReadiness,
     ...(display ? { display } : {}),
-    next_step: blocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : typeof asset.next_step === 'string' ? sanitizeMerchantAction(asset.next_step) : undefined,
+    next_step: blocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : rightsBlocked ? '这张图片的使用权益受限，请换用其他已授权图片' : typeof asset.next_step === 'string' ? sanitizeMerchantAction(asset.next_step) : undefined,
   }
 }
 
@@ -2382,13 +2491,62 @@ function merchantAssetStructuredContent(method, result) {
   if (method === 'asset.list') {
     const assets = Array.isArray(result.assets) ? result.assets.map(merchantAssetSummary).filter(Boolean) : []
     const assetActions = Array.isArray(result.asset_actions) ? result.asset_actions.map(action => {
-      const summary = merchantAssetSummary(action) ?? {}
-      const blocked = summary.scan_status === 'blocked' || summary.readiness_status === 'blocked'
-      return {
+      const currentAsset = assets.find(asset => asset.asset_id === action?.asset_id)
+      const actionSummary = merchantAssetSummary(action) ?? {}
+      // Merge only allowlisted projections. API actions carry formal readiness,
+      // while the matching asset supplies scan, rights and file facts.
+      const summary = { ...actionSummary, ...Object.fromEntries(Object.entries(currentAsset ?? {}).filter(([, value]) => value !== undefined)) }
+      // Explicit safety denials from either view cannot be weakened by a
+      // conflicting clean/approved view. An absent action scan is not a denial.
+      if (actionSummary.scan_status === 'blocked') summary.scan_status = 'blocked'
+      const actionHasScanEvidence = action && typeof action === 'object' && (
+        Object.hasOwn(action, 'scanStatus') || Object.hasOwn(action, 'scan_status')
+        || action.display?.primaryStatus === 'awaiting_scan' || action.display?.primary_status === 'awaiting_scan'
+      )
+      if (summary.scan_status !== 'blocked' && actionHasScanEvidence && actionSummary.scan_status !== 'clean') summary.scan_status = 'quarantined'
+      if (actionSummary.rights_status === 'rejected') summary.rights_status = 'rejected'
+      if (actionSummary.rights_scope === 'unusable') summary.rights_scope = 'unusable'
+      const scanBlocked = summary.scan_status === 'blocked'
+      const rightsBlocked = summary.rights_status === 'rejected' || summary.rights_scope === 'unusable'
+      const awaitingScan = !scanBlocked && (summary.scan_status !== 'clean' || summary.display?.primary_status === 'awaiting_scan')
+      const readinessStatus = scanBlocked || rightsBlocked || currentAsset?.readiness_status === 'blocked' || actionSummary.readiness_status === 'blocked'
+        ? 'blocked'
+        : awaitingScan && summary.readiness_status === 'ready' ? 'draft' : summary.readiness_status
+      // Formal parse/facts readiness is not an unbound-candidate permission.
+      // Only known scan/rights failures get a replacement recovery action.
+      const nextStep = scanBlocked
+        ? '重新提交这张图片即可触发平台自动复检，无需人工处理'
+        : rightsBlocked
+          ? '这张图片的使用权益受限，请换用其他已授权图片'
+          : awaitingScan
+            ? '图片正在自动检查，通过后会继续，无需操作'
+            : typeof action?.next_step === 'string' ? sanitizeMerchantAction(action.next_step) : undefined
+      const projectedAction = {
         ...summary,
-        next_step: blocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : typeof action?.next_step === 'string' ? sanitizeMerchantAction(action.next_step) : undefined,
-        user_action_required: blocked,
+        scan_status: awaitingScan ? 'quarantined' : summary.scan_status,
+        readiness_status: readinessStatus,
+        ...(summary.display && (scanBlocked || rightsBlocked || awaitingScan) ? { display: {
+          primary_status: scanBlocked ? 'scan_blocked' : rightsBlocked ? 'rights_blocked' : 'awaiting_scan',
+          label: scanBlocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : '正在安全检查',
+          source_state: readinessStatus,
+          reasons: [],
+          next_action: null,
+        } } : {}),
+        next_step: nextStep,
+        user_action_required: scanBlocked || rightsBlocked || !awaitingScan && readinessStatus === 'blocked',
       }
+      if (currentAsset && (scanBlocked || rightsBlocked || awaitingScan)) {
+        // Both merchant-visible views must retain explicit denials and waits.
+        Object.assign(currentAsset, {
+          scan_status: projectedAction.scan_status,
+          rights_status: projectedAction.rights_status,
+          rights_scope: projectedAction.rights_scope,
+          readiness_status: projectedAction.readiness_status,
+          next_step: projectedAction.next_step,
+          ...(projectedAction.display ? { display: projectedAction.display } : {}),
+        })
+      }
+      return projectedAction
     }) : []
     return {
       assets,
@@ -2405,6 +2563,7 @@ function merchantAssetStructuredContent(method, result) {
           } }
         : {}),
       asset_actions: assetActions,
+      candidate_generation_guidance: '用户明确要求使用上传图片制作且图片已通过可信安全扫描时，可调用 catalog.image.generate 生成未绑定候选；权益 pending/unknown 不要求重复确认，正式素材的解析/事实/readiness 状态不是未绑定候选的准入结论。扫描未知或未通过、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断，并由生成接口重新校验。不得自动批准权益；候选始终未绑定、未批准、未发布，正式生成、审核和发布仍须通过原门禁。',
       empty_state: assets.length ? null : { title: '还没有素材', message: '请先上传商品图片或品牌资料。' },
     }
   }
@@ -2412,25 +2571,26 @@ function merchantAssetStructuredContent(method, result) {
   const summary = merchantAssetSummary(result) ?? {}
   const scanStatus = summary.scan_status ?? assetScanStatus(result)
   const blocked = scanStatus === 'blocked'
+  const rightsBlocked = summary.rights_status === 'rejected' || summary.rights_scope === 'unusable'
   const continuationState = result?.generationContinuation && typeof result.generationContinuation === 'object' ? result.generationContinuation.state : undefined
-  const awaitingConfirmation = continuationState === 'awaiting_confirmation'
+  const awaitingConfirmation = scanStatus === 'clean' && !rightsBlocked && continuationState === 'awaiting_confirmation'
   return {
     ...summary,
     scanStatus,
     scan_status: scanStatus,
     scanAutomation: {
-      state: blocked ? 'blocked' : awaitingConfirmation ? 'awaiting_confirmation' : scanStatus === 'clean' ? 'completed' : 'pending',
-      userActionRequired: blocked || awaitingConfirmation,
-      message: blocked ? '这张图片暂时不能继续使用；重新提交后由平台自动复检，无需人工处理。' : awaitingConfirmation ? '图片已通过自动安全检查。请确认图片商用权与 AI 编辑授权后再开始生成。' : scanStatus === 'clean' ? '图片检查已通过。' : '图片已收到，正在自动检查。',
+      state: blocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : awaitingConfirmation ? 'awaiting_confirmation' : scanStatus === 'clean' ? 'completed' : 'pending',
+      userActionRequired: blocked || rightsBlocked || awaitingConfirmation,
+      message: blocked ? '这张图片暂时不能继续使用；重新提交后由平台自动复检，无需人工处理。' : rightsBlocked ? summary.next_step : awaitingConfirmation ? '图片已通过自动安全检查。请确认图片商用权与 AI 编辑授权后再开始生成。' : scanStatus === 'clean' ? '图片检查已通过。' : '图片已收到，正在自动检查。',
     },
     scan_wait: {
-      state: blocked ? 'blocked' : awaitingConfirmation ? 'awaiting_confirmation' : scanStatus === 'clean' ? 'completed' : 'processing',
-      user_action_required: blocked || awaitingConfirmation,
+      state: blocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : awaitingConfirmation ? 'awaiting_confirmation' : scanStatus === 'clean' ? 'completed' : 'processing',
+      user_action_required: blocked || rightsBlocked || awaitingConfirmation,
       timed_out: result.scan_wait?.timed_out === true,
-      next_step: blocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.scan_wait?.next_step ?? result.next_step ?? (scanStatus === 'clean' ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
+      next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.scan_wait?.next_step ?? result.next_step ?? (scanStatus === 'clean' ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
     },
-    next_step: blocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.next_step ?? (scanStatus === 'clean' ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
-    ...(result.generationContinuation && typeof result.generationContinuation === 'object' && typeof result.generationContinuation.state === 'string'
+    next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.next_step ?? (scanStatus === 'clean' ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
+    ...(!rightsBlocked && (continuationState !== 'awaiting_confirmation' || awaitingConfirmation) && result.generationContinuation && typeof result.generationContinuation === 'object' && typeof result.generationContinuation.state === 'string'
       ? { generation_continuation: { state: result.generationContinuation.state } }
       : {}),
   }
@@ -2476,6 +2636,10 @@ function merchantWorkflowStructuredContent(result) {
 
 function assetScanResult(uploadResult, asset, assetAction, timedOut = false) {
   const scanStatus = assetScanStatus(asset ?? uploadResult)
+  // A poll can discover a new restriction. Carry explicit denials forward,
+  // but never upgrade the upload's pending rights from a later approval.
+  const rightsRejected = [uploadResult, asset, assetAction].some(value => value?.rightsStatus === 'rejected' || value?.rights_status === 'rejected')
+  const rightsUnusable = [uploadResult, asset, assetAction].some(value => value?.rightsScope === 'unusable' || value?.rights_scope === 'unusable')
   const nextStep = scanStatus === 'clean'
     ? (typeof assetAction?.next_step === 'string' ? assetAction.next_step : '继续当前任务')
     : scanStatus === 'blocked'
@@ -2502,7 +2666,11 @@ function assetScanResult(uploadResult, asset, assetAction, timedOut = false) {
   return {
     ...stableUploadResult,
     ...generationContinuation,
-    ...(asset && typeof asset === 'object' ? { asset } : {}),
+    // The latest scan and its display are one snapshot; an old awaiting_scan
+    // display must not undo a newly observed clean result.
+    ...(asset && typeof asset === 'object' ? { asset, display: asset.display } : {}),
+    ...(rightsRejected ? { rightsStatus: 'rejected', rights_status: 'rejected' } : {}),
+    ...(rightsUnusable ? { rightsScope: 'unusable', rights_scope: 'unusable' } : {}),
     scanStatus,
     scan_status: scanStatus,
     scanAutomation,

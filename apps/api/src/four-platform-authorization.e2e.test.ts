@@ -99,6 +99,16 @@ describe('four-platform fixture authorization lifecycle', () => {
     const stores = health.data?.result?.storeDirectory?.filter((item: { platform: string }) => item.platform === 'taobao')
     expect(stores).toHaveLength(2)
     expect(new Set(stores.map((item: { accountId: string }) => item.accountId)).size).toBe(2)
+    expect(health.data?.result?.platforms).toHaveLength(6)
+    expect(health.data?.result?.platforms.find((item: { platform: string }) => item.platform === 'taobao')).toMatchObject({
+      accountCount: 2,
+      connectedAccountCount: 2,
+      state: 'fixture_ready',
+      dataMode: 'fixture',
+      simulated: true,
+      readEnabled: true,
+      writeEnabled: false,
+    })
     const northSync = await call(base, workspace, 'catalog.sync.start', { platform: 'taobao', account_id: northAccount.id, mode: 'full' })
     const southSync = await call(base, workspace, 'catalog.sync.start', { platform: 'taobao', account_id: southAccount.id, mode: 'full' })
     expect(northSync.data?.result?.products?.[0]).toMatchObject({ accountId: northAccount.id })
@@ -213,7 +223,7 @@ describe('four-platform fixture authorization lifecycle', () => {
     expect(failureHtml).not.toContain('unused')
   })
 
-  it('keeps charged generation disabled across all six platforms even after access is granted', async () => {
+  it('allows charged generation across all six platforms after access and rate evidence are granted', async () => {
     const base = await start()
     const workspace = 'ws_six_platform_complete_flow_e2e'
     await grantCommercialAccess(workspace)
@@ -234,7 +244,8 @@ describe('four-platform fixture authorization lifecycle', () => {
       expect(confirmedFacts.data?.result).toMatchObject({ factsConfirmed: true })
 
       const image = await call(base, workspace, 'catalog.image.generate', { product_id: product.id, count: '1', direction: '平台主图' })
-      expect(image.error).toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED' })
+      expect(image.error).toBeNull()
+      expect(image.data?.result).toMatchObject({ job_id: expect.any(String) })
     }
 
     const revoked = await call(base, workspace, 'platform.revoke', { platform: 'jd', account_id: accountIds.get('jd') })

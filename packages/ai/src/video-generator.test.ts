@@ -205,3 +205,65 @@ describe('video generator relay', () => {
     expect(error).toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerSucceeded: true, providerOutcome: 'unknown', reconciliationRequired: true, retryable: false })
   })
 })
+
+
+describe('reference-conditioned video', () => {
+  it('transmits source pixels using the configured image-to-video model', async () => {
+    let payload: Record<string, unknown> = {}
+    const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'text-model', imageModel: 'image-model', resolution: '1080P', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (_url, init) => {
+      payload = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify({ usage: { total_tokens: 1, cost_cny: 0.01 }, task_id: 'test-video', status: 'queued' }))
+    } })
+    await generator.generate({ prompt: '轻微推近', output: 'rendering', context: {}, sourceImage: 'data:image/png;base64,AQID' })
+    expect(payload).toMatchObject({ model: 'image-model', image: 'data:image/png;base64,AQID', duration: 5, size: '1080P', metadata: { parameters: { resolution: '1080P' } } })
+  })
+  it('does not silently use text-to-video when reference capability is missing', async () => {
+    const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'text-model', fetch: async () => { throw new Error('must not request') } })
+    await expect(generator.generate({ prompt: '商品', output: 'rendering', context: {}, sourceImage: 'data:image/png;base64,AQID' })).rejects.toThrow('VIDEO_IMAGE_MODEL_REQUIRED')
+  })
+})
+
+
+describe('video rejection evidence', () => {
+  it('preserves relay parameter errors and request ids without claiming an unknown outcome', async () => {
+    const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'video', fetch: async () => new Response(JSON.stringify({ error: { code: 'invalid_parameter', message: 'image is required' } }), { status: 400, headers: { 'x-request-id': 'video-rejected-1' } }) })
+    await expect(generator.generate({ prompt: '商品', output: 'rendering', context: {} })).rejects.toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED', details: { provider_status: 400, provider_request_id: 'video-rejected-1', provider_error_summary: 'invalid_parameter: image is required', reconciliation_required: false } })
+  })
+})
+
+
+it('sends HappyHorse native first-frame media through the relay metadata adapter', async () => {
+  let payload: any
+  const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'text-model', imageModel: 'happyhorse-1.1-i2v', resolution: '1080P', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (_url, init) => {
+    payload = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ usage: { total_tokens: 1, cost_cny: 0.01 }, task_id: 'native-i2v', status: 'queued' }))
+  } })
+  await generator.generate({ prompt: '商品', output: 'rendering', context: {}, sourceImage: 'data:image/png;base64,AQID' })
+  expect(payload.metadata).toEqual({ parameters: { resolution: '1080P' }, input: { media: [{ type: 'first_frame', url: 'data:image/png;base64,AQID' }] } })
+})
+
+
+it('sends real reference file bytes in the OpenAI video multipart protocol', async () => {
+  let body: FormData | undefined
+  const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'wan3.0-video', imageModel: 'wan3.0-video', resolution: '1080P', requestFormat: 'openai-video', path: '/videos', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (url, init) => {
+    expect(String(url)).toBe('https://relay.example/videos')
+    expect(new Headers(init?.headers).has('content-type')).toBe(false)
+    body = init?.body as FormData
+    return new Response(JSON.stringify({ usage: { total_tokens: 1, cost_cny: 0.01 }, id: 'multipart-video', status: 'queued' }))
+  } })
+  await generator.generate({ prompt: '商品展示', output: 'rendering', context: {}, sourceImage: 'data:image/png;base64,AQID' })
+  expect(body?.get('seconds')).toBe('5')
+  expect(body?.get('size')).toBe('1080P')
+  const file = body?.get('input_reference') as Blob
+  expect([...new Uint8Array(await file.arrayBuffer())]).toEqual([1, 2, 3])
+  expect(file.type).toBe('image/png')
+})
+
+it('passes Wan 3 original image as native first-frame media, never text-only', async () => {
+  let payload: any
+  const generator = new OpenAICompatibleVideoGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'wan3.0-video', imageModel: 'wan3.0-video', resolution: '1080P', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (_url, init) => {
+    payload = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ usage: { total_tokens: 1, cost_cny: 0.01 }, task_id: 'wan-original', status: 'queued' }))
+  } })
+  await generator.generate({ prompt: '商品', output: 'rendering', context: {}, sourceImage: 'data:image/png;base64,AQID' })
+  expect(payload.metadata.input.media).toEqual([{ type: 'first_frame', url: 'data:image/png;base64,AQID' }])
+  expect(payload.image).toBe('data:image/png;base64,AQID')
+})

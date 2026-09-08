@@ -150,7 +150,7 @@ test('shows blocked candidates and keeps selection disabled', async () => {
   })
   const { browser, context, page } = await openPage('/merchant/tasks?image_job=job_image_matrix', { detail })
   try {
-    await expect(page.getByText('图片生成任务')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '图片生成任务' })).toBeVisible()
     await expect(page.getByText('暂不可选择', { exact: true })).toBeVisible()
     await expect(page.getByText(/不可选择：安全扫描未通过；真实性未确认/)).toBeVisible()
     await expect(page.getByRole('checkbox', { name: /选择为/ })).toBeDisabled()

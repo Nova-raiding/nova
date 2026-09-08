@@ -1,0 +1,67 @@
+[
+  {
+    "service": "api",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "api-replica",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "clamav",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "ops-ui",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "postgres",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "redis",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "ui",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker-automation",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker-generation",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker-publish",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker-reconcile",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker-scan",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker-sync",
+    "state": "running",
+    "health": "healthy"
+  }
+]

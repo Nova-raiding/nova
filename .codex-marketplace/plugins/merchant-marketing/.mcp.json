@@ -2,7 +2,9 @@
   "mcpServers": {
     "merchant-marketing": {
       "command": "sh",
-      "args": ["./mcp/bridge.sh"],
+      "args": [
+        "./mcp/bridge.sh"
+      ],
       "cwd": ".",
       "env_vars": [
         "PATH",
@@ -11,7 +13,9 @@
         "CODEX_NODE_BIN",
         "CODEX_MCP_NODE_PATH",
         "NODE_ENV",
+        "DEPLOY_ENV",
         "MERCHANT_MCP_BASE_URL",
+        "MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES",
         "MERCHANT_WORKSPACE_ID",
         "MERCHANT_MCP_TOKEN",
         "MERCHANT_STRICT_AUTH",

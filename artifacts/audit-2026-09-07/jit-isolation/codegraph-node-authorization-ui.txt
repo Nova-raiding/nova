@@ -1,0 +1,42 @@
+**apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx** — 37 symbols, used by 2 files: apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx, apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx
+
+**Symbols**
+- `RoleAssignment` (type_alias) — :9
+- `id` (property) id: string — :9
+- `role` (property) role: string — :9
+- `subjectIdentityId` (property) subjectIdentityId: string — :9
+- `expiresAt` (property) expiresAt?: string — :9
+- `revision` (property) revision: number — :9
+- `authorizationRevision` (property) authorizationRevision: number — :9
+- `Grant` (type_alias) — :10
+- `id` (property) id: string — :10
+- `accessMode` (property) accessMode: "read" | "write" — :10
+- `workspaceId` (property) workspaceId: string — :10
+- `capabilities` (property) capabilities: string[] — :10
+- `ticketRef` (property) ticketRef: string — :10
+- `expiresAt` (property) expiresAt: string — :10
+- `useCount` (property) useCount: number — :10
+- `maxUses` (property) maxUses: number — :10
+- `revision` (property) revision: number — :10
+- `authorizationRevision` (property) authorizationRevision: number — :10
+- `RoleList` (type_alias) — :11
+- `subject_identity_id` (property) subject_identity_id: string — :11
+- `authorization_revision` (property) authorization_revision: number — :11
+- `assignments` (property) assignments: RoleAssignment[] — :11
+- `GrantList` (type_alias) — :12
+- `subject_identity_id` (property) subject_identity_id: string — :12
+- `workspace_id` (property) workspace_id: string — :12
+- `authorization_revision` (property) authorization_revision: number — :12
+- `grants` (property) grants: Grant[] — :12
+- `PendingRevocation` (type_alias) — :13
+- `GrantStatus` (type_alias) — :16
+- `label` (property) label: string — :16
+- `color` (property) color: "green" | "gold" | "orange" | "red" — :16
+- `platformRoles` (constant) = ["platform_admin", "ops_admin", "support_agent", "finance_ops", "security_admin", "auditor", "rules_... — :18
+- `parseGrantCapabilities` (function) (value: unknown): string[] — :20
+- `describeGrantScope` (function) (workspaceId: string): string — :24
+- `validateJitExpiry` (function) (value: unknown, accessMode: "read" | "write", now = Date.now()): string | undefined — :29
+- `describeGrantStatus` (function) (grant: Pick<Grant, "expiresAt" | "useCount" | "maxUses">, now = Date.now()): GrantStatus — :38
+- `AuthorizationGovernanceSection` (function) ({ model }: { model: OpsConsoleModel }) — :48
+
+> Drop `symbolsOnly` (or pass `offset`/`limit`) to read the source, like Read.

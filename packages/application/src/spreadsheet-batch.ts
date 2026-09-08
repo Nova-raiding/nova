@@ -12,6 +12,12 @@ type CellRow = Record<string, unknown>
 
 const aliases: Record<string, string> = {
   platform: 'platform', 平台: 'platform',
+  sku_id: 'sku_id', sku编码: 'sku_id', sku编号: 'sku_id',
+  sku_name: 'sku_name', sku名称: 'sku_name',
+  color: 'color', 颜色: 'color', size: 'size', 尺码: 'size',
+  sku_price: 'sku_price', sku价格: 'sku_price', sku_stock: 'sku_stock', sku库存: 'sku_stock',
+  sku_asset_ids: 'sku_asset_ids', sku素材id: 'sku_asset_ids', sku原图素材id: 'sku_asset_ids',
+  sku_images: 'sku_images', sku图片: 'sku_images', sku图片链接: 'sku_images',
   account_id: 'account_id', 店铺账号: 'account_id', 店铺: 'account_id',
   remote_id: 'remote_id', 平台商品id: 'remote_id', 商品id: 'remote_id',
   local_product_key: 'local_product_key', 商品货号: 'local_product_key', 货号: 'local_product_key',
@@ -49,43 +55,36 @@ function nonNegativeNumber(value: unknown, row: number, field: string, integer =
   return result
 }
 
-/** Convert parser-produced XLSX/CSV rows into the same input shape as catalog.import.batch. */
+/** One SKU per row; stable product keys keep distinct products separate. */
 export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>): Record<string, unknown>[] {
   if ((facts.format !== 'xlsx' && facts.format !== 'csv') || !Array.isArray(facts.rows)) throw new SpreadsheetBatchImportError(1, '仅支持已解析的 XLSX 或 CSV 商品表格')
   const sourceRows = facts.rows.filter(row => row && typeof row === 'object' && !Array.isArray(row)) as CellRow[]
   if (sourceRows.length < 2) throw new SpreadsheetBatchImportError(1, '必须包含表头和至少一行商品')
-  if (facts.format === 'csv') {
-    const headerRow = sourceRows[0]!
-    if (!Object.keys(headerRow).some(key => aliases[normalizeHeader(key)] === 'platform') || !Object.keys(headerRow).some(key => aliases[normalizeHeader(key)] === 'title')) throw new SpreadsheetBatchImportError(1, '必须包含 platform 和 title 表头')
-    return sourceRows.slice(1).map((raw, index) => {
-      const rowNumber = index + 2
-      const row = Object.fromEntries(Object.entries(raw).map(([key, value]) => [aliases[normalizeHeader(key)] ?? normalizeHeader(key), value]))
-      const title = String(row.title ?? '').trim(); const platform = String(row.platform ?? '').trim().toLowerCase()
-      if (!platform) throw new SpreadsheetBatchImportError(rowNumber, 'platform不能为空')
-      if (!title) throw new SpreadsheetBatchImportError(rowNumber, 'title不能为空')
-      const price = nonNegativeNumber(row.price, rowNumber, 'price'); const stock = nonNegativeNumber(row.stock, rowNumber, 'stock', true); const skuCount = nonNegativeNumber(row.sku_count, rowNumber, 'sku_count', true)
-      const assetIds = splitList(row.asset_ids); const images = splitList(row.images)
-      return { platform, title, ...(row.account_id ? { account_id: String(row.account_id).trim() } : {}), ...(row.remote_id ? { remote_id: String(row.remote_id).trim() } : {}), ...(row.local_product_key ? { local_product_key: String(row.local_product_key).trim() } : {}), ...(row.category ? { category: String(row.category).trim() } : {}), ...(price === undefined ? {} : { price }), ...(stock === undefined ? {} : { stock }), ...(skuCount === undefined ? {} : { sku_count: skuCount }), ...(assetIds ? { asset_ids: assetIds } : {}), ...(images ? { images } : {}), ...(row.store_name ? { store_name: String(row.store_name).trim() } : {}), ...(row.store_differentiation ? { store_differentiation: String(row.store_differentiation).trim() } : {}) }
-    })
-  }
-  const headerRow = sourceRows[0]!
-  const headers = new Map<number, string>()
-  for (const [reference, value] of Object.entries(headerRow)) {
-    const column = columnNumber(reference.replace(/\d+$/u, ''))
-    const mapped = aliases[normalizeHeader(value)]
-    if (column > 0 && mapped) headers.set(column, mapped)
+  const headers = new Map<string, string>()
+  for (const [reference, value] of Object.entries(sourceRows[0]!)) {
+    const key = facts.format === 'csv' ? reference : reference.replace(/\d+$/u, '')
+    const mapped = aliases[normalizeHeader(facts.format === 'csv' ? reference : value)]
+    if (mapped) {
+      if ([...headers.values()].includes(mapped)) throw new SpreadsheetBatchImportError(1, `存在重复表头 ${mapped}`)
+      headers.set(key, mapped)
+    }
   }
   if (![...headers.values()].includes('platform') || ![...headers.values()].includes('title')) throw new SpreadsheetBatchImportError(1, '必须包含 platform 和 title 表头')
-  return sourceRows.slice(1).map((raw, index) => {
+  const output: Record<string, unknown>[] = []
+  const groups = new Map<string, Record<string, unknown>>()
+  const platforms: Record<string, string> = { 京东: 'jd', 淘宝: 'taobao', 天猫: 'tmall', 拼多多: 'pinduoduo', 小红书: 'xiaohongshu', 抖音: 'douyin' }
+  sourceRows.slice(1).forEach((raw, index) => {
     const rowNumber = index + 2
     const row: Record<string, unknown> = {}
     for (const [reference, value] of Object.entries(raw)) {
-      const column = columnNumber(reference.replace(/\d+$/u, ''))
-      const field = headers.get(column)
+      const field = headers.get(facts.format === 'csv' ? reference : reference.replace(/\d+$/u, ''))
       if (field) row[field] = value
     }
-    const title = String(row.title ?? '').trim()
-    const platform = String(row.platform ?? '').trim().toLowerCase()
+    if (!Object.values(row).some(value => String(value ?? '').trim())) return
+    const text = (field: string) => String(row[field] ?? '').trim()
+    const title = text('title')
+    const platformText = text('platform').toLowerCase()
+    const platform = platforms[platformText] ?? platformText
     if (!platform) throw new SpreadsheetBatchImportError(rowNumber, 'platform不能为空')
     if (!title) throw new SpreadsheetBatchImportError(rowNumber, 'title不能为空')
     const assetIds = splitList(row.asset_ids)
@@ -93,20 +92,40 @@ export function spreadsheetFactsToBatchProducts(facts: Record<string, unknown>):
     const price = nonNegativeNumber(row.price, rowNumber, 'price')
     const stock = nonNegativeNumber(row.stock, rowNumber, 'stock', true)
     const skuCount = nonNegativeNumber(row.sku_count, rowNumber, 'sku_count', true)
-    return {
-      platform,
-      title,
-      ...(row.account_id ? { account_id: String(row.account_id).trim() } : {}),
-      ...(row.remote_id ? { remote_id: String(row.remote_id).trim() } : {}),
-      ...(row.local_product_key ? { local_product_key: String(row.local_product_key).trim() } : {}),
-      ...(row.category ? { category: String(row.category).trim() } : {}),
-      ...(price === undefined ? {} : { price }),
-      ...(stock === undefined ? {} : { stock }),
-      ...(skuCount === undefined ? {} : { sku_count: skuCount }),
-      ...(assetIds ? { asset_ids: assetIds } : {}),
-      ...(images ? { images } : {}),
-      ...(row.store_name ? { store_name: String(row.store_name).trim() } : {}),
-      ...(row.store_differentiation ? { store_differentiation: String(row.store_differentiation).trim() } : {}),
+    const product: Record<string, unknown> = { platform, title,
+      ...Object.fromEntries(['account_id', 'remote_id', 'local_product_key', 'category', 'store_name', 'store_differentiation'].filter(field => text(field)).map(field => [field, text(field)])),
+      ...(price === undefined ? {} : { price }), ...(stock === undefined ? {} : { stock }),
+      ...(skuCount === undefined ? {} : { sku_count: skuCount }), ...(assetIds ? { asset_ids: assetIds } : {}), ...(images ? { images } : {}) }
+    const hasSku = ['sku_id', 'sku_name', 'color', 'size', 'sku_price', 'sku_stock', 'sku_images', 'sku_asset_ids'].some(field => text(field))
+    if (!hasSku) { output.push(product); return }
+    if (!text('sku_id')) throw new SpreadsheetBatchImportError(rowNumber, 'SKU 行必须填写 SKU编码')
+    if (!text('remote_id') && !text('local_product_key')) throw new SpreadsheetBatchImportError(rowNumber, 'SKU 行必须填写商品货号或平台商品ID')
+    const skuPrice = nonNegativeNumber(text('sku_price') || row.price, rowNumber, 'SKU价格')
+    const skuStock = nonNegativeNumber(text('sku_stock') || row.stock, rowNumber, 'SKU库存', true)
+    if (skuPrice === undefined || skuStock === undefined) throw new SpreadsheetBatchImportError(rowNumber, 'SKU 行必须填写价格和库存，0 是有效值')
+    const attributes = Object.fromEntries(['color', 'size'].filter(field => text(field)).map(field => [field, text(field)]))
+    const skuImages = splitList(row.sku_images)
+    const skuAssetIds = splitList(row.sku_asset_ids)
+    const sku = { ...(skuAssetIds ? { sourceAssetIds: skuAssetIds } : {}), id: text('sku_id'), name: text('sku_name') || [text('color'), text('size')].filter(Boolean).join(' / ') || text('sku_id'), price: skuPrice, stock: skuStock, ...(Object.keys(attributes).length ? { attributes } : {}), ...(skuImages ? { images: skuImages } : images ? { images } : {}) }
+    const key = JSON.stringify([platform, text('account_id'), text('remote_id') || text('local_product_key')])
+    const existing = groups.get(key)
+    if (!existing) {
+      const first = { ...product, skus: [sku], sku_count: 1, price: skuPrice, stock: skuStock }
+      groups.set(key, first); output.push(first); return
+    }
+    for (const field of ['title', 'category', 'local_product_key', 'remote_id', 'store_name', 'store_differentiation']) {
+      if (existing[field] !== undefined && product[field] !== undefined && existing[field] !== product[field]) throw new SpreadsheetBatchImportError(rowNumber, `同一商品的 ${field} 不一致`)
+      if (existing[field] === undefined && product[field] !== undefined) existing[field] = product[field]
+    }
+    const skus = existing.skus as typeof sku[]
+    if (skus.some(item => item.id === sku.id)) throw new SpreadsheetBatchImportError(rowNumber, `同一商品存在重复 SKU编码 ${sku.id}`)
+    skus.push(sku); existing.sku_count = skus.length; existing.price = Math.min(...skus.map(item => item.price)); existing.stock = skus.reduce((sum, item) => sum + item.stock, 0)
+    for (const field of ['images', 'asset_ids']) {
+      const combined = [...new Set([...(existing[field] as string[] ?? []), ...(product[field] as string[] ?? [])])]
+      if (combined.length) existing[field] = combined
     }
   })
+  if (!output.length) throw new SpreadsheetBatchImportError(2, '没有可导入的商品')
+  if (output.length > 50) throw new SpreadsheetBatchImportError(1, '一次最多导入 50 个商品，请拆分表格')
+  return output
 }

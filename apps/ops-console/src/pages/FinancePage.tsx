@@ -2,6 +2,7 @@ import { CommercialOperationsWorkspace } from "../components/commercial/Commerci
 import { OpsPage } from "../components/OpsPage";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { commercialViewCapability, useCommercialOperations } from "../hooks/useCommercialOperations.js";
+import { CommercialReadinessPanel } from "../components/commercial/CommercialReadinessPanel.js";
 import { Button } from "antd";
 
 interface FinancePageProps {
@@ -21,6 +22,7 @@ export function FinancePage({ model }: FinancePageProps) {
       actions={<Button type="primary" disabled={!canRefresh} loading={commercial.summary.status === "loading" || commercial.data[commercial.view].status === "loading"} onClick={() => void Promise.all([commercial.loadSummary(), commercial.loadView()])}>刷新账务</Button>}
       nextStep="先处理阻断与 unknown；支付成功后仍需核验 grant 与新的 access revision。"
     >
+      <CommercialReadinessPanel authorization={model.authorization} />
       <CommercialOperationsWorkspace controller={commercial} />
     </OpsPage>
   );

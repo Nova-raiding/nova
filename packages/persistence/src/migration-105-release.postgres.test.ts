@@ -37,7 +37,7 @@ describe('migration 105 PostgreSQL release acceptance', () => {
       const now = Date.parse('2026-08-31T10:00:00.000Z')
       const repository = new PostgresAuthorizationRepository(ops, () => new Date(now))
       const role = await repository.assignPlatformRole({ subjectIdentityId: identityId, role: 'support_agent', assignedBy: 'security-admin', reason: 'approved support rotation', expectedAuthorizationRevision: 0 })
-      const scope = { ticket_ids: ['ticket-105'] }
+      const scope = { workspace_ids: ['ws_authz_a'] }
       const grant = await repository.issueGrant({ grantKind: 'support', accessMode: 'read', subjectIdentityId: identityId, workspaceId: 'ws_authz_a', capabilities: ['customer.content.read'], resourceScope: scope, reason: 'investigate approved ticket', ticketRef: `SUP-${identityId}`, issuedBy: 'support-lead', approvedBy: 'security-admin', approvedAt: new Date(now).toISOString(), expectedAuthorizationRevision: 1, expiresAt: new Date(now + 15 * 60_000).toISOString(), maxUses: 1 })
       const consume = { id: grant.id, subjectIdentityId: identityId, workspaceId: 'ws_authz_a', capability: 'customer.content.read', scopeHash: authorizationScopeHash(scope), expectedRevision: 1, actorId: 'support-user', reason: 'open approved customer record', at: new Date(now).toISOString() }
       const consumed = await Promise.all([repository.consumeGrant(consume), repository.consumeGrant(consume)])

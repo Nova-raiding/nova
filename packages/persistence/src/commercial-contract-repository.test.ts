@@ -128,4 +128,52 @@ describe('PostgresCommercialContractRepository', () => {
     await expect(repository.createOrder({ workspaceId: 'ws-1', sku: unavailable, paymentProvider: 'sandbox', createdByActorId: 'actor-1', idempotencyKey: 'blocked-1', reason: 'blocked' }))
       .rejects.toEqual(expect.objectContaining<Partial<CommercialContractError>>({ code: 'COMMERCIAL_CATALOG_UNAVAILABLE' }))
   })
+
+  it('commits the first onboarding grant and exactly six UTC monthly schedule rows idempotently', async () => {
+    const sku = approvedSku({
+      id: 'sku-onboarding', code: 'onboarding_once', kind: 'onboarding', priceFen: 500000,
+      effectiveAt: '2026-01-01T00:00:00.000Z',
+      payload: { grantSchedule: { grantCount: 6, pointsPerGrant: 500, cadence: 'monthly', startsAt: 'payment_verified', grantExpiresAtRule: 'next_monthly_anniversary', schedulingStatus: 'resolved' } },
+      benefits: [{ code: 'grant_count', quantity: 6, rawValue: null, rawUnit: 'monthly_grants', normalizedValue: null, policyRef: null, metadata: {} }],
+    })
+    let revision = 0
+    const client = new ScriptedClient((sql, values) => {
+      if (sql.includes('FROM commercial_orders_v2 o')) return { rows: [{
+        id: 'order-onboarding', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId,
+        amountFen: 500000, currency: 'CNY', paymentProvider: 'alipay', status: 'pending', idempotencyKey: 'onboarding-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: null, createdAt: '2026-01-31T23:00:00.000Z', paidAt: null, snapshotId: 'snapshot-onboarding', snapshot: { sku },
+      }] }
+      if (sql.includes('UPDATE creative_point_access_state')) { revision += 1; return { rows: [{ available: 500, reserved: 0, settled: 0, revision }] } }
+      if (sql.includes('SELECT count(*) AS count')) return { rows: [{ count: 6 }] }
+      if (sql.includes("UPDATE commercial_orders_v2 SET status='paid'")) return { rows: [{
+        id: 'order-onboarding', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId, amountFen: 500000, currency: 'CNY', paymentProvider: 'alipay', status: 'paid', idempotencyKey: 'onboarding-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: values[2], createdAt: '2026-01-31T23:00:00.000Z', paidAt: values[3],
+      }] }
+      return { rows: [] }
+    })
+    const repository = new PostgresCommercialContractRepository(pool(client))
+    const result = await repository.recordVerifiedPaymentAndGrant({
+      workspaceId: 'ws-1', orderId: 'order-onboarding', provider: 'alipay', providerEventId: 'event-onboarding', providerOrderId: 'trade-onboarding', nonce: 'nonce-onboarding', payloadHash: 'c'.repeat(64), amountFen: 500000, currency: 'CNY', paidAt: '2026-01-31T23:00:00Z',
+    })
+    expect(result).toMatchObject({ availablePoints: 500, replayed: false })
+    const scheduleCalls = client.calls.filter(call => call.sql.includes('INSERT INTO onboarding_point_grant_schedules_v2'))
+    expect(scheduleCalls).toHaveLength(6)
+    expect(scheduleCalls[0]?.values).toContain('granted')
+    expect(scheduleCalls.slice(1).every(call => call.values.includes('scheduled'))).toBe(true)
+    expect(scheduleCalls.map(call => call.values[4])).toEqual([
+      '2026-01-31T23:00:00.000Z', '2026-02-28T23:00:00.000Z', '2026-03-31T23:00:00.000Z',
+      '2026-04-30T23:00:00.000Z', '2026-05-31T23:00:00.000Z', '2026-06-30T23:00:00.000Z',
+    ])
+    const replay = new ScriptedClient((sql) => {
+      if (sql.includes('FROM commercial_orders_v2 o')) return { rows: [{
+        id: 'order-onboarding', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId, amountFen: 500000, currency: 'CNY', paymentProvider: 'alipay', status: 'paid', idempotencyKey: 'onboarding-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: 'trade-onboarding', createdAt: '2026-01-31T23:00:00.000Z', paidAt: '2026-01-31T23:00:00.000Z', snapshotId: 'snapshot-onboarding', snapshot: { sku },
+      }] }
+      if (sql.includes('FROM commercial_payment_events_v2')) return { rows: [{ payloadHash: 'c'.repeat(64), orderId: 'order-onboarding' }] }
+      if (sql.includes('SELECT id FROM creative_point_grants')) return { rows: [{ id: 'grant-existing' }] }
+      if (sql.includes('FROM creative_point_access_state')) return { rows: [{ available: 500, revision: 1 }] }
+      return { rows: [] }
+    })
+    await expect(new PostgresCommercialContractRepository(pool(replay)).recordVerifiedPaymentAndGrant({
+      workspaceId: 'ws-1', orderId: 'order-onboarding', provider: 'alipay', providerEventId: 'event-onboarding', providerOrderId: 'trade-onboarding', nonce: 'nonce-onboarding', payloadHash: 'c'.repeat(64), amountFen: 500000, currency: 'CNY', paidAt: '2026-01-31T23:00:00Z',
+    })).resolves.toMatchObject({ grantId: 'grant-existing', replayed: true })
+    expect(replay.calls.filter(call => call.sql.includes('INSERT INTO onboarding_point_grant_schedules_v2'))).toHaveLength(0)
+  })
 })

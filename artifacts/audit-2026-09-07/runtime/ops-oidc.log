@@ -1,0 +1,16 @@
+
+Running 3 tests using 1 worker
+
+(node:68110) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:68110) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 dogfood/chatgpt-all-functions/ops-all.spec.js:24:1 › walk every Ops Console section through the real browser UI (51.7s)
+  ✓  2 dogfood/chatgpt-all-functions/ops-all.spec.js:120:1 › does not report model configuration success when model status fails (2.8s)
+(node:69077) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:69077) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 dogfood/chatgpt-all-functions/ops-users.spec.js:35:1 › operates the platform user directory without destructive confirmation (14.4s)
+
+  3 passed (1.2m)

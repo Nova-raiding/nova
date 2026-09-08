@@ -29,7 +29,7 @@ describe('Ops domain API integration', () => {
     vi.unstubAllEnvs()
   })
 
-  it('wires support tickets with server-bound workspace, replay safety, revision conflicts, and CRM RBAC', async () => {
+  it('wires support tickets with server-bound workspace, replay safety, and revision conflicts', async () => {
     const base = await start()
     const workspaceId = `ws_ops_support_${Date.now()}`
     const call = <T>(method: string, params: Record<string, unknown>, role = 'support') => fetch(`${base}/mcp`, {
@@ -55,8 +55,6 @@ describe('Ops domain API integration', () => {
     expect(assigned.data?.result.ticket.revision).toBe(2)
     const stale = await call('ops.support.ticket.comment', { ticket_id: created.data?.result.ticket.id, body: '并发旧版本评论', visibility: 'internal', expected_revision: '1', idempotency_key: 'support-comment-0001' })
     expect(stale.error?.code).toBe('SUPPORT_TICKET_REVISION_CONFLICT')
-    expect((await call('ops.support.crm.export', {})).error?.code).toBe('SUPPORT_FORBIDDEN')
-    expect((await call('ops.support.crm.export', {}, 'platform_ops')).error?.code).toBe('SUPPORT_FORBIDDEN')
     const platformTickets = await call<{ items: Array<Record<string, unknown>>; aggregate: boolean }>('ops.support.tickets.list', { platform_scope: 'platform', limit: '25' }, 'platform_ops')
     expect(platformTickets.error?.code).toBe('FORBIDDEN')
 

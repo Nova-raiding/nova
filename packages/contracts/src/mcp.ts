@@ -84,7 +84,6 @@ export const MCP_METHODS = [
   'ops.support.sla.report',
   'ops.support.sla.correction.create',
   'ops.support.sla.correction.decide',
-  'ops.support.crm.export',
   'ops.incidents.list',
   'ops.incident.get',
   'ops.incident.timeline',
@@ -128,6 +127,19 @@ export const MCP_METHODS = [
   'ops.commercial.catalog-v2.list',
   'ops.commercial.orders-v2.list',
   'ops.commercial.rate-cards.list',
+  'ops.commercial.readiness.report',
+  'ops.commercial.private-trial.eligibility.create',
+  'ops.commercial.private-trial.eligibility.approve',
+  'ops.commercial.private-trial.validation.complete',
+  'ops.commercial.private-trial.credit.prepare',
+  'ops.commercial.private-trial.credit.approve',
+  'ops.commercial.private-trial.conversion.create',
+  'ops.commercial.private-trial.payment.verify',
+  'ops.commercial.order.payment.verify',
+  'ops.commercial.order.refund.list',
+  'ops.commercial.order.refund.request',
+  'ops.commercial.order.refund.approve',
+  'ops.commercial.order.refund.complete',
   'ops.commercial.service-fulfillment.list',
   'ops.commercial.timeline.list',
   'ops.commercial.service-allocation.create',
@@ -207,6 +219,7 @@ export const MCP_METHODS = [
   'sync.retry_failed',
   'rule.list',
   'rule.sync.status',
+  'rule.sync.now',
   'rule.history',
   'rule.audit',
   'rule.publish',
@@ -280,6 +293,8 @@ export const MCP_METHODS = [
   'knowledge.asset.create',
   'knowledge.asset.update',
   'knowledge.asset.list',
+  'knowledge.brand.preference.get',
+  'knowledge.brand.preference.update',
   'knowledge.feedback.record',
   'knowledge.learning.list',
   'knowledge.learning.confirm',
@@ -646,7 +661,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'workspace.usage.get', description: 'Return current monthly task quota usage for the workspace.', params: params({}) },
   { method: 'commercial.access.get', description: 'Return the server-owned CommercialAccessDecision for the authenticated workspace; unknown values remain null and never fall back to wallet or legacy task quota.', params: params({}) },
   { method: 'commercial.catalog.get', description: 'Return the versioned workspace-visible commercial catalog; unavailable catalog state is explicit and never falls back to legacy offer DTOs.', params: params({}) },
-  { method: 'commercial.order.create', description: 'Create a V2 plan purchase, upgrade, or point-pack order from one active approved server-owned SKU snapshot; clients cannot submit amount, currency, points, benefits, or private eligibility.', params: params({ purchase_kind: { type: 'string', enum: ['purchase', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, ['purchase_kind', 'sku_code', 'idempotency_key', 'reason']) },
+  { method: 'commercial.order.create', description: 'Create a V2 onboarding, plan purchase, upgrade, or point-pack order from one active approved server-owned SKU snapshot; clients cannot submit amount, currency, points, benefits, or private eligibility.', params: params({ purchase_kind: { type: 'string', enum: ['purchase', 'onboarding_once', 'upgrade', 'point_pack'] }, sku_code: boundedString(128), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, ['purchase_kind', 'sku_code', 'idempotency_key', 'reason']) },
   { method: 'commercial.order.payment.get', description: 'Return workspace-scoped V2 payment and grant status without treating paid as recovered until an access revision exists.', params: params({ order_id: boundedString(256) }, ['order_id']) },
   { method: 'creative-points.balance.get', description: 'Return the creative-point balance and access revision for the authenticated workspace; unknown balance is null, never zero.', params: params({}) },
   { method: 'creative-points.statement.list', description: 'Return a bounded creative-point ledger statement for the authenticated workspace; unavailable ledger state returns null entries and no fabricated empty page.', params: params({ cursor: boundedString(4_096), limit: pageLimit100 }) },
@@ -672,7 +687,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.tasks.summary', description: 'Return redacted platform-wide task and content queue counts for platform operations. Requires explicit platform scope and never returns task正文 or credentials.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.model-usage.summary', description: 'Return redacted platform-wide model usage totals grouped by modality, model and settlement status. Requires explicit platform scope and never returns prompts, credentials or provider request identifiers.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
   { method: 'ops.storage.reconciliation.list', description: 'List redacted storage reconciliation summaries for all workspaces visible to platform operations; requires explicit platform scope and never returns object keys, asset content, or download URLs.', params: params({ platform_scope: { type: 'string', enum: ['platform'] } }) },
-  { method: 'ops.support.tickets.list', description: 'List a bounded page of support tickets in one authorized workspace, or a redacted platform-wide aggregate for platform_ops.', params: params({ platform_scope: { type: 'string', enum: ['platform'] }, status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, assignee_id: boundedString(256), customer_id: boundedString(256), query: boundedString(200), cursor_json: boundedString(2_000), limit: pageLimit100 }) },
+  { method: 'ops.support.tickets.list', description: 'List a bounded page of support tickets in one authorized workspace, or a redacted platform-wide aggregate for platform_ops.', params: params({ platform_scope: { type: 'string', enum: ['platform'] }, status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, sla_state: { type: 'string', enum: ['on_track', 'at_risk', 'breached', 'met'] }, assignee_id: boundedString(256), customer_id: boundedString(256), query: boundedString(200), cursor_json: boundedString(2_000), limit: pageLimit100 }) },
   { method: 'ops.support.ticket.get', description: 'Return one support ticket and its append-only event history in an authorized workspace.', params: params({ ticket_id: boundedString(36) }, ['ticket_id']) },
   { method: 'ops.support.ticket.create', description: 'Create a support ticket with bounded customer context and an idempotency key.', params: params({ subject: boundedString(200, 3), description: boundedString(10_000), priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] }, customer_id: boundedString(256), customer_name: boundedString(200), customer_email: boundedString(320), related_order_id: boundedString(256), related_task_id: boundedString(256), tags_json: boundedString(2_000), idempotency_key: idempotencyKeyProperty }, ['subject', 'description', 'priority', 'customer_id', 'customer_name', 'idempotency_key']) },
   { method: 'ops.support.ticket.assign', description: 'Assign a support ticket with optimistic concurrency and idempotent replay.', params: params({ ticket_id: boundedString(36), assignee_id: boundedString(256), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, ['ticket_id', 'assignee_id', 'expected_revision', 'idempotency_key']) },
@@ -681,7 +696,6 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.support.sla.report', description: 'Build or replay an immutable workspace-scoped monthly SLA report from append-only support ticket events.', params: params({ period_start: boundedString(64), period_end: boundedString(64), cutoff_at: boundedString(64), report_id: boundedString(256) }, ['period_start', 'period_end', 'cutoff_at']) },
   { method: 'ops.support.sla.correction.create', description: 'Create a pending-review correction run by rebuilding the original SLA period from current append-only events; never overwrites the original report.', params: params({ original_report_id: boundedString(256), period_start: boundedString(64), period_end: boundedString(64), cutoff_at: boundedString(64), reason: reasonProperty, idempotency_key: boundedString(256) }, ['original_report_id', 'period_start', 'period_end', 'cutoff_at', 'reason', 'idempotency_key']) },
   { method: 'ops.support.sla.correction.decide', description: 'Approve or reject one pending SLA correction exactly once; decision evidence is append-only and workspace scoped.', params: params({ correction_id: boundedString(256), decision: { type: 'string', enum: ['approved', 'rejected'] }, reason: reasonProperty, idempotency_key: boundedString(256) }, ['correction_id', 'decision', 'reason', 'idempotency_key']) },
-  { method: 'ops.support.crm.export', description: 'Export a bounded CRM projection for platform operations; internal ticket comments are excluded.', params: params({ limit: exportLimit5000 }) },
   { method: 'ops.incidents.list', description: 'List a bounded page of incidents in one authorized workspace, or a platform-wide aggregate for platform_ops.', params: params({ platform_scope: { type: 'string', enum: ['platform'] }, status: { type: 'string', enum: ['investigating', 'identified', 'monitoring', 'resolved'] }, severity: { type: 'string', enum: ['sev1', 'sev2', 'sev3', 'sev4'] }, limit: pageLimit100, cursor: boundedString(1_000) }) },
   { method: 'ops.incident.get', description: 'Return one incident from an authorized workspace.', params: params({ incident_id: boundedString(160) }, ['incident_id']) },
   { method: 'ops.incident.timeline', description: 'List a bounded page of immutable incident timeline entries.', params: params({ incident_id: boundedString(160), limit: pageLimit200, cursor: boundedString(1_000) }, ['incident_id']) },
@@ -725,6 +739,19 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   { method: 'ops.commercial.catalog-v2.list', description: 'List immutable V2 commercial SKU versions; private entries require a separate private-SKU capability at execution.', params: params({ include_private: booleanString, cursor: boundedString(4_096), limit: pageLimit100 }) },
   { method: 'ops.commercial.orders-v2.list', description: 'List immutable V2 order and payment snapshots without exposing provider credentials or legacy wallet unlock state.', params: params({ target_workspace_id: boundedString(200), cursor: boundedString(4_096), limit: pageLimit100 }) },
   { method: 'ops.commercial.rate-cards.list', description: 'List versioned creative-point rate cards and approval state; draft rates never become executable through this read method.', params: params({ cursor: boundedString(4_096), limit: pageLimit100 }) },
+  { method: 'ops.commercial.readiness.report', description: 'Read-only production readiness report for commercial image, video, SEO, content, and batch operations. Reports rate approval, provider evidence, point settlement, and video blockers without changing gates or balances.', params: params({}) },
+  { method: 'ops.commercial.private-trial.eligibility.create', description: 'Create an auditable private 1999 CNY trial eligibility; it does not create an order or grant access.', params: params({ target_workspace_id: boundedString(200), customer_ref: boundedString(256), idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'customer_ref', 'idempotency_key', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.private-trial.eligibility.approve', description: 'Approve a private trial eligibility with optimistic revision and business evidence.', params: params({ target_workspace_id: boundedString(200), eligibility_id: boundedString(256), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'eligibility_id', 'expected_revision', 'idempotency_key', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.private-trial.validation.complete', description: 'Bind a verified paid private trial and its validation-completed timestamp; the seven-day conversion window is server-derived.', params: params({ target_workspace_id: boundedString(200), eligibility_id: boundedString(256), trial_order_id: boundedString(256), completed_at: boundedString(64), idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'eligibility_id', 'trial_order_id', 'completed_at', 'idempotency_key', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.private-trial.credit.prepare', description: 'Prepare the fixed 199900 CNY credit against the 500000 CNY onboarding price; accounting approval is still required.', params: params({ target_workspace_id: boundedString(200), eligibility_id: boundedString(256), idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'eligibility_id', 'idempotency_key', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.private-trial.credit.approve', description: 'Approve the private-trial accounting credit using a distinct actor and immutable evidence.', params: params({ target_workspace_id: boundedString(200), credit_id: boundedString(256), idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'credit_id', 'idempotency_key', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.private-trial.conversion.create', description: 'Create the pending 300100 CNY formal onboarding order from an approved, unexpired private-trial credit; real payment remains required.', params: params({ target_workspace_id: boundedString(200), credit_id: boundedString(256), idempotency_key: idempotencyKeyProperty, reason: reasonProperty }, ['target_workspace_id', 'credit_id', 'idempotency_key', 'reason']) },
+  { method: 'ops.commercial.private-trial.payment.verify', description: 'Verify a 300100 CNY manual-transfer payment subject and atomically grant onboarding points; this is the platform manual-enable action.', params: params({ target_workspace_id: boundedString(200), credit_id: boundedString(256), order_id: boundedString(256), provider_event_id: boundedString(256), provider_order_id: boundedString(256), payment_subject_ref: boundedString(256), nonce: boundedString(256), payload_hash: boundedString(128), paid_at: boundedString(64), idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'credit_id', 'order_id', 'provider_event_id', 'provider_order_id', 'payment_subject_ref', 'nonce', 'payload_hash', 'paid_at', 'idempotency_key', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.order.payment.verify', description: 'Verify a platform-approved manual-transfer payment for a public onboarding, monthly or point-pack order; amount, provider, SKU and point grant are read from the immutable order snapshot.', params: params({ target_workspace_id: boundedString(200), order_id: boundedString(256), provider_event_id: boundedString(256), provider_order_id: boundedString(256), payment_subject_ref: boundedString(256), nonce: boundedString(256), payload_hash: boundedString(128), paid_at: boundedString(64), idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'order_id', 'provider_event_id', 'provider_order_id', 'payment_subject_ref', 'nonce', 'payload_hash', 'paid_at', 'idempotency_key', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.order.refund.list', description: 'List immutable commercial-order refund evidence; it never projects a refund from legacy wallet transactions.', params: params({ target_workspace_id: boundedString(200), limit: pageLimit100 }) },
+  { method: 'ops.commercial.order.refund.request', description: 'Request a commercial-order refund. The request is not a refund until policy approval, external payment evidence, and any creative-point reversal are complete.', params: params({ target_workspace_id: boundedString(200), order_id: boundedString(256), request_id: idempotencyKeyProperty, refund_kind: { type: 'string', enum: ['onboarding_pre_deployment', 'monthly_unused_points', 'point_pack_unused_points', 'outage_compensation', 'custom_milestone'] }, amount_fen: positiveIntegerString, points_to_revoke: { type: 'string', pattern: '^(0|[1-9][0-9]*)$' }, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'order_id', 'request_id', 'refund_kind', 'amount_fen', 'points_to_revoke', 'reason', 'evidence_json']) },
+  { method: 'ops.commercial.order.refund.approve', description: 'Approve a refund request with a distinct operator and legal/policy evidence; this does not move money.', params: params({ target_workspace_id: boundedString(200), request_id: boundedString(256), reason: reasonProperty, policy_approval_json: boundedString(33_000) }, ['target_workspace_id', 'request_id', 'reason', 'policy_approval_json']) },
+  { method: 'ops.commercial.order.refund.complete', description: 'Complete an approved refund only with an external refund reference; the server records any requested creative-point reversal before marking the order refunded.', params: params({ target_workspace_id: boundedString(200), request_id: boundedString(256), external_refund_id: boundedString(256), reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'request_id', 'external_refund_id', 'reason', 'evidence_json']) },
   { method: 'ops.commercial.service-fulfillment.list', description: 'List contracted service allocations and manual fulfillment evidence without inventing SLA, rounding, cancellation, or refund policy.', params: params({ target_workspace_id: boundedString(200), cursor: boundedString(4_096), limit: pageLimit100 }) },
   { method: 'ops.commercial.timeline.list', description: 'Aggregate workspace commercial facts into a read-only timeline joined by operation_id and trace_id; supports bounded time and status filters and preserves audit evidence.', params: params({ target_workspace_id: boundedString(200), from_at: boundedString(64), to_at: boundedString(64), status: boundedString(64), limit: pageLimit100 }) },
   { method: 'ops.commercial.service-allocation.create', description: 'Create one workspace service allocation from verified order and entitlement snapshots; expected_revision must be 0 because no allocation may already exist.', params: params({ target_workspace_id: boundedString(200), order_snapshot_id: boundedString(256), entitlement_snapshot_id: boundedString(256), service_type: boundedString(128), unit: { type: 'string', enum: ['count', 'minute', 'contract_label'] }, allocated_quantity: positiveIntegerString, contract_label: boundedString(512), period_start: boundedString(64), period_end: boundedString(64), source_checksum: boundedString(64), expected_revision: { type: 'string', pattern: '^0$' }, idempotency_key: idempotencyKeyProperty, reason: reasonProperty, evidence_json: boundedString(33_000) }, ['target_workspace_id', 'order_snapshot_id', 'entitlement_snapshot_id', 'service_type', 'unit', 'source_checksum', 'expected_revision', 'idempotency_key', 'reason', 'evidence_json']) },
@@ -918,7 +945,7 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   {
     method: 'catalog.image.generate',
     description: 'Generate product main/secondary image candidates from confirmed product facts and a selected visual direction; candidates remain unapproved until reviewed.',
-    params: params({ product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: platformProperty, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '已上传且通过扫描/权益/AI 修改检查的商品图片素材 ID 数组 JSON；未绑定模式必填。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }),
+    params: params({ product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: platformProperty, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已通过可信安全扫描的上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1024x3072', '1024x4096'], description: '单次画布尺寸；完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }),
   },
   {
     method: 'catalog.image.retry',
@@ -954,6 +981,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'rule.sync.status',
     description: 'Show per-platform rule freshness and whether a trusted signed manifest source is configured.',
     params: params({ interval_hours: { type: 'string' } }),
+  },
+  {
+    method: 'rule.sync.now',
+    description: 'Immediately fetch and verify the signed platform rule manifest, importing and activating new versions when configured.',
+    params: params({}),
   },
   {
     method: 'rule.history',
@@ -1308,6 +1340,16 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     params: params({ kind: { type: 'string', enum: ['brand', 'customer'] }, text: { type: 'string' }, tags_json: { type: 'string' } }),
   },
   {
+    method: 'knowledge.brand.preference.get',
+    description: 'Read the active or draft brand preference for the current workspace.',
+    params: params({}),
+  },
+  {
+    method: 'knowledge.brand.preference.update',
+    description: 'Save a versioned, workspace-scoped brand preference with an audit trail.',
+    params: params({ preferences_json: { type: 'string', contentMediaType: 'application/json', jsonShape: 'object' }, version: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'archived'] }, source: { type: 'string' }, expected_revision: { type: 'string' } }, ['preferences_json', 'version']),
+  },
+  {
     method: 'knowledge.asset.update',
     description: 'Update approval, rights or metadata for a workspace knowledge asset with an audit trail.',
     params: params({ asset_id: { type: 'string' }, name: { type: 'string' }, content_json: { type: 'string' }, source: { type: 'string' }, tags_json: { type: 'string' }, approval_status: { type: 'string', enum: ['pending', 'approved', 'rejected'] }, rights_status: { type: 'string', enum: ['unknown', 'cleared', 'restricted'] } }, ['asset_id']),
@@ -1448,11 +1490,15 @@ export function validateMcpRequest(value: unknown): McpValidationResult {
   const paramsObject = rawParams as Record<string, unknown>
   const schema = MCP_METHOD_SCHEMAS[request.method]
   for (const required of schema.required ?? []) {
-    if (typeof paramsObject[required] !== 'string' || !paramsObject[required].trim()) {
+    const value = paramsObject[required]
+    if (typeof value !== 'string' || !value.trim()) {
       errors.push(`params.${required} is required`)
     }
   }
-  if (schema.requiredAnyOf && !schema.requiredAnyOf.some(key => typeof paramsObject[key] === 'string' && paramsObject[key].trim())) {
+  if (schema.requiredAnyOf && !schema.requiredAnyOf.some(key => {
+    const value = paramsObject[key]
+    return typeof value === 'string' && Boolean(value.trim())
+  })) {
     errors.push(`params.${schema.requiredAnyOf.join(' or ')} is required`)
   }
   for (const [key, field] of Object.entries(paramsObject)) {

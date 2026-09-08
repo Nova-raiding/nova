@@ -1,10 +1,10 @@
-# Merchant Marketing Codex Plugin
+# 大麦 Codex 插件
 
-当前 `tools/list` 为 140 个 MCP 工具，以运行态契约测试为准。
+当前 `tools/list` 为 143 个 MCP 工具，以运行态契约测试为准。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
-- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260902004800`。
+- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260907102000`。
 - `skills/merchant-marketing/SKILL.md`：唯一入口 Skill。
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
@@ -50,6 +50,26 @@ bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPA
 共享 `COMMERCIAL_OPERATION_REGISTRY` 中所有 `surface=MCP + domain=COMMERCIAL + enabled=false` 的精确方法都不出现在 `tools/list`，直接调用也会在 API 前 fail-closed。这包括 `subscription.order.create`、`subscription.change`、接受任意人民币金额的旧 `billing.recharge.create`，以及当前因费率/生产证据未就绪而 disabled 的生成、编辑和预览类方法。未来的充值创建只能接受服务端发布的创意点包 SKU；Bridge 不生成 50/100/300 元等任意金额建议。
 
 ## 安装后第一步
+
+### ChatGPT 宿主模型与大麦业务模型
+
+聊天编排使用 ChatGPT/Codex 的宿主模型；商品文案、OCR、主图、图片编辑和视频使用服务端配置的大麦业务中转。插件不能替宿主模型申请容量，也不会把业务模型伪装成 ChatGPT 的模型选项。宿主出现 `Selected model is at capacity` 时，消息尚未进入插件 MCP，需等待容量恢复或在 ChatGPT 模型选择器切换可用模型。
+
+如果团队要让宿主对话也经过大麦中转站，安装后由管理员在启动 ChatGPT 的用户环境执行一次：
+
+```bash
+CODEX_RELAY_BASE_URL="https://ai.wormholexyz.xyz/v1" \
+CODEX_RELAY_MODEL="glm-5.2" \
+CODEX_RELAY_API_KEY_ENV="WORMHOLE_API_KEY" \
+npm run codex:relay:configure
+npm run codex:relay:validate
+```
+
+命令只写入用户级 `~/.codex/config.toml` 的 provider、模型、地址和一个仅包含已验证模型的本地目录快照，不写入密钥；密钥由平台密钥管理器注入。验证通过后必须完全重启 ChatGPT 并开启新会话。普通商家不需要填写中转站地址、Key 或模型名；缺少平台中转配置时，业务生成会按服务端门禁安全停止。
+
+### 图片附件需要宿主模型支持
+
+图片、PDF 或其他附件首先由 ChatGPT 宿主模型接收；消息成功发送后，服务端才会使用业务模型中转执行 OCR、文案或图片生成。若当前宿主模型不支持视觉附件（例如 Codex Spark 当前会提示“请移除图像或切换模型”），消息会在发送前被 ChatGPT 拦截，这不是 Merchant MCP 或业务中转故障。请切换到支持图片输入的宿主模型后重试；纯文字任务可以直接移除附件继续。业务模型不会替代宿主模型的输入能力，也不会出现在 ChatGPT 的模型选择器中。
 
 插件下载并启用后，第一步调用 `merchant.start`。它虽然幂等，但可能记录当前意图，因此不是只读恢复入口；服务端必须在任何意图写入、知识加载或业务 action 生成前完成创意点准入。零点或 unknown 时，返回内容只能包含余额/订单/支付状态等服务端授权恢复操作，不展示平台连接、目录同步、内容导出或其他业务下一步。如尚未有工作区，仅在服务端恢复契约允许时执行 `workspace.bootstrap`。准入通过后才展示京东、淘宝、天猫、拼多多、小红书、抖音六个平台，商家明确选择后调用 `platform.connect`，授权回调完成后用 `workspace.health` 刷新店铺状态。
 

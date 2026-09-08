@@ -22,7 +22,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
         }}
         disabled={!canKnowledge}
         style={{ marginBottom: 16 }}
-        aria-label="录入知识规则"
+        aria-label="录入工作区规则"
       >
         <Form.Item name="name" label="规则名称" rules={[{ required: true, message: "请输入规则名称" }]}>
           <Input placeholder="规则名称" />
@@ -81,6 +81,15 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
             options={[{ value: "draft", label: "草稿" }, { value: "active", label: "生效" }, { value: "inactive", label: "停用" }, { value: "archived", label: "归档" }]}
           />
         </Form.Item>
+        <Form.Item name="severity" label="严重级别" initialValue="warning">
+          <Select style={{ width: 110 }} options={[{ value: "info", label: "提示" }, { value: "warning", label: "警告" }, { value: "error", label: "阻断" }]} />
+        </Form.Item>
+        <Form.Item name="action" label="命中动作" initialValue="warn">
+          <Select style={{ width: 140 }} options={[{ value: "warn", label: "提醒" }, { value: "block", label: "阻断" }, { value: "require_confirmation", label: "要求确认" }, { value: "suggest", label: "建议" }]} />
+        </Form.Item>
+        <Form.Item name="tags" label="标签">
+          <Input placeholder="标签，用逗号分隔" />
+        </Form.Item>
         <Button disabled={!canKnowledge} type="primary" htmlType="submit">
           录入知识规则
         </Button>
@@ -89,7 +98,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
         rowKey="id"
         pagination={{ pageSize: 6 }}
         dataSource={knowledgeRules}
-        locale={{ emptyText: "尚未录入知识规则；完成上方来源核验后创建第一条规则" }}
+        locale={{ emptyText: "尚未录入工作区规则；平台官方规则请前往“平台规则”查看" }}
         scroll={{ x: 720 }}
         columns={[
           { title: "规则", dataIndex: "name" },

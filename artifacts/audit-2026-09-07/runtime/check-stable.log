@@ -1,0 +1,123 @@
+
+> merchant-marketing-codex@0.1.1 check
+> npm run typecheck && npm test && npm run test:ops-console && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio
+
+
+> merchant-marketing-codex@0.1.1 typecheck
+> tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+
+> merchant-marketing-codex@0.1.1 test
+> vitest run --no-file-parallelism
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts (90 tests | 1 failed) 9729ms
+     × returns only merchant-safe asset list fields and reduces blocked guidance to re-upload 125ms
+container source manifest failed: required worker input is missing: apps/worker
+container source manifest failed: symbolic links are forbidden in source inputs: apps/api/src/package-link.json
+container source manifest failed: required root build metadata is missing: package-lock.json
+container source manifest failed: manifest paths are not strictly sorted
+container source manifest failed: manifest contains an unsafe path: "../escape.ts"
+ ❯ apps/plugin/mcp/bridge.test.ts (90 tests | 1 failed) 10126ms
+     × returns only merchant-safe asset list fields and reduces blocked guidance to re-upload 147ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/plugin/mcp/bridge.test.ts > Codex stdio MCP bridge > returns only merchant-safe asset list fields and reduces blocked guidance to re-upload
+AssertionError: expected { assets: [ { …(5) } ], …(5) } to deeply equal { assets: [ { …(5) } ], …(4) }
+
+- Expected
++ Received
+
+@@ -1,13 +1,13 @@
+  {
+    "asset_actions": [
+      {
+        "asset_id": "asset_blocked_1",
++       "mime_type": "image/png",
+        "name": "bad.png",
+        "next_step": "重新提交这张图片即可触发平台自动复检，无需人工处理",
+-       "readiness_status": "blocked",
+-       "scan_status": "quarantined",
++       "scan_status": "blocked",
+        "user_action_required": true,
+      },
+    ],
+    "assets": [
+      {
+@@ -16,10 +16,11 @@
+        "name": "bad.png",
+        "next_step": "重新提交这张图片即可触发平台自动复检，无需人工处理",
+        "scan_status": "blocked",
+      },
+    ],
++   "candidate_generation_guidance": "用户明确要求使用上传图片制作时，扫描通过后直接调用 catalog.image.generate 生成未绑定候选；这里的权益/readiness 待确认是正式素材状态，不要求候选制作前重复确认。不得自动批准权益，明确拒绝、禁止 AI 修改及用途限制仍以生成接口校验为准。",
+    "empty_state": null,
+    "readiness": {
+      "blocked": 1,
+      "draft": 0,
+      "ready": 0,
+
+ ❯ apps/plugin/mcp/bridge.test.ts:1694:49
+    1692|       const response = await nextLine(child.stdout)
+    1693|       expect(response.result.isError).toBe(false)
+    1694|       expect(response.result.structuredContent).toEqual({
+       |                                                 ^
+    1695|         assets: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_…
+    1696|         readiness: { draft: 0, ready: 0, blocked: 1, total: 1 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts > Codex stdio MCP bridge > returns only merchant-safe asset list fields and reduces blocked guidance to re-upload
+AssertionError: expected { assets: [ { …(5) } ], …(5) } to deeply equal { assets: [ { …(5) } ], …(4) }
+
+- Expected
++ Received
+
+@@ -1,13 +1,13 @@
+  {
+    "asset_actions": [
+      {
+        "asset_id": "asset_blocked_1",
++       "mime_type": "image/png",
+        "name": "bad.png",
+        "next_step": "重新提交这张图片即可触发平台自动复检，无需人工处理",
+-       "readiness_status": "blocked",
+-       "scan_status": "quarantined",
++       "scan_status": "blocked",
+        "user_action_required": true,
+      },
+    ],
+    "assets": [
+      {
+@@ -16,10 +16,11 @@
+        "name": "bad.png",
+        "next_step": "重新提交这张图片即可触发平台自动复检，无需人工处理",
+        "scan_status": "blocked",
+      },
+    ],
++   "candidate_generation_guidance": "用户明确要求使用上传图片制作时，扫描通过后直接调用 catalog.image.generate 生成未绑定候选；这里的权益/readiness 待确认是正式素材状态，不要求候选制作前重复确认。不得自动批准权益，明确拒绝、禁止 AI 修改及用途限制仍以生成接口校验为准。",
+    "empty_state": null,
+    "readiness": {
+      "blocked": 1,
+      "draft": 0,
+      "ready": 0,
+
+ ❯ .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts:1694:49
+    1692|       const response = await nextLine(child.stdout)
+    1693|       expect(response.result.isError).toBe(false)
+    1694|       expect(response.result.structuredContent).toEqual({
+       |                                                 ^
+    1695|         assets: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_…
+    1696|         readiness: { draft: 0, ready: 0, blocked: 1, total: 1 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 601 passed | 44 skipped (647)
+      Tests  2 failed | 4165 passed | 69 skipped (4236)
+   Start at  16:59:38
+   Duration  279.98s (transform 6.57s, setup 0ms, import 87.23s, tests 111.79s, environment 36ms)
+

@@ -1,0 +1,181 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-45-43.563Z-3617d2fe-1c88-42d8-91af-77e95d69cfc6/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "isolated live JIT issue, refresh and revoke at 1440x900",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 8319,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mnot\u001b[2m.\u001b[22mtoHaveClass\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: '读取有效 JIT', exact: true })\nExpected pattern: not \u001b[32m/ant-btn-loading/u\u001b[39m\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"not toHaveClass\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: '读取有效 JIT', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mnot\u001b[2m.\u001b[22mtoHaveClass\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: '读取有效 JIT', exact: true })\nExpected pattern: not \u001b[32m/ant-btn-loading/u\u001b[39m\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"not toHaveClass\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: '读取有效 JIT', exact: true })\u001b[22m\n\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:235:36",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+                      "column": 36,
+                      "line": 235
+                    },
+                    "snippet": "  233 |\n  234 |       step('explicit_refresh_preserves_persisted_grant_and_revision')\n> 235 |       await expect(readGrants).not.toHaveClass(/ant-btn-loading/u)\n      |                                    ^\n  236 |       const [{ result: refreshed }] = await rpcThroughUi(page, ['ops.authorization.grants.list'], () => readGrants.click(), evidence)\n  237 |       const persisted = refreshed.grants.find(grant => grant.id === issued.id)\n  238 |       expect(persisted).toBeDefined()"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+                        "column": 36,
+                        "line": 235
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mnot\u001b[2m.\u001b[22mtoHaveClass\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: '读取有效 JIT', exact: true })\nExpected pattern: not \u001b[32m/ant-btn-loading/u\u001b[39m\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n\u001b[2m  - Expect \"not toHaveClass\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: '读取有效 JIT', exact: true })\u001b[22m\n\n\n  233 |\n  234 |       step('explicit_refresh_preserves_persisted_grant_and_revision')\n> 235 |       await expect(readGrants).not.toHaveClass(/ant-btn-loading/u)\n      |                                    ^\n  236 |       const [{ result: refreshed }] = await rpcThroughUi(page, ['ops.authorization.grants.list'], () => readGrants.click(), evidence)\n  237 |       const persisted = refreshed.grants.find(grant => grant.id === issued.id)\n  238 |       expect(persisted).toBeDefined()\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:235:36"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T01:45:49.510Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "failure-masked",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-45-43.563Z-3617d2fe-1c88-42d8-91af-77e95d69cfc6/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/failure-masked-486104a35e0f3f78113e6046bda0153d756f179c.png"
+                    },
+                    {
+                      "name": "redacted-rpc-step-trace",
+                      "contentType": "application/json",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-45-43.563Z-3617d2fe-1c88-42d8-91af-77e95d69cfc6/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/redacted-rpc-step-trace-2849c9f5d5c4c1771f6f94a104e01ab806412714.json"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-45-43.563Z-3617d2fe-1c88-42d8-91af-77e95d69cfc6/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+                    "column": 36,
+                    "line": 235
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "3ff8876666a65e908513-d14f88ee488fd2f2d1c2",
+          "file": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+          "line": 166,
+          "column": 3
+        },
+        {
+          "title": "isolated live JIT issue, refresh and revoke at 1280x800",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": -1,
+                  "parallelIndex": -1,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T01:45:58.364Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "3ff8876666a65e908513-30013240ca1bcf5f2d84",
+          "file": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+          "line": 166,
+          "column": 3
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-08T01:45:48.124Z",
+    "duration": 10247.679,
+    "expected": 0,
+    "skipped": 1,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

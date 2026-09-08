@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { authorizationScopeHash, AuthorizationRepositoryError, MemoryAuthorizationRepository } from './authorization-repository.js'
+import { authorizationScopeHash, AuthorizationRepositoryError, MemoryAuthorizationRepository, PostgresAuthorizationRepository } from './authorization-repository.js'
+import type { SqlClient } from './repository.js'
 
 const subject = '00000000-0000-0000-0000-000000000105'
 const start = Date.parse('2026-08-31T10:00:00.000Z')
@@ -100,6 +101,12 @@ describe('durable authorization repository', () => {
     await expect(issue({ product_ids: ['*'] }, 'SCOPE-WILDCARD')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
     await expect(issue({ product_ids: ['product-a'], metadata: { sensitive: true } }, 'SCOPE-NESTED')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
     await expect(issue({ product_ids: ['product-\nunsafe'] }, 'SCOPE-CONTROL')).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
+    for (const [index, scope] of [
+      { workspace_ids: ['ws-b'] },
+      { workspace_ids: ['ws-a', 'ws-b'] },
+      { workspace_ids: ['ws-a'], type: 'workspace', ids: 'ws-a' },
+      { workspace_ids: ['ws-a'], type: 'workspace' },
+    ].entries()) await expect(issue(scope, `SCOPE-WORKSPACE-${index}`)).rejects.toMatchObject({ code: 'AUTHORIZATION_GRANT_INVALID' })
     expect(await repo.getAuthorizationRevision(subject)).toBe(0)
   })
 
@@ -137,7 +144,6 @@ describe('durable authorization repository', () => {
   })
 
   it.each([
-    ['workspace', { workspace_ids: ['ws-a'] }, 'ws-b'],
     ['brand', { brand_ids: ['brand-a'] }, 'brand-b'],
     ['account', { account_ids: ['account-a'] }, 'account-b'],
   ] as const)('rejects a consumed grant reservation for a different %s resource ID', async (_scopeKind, resourceScope, foreignResourceId) => {
@@ -151,10 +157,50 @@ describe('durable authorization repository', () => {
     await expect(repo.reserveExecution({ ...input, reservationId: `reservation-${_scopeKind}-valid`, eventId: `event-${_scopeKind}-valid`, resourceId: validResourceId })).resolves.toMatchObject({ grantRevision: consumed!.revision })
   })
 
+  it('reserves the real job ID under a consumed workspace grant without rewriting its scope or hash', async () => {
+    const repo = repository()
+    const resourceScope = { workspace_ids: ['ws-a'], reason_tag: 'approved repair' }
+    const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.update'], resourceScope, reason: 'repair a workspace job', ticketRef: 'WORKSPACE-JOB', issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 1 })
+    const consumed = await repo.consumeGrant({ id: grant.id, subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', scopeHash: grant.scopeHash, expectedRevision: grant.revision, actorId: 'ops-lead', reason: 'admit workspace job' })
+    const input = { reservationId: 'reservation-workspace-job', eventId: 'event-workspace-job', decisionId: 'decision-workspace-job', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'job-a', scopeHash: grant.scopeHash, expectedAuthorizationRevision: consumed!.authorizationRevision, grantId: grant.id, expectedGrantRevision: consumed!.revision }
+    await expect(repo.reserveExecution({ ...input, workspaceId: 'ws-b' })).resolves.toBeUndefined()
+    await expect(repo.reserveExecution({ ...input, scopeHash: '0'.repeat(64) })).resolves.toBeUndefined()
+    await expect(repo.reserveExecution(input)).resolves.toMatchObject({ resourceId: 'job-a', workspaceId: 'ws-a', scopeHash: authorizationScopeHash(resourceScope) })
+    await expect(repo.reserveExecution({ ...input, resourceId: 'job-b' })).rejects.toMatchObject({ code: 'AUTHORIZATION_EXECUTION_RESERVATION_CONFLICT' })
+    await expect(repo.getGrant(grant.id, subject)).resolves.toMatchObject({ resourceScope, scopeHash: authorizationScopeHash(resourceScope), useCount: 1 })
+  })
+
   it('makes revoke win when it advances the authorization revision before reservation', async () => {
     const repo = repository()
     const grant = await repo.issueGrant({ grantKind: 'temporary', accessMode: 'write', subjectIdentityId: subject, workspaceId: 'ws-a', capabilities: ['customer.content.update'], resourceScope: { task_ids: ['task-cas-2'] }, reason: 'execute approved task', ticketRef: 'CAS-2', issuedBy: 'ops-lead', approvedBy: 'security-admin', approvedAt: new Date(start).toISOString(), expectedAuthorizationRevision: 0, expiresAt: new Date(start + 60_000).toISOString(), maxUses: 1 })
     await repo.revokeGrant({ id: grant.id, subjectIdentityId: subject, actorId: 'security-admin', reason: 'revoke before reservation', expectedRevision: grant.revision, expectedAuthorizationRevision: grant.authorizationRevision })
     await expect(repo.reserveExecution({ reservationId: 'reservation-cas-3', eventId: 'event-cas-3', decisionId: 'decision-cas-3', subjectIdentityId: subject, workspaceId: 'ws-a', capability: 'customer.content.update', resourceId: 'task-cas-2', scopeHash: grant.scopeHash, expectedAuthorizationRevision: 1, grantId: grant.id, expectedGrantRevision: 1 })).resolves.toBeUndefined()
+  })
+})
+
+describe('PostgreSQL authorization revision decoding', () => {
+  function postgresRevisionRepository(revision: string) {
+    const row = { id: 'grant-revision', subjectIdentityId: subject, workspaceId: 'ws-a', grantKind: 'temporary', accessMode: 'write', capabilities: ['customer.content.update'], resourceScope: { workspace_ids: ['ws-a'] }, scopeHash: authorizationScopeHash({ workspace_ids: ['ws-a'] }), reason: 'approved repair', ticketRef: 'REVISION', issuedBy: 'issuer', approvedBy: 'approver', approvedAt: new Date(start).toISOString(), issuedAt: new Date(start).toISOString(), expiresAt: new Date(start + 60_000).toISOString(), revokedAt: null, revokedBy: null, revocationReason: null, maxUses: 1, useCount: 0, revision: 1, authorizationRevision: revision, role: 'support_agent', validFrom: new Date(start).toISOString(), createdAt: new Date(start).toISOString(), updatedAt: new Date(start).toISOString() }
+    const client: SqlClient = {
+      async query<Row>(sql: string) {
+        if (/^(BEGIN|COMMIT|ROLLBACK)/u.test(sql) || sql.includes('set_config')) return { rows: [] as Row[] }
+        return { rows: [sql.includes('FROM authorization_revisions') ? { revision } : row] as Row[] }
+      },
+    }
+    return new PostgresAuthorizationRepository({ connect: async () => client }, () => new Date(start))
+  }
+
+  it('returns safe numbers from bigint grant, role, and subject revisions', async () => {
+    const repo = postgresRevisionRepository('2')
+    expect((await repo.getGrant('grant-revision', subject))?.authorizationRevision).toBe(2)
+    expect((await repo.listActivePlatformRoles(subject))[0]?.authorizationRevision).toBe(2)
+    expect(await repo.getAuthorizationRevision(subject)).toBe(2)
+  })
+
+  it.each(['9007199254740993', '-1', '1.5', 'invalid', ''])('fails closed for an unrepresentable authorization revision: %s', async revision => {
+    const repo = postgresRevisionRepository(revision)
+    await expect(repo.getGrant('grant-revision', subject)).rejects.toMatchObject({ code: 'AUTHORIZATION_REVISION_CONFLICT' })
+    await expect(repo.listActivePlatformRoles(subject)).rejects.toMatchObject({ code: 'AUTHORIZATION_REVISION_CONFLICT' })
+    await expect(repo.getAuthorizationRevision(subject)).rejects.toMatchObject({ code: 'AUTHORIZATION_REVISION_CONFLICT' })
   })
 })

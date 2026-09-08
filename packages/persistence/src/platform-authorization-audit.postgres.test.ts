@@ -63,9 +63,12 @@ describe('platform authorization audit PostgreSQL boundary', () => {
 
       app = new Pool({ connectionString: databaseConnection(base, databaseName, 'merchant_app', 'merchant_app_local_only') })
       await expect(app.query('SELECT * FROM platform_authorization_audit')).rejects.toMatchObject({ code: '42501' })
-      await expect(ops.query(`UPDATE platform_authorization_audit SET reason_code='tampered' WHERE decision_id=$1`, [decisionId])).rejects.toThrow(/append-only/u)
-      await expect(ops.query(`DELETE FROM platform_authorization_audit WHERE decision_id=$1`, [decisionId])).rejects.toThrow(/append-only/u)
-      await expect(ops.query('TRUNCATE platform_authorization_audit')).rejects.toThrow(/append-only/u)
+      // The control-plane contract is deny-by-default: a role with only
+      // SELECT/INSERT may be stopped by ACL before the append-only trigger.
+      // Both outcomes preserve the invariant and must remain fail-closed.
+      await expect(ops.query(`UPDATE platform_authorization_audit SET reason_code='tampered' WHERE decision_id=$1`, [decisionId])).rejects.toThrow(/append-only|permission denied/u)
+      await expect(ops.query(`DELETE FROM platform_authorization_audit WHERE decision_id=$1`, [decisionId])).rejects.toThrow(/append-only|permission denied/u)
+      await expect(ops.query('TRUNCATE platform_authorization_audit')).rejects.toThrow(/append-only|permission denied/u)
     } finally {
       await app?.end()
       await ops?.end()

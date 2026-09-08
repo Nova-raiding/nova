@@ -1,0 +1,81 @@
+{
+  "job_id": "imggen_b37be3f8-b6d2-493e-a3f7-f8ae58b0d874",
+  "creative_points": {
+    "balance_state": "known",
+    "available_points": 10000,
+    "quoted_points": null,
+    "reserved_points": 0,
+    "settled_points": 0,
+    "consumed_points": 0,
+    "customer_charge_points": 0,
+    "settlement": "included_quota",
+    "settlement_status": "authorized",
+    "access_revision": "1",
+    "rate_card_version": null,
+    "authoritative": true
+  },
+  "execution": {
+    "mode": "provider",
+    "simulated": false,
+    "providerExecuted": true,
+    "label": "已由配置的图片模型生成",
+    "message": "已由配置的图片模型生成"
+  },
+  "execution_state": "completed",
+  "provider_request_id": "202609071251124499196378268d9d6dpaDxSUA",
+  "execution_attempt": 1,
+  "reconciliation_required": false,
+  "next_action": {
+    "type": "refresh_status",
+    "label": "刷新任务状态",
+    "allowed": true
+  },
+  "selection_tickets": [
+    {
+      "visual_ref": "dvis_6607GukbWVx2YtNWWeuyrOVI",
+      "nonce_hash": "74308c07d55001df4023cee2f1a700556cc50ce7549f687009276d6bf7df45f1",
+      "intent_hash": "e91188dca23c0bbfd809f7d7c6ca5ef0c3867d56e54f931632501434f865bf17",
+      "expires_at": "2026-09-07T13:06:35.191Z"
+    }
+  ],
+  "review": [],
+  "job": {
+    "jobId": "imggen_b37be3f8-b6d2-493e-a3f7-f8ae58b0d874",
+    "productId": "prod_jd_local_4a7416e4ae4bff7263bf",
+    "taskId": null,
+    "contentVersionId": null,
+    "revision": 4,
+    "state": "succeeded",
+    "artifactRole": "candidate",
+    "imageMode": "optimize",
+    "direction": "使用这张原图制作京东商品主图，纯白背景，完整保留原来的浅蓝色女式连帽冲锋衣原款式、平滑面料、同色拉链、侧袋与松紧袖口。商品完整居中占画面85%，柔和摄影棚光线，不能增加帽绳、装饰或人物。仅展示所选SKU 浅蓝色 M码，不改变颜色，不添加文字或价格标签。",
+    "requestedCount": 1,
+    "skuIds": [],
+    "sourceAssetIds": [
+      "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac"
+    ],
+    "createdAt": "2026-09-07T12:51:08.969Z",
+    "updatedAt": "2026-09-07T13:01:35.177Z",
+    "archiveState": "archived",
+    "binding": "unbound",
+    "candidateCount": 1,
+    "candidates": [
+      {
+        "visualRef": "dvis_6607GukbWVx2YtNWWeuyrOVI",
+        "assetId": "asset_20ab095b-cd3b-403d-af1c-67e53426bfe2",
+        "ordinal": 1,
+        "mimeType": "image/png",
+        "sizeBytes": 580979,
+        "reviewStatus": "unreviewed",
+        "scanStatus": "clean"
+      }
+    ],
+    "platformUsage": {
+      "status": "not_submitted",
+      "observed": false
+    },
+    "selectionRequired": true
+  },
+  "historicalCandidate": true,
+  "platformPublished": false
+}

@@ -40,7 +40,6 @@ ops.members.list,candidate_pending_manual_trace,candidate only; literal scan doe
 ops.model-usage.summary,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
 ops.storage.reconciliation.list,frontend_reference_confirmed,StoragePage + useOpsConsoleModel; runtime closure still needs browser evidence
 ops.stores.list,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
-ops.support.crm.export,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
 ops.support.sla.correction.create,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
 ops.support.sla.correction.decide,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow
 ops.support.sla.report,candidate_pending_manual_trace,candidate only; literal scan does not prove missing UI or missing workflow

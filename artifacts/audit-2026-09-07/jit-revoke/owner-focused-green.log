@@ -1,0 +1,34 @@
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism apps/api/src/ops-jit-revoke-enforce.test.ts packages/contracts/src/authz.test.ts apps/api/src/server.test.ts apps/api/src/authz-decision-audit.test.ts apps/api/src/security.e2e.test.ts apps/api/src/worker-authorization-recheck.test.ts packages/persistence/src/authorization-repository.test.ts --reporter=default --reporter=json --outputFile=artifacts/audit-2026-09-07/jit-revoke/owner-focused-green.json
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+stderr | apps/api/src/ops-jit-revoke-enforce.test.ts > E1 signed OIDC JIT revoke under enforced durable authorization > revoke rejects stale grant revision in the real repository without changing grant, revisions, or successful mutations
+{"event":"request.unhandled_error","request_id":"req_6c980e0e-80ef-4385-9d15-c5a27cfed9db","trace_id":"req_6c980e0e-80ef-4385-9d15-c5a27cfed9db","method":"POST","route":"/mcp","error_name":"AuthorizationRepositoryError","error_message":"AUTHORIZATION_GRANT_REVISION_CONFLICT","error_stack":"AuthorizationRepositoryError: AUTHORIZATION_GRANT_REVISION_CONFLICT\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:277:56)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/ops-jit-revoke-enforce.test.ts:29:33)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:11429:38)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+stderr | apps/api/src/ops-jit-revoke-enforce.test.ts > E1 signed OIDC JIT revoke under enforced durable authorization > revoke rejects stale subject revision in the real repository without changing grant, revisions, or successful mutations
+{"event":"request.unhandled_error","request_id":"req_d97cf82b-8108-4e7f-b3ce-469c56e32052","trace_id":"req_d97cf82b-8108-4e7f-b3ce-469c56e32052","method":"POST","route":"/mcp","error_name":"AuthorizationRepositoryError","error_message":"AUTHORIZATION_REVISION_CONFLICT","error_stack":"AuthorizationRepositoryError: AUTHORIZATION_REVISION_CONFLICT\n    at ObservedAuthorizationRepository.bump (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:236:170)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:279:80)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/ops-jit-revoke-enforce.test.ts:29:33)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:11429:38)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+stderr | apps/api/src/ops-jit-revoke-enforce.test.ts > E1 signed OIDC JIT revoke under enforced durable authorization > revoke rejects wrong subject in the real repository without changing grant, revisions, or successful mutations
+{"event":"request.unhandled_error","request_id":"req_bfbbcbd4-424f-40b7-b002-5744f6bca3eb","trace_id":"req_bfbbcbd4-424f-40b7-b002-5744f6bca3eb","method":"POST","route":"/mcp","error_name":"AuthorizationRepositoryError","error_message":"AUTHORIZATION_GRANT_NOT_FOUND","error_stack":"AuthorizationRepositoryError: AUTHORIZATION_GRANT_NOT_FOUND\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:276:130)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/ops-jit-revoke-enforce.test.ts:29:33)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:11429:38)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+ ✓ apps/api/src/ops-jit-revoke-enforce.test.ts (33 tests) 2749ms
+stderr | apps/api/src/security.e2e.test.ts > security and access-control acceptance gates > keeps platform_ops out of customer marketing data while preserving platform summaries
+{"event":"request.unhandled_error","request_id":"req_2920d6c6-5c67-4711-b2db-15c01b591b05","trace_id":"req_2920d6c6-5c67-4711-b2db-15c01b591b05","method":"POST","route":"/mcp","error_name":"Error","error_message":"OPERATIONAL_ALERT_NOT_FOUND","error_stack":"Error: OPERATIONAL_ALERT_NOT_FOUND\n    at MemoryOperationalAlertsRepository.acknowledge (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/alerts-repository.ts:76:21)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:12004:64)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+ ✓ apps/api/src/security.e2e.test.ts (67 tests) 1194ms
+     ✓ filters brands by grant and enforces minimum brand roles for writes in staging  315ms
+ ✓ apps/api/src/worker-authorization-recheck.test.ts (34 tests) 152ms
+ ✓ apps/api/src/server.test.ts (95 tests) 140ms
+ ✓ packages/persistence/src/authorization-repository.test.ts (20 tests) 21ms
+ ✓ packages/contracts/src/authz.test.ts (32 tests) 17ms
+ ✓ apps/api/src/authz-decision-audit.test.ts (9 tests) 4ms
+
+ Test Files  7 passed (7)
+      Tests  290 passed (290)
+   Start at  20:33:04
+   Duration  7.85s (transform 2.03s, setup 0ms, import 2.71s, tests 4.28s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-revoke/owner-focused-green.json

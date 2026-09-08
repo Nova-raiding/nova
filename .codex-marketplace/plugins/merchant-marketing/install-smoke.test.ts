@@ -13,7 +13,9 @@ const inheritedRuntimeEnv = [
   'CODEX_NODE_BIN',
   'CODEX_MCP_NODE_PATH',
   'NODE_ENV',
+  'DEPLOY_ENV',
   'MERCHANT_MCP_BASE_URL',
+  'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
   'MERCHANT_WORKSPACE_ID',
   'MERCHANT_MCP_TOKEN',
   'MERCHANT_STRICT_AUTH',
@@ -36,7 +38,7 @@ describe('Codex plugin installation package', () => {
     expect(manifest.skills).toBe('./skills/')
     expect(manifest.mcpServers).toBe('./.mcp.json')
     expect(manifest.interface.defaultPrompt).toEqual([
-      '开始使用大麦：先读取当前工作区和店铺连接状态，再让我选择一家店铺',
+      '如果我已上传图片并要求生成或优化，直接使用上传素材生成未绑定候选图，不要先读取店铺或要求授权；只有同步、绑定商品或发布时才进入店铺流程',
       '查看当前工作区的创意点余额和准入状态；余额为零或未知时只显示服务端授权的恢复入口',
       '开始商品营销：先让我选择一个平台和商品，然后每一步都等我确认',
     ])

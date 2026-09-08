@@ -118,6 +118,10 @@ DOUYIN_API_BASE_URL=
 
 ## 当前阻塞项
 
+2026-09-08 本机运行态复核：当前 shell、用户级 launchd 环境和 API 容器均未注入六个平台的应用 ID/Secret、OAuth/API 地址或 Vault 凭据；`buildHttpConnectorConfigs(..., fixture=false)` 对六个平台返回零个可用配置。因此继续保持 `CONNECTOR_FIXTURE_MODE=true`、`PLUGIN_WRITE_ENABLED=false` 和 `productionGate=false`，没有用示例地址、测试凭据或手工修改状态冒充生产接入。
+
+同日使用 gstack Chromium 直连 `http://127.0.0.1:18082/ops/overview` 完成运行态复核：平台 readiness 聚合为 JD、TAOBAO、TMALL、PINDUODUO、XIAOHONGSHU、DOUYIN 恰好六行；淘宝的 3 个演示账号只汇总为一行，账号明细继续保留在店铺目录。所有 fixture 授权、读取和媒体状态均使用黄色“演示/未验证”标签，写入与生产发布使用红色阻断标签，没有绿色完成态。运营台 14 个一级页面均完成“底部→顶部→底部”滚动复测，稳定加载后全部到达实际滚动容器底部、保留可见内容，浏览器控制台无错误。
+
 - 六个平台真实应用 ID 和 Secret 尚未提供；
 - 没有真实测试店铺或官方沙箱凭证；
 - 尚未配置正式 HTTPS 域名和生产 Redis/Vault；

@@ -1,0 +1,190 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 平台级
+        - status [ref=e19]: 正在查看平台聚合与控制面数据
+        - generic [ref=e20]:
+          - generic [ref=e21]: 平台范围
+          - strong [ref=e22]: 全平台
+        - generic [ref=e23]:
+          - generic [ref=e24]: 工作区上下文
+          - strong [ref=e25]: 未进入工作区
+        - generic [ref=e26]: 客户内容默认不可见；进入工作区需受控授权
+      - navigation "平台运营功能导航" [ref=e27]:
+        - region "平台治理" [ref=e28]:
+          - heading "平台治理" [level=2] [ref=e29]
+          - button "总览" [ref=e30] [cursor=pointer]:
+            - img "safety-certificate" [ref=e31] [cursor=pointer]:
+              - img [ref=e32] [cursor=pointer]
+            - text: 总览
+          - button "用户与租户" [ref=e34] [cursor=pointer]:
+            - img "team" [ref=e35] [cursor=pointer]:
+              - img [ref=e36] [cursor=pointer]
+            - text: 用户与租户
+          - button "成员与权限" [ref=e38] [cursor=pointer]:
+            - img "usergroup-add" [ref=e39] [cursor=pointer]:
+              - img [ref=e40] [cursor=pointer]
+            - text: 成员与权限
+          - button "客服与 CRM" [ref=e42] [cursor=pointer]:
+            - img "customer-service" [ref=e43] [cursor=pointer]:
+              - img [ref=e44] [cursor=pointer]
+            - text: 客服与 CRM
+          - button "事故中心" [ref=e46] [cursor=pointer]:
+            - img "alert" [ref=e47] [cursor=pointer]:
+              - img [ref=e48] [cursor=pointer]
+            - text: 事故中心
+        - region "商家运营" [ref=e50]:
+          - heading "商家运营" [level=2] [ref=e51]
+          - button "任务与内容" [ref=e52] [cursor=pointer]:
+            - img "cloud-sync" [ref=e53] [cursor=pointer]:
+              - img [ref=e54] [cursor=pointer]
+            - text: 任务与内容
+          - button "平台连接" [ref=e57] [cursor=pointer]:
+            - img "global" [ref=e58] [cursor=pointer]:
+              - img [ref=e59] [cursor=pointer]
+            - text: 平台连接
+          - button "平台规则" [ref=e61] [cursor=pointer]:
+            - img "read" [ref=e62] [cursor=pointer]:
+              - img [ref=e63] [cursor=pointer]
+            - text: 平台规则
+        - region "模型与计费" [ref=e65]:
+          - heading "模型与计费" [level=2] [ref=e66]
+          - button "模型服务" [ref=e67] [cursor=pointer]:
+            - img "robot" [ref=e68] [cursor=pointer]:
+              - img [ref=e69] [cursor=pointer]
+            - text: 模型服务
+          - button "账务与退款" [ref=e71] [cursor=pointer]:
+            - img "dollar" [ref=e72] [cursor=pointer]:
+              - img [ref=e73] [cursor=pointer]
+            - text: 账务与退款
+        - region "风险与系统" [ref=e75]:
+          - heading "风险与系统" [level=2] [ref=e76]
+          - button "功能开关" [ref=e77] [cursor=pointer]:
+            - img "experiment" [ref=e78] [cursor=pointer]:
+              - img [ref=e79] [cursor=pointer]
+            - text: 功能开关
+          - button "存储与对账" [ref=e81] [cursor=pointer]:
+            - img "cloud-server" [ref=e82] [cursor=pointer]:
+              - img [ref=e83] [cursor=pointer]
+            - text: 存储与对账
+          - button "审计中心" [ref=e87] [cursor=pointer]:
+            - img "file-search" [ref=e88] [cursor=pointer]:
+              - img [ref=e89] [cursor=pointer]
+            - text: 审计中心
+      - button "通过客服与 CRM 受控支持客户问题" [ref=e91] [cursor=pointer]: 受控支持入口
+  - generic [ref=e92]:
+    - banner [ref=e93]:
+      - generic [ref=e94]:
+        - generic [ref=e95]:
+          - generic [ref=e96]: WORKSPACE OPERATIONS
+          - generic [ref=e97]: 桌面运营工作台
+        - heading "商业与平台控制台" [level=2] [ref=e98]
+        - region "当前身份与权限范围" [ref=e99]:
+          - generic [ref=e100]:
+            - img [ref=e102]:
+              - img [ref=e103]
+            - strong [ref=e107]: 平台运营
+            - status [ref=e109]: 授权状态：已由服务端验证
+            - generic [ref=e111]: 身份 actor_demo
+            - generic "切换运营工作台" [ref=e113]:
+              - generic [ref=e114]: 工作台
+              - generic [ref=e115]: 主动选择后将重新验证对应工作台的服务端授权范围；切换期间控件暂不可用。
+              - radiogroup "当前运营工作台，请主动选择" [ref=e116]:
+                - generic [ref=e117]:
+                  - generic [ref=e118] [cursor=pointer]:
+                    - radio "平台控制台" [checked]
+                  - generic [ref=e120] [cursor=pointer]:
+                    - radio "商家工作区"
+            - generic [ref=e123]: 平台全局
+            - generic [ref=e125]: 策略 2026-08-31.v2
+          - status [ref=e126]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+      - button "连接诊断 / 登录配置" [ref=e129] [cursor=pointer]:
+        - generic [ref=e130] [cursor=pointer]: 登录 / 连接
+    - main [ref=e131]:
+      - status [ref=e132]
+      - status [ref=e133]:
+        - img "exclamation-circle" [ref=e135]:
+          - img [ref=e136]
+        - generic [ref=e138]:
+          - generic [ref=e139]: 部分运营数据未刷新
+          - generic [ref=e140]: 部分数据集刷新失败（ops.audit.platform.list、ops.storage.reconciliation.list、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。
+      - region "审计中心" [active] [ref=e141]:
+        - generic [ref=e142]:
+          - generic [ref=e143]:
+            - generic [ref=e144]:
+              - generic [ref=e145]: AUDIT TRAIL
+              - generic [ref=e146]: 当前工作区数据
+            - heading "审计中心" [level=3] [ref=e147]
+            - generic [ref=e148]: 平台范围检索各授权租户的不可变审计事实；详情采用最小化、脱敏投影，跨租户导出请切换到具体工作区。
+          - button "loading 刷新审计" [ref=e150]:
+            - img "loading" [ref=e152]:
+              - img [ref=e153]
+            - generic [ref=e155]: 刷新审计
+        - generic [ref=e159]:
+          - generic [ref=e160]:
+            - generic [ref=e161]:
+              - heading "不可变审计记录" [level=3] [ref=e162]
+              - generic [ref=e163]: 所有详情均为服务端脱敏投影
+            - generic [ref=e164]:
+              - button "loading 刷新" [ref=e166]:
+                - img "loading" [ref=e168]:
+                  - img [ref=e169]
+                - generic [ref=e171]: 刷新
+              - button "导出当前筛选" [disabled] [ref=e173] [cursor=pointer]:
+                - img [ref=e175] [cursor=pointer]:
+                  - img [ref=e176] [cursor=pointer]
+                - generic [ref=e178] [cursor=pointer]: 导出当前筛选
+          - generic [ref=e179]: 平台聚合视图暂不支持跨租户导出，请切换到具体工作区。
+          - form "审计记录筛选" [ref=e180]:
+            - generic [ref=e181]:
+              - generic [ref=e190]:
+                - searchbox "搜索审计记录" [ref=e192]
+                - button "search" [ref=e194] [cursor=pointer]:
+                  - img "search" [ref=e196] [cursor=pointer]:
+                    - img [ref=e197] [cursor=pointer]
+              - generic [ref=e207]:
+                - combobox "按来源筛选" [ref=e210]
+                - img "down" [ref=e212]:
+                  - img [ref=e213]
+              - textbox "按操作者筛选" [ref=e224]
+              - textbox "按动作筛选" [ref=e235]
+              - textbox "按资源类型筛选" [ref=e246]
+              - textbox "审计开始时间" [ref=e256]
+              - textbox "审计结束时间" [ref=e265]
+              - button "清除筛选" [ref=e274] [cursor=pointer]:
+                - generic [ref=e275] [cursor=pointer]: 清除筛选
+          - generic [ref=e276]: 正在加载审计记录
+          - generic [ref=e279]:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - table:
+                      - rowgroup:
+                        - row "时间 来源 操作者 动作 资源 原因 操作":
+                          - columnheader "时间"
+                          - columnheader "来源"
+                          - columnheader "操作者"
+                          - columnheader "动作"
+                          - columnheader "资源"
+                          - columnheader "原因"
+                          - columnheader "操作"
+                      - rowgroup:
+                        - row "正在加载":
+                          - cell "正在加载":
+                            - generic: 正在加载
+```

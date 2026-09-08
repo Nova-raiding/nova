@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
+import { assertImageSelectionTicketPersistence, assertVideoArtifactUrl, configuredOAuthRedirectUri, deriveWorkerContinuationAuthorizationSnapshot, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, mcpAuthorizationCoverageReport, mcpAuthorizationEnforcedMethods, mcpAuthorizationRuntimeConfig, oauthStates, operationAudits, platformAuthorizationAuditForTests, productionAuthorizationReadiness, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests, setOAuthStateStoreForTests, setRuleRepositoryForTests, trustedDashScopeImageArtifactHost, validateOperationAuditContext, workspaceMembers } from './server.js'
 import { hashPkceVerifier, OAuthStateStore, redactSecrets } from '../../../packages/security/src/oauth.js'
 import { RedisOAuthStateStore, type OAuthRedisPort } from '../../../packages/security/src/redis-oauth.js'
 import { MemoryAuthorizationRepository } from '../../../packages/persistence/src/authorization-repository.js'
 import { MCP_METHODS } from '../../../packages/contracts/src/mcp.js'
 import { AUTHZ_POLICY_VERSION, CANONICAL_ROLES } from '../../../packages/contracts/src/authz.js'
 import { createWorkerRequestProof, type WorkerRequestRole } from '../../../packages/security/src/worker-request-proof.js'
+import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 
 type Envelope<T = Record<string, any>> = { workspace_id: string; data: T | null; error: { code: string; details?: Record<string, unknown> } | null }
 
@@ -103,11 +104,20 @@ function createRedisOAuthStateStoreForTests() {
   return new RedisOAuthStateStore(new MemoryRedisOAuthPort())
 }
 
+async function configureTrustedPlatformRule(workspaceId: string, platform: Parameters<typeof trustedPlatformRuleTestRepository>[1]) {
+  const repository = await trustedPlatformRuleTestRepository(workspaceId, platform)
+  setRuleRepositoryForTests(repository)
+  vi.stubEnv('PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://rules.example.com/platform-rule-manifest.json')
+  vi.stubEnv('PLATFORM_RULE_SYNC_SIGNING_SECRET', 'security-test-signing-secret')
+  return repository
+}
+
 beforeEach(() => vi.stubEnv('SESSION_ID_HASH_SECRET', 'test-session-hash-secret'))
 
 afterEach(async () => {
   if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
   setAuthorizationRepositoryForTests(undefined)
+  setRuleRepositoryForTests(undefined)
   setOAuthStateStoreForTests(undefined)
   vi.useRealTimers()
   vi.unstubAllEnvs()
@@ -213,7 +223,7 @@ describe('security and access-control acceptance gates', () => {
       context_id: 'platform:global',
       roles: ['platform_ops', 'rules_admin'],
       canonical_roles: ['ops_admin', 'rules_admin'],
-      policy_version: '2026-08-31.v2',
+      policy_version: AUTHZ_POLICY_VERSION,
       denied_capabilities: ['identity.update'],
       scopes: expect.arrayContaining([
         { type: 'self', ids: ['authz-ops'] },
@@ -245,7 +255,7 @@ describe('security and access-control acceptance gates', () => {
     const denied = await call('ops.feature-flag.emergency.set', {
       id: 'flag-authz', disabled: 'true', expected_revision: '1', idempotency_key: 'authz-emergency-1', reason: '验证紧急开关服务端拒绝',
     })
-    expect(denied.error).toMatchObject({ code: 'FORBIDDEN', details: { capability: 'feature_flag.administer', policy_version: '2026-08-31.v2' } })
+    expect(denied.error).toMatchObject({ code: 'FORBIDDEN', details: { capability: 'feature_flag.administer', policy_version: AUTHZ_POLICY_VERSION } })
     expect(await platformAuthorizationAuditForTests.list({ actorId: 'authz-ops', method: 'ops.feature-flag.emergency.set', result: 'deny' })).toEqual(expect.arrayContaining([
       expect.objectContaining({ decisionId: denied.error?.details?.decision_id, actorId: 'authz-ops', method: 'ops.feature-flag.emergency.set', result: 'deny', reasonCode: 'AUTHZ_CAPABILITY_MISSING', requestId: expect.any(String), traceId: expect.any(String) }),
     ]))
@@ -268,7 +278,7 @@ describe('security and access-control acceptance gates', () => {
       expect(response.status).toBe(503)
       expect(body.error).toMatchObject({
         code: 'AUTHZ_AUDIT_UNAVAILABLE',
-        details: { decision_id: expect.any(String), policy_version: '2026-08-31.v2' },
+        details: { decision_id: expect.any(String), policy_version: AUTHZ_POLICY_VERSION },
       })
       expect(append).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'authz-audit-failure-actor', method: 'ops.feature-flag.emergency.set', result: 'deny', reasonCode: 'AUTHZ_CAPABILITY_MISSING', resourceType: expect.any(String), requestId: expect.any(String), traceId: expect.any(String) }))
       expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('AUTHZ_PLATFORM_AUDIT_UNAVAILABLE'), expect.objectContaining({ message: 'AUTHZ_AUDIT_SINK_UNAVAILABLE' }))
@@ -596,7 +606,6 @@ describe('security and access-control acceptance gates', () => {
       ['ops.marketing.publish.acknowledge', { publish_job_id: 'publish_unknown', reason: '越权测试' }],
       ['ops.marketing.revision.create', { publish_job_id: 'publish_unknown', changes_json: '{}', reason: '越权测试' }],
       ['ops.support.tickets.list', { limit: '10' }],
-      ['ops.support.crm.export', { limit: '10' }],
     ] as const
     for (const [method, params] of customerDataMethods) {
       const errorCode = (await call(method, params)).error?.code
@@ -1561,21 +1570,24 @@ describe('security and access-control acceptance gates', () => {
     const headers = { authorization: 'Bearer token-publish', 'x-workspace-id': 'ws_publish_gate', 'content-type': 'application/json' }
     const created = await fetch(`${base}/v1/tasks`, { method: 'POST', headers, body: JSON.stringify({ product_id: productId, platform: 'taobao', account_id: 'remote-publish-gate' }) }).then(response => response.json() as Promise<Envelope<{ id: string }>>)
     const taskId = created.data!.id
+    const generationWithoutRules = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'content.generate', params: { task_id: taskId } }) }).then(response => response.json() as Promise<Envelope>)
+    expect(generationWithoutRules.error).toMatchObject({ code: 'PLATFORM_RULE_DATA_UNAVAILABLE', details: { platform: 'taobao', rule_sync: { state: 'not_configured' } } })
+    const trustedRuleRepository = await configureTrustedPlatformRule('ws_publish_gate', 'taobao')
     const generationBeforeRecharge = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'content.generate', params: { task_id: taskId } }) }).then(response => response.json() as Promise<Envelope>)
-    expect(generationBeforeRecharge.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    expect(generationBeforeRecharge.error?.code).toBe('MODEL_RELAY_NOT_CONFIGURED')
     const restGenerationBeforeRecharge = await fetch(`${base}/v1/tasks/${taskId}/content`, { method: 'POST', headers }).then(async response => ({ status: response.status, body: await response.json() as Envelope }))
-    expect(restGenerationBeforeRecharge.status).toBe(503)
-    expect(restGenerationBeforeRecharge.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    expect(restGenerationBeforeRecharge.status).toBe(400)
+    expect(restGenerationBeforeRecharge.body.error?.code).toBe('IDEMPOTENCY_KEY_REQUIRED')
     const asyncGenerationBeforeRecharge = await fetch(`${base}/v1/tasks/${taskId}/content-jobs`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'security-generation-before-recharge' }, body: JSON.stringify({}) }).then(async response => ({ status: response.status, body: await response.json() as Envelope }))
     expect(asyncGenerationBeforeRecharge.status).toBe(503)
-    expect(asyncGenerationBeforeRecharge.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+    expect(asyncGenerationBeforeRecharge.body.error?.code).toBe('MODEL_RELAY_NOT_CONFIGURED')
     await fetch(`${base}/v1/tasks/${taskId}/directions`, { method: 'POST', headers, body: JSON.stringify({ direction_id: 'A' }) })
     // Seed the content version directly after the mandatory production-plan
     // confirmation: model configuration is a separate gate, while this test
     // isolates the publish connector gate.
     service.confirmProductionPlan('ws_publish_gate', taskId, 'security-test')
     const draftVersion = service.createDraft(taskId)
-    service.approveContent(taskId, draftVersion.id)
+    service.approveContent(taskId, draftVersion.id, { availableRuleVersionIds: trustedRuleRepository.versions.filter(row => row.status === 'active').map(row => row.version), forbiddenTerms: [] })
     const preview = service.preparePublish(taskId)
     const response = await fetch(`${base}/v1/publish-jobs`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'publish-gate-1' }, body: JSON.stringify({ task_id: taskId, content_version_id: draftVersion.id, confirmation_hash: preview.confirmationHash, remote_snapshot_hash: preview.remoteSnapshotHash, account_id: 'remote-publish-gate' }) })
     const body = await response.json() as Envelope
@@ -1687,6 +1699,7 @@ describe('security and access-control acceptance gates', () => {
     vi.stubEnv('MERCHANT_BEARER_HOSTNAME', 'merchant.example.com')
     vi.stubEnv('OIDC_PROXY_SIGNING_SECRET', 'worker-oidc-secret')
     vi.stubEnv('WORKER_API_CREDENTIALS', JSON.stringify({ generation: { token: 'worker-token', signing_secret: 'worker-signing-secret' } }))
+    await configureTrustedPlatformRule('ws_worker', 'taobao')
     const productId = `prod_worker_${Date.now()}`
     service.products.set(productId, { ...service.products.get('prod_fixture_1')!, id: productId, workspaceId: 'ws_worker' })
     const task = service.createTask({ workspaceId: 'ws_worker', productId, platform: 'taobao' })

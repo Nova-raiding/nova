@@ -23,6 +23,76 @@ class RecordingPool implements SqlPool {
 const debit = { id: 'debit_1', workspace_id: 'ws_wallet', type: 'debit', amount_fen: 1, order_id: 'model:request-1', description: '模型生成调用', created_at: '2026-08-26T01:00:00.000Z' }
 const refund = { id: 'refund_1', workspace_id: 'ws_wallet', type: 'refund', amount_fen: 1, order_id: 'refund:model:request-1', description: '模型失败退款（merchant）：provider timeout', created_at: '2026-08-26T01:00:01.000Z' }
 
+describe('PostgresBillingRepository PostgreSQL bigint decoding', () => {
+  const pending = { id: 'recharge_bigint', workspace_id: 'ws_wallet', channel: 'alipay', amount_fen: '1000', state: 'pending', payment_mode: 'provider', payment_url: null, provider_trade_id: null, created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z' }
+
+  it('replays the same recharge intent when PostgreSQL returns bigint as text', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue(pending); client.enqueue()
+    const result = await new PostgresBillingRepository(new RecordingPool(client)).createOrder({ id: 'recharge_retry', workspaceId: 'ws_wallet', channel: 'alipay', amountFen: 1000, state: 'pending', paymentMode: 'provider', idempotencyKey: 'same-key' })
+    expect(result).toMatchObject({ id: 'recharge_bigint', amountFen: 1000 })
+  })
+
+  it('replays the same wallet debit without mistaking the driver type for a changed amount', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amount_fen: '1', description: '模型生成调用（merchant）' }); client.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).debit({ workspaceId: 'ws_wallet', amountFen: 1, idempotencyKey: 'model:request-1', actorId: 'merchant', description: '模型生成调用' })).resolves.toMatchObject({ amountFen: 1, created: false })
+    expect(client.calls.some(call => call.text.includes('INSERT INTO billing_transactions'))).toBe(false)
+  })
+
+  it('replays a provider settlement whose original and delta amounts are bigint text', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amount_fen: '1' }); client.enqueue({ ...debit, id: 'debit_delta', amount_fen: '4', order_id: 'settlement:model:request-1' }); client.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).settleDebit({ workspaceId: 'ws_wallet', debitIdempotencyKey: 'model:request-1', finalAmountFen: 5, actorId: 'merchant', description: '模型真实用量结算' })).resolves.toMatchObject({ original: { amountFen: 1 }, delta: { amountFen: 4 } })
+    expect(client.calls.some(call => call.text.includes('INSERT INTO billing_transactions'))).toBe(false)
+  })
+
+  it('accepts an equal numeric payment callback and returns a numeric domain amount', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue(pending); client.enqueue({ ...pending, state: 'paid', provider_trade_id: 'trade_bigint' }); client.enqueue(); client.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).markPaid({ workspaceId: 'ws_wallet', orderId: 'recharge_bigint', providerTradeId: 'trade_bigint', amountFen: 1000, eventSource: 'provider_callback' })).resolves.toMatchObject({ amountFen: 1000, state: 'paid' })
+    expect(client.calls.at(-1)?.text).toBe('COMMIT')
+  })
+
+  it('emits a numeric amount when a recharge refund completes', async () => {
+    const client = new RecordingClient()
+    const reservation = { ...debit, amount_fen: '1000', order_id: 'recharge-refund:recharge_bigint:1' }
+    client.enqueue(); client.enqueue(); client.enqueue({ ...pending, state: 'paid' }); client.enqueue(reservation); client.enqueue(); client.enqueue(); client.enqueue()
+    const appendEvent = vi.fn(async () => undefined)
+    await expect(new PostgresBillingRepository(new RecordingPool(client), appendEvent).completeRechargeRefund({ workspaceId: 'ws_wallet', orderId: 'recharge_bigint', reservationKey: reservation.order_id, actorId: 'finance', reason: '客户申请', providerRefundId: 'refund_bigint' })).resolves.toMatchObject({ amountFen: 1000 })
+    expect(appendEvent).toHaveBeenCalledWith(client, expect.objectContaining({ payload: expect.objectContaining({ amount_fen: 1000 }) }))
+  })
+
+  it('preserves the largest exactly representable amount and a negative wallet balance', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amount_fen: String(Number.MAX_SAFE_INTEGER) }); client.enqueue()
+    client.enqueue(); client.enqueue(); client.enqueue({ balance_fen: '-100' }); client.enqueue()
+    const repository = new PostgresBillingRepository(new RecordingPool(client))
+    await expect(repository.listTransactions('ws_wallet')).resolves.toMatchObject([{ amountFen: Number.MAX_SAFE_INTEGER }])
+    await expect(repository.balanceFen('ws_wallet')).resolves.toBe(-100)
+  })
+
+  it.each(['9007199254740993', '-9007199254740993', '1.5', 'invalid', ''])('rejects a database amount that cannot be represented safely: %s', async amount => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amount_fen: amount })
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).listTransactions('ws_wallet')).rejects.toThrow('BILLING_AMOUNT_INVALID')
+    expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+  })
+
+  it('rejects an unsafe aggregate balance before authorizing a new debit', async () => {
+    const client = new RecordingClient()
+    client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue(); client.enqueue({ balance_fen: '9007199254740993' })
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).debit({ workspaceId: 'ws_wallet', amountFen: 1, idempotencyKey: 'unsafe-balance', actorId: 'merchant', description: '模型生成调用' })).rejects.toThrow('BILLING_AMOUNT_INVALID')
+    expect(client.calls.some(call => call.text.includes('INSERT INTO billing_transactions'))).toBe(false)
+  })
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN])('rejects invalid debit input before starting a transaction: %s', async amountFen => {
+    const client = new RecordingClient()
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).debit({ workspaceId: 'ws_wallet', amountFen, idempotencyKey: 'invalid-amount', actorId: 'merchant', description: '模型生成调用' })).rejects.toThrow('BILLING_AMOUNT_INVALID')
+    expect(client.calls).toHaveLength(0)
+  })
+})
+
 describe('PostgresBillingRepository model debit reversal', () => {
   it('writes an immutable, idempotent refund keyed to the original debit', async () => {
     const client = new RecordingClient()

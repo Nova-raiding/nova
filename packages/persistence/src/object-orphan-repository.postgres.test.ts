@@ -71,7 +71,6 @@ describe('PostgresObjectOrphanRepository', () => {
       const repositoryA = new PostgresObjectOrphanRepository(appA)
       const repositoryB = new PostgresObjectOrphanRepository(appB)
       const queued = await repositoryA.enqueue({ workspaceId: workspaceA, objectKey: `clean/${workspaceA}/asset/source.png`, reason: 'metadata write failed' })
-
       const claims = await Promise.all([
         repositoryA.claimPending(workspaceA, { limit: 1, leaseMs: 1_000 }),
         repositoryB.claimPending(workspaceA, { limit: 1, leaseMs: 1_000 }),
@@ -91,7 +90,7 @@ describe('PostgresObjectOrphanRepository', () => {
       expect(await repositoryB.listPending(workspaceA)).toEqual([])
 
       const delayed = await repositoryA.enqueue({ workspaceId: workspaceA, objectKey: `clean/${workspaceA}/asset/delayed.png`, reason: 'retry later' })
-      const delayedClaim = await repositoryA.claimPending(workspaceA, { now: delayed.nextAttemptAt, leaseMs: 1_000 })
+      const delayedClaim = await repositoryA.claimPending(workspaceA, { leaseMs: 1_000 })
       const delayedLease = delayedClaim.find(row => row.id === delayed.id)?.leaseToken
       if (!delayedLease) throw new Error('expected a delayed lease token')
       await repositoryA.markRetry({
@@ -104,7 +103,7 @@ describe('PostgresObjectOrphanRepository', () => {
       })
       const requeued = await repositoryA.enqueue({ workspaceId: workspaceA, objectKey: `clean/${workspaceA}/asset/delayed.png`, reason: 'fresh cleanup event', lastError: 'retry now' })
       expect(requeued).toMatchObject({ id: delayed.id, state: 'pending' })
-      expect(await repositoryA.claimPending(workspaceA, { now: requeued.nextAttemptAt, leaseMs: 1_000 })).toContainEqual(expect.objectContaining({ id: delayed.id }))
+      expect(await repositoryA.claimPending(workspaceA, { leaseMs: 1_000 })).toContainEqual(expect.objectContaining({ id: delayed.id }))
 
       await repositoryA.enqueue({ workspaceId: workspaceB, objectKey: `clean/${workspaceB}/asset/source.png`, reason: 'other workspace' })
       expect(await repositoryA.listPending(workspaceA)).toEqual([])

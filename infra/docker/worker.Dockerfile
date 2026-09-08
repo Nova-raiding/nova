@@ -6,7 +6,7 @@ COPY packages ./packages
 COPY tests ./tests
 COPY demo ./demo
 COPY scripts ./scripts
-COPY tsconfig.json vitest.config.ts ./
+COPY tsconfig.json vitest*.config.ts ./
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
 RUN node infra/scripts/generate-container-source-manifest.mjs generate api /app \
   /app/.release-source/api.manifest /app/.release-source/api.manifest.sha256 \

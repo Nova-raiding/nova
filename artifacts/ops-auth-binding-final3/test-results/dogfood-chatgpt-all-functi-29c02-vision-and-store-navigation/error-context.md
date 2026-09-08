@@ -1,0 +1,938 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 工作区
+        - status [ref=e19]: 正在操作工作区 ws_demo
+        - generic [ref=e20]:
+          - generic [ref=e21]: 工作区范围
+          - strong [ref=e22]: ws_demo
+        - generic [ref=e23]: 数据与操作仅限当前工作区
+      - navigation "平台运营功能导航" [ref=e24]:
+        - region "平台治理" [ref=e25]:
+          - heading "平台治理" [level=2] [ref=e26]
+          - button "总览" [ref=e27] [cursor=pointer]:
+            - img "safety-certificate" [ref=e28] [cursor=pointer]:
+              - img [ref=e29] [cursor=pointer]
+            - text: 总览
+          - button "成员与权限" [ref=e31] [cursor=pointer]:
+            - img "usergroup-add" [ref=e32] [cursor=pointer]:
+              - img [ref=e33] [cursor=pointer]
+            - text: 成员与权限
+        - region "商家运营" [ref=e35]:
+          - heading "商家运营" [level=2] [ref=e36]
+          - button "任务与内容" [ref=e37] [cursor=pointer]:
+            - img "cloud-sync" [ref=e38] [cursor=pointer]:
+              - img [ref=e39] [cursor=pointer]
+            - text: 任务与内容
+          - button "知识库" [ref=e42] [cursor=pointer]:
+            - img "database" [ref=e43] [cursor=pointer]:
+              - img [ref=e44] [cursor=pointer]
+            - text: 知识库
+          - button "平台连接" [ref=e46] [cursor=pointer]:
+            - img "global" [ref=e47] [cursor=pointer]:
+              - img [ref=e48] [cursor=pointer]
+            - text: 平台连接
+          - button "平台规则" [ref=e50] [cursor=pointer]:
+            - img "read" [ref=e51] [cursor=pointer]:
+              - img [ref=e52] [cursor=pointer]
+            - text: 平台规则
+        - region "模型与计费" [ref=e54]:
+          - heading "模型与计费" [level=2] [ref=e55]
+          - button "账务与退款" [ref=e56] [cursor=pointer]:
+            - img "dollar" [ref=e57] [cursor=pointer]:
+              - img [ref=e58] [cursor=pointer]
+            - text: 账务与退款
+        - region "风险与系统" [ref=e60]:
+          - heading "风险与系统" [level=2] [ref=e61]
+          - button "存储与对账" [ref=e62] [cursor=pointer]:
+            - img "cloud-server" [ref=e63] [cursor=pointer]:
+              - img [ref=e64] [cursor=pointer]
+            - text: 存储与对账
+          - button "审计中心" [ref=e68] [cursor=pointer]:
+            - img "file-search" [ref=e69] [cursor=pointer]:
+              - img [ref=e70] [cursor=pointer]
+            - text: 审计中心
+  - generic [ref=e72]:
+    - banner [ref=e73]:
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - generic [ref=e76]: WORKSPACE OPERATIONS
+          - generic [ref=e77]: 桌面运营工作台
+        - heading "商业与平台控制台" [level=2] [ref=e78]
+        - region "当前身份与权限范围" [ref=e79]:
+          - generic [ref=e80]:
+            - img [ref=e82]:
+              - img [ref=e83]
+            - strong [ref=e87]: competitor_reviewer
+            - status [ref=e89]: 授权状态：已由服务端验证
+            - generic [ref=e91]: 身份 actor_demo
+            - button "展开其余 4 个已验证角色" [ref=e94] [cursor=pointer]:
+              - generic [ref=e95] [cursor=pointer]: +4 个角色
+            - generic "切换运营工作台" [ref=e97]:
+              - generic [ref=e98]: 工作台
+              - generic [ref=e99]: 主动选择后将重新验证对应工作台的服务端授权范围；切换期间控件暂不可用。
+              - radiogroup "当前运营工作台，请主动选择" [ref=e100]:
+                - generic [ref=e101]:
+                  - generic [ref=e102] [cursor=pointer]:
+                    - radio "平台控制台"
+                  - generic [ref=e104] [cursor=pointer]:
+                    - radio "商家工作区" [checked]
+            - generic [ref=e107]: 工作区 · ws_demo
+            - generic [ref=e109]: 策略 2026-08-31.v2
+          - status [ref=e110]: 商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。
+      - button "连接诊断 / 登录配置" [ref=e113] [cursor=pointer]:
+        - generic [ref=e114] [cursor=pointer]: 查看安全状态
+    - main [ref=e115]:
+      - status [ref=e116]
+      - region "平台连接汇总" [active] [ref=e117]:
+        - generic [ref=e118]:
+          - generic [ref=e119]:
+            - generic [ref=e120]:
+              - generic [ref=e121]: STORE OPERATIONS
+              - generic [ref=e122]: 当前工作区数据
+            - heading "平台连接汇总" [level=3] [ref=e123]
+            - generic [ref=e124]: 平台运营查看平台级连接健康，并通过受控支持入口处理客户问题。
+          - button "刷新连接" [ref=e126] [cursor=pointer]:
+            - generic [ref=e127] [cursor=pointer]: 刷新连接
+        - generic [ref=e128]:
+          - generic [ref=e130]:
+            - generic [ref=e132]:
+              - generic [ref=e134]:
+                - img [ref=e136]:
+                  - img [ref=e137]
+                - generic [ref=e139]: 平台连接汇总
+              - button "受控支持入口" [ref=e141] [cursor=pointer]:
+                - img [ref=e143] [cursor=pointer]:
+                  - img [ref=e144] [cursor=pointer]
+                - generic [ref=e146] [cursor=pointer]: 受控支持入口
+            - generic [ref=e147]:
+              - generic [ref=e148]: 平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单按授权范围受控处理。
+              - generic "平台连接汇总" [ref=e150]:
+                - generic [ref=e151]:
+                  - generic [ref=e154]: 抖音
+                  - generic [ref=e156]:
+                    - generic [ref=e158]:
+                      - generic [ref=e160]: 登记店铺
+                      - generic [ref=e163]: "1"
+                    - generic [ref=e165]:
+                      - generic [ref=e167]: 官方 API
+                      - generic [ref=e170]: "0"
+                    - generic [ref=e172]: 连接正常
+                - generic [ref=e173]:
+                  - generic [ref=e176]: 京东
+                  - generic [ref=e178]:
+                    - generic [ref=e180]:
+                      - generic [ref=e182]: 登记店铺
+                      - generic [ref=e185]: "1"
+                    - generic [ref=e187]:
+                      - generic [ref=e189]: 官方 API
+                      - generic [ref=e192]: "0"
+                    - generic [ref=e194]: 连接正常
+                - generic [ref=e195]:
+                  - generic [ref=e198]: 拼多多
+                  - generic [ref=e200]:
+                    - generic [ref=e202]:
+                      - generic [ref=e204]: 登记店铺
+                      - generic [ref=e207]: "1"
+                    - generic [ref=e209]:
+                      - generic [ref=e211]: 官方 API
+                      - generic [ref=e214]: "0"
+                    - generic [ref=e216]: 连接正常
+                - generic [ref=e217]:
+                  - generic [ref=e220]: 淘宝
+                  - generic [ref=e222]:
+                    - generic [ref=e224]:
+                      - generic [ref=e226]: 登记店铺
+                      - generic [ref=e229]: "3"
+                    - generic [ref=e231]:
+                      - generic [ref=e233]: 官方 API
+                      - generic [ref=e236]: "0"
+                    - generic [ref=e238]: 连接正常
+                - generic [ref=e239]:
+                  - generic [ref=e242]: 天猫
+                  - generic [ref=e244]:
+                    - generic [ref=e246]:
+                      - generic [ref=e248]: 登记店铺
+                      - generic [ref=e251]: "1"
+                    - generic [ref=e253]:
+                      - generic [ref=e255]: 官方 API
+                      - generic [ref=e258]: "0"
+                    - generic [ref=e260]: 连接正常
+                - generic [ref=e261]:
+                  - generic [ref=e264]: 小红书
+                  - generic [ref=e266]:
+                    - generic [ref=e268]:
+                      - generic [ref=e270]: 登记店铺
+                      - generic [ref=e273]: "1"
+                    - generic [ref=e275]:
+                      - generic [ref=e277]: 官方 API
+                      - generic [ref=e280]: "0"
+                    - generic [ref=e282]: 1 个需关注
+          - generic [ref=e284]:
+            - generic [ref=e288]:
+              - img [ref=e290]:
+                - img [ref=e291]
+              - generic [ref=e293]: 品牌、平台与店铺
+            - status [ref=e295]:
+              - generic [ref=e296]:
+                - img "暂无数据" [ref=e298]
+                - generic [ref=e304]: 当前工作区还没有可访问的品牌
+                - generic [ref=e306]:
+                  - generic [ref=e308]: 先创建一个品牌，再绑定平台和店铺。
+                  - generic [ref=e310]:
+                    - textbox "品牌名称" [ref=e311]
+                    - button "创建品牌" [ref=e312] [cursor=pointer]:
+                      - generic [ref=e313] [cursor=pointer]: 创建品牌
+          - generic [ref=e315]:
+            - generic [ref=e318]:
+              - img [ref=e319]:
+                - img [ref=e320]
+              - text: 品牌治理聚合
+            - generic [ref=e323]:
+              - img "暂无数据" [ref=e325]
+              - generic [ref=e331]: 尚未取得平台品牌聚合数据
+          - generic [ref=e333]:
+            - generic [ref=e335]:
+              - generic [ref=e337]:
+                - generic [ref=e338]: 规范商品一致性
+                - generic [ref=e340]: 需处理
+              - button "重新检查一致性报告" [ref=e342] [cursor=pointer]:
+                - img "reload" [ref=e344] [cursor=pointer]:
+                  - img [ref=e345] [cursor=pointer]
+                - generic [ref=e347] [cursor=pointer]: 重新检查
+            - generic [ref=e348]:
+              - generic [ref=e349]: 只读检查 canonical → listing → campaign item → task 关系链；未验证状态不会自动修复或允许继续发布。
+              - alert [ref=e350]:
+                - img "check-circle" [ref=e352]:
+                  - img [ref=e353]
+                - generic [ref=e355]:
+                  - generic [ref=e356]: 报告新鲜
+                  - generic [ref=e357]: 结果可作为当前工作区的只读依据。
+              - alert [ref=e358]:
+                - img "exclamation-circle" [ref=e360]:
+                  - img [ref=e361]
+                - generic [ref=e364]:
+                  - generic [ref=e365]: 存在未验证关系
+                  - generic [ref=e367]:
+                    - generic [ref=e368]: 请打开具体商品查看稳定错误码、影响范围和下一步；不要把数量摘要当作全部一致。
+                    - alert "错误摘要：" [ref=e369]:
+                      - generic [ref=e370]: 错误摘要：
+                      - generic [ref=e371]: TASK_ACCOUNT_MISMATCH
+                      - generic [ref=e372]: TASK_CANONICAL_SCOPE_MISSING
+                      - generic [ref=e373]: TASK_LISTING_SCOPE_MISSING
+                      - generic [ref=e374]: 未找到规范商品映射
+                      - generic [ref=e375]: PUBLISH_CANONICAL_SCOPE_MISSING
+                      - generic [ref=e376]: PUBLISH_LISTING_SCOPE_MISSING
+                      - generic [ref=e377]: 关联素材尚未通过安全扫描
+                      - generic [ref=e378]: ASSET_BINDING_DISABLED
+                      - generic [ref=e379]: 请修复后重新检查；错误状态不会自动放行后续操作。
+              - generic [ref=e380]:
+                - generic [ref=e382]: 工作区：ws_demo
+                - generic [ref=e384]: 实时读取
+                - generic [ref=e386]: 切读：legacy_shadow
+                - generic [ref=e388]: 检查 revision：cd06796e6046…
+                - generic [ref=e390]: 审计记录：58
+                - generic [ref=e392]: 生成于：2026-09-06T10:13:59.275Z
+              - generic [ref=e393]:
+                - generic [ref=e395]:
+                  - generic [ref=e397]: 已验证
+                  - generic [ref=e400]: "0"
+                - generic [ref=e402]:
+                  - generic [ref=e404]: 已回填待核验
+                  - generic [ref=e407]: "0"
+                - generic [ref=e409]:
+                  - generic [ref=e411]: 仅旧商品
+                  - generic [ref=e414]: "48"
+                - generic [ref=e416]:
+                  - generic [ref=e418]: 存在冲突
+                  - generic [ref=e421]: "9"
+                - generic [ref=e423]:
+                  - generic [ref=e425]: 已阻断
+                  - generic [ref=e428]: "1"
+              - generic [ref=e429]:
+                - strong [ref=e432]: 商品级检查结果
+                - radiogroup "一致性状态筛选" [ref=e434]:
+                  - generic [ref=e435]:
+                    - generic [ref=e436] [cursor=pointer]:
+                      - radio "全部" [checked]
+                    - generic [ref=e438] [cursor=pointer]:
+                      - radio "已验证"
+                    - generic [ref=e440] [cursor=pointer]:
+                      - radio "已回填待核验"
+                    - generic [ref=e442] [cursor=pointer]:
+                      - radio "仅旧商品"
+                    - generic [ref=e444] [cursor=pointer]:
+                      - radio "存在冲突"
+                    - generic [ref=e446] [cursor=pointer]:
+                      - radio "已阻断"
+                - generic [ref=e451]:
+                  - table [ref=e455]:
+                    - rowgroup [ref=e456]:
+                      - row "旧商品 ID 规范商品 ID 关系引用 证据时间 原因 状态 下一步 操作" [ref=e457]:
+                        - columnheader "旧商品 ID" [ref=e458]
+                        - columnheader "规范商品 ID" [ref=e459]
+                        - columnheader "关系引用" [ref=e460]
+                        - columnheader "证据时间" [ref=e461]
+                        - columnheader "原因" [ref=e462]
+                        - columnheader "状态" [ref=e463]
+                        - columnheader "下一步" [ref=e464]
+                        - columnheader "操作" [ref=e465]
+                    - rowgroup [ref=e466]:
+                      - row "prod_taobao_484008b7e055_TB-FIXTURE-2001 canonical_product_0ffeaf289d0f444bbf98ac41 1 listing / 7 task 2026-09-06T10:13:59.275Z TASK_ACCOUNT_MISMATCH、TASK_CANONICAL_SCOPE_MISSING、TASK_LISTING_SCOPE_MISSING warning 存在冲突 按当前店铺重新承接任务（需要 platform_ops 权限） 服务端动作证据 查看 prod_taobao_484008b7e055_TB-FIXTURE-2001 一致性详情" [ref=e467]:
+                        - cell "prod_taobao_484008b7e055_TB-FIXTURE-2001" [ref=e468]
+                        - cell "canonical_product_0ffeaf289d0f444bbf98ac41" [ref=e469]
+                        - cell "1 listing / 7 task" [ref=e470]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e471]
+                        - cell "TASK_ACCOUNT_MISMATCH、TASK_CANONICAL_SCOPE_MISSING、TASK_LISTING_SCOPE_MISSING" [ref=e472]
+                        - cell "warning 存在冲突" [ref=e473]:
+                          - generic [ref=e474]:
+                            - img "warning" [ref=e475]:
+                              - img [ref=e476]
+                            - generic [ref=e478]: 存在冲突
+                        - cell "按当前店铺重新承接任务（需要 platform_ops 权限） 服务端动作证据" [ref=e479]:
+                          - generic [ref=e480]:
+                            - generic [ref=e482]: 按当前店铺重新承接任务（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e484]: task.clone · 任务 task_5b8cccaa-475b-4601-b277-e313e2f63339 的店铺账号与商品关系链不一致；原任务保持不变，必须显式选择目标账号创建新任务。 · 输入：workspace_id、task_id、target_account_id、reason · 需要交互确认
+                        - cell "查看 prod_taobao_484008b7e055_TB-FIXTURE-2001 一致性详情" [ref=e485]:
+                          - button "查看 prod_taobao_484008b7e055_TB-FIXTURE-2001 一致性详情" [ref=e486] [cursor=pointer]:
+                            - generic [ref=e487] [cursor=pointer]: 查看详情
+                      - row "prod_demo_fixture_1 — 0 listing / 2 task 2026-09-06T10:13:59.275Z 未找到规范商品映射 warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_demo_fixture_1 一致性详情" [ref=e488]:
+                        - cell "prod_demo_fixture_1" [ref=e489]
+                        - cell "—" [ref=e490]
+                        - cell "0 listing / 2 task" [ref=e491]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e492]
+                        - cell "未找到规范商品映射" [ref=e493]
+                        - cell "warning 仅旧商品" [ref=e494]:
+                          - generic [ref=e495]:
+                            - img "warning" [ref=e496]:
+                              - img [ref=e497]
+                            - generic [ref=e499]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e500]:
+                          - generic [ref=e501]:
+                            - generic [ref=e503]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e505]: brand-unit.product.create · 需要为对象 prod_demo_fixture_1 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_demo_fixture_1 一致性详情" [ref=e506]:
+                          - button "查看 prod_demo_fixture_1 一致性详情" [ref=e507] [cursor=pointer]:
+                            - generic [ref=e508] [cursor=pointer]: 查看详情
+                      - row "prod_douyin_1edf77671d8b_DY-FIXTURE-2001 — 0 listing / 0 task 2026-09-06T10:13:59.275Z 未找到规范商品映射 warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_douyin_1edf77671d8b_DY-FIXTURE-2001 一致性详情" [ref=e509]:
+                        - cell "prod_douyin_1edf77671d8b_DY-FIXTURE-2001" [ref=e510]
+                        - cell "—" [ref=e511]
+                        - cell "0 listing / 0 task" [ref=e512]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e513]
+                        - cell "未找到规范商品映射" [ref=e514]
+                        - cell "warning 仅旧商品" [ref=e515]:
+                          - generic [ref=e516]:
+                            - img "warning" [ref=e517]:
+                              - img [ref=e518]
+                            - generic [ref=e520]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e521]:
+                          - generic [ref=e522]:
+                            - generic [ref=e524]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e526]: brand-unit.product.create · 需要为对象 prod_douyin_1edf77671d8b_DY-FIXTURE-2001 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_douyin_1edf77671d8b_DY-FIXTURE-2001 一致性详情" [ref=e527]:
+                          - button "查看 prod_douyin_1edf77671d8b_DY-FIXTURE-2001 一致性详情" [ref=e528] [cursor=pointer]:
+                            - generic [ref=e529] [cursor=pointer]: 查看详情
+                      - row "prod_fixture_1 — 0 listing / 40 task 2026-09-06T10:13:59.275Z 未找到规范商品映射、PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_fixture_1 一致性详情" [ref=e530]:
+                        - cell "prod_fixture_1" [ref=e531]
+                        - cell "—" [ref=e532]
+                        - cell "0 listing / 40 task" [ref=e533]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e534]
+                        - cell "未找到规范商品映射、PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e535]
+                        - cell "warning 仅旧商品" [ref=e536]:
+                          - generic [ref=e537]:
+                            - img "warning" [ref=e538]:
+                              - img [ref=e539]
+                            - generic [ref=e541]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e542]:
+                          - generic [ref=e543]:
+                            - generic [ref=e545]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e547]: brand-unit.product.create · 需要为对象 prod_fixture_1 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_fixture_1 一致性详情" [ref=e548]:
+                          - button "查看 prod_fixture_1 一致性详情" [ref=e549] [cursor=pointer]:
+                            - generic [ref=e550] [cursor=pointer]: 查看详情
+                      - row "prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001 — 0 listing / 6 task 2026-09-06T10:13:59.275Z 未找到规范商品映射 warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001 一致性详情" [ref=e551]:
+                        - cell "prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001" [ref=e552]
+                        - cell "—" [ref=e553]
+                        - cell "0 listing / 6 task" [ref=e554]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e555]
+                        - cell "未找到规范商品映射" [ref=e556]
+                        - cell "warning 仅旧商品" [ref=e557]:
+                          - generic [ref=e558]:
+                            - img "warning" [ref=e559]:
+                              - img [ref=e560]
+                            - generic [ref=e562]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e563]:
+                          - generic [ref=e564]:
+                            - generic [ref=e566]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e568]: brand-unit.product.create · 需要为对象 prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001 一致性详情" [ref=e569]:
+                          - button "查看 prod_jd_f66d3fe3ee3d_JD-FIXTURE-1001 一致性详情" [ref=e570] [cursor=pointer]:
+                            - generic [ref=e571] [cursor=pointer]: 查看详情
+                      - row "prod_jd_local_1748a7ba4da4d550c698 — 0 listing / 0 task 2026-09-06T10:13:59.275Z 未找到规范商品映射 warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_jd_local_1748a7ba4da4d550c698 一致性详情" [ref=e572]:
+                        - cell "prod_jd_local_1748a7ba4da4d550c698" [ref=e573]
+                        - cell "—" [ref=e574]
+                        - cell "0 listing / 0 task" [ref=e575]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e576]
+                        - cell "未找到规范商品映射" [ref=e577]
+                        - cell "warning 仅旧商品" [ref=e578]:
+                          - generic [ref=e579]:
+                            - img "warning" [ref=e580]:
+                              - img [ref=e581]
+                            - generic [ref=e583]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e584]:
+                          - generic [ref=e585]:
+                            - generic [ref=e587]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e589]: brand-unit.product.create · 需要为对象 prod_jd_local_1748a7ba4da4d550c698 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_jd_local_1748a7ba4da4d550c698 一致性详情" [ref=e590]:
+                          - button "查看 prod_jd_local_1748a7ba4da4d550c698 一致性详情" [ref=e591] [cursor=pointer]:
+                            - generic [ref=e592] [cursor=pointer]: 查看详情
+                      - row "prod_jd_local_4724a131dfc685cb7a4e — 0 listing / 0 task 2026-09-06T10:13:59.275Z 未找到规范商品映射 warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_jd_local_4724a131dfc685cb7a4e 一致性详情" [ref=e593]:
+                        - cell "prod_jd_local_4724a131dfc685cb7a4e" [ref=e594]
+                        - cell "—" [ref=e595]
+                        - cell "0 listing / 0 task" [ref=e596]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e597]
+                        - cell "未找到规范商品映射" [ref=e598]
+                        - cell "warning 仅旧商品" [ref=e599]:
+                          - generic [ref=e600]:
+                            - img "warning" [ref=e601]:
+                              - img [ref=e602]
+                            - generic [ref=e604]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e605]:
+                          - generic [ref=e606]:
+                            - generic [ref=e608]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e610]: brand-unit.product.create · 需要为对象 prod_jd_local_4724a131dfc685cb7a4e 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_jd_local_4724a131dfc685cb7a4e 一致性详情" [ref=e611]:
+                          - button "查看 prod_jd_local_4724a131dfc685cb7a4e 一致性详情" [ref=e612] [cursor=pointer]:
+                            - generic [ref=e613] [cursor=pointer]: 查看详情
+                      - row "prod_jd_local_67de4b41631f44dc7d72 — 0 listing / 0 task 2026-09-06T10:13:59.275Z 未找到规范商品映射 warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_jd_local_67de4b41631f44dc7d72 一致性详情" [ref=e614]:
+                        - cell "prod_jd_local_67de4b41631f44dc7d72" [ref=e615]
+                        - cell "—" [ref=e616]
+                        - cell "0 listing / 0 task" [ref=e617]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e618]
+                        - cell "未找到规范商品映射" [ref=e619]
+                        - cell "warning 仅旧商品" [ref=e620]:
+                          - generic [ref=e621]:
+                            - img "warning" [ref=e622]:
+                              - img [ref=e623]
+                            - generic [ref=e625]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e626]:
+                          - generic [ref=e627]:
+                            - generic [ref=e629]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e631]: brand-unit.product.create · 需要为对象 prod_jd_local_67de4b41631f44dc7d72 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_jd_local_67de4b41631f44dc7d72 一致性详情" [ref=e632]:
+                          - button "查看 prod_jd_local_67de4b41631f44dc7d72 一致性详情" [ref=e633] [cursor=pointer]:
+                            - generic [ref=e634] [cursor=pointer]: 查看详情
+                      - row "prod_jd_local_6f3b85b19d1643a1e709 — 0 listing / 0 task 2026-09-06T10:13:59.275Z 关联素材尚未通过安全扫描、未找到规范商品映射 warning 仅旧商品 查看关系链证据（需要 platform_ops 权限） 服务端动作证据 查看 prod_jd_local_6f3b85b19d1643a1e709 一致性详情" [ref=e635]:
+                        - cell "prod_jd_local_6f3b85b19d1643a1e709" [ref=e636]
+                        - cell "—" [ref=e637]
+                        - cell "0 listing / 0 task" [ref=e638]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e639]
+                        - cell "关联素材尚未通过安全扫描、未找到规范商品映射" [ref=e640]
+                        - cell "warning 仅旧商品" [ref=e641]:
+                          - generic [ref=e642]:
+                            - img "warning" [ref=e643]:
+                              - img [ref=e644]
+                            - generic [ref=e646]: 仅旧商品
+                        - cell "查看关系链证据（需要 platform_ops 权限） 服务端动作证据" [ref=e647]:
+                          - generic [ref=e648]:
+                            - generic [ref=e650]: 查看关系链证据（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e652]: canonical.product.consistency · 需要处理 ASSET_SCAN_NOT_CLEAN（对象 prod_jd_local_6f3b85b19d1643a1e709）。 · 输入：workspace_id、product_id · 无需交互确认
+                        - cell "查看 prod_jd_local_6f3b85b19d1643a1e709 一致性详情" [ref=e653]:
+                          - button "查看 prod_jd_local_6f3b85b19d1643a1e709 一致性详情" [ref=e654] [cursor=pointer]:
+                            - generic [ref=e655] [cursor=pointer]: 查看详情
+                      - row "prod_jd_local_80013ca57719c4d5007d — 0 listing / 0 task 2026-09-06T10:13:59.275Z 未找到规范商品映射 warning 仅旧商品 创建规范商品映射（需要 platform_ops 权限） 服务端动作证据 查看 prod_jd_local_80013ca57719c4d5007d 一致性详情" [ref=e656]:
+                        - cell "prod_jd_local_80013ca57719c4d5007d" [ref=e657]
+                        - cell "—" [ref=e658]
+                        - cell "0 listing / 0 task" [ref=e659]
+                        - cell "2026-09-06T10:13:59.275Z" [ref=e660]
+                        - cell "未找到规范商品映射" [ref=e661]
+                        - cell "warning 仅旧商品" [ref=e662]:
+                          - generic [ref=e663]:
+                            - img "warning" [ref=e664]:
+                              - img [ref=e665]
+                            - generic [ref=e667]: 仅旧商品
+                        - cell "创建规范商品映射（需要 platform_ops 权限） 服务端动作证据" [ref=e668]:
+                          - generic [ref=e669]:
+                            - generic [ref=e671]: 创建规范商品映射（需要 platform_ops 权限）
+                            - generic "服务端动作证据" [ref=e673]: brand-unit.product.create · 需要为对象 prod_jd_local_80013ca57719c4d5007d 建立规范商品映射。 · 输入：workspace_id、brand_id、source_product_id、title · 需要交互确认
+                        - cell "查看 prod_jd_local_80013ca57719c4d5007d 一致性详情" [ref=e674]:
+                          - button "查看 prod_jd_local_80013ca57719c4d5007d 一致性详情" [ref=e675] [cursor=pointer]:
+                            - generic [ref=e676] [cursor=pointer]: 查看详情
+                  - list [ref=e677]:
+                    - listitem "上一页" [ref=e678]:
+                      - button "left" [disabled] [ref=e679]:
+                        - img "left" [ref=e680]:
+                          - img [ref=e681]
+                    - listitem "1" [ref=e683] [cursor=pointer]:
+                      - generic [ref=e684] [cursor=pointer]: "1"
+                    - listitem "2" [ref=e685] [cursor=pointer]:
+                      - generic [ref=e686] [cursor=pointer]: "2"
+                    - listitem "3" [ref=e687] [cursor=pointer]:
+                      - generic [ref=e688] [cursor=pointer]: "3"
+                    - listitem "4" [ref=e689] [cursor=pointer]:
+                      - generic [ref=e690] [cursor=pointer]: "4"
+                    - listitem "5" [ref=e691] [cursor=pointer]:
+                      - generic [ref=e692] [cursor=pointer]: "5"
+                    - listitem "下一页" [ref=e693] [cursor=pointer]:
+                      - button "right" [ref=e694] [cursor=pointer]:
+                        - img "right" [ref=e695] [cursor=pointer]:
+                          - img [ref=e696] [cursor=pointer]
+                - strong [ref=e700]: 未挂接关系对象
+                - generic [ref=e702]: 这些对象不属于任何可验证的商品行，必须单独处理；系统不会根据数量摘要推断其已通过。
+                - generic [ref=e706]:
+                  - table [ref=e710]:
+                    - rowgroup [ref=e711]:
+                      - row "对象类型 对象 ID 状态 阻断原因 操作" [ref=e712]:
+                        - columnheader "对象类型" [ref=e713]
+                        - columnheader "对象 ID" [ref=e714]
+                        - columnheader "状态" [ref=e715]
+                        - columnheader "阻断原因" [ref=e716]
+                        - columnheader "操作" [ref=e717]
+                    - rowgroup [ref=e718]:
+                      - row "批次商品 campaign_batch_cb8be1b5e32c4113bcf6507f_item_0001 复制 warning 已阻断 CAMPAIGN_CANONICAL_ORPHAN、CAMPAIGN_LISTING_ORPHAN 查看 campaign_batch_cb8be1b5e32c4113bcf6507f_item_0001 关系详情" [ref=e719]:
+                        - cell "批次商品" [ref=e720]
+                        - cell "campaign_batch_cb8be1b5e32c4113bcf6507f_item_0001 复制" [ref=e721]:
+                          - generic [ref=e722]:
+                            - text: campaign_batch_cb8be1b5e32c4113bcf6507f_item_0001
+                            - button "复制" [ref=e724] [cursor=pointer]:
+                              - img "copy" [ref=e725] [cursor=pointer]:
+                                - img [ref=e726] [cursor=pointer]
+                        - cell "warning 已阻断" [ref=e728]:
+                          - generic [ref=e729]:
+                            - img "warning" [ref=e730]:
+                              - img [ref=e731]
+                            - generic [ref=e733]: 已阻断
+                        - cell "CAMPAIGN_CANONICAL_ORPHAN、CAMPAIGN_LISTING_ORPHAN" [ref=e734]
+                        - cell "查看 campaign_batch_cb8be1b5e32c4113bcf6507f_item_0001 关系详情" [ref=e735]:
+                          - button "查看 campaign_batch_cb8be1b5e32c4113bcf6507f_item_0001 关系详情" [ref=e736] [cursor=pointer]:
+                            - generic [ref=e737] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_25d2671b-717a-442f-8a38-ec30f2508fdf 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_25d2671b-717a-442f-8a38-ec30f2508fdf 关系详情" [ref=e738]:
+                        - cell "发布任务" [ref=e739]
+                        - cell "pub_25d2671b-717a-442f-8a38-ec30f2508fdf 复制" [ref=e740]:
+                          - generic [ref=e741]:
+                            - text: pub_25d2671b-717a-442f-8a38-ec30f2508fdf
+                            - button "复制" [ref=e743] [cursor=pointer]:
+                              - img "copy" [ref=e744] [cursor=pointer]:
+                                - img [ref=e745] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e747]:
+                          - generic [ref=e748]:
+                            - img "warning" [ref=e749]:
+                              - img [ref=e750]
+                            - generic [ref=e752]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e753]
+                        - cell "查看 pub_25d2671b-717a-442f-8a38-ec30f2508fdf 关系详情" [ref=e754]:
+                          - button "查看 pub_25d2671b-717a-442f-8a38-ec30f2508fdf 关系详情" [ref=e755] [cursor=pointer]:
+                            - generic [ref=e756] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_59123582-66ac-4eb3-9a83-1d52d566f1c4 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_59123582-66ac-4eb3-9a83-1d52d566f1c4 关系详情" [ref=e757]:
+                        - cell "发布任务" [ref=e758]
+                        - cell "pub_59123582-66ac-4eb3-9a83-1d52d566f1c4 复制" [ref=e759]:
+                          - generic [ref=e760]:
+                            - text: pub_59123582-66ac-4eb3-9a83-1d52d566f1c4
+                            - button "复制" [ref=e762] [cursor=pointer]:
+                              - img "copy" [ref=e763] [cursor=pointer]:
+                                - img [ref=e764] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e766]:
+                          - generic [ref=e767]:
+                            - img "warning" [ref=e768]:
+                              - img [ref=e769]
+                            - generic [ref=e771]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e772]
+                        - cell "查看 pub_59123582-66ac-4eb3-9a83-1d52d566f1c4 关系详情" [ref=e773]:
+                          - button "查看 pub_59123582-66ac-4eb3-9a83-1d52d566f1c4 关系详情" [ref=e774] [cursor=pointer]:
+                            - generic [ref=e775] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_9bcd74c1-4e53-40cc-bfb6-73dbde4ffcee 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_9bcd74c1-4e53-40cc-bfb6-73dbde4ffcee 关系详情" [ref=e776]:
+                        - cell "发布任务" [ref=e777]
+                        - cell "pub_9bcd74c1-4e53-40cc-bfb6-73dbde4ffcee 复制" [ref=e778]:
+                          - generic [ref=e779]:
+                            - text: pub_9bcd74c1-4e53-40cc-bfb6-73dbde4ffcee
+                            - button "复制" [ref=e781] [cursor=pointer]:
+                              - img "copy" [ref=e782] [cursor=pointer]:
+                                - img [ref=e783] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e785]:
+                          - generic [ref=e786]:
+                            - img "warning" [ref=e787]:
+                              - img [ref=e788]
+                            - generic [ref=e790]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e791]
+                        - cell "查看 pub_9bcd74c1-4e53-40cc-bfb6-73dbde4ffcee 关系详情" [ref=e792]:
+                          - button "查看 pub_9bcd74c1-4e53-40cc-bfb6-73dbde4ffcee 关系详情" [ref=e793] [cursor=pointer]:
+                            - generic [ref=e794] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_bd5c720f-e982-4c59-9b3f-069f16d0780e 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_bd5c720f-e982-4c59-9b3f-069f16d0780e 关系详情" [ref=e795]:
+                        - cell "发布任务" [ref=e796]
+                        - cell "pub_bd5c720f-e982-4c59-9b3f-069f16d0780e 复制" [ref=e797]:
+                          - generic [ref=e798]:
+                            - text: pub_bd5c720f-e982-4c59-9b3f-069f16d0780e
+                            - button "复制" [ref=e800] [cursor=pointer]:
+                              - img "copy" [ref=e801] [cursor=pointer]:
+                                - img [ref=e802] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e804]:
+                          - generic [ref=e805]:
+                            - img "warning" [ref=e806]:
+                              - img [ref=e807]
+                            - generic [ref=e809]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e810]
+                        - cell "查看 pub_bd5c720f-e982-4c59-9b3f-069f16d0780e 关系详情" [ref=e811]:
+                          - button "查看 pub_bd5c720f-e982-4c59-9b3f-069f16d0780e 关系详情" [ref=e812] [cursor=pointer]:
+                            - generic [ref=e813] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_c1482028-e18e-4ab6-84ff-2acdc9ee0162 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_c1482028-e18e-4ab6-84ff-2acdc9ee0162 关系详情" [ref=e814]:
+                        - cell "发布任务" [ref=e815]
+                        - cell "pub_c1482028-e18e-4ab6-84ff-2acdc9ee0162 复制" [ref=e816]:
+                          - generic [ref=e817]:
+                            - text: pub_c1482028-e18e-4ab6-84ff-2acdc9ee0162
+                            - button "复制" [ref=e819] [cursor=pointer]:
+                              - img "copy" [ref=e820] [cursor=pointer]:
+                                - img [ref=e821] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e823]:
+                          - generic [ref=e824]:
+                            - img "warning" [ref=e825]:
+                              - img [ref=e826]
+                            - generic [ref=e828]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e829]
+                        - cell "查看 pub_c1482028-e18e-4ab6-84ff-2acdc9ee0162 关系详情" [ref=e830]:
+                          - button "查看 pub_c1482028-e18e-4ab6-84ff-2acdc9ee0162 关系详情" [ref=e831] [cursor=pointer]:
+                            - generic [ref=e832] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_c81e94ca-3f84-4278-8aaf-14be2f41cd3b 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_c81e94ca-3f84-4278-8aaf-14be2f41cd3b 关系详情" [ref=e833]:
+                        - cell "发布任务" [ref=e834]
+                        - cell "pub_c81e94ca-3f84-4278-8aaf-14be2f41cd3b 复制" [ref=e835]:
+                          - generic [ref=e836]:
+                            - text: pub_c81e94ca-3f84-4278-8aaf-14be2f41cd3b
+                            - button "复制" [ref=e838] [cursor=pointer]:
+                              - img "copy" [ref=e839] [cursor=pointer]:
+                                - img [ref=e840] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e842]:
+                          - generic [ref=e843]:
+                            - img "warning" [ref=e844]:
+                              - img [ref=e845]
+                            - generic [ref=e847]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e848]
+                        - cell "查看 pub_c81e94ca-3f84-4278-8aaf-14be2f41cd3b 关系详情" [ref=e849]:
+                          - button "查看 pub_c81e94ca-3f84-4278-8aaf-14be2f41cd3b 关系详情" [ref=e850] [cursor=pointer]:
+                            - generic [ref=e851] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_e0aa6f2f-0d0b-4185-9895-400dcedd943a 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_e0aa6f2f-0d0b-4185-9895-400dcedd943a 关系详情" [ref=e852]:
+                        - cell "发布任务" [ref=e853]
+                        - cell "pub_e0aa6f2f-0d0b-4185-9895-400dcedd943a 复制" [ref=e854]:
+                          - generic [ref=e855]:
+                            - text: pub_e0aa6f2f-0d0b-4185-9895-400dcedd943a
+                            - button "复制" [ref=e857] [cursor=pointer]:
+                              - img "copy" [ref=e858] [cursor=pointer]:
+                                - img [ref=e859] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e861]:
+                          - generic [ref=e862]:
+                            - img "warning" [ref=e863]:
+                              - img [ref=e864]
+                            - generic [ref=e866]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e867]
+                        - cell "查看 pub_e0aa6f2f-0d0b-4185-9895-400dcedd943a 关系详情" [ref=e868]:
+                          - button "查看 pub_e0aa6f2f-0d0b-4185-9895-400dcedd943a 关系详情" [ref=e869] [cursor=pointer]:
+                            - generic [ref=e870] [cursor=pointer]: 查看详情
+                      - row "发布任务 pub_e15ebf4a-c23c-49f3-a1c6-69f8145497ec 复制 warning 存在冲突 PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING 查看 pub_e15ebf4a-c23c-49f3-a1c6-69f8145497ec 关系详情" [ref=e871]:
+                        - cell "发布任务" [ref=e872]
+                        - cell "pub_e15ebf4a-c23c-49f3-a1c6-69f8145497ec 复制" [ref=e873]:
+                          - generic [ref=e874]:
+                            - text: pub_e15ebf4a-c23c-49f3-a1c6-69f8145497ec
+                            - button "复制" [ref=e876] [cursor=pointer]:
+                              - img "copy" [ref=e877] [cursor=pointer]:
+                                - img [ref=e878] [cursor=pointer]
+                        - cell "warning 存在冲突" [ref=e880]:
+                          - generic [ref=e881]:
+                            - img "warning" [ref=e882]:
+                              - img [ref=e883]
+                            - generic [ref=e885]: 存在冲突
+                        - cell "PUBLISH_CANONICAL_SCOPE_MISSING、PUBLISH_LISTING_SCOPE_MISSING" [ref=e886]
+                        - cell "查看 pub_e15ebf4a-c23c-49f3-a1c6-69f8145497ec 关系详情" [ref=e887]:
+                          - button "查看 pub_e15ebf4a-c23c-49f3-a1c6-69f8145497ec 关系详情" [ref=e888] [cursor=pointer]:
+                            - generic [ref=e889] [cursor=pointer]: 查看详情
+                  - list [ref=e890]:
+                    - listitem "上一页" [ref=e891]:
+                      - button "left" [disabled] [ref=e892]:
+                        - img "left" [ref=e893]:
+                          - img [ref=e894]
+                    - listitem "1" [ref=e896] [cursor=pointer]:
+                      - generic [ref=e897] [cursor=pointer]: "1"
+                    - listitem "下一页" [ref=e898]:
+                      - button "right" [disabled] [ref=e899]:
+                        - img "right" [ref=e900]:
+                          - img [ref=e901]
+          - generic [ref=e904]:
+            - generic [ref=e906]:
+              - generic [ref=e907]: 平台连接与授权健康
+              - generic [ref=e909]: 8 个已登记店铺
+            - generic [ref=e910]:
+              - generic [ref=e913]:
+                - table [ref=e917]:
+                  - rowgroup [ref=e918]:
+                    - row "平台 店铺 授权 数据模式 同步 读/写 操作" [ref=e919]:
+                      - columnheader "平台" [ref=e920]
+                      - columnheader "店铺" [ref=e921]
+                      - columnheader "授权" [ref=e922]
+                      - columnheader "数据模式" [ref=e923]
+                      - columnheader "同步" [ref=e924]
+                      - columnheader "读/写" [ref=e925]
+                      - columnheader "操作" [ref=e926]
+                  - rowgroup [ref=e927]:
+                    - row "DOUYIN douyin 店铺 fixture-store-ws_demo-douyin 演示授权 fixture 演示 暂无记录 读 / — 改别名 撤销" [ref=e928]:
+                      - cell "DOUYIN" [ref=e929]:
+                        - generic [ref=e930]: DOUYIN
+                      - cell "douyin 店铺 fixture-store-ws_demo-douyin" [ref=e931]:
+                        - generic [ref=e932]:
+                          - strong [ref=e935]: douyin 店铺
+                          - generic [ref=e937]: fixture-store-ws_demo-douyin
+                      - cell "演示授权" [ref=e938]:
+                        - generic [ref=e939]: 演示授权
+                      - cell "fixture 演示" [ref=e940]:
+                        - generic [ref=e941]: fixture 演示
+                      - cell "暂无记录" [ref=e942]
+                      - cell "读 / —" [ref=e943]
+                      - cell "改别名 撤销" [ref=e944]:
+                        - generic [ref=e945]:
+                          - button "改别名" [ref=e947] [cursor=pointer]:
+                            - generic [ref=e948] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e950] [cursor=pointer]:
+                            - generic [ref=e951] [cursor=pointer]: 撤销
+                    - row "JD jd 店铺 fixture-store-ws_demo-jd 演示授权 fixture 演示 最近成功：9/1/2026, 6:37:47 PM 读 / — 改别名 撤销" [ref=e952]:
+                      - cell "JD" [ref=e953]:
+                        - generic [ref=e954]: JD
+                      - cell "jd 店铺 fixture-store-ws_demo-jd" [ref=e955]:
+                        - generic [ref=e956]:
+                          - strong [ref=e959]: jd 店铺
+                          - generic [ref=e961]: fixture-store-ws_demo-jd
+                      - cell "演示授权" [ref=e962]:
+                        - generic [ref=e963]: 演示授权
+                      - cell "fixture 演示" [ref=e964]:
+                        - generic [ref=e965]: fixture 演示
+                      - cell "最近成功：9/1/2026, 6:37:47 PM" [ref=e966]
+                      - cell "读 / —" [ref=e967]
+                      - cell "改别名 撤销" [ref=e968]:
+                        - generic [ref=e969]:
+                          - button "改别名" [ref=e971] [cursor=pointer]:
+                            - generic [ref=e972] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e974] [cursor=pointer]:
+                            - generic [ref=e975] [cursor=pointer]: 撤销
+                    - row "PINDUODUO pinduoduo 店铺 fixture-store-ws_demo-pinduoduo 演示授权 fixture 演示 最近成功：8/24/2026, 3:29:13 AM 读 / — 改别名 撤销" [ref=e976]:
+                      - cell "PINDUODUO" [ref=e977]:
+                        - generic [ref=e978]: PINDUODUO
+                      - cell "pinduoduo 店铺 fixture-store-ws_demo-pinduoduo" [ref=e979]:
+                        - generic [ref=e980]:
+                          - strong [ref=e983]: pinduoduo 店铺
+                          - generic [ref=e985]: fixture-store-ws_demo-pinduoduo
+                      - cell "演示授权" [ref=e986]:
+                        - generic [ref=e987]: 演示授权
+                      - cell "fixture 演示" [ref=e988]:
+                        - generic [ref=e989]: fixture 演示
+                      - cell "最近成功：8/24/2026, 3:29:13 AM" [ref=e990]
+                      - cell "读 / —" [ref=e991]
+                      - cell "改别名 撤销" [ref=e992]:
+                        - generic [ref=e993]:
+                          - button "改别名" [ref=e995] [cursor=pointer]:
+                            - generic [ref=e996] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e998] [cursor=pointer]:
+                            - generic [ref=e999] [cursor=pointer]: 撤销
+                    - row "TAOBAO taobao 店铺 等 3 个店铺名 fixture-store-ws_demo-taobao 演示授权 fixture 演示 最近成功：8/24/2026, 3:29:08 AM 读 / — 改别名 撤销" [ref=e1000]:
+                      - cell "TAOBAO" [ref=e1001]:
+                        - generic [ref=e1002]: TAOBAO
+                      - cell "taobao 店铺 等 3 个店铺名 fixture-store-ws_demo-taobao" [ref=e1003]:
+                        - generic [ref=e1004]:
+                          - strong [ref=e1007]: taobao 店铺 等 3 个店铺名
+                          - generic [ref=e1009]: fixture-store-ws_demo-taobao
+                      - cell "演示授权" [ref=e1010]:
+                        - generic [ref=e1011]: 演示授权
+                      - cell "fixture 演示" [ref=e1012]:
+                        - generic [ref=e1013]: fixture 演示
+                      - cell "最近成功：8/24/2026, 3:29:08 AM" [ref=e1014]
+                      - cell "读 / —" [ref=e1015]
+                      - cell "改别名 撤销" [ref=e1016]:
+                        - generic [ref=e1017]:
+                          - button "改别名" [ref=e1019] [cursor=pointer]:
+                            - generic [ref=e1020] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e1022] [cursor=pointer]:
+                            - generic [ref=e1023] [cursor=pointer]: 撤销
+                    - row "TAOBAO taobao 店铺 fixture_ws_demo_taobao 演示授权 fixture 演示 最近成功：8/23/2026, 9:29:31 PM 读 / — 改别名 撤销" [ref=e1024]:
+                      - cell "TAOBAO" [ref=e1025]:
+                        - generic [ref=e1026]: TAOBAO
+                      - cell "taobao 店铺 fixture_ws_demo_taobao" [ref=e1027]:
+                        - generic [ref=e1028]:
+                          - strong [ref=e1031]: taobao 店铺
+                          - generic [ref=e1033]: fixture_ws_demo_taobao
+                      - cell "演示授权" [ref=e1034]:
+                        - generic [ref=e1035]: 演示授权
+                      - cell "fixture 演示" [ref=e1036]:
+                        - generic [ref=e1037]: fixture 演示
+                      - cell "最近成功：8/23/2026, 9:29:31 PM" [ref=e1038]
+                      - cell "读 / —" [ref=e1039]
+                      - cell "改别名 撤销" [ref=e1040]:
+                        - generic [ref=e1041]:
+                          - button "改别名" [ref=e1043] [cursor=pointer]:
+                            - generic [ref=e1044] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e1046] [cursor=pointer]:
+                            - generic [ref=e1047] [cursor=pointer]: 撤销
+                    - row "TAOBAO taobao 店铺 fixture-store-ws_demo-taobao-fixture-store 演示授权 fixture 演示 最近成功：9/5/2026, 6:59:54 PM 读 / — 改别名 撤销" [ref=e1048]:
+                      - cell "TAOBAO" [ref=e1049]:
+                        - generic [ref=e1050]: TAOBAO
+                      - cell "taobao 店铺 fixture-store-ws_demo-taobao-fixture-store" [ref=e1051]:
+                        - generic [ref=e1052]:
+                          - strong [ref=e1055]: taobao 店铺
+                          - generic [ref=e1057]: fixture-store-ws_demo-taobao-fixture-store
+                      - cell "演示授权" [ref=e1058]:
+                        - generic [ref=e1059]: 演示授权
+                      - cell "fixture 演示" [ref=e1060]:
+                        - generic [ref=e1061]: fixture 演示
+                      - cell "最近成功：9/5/2026, 6:59:54 PM" [ref=e1062]
+                      - cell "读 / —" [ref=e1063]
+                      - cell "改别名 撤销" [ref=e1064]:
+                        - generic [ref=e1065]:
+                          - button "改别名" [ref=e1067] [cursor=pointer]:
+                            - generic [ref=e1068] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e1070] [cursor=pointer]:
+                            - generic [ref=e1071] [cursor=pointer]: 撤销
+                    - row "TMALL tmall 店铺 fixture-store-ws_demo-tmall 演示授权 fixture 演示 最近成功：8/24/2026, 12:21:14 AM 读 / — 改别名 撤销" [ref=e1072]:
+                      - cell "TMALL" [ref=e1073]:
+                        - generic [ref=e1074]: TMALL
+                      - cell "tmall 店铺 fixture-store-ws_demo-tmall" [ref=e1075]:
+                        - generic [ref=e1076]:
+                          - strong [ref=e1079]: tmall 店铺
+                          - generic [ref=e1081]: fixture-store-ws_demo-tmall
+                      - cell "演示授权" [ref=e1082]:
+                        - generic [ref=e1083]: 演示授权
+                      - cell "fixture 演示" [ref=e1084]:
+                        - generic [ref=e1085]: fixture 演示
+                      - cell "最近成功：8/24/2026, 12:21:14 AM" [ref=e1086]
+                      - cell "读 / —" [ref=e1087]
+                      - cell "改别名 撤销" [ref=e1088]:
+                        - generic [ref=e1089]:
+                          - button "改别名" [ref=e1091] [cursor=pointer]:
+                            - generic [ref=e1092] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e1094] [cursor=pointer]:
+                            - generic [ref=e1095] [cursor=pointer]: 撤销
+                    - row "XIAOHONGSHU 小红书未验证 Fixture fixture-store-ws_demo-xiaohongshu 需重新授权 fixture 演示 暂无记录 — / — 改别名 撤销" [ref=e1096]:
+                      - cell "XIAOHONGSHU" [ref=e1097]:
+                        - generic [ref=e1098]: XIAOHONGSHU
+                      - cell "小红书未验证 Fixture fixture-store-ws_demo-xiaohongshu" [ref=e1099]:
+                        - generic [ref=e1100]:
+                          - strong [ref=e1103]: 小红书未验证 Fixture
+                          - generic [ref=e1105]: fixture-store-ws_demo-xiaohongshu
+                      - cell "需重新授权" [ref=e1106]:
+                        - generic [ref=e1107]: 需重新授权
+                      - cell "fixture 演示" [ref=e1108]:
+                        - generic [ref=e1109]: fixture 演示
+                      - cell "暂无记录" [ref=e1110]
+                      - cell "— / —" [ref=e1111]
+                      - cell "改别名 撤销" [ref=e1112]:
+                        - generic [ref=e1113]:
+                          - button "改别名" [ref=e1115] [cursor=pointer]:
+                            - generic [ref=e1116] [cursor=pointer]: 改别名
+                          - button "撤销" [ref=e1118] [cursor=pointer]:
+                            - generic [ref=e1119] [cursor=pointer]: 撤销
+                - list [ref=e1120]:
+                  - listitem "上一页" [ref=e1121]:
+                    - button "left" [disabled] [ref=e1122]:
+                      - img "left" [ref=e1123]:
+                        - img [ref=e1124]
+                  - listitem "1" [ref=e1126] [cursor=pointer]:
+                    - generic [ref=e1127] [cursor=pointer]: "1"
+                  - listitem "下一页" [ref=e1128]:
+                    - button "right" [disabled] [ref=e1129]:
+                      - img "right" [ref=e1130]:
+                        - img [ref=e1131]
+              - generic [ref=e1133]: 此处仅展示平台连接元数据，不读取客户商品、素材或营销内容；别名只用于展示，撤销或重新授权都会留下审计记录。
+          - generic [ref=e1135]:
+            - generic [ref=e1137]:
+              - generic [ref=e1138]: 已配置的店铺自动化策略
+              - generic [ref=e1140]: 0 条
+            - table [ref=e1148]:
+              - rowgroup [ref=e1149]:
+                - row "店铺 状态 模式 频率 下次执行 暂停原因" [ref=e1150]:
+                  - columnheader "店铺" [ref=e1151]
+                  - columnheader "状态" [ref=e1152]
+                  - columnheader "模式" [ref=e1153]
+                  - columnheader "频率" [ref=e1154]
+                  - columnheader "下次执行" [ref=e1155]
+                  - columnheader "暂停原因" [ref=e1156]
+              - rowgroup [ref=e1157]:
+                - row "暂无自动化策略；当前不会执行定时扫描或自动重试。" [ref=e1158]:
+                  - cell "暂无自动化策略；当前不会执行定时扫描或自动重试。" [ref=e1159]
+          - generic [ref=e1160]:
+            - generic [ref=e1161]:
+              - generic [ref=e1163]:
+                - generic [ref=e1164]: 店铺优化建议
+                - generic [ref=e1166]: 状态待确认
+              - table [ref=e1174]:
+                - rowgroup [ref=e1175]:
+                  - row "优先级 建议 下一步 入口 边界" [ref=e1176]:
+                    - columnheader "优先级" [ref=e1177]
+                    - columnheader "建议" [ref=e1178]
+                    - columnheader "下一步" [ref=e1179]
+                    - columnheader "入口" [ref=e1180]
+                    - columnheader "边界" [ref=e1181]
+                - rowgroup [ref=e1182]:
+                  - row "尚未取得扫描结果；可在策略配置完成后手动扫描。" [ref=e1183]:
+                    - cell "尚未取得扫描结果；可在策略配置完成后手动扫描。" [ref=e1184]
+            - generic [ref=e1185]:
+              - generic [ref=e1187]:
+                - generic [ref=e1188]: 店铺自动化运营
+                - generic [ref=e1190]:
+                  - generic [ref=e1192]: 已暂停
+                  - button "立即扫描" [ref=e1194] [cursor=pointer]:
+                    - generic [ref=e1195] [cursor=pointer]: 立即扫描
+                  - button "保存策略" [ref=e1197] [cursor=pointer]:
+                    - generic [ref=e1198] [cursor=pointer]: 保存策略
+                  - switch "自动化扫描开关" [ref=e1200] [cursor=pointer]
+              - generic [ref=e1203]:
+                - generic [ref=e1204]:
+                  - generic [ref=e1206]:
+                    - generic [ref=e1208]: 扫描商品
+                    - generic [ref=e1210]: "-"
+                  - generic [ref=e1212]:
+                    - generic [ref=e1214]: 发布任务
+                    - generic [ref=e1216]: "-"
+                  - generic [ref=e1218]:
+                    - generic [ref=e1220]: 风险项
+                    - generic [ref=e1222]: "-"
+                  - generic [ref=e1224]:
+                    - text: 模式：同步扫描 + 风险告警 + 人工重试
+                    - text: 不会无人值守自动重发
+                - generic [ref=e1225]:
+                  - generic [ref=e1227]: 执行频率（分钟）
+                  - generic [ref=e1229]:
+                    - spinbutton "自动化执行频率" [ref=e1230]: "60"
+                    - generic:
+                      - button "Increase Value" [ref=e1231] [cursor=pointer]:
+                        - img "up" [ref=e1232] [cursor=pointer]:
+                          - img [ref=e1233] [cursor=pointer]
+                      - button "Decrease Value" [ref=e1235] [cursor=pointer]:
+                        - img "down" [ref=e1236] [cursor=pointer]:
+                          - img [ref=e1237] [cursor=pointer]
+                  - generic [ref=e1240]: 重试上限
+                  - generic [ref=e1242]:
+                    - spinbutton "自动化重试上限" [ref=e1243]: "2"
+                    - generic:
+                      - button "Increase Value" [ref=e1244] [cursor=pointer]:
+                        - img "up" [ref=e1245] [cursor=pointer]:
+                          - img [ref=e1246] [cursor=pointer]
+                      - button "Decrease Value" [ref=e1248] [cursor=pointer]:
+                        - img "down" [ref=e1249] [cursor=pointer]:
+                          - img [ref=e1250] [cursor=pointer]
+                  - generic [ref=e1253]: 执行窗口
+                  - textbox "自动化执行窗口开始" [ref=e1255]
+                  - generic [ref=e1257]: 至
+                  - textbox "自动化执行窗口结束" [ref=e1259]
+                  - generic [ref=e1261]: 留空表示全天；窗口外仅延期并记录审计。
+                - alert [ref=e1262]:
+                  - img "exclamation-circle" [ref=e1264]:
+                    - img [ref=e1265]
+                  - generic [ref=e1268]: 默认关闭，需商家明确开启
+                - generic [ref=e1269]: 暂无扫描风险。
+```

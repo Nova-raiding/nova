@@ -11,6 +11,9 @@ const LEGACY = ['AI_BASE_URL', 'IMAGE_BASE_URL', 'VIDEO_BASE_URL', 'AI_API_KEY',
 const BUSINESS_MODELS = ['AI_MODEL', 'IMAGE_MODEL', 'IMAGE_EDIT_MODEL', 'OCR_MODEL', 'VIDEO_MODEL'] as const
 
 function field(text: string, key: string) { return text.match(new RegExp(`^${key}\\s*=\\s*["']([^"']+)["']`, 'mu'))?.[1]?.trim() }
+function providerSectionNames(config: string): string[] {
+  return [...config.matchAll(/^\[model_providers\.([A-Za-z0-9_-]+)\]\s*$/gmu)].map(match => match[1]!).filter(Boolean)
+}
 function regexLiteral(input: string) { return input.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&') }
 function placeholder(input: string | undefined) { return !input || /REPLACE_WITH|YOUR_|你的|由.+注入|\$\{[^}]+\}/u.test(input) }
 function https(input: string, label: string, errors: string[]) {
@@ -25,16 +28,26 @@ function https(input: string, label: string, errors: string[]) {
 export function validateCodexRelay(config: string, env: RelayEnvironment = process.env): CodexRelayValidationResult {
   const errors: string[] = []
   if (!config.trim()) errors.push('Codex 用户配置不存在或为空')
-  const hasHostOverride = /^\s*(?:model_provider|model)\s*=/mu.test(config)
   const provider = field(config, 'model_provider')
   const model = field(config, 'model')
   const section = provider ? config.match(new RegExp(`\\[model_providers\\.${regexLiteral(provider)}\\]([\\s\\S]*?)(?=\\n\\[|$)`, 'u'))?.[1] ?? '' : ''
+  // Codex's built-in `openai` provider uses the ChatGPT subscription when
+  // credentials are stored by the CLI. It is valid for a custom provider
+  // section (for example damai_relay) to coexist with that built-in provider;
+  // absence of [model_providers.openai] is not a mismatch in this mode.
+  const subscriptionAuth = !/^\s*(?:model_provider|model)\s*=/mu.test(config)
+    || (provider === 'openai' && !section && field(config, 'cli_auth_credentials_store') === 'file')
+  const hasHostOverride = !subscriptionAuth
   const baseUrl = field(section, 'base_url')
   const envKey = field(section, 'env_key')
   if (hasHostOverride) {
     if (placeholder(provider)) errors.push('Codex 配置缺少有效的 model_provider')
     if (placeholder(model)) errors.push('Codex 配置缺少有效的 host model')
-    if (provider && !section) errors.push(`Codex 配置缺少 model_providers.${provider} section`)
+    if (provider && !section) {
+      errors.push(`Codex 配置缺少 model_providers.${provider} section`)
+      const available = providerSectionNames(config)
+      if (available.length) errors.push(`Codex 配置的 model_provider=${provider} 与可用 provider section 不一致：${available.join(', ')}`)
+    }
     if (placeholder(baseUrl)) errors.push('Codex host relay 缺少有效的 base_url')
     else https(baseUrl!, 'Codex host relay base_url', errors)
     if (field(section, 'wire_api') !== 'responses') errors.push('Codex host relay 必须配置 wire_api = "responses"')
@@ -48,7 +61,7 @@ export function validateCodexRelay(config: string, env: RelayEnvironment = proce
   if (placeholder(env.MODEL_RELAY_API_KEY)) errors.push('业务模型 relay 缺少 MODEL_RELAY_API_KEY')
   for (const variable of BUSINESS_MODELS) if (placeholder(env[variable]?.trim())) errors.push(`业务模型 relay 缺少有效的 ${variable}`)
   for (const variable of LEGACY) if (env[variable]?.trim()) errors.push(`检测到不允许的直连模型配置：${variable}；请移除并仅使用 MODEL_RELAY_*`)
-  return { errors, ...(provider ? { provider } : {}), ...(model ? { model } : {}), ...(envKey ? { envKey } : {}), ...(baseUrl ? { hostBaseUrl: baseUrl } : {}), businessBaseUrl, subscriptionAuth: !hasHostOverride }
+  return { errors, ...(provider ? { provider } : {}), ...(model ? { model } : {}), ...(envKey ? { envKey } : {}), ...(baseUrl ? { hostBaseUrl: baseUrl } : {}), businessBaseUrl, subscriptionAuth }
 }
 
 export function runCodexRelayValidation(configPath: string, env: RelayEnvironment = process.env) {
@@ -64,7 +77,12 @@ function objectEntries(value: unknown): Record<string, unknown>[] {
 
 function supportsResponses(entry: Record<string, unknown>) {
   const endpointTypes = entry.supported_endpoint_types
-  return Array.isArray(endpointTypes) && endpointTypes.includes('openai-response')
+  // Relays in the wild use two catalog dialects.  Some expose the Codex
+  // specific `openai-response` capability, while OpenAI-compatible relays
+  // advertise the same model simply as `openai` and route `/responses` based
+  // on the provider's wire_api setting.  Treat both as admissible catalog
+  // evidence; the actual `/responses` probe remains the runtime authority.
+  return Array.isArray(endpointTypes) && (endpointTypes.includes('openai-response') || endpointTypes.includes('openai'))
 }
 
 export async function probeCodexRelayCatalog(

@@ -1,0 +1,99 @@
+
+> merchant-marketing-codex@0.1.1 test:runtime:isolated
+> vitest run --config vitest.runtime.config.ts --no-file-parallelism
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ tests/local-docker-release-gate.test.ts (2 tests | 2 failed) 6ms
+     × proves healthy API release probes and honest local metadata blocking 4ms
+     × proves Postgres has every source migration through the current tail 0ms
+ ❯ tests/local-docker-fault-acceptance.test.ts (1 test | 1 failed) 6ms
+     × reports Redis outage with correlation evidence and recovers after restart 4ms
+ ❯ tests/local-docker-runtime-contract.test.ts (5 tests | 5 failed) 8ms
+     × keeps every required API, replica, worker and dependency container healthy 4ms
+     × records immutable image identity and start-time evidence for every runtime container 0ms
+     × proves worker health checks and heartbeat evidence come from live containers 0ms
+     × proves API and replica use durable Postgres persistence and the complete migration tail 0ms
+     × refreshes scanner callback evidence through a real local scan 3ms
+ ❯ tests/local-creative-points-seed-runtime.test.ts (1 test | 1 failed) 5ms
+     × keeps the isolated workspace balance authoritative and known for scanner admission 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/local-creative-points-seed-runtime.test.ts > local creative-point seed runtime contract > keeps the isolated workspace balance authoritative and known for scanner admission
+Error: LOCAL_RUNTIME_TEST_CONFIG_REQUIRED: explicit isolated runtime evidence is required; shared local/production targets are forbidden
+ ❯ fail tests/local-runtime-test-safety.ts:25:9
+     23| const fail = (code: 'CONFIG_REQUIRED' | 'CONFIG_INVALID' | 'TARGET_UNS…
+     24|   // Never echo Compose output, environment values, URLs or credential…
+     25|   throw new Error(`LOCAL_RUNTIME_TEST_${code}: explicit isolated runti…
+       |         ^
+     26| }
+     27|
+ ❯ required tests/local-runtime-test-safety.ts:29:59
+ ❯ readLocalRuntimeTestConfig tests/local-runtime-test-safety.ts:31:12
+ ❯ requireIsolatedLocalRuntime tests/local-runtime-test-safety.ts:135:18
+ ❯ tests/local-creative-points-seed-runtime.test.ts:6:30
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  tests/local-docker-fault-acceptance.test.ts > local Docker fault acceptance > reports Redis outage with correlation evidence and recovers after restart
+Error: LOCAL_RUNTIME_TEST_CONFIG_REQUIRED: explicit isolated runtime evidence is required; shared local/production targets are forbidden
+ ❯ fail tests/local-runtime-test-safety.ts:25:9
+     23| const fail = (code: 'CONFIG_REQUIRED' | 'CONFIG_INVALID' | 'TARGET_UNS…
+     24|   // Never echo Compose output, environment values, URLs or credential…
+     25|   throw new Error(`LOCAL_RUNTIME_TEST_${code}: explicit isolated runti…
+       |         ^
+     26| }
+     27|
+ ❯ required tests/local-runtime-test-safety.ts:29:59
+ ❯ readLocalRuntimeTestConfig tests/local-runtime-test-safety.ts:31:12
+ ❯ requireIsolatedLocalRuntime tests/local-runtime-test-safety.ts:135:18
+ ❯ tests/local-docker-fault-acceptance.test.ts:7:30
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  tests/local-docker-release-gate.test.ts > local Docker migration and release gate > proves healthy API release probes and honest local metadata blocking
+ FAIL  tests/local-docker-release-gate.test.ts > local Docker migration and release gate > proves Postgres has every source migration through the current tail
+Error: LOCAL_RUNTIME_TEST_CONFIG_REQUIRED: explicit isolated runtime evidence is required; shared local/production targets are forbidden
+ ❯ fail tests/local-runtime-test-safety.ts:25:9
+     23| const fail = (code: 'CONFIG_REQUIRED' | 'CONFIG_INVALID' | 'TARGET_UNS…
+     24|   // Never echo Compose output, environment values, URLs or credential…
+     25|   throw new Error(`LOCAL_RUNTIME_TEST_${code}: explicit isolated runti…
+       |         ^
+     26| }
+     27|
+ ❯ required tests/local-runtime-test-safety.ts:29:59
+ ❯ readLocalRuntimeTestConfig tests/local-runtime-test-safety.ts:31:12
+ ❯ requireIsolatedLocalRuntime tests/local-runtime-test-safety.ts:135:18
+ ❯ tests/local-docker-release-gate.test.ts:8:30
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  tests/local-docker-runtime-contract.test.ts > local Docker runtime contract > keeps every required API, replica, worker and dependency container healthy
+ FAIL  tests/local-docker-runtime-contract.test.ts > local Docker runtime contract > records immutable image identity and start-time evidence for every runtime container
+ FAIL  tests/local-docker-runtime-contract.test.ts > local Docker runtime contract > proves worker health checks and heartbeat evidence come from live containers
+ FAIL  tests/local-docker-runtime-contract.test.ts > local Docker runtime contract > proves API and replica use durable Postgres persistence and the complete migration tail
+ FAIL  tests/local-docker-runtime-contract.test.ts > local Docker runtime contract > refreshes scanner callback evidence through a real local scan
+Error: LOCAL_RUNTIME_TEST_CONFIG_REQUIRED: explicit isolated runtime evidence is required; shared local/production targets are forbidden
+ ❯ fail tests/local-runtime-test-safety.ts:25:9
+     23| const fail = (code: 'CONFIG_REQUIRED' | 'CONFIG_INVALID' | 'TARGET_UNS…
+     24|   // Never echo Compose output, environment values, URLs or credential…
+     25|   throw new Error(`LOCAL_RUNTIME_TEST_${code}: explicit isolated runti…
+       |         ^
+     26| }
+     27|
+ ❯ required tests/local-runtime-test-safety.ts:29:59
+ ❯ readLocalRuntimeTestConfig tests/local-runtime-test-safety.ts:31:12
+ ❯ requireIsolatedLocalRuntime tests/local-runtime-test-safety.ts:135:18
+ ❯ tests/local-docker-runtime-contract.test.ts:10:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+
+ Test Files  4 failed (4)
+      Tests  9 failed (9)
+   Start at  19:54:29
+   Duration  1.19s (transform 392ms, setup 0ms, import 495ms, tests 25ms, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/local-runtime-tests/9cf360f4-aaa1-4820-8bce-09a050cabffc/vitest.json

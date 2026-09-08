@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "isolated_live_oidc_ui_rpc",
+  "raw_browser_trace_saved": false,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "fixture": {
+    "workspace_id": "ws_ops_fixture_d6e2fc0f9a1a4026890269059e8a7aa1",
+    "subject_ref": "sha256:dcfadd0a0d7cb3d5dfe0",
+    "actor_ref": "sha256:bd98b79f2a90211c2534",
+    "approver_ref": "sha256:f35ddddbf6ef38112d67"
+  },
+  "status": "failed",
+  "events": [
+    {
+      "at": "2026-09-07T11:41:46.104Z",
+      "event": "step",
+      "name": "signed_oidc_login_and_grant_capabilities"
+    },
+    {
+      "at": "2026-09-07T11:41:47.983Z",
+      "event": "rpc",
+      "request": {
+        "method": "ops.session",
+        "subject_ref": null,
+        "grant_ref": null,
+        "resource_scope": null,
+        "capabilities": null,
+        "approver_ref": null,
+        "reason_present": false,
+        "ticket_present": false
+      },
+      "response": {
+        "status": 503,
+        "error_code": "SESSION_HASH_SECRET_MISSING",
+        "result": null
+      }
+    },
+    {
+      "at": "2026-09-07T11:41:47.986Z",
+      "event": "failure",
+      "name": "Error"
+    },
+    {
+      "at": "2026-09-07T11:41:48.775Z",
+      "event": "screenshot",
+      "name": "failure-masked.png"
+    }
+  ],
+  "finished_at": "2026-09-07T11:41:48.776Z"
+}

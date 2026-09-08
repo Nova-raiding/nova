@@ -1,0 +1,24 @@
+
+> merchant-marketing-codex@0.1.1 check
+> npm run typecheck && npm test && npm run test:ops-console && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio
+
+
+> merchant-marketing-codex@0.1.1 typecheck
+> tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+
+> merchant-marketing-codex@0.1.1 test
+> vitest run --no-file-parallelism
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ tests/local-docker-runtime-contract.test.ts (5 tests | 1 failed) 16648ms
+     × proves API and replica use durable Postgres persistence and the complete migration tail 167ms
+container source manifest failed: required worker input is missing: apps/worker
+container source manifest failed: symbolic links are forbidden in source inputs: apps/api/src/package-link.json
+container source manifest failed: required root build metadata is missing: package-lock.json
+container source manifest failed: manifest paths are not strictly sorted
+container source manifest failed: manifest contains an unsafe path: "../escape.ts"
+ ❯ tests/local-docker-release-gate.test.ts (2 tests | 1 failed) 133ms
+     × proves Postgres has every source migration through the current tail 91ms

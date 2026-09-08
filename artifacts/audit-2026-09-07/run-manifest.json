@@ -1,0 +1,164 @@
+{
+  "runId": "audit-2026-09-07",
+  "status": "DONE_WITH_CONCERNS",
+  "productionRelease": "NO-GO",
+  "before": {
+    "capturedAt": "2026-09-07T08:59:29.049Z",
+    "head": "9986fe31e787b8f205f07db00d7a8ee40cd7866d",
+    "sourceFileCount": 1343,
+    "sourceDigestSha256": "6393567c745b53eb468f141a632fd996bf89e0d0965190ac157463abaa910fcd",
+    "critical": [
+      [
+        ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs",
+        "bbbef57e25c49b44ac59f4c06159178b901e0290100751270c640d7aa66d84d6"
+      ],
+      [
+        "apps/api/src/server.ts",
+        "7494c9dc69c5aa1664763db7f31b64d4b8db210c1b93b78feb36c1264c6f3c18"
+      ],
+      [
+        "apps/plugin/mcp/bridge.mjs",
+        "bbbef57e25c49b44ac59f4c06159178b901e0290100751270c640d7aa66d84d6"
+      ],
+      [
+        "packages/application/src/service.ts",
+        "0f528397e4e8b50b67a98c13c007c90f5f60ea43a077dc8b4d0a8c5e75c02ea7"
+      ],
+      [
+        "packages/persistence/src/asset-scan-redrive-repository.ts",
+        "f24c53fbfe426b29ed1b60c1b215a0e3341554c4b2652dab0bd98a20c32ba9d2"
+      ],
+      [
+        "packages/persistence/src/billing-repository.ts",
+        "91af3d4390f862cd2c7a71f9db09bc7e83efbfb94b1dc53046bdb524140541e5"
+      ],
+      [
+        "packages/persistence/src/repository.ts",
+        "da359347cb14cb2bddc0f35fbd9d583176d3d40585852c84c563810a1a2504aa"
+      ],
+      [
+        "tests/outbox-retry.postgres.test.ts",
+        "13a8737526d742472d4688213ace59c18dfb0272f91db88c80f3d6e27782ef8d"
+      ],
+      [
+        "tests/test-summary.ts",
+        "051d5e1c4fa6d6cb9190a300fd2e44bae9351d509af1ec7ba0d88def33e567c8"
+      ]
+    ]
+  },
+  "after": {
+    "capturedAt": "2026-09-07T09:05:58.073Z",
+    "head": "9986fe31e787b8f205f07db00d7a8ee40cd7866d",
+    "sourceFileCount": 1343,
+    "sourceDigestSha256": "31d51476317eb7ba2595c58b3faaf9464ea174a42b67dd005d7b64c9e9b9ec65",
+    "critical": [
+      [
+        ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs",
+        "bbbef57e25c49b44ac59f4c06159178b901e0290100751270c640d7aa66d84d6"
+      ],
+      [
+        "apps/api/src/server.ts",
+        "7494c9dc69c5aa1664763db7f31b64d4b8db210c1b93b78feb36c1264c6f3c18"
+      ],
+      [
+        "apps/plugin/mcp/bridge.mjs",
+        "bbbef57e25c49b44ac59f4c06159178b901e0290100751270c640d7aa66d84d6"
+      ],
+      [
+        "packages/application/src/service.ts",
+        "0f528397e4e8b50b67a98c13c007c90f5f60ea43a077dc8b4d0a8c5e75c02ea7"
+      ],
+      [
+        "packages/persistence/src/asset-scan-redrive-repository.ts",
+        "f24c53fbfe426b29ed1b60c1b215a0e3341554c4b2652dab0bd98a20c32ba9d2"
+      ],
+      [
+        "packages/persistence/src/billing-repository.ts",
+        "91af3d4390f862cd2c7a71f9db09bc7e83efbfb94b1dc53046bdb524140541e5"
+      ],
+      [
+        "packages/persistence/src/repository.ts",
+        "da359347cb14cb2bddc0f35fbd9d583176d3d40585852c84c563810a1a2504aa"
+      ],
+      [
+        "tests/outbox-retry.postgres.test.ts",
+        "13a8737526d742472d4688213ace59c18dfb0272f91db88c80f3d6e27782ef8d"
+      ],
+      [
+        "tests/test-summary.ts",
+        "051d5e1c4fa6d6cb9190a300fd2e44bae9351d509af1ec7ba0d88def33e567c8"
+      ]
+    ],
+    "releaseMetadata": {
+      "schemaVersion": 1,
+      "repositoryVersion": "0.1.1",
+      "pluginVersion": "0.1.0+codex.20260907102000",
+      "expectedMigrationVersion": 162,
+      "mcpMethodCount": 282,
+      "merchantBridgeToolCount": 142,
+      "opsDomainCount": 14
+    }
+  },
+  "sourceDigestUnchanged": false,
+  "stabilityNotes": {"criticalFilesUnchanged":true,"allSourceFilesUnchanged":false,"recentlyModifiedAfterVitestFinished":["packages/ai/src/image-generator.ts","packages/ai/src/image-generator.test.ts"],"observedMtime":"2026-09-07T09:04:50Z","attribution":"unknown; files outside this audit's edits","releaseSnapshotCertified":false},
+  "scope": "git tracked and untracked nonignored files under apps/packages/tests/scripts/infra/.codex-marketplace plus root JSON/YAML; not a signed release manifest or proof of no transient edits",
+  "verification": {
+    "check": {
+      "exitCode": 1,
+      "files": {
+        "passed": 601,
+        "failed": 2,
+        "skipped": 44,
+        "total": 647
+      },
+      "tests": {
+        "passed": 4165,
+        "failed": 2,
+        "skipped": 69,
+        "total": 4236
+      },
+      "log": "runtime/check-stable.log"
+    },
+    "isolatedPostgres": {
+      "version": "16-alpine",
+      "files": {
+        "passed": 5,
+        "failed": 2,
+        "total": 7
+      },
+      "tests": {
+        "passed": 8,
+        "failed": 2,
+        "notExecuted": 0,
+        "total": 10
+      },
+      "log": "runtime/postgres-1788771142349.json"
+    },
+    "opsUnit": {
+      "files": 87,
+      "tests": 495,
+      "failed": 0
+    },
+    "opsOidc": {
+      "tests": 3,
+      "failed": 0,
+      "identity": "local signed OIDC gateway",
+      "dataBoundary": "source container shared DB and Redis"
+    },
+    "builds": {
+      "ops": "passed",
+      "merchantStudio": "passed with chunk-size warning"
+    },
+    "doctor": {
+      "passed": 37,
+      "warnings": 16,
+      "failed": 0
+    }
+  },
+  "cleanup": {
+    "container": "merchant-audit-pg-20260907",
+    "autoRemove": true,
+    "stopped": true,
+    "businessDataRemoved": false
+  }
+}

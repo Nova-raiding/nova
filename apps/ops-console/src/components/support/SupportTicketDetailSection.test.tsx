@@ -8,7 +8,7 @@ function model(overrides: Partial<SupportDomainModel> = {}): SupportDomainModel 
     workspaceId: "ws_1", tickets: [], filters: { query: "" }, loading: false, loadingMore: false,
     detailLoading: false, mutating: false, error: "", hasMore: false, setFilters: vi.fn(), reload: vi.fn(),
     loadMore: vi.fn(), selectTicket: vi.fn(), clearSelection: vi.fn(), create: vi.fn(), assign: vi.fn(),
-    transition: vi.fn(), comment: vi.fn(), exportCrm: vi.fn(), reportLoading: false, loadReport: vi.fn(), ...overrides,
+    transition: vi.fn(), comment: vi.fn(), reportLoading: false, loadReport: vi.fn(), ...overrides,
   };
 }
 

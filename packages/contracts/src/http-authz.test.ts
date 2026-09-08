@@ -19,14 +19,12 @@ describe('HTTP authorization policy registry', () => {
   it('keeps HTTP identity write semantics aligned with the referenced MCP policy', () => {
     const readMethods = new Set(['GET'])
     const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-    // This endpoint computes a review decision/read model from the current
-    // content version; its MCP operation is intentionally customer-content
-    // update because the review computation is an authorization-sensitive
-    // mutation boundary, even though the HTTP transport is GET.
+    // A small number of GET transports intentionally expose write-semantic
+    // review/export operations; image-review is not one of them because its
+    // HTTP handler is a read-only deterministic checker.
     const readTransportWriteOperations = new Set([
       'http:GET:/v1/content-versions/{contentVersionId}/review',
       'http:GET:/v1/content-versions/{contentVersionId}/export',
-      'http:GET:/v1/products/{productId}/image-review',
     ])
 
     for (const policy of HTTP_OPERATION_POLICIES) {
@@ -59,7 +57,7 @@ describe('HTTP authorization policy registry', () => {
     expect(getHttpOperationPolicy('POST', '/v1/internal/support/sla-scan')).toMatchObject({ authentication: 'worker' })
     expect(getHttpOperationPolicy('POST', '/v1/internal/support/sla-report')).toMatchObject({ authentication: 'worker' })
     expect(getHttpOperationPolicy('GET', '/v1/tasks/task-1/approve')).toBeUndefined()
-    expect(getHttpOperationPolicy('GET', '/v1/products/product-1/image-review')).toMatchObject({ mcpMethod: 'catalog.image.review', authentication: 'identity' })
+    expect(getHttpOperationPolicy('GET', '/v1/products/product-1/image-review')).toMatchObject({ mcpMethod: 'catalog.image.get', authentication: 'identity' })
     expect(getHttpOperationPolicy('POST', '/v1/tasks/task-1/approve/extra')).toBeUndefined()
   })
 

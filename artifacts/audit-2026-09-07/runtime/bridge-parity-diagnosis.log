@@ -1,0 +1,36 @@
+Bridge parity diagnosis (read-only source inspection)
+Date: 2026-09-07 Asia/Shanghai
+
+Original full-check evidence: artifacts/audit-2026-09-07/runtime/check-final.log
+Full test run began at 16:52:54 and lasted 272.45s.
+Failure: apps/plugin/mcp/bridge.test.ts:101, expect(marketplaceBytes).toEqual(sourceBytes).
+The attachment_count schema assertions at lines 114-115 were not reached.
+Original output recorded different source and marketplace Buffer lengths.
+This was a source/mirror byte mismatch, not a demonstrated attachment_count schema mismatch.
+
+Before and after independent rerun:
+apps/plugin/mcp/bridge.mjs
+.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs
+Both size: 266008 bytes
+Both mtime: 2026-09-07 16:56:02 +0800
+Both SHA-256: bbbef57e25c49b44ac59f4c06159178b901e0290100751270c640d7aa66d84d6
+diff -u between these two files returned no differences.
+Their modification time falls inside the original full-check run.
+The writer and exact earlier synchronization sequence were not observed.
+
+Independent command:
+npx vitest run apps/plugin/mcp/bridge.test.ts -t 'keeps merchant.start attachment_count aligned' --reporter=verbose --reporter=json --outputFile=artifacts/audit-2026-09-07/runtime/bridge-parity-recheck.json
+
+Observed result:
+PASS keeps merchant.start attachment_count aligned with the shared contract and byte-identical in marketplace (494ms)
+Test Files: 1 passed
+Tests: 1 passed, 89 excluded by the test-name filter
+Start at: 16:58:39
+Duration: 945ms
+Exit code: 0
+Structured reporter evidence: artifacts/audit-2026-09-07/runtime/bridge-parity-recheck.json
+
+No bridge, marketplace, schema, or test source was modified by this diagnostic task.
+Suggested next step: preserve the current matched snapshot and rerun affected verification after source writers finish.
+Optional test maintenance: split mirror parity from attachment_count schema assertions and compare hashes with file names to avoid large numeric Buffer diffs. Do not remove the parity gate.
+The independent pass does not change the recorded failed full-check result or prove a frozen release.

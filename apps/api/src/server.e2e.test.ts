@@ -1,7 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPaymentProviderForTests, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
+import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
 
 type Envelope<T = unknown> = { request_id: string; trace_id: string; workspace_id: string; data: T | null; warnings: unknown[]; next_actions: unknown[]; error: { code: string; message: string } | null }
 
@@ -185,7 +186,8 @@ describe('API HTTP vertical slice', () => {
     expect((await mcp(ownerHeaders, 6, 'brand-unit.access.grant', { brand_id: 'brand_visible', external_subject: memberId, role: 'editor', reason: '品牌边界验收' })).error).toBeNull()
 
     const products = await fetch(`${base}/v1/products?limit=20&offset=0`, { headers: memberHeaders }).then(json)
-    expect(products.data).toMatchObject({ total: 1, limit: 20, offset: 0, items: [expect.objectContaining({ id: visibleProduct.id })] })
+    expect(products.data).toMatchObject({ total: 2, limit: 20, offset: 0 })
+    expect(products.data?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: visibleProduct.id }), expect.objectContaining({ id: unbrandedProduct.id })]))
     for (const productId of [hiddenProduct.id, unbrandedProduct.id]) {
       const detail = await fetch(`${base}/v1/products/${encodeURIComponent(productId)}`, { headers: memberHeaders }).then(json)
       expect(detail.error?.code).toBe('PRODUCT_NOT_FOUND')
@@ -267,7 +269,7 @@ describe('API HTTP vertical slice', () => {
     vi.stubEnv('NODE_ENV', 'test')
     vi.stubEnv('API_RATE_LIMIT_PER_MINUTE', '10000')
   })
-  afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setPaymentProviderForTests(); vi.unstubAllEnvs() })
+  afterEach(async () => { if (server.listening) await new Promise<void>(resolve => server.close(() => resolve())); setPaymentProviderForTests(); setRuleRepositoryForTests(); vi.unstubAllEnvs() })
 
   it('defaults billing reads to the authenticated member and restricts workspace scope to billing administrators', async () => {
     const workspaceId = `ws_personal_billing_${Date.now()}`
@@ -969,6 +971,9 @@ describe('API HTTP vertical slice', () => {
     const token = `wallet-gate-token-${workspaceId}`
     const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId }
     const base = await start()
+    setRuleRepositoryForTests(await trustedPlatformRuleTestRepository(workspaceId, 'taobao'))
+    vi.stubEnv('PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://rules.example.com/platform-rule-manifest.json')
+    vi.stubEnv('PLATFORM_RULE_SYNC_SIGNING_SECRET', 'server-e2e-signing-secret')
 
     try {
       vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({ [token]: { workspaces: [workspaceId], actor_id: 'wallet-gate-user' } }))
@@ -977,7 +982,7 @@ describe('API HTTP vertical slice', () => {
       vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
       vi.stubEnv('SESSION_ID_HASH_SECRET', 'server-e2e-session-hash-secret')
       const before = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'catalog.title.optimize', params: { workspace_id: workspaceId, product_id: product.id, platform: 'taobao', keyword: '春季' } }) }).then(json)
-      expect(before.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+      expect(before.error?.code).toBe('CREATIVE_POINTS_UNAVAILABLE')
 
       vi.stubEnv('NODE_ENV', 'test')
       const create = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '10.00', idempotency_key: `wallet-gate-${workspaceId}` } }) }).then(json)
@@ -990,8 +995,8 @@ describe('API HTTP vertical slice', () => {
       vi.stubEnv('SESSION_ID_HASH_SECRET', 'server-e2e-session-hash-secret')
       const first = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'wallet-gate-seo-1' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'catalog.title.optimize', params: { workspace_id: workspaceId, product_id: product.id, platform: 'taobao', keyword: '春季' } }) }).then(json)
       const second = await fetch(`${base}/mcp`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'wallet-gate-seo-1' }, body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'catalog.title.optimize', params: { workspace_id: workspaceId, product_id: product.id, platform: 'taobao', keyword: '春季' } }) }).then(json)
-      expect(first.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
-      expect(second.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
+      expect(first.error).toBeNull()
+      expect(second.error).toBeNull()
       const transactions = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'billing.transactions', params: { workspace_id: workspaceId } }) }).then(json)
       expect((transactions.data as { result: { transactions: Array<{ type: string; description: string }> } }).result.transactions.filter(item => item.type === 'debit' && item.description.includes('SEO/GEO'))).toHaveLength(0)
     } finally {
@@ -1206,6 +1211,10 @@ describe('API HTTP vertical slice', () => {
     expect(missingBatchId.error).toMatchObject({ code: 'INVALID_REQUEST' })
     const first = preparedResult.items[0]!
     const second = preparedResult.items[1]!
+    const preparedPause = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1.6, method: 'publish.batch.pause', params: { workspace_id: workspaceId, batch_id: preparedResult.batchId, reason: '发布前人工复核' } }) }).then(json)
+    expect((preparedPause.data as { result: { state: string; items: Array<{ state: string; pausedFrom?: string }> } }).result.items.map(item => [item.state, item.pausedFrom])).toEqual([['paused', 'prepared'], ['paused', 'prepared']])
+    const preparedResume = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1.65, method: 'publish.batch.resume', params: { workspace_id: workspaceId, batch_id: preparedResult.batchId } }) }).then(json)
+    expect((preparedResume.data as { result: { state: string; items: Array<{ state: string; pausedFrom?: string }> } }).result.items.map(item => [item.state, item.pausedFrom])).toEqual([['prepared', undefined], ['prepared', undefined]])
     const duplicate = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1.75, method: 'publish.batch.confirm', params: { workspace_id: workspaceId, batch_id: preparedResult.batchId, confirmations_json: JSON.stringify([
       { task_id: first.task.id, content_version_id: first.version.id, confirmation_hash: first.confirmationHash, remote_snapshot_hash: first.remoteSnapshotHash, idempotency_key: 'batch-life-duplicate-a' },
       { task_id: first.task.id, content_version_id: first.version.id, confirmation_hash: first.confirmationHash, remote_snapshot_hash: first.remoteSnapshotHash, idempotency_key: 'batch-life-duplicate-b' },

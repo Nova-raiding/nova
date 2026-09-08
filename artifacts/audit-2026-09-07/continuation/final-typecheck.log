@@ -1,0 +1,4 @@
+
+> merchant-marketing-codex@0.1.1 typecheck
+> tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+

@@ -55,7 +55,7 @@ test('operates the platform user directory without destructive confirmation', as
   try {
     await expect(supportRow).toBeVisible({ timeout: 70_000 })
   } catch (error) {
-    const loadError = page.getByRole('alert').filter({ hasText: '用户目录加载失败' })
+    const loadError = page.getByRole('alert').filter({ hasText: '用户目录加载失败' }).first()
     if (await loadError.isVisible()) {
       await loadError.getByRole('button', { name: /刷新用户目录/u }).click()
       await expect(supportRow).toBeVisible({ timeout: 70_000 })
@@ -144,7 +144,11 @@ test('keeps member governance in the workspace workbench', async ({ page }) => {
     localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: 'ws_demo', actorId, token, workbench: 'workspace' }))
     localStorage.setItem('ops_workbench', 'workspace')
   }, { actorId: workspaceActorId, token: workspaceToken })
-  await page.goto(new URL('/ops/members?workbench=workspace', baseUrl).toString(), { waitUntil: 'domcontentloaded' })
+  // Authenticate through the signed OIDC gateway before entering the
+  // workspace workbench. A bearer token in localStorage is intentionally not
+  // accepted by the OIDC runner and would make this test exercise an
+  // impossible mixed-auth state.
+  await openPlatformConsole(page, '/ops/members?workbench=workspace', { workbench: 'workspace' })
   await expect(page).toHaveURL(/\/ops\/members\?workbench=workspace$/u)
   await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()
   await expect(page.getByText('当前租户成员')).toBeVisible()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { renderCodexRelayConfig } from '../scripts/configure-codex-relay.js'
+import { renderCodexRelayCatalog, renderCodexRelayConfig } from '../scripts/configure-codex-relay.js'
 import { probeCodexRelayCatalog, validateCodexRelay } from '../scripts/validate-codex-relay.js'
 
 describe('Codex relay configuration renderer', () => {
@@ -40,6 +40,36 @@ describe('Codex relay configuration renderer', () => {
     expect(rendered).not.toContain('old.example')
   })
 
+  it('pins an optional absolute local catalog path without accepting relative paths', () => {
+    const rendered = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'glm-5.2', baseUrl: 'https://relay.example/v1', apiKeyEnv: 'WORMHOLE_API_KEY', catalogPath: '/Users/test/.codex/merchant-marketing/model-catalog.json' })
+    expect(rendered).toContain('model_catalog_json = "/Users/test/.codex/merchant-marketing/model-catalog.json"')
+    expect(() => renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'glm-5.2', baseUrl: 'https://relay.example/v1', apiKeyEnv: 'WORMHOLE_API_KEY', catalogPath: 'model-catalog.json' })).toThrow('绝对路径')
+  })
+
+  it('removes an unsupported host service tier when pinning a relay catalog', () => {
+    const rendered = renderCodexRelayConfig({ existing: 'service_tier = "fast"\n', provider: 'damai_relay', model: 'glm-5.2', baseUrl: 'https://relay.example/v1', apiKeyEnv: 'WORMHOLE_API_KEY', catalogPath: '/Users/test/.codex/merchant-marketing/model-catalog.json' })
+    expect(rendered).not.toContain('service_tier')
+  })
+
+  it('renders a bounded static catalog for the selected host model', () => {
+    const catalog = renderCodexRelayCatalog('glm-5.2')
+    expect(catalog.models).toHaveLength(1)
+    expect(catalog.models[0]).toMatchObject({ slug: 'glm-5.2', service_tiers: [], supported_in_api: true })
+  })
+
+  it('preserves complete cached model instructions when pinning a static catalog', () => {
+    const catalog = renderCodexRelayCatalog('glm-5.2', {
+      slug: 'gpt-5.6-luna', display_name: 'GPT-5.6-Luna', service_tiers: [{ id: 'priority' }],
+      model_messages: { instructions_template: 'full instructions', permissions: { shell: true } },
+      context_window: 272000,
+    })
+    expect(catalog.models[0]).toMatchObject({ slug: 'glm-5.2', display_name: 'glm-5.2 (大麦中转)', service_tiers: [], model_messages: { instructions_template: 'full instructions', permissions: { shell: true } }, context_window: 272000 })
+    expect(catalog.models[0]).toHaveProperty('experimental_supported_tools', [])
+    expect(catalog.models[0]).not.toHaveProperty('use_responses_lite')
+    expect(catalog.models[0]).not.toHaveProperty('tool_mode')
+    expect(catalog.models[0]).not.toHaveProperty('node_repl_disabled')
+  })
+
   it('rejects non-HTTPS relay endpoints', () => {
     expect(() => renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'model', baseUrl: 'http://relay.example/v1', apiKeyEnv: 'KEY' })).toThrow('HTTPS')
   })
@@ -61,12 +91,32 @@ describe('Codex relay configuration renderer', () => {
     expect(result.subscriptionAuth).toBe(true)
   })
 
+  it('accepts the built-in OpenAI provider when Codex stores ChatGPT subscription credentials', () => {
+    const result = validateCodexRelay('model_provider = "openai"\nmodel = "gpt-5.6-luna"\ncli_auth_credentials_store = "file"\n\n[model_providers.damai_relay]\nbase_url = "https://host-relay.example/v1"\nwire_api = "responses"\nenv_key = "WORMHOLE_API_KEY"\n', {
+      MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
+      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
+    })
+    expect(result.errors).toEqual([])
+    expect(result.subscriptionAuth).toBe(true)
+  })
+
   it('fails closed when host wire_api and env_key are absent', () => {
     const result = validateCodexRelay('model_provider = "bad"', {})
     expect(result.errors).toEqual(expect.arrayContaining([
       'Codex 配置缺少有效的 host model', 'Codex 配置缺少 model_providers.bad section',
       'Codex host relay 缺少有效的 base_url', 'Codex host relay 必须配置 wire_api = "responses"',
       'Codex host relay 缺少有效的 env_key（必须是环境变量名）', '业务模型 relay 缺少有效的 MODEL_RELAY_BASE_URL',
+    ]))
+  })
+
+  it('reports an active provider/section mismatch without guessing a replacement', () => {
+    const result = validateCodexRelay('model_provider = "openai"\nmodel = "responses-model"\n\n[model_providers.damai_relay]\nbase_url = "https://host-relay.example/v1"\nwire_api = "responses"\nenv_key = "DAMAI_CODEX_RELAY_API_KEY"\n', {
+      DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
+      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
+    })
+    expect(result.errors).toEqual(expect.arrayContaining([
+      'Codex 配置缺少 model_providers.openai section',
+      'Codex 配置的 model_provider=openai 与可用 provider section 不一致：damai_relay',
     ]))
   })
 
@@ -78,6 +128,17 @@ describe('Codex relay configuration renderer', () => {
     const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
     const result = validateCodexRelay(config, environment)
     await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({ object: 'list', data: [{ id: 'responses-model', supported_endpoint_types: ['openai-response'] }] })))
+    expect(result.errors).toEqual([])
+  })
+
+  it('accepts relays that advertise Responses-compatible models as generic openai', async () => {
+    const environment = {
+      DAMAI_CODEX_RELAY_API_KEY: 'host-secret', MODEL_RELAY_BASE_URL: 'https://business-relay.example/v1', MODEL_RELAY_API_KEY: 'business-secret',
+      AI_MODEL: 'text', IMAGE_MODEL: 'image', IMAGE_EDIT_MODEL: 'edit', OCR_MODEL: 'ocr', VIDEO_MODEL: 'video',
+    }
+    const config = renderCodexRelayConfig({ existing: '', provider: 'damai_relay', model: 'responses-model', baseUrl: 'https://host-relay.example/v1', apiKeyEnv: 'DAMAI_CODEX_RELAY_API_KEY' })
+    const result = validateCodexRelay(config, environment)
+    await probeCodexRelayCatalog(result, environment, async () => new Response(JSON.stringify({ object: 'list', data: [{ id: 'responses-model', supported_endpoint_types: ['openai'] }] })))
     expect(result.errors).toEqual([])
   })
 

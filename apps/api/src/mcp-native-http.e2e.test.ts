@@ -33,7 +33,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.every(tool => !tool.name.startsWith('ops.'))).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'asset.scan')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'billing.recharge.create')).toBe(false)
-    expect(payload.result.tools.some(tool => tool.name === 'content.generate')).toBe(false)
+    expect(payload.result.tools.some(tool => tool.name === 'content.generate')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'commercial.access.get')).toBe(true)
     const orderCreate = payload.result.tools.find(tool => tool.name === 'commercial.order.create')
     expect(orderCreate?.inputSchema.properties).not.toHaveProperty('amount_fen')

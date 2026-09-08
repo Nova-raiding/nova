@@ -1,0 +1,23 @@
+
+> merchant-marketing-codex@0.1.1 build:merchant-studio
+> npm run build --prefix demo/merchant-studio
+
+
+> merchant-studio-demo@0.1.0 build
+> tsc -b && vite build
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 3296 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.59 kB │ gzip:   0.39 kB
+dist/assets/index-BEg828Cl.css   94.68 kB │ gzip:  18.01 kB
+dist/assets/index-CvkO1Fcl.js   830.65 kB │ gzip: 257.80 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 525ms

@@ -2,6 +2,11 @@
 set -eu
 
 relay_api_key=${MODEL_RELAY_API_KEY:-}
+if [ -z "$relay_api_key" ] && [ -f .env ]; then
+  # Read only the relay key from the repository env file.  Do not source the
+  # file: it contains JSON-valued settings and must never be executed as shell.
+  relay_api_key=$(awk -F= '/^[[:space:]]*(MODEL_RELAY_API_KEY|WORMHOLE_API_KEY)[[:space:]]*=/{sub(/^[^=]*=/, ""); gsub(/^\"|\"$/, ""); gsub(/^\047|\047$/, ""); print; exit}' .env)
+fi
 if [ -z "$relay_api_key" ] && command -v launchctl >/dev/null 2>&1; then
   relay_api_key=$(launchctl getenv WORMHOLE_API_KEY 2>/dev/null || true)
 fi
@@ -11,6 +16,10 @@ if [ -z "$relay_api_key" ]; then
 fi
 
 export MODEL_RELAY_API_KEY="$relay_api_key"
+export MERCHANT_MCP_BASE_URL=${MERCHANT_MCP_BASE_URL:-http://127.0.0.1:8787}
+export MERCHANT_STRICT_AUTH=${MERCHANT_STRICT_AUTH:-false}
+export MERCHANT_ALLOW_FIXTURE_FALLBACK=${MERCHANT_ALLOW_FIXTURE_FALLBACK:-false}
+export MERCHANT_MCP_WRITE_ENABLED=${MERCHANT_MCP_WRITE_ENABLED:-false}
 video_relay_api_key=${VIDEO_MODEL_RELAY_API_KEY:-}
 if [ -z "$video_relay_api_key" ] && command -v launchctl >/dev/null 2>&1; then
   video_relay_api_key=$(launchctl getenv WORMHOLE_VIDEO_API_KEY 2>/dev/null || launchctl getenv WORMHOLE_VIP_API_KEY 2>/dev/null || launchctl getenv WORMHOLE_SVIP_API_KEY 2>/dev/null || true)

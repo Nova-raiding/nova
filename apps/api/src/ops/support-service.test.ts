@@ -11,10 +11,6 @@ const supportContext: SupportAuthorizationContext = {
   actorId: 'support_1', role: 'support', workspaceId: 'ws_1',
   permissions: ['support.ticket.read', 'support.ticket.create', 'support.ticket.assign', 'support.ticket.transition', 'support.ticket.comment'],
 }
-const platformContext: SupportAuthorizationContext = {
-  actorId: 'ops_1', role: 'platform_ops', workspaceId: 'ws_1',
-  permissions: ['support.ticket.read', 'support.ticket.create', 'support.ticket.assign', 'support.ticket.transition', 'support.ticket.comment', 'support.crm.export'],
-}
 
 async function seed(service: SupportService) {
   return service.create(supportContext, {
@@ -68,13 +64,4 @@ describe('SupportService', () => {
     expect(replay.replayed).toBe(true)
   })
 
-  it('keeps CRM export restricted to platform operations and returns a read projection', async () => {
-    const service = new SupportService(new MemorySupportRepository(), () => new Date('2026-08-29T00:00:00.000Z'))
-    await seed(service)
-    await expect(service.exportCrm({ ...supportContext, permissions: [...supportContext.permissions, 'support.crm.export'] }, 'ws_1')).rejects.toBeInstanceOf(SupportAuthorizationError)
-
-    const exported = await service.exportCrm(platformContext, 'ws_1')
-    expect(exported).toMatchObject({ generatedAt: '2026-08-29T00:00:00.000Z', workspaceId: 'ws_1', rows: [{ customerId: 'customer_1', totalTickets: 1 }] })
-    expect(exported.columns).toContain('last_ticket_status')
-  })
 })

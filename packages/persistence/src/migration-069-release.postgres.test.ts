@@ -195,7 +195,7 @@ describe('persistence migration 069 release acceptance', () => {
       expect(await roleTableAcl(upgrade)).toEqual(aclBefore)
       expect(await platformScopeFingerprint(upgrade)).toEqual(await platformScopeFingerprint(fresh))
 
-      await run('pg_dump', ['--format=custom', '--schema-only', '--no-owner', '--file', dumpPath, databaseUrl(base, freshName)])
+      await run(process.env.PG_DUMP_BIN ?? 'pg_dump', ['--format=custom', '--schema-only', '--no-owner', '--file', dumpPath, databaseUrl(base, freshName)])
       await run('pg_restore', ['--dbname', databaseUrl(base, restoreName), '--no-owner', dumpPath])
       expect(await platformScopeFingerprint(restored)).toEqual(await platformScopeFingerprint(fresh))
     } finally {

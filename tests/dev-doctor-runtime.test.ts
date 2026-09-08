@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
+import { apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from '../scripts/dev-doctor-runtime.js'
 
 describe('developer doctor runtime checks', () => {
   it('parses Docker Compose newline-delimited JSON', () => {
@@ -26,6 +26,15 @@ describe('developer doctor runtime checks', () => {
     expect(releaseReadiness({ data: { ready: false } })).toBe(false)
     expect(releaseReadiness({ ready: true })).toBe(true)
     expect(releaseReadiness({ data: {} })).toBeUndefined()
+  })
+
+  it('does not treat a local or fixture /readyz HTTP 200 as production-ready', () => {
+    const fixture = { data: { setup: { mode: 'fixture', productionGate: false } } }
+    const production = { data: { setup: { mode: 'production', productionGate: true } } }
+    expect(apiProbeReady(fixture, true, false)).toBe(true)
+    expect(apiProbeReady(fixture, true, true)).toBe(false)
+    expect(apiProbeReady(production, true, true)).toBe(true)
+    expect(apiProbeReady(production, false, true)).toBe(false)
   })
 
   it('reports commercial dependencies as blocked for fixture/local readiness without exposing configuration values', () => {

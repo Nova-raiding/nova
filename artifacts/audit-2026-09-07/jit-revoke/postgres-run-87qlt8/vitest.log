@@ -1,0 +1,24 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/lixiaomei/Desktop/code/codexSkills[39m
+
+ [32m✓[39m packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1588[2mms[22m[39m
+     [33m[2m✓[22m[39m rejects forged subject/workspace context at the database boundary [33m 1587[2mms[22m[39m
+ [32m✓[39m packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 3973[2mms[22m[39m
+     [33m[2m✓[22m[39m allows only an exact workspace_ids scope with safe string metadata for new writes [33m 1601[2mms[22m[39m
+     [33m[2m✓[22m[39m blocks incompatible live legacy authority and preserves historical scope, hash, and event evidence on upgrade [33m 2371[2mms[22m[39m
+ [32m✓[39m packages/persistence/src/authorization-repository.release.postgres.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1493[2mms[22m[39m
+     [33m[2m✓[22m[39m persists a grant-bound reservation, enforces event idempotency, and replays after revoke [33m 1492[2mms[22m[39m
+ [32m✓[39m packages/persistence/src/authorization-rls-boundary.postgres.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1605[2mms[22m[39m
+     [33m[2m✓[22m[39m does not leak platform scope and protects both authorization event ledgers [33m 1604[2mms[22m[39m
+ [32m✓[39m packages/persistence/src/migration-105-release.postgres.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1306[2mms[22m[39m
+     [33m[2m✓[22m[39m enforces dual-boundary RLS/ACL, atomic use budgets, append-only events, and immediate revoke [33m 1305[2mms[22m[39m
+ [32m✓[39m packages/persistence/src/migration-109-release.postgres.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2559[2mms[22m[39m
+     [33m[2m✓[22m[39m atomically redrives terminal-marker once, preserves old evidence, audits, isolates tenants, and rejects mutation [33m 1346[2mms[22m[39m
+     [33m[2m✓[22m[39m atomically redrives legacy-published once, preserves old evidence, audits, isolates tenants, and rejects mutation [33m 1212[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 20:40:53
+[2m   Duration [22m 13.62s[2m (transform 131ms, setup 0ms, import 299ms, tests 12.52s, environment 0ms)[22m
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/vitest.json

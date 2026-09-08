@@ -1,0 +1,65 @@
+{
+  "observedAt": "2026-09-07",
+  "boundary": "Current connected tools only; not a formal ChatGPT.app release acceptance. merchant.start is not guaranteed read-only by current annotations.",
+  "merchant_start": {
+    "content": [
+      {
+        "type": "text",
+        "text": "欢迎使用大麦。\n你想先连接哪个平台？"
+      }
+    ],
+    "structuredContent": {
+      "conversation_state": {
+        "stage": "connect_store",
+        "status": "needs_input",
+        "primary_action": {
+          "method": "platform.connect",
+          "label": "连接平台店铺",
+          "required_inputs": [
+            "platform"
+          ]
+        }
+      },
+      "completed_summary": "欢迎使用大麦。",
+      "question": "你想先连接哪个平台？",
+      "expected_input": {
+        "kind": "platform_selection",
+        "accepts": [
+          "natural_language"
+        ]
+      }
+    },
+    "isError": false
+  },
+  "workspace_health": {
+    "content": [
+      {
+        "type": "text",
+        "text": "当前还没有可用店铺。\n你想先连接哪个平台？"
+      }
+    ],
+    "structuredContent": {
+      "conversation_state": {
+        "stage": "connect_store",
+        "status": "needs_input",
+        "connected_store_count": 0,
+        "primary_action": {
+          "method": "platform.connect",
+          "label": "连接平台店铺",
+          "required_inputs": [
+            "platform"
+          ]
+        }
+      },
+      "completed_summary": "当前还没有可用店铺。",
+      "question": "你想先连接哪个平台？",
+      "expected_input": {
+        "kind": "platform_selection",
+        "accepts": [
+          "natural_language"
+        ]
+      }
+    },
+    "isError": false
+  }
+}

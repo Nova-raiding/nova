@@ -24,10 +24,56 @@ interface OverviewSectionProps {
   model: OpsConsoleModel;
 }
 
+export function isFixturePlatformRow(row: PlatformOperation): boolean {
+  return row.dataMode === "fixture" || row.simulated === true || row.state === "fixture_ready";
+}
+
+export function platformAuthorizationPresentation(row: PlatformOperation) {
+  const accountCount = row.accountCount ?? (row.accountId ? 1 : 0);
+  if (isFixturePlatformRow(row)) {
+    return {
+      color: "gold" as const,
+      label: accountCount > 1 ? `${accountCount} 个演示店铺` : "演示授权",
+    };
+  }
+  if (row.state === "connected") {
+    return {
+      color: "green" as const,
+      label: accountCount > 1 ? `${accountCount} 个真实店铺` : "真实授权",
+    };
+  }
+  if (row.state === "partially_connected") {
+    return {
+      color: "orange" as const,
+      label: `${row.connectedAccountCount ?? 0}/${accountCount} 个店铺已连接`,
+    };
+  }
+  return { color: "orange" as const, label: row.state || "未知" };
+}
+
+export function platformReadPresentation(row: PlatformOperation) {
+  if (isFixturePlatformRow(row)) {
+    return { color: "gold" as const, label: row.readEnabled ? "演示读取" : "演示未启用" };
+  }
+  return row.readEnabled
+    ? { color: "green" as const, label: "已开启" }
+    : { color: "default" as const, label: "未开启" };
+}
+
+export function platformMediaPresentation(row: PlatformOperation) {
+  if (isFixturePlatformRow(row)) {
+    return { color: "gold" as const, label: "未验证（fixture）" };
+  }
+  return row.readiness?.mediaUpload?.ready
+    ? { color: "green" as const, label: "可上传" }
+    : { color: "orange" as const, label: "媒体阻断" };
+}
+
 export function canPublishToProduction(row: PlatformOperation): boolean {
   const capabilities = row.capabilities ?? [];
   const canaryPassed = capabilities.length > 0 && capabilities.every((item) => item.state === "production_canary");
-  return row.state === "connected"
+  return !isFixturePlatformRow(row)
+    && row.state === "connected"
     && row.readEnabled === true
     && row.writeEnabled === true
     && row.readiness?.ready === true
@@ -247,7 +293,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
       >
         <Table
           rowKey={(row: PlatformOperation) =>
-            `${row.platform}:${row.accountId ?? "unbound"}`
+            row.platform
           }
           pagination={false}
           dataSource={
@@ -267,24 +313,18 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
             {
               title: "店铺授权",
               dataIndex: "state",
-              render: (value: string | undefined) => {
-                const simulated = value === "fixture_ready";
-                const connected = value === "connected";
-                return (
-                  <Tag color={simulated ? "gold" : connected ? "green" : "orange"}>
-                    {simulated ? "演示授权" : connected ? "真实授权" : value || "未知"}
-                  </Tag>
-                );
+              render: (_: string | undefined, row: PlatformOperation) => {
+                const presentation = platformAuthorizationPresentation(row);
+                return <Tag color={presentation.color}>{presentation.label}</Tag>;
               },
             },
             {
               title: "读取",
               dataIndex: "readEnabled",
-              render: (value: boolean | undefined) => (
-                <Tag color={value ? "green" : "default"}>
-                  {value ? "已开启" : "未开启"}
-                </Tag>
-              ),
+              render: (_: boolean | undefined, row: PlatformOperation) => {
+                const presentation = platformReadPresentation(row);
+                return <Tag color={presentation.color}>{presentation.label}</Tag>;
+              },
             },
             {
               title: "写入",
@@ -320,12 +360,8 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
             {
               title: "主/副图媒体",
               render: (_: unknown, row: PlatformOperation) => {
-                const media = row.readiness?.mediaUpload;
-                return (
-                  <Tag color={media?.ready ? "green" : "orange"}>
-                    {media?.ready ? "可上传" : "媒体阻断"}
-                  </Tag>
-                );
+                const presentation = platformMediaPresentation(row);
+                return <Tag color={presentation.color}>{presentation.label}</Tag>;
               },
             },
             {

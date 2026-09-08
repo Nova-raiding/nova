@@ -110,6 +110,24 @@ describe('new commercial and operations capabilities', () => {
     expect(stale.error).toMatchObject({ code: 'SEO_GEO_SUGGESTION_INVALID' })
   })
 
+  it('treats repeated SEO title acceptance as an idempotent retry', async () => {
+    const base = await start(); const workspaceId = `ws_seo_retry_${Date.now()}`
+    const imported = await call(base, workspaceId, 'catalog.import', { platform: 'taobao', title: '轻云防晒外套', category: '女装外套', price: '199', stock: '100' })
+    expect(imported.error).toBeNull()
+    const productId = imported.data.result.product_id
+    const confirmed = await call(base, workspaceId, 'catalog.facts.confirm', { product_id: productId })
+    expect(confirmed.error).toBeNull()
+    const optimized = await call(base, workspaceId, 'catalog.title.optimize', { product_id: productId, keyword: '通勤防晒' })
+    expect(optimized.error).toBeNull()
+    const suggestion = optimized.data.result.suggestions[0]
+    const first = await call(base, workspaceId, 'catalog.title.accept', { product_id: productId, platform: 'taobao', suggestion_id: suggestion.id, title: suggestion.title })
+    expect(first.error).toBeNull()
+    const second = await call(base, workspaceId, 'catalog.title.accept', { product_id: productId, platform: 'taobao', suggestion_id: suggestion.id, title: suggestion.title })
+    expect(second.error).toBeNull()
+    expect(second.data.result.version).toBe(first.data.result.version)
+    expect(second.data.result.seoGeoAcceptance).toEqual(first.data.result.seoGeoAcceptance)
+  })
+
   it('enforces canonical product and listing scope before a canonical title read', async () => {
     const base = await start(); const workspaceId = `ws_canonical_title_${Date.now()}`
     const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `canonical-title-store-${Date.now()}`, credentialRef: `fixture-secret/taobao/${workspaceId}` })

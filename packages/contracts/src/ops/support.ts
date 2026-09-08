@@ -15,7 +15,6 @@ export const supportPermissions = [
   'support.ticket.assign',
   'support.ticket.transition',
   'support.ticket.comment',
-  'support.crm.export',
 ] as const
 
 export type SupportTicketStatus = typeof supportTicketStatuses[number]
@@ -24,6 +23,7 @@ export type SupportTicketEventType = typeof supportTicketEventTypes[number]
 export type SupportRole = typeof supportRoles[number]
 export type SupportPermission = typeof supportPermissions[number]
 export type { SupportSlaProjection, SupportSlaPolicySnapshot, SupportSlaState } from './support-sla.js'
+
 import type { SupportSlaProjection } from './support-sla.js'
 
 export const supportRolePermissions = {
@@ -122,34 +122,6 @@ export interface CommentOnSupportTicketCommand {
   visibility: 'internal' | 'customer'
   expectedRevision: number
   idempotencyKey: string
-}
-
-export interface SupportCrmProjectionContract {
-  workspaceId: string
-  customerId: string
-  customerName: string
-  customerEmail?: string
-  totalTickets: number
-  openTickets: number
-  urgentTickets: number
-  lastTicketAt: string
-  lastTicketStatus: SupportTicketStatus
-}
-
-export interface SupportCrmExportContract {
-  generatedAt: string
-  workspaceId: string
-  columns: readonly [
-    'customer_id',
-    'customer_name',
-    'customer_email',
-    'total_tickets',
-    'open_tickets',
-    'urgent_tickets',
-    'last_ticket_at',
-    'last_ticket_status',
-  ]
-  rows: SupportCrmProjectionContract[]
 }
 
 export function isSupportTicketStatus(value: unknown): value is SupportTicketStatus {

@@ -31,6 +31,7 @@ export interface PlatformRejection {
 }
 
 export interface ProductSku {
+  sourceAssetIds?: string[]
   id: string
   name: string
   price: number
@@ -445,6 +446,8 @@ export interface KnowledgeGenerationContext {
   rules: Array<{ id: string; content: string; version: string; sourceReference: string; effectiveFrom?: string; effectiveTo?: string }>
   assets: Array<{ id: string; kind: 'brand' | 'customer'; name: string; content: string | Record<string, unknown>; revision: number; confirmed: false }>
   confirmedLearningSuggestions: Array<{ id: string; summary: string; proposedRule: { content: string; scope: string; version: string } }>
+  /** Current workspace brand guidance, captured with the generation snapshot. */
+  brandPreference?: { id: string; preferences: Record<string, unknown>; version: string; revision: number }
   /** Structured competitor observations are reference-only and never product facts. */
   competitorReferences?: CompetitorReferenceSnapshot[]
 }
@@ -1954,8 +1957,9 @@ export class MerchantService {
     if (input.stock !== undefined && (!Number.isInteger(input.stock) || input.stock < 0)) throw new DomainError('PRODUCT_IMPORT_STOCK_INVALID', '商品库存必须是非负整数', 400)
     if (input.skuCount !== undefined && (!Number.isInteger(input.skuCount) || input.skuCount < 0)) throw new DomainError('PRODUCT_IMPORT_SKU_COUNT_INVALID', 'SKU 数量必须是非负整数', 400)
     const sourceAssetIds = input.sourceAssetIds ? [...new Set(input.sourceAssetIds.map(assetId => assetId.trim()).filter(Boolean))] : undefined
-    if (sourceAssetIds?.length) {
-      const missing = sourceAssetIds.filter(assetId => {
+    const allSourceAssetIds = [...(sourceAssetIds ?? []), ...(input.skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])]
+    if (allSourceAssetIds.length) {
+      const missing = allSourceAssetIds.filter(assetId => {
         const asset = this.assets.get(assetId)
         return !asset || asset.workspaceId !== input.workspaceId
       })
@@ -2050,6 +2054,12 @@ export class MerchantService {
     if (!title) throw new DomainError('PRODUCT_TITLE_REQUIRED', 'SEO/GEO 标题不能为空', 400)
     const expectedSuggestionId = `seo_geo_${product.id}_${input.platform}`
     if (input.suggestionId !== expectedSuggestionId) throw new DomainError('SEO_GEO_SUGGESTION_INVALID', 'SEO/GEO 建议已过期或不属于当前商品/平台，请重新生成', 409, { expected_suggestion_id: expectedSuggestionId })
+    // Accepting the same suggestion again is a safe retry. Keep the product
+    // version and facts state stable so a client retry cannot invalidate a
+    // prior confirmation or create a new mutation for the same operation.
+    if (product.seoGeoAcceptance?.platform === input.platform
+      && product.seoGeoAcceptance.suggestionId === input.suggestionId
+      && product.seoGeoAcceptance.title === title) return product
     product.title = title
     product.seoGeoAcceptance = { platform: input.platform, suggestionId: input.suggestionId, title, acceptedAt: now(), acceptedBy: input.actorId || 'merchant' }
     product.factsConfirmed = false
@@ -2583,7 +2593,20 @@ export class MerchantService {
     }
     throw new DomainError('VISUAL_NOT_FOUND', '历史图片不存在或不属于当前工作区', 404)
   }
-  enqueueImageGeneration(input: { workspaceId: string; productId: string; taskId?: string; contentVersionId?: string; skuIds?: string[]; sourceAssetIds?: string[]; imageMode?: 'create' | 'optimize'; direction?: string; count?: number; idempotencyKey: string; continuation?: Omit<ImageGenerationContinuation, 'requestedAt' | 'updatedAt'> }) {
+  productImageSourceAssetIds(product: Product, skuIds?: string[]): string[] | undefined {
+    const skus = product.skus ?? []
+    if (!skus.some(sku => sku.sourceAssetIds?.length)) return product.sourceAssetIds
+    const selectedIds = skuIds ?? skus.map(sku => sku.id)
+    const selected = selectedIds.map(skuId => {
+      const sku = skus.find(item => item.id === skuId)
+      if (!sku) throw new DomainError('IMAGE_SKU_SCOPE_MISMATCH', '所选 SKU 不属于当前商品', 409)
+      if (!sku.sourceAssetIds?.length) throw new DomainError('IMAGE_SKU_SOURCE_REQUIRED', '所选 SKU 尚未关联原图，不能使用其他 SKU 的图片代替', 409, { sku_id: skuId })
+      return sku
+    })
+    return [...new Set(selected.flatMap(sku => sku.sourceAssetIds ?? []))]
+  }
+  enqueueImageGeneration(input: { workspaceId: string; productId: string; taskId?: string; contentVersionId?: string; skuIds?: string[]; sourceAssetIds?: string[]; imageMode?: 'create' | 'optimize'; direction?: string; size?: string; count?: number; idempotencyKey: string; continuation?: Omit<ImageGenerationContinuation, 'requestedAt' | 'updatedAt'> }) {
+    if (input.size && !['1024x1024', '1024x1536', '1024x3072', '1024x4096'].includes(input.size)) throw new DomainError('IMAGE_SIZE_INVALID', '图片画布尺寸不受支持', 400)
     const product = this.products.get(input.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     let task: Task | undefined
@@ -2604,8 +2627,11 @@ export class MerchantService {
     if (skuIds.some(skuId => !knownSkuIds.has(skuId))) throw new DomainError('IMAGE_SKU_SCOPE_MISMATCH', '图片候选引用了当前商品不存在的 SKU', 409, { sku_ids: skuIds })
     if (task?.productionPlan?.skuIds?.length && skuIds.some(skuId => !task.productionPlan?.skuIds.includes(skuId))) throw new DomainError('IMAGE_SKU_SCOPE_MISMATCH', '图片候选不能超出已确认方案的 SKU 范围', 409, { planned_sku_ids: task.productionPlan.skuIds, requested_sku_ids: skuIds })
     const requestedSourceAssetIds = input.sourceAssetIds ? [...new Set(input.sourceAssetIds.map(assetId => assetId.trim()).filter(Boolean))] : undefined
-    const imageMode = input.imageMode ?? (requestedSourceAssetIds?.length || product.sourceAssetIds?.length ? 'optimize' : 'create')
-    const sourceAssetIds = requestedSourceAssetIds ?? (imageMode === 'optimize' ? product.sourceAssetIds : undefined)
+    const defaultSourceAssetIds = input.imageMode === 'create' ? undefined : this.productImageSourceAssetIds(product, skuIds)
+    const otherSkuAssetIds = new Set((product.skus ?? []).filter(sku => !skuIds.includes(sku.id)).flatMap(sku => sku.sourceAssetIds ?? []).filter(assetId => !defaultSourceAssetIds?.includes(assetId)))
+    if (requestedSourceAssetIds?.some(assetId => otherSkuAssetIds.has(assetId))) throw new DomainError('IMAGE_SKU_SOURCE_MISMATCH', '不能使用其他 SKU 的原图生成当前 SKU 图片', 409)
+    const imageMode = input.imageMode ?? (requestedSourceAssetIds?.length || defaultSourceAssetIds?.length ? 'optimize' : 'create')
+    const sourceAssetIds = requestedSourceAssetIds ?? (imageMode === 'optimize' ? defaultSourceAssetIds : undefined)
     if (imageMode === 'optimize' && !sourceAssetIds?.length) throw new DomainError('IMAGE_OPTIMIZATION_SOURCE_REQUIRED', '素材优化模式必须提供至少一个已授权商品素材', 400)
     const count = Math.min(6, Math.max(1, Math.floor(input.count ?? 3)))
     const direction = input.direction?.trim() || '商品详情页运营图：核心卖点、SKU 规格与转化信息层级'
@@ -2614,6 +2640,7 @@ export class MerchantService {
     const selectedDirection = task?.directions?.find(item => item.id === task.selectedDirectionId)
     const confirmedSellingPoints = (task?.productionPlan?.sellingPoints ?? product.sellingPoints?.filter(item => item.proofStatus === 'confirmed').map(item => item.text) ?? []).filter(Boolean).slice(0, 6)
     const visualBrief = {
+      ...(input.size ? { size: input.size } : {}),
       platform: task?.platform ?? product.platform,
       placement: task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image'),
       skuLabels: (product.skus ?? []).filter(sku => skuIds.includes(sku.id)).map(sku => `${sku.name}${sku.attributes && Object.keys(sku.attributes).length ? `（${Object.entries(sku.attributes).map(([key, value]) => `${key}:${value}`).join('，')}）` : ''}`),
@@ -3636,8 +3663,11 @@ export class MerchantService {
       '',
       '本交付包只包含已生成的结构化内容和审查证据；平台发布仍需人工确认。未出现 publish-receipt.json 时，表示没有可验证的真实平台发布回执。',
     ].join('\n')
-    const reviewFile = version.reviewSnapshot
-      ? { available: true, frozenAtApproval: true, reviewedAt: version.reviewSnapshot.reviewedAt, blocking: reviewFindings.some(finding => finding.severity === 'error'), evidenceBoundary: version.reviewSnapshot.evidenceBoundary, ruleVersionIds: [...version.reviewSnapshot.ruleVersionIds], findings: clone(reviewFindings) }
+    // Generated drafts also carry automatic review snapshots. Only a version
+    // that passed approval can export that snapshot as approval-frozen evidence.
+    const approvalReviewSnapshot = version.state === 'approved' || version.state === 'delivered' ? version.reviewSnapshot : undefined
+    const reviewFile = approvalReviewSnapshot
+      ? { available: true, frozenAtApproval: true, reviewedAt: approvalReviewSnapshot.reviewedAt, blocking: reviewFindings.some(finding => finding.severity === 'error'), evidenceBoundary: approvalReviewSnapshot.evidenceBoundary, ruleVersionIds: [...approvalReviewSnapshot.ruleVersionIds], findings: clone(reviewFindings) }
       : { available: false, frozenAtApproval: false, reviewedAt: null, blocking: null, evidenceBoundary: REVIEW_EVIDENCE_BOUNDARY, ruleVersionIds: [...version.ruleVersionIds], findings: [], reason: 'legacy_or_unapproved_snapshot_unavailable' }
     const deliveryFiles = ['README.md', 'content.md', 'content.json', 'manifest.json', 'brief.json', 'review-findings.json', 'source-map.json']
     if (publishReceipt) deliveryFiles.push('publish-receipt.json')
@@ -4647,6 +4677,7 @@ function normalizeProductSku(input: unknown, index = 0): ProductSku {
     price: typeof row.price === 'number' && Number.isFinite(row.price) ? Math.max(0, row.price) : 0,
     stock: typeof row.stock === 'number' && Number.isFinite(row.stock) ? Math.max(0, Math.floor(row.stock)) : 0,
     ...(images?.length ? { images: [...images] } : {}),
+    ...(Array.isArray(row.sourceAssetIds) ? { sourceAssetIds: [...new Set(row.sourceAssetIds.filter((value): value is string => typeof value === 'string' && Boolean(value.trim())).map(value => value.trim()))] } : {}),
     ...(attributes ? { attributes } : {}),
   }
 }

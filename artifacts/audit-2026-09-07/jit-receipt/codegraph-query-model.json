@@ -1,0 +1,221 @@
+[
+  {
+    "node": {
+      "id": "function:88a2fc095ffd4f759652df9c2a65f376",
+      "kind": "function",
+      "name": "useOpsConsoleModel",
+      "qualifiedName": "useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/hooks/useOpsConsoleModel.ts",
+      "language": "typescript",
+      "startLine": 332,
+      "endLine": 2634,
+      "startColumn": 7,
+      "endColumn": 1,
+      "signature": "()",
+      "visibility": null,
+      "isExported": true,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788682823944
+    },
+    "score": 116.97733798391522
+  },
+  {
+    "node": {
+      "id": "file:apps/ops-console/src/hooks/useOpsConsoleModel.ts",
+      "kind": "file",
+      "name": "useOpsConsoleModel.ts",
+      "qualifiedName": "apps/ops-console/src/hooks/useOpsConsoleModel.ts",
+      "filePath": "apps/ops-console/src/hooks/useOpsConsoleModel.ts",
+      "language": "typescript",
+      "startLine": 1,
+      "endLine": 2637,
+      "startColumn": 0,
+      "endColumn": 0,
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788682823944
+    },
+    "score": 62.50372960197352
+  },
+  {
+    "node": {
+      "id": "import:36ea417493bacc8aabbbfc0e8734494b",
+      "kind": "import",
+      "name": "../hooks/useOpsConsoleModel",
+      "qualifiedName": "../hooks/useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/pages/OpsConsoleController.tsx",
+      "language": "tsx",
+      "startLine": 5,
+      "endLine": 5,
+      "startColumn": 0,
+      "endColumn": 87,
+      "signature": "import { useOpsConsoleModel, type OpsConsoleModel } from \"../hooks/useOpsConsoleModel\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788689339616
+    },
+    "score": 42.728588097886046
+  },
+  {
+    "node": {
+      "id": "import:ae5a420c83b6aa0566b86b6db0868af7",
+      "kind": "import",
+      "name": "../../hooks/useOpsConsoleModel",
+      "qualifiedName": "../../hooks/useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/components/finance/ModelMarkupPanel.tsx",
+      "language": "tsx",
+      "startLine": 2,
+      "endLine": 2,
+      "startColumn": 0,
+      "endColumn": 70,
+      "signature": "import type { OpsConsoleModel } from \"../../hooks/useOpsConsoleModel\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788115065604
+    },
+    "score": 42.72348798621528
+  },
+  {
+    "node": {
+      "id": "import:86388480c4c222a1353f3d3272d3d5a4",
+      "kind": "import",
+      "name": "../../hooks/useOpsConsoleModel",
+      "qualifiedName": "../../hooks/useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx",
+      "language": "tsx",
+      "startLine": 3,
+      "endLine": 3,
+      "startColumn": 0,
+      "endColumn": 70,
+      "signature": "import type { OpsConsoleModel } from \"../../hooks/useOpsConsoleModel\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788273228003
+    },
+    "score": 42.72348798621528
+  },
+  {
+    "node": {
+      "id": "import:ad1b6832ce09344fa347aafb947ef23c",
+      "kind": "import",
+      "name": "../hooks/useOpsConsoleModel",
+      "qualifiedName": "../hooks/useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/pages/ModelsPage.tsx",
+      "language": "tsx",
+      "startLine": 7,
+      "endLine": 7,
+      "startColumn": 0,
+      "endColumn": 67,
+      "signature": "import type { OpsConsoleModel } from \"../hooks/useOpsConsoleModel\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788360087522
+    },
+    "score": 42.72348798621528
+  },
+  {
+    "node": {
+      "id": "import:9e4b1c18eb48e6cbd04d79146baac9dc",
+      "kind": "import",
+      "name": "../hooks/useOpsConsoleModel",
+      "qualifiedName": "../hooks/useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/pages/UsersPage.tsx",
+      "language": "tsx",
+      "startLine": 4,
+      "endLine": 4,
+      "startColumn": 0,
+      "endColumn": 67,
+      "signature": "import type { OpsConsoleModel } from \"../hooks/useOpsConsoleModel\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788409288127
+    },
+    "score": 42.72348798621528
+  },
+  {
+    "node": {
+      "id": "import:3785fda19e146712de2f961dc830d6d5",
+      "kind": "import",
+      "name": "../../hooks/useOpsConsoleModel",
+      "qualifiedName": "../../hooks/useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/components/models/ModelStatusSection.tsx",
+      "language": "tsx",
+      "startLine": 3,
+      "endLine": 3,
+      "startColumn": 0,
+      "endColumn": 70,
+      "signature": "import type { OpsConsoleModel } from \"../../hooks/useOpsConsoleModel\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788656978967
+    },
+    "score": 42.72348798621528
+  },
+  {
+    "node": {
+      "id": "import:e6a8bd77c5481f3821352d0239168d6f",
+      "kind": "import",
+      "name": "../../hooks/useOpsConsoleModel",
+      "qualifiedName": "../../hooks/useOpsConsoleModel",
+      "filePath": "apps/ops-console/src/components/users/UserDirectorySection.tsx",
+      "language": "tsx",
+      "startLine": 4,
+      "endLine": 4,
+      "startColumn": 0,
+      "endColumn": 70,
+      "signature": "import type { OpsConsoleModel } from \"../../hooks/useOpsConsoleModel\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788691091523
+    },
+    "score": 42.72348798621528
+  },
+  {
+    "node": {
+      "id": "import:d586c1711b5c95efd9a0124d0f4a9645",
+      "kind": "import",
+      "name": "../hooks/useOpsConsoleModel.js",
+      "qualifiedName": "../hooks/useOpsConsoleModel.js",
+      "filePath": "apps/ops-console/src/navigation/opsPageRegistry.tsx",
+      "language": "tsx",
+      "startLine": 2,
+      "endLine": 2,
+      "startColumn": 0,
+      "endColumn": 70,
+      "signature": "import type { OpsConsoleModel } from \"../hooks/useOpsConsoleModel.js\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788656979113
+    },
+    "score": 42.62340396839119
+  }
+]

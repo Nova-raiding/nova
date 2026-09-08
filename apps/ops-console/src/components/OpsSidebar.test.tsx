@@ -64,7 +64,7 @@ describe("OpsSidebar navigation", () => {
   it("exposes support, incidents and feature flags as first-class destinations", () => {
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toEqual(
       expect.arrayContaining([
-        { domain: "support", label: "客服与 CRM" },
+        { domain: "support", label: "客服" },
         { domain: "incidents", label: "事故中心" },
         { domain: "feature-flags", label: "功能开关" },
       ]),
@@ -83,7 +83,7 @@ describe("OpsSidebar navigation", () => {
         onSelectStore={() => undefined}
       />,
     );
-    expect(markup).toContain("客服与 CRM");
+    expect(markup).toContain("客服");
     expect(markup).toContain("事故中心");
     expect(markup).not.toContain("账务与退款");
     expect(markup).not.toContain("功能开关");

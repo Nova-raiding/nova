@@ -1,0 +1,110 @@
+[
+  {
+    "node": {
+      "id": "function:65ba4a0f404c247a042b92490bc52f74",
+      "kind": "function",
+      "name": "AuthorizationGovernanceSection",
+      "qualifiedName": "AuthorizationGovernanceSection",
+      "filePath": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx",
+      "language": "tsx",
+      "startLine": 48,
+      "endLine": 298,
+      "startColumn": 7,
+      "endColumn": 1,
+      "signature": "({ model }: { model: OpsConsoleModel })",
+      "visibility": null,
+      "isExported": true,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788325075514
+    },
+    "score": 120.07316971923177
+  },
+  {
+    "node": {
+      "id": "file:apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx",
+      "kind": "file",
+      "name": "AuthorizationGovernanceSection.tsx",
+      "qualifiedName": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx",
+      "filePath": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx",
+      "language": "tsx",
+      "startLine": 1,
+      "endLine": 299,
+      "startColumn": 0,
+      "endColumn": 0,
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788325075514
+    },
+    "score": 65.4537612390254
+  },
+  {
+    "node": {
+      "id": "file:apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx",
+      "kind": "file",
+      "name": "AuthorizationGovernanceSection.test.tsx",
+      "qualifiedName": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx",
+      "filePath": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx",
+      "language": "tsx",
+      "startLine": 1,
+      "endLine": 59,
+      "startColumn": 0,
+      "endColumn": 0,
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788325075497
+    },
+    "score": 47.30586847255142
+  },
+  {
+    "node": {
+      "id": "import:8a34f05845cca452a8f6aae46c3710f8",
+      "kind": "import",
+      "name": "./AuthorizationGovernanceSection",
+      "qualifiedName": "./AuthorizationGovernanceSection",
+      "filePath": "apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx",
+      "language": "tsx",
+      "startLine": 5,
+      "endLine": 5,
+      "startColumn": 0,
+      "endColumn": 82,
+      "signature": "import { AuthorizationGovernanceSection } from \"./AuthorizationGovernanceSection\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788273228003
+    },
+    "score": 46.10608454427346
+  },
+  {
+    "node": {
+      "id": "import:8672c254192a1957407b5673bf8d5c74",
+      "kind": "import",
+      "name": "./AuthorizationGovernanceSection",
+      "qualifiedName": "./AuthorizationGovernanceSection",
+      "filePath": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx",
+      "language": "tsx",
+      "startLine": 2,
+      "endLine": 2,
+      "startColumn": 0,
+      "endColumn": 134,
+      "signature": "import { describeGrantScope, describeGrantStatus, parseGrantCapabilities, validateJitExpiry } from \"./AuthorizationGovernanceSection\";",
+      "visibility": null,
+      "isExported": false,
+      "isAsync": false,
+      "isStatic": false,
+      "isAbstract": false,
+      "updatedAt": 1788325075497
+    },
+    "score": 30.918647681257237
+  }
+]

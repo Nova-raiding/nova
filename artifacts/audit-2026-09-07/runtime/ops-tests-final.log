@@ -1,0 +1,17 @@
+
+> merchant-marketing-codex@0.1.1 test:ops-console
+> npm test --workspace merchant-ops-console
+
+
+> merchant-ops-console@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills/apps/ops-console
+
+
+ Test Files  87 passed (87)
+      Tests  495 passed (495)
+   Start at  17:02:30
+   Duration  22.61s (transform 3.83s, setup 0ms, import 117.86s, tests 14.66s, environment 11ms)
+

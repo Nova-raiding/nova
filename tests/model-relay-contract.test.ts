@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { assertProviderResponseAccepted } from '../packages/ai/src/provider-request.js'
 import { OpenAICompatibleVideoGenerator } from '../packages/ai/src/video-generator.js'
-import { blockHttpProbe, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe } from '../scripts/model-relay-canary.js'
+import { blockHttpProbe, evaluateRelayUsageEvidence, evaluateVideoProbePayload, extractProviderRequestId, finalizeSuccessfulProbe, writeRelayResponseArtifact } from '../scripts/model-relay-canary.js'
 import { validateModelRelayEvidence } from './model-relay-evidence-gate.js'
 
 describe('production model relay contract', () => {
@@ -67,6 +71,8 @@ describe('production model relay contract', () => {
     expect(evaluateVideoProbePayload({ code: 0, message: 'ok', data: { task_id: 'job_nested', status: 'SUCCESS', result_url: 'https://cdn.example/result.mp4', quota: 123, data: { request_id: 'request_nested', usage: { duration_seconds: 5 } } } })).toEqual({ ready: true, providerJobId: 'job_nested' })
     expect(evaluateVideoProbePayload({ code: 'success', data: { task_id: 'job_string_success', status: 'SUCCESS', result_url: 'https://cdn.example/result.mp4' } })).toEqual({ ready: true, providerJobId: 'job_string_success' })
     expect(evaluateVideoProbePayload({ data: { task_id: 'job_output', status: 'SUCCESS', data: { output: { url: 'https://cdn.example/output.mp4' } } } })).toEqual({ ready: true, providerJobId: 'job_output' })
+    expect(evaluateVideoProbePayload({ code: 'success', data: { task_id: 'job_new_api', data: { task_status: 'RUNNING', task_id: 'upstream-task' } } })).toEqual({ ready: false, providerJobId: 'job_new_api', reason: 'video_async_pending' })
+    expect(evaluateVideoProbePayload({ code: 'success', data: { task_id: 'job_real_new_api', data: { output: { task_status: 'RUNNING', task_id: 'upstream-task' } } } })).toEqual({ ready: false, providerJobId: 'job_real_new_api', reason: 'video_async_pending' })
     expect(evaluateVideoProbePayload({ code: 5001, data: { task_id: 'job_error', status: 'SUCCESS', result_url: 'https://cdn.example/stale.mp4' } })).toEqual({ ready: false, providerJobId: 'job_error', reason: 'video_relay_error_code' })
   })
 
@@ -164,5 +170,46 @@ describe('production model relay contract', () => {
       'text.costSource must identify provider_receipt or relay_pricing_snapshot',
       'video.costSource must identify provider_receipt or relay_pricing_snapshot',
     ]))
+  })
+
+  it('binds a real relay response to an immutable release artifact', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-artifacts-'))
+    try {
+      const result = completeProbe('text')
+      const reference = writeRelayResponseArtifact(root, 'release-1', 'text', {
+        status: 200,
+        headers: new Headers({ 'x-request-id': 'req-text' }),
+        payload: { choices: [{ message: { content: 'OK' } }], usage: { total_tokens: 2 } },
+        result: { ...result, state: 'ready' },
+      })
+      const artifactPath = join(root, 'relay/release-1/text.json')
+      const body = readFileSync(artifactPath, 'utf8')
+      const digest = createHash('sha256').update(body).digest('hex')
+      expect(reference).toBe(`artifact://production/relay/release-1/text.json#${digest}`)
+      expect(validateModelRelayEvidence({
+        schema_version: '1', release_id: 'release-1', generated_at: '2026-08-26T01:00:00Z',
+        expires_at: '2099-08-26T01:00:00Z', environment: 'production', simulated: false,
+        relay: 'https://relay.example.com', results: [{ ...result, evidence_ref: reference }],
+      }, { expectedReleaseId: 'release-1', requireProduction: true, artifactRoot: root })).toEqual(expect.arrayContaining([
+        'image result is required', 'image_edit result is required', 'ocr result is required', 'video result is required',
+      ]))
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('persists provider failure responses as auditable artifacts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-failure-artifacts-'))
+    try {
+      const reference = writeRelayResponseArtifact(root, 'release-1', 'video', {
+        status: 503,
+        headers: new Headers({ 'x-request-id': 'req-video-503' }),
+        payload: { error: { code: 'model_not_found' } },
+        result: { modality: 'video', endpoint: '/video/generations', model: 'video-v1', state: 'blocked', httpStatus: 503, providerRequestId: 'req-video-503', usageObserved: false, costObserved: false, detail: 'relay returned HTTP 503' },
+      })
+      const body = JSON.parse(readFileSync(join(root, 'relay/release-1/video.json'), 'utf8')) as Record<string, any>
+      expect(reference).toMatch(/^artifact:\/\/production\/relay\/release-1\/video\.json#[a-f0-9]{64}$/u)
+      expect(body.http_status).toBe(503)
+      expect(body.result.providerRequestId).toBe('req-video-503')
+      expect(body.relay_response.error.code).toBe('model_not_found')
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })

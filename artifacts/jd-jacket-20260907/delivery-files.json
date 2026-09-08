@@ -1,0 +1,42 @@
+[
+  {
+    "name": "01-主图.png",
+    "source": "multipart-result.png",
+    "sha256": "738ca4acb5531ce96588f0406c294e363d0b19d4efca47efe333eac4ec153611"
+  },
+  {
+    "name": "Banner-01.png",
+    "source": "banners-final-1.png",
+    "sha256": "d8d8a14179f8ca6ece13705b172c85039b0891c333a598cee26edc5024c1aa8e"
+  },
+  {
+    "name": "Banner-02.png",
+    "source": "banners-final-2.png",
+    "sha256": "e271cd0700c09a75d2f9c1dd4c3342a26a35a78c4740ebc1984724df7a8be48e"
+  },
+  {
+    "name": "Banner-03.png",
+    "source": "banners-final-3.png",
+    "sha256": "2cb0b9a6dfd1528c20c6c1b18e70d21d2d705a2eab9a081ae5effe7a0ce0e71d"
+  },
+  {
+    "name": "Banner-04.png",
+    "source": "banners-final-4.png",
+    "sha256": "7780450544f065be8d77affa4a6b254c7831e4ac8b4cb74892065360db32d4f0"
+  },
+  {
+    "name": "Banner-05-轻装出行.png",
+    "source": "editorial-1.png",
+    "sha256": "a000b24dced23565ab53a8619efcce34852b89e8c4f11c3bae8800eae8662d11"
+  },
+  {
+    "name": "详情-细节设计.png",
+    "source": "detail-design-1.png",
+    "sha256": "08ccae14c183d1400de5fe6911dbb2e0361e9b34b398ec26e572ecccc916b14c"
+  },
+  {
+    "name": "详情-规格价格.png",
+    "source": "detail-final-1.png",
+    "sha256": "f9897b788f71ef77364b8250501a0ac0d4c8c1cb763d8ac16786eaeeb9d305e0"
+  }
+]

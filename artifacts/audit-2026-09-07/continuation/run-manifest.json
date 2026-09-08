@@ -1,0 +1,303 @@
+{
+  "run_id": "audit-2026-09-07-continuation",
+  "status": "NO-GO; A-11 local fix DONE_WITH_CONCERNS; A-01 authorization scope approval pending",
+  "scope": {
+    "modified_production_files": [
+      "apps/plugin/mcp/bridge.mjs",
+      ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs"
+    ],
+    "authorization_source_changes": "not_applied_pending_user_scope_confirmation",
+    "installed_plugin_cache": "not_modified",
+    "business_database": "read_only_aggregate_only",
+    "paid_model_calls": 0,
+    "publish_calls": 0
+  },
+  "initial_check": {
+    "command": "npm run check",
+    "log": "continuation/check.log",
+    "exit_code": 1,
+    "typecheck": "passed",
+    "vitest": {
+      "files": {
+        "passed": 599,
+        "failed": 4,
+        "skipped": 44,
+        "total": 647
+      },
+      "assertions": {
+        "passed": 4192,
+        "failed": 6,
+        "skipped": 69,
+        "total": 4267
+      },
+      "duration_seconds": 499.32
+    },
+    "warning": "Bridge conflict regressions were extended during this check. This is not a frozen final-source release run.",
+    "bridge_before": {
+      "at": "2026-09-07T09:31:18.476Z",
+      "files": [
+        {
+          "path": "apps/plugin/mcp/bridge.mjs",
+          "sha256": "f7d1ef151a32fc4c06ccca65e6814a1e187c617a4970515268a922b9f0ebf65c",
+          "assetRegionSha256": "3cddf9026c77444e9cf6b5aaf83bf01a59daed555bbc776bcc12f106d19f0ccd",
+          "scanRegionSha256": "c93a2b13efce8c3eda9a0b401e389b2047d3a44ad11e4238a42b08a2b3b9b29d"
+        },
+        {
+          "path": "apps/plugin/mcp/bridge.test.ts",
+          "sha256": "3c62b16616fe52c702d702d018e071fa4fb373d5d4ad6dc473092eae0cecbeb7"
+        },
+        {
+          "path": ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs",
+          "sha256": "f7d1ef151a32fc4c06ccca65e6814a1e187c617a4970515268a922b9f0ebf65c",
+          "assetRegionSha256": "3cddf9026c77444e9cf6b5aaf83bf01a59daed555bbc776bcc12f106d19f0ccd",
+          "scanRegionSha256": "c93a2b13efce8c3eda9a0b401e389b2047d3a44ad11e4238a42b08a2b3b9b29d"
+        },
+        {
+          "path": ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts",
+          "sha256": "3c62b16616fe52c702d702d018e071fa4fb373d5d4ad6dc473092eae0cecbeb7"
+        }
+      ]
+    }
+  },
+  "independent_followups": [
+    {
+      "command": "npm run test:ops-console",
+      "log": "continuation/ops-tests.log",
+      "exit_code": 0,
+      "files": 87,
+      "assertions": {
+        "passed": 495,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "command": "npm run build:ops-console",
+      "log": "continuation/ops-build.log",
+      "exit_code": 0
+    },
+    {
+      "command": "npm run build:merchant-studio",
+      "log": "continuation/studio-build.log",
+      "exit_code": 0,
+      "warning": "large chunk build warning; debug surface, not merchant production acceptance"
+    },
+    {
+      "command": "npm run release:metadata:validate",
+      "log": "continuation/metadata.log",
+      "exit_code": 0
+    },
+    {
+      "command": "npm run typecheck",
+      "log": "continuation/final-typecheck.log",
+      "exit_code": 0
+    },
+    {
+      "command": "npx vitest run --no-file-parallelism <five API/model files> --reporter=json --outputFile=...",
+      "report": "continuation/final-owner-api-model.json",
+      "log": "continuation/final-owner-api-model.log",
+      "exit_code": 0,
+      "success": true,
+      "counts": {
+        "passed": 154
+      },
+      "files": [
+        {
+          "name": "apps/api/src/api-contract-request-scope.test.ts",
+          "status": "passed",
+          "assertions": 2
+        },
+        {
+          "name": "apps/api/src/asset-upload-security.test.ts",
+          "status": "passed",
+          "assertions": 24
+        },
+        {
+          "name": "apps/api/src/server.test.ts",
+          "status": "passed",
+          "assertions": 95
+        },
+        {
+          "name": "packages/ai/src/relay-pricing.test.ts",
+          "status": "passed",
+          "assertions": 10
+        },
+        {
+          "name": "packages/ai/src/video-generator.test.ts",
+          "status": "passed",
+          "assertions": 23
+        }
+      ],
+      "startedAt": "2026-09-07T09:49:07.017Z",
+      "note": "Independent later run; concurrent external model edits present; no claim that bridge patch resolved earlier model failures."
+    },
+    {
+      "command": "npm run release:metadata:validate",
+      "log": "continuation/final-metadata.log",
+      "exit_code": 0
+    }
+  ],
+  "authorization_reproduction": {
+    "environment": "isolated PostgreSQL 16-alpine",
+    "report": "runtime/postgres-1788772470212.json",
+    "assertions": {
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0
+    },
+    "error": "ops access grant scope is invalid",
+    "not_equivalent_to_ci_postgresql_17": true
+  },
+  "runtime_observations": {
+    "local_project_containers_healthy": 13,
+    "api_probes": [
+      {
+        "port": 8787,
+        "path": "/livez",
+        "http_status": 200
+      },
+      {
+        "port": 8787,
+        "path": "/healthz",
+        "http_status": 200
+      },
+      {
+        "port": 8787,
+        "path": "/readyz",
+        "http_status": 200
+      },
+      {
+        "port": 8788,
+        "path": "/livez",
+        "http_status": 200
+      },
+      {
+        "port": 8788,
+        "path": "/healthz",
+        "http_status": 200
+      },
+      {
+        "port": 8788,
+        "path": "/readyz",
+        "http_status": 200
+      }
+    ],
+    "probes_do_not_attest_release_source_or_business_completion": true
+  },
+  "disposable_cleanup": {
+    "container": "merchant-audit-pg-20260907",
+    "validated_label_run": "2026-09-07",
+    "validated_label_phase": "continuation",
+    "validated_container_id": "fa884fb3b1d250b296e8244c5866e1519f46f40c342634a2db6c809cb09b9f22",
+    "auto_remove": true,
+    "stopped": true,
+    "scope": "only this run's synthetic database; raw reports retained; no business volumes removed"
+  },
+  "final_bridge_verification": {
+    "command": "npx vitest run --no-file-parallelism apps/plugin/mcp/bridge.test.ts .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts --reporter=json --outputFile=artifacts/audit-2026-09-07/continuation/final-owner-bridge.json",
+    "report": "continuation/final-owner-bridge.json",
+    "log": "continuation/final-owner-bridge.log",
+    "exit_code": 0,
+    "success": true,
+    "counts": {
+      "passed": 254
+    },
+    "asset_counts": {
+      "passed": 80
+    },
+    "files": [
+      {
+        "name": "apps/plugin/mcp/bridge.test.ts",
+        "status": "passed",
+        "assertions": 127
+      },
+      {
+        "name": ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts",
+        "status": "passed",
+        "assertions": 127
+      }
+    ],
+    "startedAt": "2026-09-07T09:54:13.552Z",
+    "failed_names": [],
+    "skipped": 0,
+    "failed": 0,
+    "before": {
+      "at": "2026-09-07T09:54:12.974Z",
+      "files": [
+        {
+          "path": "apps/plugin/mcp/bridge.mjs",
+          "sha256": "15e790aa7ea76826fb1a482faa30267abf307723f58e50407af373ae7103f7ca",
+          "regionSha256": {
+            "assetProjection": "81c2aafa8c22f69b733fc6b9133088f8a264d7c1489b4c438ec191c834f36460",
+            "assetScanClassifier": "c93a2b13efce8c3eda9a0b401e389b2047d3a44ad11e4238a42b08a2b3b9b29d",
+            "assetPolling": "197c33e5ebaba76a320d5aecbcb0be29a337039e98c0348357f7796116952093",
+            "assetUploadText": "c29b1ad4908536829f5e06c070f88c9362307f393f3a1779d87225ea46cf1b37"
+          }
+        },
+        {
+          "path": "apps/plugin/mcp/bridge.test.ts",
+          "sha256": "3ee33ae25b9da0a8ae6ecb15be50c14586b2934d69fd43dcc1abcda81299feee"
+        },
+        {
+          "path": ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs",
+          "sha256": "15e790aa7ea76826fb1a482faa30267abf307723f58e50407af373ae7103f7ca",
+          "regionSha256": {
+            "assetProjection": "81c2aafa8c22f69b733fc6b9133088f8a264d7c1489b4c438ec191c834f36460",
+            "assetScanClassifier": "c93a2b13efce8c3eda9a0b401e389b2047d3a44ad11e4238a42b08a2b3b9b29d",
+            "assetPolling": "197c33e5ebaba76a320d5aecbcb0be29a337039e98c0348357f7796116952093",
+            "assetUploadText": "c29b1ad4908536829f5e06c070f88c9362307f393f3a1779d87225ea46cf1b37"
+          }
+        },
+        {
+          "path": ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts",
+          "sha256": "3ee33ae25b9da0a8ae6ecb15be50c14586b2934d69fd43dcc1abcda81299feee"
+        }
+      ]
+    },
+    "after": {
+      "at": "2026-09-07T09:55:21.459Z",
+      "files": [
+        {
+          "path": "apps/plugin/mcp/bridge.mjs",
+          "sha256": "15e790aa7ea76826fb1a482faa30267abf307723f58e50407af373ae7103f7ca",
+          "regionSha256": {
+            "assetProjection": "81c2aafa8c22f69b733fc6b9133088f8a264d7c1489b4c438ec191c834f36460",
+            "assetScanClassifier": "c93a2b13efce8c3eda9a0b401e389b2047d3a44ad11e4238a42b08a2b3b9b29d",
+            "assetPolling": "197c33e5ebaba76a320d5aecbcb0be29a337039e98c0348357f7796116952093",
+            "assetUploadText": "c29b1ad4908536829f5e06c070f88c9362307f393f3a1779d87225ea46cf1b37"
+          }
+        },
+        {
+          "path": "apps/plugin/mcp/bridge.test.ts",
+          "sha256": "3ee33ae25b9da0a8ae6ecb15be50c14586b2934d69fd43dcc1abcda81299feee"
+        },
+        {
+          "path": ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs",
+          "sha256": "15e790aa7ea76826fb1a482faa30267abf307723f58e50407af373ae7103f7ca",
+          "regionSha256": {
+            "assetProjection": "81c2aafa8c22f69b733fc6b9133088f8a264d7c1489b4c438ec191c834f36460",
+            "assetScanClassifier": "c93a2b13efce8c3eda9a0b401e389b2047d3a44ad11e4238a42b08a2b3b9b29d",
+            "assetPolling": "197c33e5ebaba76a320d5aecbcb0be29a337039e98c0348357f7796116952093",
+            "assetUploadText": "c29b1ad4908536829f5e06c070f88c9362307f393f3a1779d87225ea46cf1b37"
+          }
+        },
+        {
+          "path": ".codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts",
+          "sha256": "3ee33ae25b9da0a8ae6ecb15be50c14586b2934d69fd43dcc1abcda81299feee"
+        }
+      ]
+    },
+    "all_four_files_unchanged": true,
+    "implementation_mirror_identical": true,
+    "test_mirror_identical": true,
+    "typecheck": {
+      "command": "npm run typecheck",
+      "log": "continuation/frozen-bridge-typecheck.log",
+      "exit_code": 0
+    },
+    "syntax_and_scoped_diff_check": "passed",
+    "independent_review": "16 existing-scope function assertions passed; no remaining A-11 must-fix",
+    "evidence_level": "E1 real bridge stdio subprocesses with controlled HTTP responses",
+    "does_not_prove": "installed cache, real ChatGPT workflow, paid relay success, or final full-repository release verification"
+  }
+}

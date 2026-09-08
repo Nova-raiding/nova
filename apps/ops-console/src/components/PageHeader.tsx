@@ -33,15 +33,16 @@ export function PageHeader({
   return (
     <header className="ops-page-heading">
       <div className="ops-page-heading-main">
-        <Typography.Text className="eyebrow">{eyebrow}</Typography.Text>
-        <Typography.Title id={headingId} level={headingLevel}>
-          {title}
-        </Typography.Title>
+        <div className="ops-page-heading-kicker">
+          <Typography.Text className="eyebrow">{eyebrow}</Typography.Text>
+          <span className="ops-page-heading-context">当前工作区数据</span>
+        </div>
+        <Typography.Title id={headingId} level={headingLevel}>{title}</Typography.Title>
         <Typography.Paragraph id={descriptionId} type="secondary">
           {description}
         </Typography.Paragraph>
       </div>
-      {actions ? <div className="ops-page-heading-actions">{actions}</div> : null}
+      {actions ? <div className="ops-page-heading-actions" aria-label={`${title}页面操作`}>{actions}</div> : null}
       {nextStep ? (
         <div className="ops-conversation-step" role="status" aria-live="polite">
           <Typography.Text strong>当前下一步</Typography.Text>

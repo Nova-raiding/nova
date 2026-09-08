@@ -5,7 +5,16 @@ export interface ApiHealth {
   writesEnabled: boolean
   connectors: Record<string, string>
   persistence?: { mode: string; ready: boolean }
-  setup?: { objectStorage?: { configured: boolean; mode: string } }
+  setup?: {
+    objectStorage?: { configured: boolean; mode: string }
+    /** Workspace health currently exposes readiness at setup.modelReadiness. */
+    modelReadiness?: Record<string, { ready?: boolean; providerConfigured?: boolean; reasons?: string[] }>
+    ai?: {
+      relay?: { configured?: boolean; host?: string | null; reasons?: string[] }
+      modelReadiness?: Record<string, { ready?: boolean; providerConfigured?: boolean; reasons?: string[] }>
+      costGate?: string
+    }
+  }
 }
 
 export interface PlatformModelStatus {
@@ -158,6 +167,7 @@ export interface ApiError extends Error {
 }
 
 export interface BillingStatus {
+  available_points: number | null
   balance_cny: string
   billing_mode: string
   model_access: { access_state: string; message: string }
@@ -215,7 +225,7 @@ export interface Product {
   sourceAssetIds?: string[]
   attributes?: Record<string, string>
   skus?: Array<{ id: string; name: string; price?: number; stock?: number; images?: string[]; attributes?: Record<string, string> }>
-  canonical_scope?: { verification_status: 'verified' | 'legacy_only' | 'conflict' | 'blocked'; read_mode?: 'legacy_shadow' | 'dual_verify' | 'canonical_read'; canonical_product_id?: string | null; listing_id?: string | null; listing_count?: number }
+  canonical_scope?: { verification_status: 'verified' | 'legacy_only' | 'conflict' | 'blocked'; read_mode?: 'legacy_shadow' | 'dual_verify' | 'canonical_read'; canonical_product_id?: string | null; brand_id?: string | null; listing_id?: string | null; listing_count?: number }
 }
 
 export interface ProductIdentityExpectation {
@@ -596,6 +606,7 @@ export function describeApiError(error: unknown) {
   const apiError = error as ApiError | undefined
   const code = apiError?.code?.trim().toUpperCase() ?? ''
   const message = error instanceof Error ? error.message : ''
+  if (code === 'GENERATION_JOB_NOT_FOUND' || code === 'IMAGE_GENERATION_JOB_NOT_FOUND') return '找不到这条图片任务，可能已过期或链接无效；请返回任务列表重新选择。'
   if (code === 'API_REQUEST_TIMEOUT') return 'API 请求超时。请检查 API、数据库和网关状态后重试。'
   if (code === 'MCP_TRANSPORT_CLOSED' || /\btransport closed\b|\beconnreset\b/iu.test(message)) return '大麦连接已中断。已有任务和商品数据已保留；请重新连接后先确认任务状态，避免重复提交。'
   if (code === 'MODEL_RELAY_NO_CHANNEL') return '当前模型没有可用的中转通道。当前操作未确认完成；请切换到已验证可用的模型并新建会话。'
@@ -627,7 +638,37 @@ export async function requestMcp<T>(baseUrl: string, method: string, params: Rec
 }
 
 export const fetchBillingStatus = (baseUrl: string) => requestMcp<BillingStatus>(baseUrl, 'billing.status')
-export const fetchPlatformModelStatus = (baseUrl: string) => requestMcp<PlatformModelStatus>(baseUrl, 'platform.model.status')
+/**
+ * Merchant workspaces may read the redacted readiness projection from
+ * workspace.health. The platform.model.status MCP method is platform-scoped
+ * and must remain unavailable to tenant tokens. Keep the MCP fallback for
+ * fixture routes that only mock that method (for example isolated image QA).
+ */
+export const fetchPlatformModelStatus = async (baseUrl: string): Promise<PlatformModelStatus> => {
+  const health = await fetchApiHealth(baseUrl)
+  const setup = health?.setup
+  const ai = setup?.ai
+  // Keep compatibility with both the current API projection (setup.modelReadiness)
+  // and older fixtures (setup.ai.modelReadiness).
+  const readiness = setup?.modelReadiness ?? ai?.modelReadiness
+  if (readiness) {
+    const ready = Object.values(readiness).every(item => item.ready === true)
+    return {
+      state: ready ? 'ready' : 'blocked',
+      relay: ai?.relay,
+      capabilities: {
+        text_generation: readiness.text?.ready === true,
+        image_generation: readiness.image?.ready === true,
+        image_editing: readiness.image_edit?.ready === true,
+        image_fact_ocr: readiness.ocr?.ready === true,
+        video_rendering: readiness.video?.ready === true,
+      },
+      next_actions: Object.values(readiness).flatMap(item => item.reasons ?? []),
+      cost_control_ready: ai?.costGate === 'ready',
+    }
+  }
+  return requestMcp<PlatformModelStatus>(baseUrl, 'platform.model.status')
+}
 export const fetchWorkspaceMetrics = (baseUrl: string) => requestMcp<WorkspaceMetrics>(baseUrl, 'workspace.metrics')
 export const createRechargeOrder = (baseUrl: string, amountCny: string, channel: 'alipay' | 'wechat' = 'alipay') => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.create', { amount_cny: amountCny, channel, idempotency_key: `studio-${channel}-${amountCny}-${Date.now()}` })
 export const fetchRechargeOrder = (baseUrl: string, orderId: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.get', { order_id: orderId })
@@ -713,6 +754,20 @@ export const fetchTaskPage = (baseUrl: string, filters: { state?: string; platfo
 export const understandTask = (baseUrl: string, requestText: string) => requestApi<TaskUnderstanding>(baseUrl, '/v1/tasks/understand', { method: 'POST', body: JSON.stringify({ request_text: requestText }) })
 export const answerTask = (baseUrl: string, taskId: string, answers: Record<string, string | number | boolean | string[]>, expectedVersion?: number) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/answers`, { method: 'POST', body: JSON.stringify({ answers, ...(expectedVersion === undefined ? {} : { expected_version: expectedVersion }) }) })
 export const createTaskGroup = (baseUrl: string, entries: Array<{ product_id: string; platform: PlatformId; account_id?: string }>, requestText?: string) => requestApi<{ id: string; taskIds: string[]; tasks: Task[] }>(baseUrl, '/v1/task-groups', { method: 'POST', body: JSON.stringify({ entries, ...(requestText ? { request_text: requestText } : {}) }) })
+export interface CampaignBatchResult {
+  id?: string
+  campaignId?: string
+  state: string
+  count?: number
+  taskIds?: string[]
+  execution?: string
+  message?: string
+  next_actions?: string[]
+  items?: Array<{ id: string; productId: string; taskId?: string; state: string; error?: { message?: string; nextAction?: string } }>
+  workflow?: Record<string, unknown>
+}
+export const createCampaignBatch = (baseUrl: string, input: { brand_id: string; targets: Array<{ product_id: string; platform: PlatformId; account_id: string; canonical_product_id?: string; listing_id?: string }>; request_text?: string; idempotency_key: string }) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.create', { brand_id: input.brand_id, targets_json: JSON.stringify(input.targets), ...(input.request_text ? { request_text: input.request_text } : {}), idempotency_key: input.idempotency_key })
+export const generateCampaignBatch = (baseUrl: string, campaignId: string, requestText?: string) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.generate', { campaign_id: campaignId, ...(requestText ? { request_text: requestText } : {}) })
 export const selectDirection = (baseUrl: string, taskId: string, directionId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/directions`, { method: 'POST', body: JSON.stringify({ direction_id: directionId }) })
 export const selectVisualCandidates = (baseUrl: string, contentVersionId: string, visualRefs: string[], expectedRevision: number, reason: string, idempotencyKey: string) => requestMcp<{ content_version_id: string; parent_content_version_id: string; version: number; revision: number; state: string; visualSelection: { state: string; count: number; items: Array<{ visualRef: string; ordinal: number; reviewStatus: string; publishable: boolean }> }; reviewRequired: boolean; approvalRequired: boolean }>(baseUrl, 'content.visual.select', { content_version_id: contentVersionId, visual_refs_json: JSON.stringify(visualRefs), expected_revision: String(expectedRevision), idempotency_key: idempotencyKey, reason })
 export const confirmTaskPlan = (baseUrl: string, taskId: string, expectedVersion?: number) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/plan/confirm`, { method: 'POST', body: JSON.stringify(expectedVersion === undefined ? {} : { expected_version: expectedVersion }) })

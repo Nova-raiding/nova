@@ -129,6 +129,19 @@ export function commercialRuntimeReadiness(payload: unknown): CommercialRuntimeR
   }
 }
 
+/**
+ * A production doctor probe must validate the readiness contract, not only
+ * the HTTP status. A local/fixture API can legitimately answer `/readyz` with
+ * HTTP 200 while being unsuitable for production, so production mode requires
+ * an explicit production setup and a true production gate.
+ */
+export function apiProbeReady(payload: unknown, httpOk: boolean, production: boolean): boolean {
+  if (!httpOk) return false
+  if (!production) return true
+  const readiness = commercialRuntimeReadiness(payload)
+  return readiness?.mode === 'production' && readiness.productionGate === true
+}
+
 export function commercialRuntimeAudit(payload: unknown): CommercialRuntimeAudit | undefined {
   const root = objectRecord(payload)
   const data = objectRecord(root?.data)

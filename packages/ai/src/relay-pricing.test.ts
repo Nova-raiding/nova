@@ -94,3 +94,15 @@ describe('RelayPricingClient', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 })
+
+
+it('uses explicit resolution pricing instead of an overflowing fallback or stale override', async () => {
+  const payload = { ...pricing, data: [{ model_name: 'video-i2v', quota_type: 1, model_ratio: 37.5, model_price: 0, completion_ratio: 1, enable_groups: ['SVIP'], billing_mode: 'per_duration', duration_pricing: { fallback_price: 90000000, size_prices: { '1080P': 0.176 } } }] }
+  const { fetch } = client(payload)
+  const value = new RelayPricingClient({ baseUrl: 'https://relay.example/v1', apiKey: 'secret', group: 'SVIP', videoPriceCnyPerSecond: { 'video-i2v': 0.4508 }, fetch })
+  const usage = { modality: 'video' as const, model: 'video-i2v', observedAt: new Date().toISOString(), metadata: { duration_seconds: 5, resolution: '1080P' } }
+  const quote = await value.quote(usage)
+  expect(quote).toMatchObject({ costCny: 3.0052, metadata: { rounded_quota: 220000, formula_version: 'relay-video-resolution-v1' } })
+  expect(quote.metadata.video_price_cny_per_second).toBeUndefined()
+  await expect(value.quote({ ...usage, metadata: { duration_seconds: 5 } })).rejects.toMatchObject({ code: 'MODEL_PRICING_RESOLUTION_REQUIRED' })
+})

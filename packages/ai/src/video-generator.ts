@@ -8,6 +8,7 @@ export interface VideoGenerationInput {
   prompt: string
   output: 'rendering'
   context: unknown
+  sourceImage?: string
   usageContext?: RelayUsageContext
 }
 
@@ -30,6 +31,9 @@ export interface OpenAICompatibleVideoGeneratorOptions {
   baseUrl: string
   apiKey: string
   model: string
+  imageModel?: string
+  requestFormat?: 'json' | 'openai-video'
+  resolution?: '720P' | '1080P'
   path?: string
   statusPath?: string
   durationSeconds?: number
@@ -104,27 +108,49 @@ export class OpenAICompatibleVideoGenerator implements VideoGenerator {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 180_000)
     try {
-      const requestBody = JSON.stringify({ model: this.options.model, prompt: input.prompt, duration: this.options.durationSeconds ?? 5 })
-      const providerKey = providerIdempotencyKey({ operation: 'video_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
+      if (input.sourceImage && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/u.test(input.sourceImage)) throw new Error('VIDEO_SOURCE_IMAGE_INVALID')
+      if (input.sourceImage && !this.options.imageModel) throw new Error('VIDEO_IMAGE_MODEL_REQUIRED')
+      const model = input.sourceImage ? this.options.imageModel! : this.options.model
+      const requestBody = JSON.stringify({ model, prompt: input.prompt, duration: this.options.durationSeconds ?? 5, ...(input.sourceImage ? { image: input.sourceImage } : {}), ...(this.options.resolution ? { size: this.options.resolution, metadata: { parameters: { resolution: this.options.resolution }, ...(input.sourceImage && (model.startsWith('happyhorse-') || model.startsWith('wan3.0')) ? { input: { media: [{ type: 'first_frame', url: input.sourceImage }] } } : {}) } } : {}) })
+      const providerKey = providerIdempotencyKey({ operation: 'video_generate', model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
+      let form: FormData | undefined
+      if (this.options.requestFormat === 'openai-video') {
+        form = new FormData()
+        form.set('model', model)
+        form.set('prompt', input.prompt)
+        form.set('seconds', String(this.options.durationSeconds ?? 5))
+        if (this.options.resolution) form.set('size', this.options.resolution)
+        if (input.sourceImage) {
+          const [header, encoded] = input.sourceImage.split(',', 2)
+          const mimeType = header!.slice(5, header!.indexOf(';'))
+          form.set('input_reference', new Blob([Buffer.from(encoded!, 'base64')], { type: mimeType }), 'reference.png')
+          form.set('metadata', JSON.stringify({ img_url: input.sourceImage, ...(this.options.resolution ? { resolution: this.options.resolution } : {}) }))
+        }
+      }
       let response: Response
       try {
         if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
         response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/video/generations'}`, {
           method: 'POST',
-          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
-          body: requestBody,
+          headers: { accept: 'application/json', ...(!form ? { 'content-type': 'application/json' } : {}), authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
+          body: form ?? requestBody,
           signal: controller.signal,
           redirect: 'error',
         })
       } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'video provider request') }
-      assertProviderResponseAccepted(response, providerKey, 'video provider')
       let responseText: string
       try { responseText = await readBoundedResponseText(response, MAX_VIDEO_RELAY_RESPONSE_BYTES, 'video provider response') }
       catch (error) { rethrowProviderTransportFailure(error, providerKey, 'video provider response') }
       let payload: unknown
       try { payload = JSON.parse(responseText) as unknown }
-      catch (error) { throwProviderOutcomeUnknown(providerKey, 'video provider response parsing', error) }
-      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model: this.options.model, context: { ...input.usageContext, durationSeconds: this.options.durationSeconds ?? 5, providerAttemptId: providerKey } })
+      catch (error) {
+        assertProviderResponseAccepted(response, providerKey, 'video provider')
+        throwProviderOutcomeUnknown(providerKey, 'video provider response parsing', error)
+      }
+      const remoteError = record(payload) && record(payload.error) ? payload.error : record(payload) ? payload : {}
+      const errorSummary = !response.ok ? [remoteError.code, remoteError.type, remoteError.message].filter(value => typeof value === 'string').join(': ').replace(/data:image\/[^\s]+/gu, '[image redacted]').slice(0, 500) : undefined
+      assertProviderResponseAccepted(response, providerKey, 'video provider', errorSummary)
+      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'video', model, context: { ...input.usageContext, durationSeconds: this.options.durationSeconds ?? 5, resolution: this.options.resolution, providerAttemptId: providerKey } })
       return parseVideoResult(payload, providerKey)
     } finally {
       clearTimeout(timeout)
@@ -188,8 +214,9 @@ function parseVideoResult(payload: unknown, providerKey?: string): VideoGenerati
   const providerJobId = typeof data.task_id === 'string' && data.task_id.trim() ? data.task_id.trim() : typeof data.job_id === 'string' && data.job_id.trim() ? data.job_id.trim() : typeof data.id === 'string' && data.id.trim() ? data.id.trim() : undefined
   const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase() : typeof nestedData?.status === 'string' ? nestedData.status.toLowerCase() : ''
   if (['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(rawStatus)) {
-    if (providerKey) throw new ProviderRequestFailedError(providerKey, 200, `video provider job failed: ${rawStatus}`)
-    throw new Error(`video provider job failed: ${rawStatus}`)
+    const failureReason = typeof data.fail_reason === 'string' ? data.fail_reason.slice(0, 500) : rawStatus
+    if (providerKey) throw new ProviderRequestFailedError(providerKey, 200, `video provider job failed: ${failureReason}`, undefined, failureReason)
+    throw new Error(`video provider job failed: ${failureReason}`)
   }
   if (['completed', 'succeeded', 'success'].includes(rawStatus) && !videoUrl) {
     if (providerKey) throwProviderOutcomeUnknown(providerKey, 'video provider completed without an HTTPS artifact URL')
@@ -209,11 +236,16 @@ export function createVideoGeneratorFromEnv(source: Record<string, string | unde
   if (!relayUrl || !apiKey || !model || isPlaceholderModelConfiguration(relayUrl) || isPlaceholderModelConfiguration(apiKey) || isPlaceholderModelConfiguration(model)) return undefined
   const relaySecurity = relaySecurityFromEnv(source)
   if (!relaySecurity) return undefined
+  const resolution = source.VIDEO_RESOLUTION?.trim().toUpperCase()
+  if (resolution && !['720P', '1080P'].includes(resolution)) throw new Error('VIDEO_RESOLUTION must be 720P or 1080P')
   return new OpenAICompatibleVideoGenerator({
     baseUrl: relayUrl,
     relaySecurity,
     apiKey,
     model,
+    ...(source.VIDEO_REQUEST_FORMAT === 'openai-video' ? { requestFormat: 'openai-video' as const } : {}),
+    ...(resolution ? { resolution: resolution as '720P' | '1080P' } : {}),
+    ...(source.VIDEO_IMAGE_MODEL?.trim() ? { imageModel: source.VIDEO_IMAGE_MODEL.trim() } : {}),
     ...(source.VIDEO_GENERATION_PATH?.trim() ? { path: source.VIDEO_GENERATION_PATH.trim() } : {}),
     ...(source.VIDEO_STATUS_PATH?.trim() ? { statusPath: source.VIDEO_STATUS_PATH.trim() } : {}),
     durationSeconds: videoDurationSeconds(source.VIDEO_DURATION_SECONDS),

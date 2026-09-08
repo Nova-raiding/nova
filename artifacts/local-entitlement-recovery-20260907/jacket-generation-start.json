@@ -1,0 +1,109 @@
+{
+  "workspace.interactive.confirm": {
+    "content": [
+      {
+        "type": "text",
+        "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+      }
+    ],
+    "structuredContent": {
+      "enabled": true,
+      "expires_at": "2026-09-07T09:13:05.767Z",
+      "scope": "current_interactive_session",
+      "automation": "read_only",
+      "ticket": {
+        "nonce_hash": "210c0b38e635c898b713fb9f5f719b6dd97eef591d9bc78398ce427467eeceb2",
+        "intent_hash": "0ab58e0b634027f727ccc4519db550daf9ed4481e23e5c1cb236836978fc7190",
+        "expires_at": "2026-09-07T09:13:05.767Z"
+      }
+    },
+    "isError": false
+  },
+  "catalog.image.generate": {
+    "content": [
+      {
+        "type": "text",
+        "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。\n创意点：可用 10000；本次预估 1；已消耗 0；结算 authorized"
+      }
+    ],
+    "structuredContent": {
+      "job_id": "imggen_fb45f6af-f91d-4a6a-8cc5-30120e9414bb",
+      "product_id": "prod_jd_local_89b3abb6d778b01e20b3",
+      "unbound_candidate": true,
+      "candidate_status": "未绑定商品、仅候选、不可发布",
+      "creative_points": {
+        "balance_state": "known",
+        "available_points": 10000,
+        "quoted_points": 1,
+        "reserved_points": 0,
+        "settled_points": 0,
+        "consumed_points": 0,
+        "customer_charge_points": 0,
+        "settlement": "included_quota",
+        "settlement_status": "authorized",
+        "access_revision": "1",
+        "rate_card_version": "fixture-local-v1:v1:fixture-local",
+        "authoritative": true
+      },
+      "execution": {
+        "mode": "durable",
+        "state": "queued",
+        "provider": "configured relay",
+        "source": "server"
+      },
+      "product_protection": {
+        "policy": "protected-product-intent-v1",
+        "allowed": true,
+        "immutableAttributes": [
+          "color",
+          "structure",
+          "material",
+          "logo",
+          "packaging_text",
+          "certification_mark",
+          "accessories"
+        ],
+        "safeModifications": [
+          "background",
+          "lighting",
+          "composition"
+        ],
+        "blockedAttributes": [],
+        "findingCodes": []
+      },
+      "job": {
+        "jobId": "imggen_fb45f6af-f91d-4a6a-8cc5-30120e9414bb",
+        "productId": "prod_jd_local_89b3abb6d778b01e20b3",
+        "taskId": null,
+        "contentVersionId": null,
+        "revision": 1,
+        "state": "queued",
+        "artifactRole": "candidate",
+        "imageMode": "optimize",
+        "direction": "根据上传的蓝色女士连帽冲锋衣原图，制作京东主图与Banner候选。商品已知信息：蓝色、女款、M号、售价199元；不要编造防水等级、面料参数或品牌。保持原图商品颜色、结构、材质、标签、Logo、配件不变，仅优化背景、光影和构图。五张候选分别尝试纯净浅色棚拍、淡蓝几何背景、柔和山野远景、简洁通勤场景和留白横幅式构图。主体完整清晰且保持商品保真，不出现人物，不添加水印或新Logo。",
+        "requestedCount": 5,
+        "skuIds": [],
+        "sourceAssetIds": [
+          "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac"
+        ],
+        "createdAt": "2026-09-07T08:58:05.806Z",
+        "updatedAt": "2026-09-07T08:58:05.806Z",
+        "archiveState": "pending",
+        "binding": "unbound",
+        "candidateCount": 0,
+        "candidates": [],
+        "platformUsage": {
+          "status": "not_submitted",
+          "observed": false
+        },
+        "selectionRequired": true
+      },
+      "next_action": {
+        "type": "get_status",
+        "label": "查询任务状态",
+        "allowed": true
+      }
+    },
+    "isError": false
+  }
+}

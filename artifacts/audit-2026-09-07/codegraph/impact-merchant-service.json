@@ -1,0 +1,1316 @@
+{
+  "symbol": "MerchantService",
+  "depth": 2,
+  "nodeCount": 218,
+  "edgeCount": 554,
+  "affected": [
+    {
+      "name": "MerchantService",
+      "kind": "class",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1289
+    },
+    {
+      "name": "products",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1290
+    },
+    {
+      "name": "tasks",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1291
+    },
+    {
+      "name": "contentVersions",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1292
+    },
+    {
+      "name": "generationJobs",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1293
+    },
+    {
+      "name": "imageGenerationJobs",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1294
+    },
+    {
+      "name": "publishJobs",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1295
+    },
+    {
+      "name": "listCanonicalChainConsistencyRows",
+      "kind": "method",
+      "filePath": "packages/persistence/src/brand-unit-repository.ts",
+      "startLine": 257
+    },
+    {
+      "name": "brand-unit-repository.test.ts",
+      "kind": "file",
+      "filePath": "packages/persistence/src/brand-unit-repository.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "platformAccounts",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1296
+    },
+    {
+      "name": "ruleCenter",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1297
+    },
+    {
+      "name": "brandProfiles",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1298
+    },
+    {
+      "name": "assets",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1299
+    },
+    {
+      "name": "feedback",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1300
+    },
+    {
+      "name": "syncJobs",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1301
+    },
+    {
+      "name": "taskInputSnapshots",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1302
+    },
+    {
+      "name": "durableRuleSnapshots",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1303
+    },
+    {
+      "name": "idempotency",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1304
+    },
+    {
+      "name": "taskGroupIdempotency",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1305
+    },
+    {
+      "name": "taskRequestIdempotency",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1306
+    },
+    {
+      "name": "imageIdempotency",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1307
+    },
+    {
+      "name": "imageGenerationInFlight",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1308
+    },
+    {
+      "name": "visualSelectionIdempotency",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1309
+    },
+    {
+      "name": "contentGenerationIdempotency",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1310
+    },
+    {
+      "name": "contentGenerationInFlight",
+      "kind": "property",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1311
+    },
+    {
+      "name": "assertExpectedTaskVersion",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1313
+    },
+    {
+      "name": "updateCreativeDirections",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1821
+    },
+    {
+      "name": "service.test.ts",
+      "kind": "file",
+      "filePath": "packages/application/src/service.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "restoreContentVersion",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3474
+    },
+    {
+      "name": "prd-17.2-p0-golden.e2e.test.ts",
+      "kind": "file",
+      "filePath": "tests/prd-17.2-p0-golden.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "version-vector.test.ts",
+      "kind": "file",
+      "filePath": "packages/application/src/version-vector.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "answerTask",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3982
+    },
+    {
+      "name": "buildScenario",
+      "kind": "function",
+      "filePath": "tests/prd-smart-questioning-golden.test.ts",
+      "startLine": 31
+    },
+    {
+      "name": "approvedDetail",
+      "kind": "function",
+      "filePath": "tests/prd-17.2-p0-golden.e2e.test.ts",
+      "startLine": 75
+    },
+    {
+      "name": "createTaskGroup",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3824
+    },
+    {
+      "name": "selectDirection",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4043
+    },
+    {
+      "name": "review-decisions.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/review-decisions.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "load-smoke.ts",
+      "kind": "file",
+      "filePath": "tests/load-smoke.ts",
+      "startLine": 1
+    },
+    {
+      "name": "detail-page-decision-export.test.ts",
+      "kind": "file",
+      "filePath": "tests/detail-page-decision-export.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "merchant-first-value.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/merchant-first-value.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "product-image-review.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/product-image-review.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "rules.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/rules.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "security.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/security.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "feature-gap.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/feature-gap.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "server.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/server.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "confirmProductionPlan",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4095
+    },
+    {
+      "name": "mcp-content-knowledge-http.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/mcp-content-knowledge-http.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "approveContent",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4372
+    },
+    {
+      "name": "validateHydratedTask",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1319
+    },
+    {
+      "name": "hydrateSnapshot",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2155
+    },
+    {
+      "name": "validateHydratedContentVersion",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1340
+    },
+    {
+      "name": "parsePromotionSnapshot",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1345
+    },
+    {
+      "name": "captureTaskInputSnapshot",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1422
+    },
+    {
+      "name": "taskSnapshot",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1522
+    },
+    {
+      "name": "createTask",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3778
+    },
+    {
+      "name": "mcp-authorization-coverage.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/mcp-authorization-coverage.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "mcp-completion-content.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/mcp-completion-content.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "ops-rbac-http-platform-accounts-parity.acceptance.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/ops-rbac-http-platform-accounts-parity.acceptance.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "server.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/server.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "cloneTask",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1778
+    },
+    {
+      "name": "createTaskFromRequest",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3939
+    },
+    {
+      "name": "promotionPriceDiff",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1399
+    },
+    {
+      "name": "deriveTaskQuestions",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1535
+    },
+    {
+      "name": "refreshTaskQuestions",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1611
+    },
+    {
+      "name": "refreshTasksAfterProductFacts",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1934
+    },
+    {
+      "name": "extractTaskFields",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1618
+    },
+    {
+      "name": "extractIntentAwareTaskFields",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1650
+    },
+    {
+      "name": "understandTaskRequest",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3895
+    },
+    {
+      "name": "constructor",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1665
+    },
+    {
+      "name": "health",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1670
+    },
+    {
+      "name": "setDurableRuleSnapshot",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1676
+    },
+    {
+      "name": "scopedProductId",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1687
+    },
+    {
+      "name": "importProduct",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1950
+    },
+    {
+      "name": "serviceAndProduct",
+      "kind": "function",
+      "filePath": "tests/prd-17.2-p0-golden.e2e.test.ts",
+      "startLine": 54
+    },
+    {
+      "name": "asset-scan-worker.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/asset-scan-worker.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "upsertSyncedProducts",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2084
+    },
+    {
+      "name": "scopedAccountId",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1693
+    },
+    {
+      "name": "registerPlatformAccount",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3009
+    },
+    {
+      "name": "ops-rbac-http-mcp-creative-points.acceptance.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/ops-rbac-http-mcp-creative-points.acceptance.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "creative-point-statement-pagination-parity.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/creative-point-statement-pagination-parity.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "four-platform-authorization.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/four-platform-authorization.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "quality-gates.test.ts",
+      "kind": "file",
+      "filePath": "tests/quality-gates.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "brand-profile-http-mcp-parity.acceptance.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/brand-profile-http-mcp-parity.acceptance.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "brand-profile-upsert-http-mcp-parity.acceptance.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/brand-profile-upsert-http-mcp-parity.acceptance.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "listProducts",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1700
+    },
+    {
+      "name": "reviewProductImages",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1720
+    },
+    {
+      "name": "reviewContent",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3353
+    },
+    {
+      "name": "reviewContentReport",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3415
+    },
+    {
+      "name": "setReviewFindingDecision",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3449
+    },
+    {
+      "name": "markExpiredDeliveryIfNeeded",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3593
+    },
+    {
+      "name": "exportContent",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3605
+    },
+    {
+      "name": "generateDraftInternal",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4235
+    },
+    {
+      "name": "service.ts",
+      "kind": "file",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1
+    },
+    {
+      "name": "disableProduct",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1725
+    },
+    {
+      "name": "enableProduct",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1736
+    },
+    {
+      "name": "listTasks",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1747
+    },
+    {
+      "name": "resumeTask",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1764
+    },
+    {
+      "name": "listCreativeDirections",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1801
+    },
+    {
+      "name": "listRulePacks",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1919
+    },
+    {
+      "name": "listRuleHistory",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1920
+    },
+    {
+      "name": "listRuleAudit",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1921
+    },
+    {
+      "name": "publishRuleVersion",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1922
+    },
+    {
+      "name": "setRuleStatus",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1923
+    },
+    {
+      "name": "confirmProductFacts",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1924
+    },
+    {
+      "name": "platform-mapping-contract.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/platform-mapping-contract.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "generate",
+      "kind": "function",
+      "filePath": "apps/api/src/model-usage-settlement.test.ts",
+      "startLine": 169
+    },
+    {
+      "name": "model-usage-settlement.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/model-usage-settlement.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "video-cost-preflight.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/video-cost-preflight.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "updateProductSku",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 1996
+    },
+    {
+      "name": "updateProductFacts",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2024
+    },
+    {
+      "name": "acceptSeoGeoTitle",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2046
+    },
+    {
+      "name": "bindProductRemoteId",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2069
+    },
+    {
+      "name": "createSyncJob",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2118
+    },
+    {
+      "name": "retrySyncFailures",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2141
+    },
+    {
+      "name": "getSyncJob",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2124
+    },
+    {
+      "name": "updateSyncJob",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2149
+    },
+    {
+      "name": "removeSyncJob",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2129
+    },
+    {
+      "name": "listSyncJobs",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2134
+    },
+    {
+      "name": "listSyncJobsPage",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2135
+    },
+    {
+      "name": "getBrandProfile",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2227
+    },
+    {
+      "name": "brand-extract-http-mcp-parity.acceptance.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/brand-extract-http-mcp-parity.acceptance.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "brand-extraction.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/brand-extraction.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "previewBrandTone",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2238
+    },
+    {
+      "name": "getBrandVisualReadiness",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2321
+    },
+    {
+      "name": "assertBrandVisualGenerationReady",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2324
+    },
+    {
+      "name": "extractBrandProfile",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2228
+    },
+    {
+      "name": "upsertBrandProfile",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2250
+    },
+    {
+      "name": "evaluateBrandVisualReadiness",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2297
+    },
+    {
+      "name": "registerAsset",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2329
+    },
+    {
+      "name": "asset-preference.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/asset-preference.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "spreadsheet-batch-import.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/spreadsheet-batch-import.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "prepareAssetRescan",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2376
+    },
+    {
+      "name": "listAssets",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2401
+    },
+    {
+      "name": "listAssetsPage",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2403
+    },
+    {
+      "name": "findAssetBySourceProviderJobId",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2402
+    },
+    {
+      "name": "updateAssetParse",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2409
+    },
+    {
+      "name": "prepareAssetPreview",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2435
+    },
+    {
+      "name": "completeAssetPreview",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2457
+    },
+    {
+      "name": "updateAssetRights",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2476
+    },
+    {
+      "name": "updateAssetPreference",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2505
+    },
+    {
+      "name": "getTask",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2523
+    },
+    {
+      "name": "submitFeedback",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2524
+    },
+    {
+      "name": "listFeedback",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2544
+    },
+    {
+      "name": "listFeedbackPage",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2552
+    },
+    {
+      "name": "getGenerationJob",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2558
+    },
+    {
+      "name": "getJobQueueMetadata",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2877
+    },
+    {
+      "name": "startGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2904
+    },
+    {
+      "name": "completeGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2922
+    },
+    {
+      "name": "failGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2939
+    },
+    {
+      "name": "retryGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2945
+    },
+    {
+      "name": "MarketingQueuePanel",
+      "kind": "function",
+      "filePath": "apps/ops-console/src/components/tasks/knowledge/MarketingQueuePanel.tsx",
+      "startLine": 106
+    },
+    {
+      "name": "deferGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2980
+    },
+    {
+      "name": "getImageGenerationJob",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2563
+    },
+    {
+      "name": "enqueueImageGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2594
+    },
+    {
+      "name": "completeImageGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2645
+    },
+    {
+      "name": "retryImageGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2685
+    },
+    {
+      "name": "archiveImageGenerationOutputs",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2697
+    },
+    {
+      "name": "markImageGenerationFailed",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2729
+    },
+    {
+      "name": "selectImageGenerationCandidate",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2784
+    },
+    {
+      "name": "assignMarketingVisual",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2822
+    },
+    {
+      "name": "assignMarketingQueueItem",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2958
+    },
+    {
+      "name": "listImageGenerationJobs",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2568
+    },
+    {
+      "name": "listImageGenerationJobsPage",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2573
+    },
+    {
+      "name": "discardUnpersistedImageGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2579
+    },
+    {
+      "name": "resolveImageGenerationByVisualRef",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2587
+    },
+    {
+      "name": "reviewImageGenerationOutputs",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2749
+    },
+    {
+      "name": "selectVisuals",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2832
+    },
+    {
+      "name": "validateVisualSelection",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4603
+    },
+    {
+      "name": "preparePublish",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4401
+    },
+    {
+      "name": "confirmPublish",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4431
+    },
+    {
+      "name": "updateImageGenerationAsset",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2738
+    },
+    {
+      "name": "enqueueGeneration",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2893
+    },
+    {
+      "name": "validateGeneratedBody",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2910
+    },
+    {
+      "name": "getPublishJob",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2992
+    },
+    {
+      "name": "acknowledgePublish",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3000
+    },
+    {
+      "name": "assertPublishExecutionAllowed",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4501
+    },
+    {
+      "name": "recordPublishObservation",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4524
+    },
+    {
+      "name": "listPublishJobs",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2993
+    },
+    {
+      "name": "listPublishJobsPage",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 2994
+    },
+    {
+      "name": "setPlatformAccountAlias",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3036
+    },
+    {
+      "name": "getPlatformAccount",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3048
+    },
+    {
+      "name": "getActivePlatformAccount",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3053
+    },
+    {
+      "name": "revokePlatformAccount",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3058
+    },
+    {
+      "name": "mcp-completion-ops.e2e.test.ts",
+      "kind": "file",
+      "filePath": "apps/api/src/mcp-completion-ops.e2e.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "listDeliverables",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3092
+    },
+    {
+      "name": "listPlatformAccounts",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3067
+    },
+    {
+      "name": "listContentVersions",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3071
+    },
+    {
+      "name": "listContentVersionsPage",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3079
+    },
+    {
+      "name": "nextContentVersionNumber",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4638
+    },
+    {
+      "name": "modifyContentVersion",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3502
+    },
+    {
+      "name": "regenerateContentModule",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3567
+    },
+    {
+      "name": "createDraft",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4115
+    },
+    {
+      "name": "commitCodexDraft",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4351
+    },
+    {
+      "name": "resolveDeliverableReference",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3213
+    },
+    {
+      "name": "getContentVersion",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3224
+    },
+    {
+      "name": "diffContentVersions",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3463
+    },
+    {
+      "name": "evaluateCompetitorCandidate",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3231
+    },
+    {
+      "name": "competitorReferenceReviewFindings",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3252
+    },
+    {
+      "name": "detailPageDecisionReviewFindings",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3270
+    },
+    {
+      "name": "detailDecisionDeliveryBlockers",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3339
+    },
+    {
+      "name": "splitTaskBySku",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 3882
+    },
+    {
+      "name": "fixtureDraftBody",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4144
+    },
+    {
+      "name": "generateDraft",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4159
+    },
+    {
+      "name": "TaskWorkspace",
+      "kind": "function",
+      "filePath": "demo/merchant-studio/src/App.tsx",
+      "startLine": 6464
+    },
+    {
+      "name": "App",
+      "kind": "function",
+      "filePath": "demo/merchant-studio/src/App.tsx",
+      "startLine": 10083
+    },
+    {
+      "name": "prepareGenerationContext",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4193
+    },
+    {
+      "name": "generateOneSentenceText",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4289
+    },
+    {
+      "name": "prepareCodexDraft",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4323
+    },
+    {
+      "name": "commitPublishConfirmation",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4476
+    },
+    {
+      "name": "assertActiveJobCapacity",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4492
+    },
+    {
+      "name": "mustTask",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4570
+    },
+    {
+      "name": "mustContentVersion",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4571
+    },
+    {
+      "name": "remoteSnapshotHash",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4573
+    },
+    {
+      "name": "prepareDeliveryEvidence",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4578
+    },
+    {
+      "name": "buildPublishPayloadSnapshot",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4625
+    },
+    {
+      "name": "assertTaskState",
+      "kind": "method",
+      "filePath": "packages/application/src/service.ts",
+      "startLine": 4641
+    },
+    {
+      "name": "prd-smart-questioning-golden.test.ts",
+      "kind": "file",
+      "filePath": "tests/prd-smart-questioning-golden.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "ScenarioResult",
+      "kind": "interface",
+      "filePath": "tests/prd-smart-questioning-golden.test.ts",
+      "startLine": 23
+    }
+  ]
+}

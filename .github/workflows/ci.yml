@@ -34,6 +34,20 @@ jobs:
         with:
           ruby-version: '3.3'
       - run: npm ci
+      - name: Install PostgreSQL 17 client for schema-dump acceptance
+        run: |
+          sudo install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | gpg --dearmor \
+            | sudo tee /etc/apt/keyrings/postgresql.gpg >/dev/null
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && printf '%s' \"$VERSION_CODENAME\")-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+      - name: Install desktop browser for real form regression
+        run: npx playwright install --with-deps chrome
       - name: Install checksum-pinned kustomize
         env:
           KUSTOMIZE_VERSION: v5.8.1
@@ -47,6 +61,12 @@ jobs:
       - run: npm run check
       - name: Run explicit repository release gates
         run: npm run test:release-gates
+      - name: Prepare isolated PostgreSQL acceptance images
+        run: |
+          docker pull postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+          docker pull redis:7-alpine
+      - name: Run audited PostgreSQL files in owned disposable containers
+        run: npm run test:postgres:isolated
       - name: Create isolated PostgreSQL migration databases
         run: |
           docker exec "${{ job.services.postgres.id }}" createdb -U merchant legacy_backfill_test
@@ -58,6 +78,7 @@ jobs:
           < infra/local/ensure-app-role.sql
       - name: Run PostgreSQL migration acceptance tests without skips
         env:
+          PG_DUMP_BIN: /usr/lib/postgresql/17/bin/pg_dump
           LEGACY_BACKFILL_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/legacy_backfill_test
           WORKSPACE_CATALOG_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
           MODEL_BUDGET_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/model_budget_test
@@ -68,7 +89,7 @@ jobs:
           ASSET_PARSE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
           STORAGE_QUOTA_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
         run: >-
-          npm test --
+          npx vitest run --no-file-parallelism
           packages/persistence/src/migration-049.test.ts
           packages/persistence/src/migration-051.test.ts
           packages/persistence/src/migration-053.test.ts
@@ -153,12 +174,83 @@ jobs:
           packages/persistence/src/migration-159.test.ts
           packages/persistence/src/migration-160.test.ts
           packages/persistence/src/migration-162.test.ts
+          packages/persistence/src/migration-163.test.ts
+          packages/persistence/src/migration-164.test.ts
+          packages/persistence/src/migration-164-release.postgres.test.ts
+          packages/persistence/src/migration-165.test.ts
+          packages/persistence/src/migration-166.test.ts
+          packages/persistence/src/migration-166-release.postgres.test.ts
+          packages/persistence/src/migration-167.test.ts
+          packages/persistence/src/migration-168.test.ts
+          packages/persistence/src/migration-169.test.ts
+          packages/persistence/src/authorization-repository.release.postgres.test.ts
+          packages/persistence/src/authorization-rls-boundary.postgres.test.ts
+          packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts
+          packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts
           packages/persistence/src/creative-point-security-release.postgres.test.ts
           tests/commercial-zero-side-effect-release.postgres.test.ts
           packages/persistence/src/storage-quota-repository.postgres.test.ts
           packages/persistence/src/platform-media-spec-repository.test.ts
           packages/persistence/src/mapping-preflight-approval-repository.test.ts
           packages/persistence/src/asset-parse-repository.test.ts
+          # Keep every repository-owned PostgreSQL acceptance file in the CI
+          # denominator. The local safe launcher intentionally runs only its
+          # audited disposable subset; CI's dedicated PostgreSQL service is
+          # the authoritative full-surface execution environment.
+          apps/worker/src/creative-point-relay-settlement.postgres.test.ts
+          packages/persistence/src/application-rls-allow-scope-mismatch.postgres.test.ts
+          packages/persistence/src/authorization-audit-rls.postgres.test.ts
+          packages/persistence/src/authorization-execution-reservation-rls.postgres.test.ts
+          packages/persistence/src/authorization-repository.postgres.test.ts
+          packages/persistence/src/authorization-rls-probe.postgres.test.ts
+          packages/persistence/src/billing-repository.postgres.test.ts
+          packages/persistence/src/business-repository.postgres.test.ts
+          packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts
+          packages/persistence/src/canonical-product-backfill.postgres.test.ts
+          packages/persistence/src/commercial-contract-repository.release.postgres.test.ts
+          packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts
+          packages/persistence/src/data-lifecycle-repository.postgres.test.ts
+          packages/persistence/src/migration-106-release.postgres.test.ts
+          packages/persistence/src/migration-109-release.postgres.test.ts
+          packages/persistence/src/migration-127-release.postgres.test.ts
+          packages/persistence/src/migration-128-release.postgres.test.ts
+          packages/persistence/src/migration-129-release.postgres.test.ts
+          packages/persistence/src/migration-146-release.postgres.test.ts
+          packages/persistence/src/migration-148-release.postgres.test.ts
+          packages/persistence/src/object-orphan-repository.postgres.test.ts
+          packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts
+          packages/persistence/src/platform-authorization-audit.postgres.test.ts
+          packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts
+          packages/persistence/src/resource-id-scope.postgres.test.ts
+          packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts
+          packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts
+          tests/outbox-retry.postgres.test.ts
+      - name: Run mandatory authorization PostgreSQL acceptance
+        env:
+          PERSISTENCE_RELEASE_DATABASE_URL: postgres://merchant:merchant@127.0.0.1:5432/merchant
+        run: npm run test:authorization-postgres
+      - name: Verify authorization execution denominator and retain raw report in CI logs
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+          import { resolve } from 'node:path'
+          const command = JSON.parse(readFileSync('package.json', 'utf8')).scripts['test:authorization-postgres']
+          const expected = command.split(/\s+/u).filter(path => path.endsWith('.test.ts')).map(path => resolve(path)).sort()
+          const rawReport = readFileSync('artifacts/authorization-postgres/vitest.json', 'utf8')
+          // This suite uses only isolated synthetic fixtures. Keep failures and skips visible.
+          process.stdout.write(rawReport + '\n')
+          const report = JSON.parse(rawReport)
+          const actual = report.testResults.map(file => resolve(file.name)).sort()
+          assert.equal(expected.length, 5, 'five authorization PostgreSQL files are mandatory')
+          assert.deepEqual(actual, expected, 'authorization test file set mismatch')
+          for (const file of report.testResults) {
+            assert.ok(file.assertionResults.length > 0, `empty test file: ${file.name}`)
+            assert.ok(file.assertionResults.every(test => test.status === 'passed'), `failed or unexecuted assertion: ${file.name}`)
+          }
+          assert.equal(report.success, true)
+          NODE
       - run: npm run test:load
       - run: npm run build
       - run: npm audit --omit=dev

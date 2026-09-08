@@ -1,0 +1,183 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "isolated live JIT issue, refresh and revoke at 1440x900",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4391,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T01:59:16.208Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "issued-and-refreshed",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/issued-and-refreshed-63da33f950e20a61e4f9910deaa6d02eae3a4b87.png"
+                    },
+                    {
+                      "name": "revoke-confirmation",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/revoke-confirmation-a646e0a49b001a6ce028352ee536e9c0f55f2336.png"
+                    },
+                    {
+                      "name": "revoked-and-removed",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/revoked-and-removed-702ef96171fa8e5dd3c87aebf3892b6bcf389990.png"
+                    },
+                    {
+                      "name": "redacted-rpc-step-trace",
+                      "contentType": "application/json",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/redacted-rpc-step-trace-e68baf5a51515a90539a849e2c865365a111e694.json"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3ff8876666a65e908513-d14f88ee488fd2f2d1c2",
+          "file": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+          "line": 166,
+          "column": 3
+        },
+        {
+          "title": "isolated live JIT issue, refresh and revoke at 1280x800",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6758,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T01:59:21.083Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "issued-and-refreshed",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-e0782-resh-and-revoke-at-1280x800/attachments/issued-and-refreshed-5cab9f7ca761c7341df69812e8678b628cc0e593.png"
+                    },
+                    {
+                      "name": "revoke-confirmation",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-e0782-resh-and-revoke-at-1280x800/attachments/revoke-confirmation-f0e87327fe11dcd0068e08f452f58ec9f926e939.png"
+                    },
+                    {
+                      "name": "revoked-and-removed",
+                      "contentType": "image/png",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-e0782-resh-and-revoke-at-1280x800/attachments/revoked-and-removed-405df61ee45ad9e4fffa84a4b9f5eab6a94a961b.png"
+                    },
+                    {
+                      "name": "redacted-rpc-step-trace",
+                      "contentType": "application/json",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T01-59-09.222Z-d76ccf2b-ca9b-4ea2-89e0-d50ca5a1234d/test-results/dogfood-chatgpt-all-functi-e0782-resh-and-revoke-at-1280x800/attachments/redacted-rpc-step-trace-01ad08c654f3fe390ad11b5c95fc3d16d128fb6e.json"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3ff8876666a65e908513-30013240ca1bcf5f2d84",
+          "file": "dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js",
+          "line": 166,
+          "column": 3
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-08T01:59:14.809Z",
+    "duration": 13109.273,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

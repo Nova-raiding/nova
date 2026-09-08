@@ -10,6 +10,7 @@ export type CanonicalConsistencyPanelProps = {
   generatedAt?: string
   errorMessage?: string
   onRefresh?: () => void
+  onResolveCanonical?: () => void
   refreshing?: boolean
 }
 
@@ -20,7 +21,7 @@ const freshnessCopy: Record<Freshness, { label: string; detail: string; tone: 'g
   unknown: { label: '新鲜度未知', detail: '服务端没有提供报告新鲜度，不能据此判断已通过。', tone: 'amber' },
 }
 
-export function CanonicalConsistencyPanel({ items, freshness = 'unknown', generatedAt, errorMessage, onRefresh, refreshing = false }: CanonicalConsistencyPanelProps) {
+export function CanonicalConsistencyPanel({ items, freshness = 'unknown', generatedAt, errorMessage, onRefresh, onResolveCanonical, refreshing = false }: CanonicalConsistencyPanelProps) {
   const errorRef = useRef<HTMLDivElement>(null)
   const canonical = items.find((item) => item.id === 'products')
   const pendingCount = items.filter((item) => item.status !== 'green').length
@@ -46,7 +47,7 @@ export function CanonicalConsistencyPanel({ items, freshness = 'unknown', genera
         {freshness === 'fresh' ? <CheckCircle2 size={16} aria-hidden="true" /> : <Clock3 size={16} aria-hidden="true" />}
         <div><b>{freshnessState.label}</b><span>{freshnessState.detail}{generatedAt ? ` 生成于 ${generatedAt}。` : ''}</span></div>
       </div>
-      {canonical && canonical.status !== 'green' && <div className="canonical-error-summary" role="status"><AlertTriangle size={16} aria-hidden="true" /><div><b>{canonical.statusLabel ?? '标准链待处理'}</b><span>{canonical.detail}</span><small>下一步：{canonical.nextStep}</small></div></div>}
+      {canonical && canonical.status !== 'green' && <div className="canonical-status-summary warning" role="status"><AlertTriangle size={16} aria-hidden="true" /><div><b>{canonical.statusLabel ?? '标准链待核验'}</b><span>{canonical.detail}</span><small>下一步：{canonical.nextStep}</small>{onResolveCanonical && <button type="button" className="text-button canonical-resolve" onClick={onResolveCanonical}>打开商品关系并核验</button>}</div></div>}
       <div className="data-consistency-head canonical-summary-row">
         <b>当前工作区待处理：{pendingCount} 项</b>
         <span>{canonical?.statusLabel ?? '标准链状态尚未确认'}</span>

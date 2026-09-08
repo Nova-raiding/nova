@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Alert, Button, Tabs, type TabsProps } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import { OpsPageError } from "../OpsPageError";
@@ -20,12 +20,11 @@ export function visibleUsersGovernanceSections(authorization: CapabilityReader):
 
 export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConsoleModel; onRefresh?: () => void }) {
   const sectionKeys = useMemo(() => visibleUsersGovernanceSections(model.authorization), [model.authorization]);
-  const [activeSection, setActiveSection] = useState<UsersGovernanceSectionKey>(sectionKeys[0] ?? "directory");
   const unavailableRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!sectionKeys.includes(activeSection) && sectionKeys[0]) setActiveSection(sectionKeys[0]);
-  }, [activeSection, sectionKeys]);
+    if (!sectionKeys.includes(model.usersGovernanceSection as UsersGovernanceSectionKey) && sectionKeys[0]) model.setUsersGovernanceSection(sectionKeys[0]);
+  }, [model, sectionKeys]);
 
   useEffect(() => {
     if (!sectionKeys.length) unavailableRef.current?.focus({ preventScroll: true });
@@ -68,8 +67,8 @@ export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConso
   return (
     <div className="ops-users-workspace">
       <Tabs
-        activeKey={activeSection}
-        onChange={(key) => setActiveSection(key as UsersGovernanceSectionKey)}
+        activeKey={model.usersGovernanceSection}
+        onChange={(key) => model.setUsersGovernanceSection(key as UsersGovernanceSectionKey)}
         items={items}
         destroyOnHidden
         aria-label="用户治理工作区"

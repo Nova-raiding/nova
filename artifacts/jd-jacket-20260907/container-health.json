@@ -1,0 +1,80 @@
+[
+  {
+    "Service": "api",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-api"
+  },
+  {
+    "Service": "api-replica",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-api"
+  },
+  {
+    "Service": "clamav",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "clamav/clamav-debian@sha256:bcfc3d6117a6cfbeb6cd041c00164097916291b870c6183e06def6fed7fb740b"
+  },
+  {
+    "Service": "ops-ui",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-ops-ui"
+  },
+  {
+    "Service": "postgres",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "postgres:16-alpine"
+  },
+  {
+    "Service": "redis",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "redis:7-alpine"
+  },
+  {
+    "Service": "ui",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-ui"
+  },
+  {
+    "Service": "worker-automation",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-worker-automation"
+  },
+  {
+    "Service": "worker-generation",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-worker-generation"
+  },
+  {
+    "Service": "worker-publish",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-worker-publish"
+  },
+  {
+    "Service": "worker-reconcile",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-worker-reconcile"
+  },
+  {
+    "Service": "worker-scan",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-worker-scan"
+  },
+  {
+    "Service": "worker-sync",
+    "State": "running",
+    "Health": "healthy",
+    "Image": "local-worker-sync"
+  }
+]

@@ -306,7 +306,9 @@ export class PostgresBusinessRepository {
       if (table === 'products' && input.syncStatus) add(`(SELECT state FROM sync_jobs WHERE sync_jobs.workspace_id = products.workspace_id AND sync_jobs.platform = products.platform AND sync_jobs.platform_account_id = products.platform_account_id ORDER BY sync_jobs.updated_at DESC, sync_jobs.id ASC LIMIT 1) = ?`, input.syncStatus)
       if (table === 'products' && Array.isArray(input.accessibleBrandIds)) {
         values.push(input.accessibleBrandIds)
-        clauses.push(`EXISTS (SELECT 1 FROM canonical_products WHERE canonical_products.workspace_id = products.workspace_id AND canonical_products.legacy_product_id = products.id AND canonical_products.brand_id = ANY($${values.length}::text[]))`)
+        const index = values.length
+        clauses.push(`(EXISTS (SELECT 1 FROM canonical_products WHERE canonical_products.workspace_id = products.workspace_id AND canonical_products.legacy_product_id = products.id AND canonical_products.brand_id = ANY($${index}::text[]))
+          OR NOT EXISTS (SELECT 1 FROM canonical_products WHERE canonical_products.workspace_id = products.workspace_id AND canonical_products.legacy_product_id = products.id))`)
       }
       if (table === 'tasks' && input.state) add('state = ?', input.state)
       if (table === 'tasks' && input.productId) add('product_id = ?', input.productId)

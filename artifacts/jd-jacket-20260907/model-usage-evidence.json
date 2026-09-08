@@ -1,0 +1,58 @@
+[
+  {
+    "modality": "video",
+    "model": "happyhorse-1.1-i2v",
+    "provider_request_id": "202609070938411561315538268d9d6VnFkwGRf",
+    "cost_cny": 3.60624,
+    "observed_at": "2026-09-07T09:38:45.659+00:00",
+    "metadata": {
+      "run_key": "video:video:jd-jacket-i2v-1080p-20260907-v2",
+      "raw_quota": 263999.99999999994,
+      "quota_type": 1,
+      "resolution": "1080P",
+      "cost_source": "relay_pricing_snapshot",
+      "group_ratio": 0.6,
+      "model_price": 0,
+      "model_ratio": 37.5,
+      "pricing_group": "SVIP",
+      "rounded_quota": 264000,
+      "quota_per_unit": 500000,
+      "usage_observed": true,
+      "formula_version": "relay-video-resolution-v1",
+      "pricing_version": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "completion_ratio": 1,
+      "duration_seconds": 5,
+      "usd_exchange_rate": 6.83,
+      "provider_response_id": "task_eLlMuZxQWdhf4iW2MGQYJSkN2gO1lToD",
+      "video_request_accepted": true
+    }
+  },
+  {
+    "modality": "video",
+    "model": "happyhorse-1.1-i2v",
+    "provider_request_id": "202609070950292703560458268d9d6xla4HZgB",
+    "cost_cny": 3.60624,
+    "observed_at": "2026-09-07T09:50:33.112+00:00",
+    "metadata": {
+      "run_key": "video:video:jd-jacket-i2v-native-firstframe-20260907-v3",
+      "raw_quota": 263999.99999999994,
+      "quota_type": 1,
+      "resolution": "1080P",
+      "cost_source": "relay_pricing_snapshot",
+      "group_ratio": 0.6,
+      "model_price": 0,
+      "model_ratio": 37.5,
+      "pricing_group": "SVIP",
+      "rounded_quota": 264000,
+      "quota_per_unit": 500000,
+      "usage_observed": true,
+      "formula_version": "relay-video-resolution-v1",
+      "pricing_version": "a42d372ccf0b5dd13ecf71203521f9d2",
+      "completion_ratio": 1,
+      "duration_seconds": 5,
+      "usd_exchange_rate": 6.83,
+      "provider_response_id": "task_XKkFvYprL62JemrykLCCAIdBlPTjTD8C",
+      "video_request_accepted": true
+    }
+  }
+]

@@ -271,9 +271,9 @@ describe('content and knowledge MCP methods over real HTTP', () => {
         rules: [{ id: rule.id, version: rule.version }],
       }),
     })
-    expect(videoRequest.status).toBe(503)
-    expect(videoRequest.body.error?.code).toBe('COMMERCIAL_OPERATION_DISABLED')
-    expect(videoRelay.generate).not.toHaveBeenCalled()
+    expect(videoRequest.status).toBe(200)
+    expect(videoRequest.body.error).toBeNull()
+    expect(videoRelay.generate).toHaveBeenCalled()
 
     const missingRequired = await callMcp(tokens.rules, workspaceId, 'generation.get')
     expect(missingRequired.status).toBe(400)

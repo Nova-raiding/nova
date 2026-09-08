@@ -26,6 +26,7 @@ COPY tsconfig.json tsconfig.json
 COPY apps/ops-console/package.json apps/ops-console/package.json
 RUN npm ci --workspace apps/ops-console --include-workspace-root
 COPY packages/contracts packages/contracts
+COPY packages/application/src/spreadsheet-batch.ts packages/application/src/spreadsheet-batch.ts
 COPY apps/ops-console apps/ops-console
 RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode=oidc; else auth_mode=local; fi; \
     VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$OPS_CONSOLE_BUILD_MODE" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" npm run build --workspace apps/ops-console

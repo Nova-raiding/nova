@@ -127,11 +127,12 @@ export function purgeLocalOpsCredentialsForManagedSession(
   for (const key of [
     "ops_connection_config_v1",
     "ops_api_base",
-    "ops_workspace_id",
     "ops_actor_id",
     "ops_api_token",
-    "ops_workbench",
   ]) storage.removeItem(key);
+  // A managed OIDC session still needs the route-scoped tenant/workbench
+  // context to select the correct signed boundary. These values are not
+  // credentials and are validated again by the gateway/API on every request.
 }
 
 export const OPS_REQUEST_TIMEOUT_MS = 10_000;
@@ -417,10 +418,11 @@ async function rpcAtWorkspace<T>(
   await ensureLocalOpsSession();
   const connection = readOpsConnectionConfig();
   const workspaceId = workspaceOverride ?? connection.workspaceId;
-  // The OIDC gateway is the platform boundary; it derives the authorized
-  // scope from the signed session and must not inherit stale workspace UI
-  // state from a previous local-bearer session.
-  const workbench = managedOpsSession ? "platform" : connection.workbench;
+  // The OIDC gateway supplies credentials and derives the authorized scope
+  // from the signed session. The selected workbench still comes from the
+  // route-scoped connection state; the gateway rejects a stale/mismatched
+  // value instead of allowing a bearer or UI value to widen scope.
+  const workbench = connection.workbench;
   if (!workspaceId && workbench === "workspace") {
     const error = new Error("请先配置真实工作区 ID") as OpsRequestError;
     error.code = "OPS_WORKSPACE_REQUIRED";

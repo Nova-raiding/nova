@@ -1,0 +1,67 @@
+{
+  "observedAt": "2026-09-07T09:20:00Z",
+  "kind": "connected MCP read-only observation",
+  "evidenceBoundary": "Installed MCP cache, not the edited source bridge; no upload/generation/payment/publish performed",
+  "assetCount": 13,
+  "readiness": {
+    "draft": 13,
+    "ready": 0,
+    "blocked": 0,
+    "total": 13
+  },
+  "structuredFieldNames": [
+    "assets",
+    "readiness",
+    "storage_quota",
+    "asset_actions",
+    "empty_state"
+  ],
+  "health": {
+    "content": [
+      {
+        "type": "text",
+        "text": "当前还没有可用店铺。\n你想先连接哪个平台？"
+      }
+    ],
+    "structuredContent": {
+      "conversation_state": {
+        "stage": "connect_store",
+        "status": "needs_input",
+        "connected_store_count": 0,
+        "primary_action": {
+          "method": "platform.connect",
+          "label": "连接平台店铺",
+          "required_inputs": [
+            "platform"
+          ]
+        }
+      },
+      "completed_summary": "当前还没有可用店铺。",
+      "question": "你想先连接哪个平台？",
+      "expected_input": {
+        "kind": "platform_selection",
+        "accepts": [
+          "natural_language"
+        ]
+      }
+    },
+    "isError": false
+  },
+  "baselinePostgres": {
+    "report": "../runtime/postgres-1788772470212.json",
+    "files": 2,
+    "passed": 0,
+    "failed": 2,
+    "notExecuted": 0,
+    "error": "ops access grant scope is invalid"
+  },
+  "existingDatabaseReadOnlyAudit": {
+    "schemaVersion": 162,
+    "grantCount": 3,
+    "workspaceIdsFormat": 0,
+    "canonicalFormat": 3,
+    "activeCount": 0,
+    "valuesAndIdsExported": false,
+    "businessWrites": 0
+  }
+}

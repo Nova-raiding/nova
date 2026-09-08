@@ -3,13 +3,13 @@ import type {
   AssignSupportTicketCommand,
   CommentOnSupportTicketCommand,
   CreateSupportTicketCommand,
-  SupportCrmExportContract,
   SupportTicketContract,
   SupportTicketEventContract,
   SupportTicketPageContract,
   SupportTicketPageCursor,
   SupportTicketPriority,
   SupportTicketStatus,
+  SupportSlaState,
   TransitionSupportTicketCommand,
 } from "../../../../packages/contracts/src/ops/support.js";
 import type { SupportSlaCorrectionApprovalProgress, SupportSlaCorrectionDecision, SupportSlaCorrectionRun, SupportSlaMonthlyReport } from "../../../../packages/contracts/src/ops/support-sla-report.js";
@@ -31,6 +31,9 @@ export interface SupportDomainClient {
     platformScope?: boolean;
     status?: SupportTicketStatus;
     priority?: SupportTicketPriority;
+    slaState?: SupportSlaState;
+    assigneeId?: string;
+    customerId?: string;
     query?: string;
     cursor?: SupportTicketPageCursor;
     limit: number;
@@ -40,7 +43,6 @@ export interface SupportDomainClient {
   assign(command: AssignSupportTicketCommand): Promise<SupportMutationResult>;
   transition(command: TransitionSupportTicketCommand): Promise<SupportMutationResult>;
   comment(command: CommentOnSupportTicketCommand): Promise<SupportMutationResult>;
-  exportCrm(workspaceId: string): Promise<SupportCrmExportContract>;
   report(input: { workspaceId: string; periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }): Promise<SupportSlaMonthlyReport>;
   createCorrection(input: { workspaceId: string; originalReportId: string; periodStart: string; periodEnd: string; cutoffAt: string; reason: string; idempotencyKey: string }): Promise<SupportSlaCorrectionRun | { status: "no_change"; originalReportId: string; checksum: string }>;
   decideCorrection(input: { workspaceId: string; correctionId: string; decision: "approved" | "rejected"; reason: string; idempotencyKey: string }): Promise<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>;
@@ -48,8 +50,11 @@ export interface SupportDomainClient {
 
 export interface SupportFilters {
   query: string;
+  customerId?: string;
   status?: SupportTicketStatus;
   priority?: SupportTicketPriority;
+  slaState?: SupportSlaState;
+  assigneeId?: string;
 }
 
 export interface SupportDomainModel {
@@ -72,7 +77,6 @@ export interface SupportDomainModel {
   assign(assigneeId: string): Promise<void>;
   transition(status: SupportTicketStatus, reason: string): Promise<void>;
   comment(body: string, visibility: "internal" | "customer"): Promise<void>;
-  exportCrm(): Promise<SupportCrmExportContract>;
   report?: SupportSlaMonthlyReport;
   reportLoading: boolean;
   loadReport(input: { periodStart: string; periodEnd: string; cutoffAt: string; reportId?: string }): Promise<void>;
@@ -116,7 +120,10 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
         ...(platformScope ? { platformScope: true } : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.priority ? { priority: filters.priority } : {}),
+        ...(filters.slaState ? { slaState: filters.slaState } : {}),
+        ...(filters.assigneeId ? { assigneeId: filters.assigneeId } : {}),
         ...(filters.query.trim() ? { query: filters.query.trim() } : {}),
+        ...(filters.customerId?.trim() ? { customerId: filters.customerId.trim() } : {}),
         ...(nextCursor ? { cursor: nextCursor } : {}),
         limit: 25,
       });
@@ -130,7 +137,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     } finally {
       if (request === listRequest.current) append ? setLoadingMore(false) : setLoading(false);
     }
-  }, [client, filters.priority, filters.query, filters.status, platformScope, workspaceId]);
+  }, [client, filters.assigneeId, filters.customerId, filters.priority, filters.query, filters.slaState, filters.status, platformScope, workspaceId]);
 
   const reload = useCallback(() => fetchPage(undefined, false), [fetchPage]);
   const loadMore = useCallback(async () => {
@@ -277,6 +284,5 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
     clearSelection: () => { detailRequest.current += 1; setSelected(undefined); },
     create, assign, transition, comment,
     loadReport, correction, correctionDecision, correctionLoading, createCorrection, decideCorrection,
-    exportCrm: () => client.exportCrm(workspaceId),
   };
 }

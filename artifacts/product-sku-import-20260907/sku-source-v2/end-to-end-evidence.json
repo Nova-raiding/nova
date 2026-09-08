@@ -1,0 +1,21 @@
+{
+  "workspace": "ws_be87dca95d714bc1bbdb6c21",
+  "imported_product_id": "prod_jd_local_75b240893a46543719f5",
+  "selected_sku": "JACKET-BLUE-M",
+  "selected_sku_source_assets": [
+    "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac"
+  ],
+  "other_sku_source_assets": [],
+  "generation_job": "imggen_b37be3f8-b6d2-493e-a3f7-f8ae58b0d874",
+  "model": "qwen-image-3.0",
+  "configured_relay": true,
+  "generated_file": "Excel所选SKU-主图.png",
+  "sha256": "c8404bfc1855d927607ec3f0f1d3c56caf9c3d6200e5b94a81f9a6409431bb6c",
+  "width": 1024,
+  "height": 1024,
+  "visual_review": "white background, original pale-blue hooded jacket, same-color zipper and side pockets, no invented cords",
+  "status": "unbound candidate, unpublished",
+  "host_native_connection": "old process missing base URL; reload still required",
+  "tests": 279,
+  "typecheck": "passed"
+}

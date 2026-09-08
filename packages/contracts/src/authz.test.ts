@@ -31,7 +31,7 @@ describe('authorization policy registry', () => {
     const missing = Object.values(MCP_METHOD_POLICIES).filter(policy => policy.audit === 'allow_and_deny' && policy.obligations.length === 0)
     expect(missing.every(policy => policy.audit === 'allow_and_deny' && policy.obligations.length === 0)).toBe(true)
     expect(new Set(missing.map(policy => policy.method))).toEqual(new Set([
-      'ops.support.crm.export', 'ops.marketing.image.evidence.export',
+      'ops.marketing.image.evidence.export',
       'ops.canonical.backfill.create', 'ops.canonical.backfill.run',
       'ops.canonical.backfill.pause', 'ops.canonical.backfill.resume',
       'ops.canonical.backfill.conflict.claim', 'ops.canonical.backfill.conflict.resolve',

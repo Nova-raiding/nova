@@ -1,6 +1,6 @@
 import { exposeNonProductionMethods, MCP_METHODS, MCP_NON_PRODUCTION_METHODS, type McpMethod } from './mcp.js'
 
-export const AUTHZ_POLICY_VERSION = '2026-08-31.v2' as const
+export const AUTHZ_POLICY_VERSION = '2026-09-07.v1' as const
 
 export const CAPABILITIES = [
   'authorization.session.read',
@@ -23,7 +23,6 @@ export const CAPABILITIES = [
   'support.ticket.update',
   'support.sla.update',
   'support.sla.approve',
-  'support.customer.export',
   'incident.read',
   'incident.update',
   'incident.administer',
@@ -54,6 +53,7 @@ export const CAPABILITIES = [
   'commercial.catalog.publish',
   'commercial.private_sku.read',
   'commercial.private_sku.grant',
+  'commercial.private_trial.workflow',
   'commercial.order.read',
   'commercial.payment.reconcile',
   'commercial.rate.read',
@@ -180,10 +180,20 @@ export function evaluateAuthorizationDecision(input: {
         : input.resourceScope.id !== '*'))
   const resourceId = resourceScopeValid ? input.resourceScope?.id : undefined
   const usableScopes = input.scopes.filter(isSafeAuthorizationScope)
-  const workbenchMatched = input.policy.scope === 'self'
+  // Model readiness is redacted platform metadata. Merchants need the same
+  // readiness probe during onboarding, while platform operators need it in
+  // the platform console. Keep the policy's platform scope for the operator
+  // contract, but authorize the tenant workbench against its own workspace
+  // scope as well; the response never contains credentials or tenant data.
+  const crossWorkbenchModelStatus = input.policy.method === 'platform.model.status'
+  const workbenchMatched = crossWorkbenchModelStatus || input.policy.scope === 'self'
     || input.workbench === 'platform' && input.policy.scope === 'platform'
     || input.workbench === 'workspace' && input.policy.scope !== 'platform'
-  const scopeMatched = input.policy.scope === 'self' && input.resourceScope === undefined
+  const scopeMatched = crossWorkbenchModelStatus
+    ? input.workbench === 'platform'
+      ? usableScopes.some(scope => scope.type === 'platform' && scope.ids.includes('*'))
+      : resourceScopeValid && input.resourceScope?.type === 'workspace' && usableScopes.some(scope => scope.type === 'workspace' && (scope.ids.includes(input.resourceScope?.id ?? '') || scope.ids.includes('*')))
+    : input.policy.scope === 'self' && input.resourceScope === undefined
     // A self-scoped method already runs in the authenticated principal's
     // context. Require one attributable principal ID, but do not require the
     // caller to echo that private ID as a resource selector.
@@ -353,12 +363,12 @@ const commercialFinanceRead: readonly CapabilityId[] = [
 ]
 
 export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly CapabilityId[]>> = {
-  platform_admin: [...platformRead, ...commercialOpsRead, 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export'],
+  platform_admin: [...platformRead, ...commercialOpsRead, 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.export'],
   // P0 compatibility: legacy platform_ops resolves here, so existing identity/member/delete
   // enforcement remains intact until durable platform-role assignments replace that alias.
-  ops_admin: [...platformRead, ...commercialOpsRead, 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'support.customer.export', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
-  support_agent: ['platform.summary.read', 'workspace.directory.read', 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'support.customer.export', 'incident.read', 'incident.update', 'audit.read', 'feature_flag.read', 'commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read'],
-  finance_ops: ['platform.summary.read', 'workspace.directory.read', 'commercial.point.adjust.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
+  ops_admin: [...platformRead, ...commercialOpsRead, 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
+  support_agent: ['platform.summary.read', 'workspace.directory.read', 'support.ticket.read', 'support.ticket.update', 'support.sla.update', 'incident.read', 'incident.update', 'audit.read', 'feature_flag.read', 'commercial.access.read', 'commercial.entitlement.read', 'commercial.service_fulfillment.read'],
+  finance_ops: ['platform.summary.read', 'workspace.directory.read', 'commercial.private_trial.workflow', 'commercial.point.adjust.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.refund.execute', 'billing.export', 'model.cost.read', 'commercial.read', 'audit.read', ...commercialFinanceRead],
   security_admin: ['authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'audit.read', 'audit.export', 'feature_flag.read'],
   auditor: [...platformRead, 'audit.export'],
   rules_admin: ['rule.read', 'rule.update', 'rule.publish.approve', 'platform.media_spec.read', 'platform.media_spec.update', 'platform.media_spec.approve', 'audit.read', 'identity.read', 'billing.export'],
@@ -404,7 +414,8 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('authorization.role.read', 'platform', 'secret_metadata', ['ops.authorization.roles.list']),
   write('authorization.role.manage', 'platform', 'secret_metadata', ['ops.authorization.role.assign', 'ops.authorization.role.revoke'], 'mutation', ['reason', 'revision']),
   read('authorization.grant.read', 'platform', 'secret_metadata', ['ops.authorization.grants.list']),
-  write('authorization.grant.manage', 'platform', 'secret_metadata', ['ops.authorization.grant.issue', 'ops.authorization.grant.revoke'], 'allow_and_deny', ['reason', 'revision', 'approval']),
+  write('authorization.grant.manage', 'platform', 'secret_metadata', ['ops.authorization.grant.issue'], 'allow_and_deny', ['reason', 'revision', 'approval']),
+  write('authorization.grant.manage', 'platform', 'secret_metadata', ['ops.authorization.grant.revoke'], 'allow_and_deny', ['reason', 'revision']),
   read('workspace.member.read', 'workspace', 'customer_metadata', ['ops.members.list']),
   write('workspace.member.manage', 'workspace', 'customer_metadata', ['ops.member.upsert', 'ops.member.suspend'], 'mutation', ['reason']),
   read('identity.read', 'platform', 'secret_metadata', ['ops.users.list', 'ops.user.detail']),
@@ -417,7 +428,6 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('support.ticket.update', 'workspace', 'customer_metadata', ['ops.support.ticket.create', 'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment']),
   write('support.sla.update', 'workspace', 'customer_metadata', ['ops.support.sla.correction.create'], 'mutation', ['reason', 'idempotency']),
   write('support.sla.approve', 'workspace', 'customer_metadata', ['ops.support.sla.correction.decide'], 'mutation', ['reason', 'idempotency', 'approval']),
-  read('support.customer.export', 'workspace', 'customer_content', ['ops.support.crm.export'], 'allow_and_deny'),
   read('incident.read', 'workspace', 'customer_metadata', ['ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline']),
   write('incident.update', 'workspace', 'customer_metadata', ['ops.incident.create', 'ops.incident.transition', 'ops.incident.comment']),
   write('incident.administer', 'workspace', 'customer_metadata', ['ops.incident.commander.assign', 'ops.incident.scope.update']),
@@ -436,7 +446,17 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('commercial.point.adjust.approve', 'platform', 'finance', ['ops.commercial.points.adjust.decide'], 'mutation', ['reason', 'idempotency']),
   read('commercial.catalog.read', 'platform', 'finance', ['ops.commercial.catalog-v2.list']),
   read('commercial.order.read', 'platform', 'finance', ['ops.commercial.orders-v2.list']),
-  read('commercial.rate.read', 'platform', 'finance', ['ops.commercial.rate-cards.list']),
+  read('commercial.rate.read', 'platform', 'finance', ['ops.commercial.rate-cards.list', 'ops.commercial.readiness.report']),
+  write('commercial.private_trial.workflow', 'platform', 'finance', [
+    'ops.commercial.private-trial.eligibility.create',
+    'ops.commercial.private-trial.eligibility.approve',
+    'ops.commercial.private-trial.validation.complete',
+    'ops.commercial.private-trial.credit.prepare',
+    'ops.commercial.private-trial.credit.approve',
+    'ops.commercial.private-trial.conversion.create',
+    'ops.commercial.private-trial.payment.verify',
+  ], 'allow_and_deny', ['reason', 'idempotency']),
+    write('commercial.payment.reconcile', 'platform', 'finance', ['ops.commercial.order.payment.verify', 'ops.commercial.order.refund.list', 'ops.commercial.order.refund.request', 'ops.commercial.order.refund.approve', 'ops.commercial.order.refund.complete'], 'allow_and_deny', ['reason', 'idempotency']),
   read('commercial.service_fulfillment.read', 'platform', 'customer_metadata', ['ops.commercial.service-fulfillment.list']),
   write('commercial.service_fulfillment.write', 'platform', 'customer_metadata', ['ops.commercial.service-allocation.create', 'ops.commercial.service-fulfillment.schedule', 'ops.commercial.service-fulfillment.start', 'ops.commercial.service-fulfillment.complete', 'ops.commercial.service-fulfillment.adjust'], 'mutation', ['reason', 'revision', 'idempotency', 'approval']),
   read('marketing.summary.read', 'platform', 'platform_summary', ['ops.marketing.summary', 'ops.alerts.list']),
@@ -476,7 +496,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('store.connection.update', 'account', 'customer_metadata', ['platform.store.alias.set']),
   read('customer.content.read', 'workspace', 'customer_content', ['brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get', 'catalog.search', 'catalog.categories', 'rule.list', 'rule.sync.status', 'rule.history', 'asset.list', 'brand.get', 'catalog.sync.get', 'deliverable.list', 'task.history', 'feedback.list', 'creative.directions', 'publish.batch.get', 'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'multimodal.video.get', 'catalog.image.get']),
   read('customer.content.read', 'brand', 'customer_content', ['generation.get', 'publish.get', 'task.timeline', 'content.versions', 'content.diff', 'creative.brief', 'creative.preview']),
-  write('customer.content.update', 'workspace', 'customer_content', ['brand-unit.create', 'campaign.batch.create', 'campaign.batch.generate', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.title.accept', 'catalog.import', 'catalog.import.batch', 'catalog.sku.update', 'catalog.facts.confirm', 'sync.retry_failed', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.generation.confirm', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'task.create', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'task.clone', 'creative.directions.update', 'content.codex.prepare', 'content.codex.commit', 'ops.marketing.generation.retry', 'knowledge.rule.create', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.brand.preference.update', 'knowledge.feedback.record', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.reference', 'catalog.image.generate', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'rule.sync.now']),
+  write('customer.content.update', 'workspace', 'customer_content', ['brand-unit.create', 'campaign.batch.create', 'campaign.batch.generate', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed', 'catalog.title.optimize', 'catalog.title.accept', 'catalog.import', 'catalog.import.batch', 'catalog.sku.update', 'catalog.facts.confirm', 'sync.retry_failed', 'asset.parse', 'asset.facts.confirm', 'asset.preference.update', 'brand.extract', 'brand.upsert', 'brand.tone.preview', 'asset.upload', 'asset.upload.batch', 'asset.scan', 'asset.generation.confirm', 'asset.rights.update', 'catalog.sync', 'catalog.sync.start', 'task.create', 'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'task.clone', 'creative.directions.update', 'content.codex.prepare', 'content.codex.commit', 'ops.marketing.generation.retry', 'knowledge.rule.create', 'knowledge.rule.update', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.brand.preference.update', 'knowledge.feedback.record', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.reference', 'catalog.image.generate', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'rule.sync.now']),
   write('customer.content.update', 'brand', 'customer_content', ['catalog.product.disable', 'catalog.product.enable']),
   write('customer.content.update', 'account', 'customer_content', ['brand-unit.bind-store', 'brand-unit.listing.create']),
   write('customer.content.update', 'brand', 'customer_content', ['brand-unit.product.create', 'brand-unit.access.grant', 'catalog.product.update', 'catalog.image.retry', 'catalog.image.select', 'catalog.image.review', 'task.answer', 'task.resume', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.review', 'content.review.decide', 'content.modify', 'content.restore', 'content.visual.select']),

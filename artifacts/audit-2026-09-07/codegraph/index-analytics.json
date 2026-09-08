@@ -1,0 +1,213 @@
+{
+  "scopes": {
+    "apps": {
+      "files": 366,
+      "nodes": 4580,
+      "bytes": 3579058
+    },
+    "demo": {
+      "files": 69,
+      "nodes": 724,
+      "bytes": 657348
+    },
+    "infra": {
+      "files": 29,
+      "nodes": 180,
+      "bytes": 162475
+    },
+    "packages": {
+      "files": 541,
+      "nodes": 8512,
+      "bytes": 5018545
+    },
+    "tests": {
+      "files": 114,
+      "nodes": 1499,
+      "bytes": 816447
+    },
+    "vitest.config.ts": {
+      "files": 1,
+      "nodes": 2,
+      "bytes": 701
+    },
+    "doc": {
+      "files": 1,
+      "nodes": 0,
+      "bytes": 20300
+    },
+    "dogfood": {
+      "files": 17,
+      "nodes": 124,
+      "bytes": 132427
+    },
+    ".codex-marketplace": {
+      "files": 6,
+      "nodes": 209,
+      "bytes": 481297
+    },
+    "scripts": {
+      "files": 8,
+      "nodes": 284,
+      "bytes": 91118
+    },
+    ".github": {
+      "files": 1,
+      "nodes": 0,
+      "bytes": 8937
+    },
+    "artifacts": {
+      "files": 762,
+      "nodes": 63033,
+      "bytes": 26020868
+    }
+  },
+  "top": [
+    {
+      "path": "artifacts/ops-oidc-e2e-full-20260906/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-auth/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-e2e-qa2/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-e2e-qa3/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-users/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-auth-final/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-auth-binding-final/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-auth-binding-final2/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-auth-binding-final3/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-e2e-clean-20260906/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-final-owner-2/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-final-owner-3/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-final-owner-4/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-final-owner-5/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-final-owner/ui-dist/assets/antd-_util-COzEKQu4.js",
+      "size": 404385,
+      "node_count": 1436,
+      "errors": null
+    },
+    {
+      "path": "apps/ops-console/src/types/ops.ts",
+      "size": 26495,
+      "node_count": 585,
+      "errors": null
+    },
+    {
+      "path": "packages/application/src/service.ts",
+      "size": 384851,
+      "node_count": 308,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-e2e-full-20260906/ui-dist/assets/antd-table-CKZ9YrUO.js",
+      "size": 133958,
+      "node_count": 292,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-auth/ui-dist/assets/antd-table-nMPm07Wo.js",
+      "size": 133958,
+      "node_count": 292,
+      "errors": null
+    },
+    {
+      "path": "artifacts/ops-oidc-e2e-qa2/ui-dist/assets/antd-table-nMPm07Wo.js",
+      "size": 133958,
+      "node_count": 292,
+      "errors": null
+    }
+  ],
+  "key": [
+    {
+      "path": "packages/application/src/service.ts",
+      "size": 384851,
+      "node_count": 308,
+      "errors": null
+    },
+    {
+      "path": "packages/ai/src/relay-usage.ts",
+      "size": 14951,
+      "node_count": 30,
+      "errors": null
+    },
+    {
+      "path": "apps/worker/src/main.ts",
+      "size": 133007,
+      "node_count": 124,
+      "errors": null
+    },
+    {
+      "path": "apps/plugin/mcp/bridge.mjs",
+      "size": 265308,
+      "node_count": 134,
+      "errors": null
+    }
+  ],
+  "errors": []
+}

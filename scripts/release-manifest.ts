@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, relative } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
+import { countMerchantBridgeTools } from './merchant-bridge-surface.js'
 
 export interface ReleaseManifest {
   schemaVersion: 1
@@ -62,18 +63,8 @@ export function buildReleaseManifest(input: {
   if (releaseMetadata.repositoryVersion !== repositoryVersion) throw new Error('release metadata repository version does not match VERSION')
   if (releaseMetadata.pluginVersion !== pluginVersion) throw new Error('release metadata plugin version does not match plugin manifest')
   if (releaseMetadata.mcpMethodCount !== MCP_METHODS.length) throw new Error('release metadata MCP method count does not match the current contract registry')
-  const merchantHiddenMethods = new Set([
-    'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve', 'billing.usage.consume',
-    'billing.usage.refund', 'billing.refund', 'billing.reconciliation.run', 'platform.settings.update',
-    'platform.revoke', 'platform.model.status', 'asset.scan', 'content.codex.prepare', 'content.codex.commit',
-  ])
   const bridge = readFileSync(bridgePath, 'utf8')
-  const bridgeStart = bridge.indexOf('const METHODS = {')
-  const bridgeEnd = bridge.indexOf('\n}\n\n', bridgeStart)
-  const methodDefinitions = bridgeStart >= 0 && bridgeEnd > bridgeStart ? bridge.slice(bridgeStart, bridgeEnd) : ''
-  const disabledBlock = bridge.match(/const COMMERCIAL_DISABLED_METHODS = new Set\(\[(.*?)\]\)/su)?.[1] ?? ''
-  const commercialDisabledMethods = new Set([...disabledBlock.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
-  const bridgeToolCount = [...methodDefinitions.matchAll(/^  '([^']+)'\s*:/gmu)].map(match => match[1]!).filter(name => !name.startsWith('ops.') && !merchantHiddenMethods.has(name) && !commercialDisabledMethods.has(name)).length
+  const bridgeToolCount = countMerchantBridgeTools(bridge)
   if (releaseMetadata.merchantBridgeToolCount !== bridgeToolCount) throw new Error('release metadata merchant bridge tool count does not match the current bridge surface')
   const opsNavigation = readFileSync(resolve(root, 'apps/ops-console/src/navigation/opsNavigation.ts'), 'utf8')
   const opsDomainCount = [...(opsNavigation.match(/export const opsDomains = \[(.*?)\] as const/su)?.[1] ?? '').matchAll(/"[a-z0-9-]+"/gu)].length

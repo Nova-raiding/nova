@@ -1,0 +1,15 @@
+{
+  "ownerAssertions": "passed",
+  "scope": "offline cross-check of captured live RPC and read-only PG facts; does NOT promote failed UI capture",
+  "issue": 200,
+  "revoke": 200,
+  "issuedEvents": 1,
+  "revokedEvents": 1,
+  "grantRevision": 2,
+  "subjectRevisionBefore": 2,
+  "subjectRevisionAfter": 4,
+  "invalidTtlBlocked": true,
+  "emptyReasonBlocked": true,
+  "requestAuditCorrelation": "exact",
+  "desktopCaptureVerdict": "FAIL"
+}

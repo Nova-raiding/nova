@@ -1,0 +1,87 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。\n创意点：可用 10000；本次预估 1；已消耗 0；结算 authorized"
+    }
+  ],
+  "structuredContent": {
+    "job_id": "imggen_905cb21c-ed66-482c-b24a-5cf821b17988",
+    "product_id": "prod_jd_local_36420d95d30979e86b7a",
+    "unbound_candidate": true,
+    "candidate_status": "未绑定商品、仅候选、不可发布",
+    "creative_points": {
+      "balance_state": "known",
+      "available_points": 10000,
+      "quoted_points": 1,
+      "reserved_points": 0,
+      "settled_points": 0,
+      "consumed_points": 0,
+      "customer_charge_points": 0,
+      "settlement": "included_quota",
+      "settlement_status": "authorized",
+      "access_revision": "1",
+      "rate_card_version": "fixture-local-v1:v1:fixture-local",
+      "authoritative": true
+    },
+    "execution": {
+      "mode": "durable",
+      "state": "queued",
+      "provider": "configured relay",
+      "source": "server"
+    },
+    "product_protection": {
+      "policy": "protected-product-intent-v1",
+      "allowed": true,
+      "immutableAttributes": [
+        "color",
+        "structure",
+        "material",
+        "logo",
+        "packaging_text",
+        "certification_mark",
+        "accessories"
+      ],
+      "safeModifications": [
+        "background",
+        "lighting",
+        "composition"
+      ],
+      "blockedAttributes": [],
+      "findingCodes": []
+    },
+    "job": {
+      "jobId": "imggen_905cb21c-ed66-482c-b24a-5cf821b17988",
+      "productId": "prod_jd_local_36420d95d30979e86b7a",
+      "taskId": null,
+      "contentVersionId": null,
+      "revision": 1,
+      "state": "queued",
+      "artifactRole": "candidate",
+      "imageMode": "optimize",
+      "direction": "独立单幅商品Banner，每张只有一件参考图中的浅蓝色连帽冲锋衣。保持商品本体不变，只优化背景、光影与构图。浅蓝与白色的简洁摄影棚，柔和侧光，自然落影，画面留白。每张独立呈现，不拼图、不分屏、不加文字、不加人物、不加Logo。",
+      "requestedCount": 4,
+      "skuIds": [],
+      "sourceAssetIds": [
+        "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac"
+      ],
+      "createdAt": "2026-09-07T09:11:25.051Z",
+      "updatedAt": "2026-09-07T09:11:25.051Z",
+      "archiveState": "pending",
+      "binding": "unbound",
+      "candidateCount": 0,
+      "candidates": [],
+      "platformUsage": {
+        "status": "not_submitted",
+        "observed": false
+      },
+      "selectionRequired": true
+    },
+    "next_action": {
+      "type": "get_status",
+      "label": "查询任务状态",
+      "allowed": true
+    }
+  },
+  "isError": false
+}

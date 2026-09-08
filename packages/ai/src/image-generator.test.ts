@@ -39,17 +39,48 @@ describe('image generator', () => {
     await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 2 })).resolves.toEqual(['https://cdn.example/one.png', 'data:image/png;base64,aGVsbG8='])
   })
 
-  it('passes workspace-scoped source asset references to the model relay', async () => {
-    let requestBody: Record<string, unknown> | undefined
+  it('reads multi-image choices and provider request id from the relay metadata envelope', async () => {
     const generator = new OpenAICompatibleImageGenerator({
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
-      fetch: async (_url, init) => {
-        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-        return new Response(JSON.stringify({ id: 'image-test-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
-      },
+      fetch: async () => new Response(JSON.stringify({
+        data: [{ url: 'https://cdn.example/one.png' }],
+        metadata: {
+          request_id: 'provider-request-3',
+          output: { choices: [
+            { message: { content: [{ image: 'https://cdn.example/one.png' }] } },
+            { message: { content: [{ image: 'https://cdn.example/two.png' }] } },
+            { message: { content: [{ image: 'https://cdn.example/three.png' }] } },
+          ] },
+        },
+      }), { status: 200 }),
     })
-    await generator.generate({ productTitle: '外套', direction: '白底', count: 1, mode: 'optimize', sourceAssetRefs: ['asset_source_1'] })
-    expect(requestBody).toMatchObject({ source_asset_refs: ['asset_source_1'], image_mode: 'optimize', prompt: expect.stringContaining('基于提供的已授权商品素材优化') })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 3 })).resolves.toEqual([
+      'https://cdn.example/one.png',
+      'https://cdn.example/two.png',
+      'https://cdn.example/three.png',
+    ])
+  })
+
+  it('sends actual source pixels as multipart files to the edit endpoint', async () => {
+    let endpoint = ''
+    let body: FormData | undefined
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (url, init) => {
+      endpoint = String(url)
+      body = init?.body as FormData
+      expect(new Headers(init?.headers).has('content-type')).toBe(false)
+      return new Response(JSON.stringify({ id: 'image-test-request', usage: { total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+    } })
+    await generator.generate({ productTitle: '外套', direction: '白底', count: 1, mode: 'optimize', sourceAssetRefs: ['asset_source_1'], sourceImages: ['data:image/png;base64,AQID'] })
+    expect(endpoint).toBe('https://relay.example/images/edits')
+    expect(body?.get('prompt')).toEqual(expect.stringContaining('基于提供的已授权商品素材优化'))
+    expect([...new Uint8Array(await (body?.get('image') as Blob).arrayBuffer())]).toEqual([1, 2, 3])
+  })
+
+  it('never downgrades an edit with only internal asset IDs to text-only generation', async () => {
+    let called = false
+    const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', fetch: async () => { called = true; throw new Error('unexpected') } })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底', count: 1, mode: 'optimize', sourceAssetRefs: ['asset_source_1'] })).rejects.toThrow('image optimize requires')
+    expect(called).toBe(false)
   })
 
   it('injects platform DNA and confirmed SKU/marketing context without asking the model to invent copy', async () => {
@@ -182,6 +213,25 @@ describe('image generator', () => {
     expect(rejectionError).toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED', status: 400, providerSucceeded: false, providerOutcome: 'failed', reconciliationRequired: false, retryable: false, providerIdempotencyKey: expect.stringMatching(/^model_provider_[a-f0-9]{64}$/u) })
   })
 
+  it('preserves the relay openai_error body instead of collapsing it into a generic error', async () => {
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async () => new Response(JSON.stringify({ error: { code: 'openai_error', type: 'upstream_capacity', message: 'selected image channel is unavailable' } }), { status: 502 }),
+    })
+    const error = await generator.generate({ productTitle: '外套', direction: '白底', count: 1 }).catch(reason => reason as Record<string, unknown>)
+    expect(error).toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerOutcome: 'unknown', details: { provider_status: 502, provider_error_summary: 'openai_error: upstream_capacity: selected image channel is unavailable' } })
+    expect(String((error as { message?: unknown })?.message)).toContain('openai_error')
+  })
+
+  it('surfaces an application error envelope returned with HTTP 200 as a failed provider request', async () => {
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async () => new Response(JSON.stringify({ error: { code: 'openai_error', message: 'model is not enabled' } }), { status: 200 }),
+    })
+    const error = await generator.generate({ productTitle: '外套', direction: '白底', count: 1 }).catch(reason => reason as Record<string, unknown>)
+    expect(error).toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED', providerOutcome: 'failed', details: { provider_error_summary: 'openai_error: model is not enabled' } })
+  })
+
   it('classifies an explicit provider timeout response as an unknown outcome', async () => {
     const generator = new OpenAICompatibleImageGenerator({
       baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }),
@@ -199,4 +249,27 @@ describe('image generator', () => {
     const error = await generator.generate({ productTitle: '外套', direction: '白底', count: 1, usageContext: { actionId: 'image:request_malformed' } }).catch(reason => reason as Record<string, unknown>)
     expect(error).toMatchObject({ code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', providerSucceeded: true, reconciliationRequired: true })
   })
+})
+
+it('preserves a per-job long page canvas in the real multipart edit request', async () => {
+  const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'image-model', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (_url, init) => {
+    const body = init?.body as FormData
+    expect(body.get('size')).toBe('1024x4096')
+    expect(body.get('prompt')).toContain('完整商品详情页长图')
+    return new Response(JSON.stringify({ id: 'long-page', usage: { total_tokens: 1, cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/long.png' }] }))
+  } })
+  await generator.generate({ productTitle: '冲锋衣', direction: '六章节详情页', count: 1, mode: 'optimize', sourceImages: ['data:image/png;base64,AQID'], visualBrief: { size: '1024x4096' } })
+})
+
+it('sends Qwen native reference messages and long-page parameters through the configured relay', async () => {
+  const source = 'data:image/png;base64,AQID'
+  const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'key', model: 'qwen-image-2.0', usageSink: () => ({ recorded: true, costEvidence: true }), fetch: async (url, init) => {
+    expect(url).toBe('https://relay.example/images/generations')
+    const body = JSON.parse(init?.body as string)
+    expect(body.parameters).toEqual({ size: '1024*4096', n: 1, watermark: false })
+    expect(body.input.messages[0].content[0]).toEqual({ image: source })
+    expect(body.input.messages[0].content[1].text).toContain('完整商品详情页长图')
+    return new Response(JSON.stringify({ id: 'native-long', usage: { cost_cny: 0.01 }, data: [{ url: 'https://cdn.example/long.png' }] }))
+  } })
+  await generator.generate({ productTitle: '冲锋衣', direction: '六章节详情页', count: 1, mode: 'optimize', sourceImages: [source], visualBrief: { size: '1024x4096' } })
 })

@@ -1,0 +1,13 @@
+{
+  "changedFiles": [
+    "apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx"
+  ],
+  "affectedTests": [
+    "apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx",
+    "apps/ops-console/src/components/users/UsersGovernanceWorkspace.test.ts",
+    "apps/ops-console/src/pages/OpsConsoleController.test.ts",
+    "apps/ops-console/src/pages/OpsConsoleController.workbench.test.ts",
+    "apps/ops-console/src/pages/UsersPage.test.tsx"
+  ],
+  "totalDependentsTraversed": 14
+}

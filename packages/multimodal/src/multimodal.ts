@@ -72,7 +72,8 @@ export interface SnapshotRef {
 }
 
 export interface GenerationContext {
-  readonly brand: SnapshotRef
+  readonly brand: SnapshotRef | null
+  readonly candidateOnly?: true
   readonly product: SnapshotRef
   readonly rules: readonly SnapshotRef[]
 }
@@ -220,10 +221,10 @@ export const validateGenerationContext = (value: unknown): ValidationResult<Gene
   if (!isRecord(value)) return failure(issue('INVALID_CONTEXT', '', '生成上下文必须是对象。'))
 
   const issues = [
-    ...validateSnapshotRef(value.brand, 'brand'),
+    ...(value.candidateOnly === true && value.brand === null ? [] : validateSnapshotRef(value.brand, 'brand')),
     ...validateSnapshotRef(value.product, 'product'),
   ]
-  if (!Array.isArray(value.rules) || value.rules.length === 0) {
+  if (!Array.isArray(value.rules) || (value.rules.length === 0 && value.candidateOnly !== true)) {
     issues.push(issue('INVALID_CONTEXT', 'rules', '生成上下文至少需要一个规则快照引用。'))
   } else {
     value.rules.forEach((rule, index) => {

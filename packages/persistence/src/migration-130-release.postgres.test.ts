@@ -20,15 +20,16 @@ describe('persistence migration 130 canonical legacy identity uniqueness', () =>
       await new MigrationRunner(database, await loadMigrations()).run()
       await database.query(`
         INSERT INTO workspaces (id,status) VALUES ('ws_130_a','active'),('ws_130_b','active');
+        INSERT INTO brands (id,workspace_id,name) VALUES ('brand_130_a','ws_130_a','Brand 130 A'),('brand_130_b','ws_130_b','Brand 130 B');
         INSERT INTO products (id,workspace_id,platform,remote_product_id,title,source,data)
-        VALUES ('legacy_130_a','ws_130_a','taobao','remote_130_a','Legacy 130','fixture','{"brandId":"brand_130"}'),
-               ('legacy_130_b','ws_130_b','taobao','remote_130_b','Legacy 130','fixture','{"brandId":"brand_130"}');
+        VALUES ('legacy_130_a','ws_130_a','taobao','remote_130_a','Legacy 130','fixture','{"brandId":"brand_130_a"}'),
+               ('legacy_130_b','ws_130_b','taobao','remote_130_b','Legacy 130','fixture','{"brandId":"brand_130_b"}');
         INSERT INTO canonical_products (id,workspace_id,brand_id,title,legacy_product_id)
-        VALUES ('canonical_130_a','ws_130_a','brand_130','Canonical 130 A','legacy_130_a');
+        VALUES ('canonical_130_a','ws_130_a','brand_130_a','Canonical 130 A','legacy_130_a');
       `)
-      await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title,legacy_product_id) VALUES ('canonical_130_duplicate','ws_130_a','brand_130','Duplicate','legacy_130_a')`)).rejects.toMatchObject({ code: '23505' })
-      await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title,legacy_product_id) VALUES ('canonical_130_other_workspace','ws_130_b','brand_130','Canonical 130 B','legacy_130_b')`)).resolves.toMatchObject({ rowCount: 1 })
-      await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title) VALUES ('canonical_130_native_a','ws_130_a','brand_130','Native A'),('canonical_130_native_b','ws_130_a','brand_130','Native B')`)).resolves.toMatchObject({ rowCount: 2 })
+      await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title,legacy_product_id) VALUES ('canonical_130_duplicate','ws_130_a','brand_130_a','Duplicate','legacy_130_a')`)).rejects.toMatchObject({ code: '23505' })
+      await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title,legacy_product_id) VALUES ('canonical_130_other_workspace','ws_130_b','brand_130_b','Canonical 130 B','legacy_130_b')`)).resolves.toMatchObject({ rowCount: 1 })
+      await expect(database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title) VALUES ('canonical_130_native_a','ws_130_a','brand_130_a','Native A'),('canonical_130_native_b','ws_130_a','brand_130_a','Native B')`)).resolves.toMatchObject({ rowCount: 2 })
     } finally {
       await database?.end()
       await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])

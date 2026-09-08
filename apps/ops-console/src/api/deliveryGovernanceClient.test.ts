@@ -5,6 +5,14 @@ const empty = {
   generatedAt: "2026-08-29T00:00:00.000Z",
   status: "unverified",
   dimensions: { mapping: "unverified", bundles: "unverified", authenticity: "unverified" },
+  gate: {
+    status: "unverified",
+    authenticityGate: { status: "unverified", reason: "缺少" },
+    realRender: { status: "unverified", reason: "缺少" },
+    ocr: { status: "unverified", reason: "缺少" },
+    humanAttestation: { status: "unverified", reason: "缺少" },
+    bundleHash: { status: "unverified", reason: "缺少" },
+  },
   mappingPreflights: [], bundles: [], authenticity: [],
 };
 

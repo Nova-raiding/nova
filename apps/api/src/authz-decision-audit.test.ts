@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { authorizationDecisionAuditContextIsValid, authorizationDecisionRequiresAudit, authorizationDecisionAuditEvidence } from './server.js'
-import type { AuthorizationDecision } from '../../../packages/contracts/src/authz.js'
+import { AUTHZ_POLICY_VERSION, type AuthorizationDecision } from '../../../packages/contracts/src/authz.js'
 
 const enforcedDeniedDecision: AuthorizationDecision = {
-  decision_id: 'decision_audit_context', policy_version: '2026-08-31.v2', method: 'ops.member.upsert',
+  decision_id: 'decision_audit_context', policy_version: AUTHZ_POLICY_VERSION, method: 'ops.member.upsert',
   capability: 'workspace.member.manage', workbench: 'workspace',
   scope: { required: 'workspace', resolved: [] }, mode: 'enforce', enforced: true,
   authorized: false, allowed: false, result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING', explicit_deny: false,
@@ -37,7 +37,7 @@ describe('authorization decision audit evidence', () => {
 
   it('persists reconstructible scope and obligation evidence without changing the decision', () => {
     const decision: AuthorizationDecision = {
-      decision_id: 'decision_audit_1', policy_version: '2026-08-31.v2', method: 'ops.member.upsert',
+      decision_id: 'decision_audit_1', policy_version: AUTHZ_POLICY_VERSION, method: 'ops.member.upsert',
       capability: 'workspace.member.manage', workbench: 'workspace',
       scope: { required: 'workspace', resource_id: 'ws_a', resolved: [{ type: 'workspace', ids: ['ws_a'] }, { type: 'brand', ids: ['brand_a'] }] },
       mode: 'enforce', enforced: true, authorized: false, allowed: false, result: 'deny',
@@ -46,7 +46,7 @@ describe('authorization decision audit evidence', () => {
     }
 
     expect(authorizationDecisionAuditEvidence(decision, { requestId: 'req_a', traceId: 'trace_a' })).toEqual({
-      decision_id: 'decision_audit_1', request_id: 'req_a', trace_id: 'trace_a', policy_version: '2026-08-31.v2',
+      decision_id: 'decision_audit_1', request_id: 'req_a', trace_id: 'trace_a', policy_version: AUTHZ_POLICY_VERSION,
       workbench: 'workspace', capability: 'workspace.member.manage', scope: 'workspace', resource_id: 'ws_a',
       resolved_scopes: [{ type: 'workspace', ids: ['ws_a'] }, { type: 'brand', ids: ['brand_a'] }],
       result: 'deny', reason_code: 'AUTHZ_OBLIGATION_REQUIRED', explicit_deny: false,
@@ -58,7 +58,7 @@ describe('authorization decision audit evidence', () => {
   it('copies arrays so audit serialization cannot mutate the authorization decision', () => {
     const scopes = [{ type: 'workspace' as const, ids: ['ws_a'] }]
     const decision: AuthorizationDecision = {
-      decision_id: 'decision_audit_2', policy_version: '2026-08-31.v2', method: 'ops.member.upsert' as const,
+      decision_id: 'decision_audit_2', policy_version: AUTHZ_POLICY_VERSION, method: 'ops.member.upsert' as const,
       capability: 'workspace.member.manage' as const, workbench: 'workspace' as const,
       scope: { required: 'workspace' as const, resolved: scopes }, mode: 'enforce' as const, enforced: true,
       authorized: true, allowed: true, result: 'allow' as const, reason_code: 'AUTHZ_ALLOWED' as const, explicit_deny: false,

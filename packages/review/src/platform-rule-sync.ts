@@ -42,10 +42,12 @@ export function platformRuleSyncStatus(
   options: { now?: string; intervalHours?: number; manifestUrl?: string; signingSecretConfigured?: boolean } = {},
 ): PlatformRuleSyncStatus[] {
   const now = Date.parse(options.now ?? new Date().toISOString())
-  const intervalHours = Number.isFinite(options.intervalHours) && (options.intervalHours ?? 0) > 0 ? options.intervalHours! : 24
+  const intervalHours = Number.isFinite(options.intervalHours) && (options.intervalHours ?? 0) > 0 ? options.intervalHours! : 168
   const configured = Boolean(options.manifestUrl?.trim()) && options.signingSecretConfigured === true
   return PLATFORM_RULE_SOURCES.map(source => {
-    const platformRules = rules.filter(rule => rule.scope === 'platform' && rule.targetId === source.platform)
+    // A manual:// row is a fixture or human draft. It must never make a
+    // platform look synced; only a signed-manifest source is eligible here.
+    const platformRules = rules.filter(rule => rule.status === 'active' && rule.scope === 'platform' && rule.targetId === source.platform && !rule.source.reference.startsWith('manual://'))
     const latest = [...platformRules].sort((a, b) => Date.parse(b.source.checkedAt) - Date.parse(a.source.checkedAt))[0]
     const checkedAt = validDate(latest?.source.checkedAt)
     const ageHours = checkedAt ? Math.max(0, (now - Date.parse(checkedAt)) / 3_600_000) : null

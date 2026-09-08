@@ -68,10 +68,10 @@ describe('MCP surface coverage', () => {
     const installedReadme = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/README.md', import.meta.url), 'utf8')
 
     expect(installedReadme).toBe(pluginReadme)
-    expect(merchantMethodCount).toBe(140)
-    expect(rootReadme).toContain(`MCP 契约注册表为 ${MCP_METHODS.length} 个唯一方法，商家插件运行态为 140 个 MCP 工具`)
-    expect(status).toContain(`源码为 ${MCP_METHODS.length} 个唯一 MCP 方法、140 个商家 bridge 工具`)
-    expect(pluginReadme).toContain('tools/list` 为 140 个 MCP 工具')
+    expect(merchantMethodCount).toBe(143)
+    expect(rootReadme).toContain(`MCP 契约注册表为 ${MCP_METHODS.length} 个唯一方法，商家插件运行态为 143 个 MCP 工具`)
+    expect(status).toContain(`源码为 ${MCP_METHODS.length} 个唯一 MCP 方法、143 个商家 bridge 工具`)
+    expect(pluginReadme).toContain('tools/list` 为 143 个 MCP 工具')
   })
 
   it('keeps the 23 domain methods and four audit-center reads on the declared surface', () => {
@@ -81,7 +81,7 @@ describe('MCP surface coverage', () => {
       || method.startsWith('ops.feature-flag')
       || method.startsWith('ops.finance.'),
     )
-    expect(opsDomainMethods).toHaveLength(26)
+    expect(opsDomainMethods).toHaveLength(25)
     expect(MCP_METHODS.filter(method => method.startsWith('ops.audit.'))).toEqual([
       'ops.audit.list', 'ops.audit.platform.list', 'ops.audit.detail', 'ops.audit.export',
     ])

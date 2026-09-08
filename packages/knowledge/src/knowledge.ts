@@ -105,6 +105,32 @@ export interface AssetQuery {
   tags?: string[]
 }
 
+export type BrandPreferenceStatus = 'draft' | 'active' | 'archived'
+
+/** Merchant-authored brand voice and style guidance, isolated per workspace. */
+export interface BrandPreference {
+  id: string
+  workspaceId: string
+  preferences: Record<string, unknown>
+  version: string
+  status: BrandPreferenceStatus
+  source?: string
+  revision: number
+  updatedBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BrandPreferenceUpdateInput {
+  workspaceId: string
+  preferences: Record<string, unknown>
+  version: string
+  updatedBy: string
+  status?: BrandPreferenceStatus
+  source?: string
+  expectedRevision?: number
+}
+
 export type FeedbackKind = 'feedback' | 'platform_rejection'
 
 export interface FeedbackRecord {
@@ -284,6 +310,13 @@ const assertAssetEnums = (input: { kind?: string; approvalStatus?: string; right
   if (input.rightsStatus !== undefined && !['unknown', 'cleared', 'restricted'].includes(input.rightsStatus)) throw new KnowledgeError('ASSET_RIGHTS_STATUS_INVALID')
 }
 
+const assertBrandPreference = (input: { preferences: Record<string, unknown>; version: string; status?: string }): void => {
+  if (!input.preferences || typeof input.preferences !== 'object' || Array.isArray(input.preferences)) throw new KnowledgeError('BRAND_PREFERENCE_INVALID')
+  if (JSON.stringify(input.preferences).length > 20_000) throw new KnowledgeError('BRAND_PREFERENCE_TOO_LARGE')
+  requiredText(input.version, 'BRAND_PREFERENCE_VERSION_REQUIRED')
+  if (input.status !== undefined && !['draft', 'active', 'archived'].includes(input.status)) throw new KnowledgeError('BRAND_PREFERENCE_STATUS_INVALID')
+}
+
 const assertRuleEnums = (input: { scope?: string; status?: string; severity?: string; action?: string; source?: { kind?: string } }): void => {
   if (input.scope !== undefined && !['global', 'platform', 'category', 'brand', 'store', 'campaign'].includes(input.scope)) throw new KnowledgeError('RULE_SCOPE_INVALID')
   if (input.status !== undefined && !['draft', 'active', 'inactive', 'archived', 'expired'].includes(input.status)) throw new KnowledgeError('RULE_STATUS_INVALID')
@@ -371,6 +404,7 @@ export class KnowledgeModule {
   private sequence = 0
   private readonly rules = new Map<string, RuleEntry>()
   private readonly assets = new Map<string, AssetEntry>()
+  private readonly brandPreferences = new Map<string, BrandPreference>()
   private readonly feedback = new Map<string, FeedbackRecord>()
   private readonly suggestions = new Map<string, LearningSuggestion>()
   private readonly competitors = new Map<string, CompetitorAnalysis>()
@@ -392,7 +426,7 @@ export class KnowledgeModule {
   /** Rebuild knowledge state from append-only events after an API restart. */
   hydrate(events: readonly KnowledgeEvent[]): void {
     for (const event of events) {
-      const known = new Set(['knowledge.rule.created', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
+      const known = new Set(['knowledge.rule.created', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.brand.preference.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
       if (!known.has(event.eventType)) throw new KnowledgeError('KNOWLEDGE_EVENT_UNKNOWN', `unsupported knowledge event: ${event.eventType}`)
       const fingerprint = stableSerialize(event)
       const eventKey = event.id ? `event:${event.id}` : undefined
@@ -425,6 +459,7 @@ export class KnowledgeModule {
       }
       if (event.eventType === 'knowledge.rule.created' && id) this.rules.set(id, clone(payload as unknown as RuleEntry))
       if ((event.eventType === 'knowledge.asset.created' || event.eventType === 'knowledge.asset.updated') && id) this.assets.set(id, clone(payload as unknown as AssetEntry))
+      if (event.eventType === 'knowledge.brand.preference.updated' && id) this.brandPreferences.set(String((payload as Record<string, unknown>).workspaceId), clone(payload as unknown as BrandPreference))
       if (event.eventType === 'knowledge.competitor.created' && id) this.competitors.set(id, clone(payload as unknown as CompetitorAnalysis))
       if (event.eventType === 'knowledge.feedback.recorded' && id) {
         const feedback = clone(payload as unknown as FeedbackRecord)
@@ -603,6 +638,28 @@ export class KnowledgeModule {
   }
 
   listAssets(query: AssetQuery): AssetEntry[] { return this.queryAssets(query) }
+
+  getBrandPreference(workspaceId: string): BrandPreference | undefined {
+    const scope = requiredText(workspaceId, 'WORKSPACE_REQUIRED')
+    const preference = this.brandPreferences.get(scope)
+    return preference ? clone(preference) : undefined
+  }
+
+  updateBrandPreference(input: BrandPreferenceUpdateInput): BrandPreference {
+    const workspaceId = requiredText(input.workspaceId, 'WORKSPACE_REQUIRED')
+    const updatedBy = requiredText(input.updatedBy, 'UPDATED_BY_REQUIRED')
+    assertBrandPreference(input)
+    const current = this.brandPreferences.get(workspaceId)
+    if (input.expectedRevision !== undefined && (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1 || input.expectedRevision !== (current?.revision ?? 0))) throw new KnowledgeError('VERSION_CONFLICT')
+    const timestamp = this.now()
+    const next: BrandPreference = {
+      id: current?.id ?? this.nextId('brand-preference'), workspaceId, preferences: clone(input.preferences), version: input.version.trim(), status: input.status ?? current?.status ?? 'draft',
+      ...(input.source?.trim() ? { source: input.source.trim() } : current?.source ? { source: current.source } : {}), revision: (current?.revision ?? 0) + 1, updatedBy,
+      createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp,
+    }
+    this.brandPreferences.set(workspaceId, next)
+    return clone(next)
+  }
 
   recordFeedback(input: FeedbackCreateInput): FeedbackRecord {
     const record: FeedbackRecord = {

@@ -107,7 +107,7 @@ data:
   # a real request-id endpoint; outcome_unknown remains fail-closed.
   IMAGE_STATUS_PATH: ""
   IMAGE_EDIT_PATH: /images/generations
-  IMAGE_TIMEOUT_MS: "300000"
+  IMAGE_TIMEOUT_MS: "120000"
   IMAGE_EDIT_TIMEOUT_MS: "300000"
   IMAGE_EDIT_MODEL: merchant-main-image-edit
   OCR_MODEL: merchant-vision-ocr

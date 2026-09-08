@@ -1,0 +1,90 @@
+{
+  "version": "1.5.0",
+  "mode": "installed programmatic extraction/resolution API; original index untouched",
+  "root": "/Users/lixiaomei/Desktop/code/codexSkills",
+  "dbPath": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/codegraph/clean-codegraph.db",
+  "config": {
+    "exclude": [
+      "artifacts/",
+      "**/dist/**",
+      "**/src/*.js",
+      "**/src/*.d.ts",
+      "**/src/*.map"
+    ]
+  },
+  "indexed": {
+    "success": true,
+    "filesIndexed": 1153,
+    "filesSkipped": 1,
+    "filesErrored": 0,
+    "filesDiscovered": 1154,
+    "nodesCreated": 16114,
+    "edgesCreated": 16243,
+    "errors": [
+      {
+        "message": "File exceeds max size (1583824 > 1048576)",
+        "filePath": "apps/api/src/server.ts",
+        "severity": "warning",
+        "code": "size_exceeded"
+      }
+    ],
+    "durationMs": 6631
+  },
+  "resolution": {
+    "resolved": [],
+    "unresolved": [],
+    "stats": {
+      "total": 135615,
+      "resolved": 46774,
+      "unresolved": 88841,
+      "byMethod": {
+        "exact-match": 37959,
+        "qualified-name": 1658,
+        "import": 924,
+        "framework": 92,
+        "function-ref": 222,
+        "instance-method": 5907,
+        "fuzzy": 9,
+        "file-path": 3,
+        "callback-synthesis": 258
+      }
+    }
+  },
+  "stats": {
+    "nodeCount": 16114,
+    "edgeCount": 61412,
+    "fileCount": 1153,
+    "nodesByKind": {
+      "class": 341,
+      "constant": 1556,
+      "file": 1127,
+      "function": 3312,
+      "import": 3395,
+      "interface": 1146,
+      "method": 1570,
+      "property": 2701,
+      "type_alias": 822,
+      "variable": 144
+    },
+    "edgesByKind": {
+      "calls": 28704,
+      "contains": 14987,
+      "implements": 157,
+      "imports": 6092,
+      "instantiates": 3202,
+      "references": 8270
+    },
+    "filesByLanguage": {
+      "javascript": 28,
+      "ruby": 4,
+      "tsx": 155,
+      "typescript": 940,
+      "yaml": 26
+    },
+    "dbSizeBytes": 0,
+    "lastUpdated": 1788769883477
+  },
+  "artifactFiles": 0,
+  "serverIndexed": false,
+  "dbBytes": 89927680
+}

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CAPACITY_WORKLOAD_READ_PATH, LOCAL_CAPACITY_REQUIRED_SERVICES, buildCapacityEvidenceDocument, isExpectedCapacityStatus, readCapacityWorkloadConfig, selectCapacityAccount, validateLocalCapacityEvidence } from './capacity-workload.js'
 import { validateCapacityEvidence } from './capacity-evidence-gate.js'
 
 describe('capacity workload contract', () => {
+  afterEach(() => vi.unstubAllEnvs())
   it('uses an onboarding-exempt workspace-scoped read path for baseline traffic', () => {
     expect(CAPACITY_WORKLOAD_READ_PATH).toBe('/v1/platform-accounts')
   })
@@ -32,6 +33,9 @@ describe('capacity workload contract', () => {
   })
 
   it('emits schema-valid local evidence without promoting it to a cloud gate', () => {
+    // This assertion is about explicit evidence metadata, not npm's ambient
+    // lifecycle environment (which the safe default launcher strips).
+    vi.stubEnv('CAPACITY_WORKLOAD_SOFTWARE_VERSION', 'capacity-test-release')
     const config = readCapacityWorkloadConfig({ CAPACITY_WORKLOAD_URL: 'http://127.0.0.1:8787', CAPACITY_WORKLOAD_PROFILE: 'pilot_50', CAPACITY_WORKLOAD_MODE: 'compose' })
     const report = buildCapacityEvidenceDocument(config, {
       startedAt: '2026-09-01T00:00:00Z', endedAt: '2026-09-01T00:01:00Z', acceptedJobs: 0,
@@ -43,7 +47,7 @@ describe('capacity workload contract', () => {
     })
 
     expect(validateCapacityEvidence(report, { requireEvidenceBinding: true })).toEqual([])
-    expect(report).toMatchObject({ environment: 'test', cloud_gate: false, platform_mock_ratio: 1, model_mock_ratio: 1, status: 'pass', software_version: '0.1.1', data_version: 'local-fixture-v1' })
+    expect(report).toMatchObject({ environment: 'test', cloud_gate: false, platform_mock_ratio: 1, model_mock_ratio: 1, status: 'pass', software_version: 'capacity-test-release', data_version: 'local-fixture-v1' })
     expect(validateLocalCapacityEvidence(report)).toEqual([])
   })
 

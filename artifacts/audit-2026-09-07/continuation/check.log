@@ -1,0 +1,168 @@
+
+> merchant-marketing-codex@0.1.1 check
+> npm run typecheck && npm test && npm run test:ops-console && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio
+
+
+> merchant-marketing-codex@0.1.1 typecheck
+> tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+
+> merchant-marketing-codex@0.1.1 test
+> vitest run --no-file-parallelism
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ❯ .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts (102 tests | 2 failed) 12477ms
+     × keeps the standalone recovery and disabled surfaces aligned with the shared exact registry 79ms
+     × exposes standard discovery and forwards the scoped API envelope 84ms
+ ❯ apps/plugin/mcp/bridge.test.ts (102 tests | 2 failed) 16068ms
+     × keeps the standalone recovery and disabled surfaces aligned with the shared exact registry 88ms
+     × exposes standard discovery and forwards the scoped API envelope 127ms
+container source manifest failed: required worker input is missing: apps/worker
+container source manifest failed: symbolic links are forbidden in source inputs: apps/api/src/package-link.json
+container source manifest failed: required root build metadata is missing: package-lock.json
+container source manifest failed: manifest paths are not strictly sorted
+container source manifest failed: manifest contains an unsafe path: "../escape.ts"
+ ❯ packages/ai/src/video-generator.test.ts (22 tests | 1 failed) 535ms
+     × transmits source pixels using the configured image-to-video model 32ms
+ ❯ packages/ai/src/relay-pricing.test.ts (10 tests | 1 failed) 117ms
+   × uses explicit resolution pricing instead of an overflowing fallback or stale override 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/plugin/mcp/bridge.test.ts > Codex stdio MCP bridge > keeps the standalone recovery and disabled surfaces aligned with the shared exact registry
+AssertionError: expected [ 'merchant.start', …(143) ] to not include 'multimodal.video.request'
+ ❯ apps/plugin/mcp/bridge.test.ts:135:69
+    133|       const names = (await nextLine(child.stdout)).result.tools.map((t…
+    134|       expect(names).toEqual(expect.arrayContaining(enabledRecovery))
+    135|       for (const operation of disabledCommercial) expect(names).not.to…
+       |                                                                     ^
+    136|       for (const [index, operation] of disabledCommercial.entries()) {
+    137|         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: inde…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  apps/plugin/mcp/bridge.test.ts > Codex stdio MCP bridge > exposes standard discovery and forwards the scoped API envelope
+AssertionError: expected [ 'asset.facts.confirm', …(143) ] to deeply equal [ 'asset.facts.confirm', …(142) ]
+
+- Expected
++ Received
+
+@@ -90,10 +90,11 @@
+    "knowledge.rule.list",
+    "merchant.first_value",
+    "merchant.start",
+    "multimodal.image.edit",
+    "multimodal.video.get",
++   "multimodal.video.request",
+    "platform.connect",
+    "platform.mapping.preflight",
+    "platform.media.spec.approve",
+    "platform.media.spec.create",
+    "platform.media.spec.expire",
+
+ ❯ apps/plugin/mcp/bridge.test.ts:1049:85
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  packages/ai/src/relay-pricing.test.ts > uses explicit resolution pricing instead of an overflowing fallback or stale override
+AssertionError: expected { costCny: 2.254, metadata: { …(14) } } to match object { costCny: 3.0052, metadata: { …(2) } }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "costCny": 3.0052,
++   "costCny": 2.254,
+    "metadata": {
+-     "formula_version": "relay-video-resolution-v1",
+-     "rounded_quota": 220000,
++     "formula_version": "relay-video-cny-per-second-v1",
++     "rounded_quota": 165007,
+    },
+  }
+
+ ❯ packages/ai/src/relay-pricing.test.ts:105:17
+    103|   const usage = { modality: 'video' as const, model: 'video-i2v', obse…
+    104|   const quote = await value.quote(usage)
+    105|   expect(quote).toMatchObject({ costCny: 3.0052, metadata: { rounded_q…
+       |                 ^
+    106|   expect(quote.metadata.video_price_cny_per_second).toBeUndefined()
+    107|   await expect(value.quote({ ...usage, metadata: { duration_seconds: 5…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  packages/ai/src/video-generator.test.ts > reference-conditioned video > transmits source pixels using the configured image-to-video model
+AssertionError: expected { model: 'image-model', …(3) } to match object { model: 'image-model', …(4) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "duration": 5,
+    "image": "data:image/png;base64,AQID",
+-   "metadata": {
+-     "parameters": {
+-       "resolution": "1080P",
+-     },
+-   },
+    "model": "image-model",
+-   "size": "1080P",
+  }
+
+ ❯ packages/ai/src/video-generator.test.ts:218:21
+    216|     } })
+    217|     await generator.generate({ prompt: '轻微推近', output: 'rendering', co…
+    218|     expect(payload).toMatchObject({ model: 'image-model', image: 'data…
+       |                     ^
+    219|   })
+    220|   it('does not silently use text-to-video when reference capability is…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts > Codex stdio MCP bridge > keeps the standalone recovery and disabled surfaces aligned with the shared exact registry
+AssertionError: expected [ 'merchant.start', …(143) ] to not include 'multimodal.video.request'
+ ❯ .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts:135:69
+    133|       const names = (await nextLine(child.stdout)).result.tools.map((t…
+    134|       expect(names).toEqual(expect.arrayContaining(enabledRecovery))
+    135|       for (const operation of disabledCommercial) expect(names).not.to…
+       |                                                                     ^
+    136|       for (const [index, operation] of disabledCommercial.entries()) {
+    137|         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: inde…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts > Codex stdio MCP bridge > exposes standard discovery and forwards the scoped API envelope
+AssertionError: expected [ 'asset.facts.confirm', …(143) ] to deeply equal [ 'asset.facts.confirm', …(142) ]
+
+- Expected
++ Received
+
+@@ -90,10 +90,11 @@
+    "knowledge.rule.list",
+    "merchant.first_value",
+    "merchant.start",
+    "multimodal.image.edit",
+    "multimodal.video.get",
++   "multimodal.video.request",
+    "platform.connect",
+    "platform.mapping.preflight",
+    "platform.media.spec.approve",
+    "platform.media.spec.create",
+    "platform.media.spec.expire",
+
+ ❯ .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts:1049:85
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  4 failed | 599 passed | 44 skipped (647)
+      Tests  6 failed | 4192 passed | 69 skipped (4267)
+   Start at  17:31:53
+   Duration  499.32s (transform 10.77s, setup 0ms, import 190.90s, tests 183.80s, environment 54ms)
+

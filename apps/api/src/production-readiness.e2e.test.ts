@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { productionReadinessDiagnostics, route } from './server.js'
+import { productionCommercialReadiness, productionReadinessDiagnostics, route, validateCapacityEvidenceRuntime } from './server.js'
+import { MemoryCommercialCatalogRepository } from '../../../packages/persistence/src/commercial-catalog-repository.js'
 
 type Envelope = {
   data: unknown
@@ -73,6 +74,9 @@ const productionEnvironment = (): NodeJS.ProcessEnv => ({
   BACKUP_RETENTION_DAYS: '30',
   LIFECYCLE_POLICY_REF: 'policy://production/assets-v1',
   ALERT_CHANNEL_SECRET_REF: 'secret://production/alerts',
+  OPS_ALERT_WEBHOOK_URL: 'https://alerts.example.test/merchant',
+  OPS_ALERT_WEBHOOK_ALLOWED_HOSTS: 'alerts.example.test',
+  OPS_ALERT_WEBHOOK_SECRET: 'production-alert-webhook-secret',
   RELEASE_ID: 'release-0.1.1',
   RELEASE_GIT_SHA: 'a'.repeat(40),
   RELEASE_MANIFEST_SHA256: 'b'.repeat(64),
@@ -103,6 +107,39 @@ afterEach(async () => {
 })
 
 describe('production readiness fail-closed', () => {
+  it('rejects stale or differently-bound capacity evidence at runtime', () => {
+    const base = {
+      schema_version: '1', status: 'pass', cloud_gate: true, environment: 'preproduction', release_id: 'release-other',
+      platform_mock_ratio: 0, model_mock_ratio: 0, profile: 'pilot_50', sign_off: { verified_by: 'qa', verified_at: '2026-09-01T00:00:00Z' },
+      expires_at: '2026-09-02T00:00:00Z', metrics: { workspaces: 50 },
+    }
+    expect(validateCapacityEvidenceRuntime(base, { expectedReleaseId: 'release-current', now: new Date('2026-09-03T00:00:00Z') })).toEqual(expect.arrayContaining([
+      'release_id must match RELEASE_ID',
+      'capacity evidence is expired',
+    ]))
+  })
+
+  it('requires persistence-backed executable catalog, approved rates, and an enabled charged registry operation', async () => {
+    const blocked = await productionCommercialReadiness(new MemoryCommercialCatalogRepository([], []))
+    expect(blocked.ready).toBe(false)
+    expect(blocked.reasons).toEqual([
+      'commercial_executable_catalog_missing',
+      'commercial_approved_rate_missing',
+    ])
+
+    const executable = await productionCommercialReadiness(new MemoryCommercialCatalogRepository([{
+      id: 'sku-1', code: 'basic', kind: 'monthly', visibility: 'public', requiredCapability: null,
+      versionId: 'sku-v1', version: 1, lifecycle: 'approved', executable: true, priceFen: 100,
+      currency: 'CNY', priceMode: 'fixed', durationDays: 30, payload: {}, checksum: 'sku-checksum',
+      effectiveAt: new Date().toISOString(), benefits: [],
+    }], [{
+      rateCardId: 'rate-v1', version: 1, actionCode: 'image.generate.standard', unit: 'image',
+      integerPoints: 1, checksum: 'rate-checksum', effectiveAt: new Date().toISOString(),
+    }]))
+    expect(executable.ready).toBe(true)
+    expect(executable.reasons).toEqual([])
+  })
+
   it('requires every critical production gate without leaking configured secrets', () => {
     const ready = productionReadinessDiagnostics(productionEnvironment())
     expect(ready).toMatchObject({
@@ -116,6 +153,7 @@ describe('production readiness fail-closed', () => {
         payment: { ready: true },
         rule_sync: { ready: true },
         cost: { ready: true },
+        alerts: { ready: true },
         release_metadata: { ready: true },
       },
     })
@@ -136,6 +174,9 @@ describe('production readiness fail-closed', () => {
       { gate: 'rule_sync', key: 'PLATFORM_RULE_SYNC_SIGNING_SECRET' },
       { gate: 'cost', key: 'MODEL_DAILY_CNY_LIMIT' },
       { gate: 'cost', key: 'MODEL_MAX_TASK_COST_CNY' },
+      { gate: 'alerts', key: 'OPS_ALERT_WEBHOOK_URL' },
+      { gate: 'alerts', key: 'OPS_ALERT_WEBHOOK_ALLOWED_HOSTS' },
+      { gate: 'alerts', key: 'OPS_ALERT_WEBHOOK_SECRET' },
       { gate: 'release_metadata', key: 'RELEASE_MANIFEST_SHA256' },
     ]
     for (const { gate, key } of cases) {
@@ -223,6 +264,8 @@ describe('production readiness fail-closed', () => {
         cost: { ready: false },
         release_metadata: { ready: false },
       },
+      commercial: { ready: false },
+      runtime_setup: { ready: false },
     })
 
     const livenessResponse = await fetch(`${running.baseUrl}/livez`)

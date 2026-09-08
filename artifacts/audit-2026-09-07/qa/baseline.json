@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-07",
+  "url": "http://127.0.0.1:18082",
+  "status": "DONE_WITH_CONCERNS",
+  "healthScore": null,
+  "healthScoreReason": "Bounded read-only desktop exploration; no full workflow or release acceptance claim.",
+  "uniquePagePaths": 8,
+  "screenshots": 13,
+  "viewports": ["1440x900", "1280x800"],
+  "issues": [
+    {"id":"DESKTOP-001","title":"不存在的任务 ID 筛选变成全页数据加载错误","severity":"medium","category":"ux","reproduced":true}
+  ],
+  "observations": [
+    {"id":"DESKTOP-002","title":"侧栏导航自动改变工作台","classification":"ux_observation","reproduced":true},
+    {"title":"一次 MCP 502 后权限 gate 关闭且显式重试恢复","classification":"transient_runtime_observation","reproduced":false}
+  ]
+}

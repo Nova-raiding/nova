@@ -1,0 +1,34 @@
+{
+  "startedAt": "2026-09-07T12:04:00.932Z",
+  "finishedAt": "2026-09-07T12:04:02.991Z",
+  "exitCode": 0,
+  "signal": null,
+  "storageCleaned": true,
+  "evidenceLevel": "E1 real HTTP, controlled memory, fake connectors, synthetic rates",
+  "environmentKeys": [
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "COLORTERM",
+    "NO_COLOR",
+    "USER",
+    "LOGNAME",
+    "NODE_ENV",
+    "ASSET_STORAGE_ROOT",
+    "MERCHANT_TEST_APPROVED_RATES"
+  ],
+  "summary": {
+    "profile": "pilot_50_http_fake",
+    "transport": "real_http",
+    "connectorMode": "fake",
+    "cloudGate": false,
+    "workspaces": 50,
+    "requests": 400,
+    "duplicatePublishRequests": 100,
+    "acceptedPublishJobs": 100,
+    "uniquePublishJobs": 50,
+    "duplicateWrites": 50,
+    "errors": []
+  }
+}

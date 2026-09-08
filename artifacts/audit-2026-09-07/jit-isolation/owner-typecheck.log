@@ -1,0 +1,7 @@
+
+> merchant-marketing-codex@0.1.1 typecheck
+> tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+tests/isolated-postgres-entrypoint.test.ts(2,46): error TS2307: Cannot find module '../vitest.postgres.config.js' or its corresponding type declarations.
+tests/isolated-postgres-entrypoint.test.ts(3,163): error TS2307: Cannot find module '../scripts/run-isolated-postgres-tests.js' or its corresponding type declarations.
+tests/isolated-postgres-entrypoint.test.ts(18,47): error TS7006: Parameter 'file' implicitly has an 'any' type.

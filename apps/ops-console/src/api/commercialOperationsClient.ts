@@ -10,6 +10,15 @@ export const commercialOperationsMethods = {
   rates: "ops.commercial.rate-cards.list",
   services: "ops.commercial.service-fulfillment.list",
   timeline: "ops.commercial.timeline.list",
+  readiness: "ops.commercial.readiness.report",
+  privateTrialEligibilityCreate: "ops.commercial.private-trial.eligibility.create",
+  privateTrialEligibilityApprove: "ops.commercial.private-trial.eligibility.approve",
+  privateTrialValidationComplete: "ops.commercial.private-trial.validation.complete",
+  privateTrialCreditPrepare: "ops.commercial.private-trial.credit.prepare",
+  privateTrialCreditApprove: "ops.commercial.private-trial.credit.approve",
+  privateTrialConversionCreate: "ops.commercial.private-trial.conversion.create",
+  privateTrialPaymentVerify: "ops.commercial.private-trial.payment.verify",
+  orderPaymentVerify: "ops.commercial.order.payment.verify",
 } as const;
 
 const operationId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -200,6 +209,28 @@ export interface CommercialTimelineEvent {
   evidence: RecordValue;
 }
 
+export interface CommercialReadinessBlocker {
+  code: string;
+  severity: string;
+  scope: string;
+  detail: string;
+  nextAction: string;
+}
+
+export interface CommercialReadinessReport {
+  ready: boolean;
+  environment: string;
+  message: string;
+  generatedAt: string | null;
+  blockers: CommercialReadinessBlocker[];
+  capabilities: RecordValue;
+  catalog: RecordValue;
+  policies: RecordValue;
+  registry: Array<{ operation: string; enabled: boolean }>;
+  provider: RecordValue;
+  creativePoints: RecordValue;
+}
+
 export interface CommercialPage<T> { items: T[]; total: number }
 
 export function parseCommercialAccessSummary(value: unknown): CommercialAccessSummary {
@@ -355,6 +386,38 @@ export function parseCommercialTimeline(value: unknown): CommercialPage<Commerci
   })) };
 }
 
+export function parseCommercialReadiness(value: unknown): CommercialReadinessReport {
+  const method = commercialOperationsMethods.readiness;
+  if (!object(value)) invalid(method, "结果必须是对象");
+  const ready = boolean(value.ready);
+  if (ready === null) invalid(method, "ready 缺失");
+  const blockers = Array.isArray(value.blockers) ? value.blockers.filter(object).map((row) => ({
+    code: requiredText(row, method, "code", "code"),
+    severity: requiredText(row, method, "severity", "severity"),
+    scope: requiredText(row, method, "scope", "scope"),
+    detail: requiredText(row, method, "detail", "detail"),
+    nextAction: requiredText(row, method, "next_action", "next_action", "nextAction"),
+  })) : [];
+  const registry = Array.isArray(value.registry) ? value.registry.filter(object).map((row) => {
+    const enabled = boolean(row.enabled);
+    if (enabled === null) invalid(method, "registry.enabled 缺失");
+    return { operation: requiredText(row, method, "operation", "operation"), enabled };
+  }) : [];
+  return {
+    ready,
+    environment: requiredText(value, method, "environment", "environment"),
+    message: requiredText(value, method, "message", "message"),
+    generatedAt: optionalText(pick(value, "generated_at", "generatedAt")),
+    blockers,
+    capabilities: object(value.capabilities) ? Object.fromEntries(Object.entries(value.capabilities).filter(([, entry]) => object(entry))) as Record<string, RecordValue> : {},
+    catalog: object(value.catalog) ? value.catalog : {},
+    policies: object(value.policies) ? value.policies : {},
+    registry,
+    provider: object(value.provider) ? value.provider : {},
+    creativePoints: object(value.creative_points) ? value.creative_points : {},
+  };
+}
+
 export const commercialOperationsClient = {
   summary: async (targetWorkspaceId: string, signal?: AbortSignal) => parseCommercialAccessSummary(await rpc(commercialOperationsMethods.accessSummary, { target_workspace_id: targetWorkspaceId }, { signal })),
   blocks: async (targetWorkspaceId: string, signal?: AbortSignal) => parseAccessBlocks(await rpc(commercialOperationsMethods.accessBlocks, { target_workspace_id: targetWorkspaceId, status: "open", limit: "100" }, { signal })),
@@ -370,6 +433,15 @@ export const commercialOperationsClient = {
     const requestSignal = isSignal ? inputOrSignal : signal;
     return parseCommercialTimeline(await rpc(commercialOperationsMethods.timeline, { target_workspace_id: targetWorkspaceId, limit: "200", ...(input.from ? { from_at: input.from } : {}), ...(input.to ? { to_at: input.to } : {}), ...(input.status ? { status: input.status } : {}) }, { signal: requestSignal }));
   },
+  readiness: async (signal?: AbortSignal) => parseCommercialReadiness(await rpc(commercialOperationsMethods.readiness, {}, { signal })),
+  createPrivateTrialEligibility: (workspace: string, customerRef: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialEligibilityCreate, { target_workspace_id: workspace, customer_ref: customerRef, idempotency_key: operationId("private_trial_eligibility"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "create" }) }, { signal }),
+  approvePrivateTrialEligibility: (workspace: string, eligibilityId: string, expectedRevision: number, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialEligibilityApprove, { target_workspace_id: workspace, eligibility_id: eligibilityId, expected_revision: String(expectedRevision), idempotency_key: operationId("private_trial_approve"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "business_approve" }) }, { signal }),
+  completePrivateTrialValidation: (workspace: string, eligibilityId: string, trialOrderId: string, completedAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialValidationComplete, { target_workspace_id: workspace, eligibility_id: eligibilityId, trial_order_id: trialOrderId, completed_at: completedAt, idempotency_key: operationId("private_trial_validation"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "validation_complete" }) }, { signal }),
+  preparePrivateTrialCredit: (workspace: string, eligibilityId: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialCreditPrepare, { target_workspace_id: workspace, eligibility_id: eligibilityId, idempotency_key: operationId("private_trial_credit_prepare"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "prepare_credit" }) }, { signal }),
+  approvePrivateTrialCredit: (workspace: string, creditId: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialCreditApprove, { target_workspace_id: workspace, credit_id: creditId, idempotency_key: operationId("private_trial_credit_approve"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "accounting_approve" }) }, { signal }),
+  createPrivateTrialConversionOrder: (workspace: string, creditId: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialConversionCreate, { target_workspace_id: workspace, credit_id: creditId, idempotency_key: operationId("private_trial_conversion"), reason }, { signal }),
+  verifyPrivateTrialTransfer: (workspace: string, creditId: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialPaymentVerify, { target_workspace_id: workspace, credit_id: creditId, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("private_trial_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "manual_transfer_verified" }) }, { signal }),
+  verifyCommercialOrderTransfer: (workspace: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.orderPaymentVerify, { target_workspace_id: workspace, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("commercial_order_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "commercial_order_manual_transfer_verified" }) }, { signal }),
   proposePointAdjustment: async (targetWorkspaceId: string, pointsDelta: number, reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.propose", { target_workspace_id: targetWorkspaceId, points_delta: String(pointsDelta), expected_revision: "0", idempotency_key: operationId("point_adjust_propose"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
   decidePointAdjustment: async (targetWorkspaceId: string, proposalId: string, decision: "approved" | "rejected", reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.decide", { target_workspace_id: targetWorkspaceId, proposal_id: proposalId, decision, idempotency_key: operationId("point_adjust_decide"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
   scheduleService: (workspace: string, allocation: string, revision: number, scheduleAt: string, reason: string) => serviceCommand("ops.commercial.service-fulfillment.schedule", workspace, allocation, revision, reason, { schedule_at: scheduleAt }),

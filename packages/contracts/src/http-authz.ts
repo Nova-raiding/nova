@@ -82,9 +82,13 @@ export const HTTP_OPERATION_POLICIES = [
   machine('POST', '/v1/sync-jobs/{jobId}/result', 'worker'),
   identity('POST', '/v1/sync-jobs/{jobId}/retry-failed', 'sync.retry_failed'),
   identity('GET', '/v1/products', 'catalog.search'),
-  // The endpoint runs deterministic checks and persists authenticity evidence;
-  // it is a read transport with the write semantics of catalog.image.review.
-  identity('GET', '/v1/products/{productId}/image-review', 'catalog.image.review'),
+  // The merchant HTTP endpoint only reads the product's images and runs the
+  // deterministic local checker. It does not persist candidate review
+  // evidence (that write-capable operation remains MCP-only), so keep this
+  // transport on the workspace-scoped read policy. This prevents a product
+  // without a canonical brand relation from being incorrectly denied before
+  // the checker can explain its findings.
+  identity('GET', '/v1/products/{productId}/image-review', 'catalog.image.get'),
   identity('POST', '/v1/products/{productId}/confirm', 'catalog.facts.confirm'),
   identity('POST', '/v1/products/import/batch', 'catalog.import.batch'),
   identity('POST', '/v1/products/import', 'catalog.import'),

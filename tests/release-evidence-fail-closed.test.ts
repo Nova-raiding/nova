@@ -46,13 +46,14 @@ const baseCapacityEvidence = {
 describe('release evidence fail-closed coverage', () => {
   it('fails release metadata when declared counts or migration tail binding drift', () => {
     const snapshot = collectReleaseMetadata()
+    const migrationTail = Math.max(...snapshot.migrationFiles.map(file => Number(file.slice(0, 3))).filter(Number.isFinite))
     const errors = validateReleaseMetadata({
       ...snapshot,
       declared: {
         ...snapshot.declared,
         merchantBridgeToolCount: 0,
         opsDomainCount: 0,
-        expectedMigrationVersion: Number(snapshot.declared.expectedMigrationVersion ?? 0) + 1,
+        expectedMigrationVersion: migrationTail + 1,
       },
     })
 

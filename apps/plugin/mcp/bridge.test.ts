@@ -1692,10 +1692,11 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result.isError).toBe(false)
       expect(response.result.structuredContent).toEqual({
-        assets: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_type: 'image/png', scan_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理' }],
+        assets: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_type: 'image/png', scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理' }],
         readiness: { draft: 0, ready: 0, blocked: 1, total: 1 },
         storage_quota: { used_bytes: 800, reserved_bytes: 100, limit_bytes: 1000, available_bytes: 100, status: 'near_limit' },
-        asset_actions: [{ asset_id: 'asset_blocked_1', name: 'bad.png', scan_status: 'quarantined', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true }],
+        asset_actions: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_type: 'image/png', scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true }],
+        candidate_generation_guidance: '用户明确要求使用上传图片制作且图片已通过可信安全扫描时，可调用 catalog.image.generate 生成未绑定候选；权益 pending/unknown 不要求重复确认，正式素材的解析/事实/readiness 状态不是未绑定候选的准入结论。扫描未知或未通过、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断，并由生成接口重新校验。不得自动批准权益；候选始终未绑定、未批准、未发布，正式生成、审核和发布仍须通过原门禁。',
         empty_state: null,
       })
       const serialized = JSON.stringify(response.result.structuredContent)
@@ -1707,10 +1708,162 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each<{ label: string; asset: Record<string, unknown> | null; action: Record<string, unknown>; expected: Record<string, unknown> }>([
+    { label: 'action-only readiness is retained alongside clean asset facts', asset: { scanStatus: 'clean' }, action: { status: 'blocked', next_step: '请核对素材事实' }, expected: { scan_status: 'clean', readiness_status: 'blocked', next_step: '请核对素材事实', user_action_required: true } },
+    { label: 'blocked full-asset readiness cannot be weakened by a ready action', asset: { scanStatus: 'clean', readiness: { status: 'blocked' } }, action: { status: 'ready', next_step: '请核对素材事实' }, expected: { scan_status: 'clean', readiness_status: 'blocked', next_step: '请核对素材事实', user_action_required: true } },
+    { label: 'malware cannot inherit an immediate generation action', asset: { scanStatus: 'blocked' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true } },
+    { label: 'explicit rights rejection cannot inherit a ready action', asset: { scanStatus: 'clean', rightsStatus: 'rejected' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
+    { label: 'unknown scanning cannot inherit a ready action', asset: { scanStatus: 'unknown' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
+    { label: 'pending rights remain formal draft without being auto-approved', asset: { scanStatus: 'clean', rightsStatus: 'pending', readiness: { status: 'draft' } }, action: { status: 'draft', next_step: '正式使用前确认素材权益' }, expected: { scan_status: 'clean', rights_status: 'pending', readiness_status: 'draft', next_step: '正式使用前确认素材权益', user_action_required: false } },
+    { label: 'parse-blocked pending rights are not misreported as scan failure', asset: { scanStatus: 'clean', rightsStatus: 'pending', readiness: { status: 'blocked' } }, action: { status: 'blocked', next_step: '请核对素材事实' }, expected: { scan_status: 'clean', rights_status: 'pending', readiness_status: 'blocked', next_step: '请核对素材事实', user_action_required: true } },
+    { label: 'action-only responses remain usable without inventing scan evidence', asset: null, action: { status: 'blocked', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'blocked', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
+    { label: 'unusable rights scope cannot be weakened by approved rights status', asset: { scanStatus: 'clean', rightsStatus: 'approved', rightsScope: 'unusable' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'approved', rights_scope: 'unusable', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
+    { label: 'untrusted raw clean scanning cannot expose a nested generation action', asset: { scanStatus: 'clean', display: { primaryStatus: 'awaiting_scan', label: '正在安全检查', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', display: { primary_status: 'awaiting_scan', label: '正在安全检查', source_state: 'draft', reasons: [], next_action: null }, next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
+    { label: 'unknown rights remain unknown without inventing approval', asset: { scanStatus: 'clean', rightsStatus: 'unknown', readiness: { status: 'draft' } }, action: { status: 'draft', next_step: '正式使用前确认素材权益' }, expected: { scan_status: 'clean', rights_status: 'unknown', readiness_status: 'draft', next_step: '正式使用前确认素材权益', user_action_required: false } },
+    { label: 'rejected asset rights suppress nested ready generation guidance', asset: { scanStatus: 'clean', rightsStatus: 'rejected', readiness: { status: 'ready' }, display: { primaryStatus: 'ready', label: '立即生成图片', sourceState: 'ready', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', display: { primary_status: 'rights_blocked', label: '使用权益受限', source_state: 'blocked', reasons: [], next_action: null }, next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
+    { label: 'unusable asset rights suppress nested ready generation guidance', asset: { scanStatus: 'clean', rightsStatus: 'approved', rightsScope: 'unusable', readiness: { status: 'ready' }, display: { primaryStatus: 'ready', label: '立即生成图片', sourceState: 'ready', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'approved', rights_scope: 'unusable', readiness_status: 'blocked', display: { primary_status: 'rights_blocked', label: '使用权益受限', source_state: 'blocked', reasons: [], next_action: null }, next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
+    { label: 'action scan denial survives conflicting clean asset facts', asset: { scanStatus: 'clean', readiness: { status: 'ready' } }, action: { scan_status: 'blocked', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true } },
+    { label: 'asset scan denial survives a conflicting clean action', asset: { scanStatus: 'blocked', readiness: { status: 'ready' } }, action: { scan_status: 'clean', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true } },
+    { label: 'action rights denial survives conflicting approved asset facts', asset: { scanStatus: 'clean', rightsStatus: 'approved', readiness: { status: 'ready' } }, action: { rights_status: 'rejected', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
+    { label: 'asset rights denial survives a conflicting approved action', asset: { scanStatus: 'clean', rightsStatus: 'rejected', readiness: { status: 'ready' } }, action: { rights_status: 'approved', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
+    { label: 'action unusable rights scope survives conflicting asset scope', asset: { scanStatus: 'clean', rightsStatus: 'approved', rightsScope: 'owned', readiness: { status: 'ready' } }, action: { rights_scope: 'unusable', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'approved', rights_scope: 'unusable', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
+    { label: 'explicit action quarantine survives a conflicting clean asset', asset: { scanStatus: 'clean', readiness: { status: 'ready' } }, action: { scan_status: 'quarantined', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
+    { label: 'explicit unknown action scan survives a conflicting clean asset', asset: { scanStatus: 'clean', readiness: { status: 'ready' } }, action: { scan_status: 'unknown', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
+    { label: 'explicit action awaiting scan suppresses a conflicting asset CTA', asset: { scanStatus: 'clean', readiness: { status: 'ready' }, display: { primaryStatus: 'ready', label: '立即生成图片', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', display: { primaryStatus: 'awaiting_scan' }, next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', display: { primary_status: 'awaiting_scan', label: '正在安全检查', source_state: 'draft', reasons: [], next_action: null }, next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
+  ])('preserves safe asset action semantics: $label', async ({ asset, action, expected }) => {
+    const methods: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      methods.push(JSON.parse(body).method)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        assets: asset ? [{ id: 'asset_boundary', name: 'source.png', mimeType: 'image/png', ...asset, workspaceId: 'ws_secret', storageKey: 'quarantine/secret', scanReceiptId: 'receipt_secret' }] : [],
+        asset_actions: [{ asset_id: 'asset_boundary', asset_name: 'action.png', ...action, revision: 9, reasons: ['private-engine-code'], action_cards: [{ method: 'ops.secret' }] }],
+      } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.list', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(response.result.structuredContent.asset_actions).toEqual([{
+        asset_id: 'asset_boundary', name: asset ? 'source.png' : 'action.png',
+        ...(asset ? { mime_type: 'image/png' } : {}), ...expected,
+      }])
+      if (asset) {
+        expect(response.result.structuredContent.assets[0].scan_status).toBe(expected.scan_status)
+        if (asset.display) expect(response.result.structuredContent.assets[0].display.next_action).toBeNull()
+        if (expected.scan_status === 'blocked' || expected.rights_status === 'rejected' || expected.rights_scope === 'unusable') {
+          expect(response.result.structuredContent.assets[0]).toMatchObject({
+            readiness_status: 'blocked',
+            ...(expected.rights_status ? { rights_status: expected.rights_status } : {}),
+            ...(expected.rights_scope ? { rights_scope: expected.rights_scope } : {}),
+          })
+          expect(JSON.stringify(response.result.structuredContent.assets[0])).not.toContain('立即生成图片')
+        }
+      }
+      const guidance = response.result.structuredContent.candidate_generation_guidance
+      expect(guidance).toContain('权益 pending/unknown 不要求重复确认')
+      expect(guidance).toContain('readiness 状态不是未绑定候选的准入结论')
+      expect(guidance).toContain('扫描未知或未通过、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断')
+      expect(guidance).toContain('候选始终未绑定、未批准、未发布')
+      const serialized = JSON.stringify(response.result.structuredContent)
+      for (const forbidden of ['workspaceId', 'storageKey', 'scanReceipt', 'revision', 'private-engine-code', 'ops.secret', 'candidate_allowed']) expect(serialized).not.toContain(forbidden)
+      expect(methods).toEqual(['asset.list'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+
   it.each([
-    ['blocked', 'blocked', '平台会在你重新提交图片时自动复检', true],
-    ['pending', 'quarantined', '检查通过后会等待你的确认', false],
-  ])('keeps automatic asset scanning conversational when the result is %s', async (_case, scanStatus, expectedText, userActionRequired) => {
+    { method: 'asset.list', scanStatus: 'clean', rights: { rightsStatus: 'rejected' } },
+    { method: 'asset.list', scanStatus: 'clean', rights: { rightsStatus: 'approved', rightsScope: 'unusable' } },
+    { method: 'asset.upload', scanStatus: 'clean', rights: { rightsStatus: 'rejected' } },
+    { method: 'asset.upload', scanStatus: 'clean', rights: { rightsStatus: 'approved', rightsScope: 'unusable' } },
+    { method: 'asset.upload', scanStatus: 'quarantined', rights: { rightsStatus: 'rejected' } },
+    { method: 'asset.upload', scanStatus: 'unknown', rights: { rightsStatus: 'approved', rightsScope: 'unusable' } },
+    { method: 'asset.upload', scanStatus: 'blocked', rights: { rightsStatus: 'rejected' } },
+    { method: 'asset.upload', scanStatus: 'clean', rights: { rightsStatus: 'pending' } },
+    { method: 'asset.upload', scanStatus: 'quarantined', rights: { rightsStatus: 'pending' } },
+    { method: 'asset.upload', scanStatus: 'unknown', rights: { rightsStatus: 'pending' } },
+    { method: 'asset.upload', scanStatus: 'blocked', rights: { rightsStatus: 'pending' } },
+  ])('keeps upload scan and rights views consistent: %j', async ({ method, scanStatus, rights }) => {
+    const rightsBlocked = rights.rightsStatus === 'rejected' || rights.rightsScope === 'unusable'
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const request = JSON.parse(body)
+      res.setHeader('content-type', 'application/json')
+      const asset = {
+        id: 'asset_denied', scanStatus, ...rights, readiness: { status: rightsBlocked ? 'ready' : 'draft' },
+        next_step: '立即生成图片', scan_wait: { next_step: '立即生成图片' }, generationContinuation: { state: 'awaiting_confirmation' },
+        display: { primaryStatus: rightsBlocked ? 'ready' : 'awaiting_rights', sourceState: rightsBlocked ? 'ready' : 'draft', label: rightsBlocked ? '立即生成图片' : '正式素材待确认', nextAction: rightsBlocked ? { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } : null },
+      }
+      res.end(JSON.stringify({ data: { result: request.method === 'asset.list' ? { assets: [asset], asset_actions: [] } : asset }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ASSET_SCAN_POLL_TIMEOUT_MS: '100', MERCHANT_ASSET_SCAN_POLL_INTERVAL_MS: '25' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      const args = method === 'asset.upload' ? { name: 'denied.png', mime_type: 'image/png', content_base64: Buffer.from('image').toString('base64') } : {}
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: args } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      const scanBlocked = scanStatus === 'blocked'
+      const waiting = !scanBlocked && scanStatus !== 'clean'
+      const expected = {
+        asset_id: 'asset_denied', scan_status: scanStatus === 'unknown' ? 'quarantined' : scanStatus, rights_status: rights.rightsStatus,
+        ...('rightsScope' in rights ? { rights_scope: rights.rightsScope } : {}),
+        readiness_status: scanBlocked || rightsBlocked ? 'blocked' : 'draft',
+        display: {
+          primary_status: scanBlocked ? 'scan_blocked' : rightsBlocked ? 'rights_blocked' : waiting ? 'awaiting_scan' : 'awaiting_rights',
+          label: scanBlocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : waiting ? '正在安全检查' : '正式素材待确认',
+          source_state: scanBlocked || rightsBlocked ? 'blocked' : 'draft', reasons: [], next_action: null,
+        },
+        next_step: scanBlocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : rightsBlocked ? '这张图片的使用权益受限，请换用其他已授权图片' : waiting ? '平台会继续自动检查，你无需操作' : '继续当前任务',
+      }
+      if (method === 'asset.list') {
+        expect(response.result.structuredContent.assets).toEqual([expected])
+        expect(response.result.structuredContent.asset_actions).toEqual([])
+      } else {
+        expect(response.result.structuredContent).toMatchObject({
+          ...expected,
+          scanAutomation: { state: scanBlocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : waiting ? 'pending' : 'completed', userActionRequired: scanBlocked || rightsBlocked },
+          scan_wait: { state: scanBlocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : waiting ? 'processing' : 'completed', user_action_required: scanBlocked || rightsBlocked, next_step: expected.next_step },
+        })
+        expect(response.result.structuredContent.generation_continuation?.state).not.toBe('awaiting_confirmation')
+        expect(JSON.stringify(response.result)).not.toMatch(/立即生成图片|确认后开始生成/u)
+        if (scanBlocked || rightsBlocked) {
+          expect(response.result.content[0].text).toContain(scanBlocked ? '自动复检' : '使用权益受限')
+          expect(response.result.content[0].text).not.toContain('再生成')
+        } else if (waiting) {
+          expect(response.result.content[0].text).toContain('正在自动检查')
+          expect(JSON.stringify(response.result)).not.toMatch(/图片已通过|检查已通过/u)
+        }
+      }
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it.each([
+    { label: 'latest rejection remains a denial', latestRights: { rightsStatus: 'rejected' }, denied: true },
+    { label: 'latest unusable scope remains a denial', latestRights: { rightsStatus: 'approved', rightsScope: 'unusable' }, denied: true },
+    { label: 'latest pending clears only the obsolete scan wait', latestRights: { rightsStatus: 'pending' }, denied: false },
+    { label: 'latest approval does not attest the original pending rights', latestRights: { rightsStatus: 'approved' }, denied: false },
+  ])('uses the latest scan snapshot without upgrading uploaded rights: $label', async ({ latestRights, denied }) => {
     const methods: string[] = []
     const server = createServer(async (req, res) => {
       let body = ''
@@ -1718,7 +1871,57 @@ describe('Codex stdio MCP bridge', () => {
       const request = JSON.parse(body)
       methods.push(request.method)
       const result = request.method === 'asset.list'
-        ? { assets: [{ id: 'asset_scan_1', scanStatus }], asset_actions: [{ asset_id: 'asset_scan_1' }] }
+        ? {
+            assets: [{ id: 'asset_latest', scanStatus: 'clean', ...latestRights, display: { primaryStatus: latestRights.rightsStatus === 'pending' ? 'awaiting_rights' : 'ready', label: '扫描已完成', sourceState: 'draft', nextAction: null }, storageKey: 'private/latest', scanReceiptId: 'private-receipt' }],
+            asset_actions: [{ asset_id: 'asset_latest', status: 'ready', next_step: denied ? '立即生成图片' : '继续当前任务' }],
+          }
+        : { id: 'asset_latest', scanStatus: 'quarantined', rightsStatus: 'pending', readiness: { status: 'draft' }, display: { primaryStatus: 'awaiting_scan', label: '正在安全检查', sourceState: 'draft', nextAction: null }, generationContinuation: { state: 'awaiting_confirmation' } }
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ASSET_SCAN_POLL_TIMEOUT_MS: '500', MERCHANT_ASSET_SCAN_POLL_INTERVAL_MS: '25' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'source.png', mime_type: 'image/png', content_base64: Buffer.from('image').toString('base64') } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.isError).toBe(false)
+      expect(response.result.structuredContent).toMatchObject({
+        scan_status: 'clean',
+        rights_status: latestRights.rightsStatus === 'rejected' ? 'rejected' : 'pending',
+        ...(latestRights.rightsScope ? { rights_scope: latestRights.rightsScope } : {}),
+        scanAutomation: { state: denied ? 'rights_blocked' : 'completed', userActionRequired: denied },
+        scan_wait: { state: denied ? 'rights_blocked' : 'completed', user_action_required: denied },
+        next_step: denied ? '这张图片的使用权益受限，请换用其他已授权图片' : '继续当前任务',
+      })
+      expect(response.result.structuredContent.generation_continuation).toBeUndefined()
+      const serialized = JSON.stringify(response.result)
+      expect(serialized).not.toMatch(/立即生成图片|确认后开始生成|private\/latest|private-receipt|storageKey|scanReceipt/u)
+      expect(response.result.content[0].text).toContain(denied ? '使用权益受限' : '检查已通过')
+      expect(methods).toEqual(['asset.upload', 'asset.list'])
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+
+  it.each([
+    ['blocked', 'blocked', '平台会在你重新提交图片时自动复检', true, undefined],
+    ['pending', 'quarantined', '检查通过后会等待你的确认', false, undefined],
+    ['untrusted-clean', 'clean', '检查通过后会等待你的确认', false, { primaryStatus: 'awaiting_scan', label: '正在安全检查', nextAction: { method: 'asset.list', label: '刷新状态', allowed: true } }],
+  ])('keeps automatic asset scanning conversational when the result is %s', async (_case, scanStatus, expectedText, userActionRequired, display) => {
+    const methods: string[] = []
+    const server = createServer(async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const request = JSON.parse(body)
+      methods.push(request.method)
+      const result = request.method === 'asset.list'
+        ? { assets: [{ id: 'asset_scan_1', scanStatus, display }], asset_actions: [{ asset_id: 'asset_scan_1' }] }
         : { id: 'asset_scan_1', scanStatus: 'quarantined' }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
@@ -1736,6 +1939,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result._meta).toBeUndefined()
       expect(response.result.structuredContent.scan_wait).toMatchObject({ user_action_required: userActionRequired })
       expect(response.result.structuredContent.scanAutomation).toMatchObject({ state: scanStatus === 'blocked' ? 'blocked' : 'pending', userActionRequired })
+      expect(response.result.structuredContent.scan_status).toBe(scanStatus === 'blocked' ? 'blocked' : 'quarantined')
       expect(response.result.content[0].text).toContain(expectedText)
       expect(JSON.stringify(response.result)).not.toMatch(/联系管理员|运营后台|扫描证据|回复.{0,4}扫描完成/u)
       expect(methods[0]).toBe('asset.upload')
@@ -2548,9 +2752,10 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
-      expect(response.result.structuredContent.message).toMatch(/MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u)
-      expect(response.result.structuredContent.message).toContain('refusing to use the local fixture fallback')
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CONFIGURATION_REQUIRED', details: { operation_status: 'blocked', retryable: false, missing: ['MERCHANT_MCP_BASE_URL'] } } })
+      expect(response.result.content[0].text).toContain('本次未向后端发送请求')
+      expect(response.result.structuredContent.message).toContain('重新加载插件连接')
+      expect(response.result.structuredContent.message).not.toContain('稍后重试')
     } finally {
       child.kill()
     }
@@ -2867,4 +3072,35 @@ describe('Codex stdio MCP bridge', () => {
       await close(server)
     }
   })
+})
+
+
+describe('explicit local video candidate discovery', () => {
+  it.each([
+    ['http://127.0.0.1:8787', 'development', true],
+    ['http://127.0.0.1:8787', 'production', false],
+    ['https://merchant.example', 'development', false],
+  ] as const)('keeps the local acceptance flag scoped to %s / %s', async (base, environment, visible) => {
+    const child = spawn(process.execPath, [BRIDGE_PATH], { env: { ...process.env, MERCHANT_MCP_BASE_URL: base, MERCHANT_WORKSPACE_ID: 'ws_local_video_test', MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES: 'true', DEPLOY_ENV: environment, NODE_ENV: environment, MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false', MERCHANT_MCP_WRITE_ENABLED: 'false' }, stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }) + '\n')
+      const response = await nextLine(child.stdout)
+      expect(response.result.tools.some((tool: { name: string }) => tool.name === 'multimodal.video.request')).toBe(visible)
+    } finally { child.kill() }
+  })
+})
+
+it('reports a successful catalog query without suggesting an unknown task outcome', async () => {
+  const server = createServer(async (_req, res) => {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ data: { result: { scope: 'workspace', products: [{ id: 'prod_1', title: '商品', skus: [{ id: 'blue-m' }, { id: 'red-l' }] }] } }, error: null }))
+  })
+  const address = await listen(server)
+  const child = spawn(process.execPath, [BRIDGE_PATH], { env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
+  try {
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace' } } })}\n`)
+    const response = await nextLine(child.stdout)
+    expect(response.result.content[0].text).toBe('已读取 1 个商品，包含 2 个 SKU。')
+    expect(response.result.structuredContent.products[0].skus).toHaveLength(2)
+  } finally { child.kill(); await close(server) }
 })

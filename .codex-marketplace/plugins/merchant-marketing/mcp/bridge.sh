@@ -26,6 +26,7 @@ if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v launchctl >/de
   for name in \
     NODE_ENV \
     MERCHANT_MCP_BASE_URL \
+    MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES \
     MERCHANT_WORKSPACE_ID \
     MERCHANT_MCP_TOKEN \
     MERCHANT_ALLOW_FIXTURE_FALLBACK \

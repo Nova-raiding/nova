@@ -1,0 +1,59 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260906",
+  "modality": "image",
+  "observed_at": "2026-09-06T01:46:16.676Z",
+  "http_status": 200,
+  "response_headers": {
+    "req-cost-time": "3232",
+    "x-oneapi-request-id": "202609060146130941249208268d9d6tqSYYjwn",
+    "x-request-id": "86ed550c-1fd5-95a8-b143-779c3e5b74d1"
+  },
+  "result": {
+    "modality": "image",
+    "endpoint": "/images/generations",
+    "model": "qwen-image-2.0",
+    "httpStatus": 200,
+    "providerRequestId": "202609060146130941249208268d9d6tqSYYjwn",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.17010798,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "data": [
+      {
+        "url": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/24/20260906/71e29776/07384a1a-bf9c-4323-90e0-83dc16f08d96.png?Expires=1789264975&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=eTWuOqZ2OLjuvmRBflEcRr1923A%3D",
+        "b64_json": "",
+        "revised_prompt": ""
+      }
+    ],
+    "created": 1788659173,
+    "metadata": {
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": {
+              "content": [
+                {
+                  "image": "https://dashscope-0484.oss-accelerate.aliyuncs.com/7d/24/20260906/71e29776/07384a1a-bf9c-4323-90e0-83dc16f08d96.png?Expires=1789264975&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=eTWuOqZ2OLjuvmRBflEcRr1923A%3D"
+                }
+              ],
+              "role": "assistant"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "height": 1024,
+        "image_count": 1,
+        "width": 1024
+      },
+      "request_id": "86ed550c-1fd5-95a8-b143-779c3e5b74d1"
+    }
+  }
+}

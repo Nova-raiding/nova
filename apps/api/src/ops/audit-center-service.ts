@@ -21,8 +21,15 @@ export class AuditCenterService {
     if (!principal.actorId.trim() || !principal.roles.includes('platform_ops')) throw new AuditCenterServiceError('AUDIT_CENTER_FORBIDDEN', 'platform audit permission is required')
     const query = parseAuditPlatformQuery(rawQuery)
     const authorized = [...new Set(workspaceIds.map(value => value.trim()).filter(Boolean))]
+    // Postgres can enforce platform scope once and execute this as one bulk
+    // query. This avoids opening two RLS transactions per tenant during page
+    // hydration. Memory repositories retain the bounded fan-out fallback.
+    if (this.repository.listPlatform) return this.repository.listPlatform(query, authorized)
     const pages: AuditCenterPage[] = []
-    const batchSize = 8
+    // Platform audit is a bounded read across all authorized tenants. The
+    // repository uses short read transactions, so a larger batch avoids
+    // serializing hundreds of empty/test workspaces behind the UI timeout.
+    const batchSize = 64
     for (let offset = 0; offset < authorized.length; offset += batchSize) {
       const batch = authorized.slice(offset, offset + batchSize)
       pages.push(...await Promise.all(batch.map(workspaceId => this.repository.list({ ...query, workspaceId }))))

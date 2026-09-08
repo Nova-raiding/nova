@@ -21,6 +21,7 @@ export class ProviderOutcomeUnknownError extends Error {
     readonly cause?: unknown,
     readonly status?: number,
     readonly providerRequestId?: string,
+    readonly providerErrorSummary?: string,
   ) {
     super(message)
     this.name = 'ProviderOutcomeUnknownError'
@@ -31,6 +32,7 @@ export class ProviderOutcomeUnknownError extends Error {
       provider_idempotency_key: providerIdempotencyKey,
       ...(status !== undefined ? { provider_status: status } : {}),
       ...(providerRequestId ? { provider_request_id: providerRequestId } : {}),
+      ...(providerErrorSummary ? { provider_error_summary: providerErrorSummary } : {}),
     })
   }
 }
@@ -48,6 +50,7 @@ export class ProviderRequestFailedError extends Error {
     readonly status: number,
     message: string,
     readonly providerRequestId?: string,
+    readonly providerErrorSummary?: string,
   ) {
     super(message)
     this.name = 'ProviderRequestFailedError'
@@ -58,6 +61,7 @@ export class ProviderRequestFailedError extends Error {
       provider_idempotency_key: providerIdempotencyKey,
       provider_status: status,
       ...(providerRequestId ? { provider_request_id: providerRequestId } : {}),
+      ...(providerErrorSummary ? { provider_error_summary: providerErrorSummary } : {}),
     })
   }
 }
@@ -115,7 +119,7 @@ export function throwProviderOutcomeUnknown(providerKey: string, label: string, 
   throw new ProviderOutcomeUnknownError(providerKey, `${label} outcome is unknown and requires reconciliation`, cause)
 }
 
-export function assertProviderResponseAccepted(response: Response, providerKey: string, label: string): void {
+export function assertProviderResponseAccepted(response: Response, providerKey: string, label: string, providerErrorSummary?: string): void {
   if (response.ok) return
   const providerRequestId = [
     response.headers.get('x-oneapi-request-id'),
@@ -124,7 +128,7 @@ export function assertProviderResponseAccepted(response: Response, providerKey: 
     response.headers.get('request-id'),
   ].find(value => typeof value === 'string' && value.trim() && value.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(value))?.trim()
   if (response.status === 408 || response.status >= 500) {
-    throw new ProviderOutcomeUnknownError(providerKey, `${label} returned ambiguous HTTP ${response.status}; outcome requires reconciliation`, undefined, response.status, providerRequestId)
+    throw new ProviderOutcomeUnknownError(providerKey, `${label} returned ambiguous HTTP ${response.status}${providerErrorSummary ? `: ${providerErrorSummary}` : ''}; outcome requires reconciliation`, undefined, response.status, providerRequestId, providerErrorSummary)
   }
-  throw new ProviderRequestFailedError(providerKey, response.status, `${label} returned HTTP ${response.status}`, providerRequestId)
+  throw new ProviderRequestFailedError(providerKey, response.status, `${label} returned HTTP ${response.status}${providerErrorSummary ? `: ${providerErrorSummary}` : ''}`, providerRequestId, providerErrorSummary)
 }

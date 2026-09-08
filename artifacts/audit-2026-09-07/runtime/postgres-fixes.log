@@ -1,0 +1,15 @@
+{"container":"merchant-audit-pg-20260907","postgresVersion":"postgres:16-alpine","tests":["packages/persistence/src/billing-repository.postgres.test.ts","packages/persistence/src/outbox-retry.postgres.test.ts"],"evidence":"/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/runtime/postgres-targeted.json","businessDatabaseAccess":false}
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ packages/persistence/src/billing-repository.postgres.test.ts (1 test) 1338ms
+     ✓ preserves numeric amounts and idempotency through real app-role payment and settlement queries  1337ms
+ ✓ packages/persistence/src/outbox-retry.postgres.test.ts (3 tests) 1340ms
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  16:46:29
+   Duration  3.05s (transform 76ms, setup 0ms, import 133ms, tests 2.68s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/runtime/postgres-targeted.json
+{"files":2,"passed":4,"failed":0,"notExecuted":0,"expectedFiles":2}

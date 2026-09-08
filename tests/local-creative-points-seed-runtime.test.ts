@@ -1,16 +1,18 @@
 import { execFileSync } from "node:child_process"
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
+import { requireIsolatedLocalRuntime, type LocalRuntimeTestContext } from './local-runtime-test-safety.js'
 
-const compose = ["compose", "-p", "local", "-f", "infra/local/docker-compose.yml"]
+let runtime: LocalRuntimeTestContext
+beforeEach(() => { runtime = requireIsolatedLocalRuntime() })
 
 function docker(args: string[]) {
-  return execFileSync("docker", args, { cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
+  return execFileSync("docker", [...runtime.dockerArgs, ...args], { cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
 }
 
 describe("local creative-point seed runtime contract", () => {
-  it("keeps ws_demo balance authoritative and known for scanner admission", () => {
+  it("keeps the isolated workspace balance authoritative and known for scanner admission", () => {
     const row = docker([
-      ...compose,
+      ...runtime.composeArgs,
       "exec",
       "-T",
       "postgres",
@@ -23,7 +25,7 @@ describe("local creative-point seed runtime contract", () => {
       "-F",
       "\t",
       "-c",
-      "SELECT available_points, reserved_points, settled_points, revision FROM creative_point_access_state WHERE workspace_id='ws_demo'",
+      `SELECT available_points, reserved_points, settled_points, revision FROM creative_point_access_state WHERE workspace_id='${runtime.workspaceId}'`,
     ])
 
     const [availablePoints, reservedPoints, settledPoints, revision] = row.split("\t")

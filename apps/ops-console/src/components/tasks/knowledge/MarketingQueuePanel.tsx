@@ -155,6 +155,34 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
   const [visualReviewSubmitting, setVisualReviewSubmitting] = useState(false);
   const revisionErrorRef = useRef<HTMLDivElement>(null);
 
+  const openSupportTicket = (input: { kind: string; taskId: string; state: string; detail: string }) => {
+    Modal.confirm({
+      title: "将异常转为客服工单？",
+      content: `系统会在当前工作区创建客服工单，并关联任务 ${input.taskId}。客服可继续分配负责人、沟通并跟踪 SLA。`,
+      okText: "创建工单",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await model.supportClient.create({
+            workspaceId: model.opsWorkspaceId,
+            subject: `${input.kind}异常 · ${input.taskId}`,
+            description: `任务队列状态：${input.state}\n异常摘要：${input.detail}`,
+            priority: ["failed", "rejected", "unknown", "manual_attention", "blocked"].includes(input.state) ? "high" : "normal",
+            customerId: model.opsWorkspaceId,
+            customerName: `工作区 ${model.opsWorkspaceId}`,
+            relatedTaskId: input.taskId,
+            tags: ["task-queue", input.kind, input.state],
+            idempotencyKey: crypto.randomUUID(),
+          });
+          message.success("客服工单已创建，已关联当前任务");
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : "创建客服工单失败，请检查权限后重试");
+          throw error;
+        }
+      },
+    });
+  };
+
   const exportImageEvidence = async () => {
     if (!imageEvidenceTarget) return;
     setImageEvidenceExporting(true);
@@ -344,6 +372,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
               安全重试
             </Button>
           )}
+          {["failed", "unknown", "manual_attention", "blocked"].includes(job.state) && <Button type="link" onClick={() => openSupportTicket({ kind: "文案生成", taskId: job.taskId, state: job.state, detail: `${job.errorCode ?? ""} ${job.errorMessage ?? "需要客服介入"}` })}>转客服工单</Button>}
           <Button
             type="link"
             onClick={() =>
@@ -386,6 +415,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
               )}
             </>
           )}
+          {["rejected", "unknown", "manual_attention", "blocked"].includes(job.remoteState || job.state) && <Button type="link" onClick={() => openSupportTicket({ kind: `平台发布 · ${job.platform}`, taskId: job.taskId, state: job.remoteState || job.state, detail: job.rejection?.message || "平台回执需要人工处理" })}>转客服工单</Button>}
         </Space>
       ),
     })),

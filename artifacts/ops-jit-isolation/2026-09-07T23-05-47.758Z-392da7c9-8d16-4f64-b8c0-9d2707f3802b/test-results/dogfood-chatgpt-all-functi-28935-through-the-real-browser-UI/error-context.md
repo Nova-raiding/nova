@@ -1,0 +1,169 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 平台级
+        - status [ref=e19]: 正在查看平台聚合与控制面数据
+        - generic [ref=e20]:
+          - generic [ref=e21]: 平台范围
+          - strong [ref=e22]: 全平台
+        - generic [ref=e23]:
+          - generic [ref=e24]: 工作区上下文
+          - strong [ref=e25]: 未进入工作区
+        - generic [ref=e26]: 客户内容默认不可见；进入工作区需受控授权
+      - navigation "平台运营功能导航" [ref=e27]:
+        - region "平台治理" [ref=e28]:
+          - heading "平台治理" [level=2] [ref=e29]
+          - button "总览" [ref=e30] [cursor=pointer]:
+            - img "safety-certificate" [ref=e31] [cursor=pointer]:
+              - img [ref=e32] [cursor=pointer]
+            - text: 总览
+          - button "用户与租户" [ref=e34] [cursor=pointer]:
+            - img "team" [ref=e35] [cursor=pointer]:
+              - img [ref=e36] [cursor=pointer]
+            - text: 用户与租户
+          - button "客服与 CRM" [ref=e38] [cursor=pointer]:
+            - img "customer-service" [ref=e39] [cursor=pointer]:
+              - img [ref=e40] [cursor=pointer]
+            - text: 客服与 CRM
+          - button "事故中心" [ref=e42] [cursor=pointer]:
+            - img "alert" [ref=e43] [cursor=pointer]:
+              - img [ref=e44] [cursor=pointer]
+            - text: 事故中心
+        - region "商家运营" [ref=e46]:
+          - heading "商家运营" [level=2] [ref=e47]
+          - button "任务与内容" [ref=e48] [cursor=pointer]:
+            - img "cloud-sync" [ref=e49] [cursor=pointer]:
+              - img [ref=e50] [cursor=pointer]
+            - text: 任务与内容
+          - button "平台连接" [ref=e53] [cursor=pointer]:
+            - img "global" [ref=e54] [cursor=pointer]:
+              - img [ref=e55] [cursor=pointer]
+            - text: 平台连接
+          - button "平台规则" [ref=e57] [cursor=pointer]:
+            - img "read" [ref=e58] [cursor=pointer]:
+              - img [ref=e59] [cursor=pointer]
+            - text: 平台规则
+        - region "模型与计费" [ref=e61]:
+          - heading "模型与计费" [level=2] [ref=e62]
+          - button "模型服务" [ref=e63] [cursor=pointer]:
+            - img "robot" [ref=e64] [cursor=pointer]:
+              - img [ref=e65] [cursor=pointer]
+            - text: 模型服务
+          - button "账务与退款" [ref=e67] [cursor=pointer]:
+            - img "dollar" [ref=e68] [cursor=pointer]:
+              - img [ref=e69] [cursor=pointer]
+            - text: 账务与退款
+        - region "风险与系统" [ref=e71]:
+          - heading "风险与系统" [level=2] [ref=e72]
+          - button "功能开关" [ref=e73] [cursor=pointer]:
+            - img "experiment" [ref=e74] [cursor=pointer]:
+              - img [ref=e75] [cursor=pointer]
+            - text: 功能开关
+          - button "存储与对账" [ref=e77] [cursor=pointer]:
+            - img "cloud-server" [ref=e78] [cursor=pointer]:
+              - img [ref=e79] [cursor=pointer]
+            - text: 存储与对账
+          - button "审计中心" [ref=e83] [cursor=pointer]:
+            - img "file-search" [ref=e84] [cursor=pointer]:
+              - img [ref=e85] [cursor=pointer]
+            - text: 审计中心
+      - button "通过客服与 CRM 受控支持客户问题" [ref=e87] [cursor=pointer]: 受控支持入口
+  - generic [ref=e88]:
+    - banner [ref=e89]:
+      - generic [ref=e90]:
+        - generic [ref=e91]:
+          - generic [ref=e92]: WORKSPACE OPERATIONS
+          - generic [ref=e93]: 桌面运营工作台
+        - heading "商业与平台控制台" [level=2] [ref=e94]
+        - region "当前身份与权限范围" [ref=e95]:
+          - generic [ref=e96]:
+            - img [ref=e98]:
+              - img [ref=e99]
+            - strong [ref=e103]: 平台管理员
+            - status [ref=e105]: 授权状态：已由服务端验证
+            - generic [ref=e107]: 身份 ops-fixture-actor-9cfde0b1-ca19-4101-b8cb-4764bbdd01bb
+            - button "展开其余 1 个已验证角色" [ref=e110] [cursor=pointer]:
+              - generic [ref=e111] [cursor=pointer]: +1 个角色
+            - generic [ref=e113]: 平台控制台
+            - generic [ref=e115]: 平台全局
+            - generic [ref=e117]: 策略 2026-09-07.v1
+          - status [ref=e118]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+      - button "连接诊断 / 登录配置" [ref=e121] [cursor=pointer]:
+        - generic [ref=e122] [cursor=pointer]: 登录 / 连接
+    - main [ref=e123]:
+      - status [ref=e124]
+      - status [ref=e125]:
+        - img "exclamation-circle" [ref=e127]:
+          - img [ref=e128]
+        - generic [ref=e130]:
+          - generic [ref=e131]: 部分运营数据未刷新
+          - generic [ref=e132]: 部分数据集刷新失败（ops.stores.list、ops.storage.reconciliation.list、ops.brand-units.summary、ops.audit.platform.list、ops.tasks.summary、ops.marketing.summary、ops.growth.funnel、ops.alerts.list、ops.workspaces.list）。页面保留上次成功数据，这些值可能已过期：当前账号没有访问部分运营数据的权限；请切换具备对应角色的运营账号。
+      - region "审计中心" [ref=e133]:
+        - generic [ref=e134]:
+          - generic [ref=e135]:
+            - generic [ref=e136]:
+              - generic [ref=e137]: AUDIT TRAIL
+              - generic [ref=e138]: 当前工作区数据
+            - heading "审计中心" [level=3] [ref=e139]
+            - generic [ref=e140]: 平台范围检索各授权租户的不可变审计事实；详情采用最小化、脱敏投影，跨租户导出请切换到具体工作区。
+          - button "刷新审计" [ref=e142] [cursor=pointer]:
+            - generic [ref=e143] [cursor=pointer]: 刷新审计
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - heading "不可变审计记录" [level=3] [ref=e150]
+              - generic [ref=e151]: 所有详情均为服务端脱敏投影
+            - generic [ref=e152]:
+              - button "刷新" [ref=e154] [cursor=pointer]:
+                - img [ref=e156] [cursor=pointer]:
+                  - img [ref=e157] [cursor=pointer]
+                - generic [ref=e159] [cursor=pointer]: 刷新
+              - button "导出当前筛选" [disabled] [ref=e161] [cursor=pointer]:
+                - img [ref=e163] [cursor=pointer]:
+                  - img [ref=e164] [cursor=pointer]
+                - generic [ref=e166] [cursor=pointer]: 导出当前筛选
+          - generic [ref=e167]: 平台聚合视图暂不支持跨租户导出，请切换到具体工作区。
+          - form "审计记录筛选" [ref=e168]:
+            - generic [ref=e169]:
+              - generic [ref=e178]:
+                - searchbox "搜索审计记录" [ref=e180]
+                - button "search" [ref=e182] [cursor=pointer]:
+                  - img "search" [ref=e184] [cursor=pointer]:
+                    - img [ref=e185] [cursor=pointer]
+              - generic [ref=e195]:
+                - combobox "按来源筛选" [ref=e198]
+                - img "down" [ref=e200]:
+                  - img [ref=e201]
+              - textbox "按操作者筛选" [ref=e212]
+              - textbox "按动作筛选" [ref=e223]
+              - textbox "按资源类型筛选" [ref=e234]
+              - textbox "审计开始时间" [ref=e244]
+              - textbox "审计结束时间" [ref=e253]
+              - button "清除筛选" [ref=e262] [cursor=pointer]:
+                - generic [ref=e263] [cursor=pointer]: 清除筛选
+          - alert "审计记录加载失败" [active] [ref=e264]:
+            - alert [ref=e265]:
+              - img "close-circle" [ref=e267]:
+                - img [ref=e268]
+              - generic [ref=e270]:
+                - generic [ref=e272]: 审计记录加载失败
+                - generic [ref=e273]: 该运营操作需要对应的工作区或平台运营权限
+              - button "重 试" [ref=e275] [cursor=pointer]:
+                - generic [ref=e276] [cursor=pointer]: 重 试
+          - generic [ref=e277]: 审计记录不可用，当前空列表不代表没有审计事件
+          - status [ref=e278]: 审计数据尚未取得，请重试；当前状态不能解释为没有审计记录。
+```

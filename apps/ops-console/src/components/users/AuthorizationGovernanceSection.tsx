@@ -66,7 +66,6 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
   const [revocationReason, setRevocationReason] = useState("");
   const [revocationSubmitting, setRevocationSubmitting] = useState(false);
   const [revocationError, setRevocationError] = useState<string>();
-  const [recentGrantRevocation, setRecentGrantRevocation] = useState<{ grantId: string; workspaceId: string; revokedAt: string }>();
   const [grantStatusNow, setGrantStatusNow] = useState(() => Date.now());
   const [roleForm] = Form.useForm();
   const [grantForm] = Form.useForm();
@@ -144,7 +143,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           expected_authorization_revision: String(grants?.authorization_revision ?? grant.authorizationRevision),
           reason: revocationReason.trim(),
         });
-        setRecentGrantRevocation({
+        model.recordJitRevocation({
           grantId: grant.id,
           workspaceId: grant.workspaceId,
           revokedAt: new Date().toISOString(),
@@ -167,7 +166,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
 
   return <Card title="角色与 JIT 授权中心" extra={<Tag color="purple">平台控制面</Tag>}>
     <Alert showIcon type="info" title="所有变更由服务端重新授权并写入持久审计" description="平台角色不授予客户正文访问；进入客户工作区必须使用精确 workspace、能力、TTL、工单和审批人绑定的 JIT grant。platform_owner 不在日常入口开放。" />
-    <Tabs destroyOnHidden items={[
+    <Tabs activeKey={model.authorizationGovernanceTab} onChange={model.setAuthorizationGovernanceTab} destroyOnHidden items={[
       ...(canReadRoles ? [{ key: "matrix", label: "功能权限矩阵", children: <PermissionMatrixSection /> }] : []),
       ...(canReadRoles ? [{ key: "roles", label: "平台角色", children: <Space orientation="vertical" size="middle" className="full-width">
         <Space wrap>
@@ -219,12 +218,12 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             description="这些授权在本地时钟下已失效；请刷新列表或重新签发，避免继续依赖过期快照。"
           />
         </div> : null}
-        {recentGrantRevocation ? <div role="status" aria-live="polite" aria-atomic="true">
+        {model.jitRevocationReceipt ? <div role="status" aria-live="polite" aria-atomic="true">
           <Alert
             showIcon
             type="info"
             message="最近一次 JIT 已撤销"
-            description={`授权 ${recentGrantRevocation.grantId} 已于 ${recentGrantRevocation.revokedAt} 撤销，并从工作区 ${recentGrantRevocation.workspaceId} 的有效列表中移除。`}
+            description={`授权 ${model.jitRevocationReceipt.grantId} 已于 ${model.jitRevocationReceipt.revokedAt} 撤销，并从工作区 ${model.jitRevocationReceipt.workspaceId} 的有效列表中移除。`}
           />
         </div> : null}
         <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={false} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
@@ -248,7 +247,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             setGrantSubmitError(undefined);
             const capabilities = parseGrantCapabilities(values.capabilities);
             try {
-              await rpc("ops.authorization.grant.issue", { subject_identity_id: subjectIdentityId.trim(), target_workspace_id: targetWorkspaceId.trim(), grant_kind: "support", access_mode: values.access_mode, capabilities_json: JSON.stringify(capabilities), resource_scope_json: JSON.stringify({ type: "workspace", ids: [targetWorkspaceId.trim()] }), ticket_ref: values.ticket_ref, approved_by: values.approved_by, approved_at: values.approved_at, expires_at: values.expires_at, max_uses: String(values.max_uses), expected_authorization_revision: String(grants?.authorization_revision ?? 0), reason: values.reason });
+              await rpc("ops.authorization.grant.issue", { subject_identity_id: subjectIdentityId.trim(), target_workspace_id: targetWorkspaceId.trim(), grant_kind: "support", access_mode: values.access_mode, capabilities_json: JSON.stringify(capabilities), resource_scope_json: JSON.stringify({ workspace_ids: [targetWorkspaceId.trim()] }), ticket_ref: values.ticket_ref, approved_by: values.approved_by, approved_at: values.approved_at, expires_at: values.expires_at, max_uses: String(values.max_uses), expected_authorization_revision: String(grants?.authorization_revision ?? 0), reason: values.reason });
               grantForm.resetFields();
               await loadGrants();
             } catch (error) {
@@ -268,7 +267,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             <Col span={8}><Form.Item name="expires_at" label="到期时间（读≤15m / 写≤5m）" extra="使用 ISO 时间；提交前会校验有效期与权限模式" rules={[{ required: true }, ({ getFieldValue }) => ({ validator: async (_rule, value) => {
               const error = validateJitExpiry(value, getFieldValue("access_mode") ?? "read");
               if (error) throw new Error(error);
-            } })]}><Input aria-describedby="jit-expiry-help" /><span id="jit-expiry-help" className="sr-only">只读权限最多 15 分钟，写入权限最多 5 分钟</span></Form.Item></Col>
+            } })]}><Input aria-describedby="jit-expiry-help" /></Form.Item><span id="jit-expiry-help" className="sr-only">只读权限最多 15 分钟，写入权限最多 5 分钟</span></Col>
             <Col span={8}><Form.Item name="reason" label="授权原因" rules={[{ required: true, min: 3 }]}><Input /></Form.Item></Col>
           </Row>
           <Button type="primary" htmlType="submit" style={{ minHeight: 44 }} loading={grantSubmitting} aria-busy={grantSubmitting} disabled={grantSubmitting || !subjectIdentityId.trim() || !targetWorkspaceId.trim()}>签发 JIT</Button>

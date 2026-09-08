@@ -1,0 +1,63 @@
+
+> merchant-marketing-codex@0.1.1 test:browser:ops:jit
+> node --import tsx scripts/run-ops-oidc-e2e.ts
+
+{"evidenceDir":"/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-07T12-33-38.950Z-e23223f1-350d-4012-8a99-ccb651a3c872","runId":"9af048c6-d817-443f-91f5-a73b3cf80b37","isolated":true,"persistence":"postgres","testFiles":["dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js"]}
+
+Running 2 tests using 1 worker
+
+[1A[2K(node:39302) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:39302) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/2] dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1440x900
+[1A[2K  1) dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1440x900 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m()[22m failed
+
+    Locator:  getByText('最近一次 JIT 已撤销', { exact: true })
+    Expected: visible
+    Received: <element(s) not found>
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByText('最近一次 JIT 已撤销', { exact: true })[22m
+
+
+      268 |       await expect(dialog).toBeHidden({ timeout: 30_000 })
+      269 |       await expect(row).toHaveCount(0)
+    > 270 |       await expect(page.getByText('最近一次 JIT 已撤销', { exact: true })).toBeVisible()
+          |                                                                     ^
+      271 |       await screenshot('revoked-and-removed')
+      272 |       evidence.status = 'passed'
+      273 |     } catch (error) {
+        at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:270:69
+
+    attachment #1: issued-and-refreshed (image/png) ────────────────────────────────────────────────
+    artifacts/ops-jit-isolation/2026-09-07T12-33-38.950Z-e23223f1-350d-4012-8a99-ccb651a3c872/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/issued-and-refreshed-4d5a84a3cc5b8c415bad9489869de098206bef97.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: revoke-confirmation (image/png) ─────────────────────────────────────────────────
+    artifacts/ops-jit-isolation/2026-09-07T12-33-38.950Z-e23223f1-350d-4012-8a99-ccb651a3c872/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/revoke-confirmation-9b6607c86abf73de275c89f804b272f5aef3842d.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: failure-masked (image/png) ──────────────────────────────────────────────────────
+    artifacts/ops-jit-isolation/2026-09-07T12-33-38.950Z-e23223f1-350d-4012-8a99-ccb651a3c872/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/failure-masked-abb31d0f72d55ae2a2a14129bbfeb49d5100f487.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #4: redacted-rpc-step-trace (application/json) ──────────────────────────────────────
+    artifacts/ops-jit-isolation/2026-09-07T12-33-38.950Z-e23223f1-350d-4012-8a99-ccb651a3c872/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/redacted-rpc-step-trace-a89a8a3b0a1d03b087a3d860ad507dc6b13e012a.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: artifacts/ops-jit-isolation/2026-09-07T12-33-38.950Z-e23223f1-350d-4012-8a99-ccb651a3c872/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/error-context.md
+
+
+[1A[2K[2/2] dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1280x800
+[1A[2K  1 failed
+    dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1440x900 
+  1 did not run

@@ -65,7 +65,6 @@ describe("Ops domain protocol clients", () => {
     if (method === "ops.support.tickets.list") return { items: [ticket] };
     if (method === "ops.support.ticket.get") return { ticket, events: [ticketEvent] };
     if (method.startsWith("ops.support.ticket.")) return { ticket, event: ticketEvent, replayed: false };
-    if (method === "ops.support.crm.export") return { generatedAt: ticket.createdAt, workspaceId: "ws-ops", columns: ["customer_id", "customer_name", "customer_email", "total_tickets", "open_tickets", "urgent_tickets", "last_ticket_at", "last_ticket_status"], rows: [] };
     if (method === "ops.support.sla.report") return { reportId: "run-1", workspaceId: "ws-ops", periodStart: "2026-08-01T00:00:00.000Z", periodEnd: "2026-09-01T00:00:00.000Z", cutoffAt: "2026-09-03T00:00:00.000Z", policyVersions: [1], calendarVersions: ["business_weekday_utc"], denominator: 1, met: 1, failed: 0, excluded: 0, lateOrUnresolved: 0, checksum: "a".repeat(64), ticketResults: [] };
     if (method === "ops.finance.search") return { records: [financeRecord], summary: { totalRecords: 1, rechargeOrderCny: 1, subscriptionOrderCny: 0, walletCreditCny: 0, walletDebitCny: 0, walletNetCny: 0, providerCostCny: 0, customerChargeCny: 0, usageUnits: 0, byKind: { recharge_order: 1, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } }, snapshotAt: "2026-08-29T00:00:00.000Z", scope: { role: "platform_ops", workspaceCount: 1 } };
     if (method === "ops.finance.detail") return { ...financeRecord, attributes: { provider: "wechat" } };
@@ -117,7 +116,6 @@ describe("Ops domain protocol clients", () => {
     await supportClient.assign({ workspaceId: "ws-ops", ticketId: "ticket-1", assigneeId: "operator-1", expectedRevision: 1, idempotencyKey: "ticket-assign-0001" });
     await supportClient.transition({ workspaceId: "ws-ops", ticketId: "ticket-1", status: "in_progress", reason: "Started investigation", expectedRevision: 2, idempotencyKey: "ticket-transition-0001" });
     await supportClient.comment({ workspaceId: "ws-ops", ticketId: "ticket-1", body: "We are checking the payment", visibility: "customer", expectedRevision: 3, idempotencyKey: "ticket-comment-0001" });
-    await supportClient.exportCrm("ws-ops");
 
     const financeQuery = { workspaceIds: ["ws-1", "ws-2"], kinds: ["recharge_order" as const], statuses: ["paid"], text: "order", fromAt: "2026-08-01T00:00:00.000Z", toAt: "2026-08-29T00:00:00.000Z", cursor: "finance-cursor", snapshotAt: "2026-08-29T01:00:00.000Z", limit: 50 };
     await financeSearchClient.search(financeQuery);
@@ -150,7 +148,6 @@ describe("Ops domain protocol clients", () => {
       "ops.support.ticket.assign",
       "ops.support.ticket.transition",
       "ops.support.ticket.comment",
-      "ops.support.crm.export",
       "ops.finance.search",
       "ops.finance.detail",
       "ops.finance.export",

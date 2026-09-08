@@ -1,78 +1,168 @@
-import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
-import { mkdirSync, openSync } from 'node:fs'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { randomBytes, randomUUID } from 'node:crypto'
+import { closeSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createLocalOidcGateway } from '../tests/local-oidc-gateway.js'
+import { createIsolatedOpsFixture, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
 
-// Local acceptance only: reuse the running stack's real PostgreSQL/Redis and
-// service configuration, but isolate the signed OIDC API and UI listeners.
-const sourceContainer = process.env.OPS_E2E_SOURCE_CONTAINER ?? 'local-api-1'
-const inspected = JSON.parse(execFileSync('docker', ['inspect', sourceContainer], { encoding: 'utf8' }))[0]
-const serviceEnv = Object.fromEntries((inspected.Config.Env as string[]).map(value => {
-  const index = value.indexOf('='); return [value.slice(0, index), value.slice(index + 1)]
-}))
-for (const key of ['PATH', 'HOME', 'HOSTNAME', 'NODE_VERSION', 'YARN_VERSION']) delete serviceEnv[key]
-function hostUrl(raw: string, port: number) { const url = new URL(raw); url.hostname = '127.0.0.1'; url.port = String(port); return url.toString() }
-const apiPort = Number(process.env.OPS_E2E_API_PORT ?? 8797)
-const uiPort = Number(process.env.OPS_E2E_UI_PORT ?? 18092)
-const gatewayPort = Number(process.env.OPS_E2E_GATEWAY_PORT ?? 18093)
-const evidenceDir = resolve(process.env.OPS_E2E_OUTPUT_DIR ?? 'artifacts/ops-oidc-e2e')
-mkdirSync(evidenceDir, { recursive: true })
-const signingSecret = randomBytes(32).toString('hex')
-const password = randomBytes(24).toString('hex')
-const children: ChildProcess[] = []
-function launch(command: string, args: string[], env: NodeJS.ProcessEnv, name: string) {
-  const child = spawn(command, args, { env, stdio: ['ignore', openSync(resolve(evidenceDir, `${name}.log`), 'w'), openSync(resolve(evidenceDir, `${name}.error.log`), 'w')] })
-  children.push(child); return child
-}
-async function ready(url: string) {
-  for (let attempt = 0; attempt < 90; attempt++) {
-    try { if ((await fetch(url)).ok) return } catch {}
-    await new Promise(resolve => setTimeout(resolve, 1000))
+// Own all persistence and identities; never copy a business container or .env.
+export function opsChildEnvironment(source: NodeJS.ProcessEnv, additions: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {}
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'WINDIR', 'CI', 'NO_COLOR']) {
+    if (source[key] !== undefined) environment[key] = source[key]
   }
-  throw new Error(`Local service did not become ready: ${url}`)
+  return { ...environment, ...additions }
 }
-const gateway = createLocalOidcGateway({
-  // The API child binds IPv4 loopback explicitly. Keep the gateway upstream
-  // on the same address family; `localhost` may resolve to ::1 on macOS and
-  // leave the browser stuck at the unverified OIDC session state.
-  uiUpstream: `http://127.0.0.1:${uiPort}`, apiUpstream: `http://127.0.0.1:${apiPort}`,
-  username: 'ops-browser-e2e', password, sessionSecret: randomBytes(32).toString('hex'),
-  oidcSigningSecret: signingSecret, issuer: 'http://127.0.0.1/local-test-idp', subject: 'actor_demo',
-  // Platform operations still carries an explicit workspace context for the
-  // local acceptance fixture; an empty scope is correctly rejected by API.
-  workspaceId: process.env.OPS_E2E_WORKSPACE_ID ?? 'ws_demo', roles: ['platform_ops'], workbench: 'platform',
-})
-try {
-  launch(resolve('node_modules/.bin/tsx'), ['apps/api/src/server.ts'], {
-    ...process.env, ...serviceEnv, PORT: String(apiPort), OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: signingSecret,
-    // The local gateway is the only identity boundary for this acceptance
-    // run; never let a copied merchant-host override select bearer auth.
-    MERCHANT_BEARER_HOSTNAME: '',
-    DATABASE_URL: hostUrl(serviceEnv.DATABASE_URL!, 54329), OPS_DATABASE_URL: hostUrl(serviceEnv.OPS_DATABASE_URL!, 54329),
-    REDIS_URL: hostUrl(serviceEnv.REDIS_URL!, 63799), RUN_MIGRATIONS_ON_STARTUP: 'false', REQUEST_OBSERVABILITY_LOGS: process.env.OPS_E2E_REQUEST_LOGS ?? 'true',
-    ALLOWED_ORIGINS: `http://127.0.0.1:${gatewayPort}`, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
-  }, 'api')
-  const uiEnvironment = {
-    ...process.env, VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: `http://127.0.0.1:${gatewayPort}`, VITE_OPS_AUTH_MODE: 'oidc', VITE_OPS_BUILD_MODE: 'oidc', VITE_OPS_TRACE: 'true', VITE_OPS_E2E: 'true',
+
+export function validateOpsE2eArguments(args: readonly string[], source: NodeJS.ProcessEnv): string[] {
+  if (source.OPS_E2E_SOURCE_CONTAINER?.trim()) throw new Error('OPS_E2E_SHARED_SOURCE_UNSUPPORTED: this runner only provisions isolated fixtures')
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index]!
+    if (/^dogfood\/chatgpt-all-functions\/ops[a-z0-9-]*\.spec\.js$/u.test(argument) || argument === '--workers=1') continue
+    if ((argument === '--grep' || argument === '-g') && args[index + 1]?.trim() && !/[\u0000-\u001f\u007f]/u.test(args[index + 1]!)) { index++; continue }
+    throw new Error('OPS_E2E_OVERRIDE_NOT_ALLOWED')
   }
-  const uiOutput = resolve(evidenceDir, 'ui-dist')
-  const build = launch(resolve('node_modules/.bin/vite'), ['build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
-  const buildCode = await new Promise<number>(resolve => build.on('exit', code => resolve(code ?? 1)))
-  if (buildCode !== 0) throw new Error(`Ops UI build failed; see ${evidenceDir}/ui-build.error.log`)
-  // Exercise the emitted application without a development HMR client.
-  launch(resolve('node_modules/.bin/vite'), ['preview', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui')
-  await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`), ready(`http://127.0.0.1:${uiPort}/`)])
-  await new Promise<void>(resolve => gateway.listen(gatewayPort, '127.0.0.1', resolve))
-  const requested = process.argv.slice(2)
-  const args = requested.length ? requested : ['dogfood/chatgpt-all-functions/ops-all.spec.js', 'dogfood/chatgpt-all-functions/ops-users.spec.js', '--grep', 'walk every|does not report|operates the platform']
-  const run = spawn(resolve('node_modules/.bin/playwright'), ['test', ...args, '--workers=1', '--output', resolve(evidenceDir, 'test-results')], { stdio: 'inherit', env: {
-    ...process.env, OPS_OIDC_BASE_URL: `http://127.0.0.1:${gatewayPort}`, LOCAL_OIDC_TEST_USERNAME: 'ops-browser-e2e', LOCAL_OIDC_TEST_PASSWORD: password,
-    OPS_E2E_OUTPUT_DIR: evidenceDir,
-  } })
-  children.push(run)
-  process.exitCode = await new Promise<number>(resolve => run.on('exit', code => resolve(code ?? 1)))
-} finally {
-  gateway.closeAllConnections(); gateway.close()
-  for (const child of children) child.kill('SIGTERM')
+  if (args.length && !args.some(argument => argument.endsWith('.spec.js'))) throw new Error('OPS_E2E_EXPLICIT_SPEC_REQUIRED')
+  return args.length ? [...args] : ['dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js']
+}
+
+async function freeLoopbackPort(): Promise<number> {
+  const listener = createServer()
+  await new Promise<void>((ready, reject) => { listener.once('error', reject); listener.listen(0, '127.0.0.1', ready) })
+  const address = listener.address()
+  if (!address || typeof address === 'string') throw new Error('OPS_E2E_PORT_UNAVAILABLE')
+  await new Promise<void>((closed, reject) => listener.close(error => error ? reject(error) : closed()))
+  return address.port
+}
+
+async function exited(child: ChildProcess): Promise<number> {
+  if (child.exitCode !== null) return child.exitCode
+  if (child.signalCode !== null) return 1
+  return new Promise<number>((done, reject) => { child.once('error', reject); child.once('exit', code => done(code ?? 1)) })
+}
+
+export type OpsE2eContext = { fixture: IsolatedOpsFixture; baseUrl: string; username: string; password: string; evidenceDir: string; environment: NodeJS.ProcessEnv }
+
+export async function runOpsE2e(requested: readonly string[], source: NodeJS.ProcessEnv = process.env, afterRun?: (context: OpsE2eContext) => Promise<void>): Promise<number> {
+  // Validate before creating directories, containers, connections or processes.
+  const args = validateOpsE2eArguments(requested, source)
+  const evidenceDir = resolve('artifacts/ops-jit-isolation', `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`)
+  mkdirSync(evidenceDir, { recursive: true, mode: 0o700 })
+  const children: ChildProcess[] = []
+  let fixture: IsolatedOpsFixture | undefined
+  let fixtureSetup: Promise<IsolatedOpsFixture> | undefined
+  let gateway: ReturnType<typeof createLocalOidcGateway> | undefined
+  let cleanupPromise: Promise<void> | undefined
+  let stopping = false
+  const cleanup = () => cleanupPromise ??= (async () => {
+    stopping = true
+    // A signal can arrive while Docker/migrations are still provisioning. Do
+    // not exit before that promise yields the exact resources we must dispose.
+    if (!fixture && fixtureSetup) fixture = await fixtureSetup.catch(() => undefined)
+    gateway?.closeAllConnections?.()
+    if (gateway?.listening) await new Promise<void>(closed => gateway!.close(() => closed()))
+    await Promise.all(children.map(async child => {
+      if (child.exitCode !== null || child.signalCode !== null) return
+      child.kill('SIGTERM')
+      await Promise.race([exited(child).catch(() => 1), new Promise<void>(done => setTimeout(done, 5_000))])
+      if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await exited(child).catch(() => 1) }
+    }))
+    if (fixture) {
+      const disposed = await fixture.dispose()
+      if (disposed.leftRunning.length) throw new Error('OPS_E2E_FIXTURE_CLEANUP_REQUIRES_REVIEW')
+    }
+  })()
+  const onInterrupt = () => { void cleanup().finally(() => process.exit(130)) }
+  const onTerminate = () => { void cleanup().finally(() => process.exit(143)) }
+  process.once('SIGINT', onInterrupt)
+  process.once('SIGTERM', onTerminate)
+  const launch = (command: string, arguments_: string[], environment: NodeJS.ProcessEnv, name: string, inherit = false): ChildProcess => {
+    const output = inherit ? undefined : openSync(resolve(evidenceDir, `${name}.log`), 'wx', 0o600)
+    const errors = inherit ? undefined : openSync(resolve(evidenceDir, `${name}.error.log`), 'wx', 0o600)
+    const child = spawn(command, arguments_, { env: environment, stdio: inherit ? 'inherit' : ['ignore', output!, errors!] })
+    if (output !== undefined) closeSync(output)
+    if (errors !== undefined) closeSync(errors)
+    children.push(child)
+    return child
+  }
+  const ready = async (url: string, child: ChildProcess) => {
+    const deadline = Date.now() + 60_000
+    while (!stopping && Date.now() < deadline) {
+      if (child.exitCode !== null || child.signalCode !== null) throw new Error('OPS_E2E_SERVICE_EXITED_BEFORE_READY')
+      try { if ((await fetch(url, { signal: AbortSignal.timeout(2_000) })).ok) return } catch { /* startup */ }
+      await new Promise(done => setTimeout(done, 300))
+    }
+    throw new Error('OPS_E2E_SERVICE_READINESS_TIMEOUT')
+  }
+  try {
+    fixtureSetup = createIsolatedOpsFixture({ evidenceDir })
+    fixture = await fixtureSetup
+    if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SETUP')
+    const apiPort = await freeLoopbackPort()
+    const uiPort = await freeLoopbackPort()
+    const gatewayPort = await freeLoopbackPort()
+    if (new Set([apiPort, uiPort, gatewayPort]).size !== 3) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
+    const baseUrl = `http://127.0.0.1:${gatewayPort}`
+    const signingSecret = randomBytes(32).toString('hex')
+    const username = 'ops-isolated-e2e'
+    const password = randomBytes(24).toString('hex')
+    gateway = createLocalOidcGateway({
+      uiUpstream: `http://127.0.0.1:${uiPort}`, apiUpstream: `http://127.0.0.1:${apiPort}`,
+      username, password, sessionSecret: randomBytes(32).toString('hex'), oidcSigningSecret: signingSecret,
+      issuer: fixture.issuer, subject: fixture.actorSubject, workspaceId: fixture.workspaceId,
+      roles: ['platform_admin', 'security_admin'], workbench: 'platform',
+    })
+    const apiEnvironment = opsChildEnvironment(source, {
+      NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
+      PORT: String(apiPort), OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: signingSecret,
+      API_BIND_HOST: '127.0.0.1',
+      SESSION_ID_HASH_SECRET: randomBytes(32).toString('hex'),
+      DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl, REDIS_URL: fixture.redisUrl,
+      RUN_MIGRATIONS_ON_STARTUP: 'false', MCP_AUTHZ_MODE: 'enforce', AUTHZ_DURABLE_ASSIGNMENTS_REQUIRED: 'true',
+      CONNECTOR_FIXTURE_MODE: 'false', REQUEST_OBSERVABILITY_LOGS: 'true',
+      ALLOWED_ORIGINS: baseUrl, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
+    })
+    const api = launch(process.execPath, ['--import', 'tsx', 'apps/api/src/server.ts'], apiEnvironment, 'api')
+    const uiEnvironment = opsChildEnvironment(source, {
+      NODE_ENV: 'production', VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: baseUrl,
+      VITE_OPS_AUTH_MODE: 'oidc', VITE_OPS_BUILD_MODE: 'oidc', VITE_OPS_TRACE: 'true', VITE_OPS_E2E: 'true',
+    })
+    const uiOutput = resolve(evidenceDir, 'ui-dist')
+    const build = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
+    if (await exited(build) !== 0) throw new Error('OPS_E2E_UI_BUILD_FAILED')
+    const ui = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui')
+    await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`, api), ready(`http://127.0.0.1:${uiPort}/`, ui)])
+    const health = await (await fetch(`http://127.0.0.1:${apiPort}/healthz`)).json() as { data?: { persistence?: { mode?: string; ready?: boolean }; redis?: { ready?: boolean } } }
+    if (health.data?.persistence?.mode !== 'postgres' || !health.data.persistence.ready || !health.data.redis?.ready) throw new Error('OPS_E2E_DURABLE_RUNTIME_REQUIRED')
+    await new Promise<void>((done, reject) => { gateway!.once('error', reject); gateway!.listen(gatewayPort, '127.0.0.1', done) })
+    const environment = opsChildEnvironment(source, {
+      OPS_OIDC_BASE_URL: baseUrl, LOCAL_OIDC_TEST_USERNAME: username, LOCAL_OIDC_TEST_PASSWORD: password,
+      OPS_NO_AUTH_BASE_URL: `http://127.0.0.1:${uiPort}/`,
+      LOCAL_OIDC_SUBJECT: fixture.actorSubject, OPS_E2E_WORKSPACE_ID: fixture.workspaceId,
+      OPS_E2E_SUBJECT_IDENTITY_ID: fixture.subjectIdentityId, OPS_E2E_APPROVER_ID: fixture.approverId,
+      OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
+    })
+    writeFileSync(resolve(evidenceDir, 'runtime.json'), JSON.stringify({
+      runId: fixture.runId, evidenceDir, baseUrl, apiPort, uiPort, gatewayPort,
+      persistence: health.data.persistence, redis: health.data.redis,
+      authorization: { mode: 'enforce', durableAssignmentsRequired: true, identityProvider: 'local signed OIDC fixture' },
+      models: { configured: false, called: false }, sharedConfigurationRead: false,
+    }, null, 2), { mode: 0o600, flag: 'wx' })
+    console.log(JSON.stringify({ evidenceDir, runId: fixture.runId, isolated: true, persistence: 'postgres', testFiles: args.filter(argument => argument.endsWith('.spec.js')) }))
+    const run = launch(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--workers=1', '--reporter=line,json', '--output', resolve(evidenceDir, 'test-results')], environment, 'browser', true)
+    const exitCode = await exited(run)
+    if (afterRun) await afterRun({ fixture, baseUrl, username, password, evidenceDir, environment })
+    return exitCode
+  } finally {
+    await cleanup()
+    process.removeListener('SIGINT', onInterrupt)
+    process.removeListener('SIGTERM', onTerminate)
+  }
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  if (process.argv.includes('--help')) console.log('Usage: node --import tsx scripts/run-ops-oidc-e2e.ts [dogfood/chatgpt-all-functions/ops*.spec.js]\nAlways provisions isolated PG17/Redis and a fresh signed OIDC identity. Shared stack configuration is not accepted.')
+  else runOpsE2e(process.argv.slice(2)).then(code => { process.exitCode = code }, error => { console.error(error instanceof Error ? error.message : 'OPS_E2E_FAILED'); process.exitCode = 1 })
 }

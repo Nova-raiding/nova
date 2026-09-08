@@ -1,0 +1,87 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。\n创意点：可用 10000；本次预估 1；已消耗 0；结算 authorized"
+    }
+  ],
+  "structuredContent": {
+    "job_id": "imggen_399b378c-a03a-4a28-9320-b4a0233351e4",
+    "product_id": "prod_jd_local_89b3abb6d778b01e20b3",
+    "unbound_candidate": true,
+    "candidate_status": "未绑定商品、仅候选、不可发布",
+    "creative_points": {
+      "balance_state": "known",
+      "available_points": 10000,
+      "quoted_points": 1,
+      "reserved_points": 0,
+      "settled_points": 0,
+      "consumed_points": 0,
+      "customer_charge_points": 0,
+      "settlement": "included_quota",
+      "settlement_status": "authorized",
+      "access_revision": "1",
+      "rate_card_version": "fixture-local-v1:v1:fixture-local",
+      "authoritative": true
+    },
+    "execution": {
+      "mode": "durable",
+      "state": "queued",
+      "provider": "configured relay",
+      "source": "server"
+    },
+    "product_protection": {
+      "policy": "protected-product-intent-v1",
+      "allowed": true,
+      "immutableAttributes": [
+        "color",
+        "structure",
+        "material",
+        "logo",
+        "packaging_text",
+        "certification_mark",
+        "accessories"
+      ],
+      "safeModifications": [
+        "background",
+        "lighting",
+        "composition"
+      ],
+      "blockedAttributes": [],
+      "findingCodes": []
+    },
+    "job": {
+      "jobId": "imggen_399b378c-a03a-4a28-9320-b4a0233351e4",
+      "productId": "prod_jd_local_89b3abb6d778b01e20b3",
+      "taskId": null,
+      "contentVersionId": null,
+      "revision": 1,
+      "state": "queued",
+      "artifactRole": "candidate",
+      "imageMode": "optimize",
+      "direction": "制作一张京东商品详情介绍图，简洁清晰的分区电商排版，浅蓝白色背景，主体使用上传的蓝色女款连帽冲锋衣原图，保留商品本体颜色结构材质Logo标签配件不变，仅优化构图、背景和光影。画面分为商品全貌、规格信息、价格信息三个清晰区域。可见文字仅使用用户提供事实：蓝色女士防风冲锋衣、M号、199元。不添加未经证实的防水性能、材料成分或认证。不得虚构实拍细节；文字放在商品外部留白区域，不修改商品表面原有文字。",
+      "requestedCount": 1,
+      "skuIds": [],
+      "sourceAssetIds": [
+        "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac"
+      ],
+      "createdAt": "2026-09-07T09:00:13.935Z",
+      "updatedAt": "2026-09-07T09:00:13.935Z",
+      "archiveState": "pending",
+      "binding": "unbound",
+      "candidateCount": 0,
+      "candidates": [],
+      "platformUsage": {
+        "status": "not_submitted",
+        "observed": false
+      },
+      "selectionRequired": true
+    },
+    "next_action": {
+      "type": "get_status",
+      "label": "查询任务状态",
+      "allowed": true
+    }
+  },
+  "isError": false
+}

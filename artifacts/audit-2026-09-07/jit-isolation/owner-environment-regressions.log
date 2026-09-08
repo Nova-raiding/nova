@@ -1,0 +1,20 @@
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/capacity-workload.test.ts tests/safe-test-launcher.test.ts tests/test-summary.test.ts --reporter=default --reporter=json --outputFile=artifacts/audit-2026-09-07/jit-isolation/owner-environment-regressions.json
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/capacity-workload.test.ts (15 tests) 8ms
+ ✓ tests/test-summary.test.ts (23 tests) 2100ms
+     ✓ runs the CLI with isolated child fixtures and preserves raw reports in distinct run directories  1036ms
+     ✓ routes Vitest through the safe launcher and isolates/cleans smoke storage even after child exit 0  578ms
+     ✓ routes Vitest through the safe launcher and isolates/cleans smoke storage even after child exit 7  477ms
+ ✓ tests/safe-test-launcher.test.ts (31 tests) 18ms
+
+ Test Files  3 passed (3)
+      Tests  69 passed (69)
+   Start at  20:06:48
+   Duration  2.74s (transform 90ms, setup 0ms, import 135ms, tests 2.13s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-environment-regressions.json

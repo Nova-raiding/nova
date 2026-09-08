@@ -1,0 +1,828 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+    - /url: "#ops-main-content"
+  - complementary "运营主导航" [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: 大麦
+        - generic [ref=e11]:
+          - strong [ref=e12]: 大麦运营中心
+          - generic [ref=e13]: 平台运营与商家服务
+      - generic [ref=e14]: 平台运营控制面
+      - region "当前操作范围" [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: 当前操作范围
+          - generic [ref=e18]: 平台级
+        - status [ref=e19]: 正在查看平台聚合与控制面数据
+        - generic [ref=e20]:
+          - generic [ref=e21]: 平台范围
+          - strong [ref=e22]: 全平台
+        - generic [ref=e23]:
+          - generic [ref=e24]: 工作区上下文
+          - strong [ref=e25]: 未进入工作区
+        - generic [ref=e26]: 客户内容默认不可见；进入工作区需受控授权
+      - navigation "平台运营功能导航" [ref=e27]:
+        - region "平台治理" [ref=e28]:
+          - heading "平台治理" [level=2] [ref=e29]
+          - button "总览" [ref=e30] [cursor=pointer]:
+            - img "safety-certificate" [ref=e31] [cursor=pointer]:
+              - img [ref=e32] [cursor=pointer]
+            - text: 总览
+          - button "用户与租户" [ref=e34] [cursor=pointer]:
+            - img "team" [ref=e35] [cursor=pointer]:
+              - img [ref=e36] [cursor=pointer]
+            - text: 用户与租户
+          - button "成员与权限" [ref=e38] [cursor=pointer]:
+            - img "usergroup-add" [ref=e39] [cursor=pointer]:
+              - img [ref=e40] [cursor=pointer]
+            - text: 成员与权限
+          - button "客服与 CRM" [ref=e42] [cursor=pointer]:
+            - img "customer-service" [ref=e43] [cursor=pointer]:
+              - img [ref=e44] [cursor=pointer]
+            - text: 客服与 CRM
+          - button "事故中心" [ref=e46] [cursor=pointer]:
+            - img "alert" [ref=e47] [cursor=pointer]:
+              - img [ref=e48] [cursor=pointer]
+            - text: 事故中心
+        - region "商家运营" [ref=e50]:
+          - heading "商家运营" [level=2] [ref=e51]
+          - button "任务与内容" [ref=e52] [cursor=pointer]:
+            - img "cloud-sync" [ref=e53] [cursor=pointer]:
+              - img [ref=e54] [cursor=pointer]
+            - text: 任务与内容
+          - button "平台连接" [ref=e57] [cursor=pointer]:
+            - img "global" [ref=e58] [cursor=pointer]:
+              - img [ref=e59] [cursor=pointer]
+            - text: 平台连接
+          - button "平台规则" [ref=e61] [cursor=pointer]:
+            - img "read" [ref=e62] [cursor=pointer]:
+              - img [ref=e63] [cursor=pointer]
+            - text: 平台规则
+        - region "模型与计费" [ref=e65]:
+          - heading "模型与计费" [level=2] [ref=e66]
+          - button "模型服务" [ref=e67] [cursor=pointer]:
+            - img "robot" [ref=e68] [cursor=pointer]:
+              - img [ref=e69] [cursor=pointer]
+            - text: 模型服务
+          - button "账务与退款" [ref=e71] [cursor=pointer]:
+            - img "dollar" [ref=e72] [cursor=pointer]:
+              - img [ref=e73] [cursor=pointer]
+            - text: 账务与退款
+        - region "风险与系统" [ref=e75]:
+          - heading "风险与系统" [level=2] [ref=e76]
+          - button "功能开关" [ref=e77] [cursor=pointer]:
+            - img "experiment" [ref=e78] [cursor=pointer]:
+              - img [ref=e79] [cursor=pointer]
+            - text: 功能开关
+          - button "存储与对账" [ref=e81] [cursor=pointer]:
+            - img "cloud-server" [ref=e82] [cursor=pointer]:
+              - img [ref=e83] [cursor=pointer]
+            - text: 存储与对账
+          - button "审计中心" [ref=e87] [cursor=pointer]:
+            - img "file-search" [ref=e88] [cursor=pointer]:
+              - img [ref=e89] [cursor=pointer]
+            - text: 审计中心
+      - button "通过客服与 CRM 受控支持客户问题" [ref=e91] [cursor=pointer]: 受控支持入口
+  - generic [ref=e92]:
+    - banner [ref=e93]:
+      - generic [ref=e94]:
+        - generic [ref=e95]:
+          - generic [ref=e96]: WORKSPACE OPERATIONS
+          - generic [ref=e97]: 桌面运营工作台
+        - heading "商业与平台控制台" [level=2] [ref=e98]
+        - region "当前身份与权限范围" [ref=e99]:
+          - generic [ref=e100]:
+            - img [ref=e102]:
+              - img [ref=e103]
+            - strong [ref=e107]: 平台运营
+            - status [ref=e109]: 授权状态：已由服务端验证
+            - generic [ref=e111]: 身份 actor_demo
+            - generic "切换运营工作台" [ref=e113]:
+              - generic [ref=e114]: 工作台
+              - generic [ref=e115]: 主动选择后将重新验证对应工作台的服务端授权范围；切换期间控件暂不可用。
+              - radiogroup "当前运营工作台，请主动选择" [ref=e116]:
+                - generic [ref=e117]:
+                  - generic [ref=e118] [cursor=pointer]:
+                    - radio "平台控制台" [checked]
+                  - generic [ref=e120] [cursor=pointer]:
+                    - radio "商家工作区"
+            - generic [ref=e123]: 平台全局
+            - generic [ref=e125]: 策略 2026-08-31.v2
+          - status [ref=e126]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+      - button "连接诊断 / 登录配置" [ref=e129] [cursor=pointer]:
+        - generic [ref=e130] [cursor=pointer]: 登录 / 连接
+    - main [ref=e131]:
+      - status [ref=e132]
+      - status [ref=e133]:
+        - img "exclamation-circle" [ref=e135]:
+          - img [ref=e136]
+        - generic [ref=e138]:
+          - generic [ref=e139]: 部分运营数据未刷新
+          - generic [ref=e140]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list、ops.marketing.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+      - region "用户与租户" [ref=e141]:
+        - generic [ref=e142]:
+          - generic [ref=e143]:
+            - generic [ref=e144]:
+              - generic [ref=e145]: PLATFORM GOVERNANCE
+              - generic [ref=e146]: 当前工作区数据
+            - heading "用户与租户" [level=3] [ref=e147]
+            - generic [ref=e148]: 按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。
+          - button "刷新目录" [ref=e150] [cursor=pointer]:
+            - generic [ref=e151] [cursor=pointer]: 刷新目录
+          - status [ref=e152]:
+            - strong [ref=e154]: 当前下一步
+            - generic [ref=e155]: 先确认服务端能力投影与当前工作区范围，再执行需要原因、修订号和审计的治理操作。
+        - generic [ref=e156]:
+          - alert [ref=e159]:
+            - img "close-circle" [ref=e161]:
+              - img [ref=e162]
+            - generic [ref=e164]:
+              - generic [ref=e165]: 无法加载运营数据
+              - paragraph [ref=e168]: 部分数据集刷新失败（ops.storage.reconciliation.list、ops.audit.platform.list、ops.marketing.summary、ops.model-usage.summary、ops.growth.funnel、ops.alerts.list）。页面保留上次成功数据，这些值可能已过期：运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。
+            - button "重试加载运营数据" [ref=e170] [cursor=pointer]:
+              - generic [ref=e171] [cursor=pointer]: 重 试
+          - status [ref=e173]:
+            - img "info-circle" [ref=e175]:
+              - img [ref=e176]
+            - generic [ref=e178]:
+              - generic [ref=e179]: 用户治理能力已由服务端确认
+              - generic [ref=e180]: 页面分区、只读状态和写入入口均依据 ops.session 返回的 capability projection；页面不会从角色名称推断权限。
+          - generic "用户治理工作区" [ref=e183]:
+            - tablist [ref=e184]:
+              - generic [ref=e186]:
+                - tab "用户目录" [selected] [ref=e188] [cursor=pointer]
+                - tab "租户治理" [ref=e190] [cursor=pointer]
+                - tab "权限与角色" [ref=e192] [cursor=pointer]
+            - tabpanel "用户目录" [ref=e195]:
+              - generic [ref=e196]:
+                - generic [ref=e200]:
+                  - generic [ref=e202]: 用户身份
+                  - generic [ref=e205]: "4"
+                - generic [ref=e209]:
+                  - generic [ref=e211]: 成员关系
+                  - generic [ref=e214]: "161"
+                - generic [ref=e218]:
+                  - generic [ref=e220]: 涉及租户
+                  - generic [ref=e223]: "158"
+              - generic [ref=e224]:
+                - generic [ref=e227]: 用户目录
+                - generic [ref=e228]:
+                  - form "用户目录筛选" [ref=e229]:
+                    - generic [ref=e231]:
+                      - generic "关键词" [ref=e233]: "关键词 :"
+                      - textbox "按关键词筛选用户目录" [ref=e238]
+                    - generic [ref=e241]:
+                      - generic "状态" [ref=e243]: "状态 :"
+                      - generic [ref=e247] [cursor=pointer]:
+                        - generic [ref=e248] [cursor=pointer]:
+                          - generic: 全部状态
+                          - combobox "按成员状态筛选用户目录" [ref=e249] [cursor=pointer]
+                        - img "down" [ref=e251] [cursor=pointer]:
+                          - img [ref=e252] [cursor=pointer]
+                    - generic [ref=e255]:
+                      - generic "租户" [ref=e257]: "租户 :"
+                      - textbox "按工作区筛选用户目录" [ref=e262]
+                    - generic [ref=e269]:
+                      - button "查 询" [ref=e271] [cursor=pointer]:
+                        - generic [ref=e272] [cursor=pointer]: 查 询
+                      - button "清 空" [ref=e274] [cursor=pointer]:
+                        - generic [ref=e275] [cursor=pointer]: 清 空
+                      - button "导出当前筛选" [ref=e277] [cursor=pointer]:
+                        - generic [ref=e278] [cursor=pointer]: 导出当前筛选
+                      - button "批量停用（0）" [disabled] [ref=e280]:
+                        - generic: 批量停用（0）
+                  - alert [ref=e282]:
+                    - img "info-circle" [ref=e284]:
+                      - img [ref=e285]
+                    - generic [ref=e288]: 结果超过 500 条，请增加筛选条件。
+                  - generic [ref=e291]:
+                    - table "用户目录数据表" [ref=e295]:
+                      - rowgroup [ref=e308]:
+                        - row "Select all 身份标识 显示名 租户 角色 数据来源 套餐 / 消耗 成员状态 租户状态 创建时间 操作" [ref=e309]:
+                          - columnheader "Select all" [ref=e310]:
+                            - checkbox "Select all" [ref=e314] [cursor=pointer]
+                          - columnheader "身份标识" [ref=e315]
+                          - columnheader "显示名" [ref=e316] [cursor=pointer]:
+                            - generic [ref=e317] [cursor=pointer]:
+                              - generic [ref=e318] [cursor=pointer]: 显示名
+                              - generic [ref=e320] [cursor=pointer]:
+                                - img [ref=e321] [cursor=pointer]:
+                                  - img [ref=e322] [cursor=pointer]
+                                - img [ref=e324] [cursor=pointer]:
+                                  - img [ref=e325] [cursor=pointer]
+                          - columnheader "租户" [ref=e327]
+                          - columnheader "角色" [ref=e328]
+                          - columnheader "数据来源" [ref=e329]
+                          - columnheader "套餐 / 消耗" [ref=e330]
+                          - columnheader "成员状态" [ref=e331] [cursor=pointer]:
+                            - generic [ref=e332] [cursor=pointer]:
+                              - generic [ref=e333] [cursor=pointer]: 成员状态
+                              - generic [ref=e335] [cursor=pointer]:
+                                - img [ref=e336] [cursor=pointer]:
+                                  - img [ref=e337] [cursor=pointer]
+                                - img [ref=e339] [cursor=pointer]:
+                                  - img [ref=e340] [cursor=pointer]
+                          - columnheader "租户状态" [ref=e342]
+                          - columnheader "创建时间" [ref=e343] [cursor=pointer]:
+                            - generic [ref=e344] [cursor=pointer]:
+                              - generic [ref=e345] [cursor=pointer]: 创建时间
+                              - generic [ref=e347] [cursor=pointer]:
+                                - img [ref=e348] [cursor=pointer]:
+                                  - img [ref=e349] [cursor=pointer]
+                                - img [ref=e351] [cursor=pointer]:
+                                  - img [ref=e352] [cursor=pointer]
+                          - columnheader "操作" [ref=e354]
+                      - rowgroup [ref=e355]:
+                        - checkbox [ref=e359] [cursor=pointer]
+                        - generic [ref=e360]:
+                          - generic [ref=e361]: 显示名
+                          - generic [ref=e363]:
+                            - img [ref=e364]:
+                              - img [ref=e365]
+                            - img [ref=e367]:
+                              - img [ref=e368]
+                        - generic [ref=e370]:
+                          - generic [ref=e371]: 成员状态
+                          - generic [ref=e373]:
+                            - img [ref=e374]:
+                              - img [ref=e375]
+                            - img [ref=e377]:
+                              - img [ref=e378]
+                        - generic [ref=e380]:
+                          - generic [ref=e381]: 创建时间
+                          - generic [ref=e383]:
+                            - img [ref=e384]:
+                              - img [ref=e385]
+                            - img [ref=e387]:
+                              - img [ref=e388]
+                        - row "Select row 1 actor_demo 本地演示商家运营 ws_demo 运营 业务成员记录 Trial · trialing 任务 3/30 · 余额 ¥159.53 已激活 正常 2026/08/28 07:53 查看 本地演示商家运营 的用户详情 停用 本地演示商家运营 的访问" [ref=e390]:
+                          - cell "Select row 1" [ref=e391]:
+                            - generic [ref=e392]:
+                              - generic:
+                                - checkbox "Select row 1" [disabled]
+                          - cell "actor_demo" [ref=e393]
+                          - cell "本地演示商家运营" [ref=e394]
+                          - cell "ws_demo" [ref=e395]
+                          - cell "运营" [ref=e396]:
+                            - generic [ref=e397]: 运营
+                          - cell "业务成员记录" [ref=e398]:
+                            - generic [ref=e399]: 业务成员记录
+                          - cell "Trial · trialing 任务 3/30 · 余额 ¥159.53" [ref=e400]:
+                            - generic [ref=e401]:
+                              - generic [ref=e403]: Trial · trialing
+                              - generic [ref=e405]: 任务 3/30 · 余额 ¥159.53
+                          - cell "已激活" [ref=e406]:
+                            - generic [ref=e407]: 已激活
+                          - cell "正常" [ref=e408]:
+                            - generic [ref=e409]: 正常
+                          - cell "2026/08/28 07:53" [ref=e410]
+                          - cell "查看 本地演示商家运营 的用户详情 停用 本地演示商家运营 的访问" [ref=e411]:
+                            - generic [ref=e412]:
+                              - button "查看 本地演示商家运营 的用户详情" [ref=e414] [cursor=pointer]:
+                                - generic [ref=e415] [cursor=pointer]: 详 情
+                              - button "停用 本地演示商家运营 的访问" [disabled] [ref=e417]:
+                                - generic: 停 用
+                        - row "Select row 2 workspace_admin_demo Capacity gate 6 ws_be87dca95d714bc1bbdb6c21 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/09/01 13:53 查看 Capacity gate 6 的用户详情 停用 Capacity gate 6 的访问" [ref=e418]:
+                          - cell "Select row 2" [ref=e419]:
+                            - checkbox "Select row 2" [ref=e422] [cursor=pointer]
+                          - cell "workspace_admin_demo" [ref=e423]
+                          - cell "Capacity gate 6" [ref=e424]
+                          - cell "ws_be87dca95d714bc1bbdb6c21" [ref=e425]
+                          - cell "工作区所有者" [ref=e426]:
+                            - generic [ref=e427]: 工作区所有者
+                          - cell "业务成员记录" [ref=e428]:
+                            - generic [ref=e429]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e430]:
+                            - generic [ref=e431]:
+                              - generic [ref=e433]: Trial · trialing
+                              - generic [ref=e435]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e436]:
+                            - generic [ref=e437]: 已激活
+                          - cell "正常" [ref=e438]:
+                            - generic [ref=e439]: 正常
+                          - cell "2026/09/01 13:53" [ref=e440]
+                          - cell "查看 Capacity gate 6 的用户详情 停用 Capacity gate 6 的访问" [ref=e441]:
+                            - generic [ref=e442]:
+                              - button "查看 Capacity gate 6 的用户详情" [ref=e444] [cursor=pointer]:
+                                - generic [ref=e445] [cursor=pointer]: 详 情
+                              - button "停用 Capacity gate 6 的访问" [ref=e447] [cursor=pointer]:
+                                - generic [ref=e448] [cursor=pointer]: 停 用
+                        - row "Select row 3 workspace_admin_demo 本地演示工作区所有者 ws_demo 工作区所有者 本地种子 Trial · trialing 任务 3/30 · 余额 ¥159.53 已激活 正常 2026/09/01 08:33 查看 本地演示工作区所有者 的用户详情 停用 本地演示工作区所有者 的访问" [ref=e449]:
+                          - cell "Select row 3" [ref=e450]:
+                            - checkbox "Select row 3" [ref=e453] [cursor=pointer]
+                          - cell "workspace_admin_demo" [ref=e454]
+                          - cell "本地演示工作区所有者" [ref=e455]
+                          - cell "ws_demo" [ref=e456]
+                          - cell "工作区所有者" [ref=e457]:
+                            - generic [ref=e458]: 工作区所有者
+                          - cell "本地种子" [ref=e459]:
+                            - generic [ref=e460]: 本地种子
+                          - cell "Trial · trialing 任务 3/30 · 余额 ¥159.53" [ref=e461]:
+                            - generic [ref=e462]:
+                              - generic [ref=e464]: Trial · trialing
+                              - generic [ref=e466]: 任务 3/30 · 余额 ¥159.53
+                          - cell "已激活" [ref=e467]:
+                            - generic [ref=e468]: 已激活
+                          - cell "正常" [ref=e469]:
+                            - generic [ref=e470]: 正常
+                          - cell "2026/09/01 08:33" [ref=e471]
+                          - cell "查看 本地演示工作区所有者 的用户详情 停用 本地演示工作区所有者 的访问" [ref=e472]:
+                            - generic [ref=e473]:
+                              - button "查看 本地演示工作区所有者 的用户详情" [ref=e475] [cursor=pointer]:
+                                - generic [ref=e476] [cursor=pointer]: 详 情
+                              - button "停用 本地演示工作区所有者 的访问" [ref=e478] [cursor=pointer]:
+                                - generic [ref=e479] [cursor=pointer]: 停 用
+                        - row "Select row 4 codex-app-user jaap Odin ws_demo 工作区所有者 业务成员记录 Trial · trialing 任务 3/30 · 余额 ¥159.53 已激活 正常 2026/08/29 16:55 查看 jaap Odin 的用户详情 停用 jaap Odin 的访问" [ref=e480]:
+                          - cell "Select row 4" [ref=e481]:
+                            - checkbox "Select row 4" [ref=e484] [cursor=pointer]
+                          - cell "codex-app-user" [ref=e485]
+                          - cell "jaap Odin" [ref=e486]
+                          - cell "ws_demo" [ref=e487]
+                          - cell "工作区所有者" [ref=e488]:
+                            - generic [ref=e489]: 工作区所有者
+                          - cell "业务成员记录" [ref=e490]:
+                            - generic [ref=e491]: 业务成员记录
+                          - cell "Trial · trialing 任务 3/30 · 余额 ¥159.53" [ref=e492]:
+                            - generic [ref=e493]:
+                              - generic [ref=e495]: Trial · trialing
+                              - generic [ref=e497]: 任务 3/30 · 余额 ¥159.53
+                          - cell "已激活" [ref=e498]:
+                            - generic [ref=e499]: 已激活
+                          - cell "正常" [ref=e500]:
+                            - generic [ref=e501]: 正常
+                          - cell "2026/08/29 16:55" [ref=e502]
+                          - cell "查看 jaap Odin 的用户详情 停用 jaap Odin 的访问" [ref=e503]:
+                            - generic [ref=e504]:
+                              - button "查看 jaap Odin 的用户详情" [ref=e506] [cursor=pointer]:
+                                - generic [ref=e507] [cursor=pointer]: 详 情
+                              - button "停用 jaap Odin 的访问" [ref=e509] [cursor=pointer]:
+                                - generic [ref=e510] [cursor=pointer]: 停 用
+                        - row "Select row 5 support_demo 本地演示支持专员 ws_demo 支持 本地种子 Trial · trialing 任务 3/30 · 余额 ¥159.53 已激活 正常 2026/08/28 10:14 查看 本地演示支持专员 的用户详情 停用 本地演示支持专员 的访问" [ref=e511]:
+                          - cell "Select row 5" [ref=e512]:
+                            - checkbox "Select row 5" [ref=e515] [cursor=pointer]
+                          - cell "support_demo" [ref=e516]
+                          - cell "本地演示支持专员" [ref=e517]
+                          - cell "ws_demo" [ref=e518]
+                          - cell "支持" [ref=e519]:
+                            - generic [ref=e520]: 支持
+                          - cell "本地种子" [ref=e521]:
+                            - generic [ref=e522]: 本地种子
+                          - cell "Trial · trialing 任务 3/30 · 余额 ¥159.53" [ref=e523]:
+                            - generic [ref=e524]:
+                              - generic [ref=e526]: Trial · trialing
+                              - generic [ref=e528]: 任务 3/30 · 余额 ¥159.53
+                          - cell "已激活" [ref=e529]:
+                            - generic [ref=e530]: 已激活
+                          - cell "正常" [ref=e531]:
+                            - generic [ref=e532]: 正常
+                          - cell "2026/08/28 10:14" [ref=e533]
+                          - cell "查看 本地演示支持专员 的用户详情 停用 本地演示支持专员 的访问" [ref=e534]:
+                            - generic [ref=e535]:
+                              - button "查看 本地演示支持专员 的用户详情" [ref=e537] [cursor=pointer]:
+                                - generic [ref=e538] [cursor=pointer]: 详 情
+                              - button "停用 本地演示支持专员 的访问" [ref=e540] [cursor=pointer]:
+                                - generic [ref=e541] [cursor=pointer]: 停 用
+                        - row "Select row 6 actor_demo Compose smoke 40 ws_65e93b2a884e44e8bcf03d62 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 40 的用户详情 停用 Compose smoke 40 的访问" [ref=e542]:
+                          - cell "Select row 6" [ref=e543]:
+                            - generic [ref=e544]:
+                              - generic:
+                                - checkbox "Select row 6" [disabled]
+                          - cell "actor_demo" [ref=e545]
+                          - cell "Compose smoke 40" [ref=e546]
+                          - cell "ws_65e93b2a884e44e8bcf03d62" [ref=e547]
+                          - cell "工作区所有者" [ref=e548]:
+                            - generic [ref=e549]: 工作区所有者
+                          - cell "业务成员记录" [ref=e550]:
+                            - generic [ref=e551]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e552]:
+                            - generic [ref=e553]:
+                              - generic [ref=e555]: Trial · trialing
+                              - generic [ref=e557]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e558]:
+                            - generic [ref=e559]: 已激活
+                          - cell "正常" [ref=e560]:
+                            - generic [ref=e561]: 正常
+                          - cell "2026/08/28 23:19" [ref=e562]
+                          - cell "查看 Compose smoke 40 的用户详情 停用 Compose smoke 40 的访问" [ref=e563]:
+                            - generic [ref=e564]:
+                              - button "查看 Compose smoke 40 的用户详情" [ref=e566] [cursor=pointer]:
+                                - generic [ref=e567] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 40 的访问" [disabled] [ref=e569]:
+                                - generic: 停 用
+                        - row "Select row 7 actor_demo Compose smoke 34 ws_4f2d9330552e4aada048d3df 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 34 的用户详情 停用 Compose smoke 34 的访问" [ref=e570]:
+                          - cell "Select row 7" [ref=e571]:
+                            - generic [ref=e572]:
+                              - generic:
+                                - checkbox "Select row 7" [disabled]
+                          - cell "actor_demo" [ref=e573]
+                          - cell "Compose smoke 34" [ref=e574]
+                          - cell "ws_4f2d9330552e4aada048d3df" [ref=e575]
+                          - cell "工作区所有者" [ref=e576]:
+                            - generic [ref=e577]: 工作区所有者
+                          - cell "业务成员记录" [ref=e578]:
+                            - generic [ref=e579]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e580]:
+                            - generic [ref=e581]:
+                              - generic [ref=e583]: Trial · trialing
+                              - generic [ref=e585]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e586]:
+                            - generic [ref=e587]: 已激活
+                          - cell "正常" [ref=e588]:
+                            - generic [ref=e589]: 正常
+                          - cell "2026/08/28 23:19" [ref=e590]
+                          - cell "查看 Compose smoke 34 的用户详情 停用 Compose smoke 34 的访问" [ref=e591]:
+                            - generic [ref=e592]:
+                              - button "查看 Compose smoke 34 的用户详情" [ref=e594] [cursor=pointer]:
+                                - generic [ref=e595] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 34 的访问" [disabled] [ref=e597]:
+                                - generic: 停 用
+                        - row "Select row 8 actor_demo Compose smoke 33 ws_218040acdffe447f9177fe96 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 33 的用户详情 停用 Compose smoke 33 的访问" [ref=e598]:
+                          - cell "Select row 8" [ref=e599]:
+                            - generic [ref=e600]:
+                              - generic:
+                                - checkbox "Select row 8" [disabled]
+                          - cell "actor_demo" [ref=e601]
+                          - cell "Compose smoke 33" [ref=e602]
+                          - cell "ws_218040acdffe447f9177fe96" [ref=e603]
+                          - cell "工作区所有者" [ref=e604]:
+                            - generic [ref=e605]: 工作区所有者
+                          - cell "业务成员记录" [ref=e606]:
+                            - generic [ref=e607]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e608]:
+                            - generic [ref=e609]:
+                              - generic [ref=e611]: Trial · trialing
+                              - generic [ref=e613]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e614]:
+                            - generic [ref=e615]: 已激活
+                          - cell "正常" [ref=e616]:
+                            - generic [ref=e617]: 正常
+                          - cell "2026/08/28 23:19" [ref=e618]
+                          - cell "查看 Compose smoke 33 的用户详情 停用 Compose smoke 33 的访问" [ref=e619]:
+                            - generic [ref=e620]:
+                              - button "查看 Compose smoke 33 的用户详情" [ref=e622] [cursor=pointer]:
+                                - generic [ref=e623] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 33 的访问" [disabled] [ref=e625]:
+                                - generic: 停 用
+                        - row "Select row 9 actor_demo Compose smoke 39 ws_02d69d8273504d52b9039820 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 39 的用户详情 停用 Compose smoke 39 的访问" [ref=e626]:
+                          - cell "Select row 9" [ref=e627]:
+                            - generic [ref=e628]:
+                              - generic:
+                                - checkbox "Select row 9" [disabled]
+                          - cell "actor_demo" [ref=e629]
+                          - cell "Compose smoke 39" [ref=e630]
+                          - cell "ws_02d69d8273504d52b9039820" [ref=e631]
+                          - cell "工作区所有者" [ref=e632]:
+                            - generic [ref=e633]: 工作区所有者
+                          - cell "业务成员记录" [ref=e634]:
+                            - generic [ref=e635]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e636]:
+                            - generic [ref=e637]:
+                              - generic [ref=e639]: Trial · trialing
+                              - generic [ref=e641]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e642]:
+                            - generic [ref=e643]: 已激活
+                          - cell "正常" [ref=e644]:
+                            - generic [ref=e645]: 正常
+                          - cell "2026/08/28 23:19" [ref=e646]
+                          - cell "查看 Compose smoke 39 的用户详情 停用 Compose smoke 39 的访问" [ref=e647]:
+                            - generic [ref=e648]:
+                              - button "查看 Compose smoke 39 的用户详情" [ref=e650] [cursor=pointer]:
+                                - generic [ref=e651] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 39 的访问" [disabled] [ref=e653]:
+                                - generic: 停 用
+                        - row "Select row 10 actor_demo Compose smoke 37 ws_31d43b64276d408e9d04a1b2 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 37 的用户详情 停用 Compose smoke 37 的访问" [ref=e654]:
+                          - cell "Select row 10" [ref=e655]:
+                            - generic [ref=e656]:
+                              - generic:
+                                - checkbox "Select row 10" [disabled]
+                          - cell "actor_demo" [ref=e657]
+                          - cell "Compose smoke 37" [ref=e658]
+                          - cell "ws_31d43b64276d408e9d04a1b2" [ref=e659]
+                          - cell "工作区所有者" [ref=e660]:
+                            - generic [ref=e661]: 工作区所有者
+                          - cell "业务成员记录" [ref=e662]:
+                            - generic [ref=e663]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e664]:
+                            - generic [ref=e665]:
+                              - generic [ref=e667]: Trial · trialing
+                              - generic [ref=e669]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e670]:
+                            - generic [ref=e671]: 已激活
+                          - cell "正常" [ref=e672]:
+                            - generic [ref=e673]: 正常
+                          - cell "2026/08/28 23:19" [ref=e674]
+                          - cell "查看 Compose smoke 37 的用户详情 停用 Compose smoke 37 的访问" [ref=e675]:
+                            - generic [ref=e676]:
+                              - button "查看 Compose smoke 37 的用户详情" [ref=e678] [cursor=pointer]:
+                                - generic [ref=e679] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 37 的访问" [disabled] [ref=e681]:
+                                - generic: 停 用
+                        - row "Select row 11 actor_demo Compose smoke 38 ws_d18a3d8291114e128c9d2fd6 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 38 的用户详情 停用 Compose smoke 38 的访问" [ref=e682]:
+                          - cell "Select row 11" [ref=e683]:
+                            - generic [ref=e684]:
+                              - generic:
+                                - checkbox "Select row 11" [disabled]
+                          - cell "actor_demo" [ref=e685]
+                          - cell "Compose smoke 38" [ref=e686]
+                          - cell "ws_d18a3d8291114e128c9d2fd6" [ref=e687]
+                          - cell "工作区所有者" [ref=e688]:
+                            - generic [ref=e689]: 工作区所有者
+                          - cell "业务成员记录" [ref=e690]:
+                            - generic [ref=e691]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e692]:
+                            - generic [ref=e693]:
+                              - generic [ref=e695]: Trial · trialing
+                              - generic [ref=e697]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e698]:
+                            - generic [ref=e699]: 已激活
+                          - cell "正常" [ref=e700]:
+                            - generic [ref=e701]: 正常
+                          - cell "2026/08/28 23:19" [ref=e702]
+                          - cell "查看 Compose smoke 38 的用户详情 停用 Compose smoke 38 的访问" [ref=e703]:
+                            - generic [ref=e704]:
+                              - button "查看 Compose smoke 38 的用户详情" [ref=e706] [cursor=pointer]:
+                                - generic [ref=e707] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 38 的访问" [disabled] [ref=e709]:
+                                - generic: 停 用
+                        - row "Select row 12 actor_demo Compose smoke 36 ws_db170122ea1942a382cc879b 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 36 的用户详情 停用 Compose smoke 36 的访问" [ref=e710]:
+                          - cell "Select row 12" [ref=e711]:
+                            - generic [ref=e712]:
+                              - generic:
+                                - checkbox "Select row 12" [disabled]
+                          - cell "actor_demo" [ref=e713]
+                          - cell "Compose smoke 36" [ref=e714]
+                          - cell "ws_db170122ea1942a382cc879b" [ref=e715]
+                          - cell "工作区所有者" [ref=e716]:
+                            - generic [ref=e717]: 工作区所有者
+                          - cell "业务成员记录" [ref=e718]:
+                            - generic [ref=e719]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e720]:
+                            - generic [ref=e721]:
+                              - generic [ref=e723]: Trial · trialing
+                              - generic [ref=e725]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e726]:
+                            - generic [ref=e727]: 已激活
+                          - cell "正常" [ref=e728]:
+                            - generic [ref=e729]: 正常
+                          - cell "2026/08/28 23:19" [ref=e730]
+                          - cell "查看 Compose smoke 36 的用户详情 停用 Compose smoke 36 的访问" [ref=e731]:
+                            - generic [ref=e732]:
+                              - button "查看 Compose smoke 36 的用户详情" [ref=e734] [cursor=pointer]:
+                                - generic [ref=e735] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 36 的访问" [disabled] [ref=e737]:
+                                - generic: 停 用
+                        - row "Select row 13 actor_demo Compose smoke 47 ws_249a673e1d144e548590c532 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 47 的用户详情 停用 Compose smoke 47 的访问" [ref=e738]:
+                          - cell "Select row 13" [ref=e739]:
+                            - generic [ref=e740]:
+                              - generic:
+                                - checkbox "Select row 13" [disabled]
+                          - cell "actor_demo" [ref=e741]
+                          - cell "Compose smoke 47" [ref=e742]
+                          - cell "ws_249a673e1d144e548590c532" [ref=e743]
+                          - cell "工作区所有者" [ref=e744]:
+                            - generic [ref=e745]: 工作区所有者
+                          - cell "业务成员记录" [ref=e746]:
+                            - generic [ref=e747]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e748]:
+                            - generic [ref=e749]:
+                              - generic [ref=e751]: Trial · trialing
+                              - generic [ref=e753]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e754]:
+                            - generic [ref=e755]: 已激活
+                          - cell "正常" [ref=e756]:
+                            - generic [ref=e757]: 正常
+                          - cell "2026/08/28 23:19" [ref=e758]
+                          - cell "查看 Compose smoke 47 的用户详情 停用 Compose smoke 47 的访问" [ref=e759]:
+                            - generic [ref=e760]:
+                              - button "查看 Compose smoke 47 的用户详情" [ref=e762] [cursor=pointer]:
+                                - generic [ref=e763] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 47 的访问" [disabled] [ref=e765]:
+                                - generic: 停 用
+                        - row "Select row 14 actor_demo Compose smoke 32 ws_878c6eaa143446c7adee8f0a 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 32 的用户详情 停用 Compose smoke 32 的访问" [ref=e766]:
+                          - cell "Select row 14" [ref=e767]:
+                            - generic [ref=e768]:
+                              - generic:
+                                - checkbox "Select row 14" [disabled]
+                          - cell "actor_demo" [ref=e769]
+                          - cell "Compose smoke 32" [ref=e770]
+                          - cell "ws_878c6eaa143446c7adee8f0a" [ref=e771]
+                          - cell "工作区所有者" [ref=e772]:
+                            - generic [ref=e773]: 工作区所有者
+                          - cell "业务成员记录" [ref=e774]:
+                            - generic [ref=e775]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e776]:
+                            - generic [ref=e777]:
+                              - generic [ref=e779]: Trial · trialing
+                              - generic [ref=e781]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e782]:
+                            - generic [ref=e783]: 已激活
+                          - cell "正常" [ref=e784]:
+                            - generic [ref=e785]: 正常
+                          - cell "2026/08/28 23:19" [ref=e786]
+                          - cell "查看 Compose smoke 32 的用户详情 停用 Compose smoke 32 的访问" [ref=e787]:
+                            - generic [ref=e788]:
+                              - button "查看 Compose smoke 32 的用户详情" [ref=e790] [cursor=pointer]:
+                                - generic [ref=e791] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 32 的访问" [disabled] [ref=e793]:
+                                - generic: 停 用
+                        - row "Select row 15 actor_demo Compose smoke 35 ws_092c3a8e83fe41e499a49782 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 35 的用户详情 停用 Compose smoke 35 的访问" [ref=e794]:
+                          - cell "Select row 15" [ref=e795]:
+                            - generic [ref=e796]:
+                              - generic:
+                                - checkbox "Select row 15" [disabled]
+                          - cell "actor_demo" [ref=e797]
+                          - cell "Compose smoke 35" [ref=e798]
+                          - cell "ws_092c3a8e83fe41e499a49782" [ref=e799]
+                          - cell "工作区所有者" [ref=e800]:
+                            - generic [ref=e801]: 工作区所有者
+                          - cell "业务成员记录" [ref=e802]:
+                            - generic [ref=e803]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e804]:
+                            - generic [ref=e805]:
+                              - generic [ref=e807]: Trial · trialing
+                              - generic [ref=e809]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e810]:
+                            - generic [ref=e811]: 已激活
+                          - cell "正常" [ref=e812]:
+                            - generic [ref=e813]: 正常
+                          - cell "2026/08/28 23:19" [ref=e814]
+                          - cell "查看 Compose smoke 35 的用户详情 停用 Compose smoke 35 的访问" [ref=e815]:
+                            - generic [ref=e816]:
+                              - button "查看 Compose smoke 35 的用户详情" [ref=e818] [cursor=pointer]:
+                                - generic [ref=e819] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 35 的访问" [disabled] [ref=e821]:
+                                - generic: 停 用
+                        - row "Select row 16 actor_demo Compose smoke 48 ws_c5936fe67a9e403badeb043d 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 48 的用户详情 停用 Compose smoke 48 的访问" [ref=e822]:
+                          - cell "Select row 16" [ref=e823]:
+                            - generic [ref=e824]:
+                              - generic:
+                                - checkbox "Select row 16" [disabled]
+                          - cell "actor_demo" [ref=e825]
+                          - cell "Compose smoke 48" [ref=e826]
+                          - cell "ws_c5936fe67a9e403badeb043d" [ref=e827]
+                          - cell "工作区所有者" [ref=e828]:
+                            - generic [ref=e829]: 工作区所有者
+                          - cell "业务成员记录" [ref=e830]:
+                            - generic [ref=e831]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e832]:
+                            - generic [ref=e833]:
+                              - generic [ref=e835]: Trial · trialing
+                              - generic [ref=e837]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e838]:
+                            - generic [ref=e839]: 已激活
+                          - cell "正常" [ref=e840]:
+                            - generic [ref=e841]: 正常
+                          - cell "2026/08/28 23:19" [ref=e842]
+                          - cell "查看 Compose smoke 48 的用户详情 停用 Compose smoke 48 的访问" [ref=e843]:
+                            - generic [ref=e844]:
+                              - button "查看 Compose smoke 48 的用户详情" [ref=e846] [cursor=pointer]:
+                                - generic [ref=e847] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 48 的访问" [disabled] [ref=e849]:
+                                - generic: 停 用
+                        - row "Select row 17 actor_demo Compose smoke 46 ws_77bfd64cfcb343a382a6655b 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 46 的用户详情 停用 Compose smoke 46 的访问" [ref=e850]:
+                          - cell "Select row 17" [ref=e851]:
+                            - generic [ref=e852]:
+                              - generic:
+                                - checkbox "Select row 17" [disabled]
+                          - cell "actor_demo" [ref=e853]
+                          - cell "Compose smoke 46" [ref=e854]
+                          - cell "ws_77bfd64cfcb343a382a6655b" [ref=e855]
+                          - cell "工作区所有者" [ref=e856]:
+                            - generic [ref=e857]: 工作区所有者
+                          - cell "业务成员记录" [ref=e858]:
+                            - generic [ref=e859]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e860]:
+                            - generic [ref=e861]:
+                              - generic [ref=e863]: Trial · trialing
+                              - generic [ref=e865]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e866]:
+                            - generic [ref=e867]: 已激活
+                          - cell "正常" [ref=e868]:
+                            - generic [ref=e869]: 正常
+                          - cell "2026/08/28 23:19" [ref=e870]
+                          - cell "查看 Compose smoke 46 的用户详情 停用 Compose smoke 46 的访问" [ref=e871]:
+                            - generic [ref=e872]:
+                              - button "查看 Compose smoke 46 的用户详情" [ref=e874] [cursor=pointer]:
+                                - generic [ref=e875] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 46 的访问" [disabled] [ref=e877]:
+                                - generic: 停 用
+                        - row "Select row 18 actor_demo Compose smoke 45 ws_8dcb6f4000024ba8a8438095 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 45 的用户详情 停用 Compose smoke 45 的访问" [ref=e878]:
+                          - cell "Select row 18" [ref=e879]:
+                            - generic [ref=e880]:
+                              - generic:
+                                - checkbox "Select row 18" [disabled]
+                          - cell "actor_demo" [ref=e881]
+                          - cell "Compose smoke 45" [ref=e882]
+                          - cell "ws_8dcb6f4000024ba8a8438095" [ref=e883]
+                          - cell "工作区所有者" [ref=e884]:
+                            - generic [ref=e885]: 工作区所有者
+                          - cell "业务成员记录" [ref=e886]:
+                            - generic [ref=e887]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e888]:
+                            - generic [ref=e889]:
+                              - generic [ref=e891]: Trial · trialing
+                              - generic [ref=e893]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e894]:
+                            - generic [ref=e895]: 已激活
+                          - cell "正常" [ref=e896]:
+                            - generic [ref=e897]: 正常
+                          - cell "2026/08/28 23:19" [ref=e898]
+                          - cell "查看 Compose smoke 45 的用户详情 停用 Compose smoke 45 的访问" [ref=e899]:
+                            - generic [ref=e900]:
+                              - button "查看 Compose smoke 45 的用户详情" [ref=e902] [cursor=pointer]:
+                                - generic [ref=e903] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 45 的访问" [disabled] [ref=e905]:
+                                - generic: 停 用
+                        - row "Select row 19 actor_demo Compose smoke 43 ws_e23a084a25374af1807d137e 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 43 的用户详情 停用 Compose smoke 43 的访问" [ref=e906]:
+                          - cell "Select row 19" [ref=e907]:
+                            - generic [ref=e908]:
+                              - generic:
+                                - checkbox "Select row 19" [disabled]
+                          - cell "actor_demo" [ref=e909]
+                          - cell "Compose smoke 43" [ref=e910]
+                          - cell "ws_e23a084a25374af1807d137e" [ref=e911]
+                          - cell "工作区所有者" [ref=e912]:
+                            - generic [ref=e913]: 工作区所有者
+                          - cell "业务成员记录" [ref=e914]:
+                            - generic [ref=e915]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e916]:
+                            - generic [ref=e917]:
+                              - generic [ref=e919]: Trial · trialing
+                              - generic [ref=e921]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e922]:
+                            - generic [ref=e923]: 已激活
+                          - cell "正常" [ref=e924]:
+                            - generic [ref=e925]: 正常
+                          - cell "2026/08/28 23:19" [ref=e926]
+                          - cell "查看 Compose smoke 43 的用户详情 停用 Compose smoke 43 的访问" [ref=e927]:
+                            - generic [ref=e928]:
+                              - button "查看 Compose smoke 43 的用户详情" [ref=e930] [cursor=pointer]:
+                                - generic [ref=e931] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 43 的访问" [disabled] [ref=e933]:
+                                - generic: 停 用
+                        - row "Select row 20 actor_demo Compose smoke 31 ws_21aaea1ce44e48cb8ab66374 工作区所有者 业务成员记录 Trial · trialing 任务 0/30 · 余额 ¥0.00 已激活 正常 2026/08/28 23:19 查看 Compose smoke 31 的用户详情 停用 Compose smoke 31 的访问" [ref=e934]:
+                          - cell "Select row 20" [ref=e935]:
+                            - generic [ref=e936]:
+                              - generic:
+                                - checkbox "Select row 20" [disabled]
+                          - cell "actor_demo" [ref=e937]
+                          - cell "Compose smoke 31" [ref=e938]
+                          - cell "ws_21aaea1ce44e48cb8ab66374" [ref=e939]
+                          - cell "工作区所有者" [ref=e940]:
+                            - generic [ref=e941]: 工作区所有者
+                          - cell "业务成员记录" [ref=e942]:
+                            - generic [ref=e943]: 业务成员记录
+                          - cell "Trial · trialing 任务 0/30 · 余额 ¥0.00" [ref=e944]:
+                            - generic [ref=e945]:
+                              - generic [ref=e947]: Trial · trialing
+                              - generic [ref=e949]: 任务 0/30 · 余额 ¥0.00
+                          - cell "已激活" [ref=e950]:
+                            - generic [ref=e951]: 已激活
+                          - cell "正常" [ref=e952]:
+                            - generic [ref=e953]: 正常
+                          - cell "2026/08/28 23:19" [ref=e954]
+                          - cell "查看 Compose smoke 31 的用户详情 停用 Compose smoke 31 的访问" [ref=e955]:
+                            - generic [ref=e956]:
+                              - button "查看 Compose smoke 31 的用户详情" [ref=e958] [cursor=pointer]:
+                                - generic [ref=e959] [cursor=pointer]: 详 情
+                              - button "停用 Compose smoke 31 的访问" [disabled] [ref=e961]:
+                                - generic: 停 用
+                    - list [ref=e962]:
+                      - listitem [ref=e963]: 共 161 条成员关系
+                      - listitem "上一页" [ref=e964]:
+                        - button "left" [disabled] [ref=e965]:
+                          - img "left" [ref=e966]:
+                            - img [ref=e967]
+                      - listitem "1" [ref=e969] [cursor=pointer]:
+                        - generic [ref=e970] [cursor=pointer]: "1"
+                      - listitem "2" [ref=e971] [cursor=pointer]:
+                        - generic [ref=e972] [cursor=pointer]: "2"
+                      - listitem "3" [ref=e973] [cursor=pointer]:
+                        - generic [ref=e974] [cursor=pointer]: "3"
+                      - listitem "4" [ref=e975] [cursor=pointer]:
+                        - generic [ref=e976] [cursor=pointer]: "4"
+                      - listitem "5" [ref=e977] [cursor=pointer]:
+                        - generic [ref=e978] [cursor=pointer]: "5"
+                      - listitem "向后 5 页" [ref=e979] [cursor=pointer]:
+                        - generic [ref=e981] [cursor=pointer]:
+                          - img "double-right" [ref=e982] [cursor=pointer]:
+                            - img [ref=e983] [cursor=pointer]
+                          - img "ellipsis" [ref=e986] [cursor=pointer]:
+                            - img [ref=e987] [cursor=pointer]
+                      - listitem "9" [ref=e989] [cursor=pointer]:
+                        - generic [ref=e990] [cursor=pointer]: "9"
+                      - listitem "下一页" [ref=e991] [cursor=pointer]:
+                        - button "right" [ref=e992] [cursor=pointer]:
+                          - img "right" [ref=e993] [cursor=pointer]:
+                            - img [ref=e994] [cursor=pointer]
+                      - listitem [ref=e996]:
+                        - generic [ref=e997]:
+                          - generic "20 条/页" [ref=e998]:
+                            - text: 20 条/页
+                            - combobox "页码" [ref=e999]
+                          - img "down" [ref=e1001]:
+                            - img [ref=e1002]
+```

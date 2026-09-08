@@ -2,15 +2,15 @@ import { useEffect, useRef } from 'react'
 import { Alert, Button, Card, Descriptions, Empty, Skeleton, Space, Tag, Typography } from 'antd'
 import type { OpsConsoleModel } from '../../../hooks/useOpsConsoleModel.js'
 import { useDeliveryGovernance, type DeliveryGovernanceModel } from '../../../hooks/useDeliveryGovernance.js'
-import type { DeliveryEvidenceStatus, DeliveryFinding } from '../../../api/deliveryGovernanceClient.js'
+import type { DeliveryEvidenceGate, DeliveryEvidenceStatus, DeliveryFinding } from '../../../api/deliveryGovernanceClient.js'
 import { platformLabels } from '../../../types/ops.js'
 
 export type OpsDeliveryReadiness = 'approved' | 'expired' | 'unverified'
 
-export function opsMediaReadiness(input: { ready?: boolean; mediaReady?: boolean; mediaEvidence?: boolean; evidenceState?: string; sourceRef?: string; schemaVersion?: string; verifiedAt?: string; expiresAt?: string }, now = Date.now()): OpsDeliveryReadiness {
+export function opsMediaReadiness(input: { ready?: boolean; mediaReady?: boolean; mediaEvidence?: boolean; evidenceState?: string; sourceRef?: string; schemaVersion?: string; verifiedAt?: string; expiresAt?: string }, now = Date.now(), deliveryGateStatus: DeliveryEvidenceStatus = 'unverified'): OpsDeliveryReadiness {
   const expiry = input.expiresAt ? Date.parse(input.expiresAt) : Number.NaN
   if (Number.isFinite(expiry) && expiry <= now) return 'expired'
-  return input.ready && input.mediaReady && input.mediaEvidence && input.evidenceState === 'ready' && Boolean(input.sourceRef && input.schemaVersion && input.verifiedAt) && Number.isFinite(expiry) && expiry > now ? 'approved' : 'unverified'
+  return deliveryGateStatus === 'passed' && input.ready && input.mediaReady && input.mediaEvidence && input.evidenceState === 'ready' && Boolean(input.sourceRef && input.schemaVersion && input.verifiedAt) && Number.isFinite(expiry) && expiry > now ? 'approved' : 'unverified'
 }
 
 export function deliveryLiveStatus(loading: boolean, error: string | undefined, platformCount: number) {
@@ -22,6 +22,19 @@ const evidenceStatusColor: Record<DeliveryEvidenceStatus, string> = { passed: 'g
 
 function EvidenceTag({ status }: { status: DeliveryEvidenceStatus }) {
   return <Tag color={evidenceStatusColor[status]}>{evidenceStatusLabel[status]}</Tag>
+}
+
+function DeliveryGate({ gate }: { gate: DeliveryEvidenceGate }) {
+  const checks = [
+    ['真实性 gate', gate.authenticityGate],
+    ['真实渲染', gate.realRender],
+    ['OCR', gate.ocr],
+    ['人审 attestation', gate.humanAttestation],
+    ['Bundle 哈希', gate.bundleHash],
+  ] as const
+  return <Card size="small" title="真实性交付 gate" extra={<EvidenceTag status={gate.status}/> }>
+    <Space orientation="vertical" size="small" style={{ width: '100%' }}>{checks.map(([label, check]) => <Descriptions key={label} bordered size="small" column={{ xs: 1, sm: 2 }} items={[{ key: 'status', label, children: <Space><EvidenceTag status={check.status}/><span>{check.reason}</span></Space> }, ...(check.evidenceRef ? [{ key: 'ref', label: '证据引用', children: check.evidenceRef }] : [])]}/>)}</Space>
+  </Card>
 }
 
 function Findings({ items }: { items: DeliveryFinding[] }) {
@@ -42,6 +55,7 @@ export function DeliveryReadinessCards({ state }: { state: Pick<DeliveryGovernan
         { key: 'bundles', label: 'Bundles', children: <EvidenceTag status={data.dimensions.bundles}/> },
         { key: 'authenticity', label: '真实性', children: <EvidenceTag status={data.dimensions.authenticity}/> },
       ]}/>
+      <DeliveryGate gate={data.gate}/>
       {!total && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="接口返回 0 条交付治理记录；三个维度保持未验证"/>}
     </Card>
     <Card size="small" title={`字段 mapping preflight（${data.mappingPreflights.length}）`}>
@@ -77,9 +91,10 @@ export function DeliveryGovernancePanel({ model }: { model: OpsConsoleModel }) {
   const restoreRetryFocus = useRef(false)
   const delivery = useDeliveryGovernance()
   const evidence = model.productionEvidence.capability
+  const deliveryGateStatus = delivery.data?.gate.status ?? 'unverified'
   const platformRows = Object.entries(model.platformHealth).map(([platform, health]) => {
     const mediaSpec = (health as typeof health & { mediaSpec?: { source?: string; version?: string; expiresAt?: string } }).mediaSpec
-    return { platform, health, mediaSpec, readiness: opsMediaReadiness({ ready: health.ready, mediaReady: health.mediaUpload?.ready, mediaEvidence: health.mediaUpload?.evidence, evidenceState: evidence.state, sourceRef: mediaSpec?.source ?? evidence.sourceRef, schemaVersion: mediaSpec?.version ?? evidence.schemaVersion, verifiedAt: evidence.verifiedAt, expiresAt: mediaSpec?.expiresAt }) }
+    return { platform, health, mediaSpec, readiness: opsMediaReadiness({ ready: health.ready, mediaReady: health.mediaUpload?.ready, mediaEvidence: health.mediaUpload?.evidence, evidenceState: evidence.state, sourceRef: mediaSpec?.source ?? evidence.sourceRef, schemaVersion: mediaSpec?.version ?? evidence.schemaVersion, verifiedAt: evidence.verifiedAt, expiresAt: mediaSpec?.expiresAt }, Date.now(), deliveryGateStatus) }
   })
   const liveStatus = deliveryLiveStatus(delivery.loading, delivery.error, platformRows.length)
   useEffect(() => {

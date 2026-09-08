@@ -1,0 +1,1 @@
+import{r as e}from"./antd-col-F4QYtzlY.js";var t=e;export{t};

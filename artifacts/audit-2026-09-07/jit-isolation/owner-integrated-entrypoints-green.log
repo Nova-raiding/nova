@@ -1,0 +1,20 @@
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/ops-e2e-isolation.test.ts tests/quality-entrypoints.test.ts tests/supply-chain-reproducibility.test.ts tests/isolated-ops-fixture.test.ts tests/safe-test-launcher.test.ts --reporter=default --reporter=json --outputFile=artifacts/audit-2026-09-07/jit-isolation/owner-integrated-entrypoints-green.json
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/safe-test-launcher.test.ts (31 tests) 31ms
+ ✓ tests/quality-entrypoints.test.ts (6 tests) 607ms
+     ✓ keeps every deterministic source test reachable from the root check  591ms
+ ✓ tests/isolated-ops-fixture.test.ts (24 tests) 17ms
+ ✓ tests/ops-e2e-isolation.test.ts (12 tests) 13ms
+ ✓ tests/supply-chain-reproducibility.test.ts (4 tests) 8ms
+
+ Test Files  5 passed (5)
+      Tests  77 passed (77)
+   Start at  19:55:50
+   Duration  2.45s (transform 276ms, setup 0ms, import 562ms, tests 675ms, environment 2ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-integrated-entrypoints-green.json

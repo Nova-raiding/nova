@@ -1,0 +1,54 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260906",
+  "modality": "text",
+  "observed_at": "2026-09-06T01:46:12.812Z",
+  "http_status": 200,
+  "response_headers": {
+    "req-cost-time": "956",
+    "x-oneapi-request-id": "202609060146106921785798268d9d6DrHFoYFs",
+    "x-request-id": "896c0a4e-0f1f-9c5b-b182-eadd5477616b"
+  },
+  "result": {
+    "modality": "text",
+    "endpoint": "/chat/completions",
+    "model": "deepseek-v4-pro",
+    "httpStatus": 200,
+    "providerRequestId": "202609060146106921785798268d9d6DrHFoYFs",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.04092536,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "content": "",
+          "reasoning_content": "We need answer user. User says \"",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1788659170,
+    "id": "chatcmpl-896c0a4e-0f1f-9c5b-b182-eadd5477616b",
+    "model": "deepseek-v4-pro-0813",
+    "object": "chat.completion",
+    "usage": {
+      "completion_tokens": 8,
+      "completion_tokens_details": {
+        "reasoning_tokens": 8
+      },
+      "prompt_tokens": 86,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 94
+    }
+  }
+}

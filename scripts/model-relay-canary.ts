@@ -1,4 +1,6 @@
-import { writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readBoundedResponseText } from '../packages/connectors/src/bounded-response.js'
 import { createRelayPricingClientFromEnv } from '../packages/ai/src/relay-pricing.js'
@@ -19,6 +21,7 @@ export type ProbeResult = {
   costCny?: number
   pricingVersion?: string
   pricingGroup?: string
+  evidence_ref?: string
   detail?: string
 }
 
@@ -37,6 +40,8 @@ const videoDurationSeconds = Number.isFinite(rawVideoDurationSeconds) ? Math.max
 const base = source.replace(/\/+$/u, '')
 const pricingClient = createRelayPricingClientFromEnv(process.env)
 const relaySecurity = relaySecurityFromEnv(process.env)
+const artifactRoot = process.env.MODEL_RELAY_ARTIFACT_ROOT?.trim()
+const releaseId = process.env.RELEASE_ID?.trim() || ''
 
 function modelFor(modality: ProbeResult['modality']) {
   if (modality === 'text') return process.env.AI_MODEL?.trim() || process.env.MODEL_ID?.trim() || ''
@@ -66,6 +71,24 @@ function nonEmptyText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+/** Persist only the real relay response and probe metadata; never credentials. */
+export function writeRelayResponseArtifact(root: string, release: string, modality: ProbeResult['modality'], response: { status: number; headers: Headers; payload: unknown; result: ProbeResult }): string {
+  if (!/^[A-Za-z0-9._-]+$/u.test(release)) throw new Error('RELEASE_ID must be a safe artifact path component')
+  const target = resolve(root, 'relay', release, `${modality}.json`)
+  const body = JSON.stringify({
+    schema_version: '1', release_id: release, modality,
+    observed_at: new Date().toISOString(), http_status: response.status,
+    response_headers: Object.fromEntries([...response.headers].filter(([name]) => /request-id|usage|cost|quota/iu.test(name))),
+    result: response.result,
+    relay_response: response.payload,
+  }, null, 2) + '\n'
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+  writeFileSync(target, body, { mode: 0o600 })
+  const digest = createHash('sha256').update(body).digest('hex')
+  const relativePath = relative(resolve(root), target).split('\\').join('/')
+  return `artifact://production/${relativePath}#${digest}`
+}
+
 export function extractProviderRequestId(payload: unknown, headers: Headers): string | undefined {
   const root = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
   const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : {}
@@ -92,7 +115,7 @@ export async function evaluateRelayUsageEvidence(
   headers: Headers,
   modality: ProbeResult['modality'],
   model: string,
-  options: { pricing?: PricingClient; durationSeconds?: number } = {},
+  options: { pricing?: PricingClient; durationSeconds?: number; resolution?: string } = {},
 ) {
   const record = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
   const nested = record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data as Record<string, unknown> : undefined
@@ -109,7 +132,7 @@ export async function evaluateRelayUsageEvidence(
     model,
     ...(modality === 'image' || modality === 'image_edit'
       ? { context: { billingUnits: 1 } }
-      : modality === 'video' ? { context: { durationSeconds: options.durationSeconds ?? videoDurationSeconds } } : {}),
+      : modality === 'video' ? { context: { durationSeconds: options.durationSeconds ?? videoDurationSeconds, ...(options.resolution ? { resolution: options.resolution } : {}) } } : {}),
   })
   const requestUsageObserved = modality === 'image' || modality === 'image_edit'
     ? parsed?.metadata?.billing_units === 1
@@ -143,10 +166,16 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
   const root = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
   const data = root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data as Record<string, unknown> : root
   const nestedData = data.data && typeof data.data === 'object' && !Array.isArray(data.data) ? data.data as Record<string, unknown> : {}
+  const nestedOutput = nestedData.output && typeof nestedData.output === 'object' && !Array.isArray(nestedData.output) ? nestedData.output as Record<string, unknown> : {}
   const providerJobId = nonEmptyText(data.task_id) ?? nonEmptyText(data.job_id) ?? nonEmptyText(data.id)
   const relayCode = typeof root.code === 'number' || typeof root.code === 'string' ? String(root.code).trim() : undefined
   if (relayCode && !['0', '200', 'success'].includes(relayCode.toLowerCase())) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_relay_error_code' }
-  const status = (nonEmptyText(data.status) ?? nonEmptyText(nestedData.status))?.toLowerCase()
+  // The local New API relay wraps async video state one level deeper as
+  // `data.data.task_status` (while other providers use `status`). Treat the
+  // provider's task status as first-class evidence so an accepted/running job
+  // remains explicitly pending and a completed job can be validated once it
+  // carries an HTTPS artifact.
+  const status = (nonEmptyText(data.status) ?? nonEmptyText(nestedData.status) ?? nonEmptyText(nestedData.task_status) ?? nonEmptyText(nestedOutput.task_status))?.toLowerCase()
   const artifact = [data.result_url, data.video_url, data.output_url, data.url, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url].some(value => typeof value === 'string' && /^https:\/\//u.test(value)) || hasHttpsOutput(nestedData.output)
   if (status && ['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_failed' }
   if (status && ['queued', 'pending', 'processing', 'running', 'submitted'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_pending' }
@@ -230,9 +259,17 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
       .then(text => JSON.parse(text) as unknown)
       .catch(() => undefined)
     const providerRequestId = extractProviderRequestId(payload, response.headers)
-    if (!response.ok) return blockHttpProbe(common, response.status, providerRequestId)
+    if (!response.ok) {
+      const blocked = blockHttpProbe(common, response.status, providerRequestId)
+      if (artifactRoot) {
+        blocked.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
+          status: response.status, headers: response.headers, payload, result: blocked,
+        })
+      }
+      return blocked
+    }
     let measured: Awaited<ReturnType<typeof evaluateRelayUsageEvidence>>
-    try { measured = await evaluateRelayUsageEvidence(payload, response.headers, modality, model) }
+    try { measured = await evaluateRelayUsageEvidence(payload, response.headers, modality, model, { resolution: process.env.VIDEO_RESOLUTION?.trim().toUpperCase() }) }
     catch (error) {
       measured = { usageObserved: false, costObserved: false }
       return { ...common, state: 'blocked', httpStatus: response.status, ...measured, detail: `pricing evidence failed: ${(error as { code?: string })?.code ?? (error instanceof Error ? error.message : 'unknown')}` }
@@ -243,7 +280,7 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
       : modality === 'video'
         ? videoEvaluation?.ready === true
         : Boolean(payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).data))
-    return finalizeSuccessfulProbe({
+    const finalized = finalizeSuccessfulProbe({
       ...common,
       httpStatus: response.status,
       ...(providerRequestId ? { providerRequestId } : {}),
@@ -252,6 +289,12 @@ async function probe(modality: ProbeResult['modality']): Promise<ProbeResult> {
       responseValid: valid,
       ...(valid ? {} : { responseFailure: videoEvaluation?.reason ?? 'response_shape_incompatible' }),
     })
+    if (finalized.state === 'ready' && artifactRoot) {
+      finalized.evidence_ref = writeRelayResponseArtifact(artifactRoot, releaseId, modality, {
+        status: response.status, headers: response.headers, payload, result: finalized,
+      })
+    }
+    return finalized
   } catch (error) {
     return { ...common, state: 'blocked', detail: error instanceof Error ? error.name === 'AbortError' ? 'timeout' : error.message : 'probe_failed' }
   } finally { clearTimeout(timer) }
@@ -278,11 +321,18 @@ export async function main() {
         // endpoint path. This keeps /v1 configuration paths out of the origin
         // field and makes generated evidence compatible with its validator.
         const relayOrigin = new URL(base).origin
-        const evidence = { schema_version: '1', release_id: process.env.RELEASE_ID?.trim() || '', generated_at: new Date().toISOString(), environment: process.env.NODE_ENV?.trim() || '', simulated: false, relay: relayOrigin, results }
+        const generatedAt = new Date()
+        const ttlSeconds = Math.min(7 * 24 * 60 * 60, Math.max(60, Number(process.env.MODEL_RELAY_EVIDENCE_TTL_SECONDS ?? 24 * 60 * 60)))
+        const evidence = {
+          schema_version: '1', release_id: releaseId, generated_at: generatedAt.toISOString(),
+          expires_at: new Date(generatedAt.getTime() + ttlSeconds * 1000).toISOString(),
+          environment: process.env.NODE_ENV?.trim() || '', simulated: false, relay: relayOrigin, results,
+        }
         const evidencePath = process.env.MODEL_RELAY_EVIDENCE_PATH?.trim()
         if (evidencePath) writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 })
         console.log(JSON.stringify(evidence, null, 2))
         if (results.some(result => result.state !== 'ready' || result.providerRequestId === undefined || result.usageObserved !== true || result.costObserved !== true)) process.exitCode = 1
+        if (process.env.NODE_ENV?.trim() === 'production' && (!artifactRoot || results.some(result => !result.evidence_ref))) process.exitCode = 1
       } catch (error) {
         console.error(JSON.stringify({ state: 'blocked', reason: error instanceof Error ? error.message : 'relay_probe_failed' }))
         process.exitCode = 1

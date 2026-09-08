@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
 
 const root = resolve(import.meta.dirname, '..')
 const packageJsonSource = readFileSync(resolve(root, 'package.json'), 'utf8')
@@ -34,6 +35,7 @@ describe('quality entrypoint coverage', () => {
       .filter(file => !file.includes('/dist/') && !file.includes('/node_modules/'))
 
     const uncovered = testFiles.filter(file => {
+      if ((NON_HERMETIC_TEST_FILES as readonly string[]).includes(file)) return false
       if (file.startsWith('apps/ops-console/') && file.endsWith('.test.tsx')) {
         return !check.includes('npm run test:ops-console')
       }
@@ -41,6 +43,7 @@ describe('quality entrypoint coverage', () => {
     })
 
     expect(uncovered).toEqual([])
+    expect(script('test')).toContain('scripts/run-safe-tests.ts')
     expect(check).toContain('npm run typecheck')
     expect(check).toContain('npm run release:metadata:validate')
     expect(check).toContain('npm run build:ops-console')
@@ -51,9 +54,11 @@ describe('quality entrypoint coverage', () => {
     const releaseGate = script('test:release-gates')
     const missing = filesUnder('tests')
       .filter(file => /^tests\/[^/]+-gate\.test\.ts$/.test(file))
+      .filter(file => file !== 'tests/local-docker-release-gate.test.ts')
       .filter(file => !releaseGate.includes(file))
 
     expect(missing).toEqual([])
+    expect(script('test:local-release-gate')).toContain('--config vitest.runtime.config.ts tests/local-docker-release-gate.test.ts')
     for (const contract of [
       'tests/quality-entrypoints.test.ts',
       'tests/mcp-surface-contract.test.ts',
@@ -73,6 +78,18 @@ describe('quality entrypoint coverage', () => {
     ]) {
       expect(releaseGate).toContain(contract)
     }
+  })
+
+  it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(15)
+    expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
+    expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
+    expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-oidc-e2e.ts')
+    expect(readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')).toContain('...NON_HERMETIC_TEST_FILES')
+    // The legacy canonical API contract still embeds merchant bearer login.
+    // It is quarantined, not claimed as passing until its signed, isolated
+    // runtime migration is implemented. Keep that exact gap visible.
+    expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
   })
 
   it('tracks the current migration tail and required CI quality entrypoints', () => {
@@ -101,6 +118,10 @@ describe('quality entrypoint coverage', () => {
     // fail when applied by PostgreSQL. Keep the CI acceptance list aligned
     // with the migration tail as well as the release-gate list.
     expect(ci).toContain(`packages/persistence/src/migration-${latestMigration}.test.ts`)
+    // Schema-dump acceptance is version-sensitive: the CI workflow must pin
+    // the PostgreSQL 17 client instead of relying on an image-host default.
+    expect(ci).toContain('Install PostgreSQL 17 client for schema-dump acceptance')
+    expect(ci).toContain('PG_DUMP_BIN: /usr/lib/postgresql/17/bin/pg_dump')
   })
 
   it('keeps the current late-migration acceptance tests in CI', () => {

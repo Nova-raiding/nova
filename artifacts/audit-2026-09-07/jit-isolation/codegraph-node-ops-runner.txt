@@ -1,0 +1,28 @@
+**scripts/run-ops-oidc-e2e.ts** — 23 symbols, used by 4 files: apps/ops-console/src/components/authz/PermissionGate.tsx, apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.tsx, apps/worker/src/clamav-scanner.ts, packages/application/src/asset-parse-lifecycle.ts
+
+**Symbols**
+- `sourceContainer` (constant) = process.env.OPS_E2E_SOURCE_CONTAINER?.trim() || (() => { const candidates = execFileSync('docker',... — :9
+- `inspected` (constant) = JSON.parse(execFileSync('docker', ['inspect', sourceContainer], { encoding: 'utf8' }))[0] — :15
+- `serviceEnv` (constant) = Object.fromEntries((inspected.Config.Env as string[]).map(value => { const index = value.indexOf('... — :16
+- `hostUrl` (function) (raw: string, port: number) — :20
+- `apiPort` (constant) = Number(process.env.OPS_E2E_API_PORT ?? 8797) — :21
+- `uiPort` (constant) = Number(process.env.OPS_E2E_UI_PORT ?? 18092) — :22
+- `gatewayPort` (constant) = Number(process.env.OPS_E2E_GATEWAY_PORT ?? 18093) — :23
+- `evidenceDir` (constant) = resolve(process.env.OPS_E2E_OUTPUT_DIR ?? 'artifacts/ops-oidc-e2e') — :24
+- `signingSecret` (constant) = randomBytes(32).toString('hex') — :26
+- `password` (constant) = randomBytes(24).toString('hex') — :27
+- `children` (constant) = [] — :28
+- `gateway` (variable) — :29
+- `cleanedUp` (variable) = false — :30
+- `cleanup` (function) () — :31
+- `launch` (function) (command: string, args: string[], env: NodeJS.ProcessEnv, name: string) — :40
+- `ready` (function) (url: string) — :44
+- `uiEnvironment` (constant) = { ...process.env, VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: `http://127.0.0.1:${gatewayPort}... — :78
+- `uiOutput` (constant) = resolve(evidenceDir, 'ui-dist') — :81
+- `build` (constant) = launch(resolve('node_modules/.bin/vite'), ['build', 'apps/ops-console', '--config', 'apps/ops-consol... — :82
+- `buildCode` (constant) = await new Promise<number>(resolve => build.on('exit', code => resolve(code ?? 1))) — :83
+- `requested` (constant) = process.argv.slice(2) — :89
+- `args` (constant) = requested.length ? requested : ['dogfood/chatgpt-all-functions/ops-all.spec.js', 'dogfood/chatgpt-al... — :90
+- `run` (constant) = spawn(resolve('node_modules/.bin/playwright'), ['test', ...args, '--workers=1', '--output', resolve(... — :91
+
+> Drop `symbolsOnly` (or pass `offset`/`limit`) to read the source, like Read.

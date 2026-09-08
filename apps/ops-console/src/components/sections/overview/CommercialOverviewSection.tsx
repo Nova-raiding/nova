@@ -23,6 +23,7 @@ import type {
   OperationalAlert,
   WorkspaceSummary,
 } from "../../../types/ops";
+import { CommercialReadinessPanel } from "../../commercial/CommercialReadinessPanel";
 
 interface OverviewSectionProps {
   model: OpsConsoleModel;
@@ -169,6 +170,11 @@ export function CommercialOverviewSection({ model }: OverviewSectionProps) {
     createRevision,
     reviewVisual,
   } = model;
+  const realPlatformCount = new Set(
+    platformOperations
+      .filter((row) => row.dataMode === "official_api" && row.readEnabled === true)
+      .map((row) => row.platform),
+  ).size;
   return (
     <>
       <Row gutter={[16, 16]}>
@@ -193,8 +199,8 @@ export function CommercialOverviewSection({ model }: OverviewSectionProps) {
         <Col xs={24} md={6}>
           <Card>
             <Statistic
-              title="平台已启用"
-              value={`${enabledCount} / ${platformRows.length || 6}`}
+              title="真实平台接入"
+              value={`${realPlatformCount} / 6`}
               prefix={<GlobalOutlined />}
             />
           </Card>
@@ -209,6 +215,16 @@ export function CommercialOverviewSection({ model }: OverviewSectionProps) {
           </Card>
         </Col>
       </Row>
+      <CommercialReadinessPanel authorization={model.authorization} />
+      <Card title="ChatGPT 插件接入" style={{ marginTop: 16 }}>
+        <Space orientation="vertical" size="small">
+          <Typography.Text>插件绑定跟随当前工作区和认证身份完成，不需要把 Token 粘贴到对话中。</Typography.Text>
+          <Typography.Text>
+            当前工作区：<Typography.Text code copyable={model.opsSession?.workspace_id ? { text: model.opsSession.workspace_id } : false}>{model.opsSession?.workspace_id ?? "尚未通过登录验证"}</Typography.Text>
+          </Typography.Text>
+          <Typography.Text type="secondary">使用方式：在 ChatGPT 中启用“大麦商家营销”，发送“开始使用大麦”；插件会调用 workspace.bootstrap（首次）或 workspace.health（恢复）并返回绑定状态。</Typography.Text>
+        </Space>
+      </Card>
       <Card title="工作区与财务总览">
         <Table
           rowKey="workspaceId"

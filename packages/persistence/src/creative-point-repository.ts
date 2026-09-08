@@ -75,6 +75,7 @@ export interface CreativePointRepository {
   getBalance(workspaceId: string, at?: string): Promise<CreativePointBalance>
   getBalanceDetails(workspaceId: string, at?: string): Promise<CreativePointBalanceDetails>
   getReservation(workspaceId: string, reservationId: string, at?: string): Promise<CreativePointReservationFact | null>
+  getReservationByActionKey?(workspaceId: string, actionKey: string, at?: string): Promise<CreativePointReservationFact | null>
   listStatement(workspaceId: string, options?: { limit?: number; cursor?: CreativePointStatementCursor }): Promise<CreativePointStatementPage>
   grant(input: GrantCreativePointsInput): Promise<CreativePointMutation<CreativePointGrant>>
   reserve(input: ReserveCreativePointsInput): Promise<CreativePointMutation<CreativePointReservation>>
@@ -175,6 +176,11 @@ export class MemoryCreativePointRepository implements CreativePointRepository {
     const reservation = this.reservations.get(reservationId)
     if (!reservation || reservation.workspaceId !== scope) return null
     return currentReservationFact(reservation, this.reservationIntents.get(reservation.id) ?? { action_key: reservation.actionKey, points: reservation.points }, observedAt)
+  }
+  async getReservationByActionKey(workspaceId: string, actionKey: string, at = now()): Promise<CreativePointReservationFact | null> {
+    const scope = requireWorkspaceScope(workspaceId); required(actionKey, 'actionKey'); const observedAt = instant(at)
+    const reservation = [...this.reservations.values()].find(item => item.workspaceId === scope && item.actionKey === actionKey)
+    return reservation ? currentReservationFact(reservation, this.reservationIntents.get(reservation.id) ?? { action_key: actionKey, points: reservation.points }, observedAt) : null
   }
   async listStatement(workspaceId: string, options: { limit?: number; cursor?: CreativePointStatementCursor } = {}): Promise<CreativePointStatementPage> {
     const scope = requireWorkspaceScope(workspaceId); const limit = statementLimit(options.limit)
@@ -302,6 +308,14 @@ export class PostgresCreativePointRepository implements CreativePointRepository 
           LIMIT 1`,
         [scope, reservationId],
       )
+      const row = result.rows[0]
+      return row ? currentReservationFact(reservationFromRow(row), row.intent, observedAt) : null
+    })
+  }
+  async getReservationByActionKey(workspaceId: string, actionKey: string, at = now()): Promise<CreativePointReservationFact | null> {
+    const scope = requireWorkspaceScope(workspaceId); required(actionKey, 'actionKey'); const observedAt = instant(at)
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const result = await client.query<ReservationRow & { intent: Record<string, unknown> }>(`SELECT ${reservationFactProjection}, o.request AS intent FROM creative_point_reservations r JOIN creative_point_operations o ON o.workspace_id=r.workspace_id AND o.id=r.operation_id WHERE r.workspace_id=$1 AND r.action_key=$2 ORDER BY r.created_at DESC LIMIT 1`, [scope, actionKey])
       const row = result.rows[0]
       return row ? currentReservationFact(reservationFromRow(row), row.intent, observedAt) : null
     })

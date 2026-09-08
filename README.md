@@ -1,10 +1,10 @@
 # 商家营销内容助手（桌面 ChatGPT 插件）
 
-发布元数据同步基线（2026-09-05）：MCP 契约注册表为 278 个唯一方法，商家插件运行态为 140 个 MCP 工具，PostgreSQL 迁移链已进入 162。
+发布元数据同步基线（2026-09-08）：MCP 契约注册表为 289 个唯一方法，商家插件运行态为 143 个 MCP 工具，PostgreSQL 迁移链已进入 169。
 
 当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及仅供开发调试的 Merchant Studio。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
 
-当前发布验收基线（2026-08-31）：Repository 为 0.1.1，plugin 为 0.1.0+codex.20260831142726，MCP 契约注册表为 249 个唯一方法，商家插件运行态为 149 个 MCP 工具，Ops Console 为 13 个独立一级域，PostgreSQL 迁移链已进入 108。060/062 采用非事务并发索引迁移；063–079 补齐 listing/canonical 品牌组合、身份 bootstrap、素材解析租约、媒体规格、字段映射审批、campaign ACL、legacy 平台/店铺作用域、商品素材完整性、Ops 数据契约、模型用量上下文、canonical 发布作用域和 workspace 知识快照游标；080 增加 workspace 存储配额与预留账本；098 增加 canonical 统一链审计，099 增加 canonical→legacy 品牌复合完整性约束，100 增加告警通知投递账本，101/102 增加 canonical backfill 批次控制与人工冲突队列，103 收紧告警通知账本的应用角色 ACL，104 增加一次性交互确认票据及最小权限消费约束，105 增加 durable authorization grants（持久化授权授予、撤销、JIT 时效/次数预算及双人审批约束），106 增加 NULL 品牌映射的 fail-closed 完整性守卫，107 增加 canonical backfill 冲突验证证据，108 强制已结算模型用量必须存在真实成本。正式发布仍须由 metadata 和发布门禁重新对账。
+当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository 0.1.1、plugin 0.1.0+codex.20260907102000、290 个 MCP 方法、143 个商家 Bridge 工具、14 个 Ops 一级域和迁移 169。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
 
 2026-08-29 桌面 ChatGPT 真实宿主只读验收中，`merchant.start`、`workspace.health`、`catalog.search`、`billing.status` 四项均通过。该结果证明桌面宿主 → 插件 → MCP → 本地 API 的四个核心只读入口可工作；本次店铺、商品和余额来自本地 `ws_demo`/fixture，不能替代真实六平台 OAuth、真实商户余额或生产 release 证据。
 
@@ -54,6 +54,9 @@ Compose 会先执行版本化迁移，再启动 API 和 UI；UI 地址为 `http:
 UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)。
 
 ## 代码入口
+
+- 产品使用介绍：[docs/product-usage-guide.md](docs/product-usage-guide.md)
+- 测试架构与上线验收：[docs/test-architecture-and-release-readiness-2026-09-08.md](docs/test-architecture-and-release-readiness-2026-09-08.md)
 
 - Plugin manifest：[apps/plugin/.codex-plugin/plugin.json](apps/plugin/.codex-plugin/plugin.json)
 - MCP/API：[apps/api/src/server.ts](apps/api/src/server.ts)

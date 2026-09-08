@@ -1995,6 +1995,30 @@ describe('MerchantService', () => {
     expect(JSON.stringify(version.body)).toBe(before)
   })
 
+  it('does not label automatic draft review evidence as frozen at approval in exports', async () => {
+    const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => ({
+      title: '模型生成标题', detail: '仅陈述已确认商品信息。', sellingPoints: ['关键事实可追溯'],
+    }) } })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A')
+    service.confirmProductionPlan('ws_demo', task.id, 'merchant')
+    const version = await service.generateDraft(task.id)
+    const automaticReview = structuredClone(version.reviewSnapshot)
+    expect(automaticReview).toBeDefined()
+
+    const bundle = service.exportContent('ws_demo', version.id, 'bundle')
+    const files = readStoredZip(bundle.binaryBody!)
+    const review = JSON.parse(Buffer.from(files.get('legacy-review-findings.json')!).toString('utf8'))
+
+    expect(review).toMatchObject({
+      available: false, frozenAtApproval: false, reviewedAt: null, blocking: null,
+      findings: [], reason: 'legacy_or_unapproved_snapshot_unavailable',
+    })
+    expect(version.reviewSnapshot).toEqual(automaticReview)
+    expect(version.state).toBe('review_required')
+    expect(task.state).toBe('review_required')
+  })
+
   it('freezes approval review evidence so repeated historical bundles stay byte-identical', () => {
     const service = new MerchantService({ fixtureMode: true })
     const product = service.products.get('prod_fixture_1')!
@@ -2004,6 +2028,13 @@ describe('MerchantService', () => {
     const approved = service.approveContent(task.id, version.id)
     expect(approved.version.reviewSnapshot).toMatchObject({ findings: expect.any(Array), reviewedAt: expect.any(String) })
     const first = service.exportContent('ws_demo', version.id, 'bundle').binaryBody
+    const review = JSON.parse(Buffer.from(readStoredZip(first!).get('legacy-review-findings.json')!).toString('utf8'))
+    expect(review).toMatchObject({
+      available: true, frozenAtApproval: true,
+      reviewedAt: approved.version.reviewSnapshot!.reviewedAt,
+      findings: approved.version.reviewSnapshot!.findings,
+      ruleVersionIds: approved.version.reviewSnapshot!.ruleVersionIds,
+    })
     product.title = '后来修改的商品标题'
     product.price = 9999
     product.images = ['https://example.com/a.jpg', 'https://example.com/a.jpg']
@@ -2485,4 +2516,28 @@ describe('MerchantService', () => {
     const cloned = service.cloneTask('ws_canonical_clone', source.id)
     expect(cloned).toMatchObject({ canonicalProductId: 'canonical_1', listingId: 'listing_1', platform: 'taobao', accountId: 'store-taobao-1' })
   })
+})
+
+it('freezes canvas size into the image intent and rejects size-changing idempotency reuse', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const input = { workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'long-page-size', size: '1024x4096', count: 1 }
+  expect(service.enqueueImageGeneration(input).visualBrief?.size).toBe('1024x4096')
+  expect(() => service.enqueueImageGeneration({ ...input, size: '1024x1024' })).toThrow()
+  expect(() => service.enqueueImageGeneration({ ...input, idempotencyKey: 'oversize', size: '8192x8192' })).toThrow()
+})
+
+it('preserves SKU-specific source images and refuses a missing or foreign SKU source', () => {
+  const service = new MerchantService({ seedFixture: false })
+  const source = service.registerAsset({ workspaceId: 'sku-owner', name: 'blue.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'a'.repeat(64), storageKey: 'quarantine/sku-owner/blue.png' })
+  const sku = { id: 'blue-m', name: '蓝色 M', price: 199, stock: 2, sourceAssetIds: [source.id] }
+  const product = service.importProduct({ workspaceId: 'sku-owner', platform: 'jd', title: 'SKU映射', skus: [sku, { id: 'red-l', name: '红色 L', price: 209, stock: 3 }] })
+  expect(product.skus?.[0]?.sourceAssetIds).toEqual([source.id])
+  expect(service.productImageSourceAssetIds(product, ['blue-m'])).toEqual([source.id])
+  expect(service.enqueueImageGeneration({ workspaceId: 'sku-owner', productId: product.id, skuIds: ['blue-m'], idempotencyKey: 'blue-only' }).sourceAssetIds).toEqual([source.id])
+  expect(() => service.productImageSourceAssetIds(product, ['red-l'])).toThrowError(expect.objectContaining({ code: 'IMAGE_SKU_SOURCE_REQUIRED' }))
+  expect(() => service.productImageSourceAssetIds(product, ['absent'])).toThrowError(expect.objectContaining({ code: 'IMAGE_SKU_SCOPE_MISMATCH' }))
+  expect(() => service.importProduct({ workspaceId: 'other-owner', platform: 'jd', title: '跨工作区', skus: [sku] })).toThrowError(expect.objectContaining({ code: 'PRODUCT_SOURCE_ASSET_NOT_FOUND' }))
+  const red = service.registerAsset({ workspaceId: 'sku-owner', name: 'red.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'b'.repeat(64), storageKey: 'quarantine/sku-owner/red.png' })
+  const mapped = service.importProduct({ workspaceId: 'sku-owner', platform: 'jd', title: '双色映射', skus: [sku, { id: 'red-l', name: '红色 L', price: 209, stock: 3, sourceAssetIds: [red.id] }] })
+  expect(() => service.enqueueImageGeneration({ workspaceId: 'sku-owner', productId: mapped.id, skuIds: ['blue-m'], sourceAssetIds: [red.id], idempotencyKey: 'wrong-red' })).toThrowError(expect.objectContaining({ code: 'IMAGE_SKU_SOURCE_MISMATCH' }))
 })

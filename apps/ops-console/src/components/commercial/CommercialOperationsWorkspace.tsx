@@ -343,7 +343,7 @@ function OrdersTable({ state, controller }: { state: CommercialOperationsControl
       { key: "request", label: "Request ID", children: <Typography.Text code>{dash(selection.selected.requestId)}</Typography.Text> },
     ]} />
   </Space> : null}</Drawer>
-  {controller.permissions.canReconcilePayment ? <Alert type="warning" showIcon title="支付对账操作入口尚未接入" description="服务端能力存在但当前页面保持只读；不会把 payment success 伪装成 grant 或 RECOVERED。" /> : null}</>}</DataBoundary>;
+  {controller.permissions.canReconcilePayment ? <Alert type="info" showIcon title="支付对账已接入" description="在下方‘私测转正式与人工转账’面板中核验普通订单或私测补差价；核验结果会返回支付、Grant 和 access revision 事实。" /> : null}</>}</DataBoundary>;
 }
 
 function RatesTable({ state, controller }: { state: CommercialOperationsController["data"]["rates"]; controller: CommercialOperationsController }) {
@@ -365,7 +365,7 @@ function ServicesTable({ state, controller }: { state: CommercialOperationsContr
     { title: "排期", dataIndex: "scheduleAt", width: 180, sorter: (a, b) => String(a.scheduleAt).localeCompare(String(b.scheduleAt)), ...controlledSort(controller, "scheduleAt"), render: time }, { title: "状态", dataIndex: "status", width: 120, render: value => <StateTag value={value} /> },
     { title: "负责人", dataIndex: "ownerLabel", width: 150, render: dash }, { title: "证据", dataIndex: "evidenceLabel", width: 260, render: dash }, { title: "更新时间", dataIndex: "updatedAt", width: 180, render: time },
   ]} />
-  {controller.permissions.canWriteService ? <Alert type="warning" showIcon title="履约写入操作入口尚未接入" description="服务端已有独立 capability、reason、revision 和审计契约；当前页面仍保持只读，避免绕过证据提交。" /> : null}</>}</DataBoundary>;
+  {controller.permissions.canWriteService ? <Alert type="info" showIcon title="履约写入已接入" description="使用下方履约操作面板创建分配、排期、开始、完成或调整；每个动作都要求 revision、幂等键、原因和证据。" /> : null}</>}</DataBoundary>;
 }
 
 function TimelineTable({ state, controller }: { state: CommercialOperationsController["data"]["timeline"]; controller: CommercialOperationsController }) {
@@ -404,12 +404,65 @@ function renderView(view: CommercialView, controller: CommercialOperationsContro
   return <ServicesTable state={controller.data.services} controller={controller} />;
 }
 
+function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOperationsController }) {
+  const canOperate = controller.permissions.canGrantPrivateSku || controller.permissions.canReconcilePayment;
+  const [workspace, setWorkspace] = useState(controller.targetWorkspaceId);
+  const [customerRef, setCustomerRef] = useState("");
+  const [eligibilityId, setEligibilityId] = useState("");
+  const [trialOrderId, setTrialOrderId] = useState("");
+  const [creditId, setCreditId] = useState("");
+  const [conversionOrderId, setConversionOrderId] = useState("");
+  const [paymentSubjectRef, setPaymentSubjectRef] = useState("");
+  const [providerEventId, setProviderEventId] = useState("");
+  const [providerOrderId, setProviderOrderId] = useState("");
+  const [nonce, setNonce] = useState("");
+  const [payloadHash, setPayloadHash] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [revision, setRevision] = useState(0);
+  if (!canOperate) return <Alert type="info" showIcon title="私测转正式仅对授权运营人员开放" description="需要 commercial.private_sku.grant 或 commercial.payment.reconcile；无权限时不会发起请求。" />;
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true); setMessage("");
+    try { const value = await action(); setMessage(JSON.stringify(value)); }
+    catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+  const reason = "商业化方案：私测转正式人工核验";
+  return <section aria-label="私测转正式与人工转账" className="commercial-manual-operations">
+    <Typography.Title level={5}>私测转正式 / 人工转账开通</Typography.Title>
+    <Alert type="warning" showIcon message="正式开通 5000 元；1999 元仅为 7 天试用，验证后 7 天内补 3001 元，必须人工核验到账证据后开通。" description="每一步都会写入商业时间线和审计；不要只改前端状态。" />
+    <Space wrap>
+      <Input aria-label="目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
+      <Input aria-label="客户标识" placeholder="客户标识" value={customerRef} onChange={event => setCustomerRef(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !customerRef} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialEligibility(workspace, customerRef, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.eligibility_id === "string") setEligibilityId(row.eligibility_id); } return value; })}>创建 1999 元私测资格</Button>
+      <Input aria-label="私测资格 ID" placeholder="私测资格 ID" value={eligibilityId} onChange={event => setEligibilityId(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(() => controller.client.approvePrivateTrialEligibility(workspace, eligibilityId, revision, reason))}>业务审批</Button>
+      <Button loading={busy} disabled={!workspace || !eligibilityId} onClick={() => void run(() => controller.client.completePrivateTrialValidation(workspace, eligibilityId, trialOrderId, new Date().toISOString(), reason))}>完成 7 天验证</Button>
+      <Input aria-label="试用订单 ID" placeholder="试用订单 ID" value={trialOrderId} onChange={event => setTrialOrderId(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(async () => { const value = await controller.client.preparePrivateTrialCredit(workspace, eligibilityId, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.credit_id === "string") setCreditId(row.credit_id); } return value; })}>准备 3001 元抵扣</Button>
+      <Input aria-label="抵扣 ID" placeholder="抵扣 ID" value={creditId} onChange={event => setCreditId(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !creditId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(() => controller.client.approvePrivateTrialCredit(workspace, creditId, reason))}>财务审批抵扣</Button>
+      <Button loading={busy} disabled={!workspace || !creditId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialConversionOrder(workspace, creditId, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.order_id === "string") setConversionOrderId(row.order_id); } return value; })}>创建正式订单</Button>
+      <Input aria-label="正式订单 ID" placeholder="正式订单 ID" value={conversionOrderId} onChange={event => setConversionOrderId(event.target.value)} />
+      <Input aria-label="支付主体引用" placeholder="支付主体引用" value={paymentSubjectRef} onChange={event => setPaymentSubjectRef(event.target.value)} />
+      <Input aria-label="支付事件 ID" placeholder="支付事件 ID" value={providerEventId} onChange={event => setProviderEventId(event.target.value)} />
+      <Input aria-label="支付订单 ID" placeholder="支付订单 ID" value={providerOrderId} onChange={event => setProviderOrderId(event.target.value)} />
+      <Input aria-label="支付 nonce" placeholder="支付 nonce" value={nonce} onChange={event => setNonce(event.target.value)} />
+      <Input aria-label="支付 payload hash" placeholder="支付 payload hash" value={payloadHash} onChange={event => setPayloadHash(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyCommercialOrderTransfer(workspace, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), reason))}>核验普通订单转账并发放点数</Button>
+      <Button type="primary" loading={busy} disabled={!workspace || !creditId || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyPrivateTrialTransfer(workspace, creditId, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), reason))}>核验转账并开通</Button>
+    </Space>
+    {message ? <Typography.Paragraph copyable={{ text: message }} code>{message}</Typography.Paragraph> : null}
+  </section>;
+}
+
 export function CommercialOperationsWorkspace({ controller }: { controller: CommercialOperationsController }) {
   const viewHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { viewHeadingRef.current?.focus({ preventScroll: true }); }, [controller.view]);
   return (
     <Space orientation="vertical" size="middle" className="full-width commercial-operations-workspace">
       <CommercialAccessStatusBar state={controller.summary} onRetry={() => void controller.loadSummary()} />
+      <PrivateTrialOperationsPanel controller={controller} />
       <PointAdjustmentPanel controller={controller} />
       <ServiceFulfillmentPanel controller={controller} />
       <Tabs activeKey={controller.view} onChange={key => controller.setView(key as CommercialView)} items={commercialViews.map(view => ({ key: view, label: commercialViewLabels[view] }))} />

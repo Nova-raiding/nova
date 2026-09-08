@@ -1,4 +1,4 @@
-import { ReloadOutlined } from "@ant-design/icons";
+import { CloudSyncOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Table, Tag, Typography } from "antd";
 import { useEffect, useId, useRef } from "react";
 import type { RuleSyncStatus } from "../../types/ops";
@@ -8,6 +8,8 @@ interface RuleSyncStatusSectionProps {
   statuses: RuleSyncStatus[];
   error?: string | null;
   onRefresh: () => void;
+  canSync?: boolean;
+  onSyncNow?: () => void;
 }
 
 const statePresentation: Record<RuleSyncStatus["state"], { color: string; label: string }> = {
@@ -21,6 +23,8 @@ export function RuleSyncStatusSection({
   statuses,
   error,
   onRefresh,
+  canSync = false,
+  onSyncNow,
 }: RuleSyncStatusSectionProps) {
   const blocked = statuses.filter((item) => item.state !== "ready").length;
   const errorRef = useRef<HTMLDivElement>(null);
@@ -39,17 +43,30 @@ export function RuleSyncStatusSection({
       <Card
         title="六平台规则同步"
         extra={
-          <Button
-            icon={<ReloadOutlined aria-hidden="true" />}
-            loading={loading}
-            disabled={loading}
-            aria-busy={loading}
-            aria-label={loading ? "正在刷新规则同步状态" : "刷新规则同步状态"}
-            style={{ minHeight: 44 }}
-            onClick={onRefresh}
-          >
-            {loading ? "刷新中" : "刷新状态"}
-          </Button>
+          <span>
+            <Button
+              icon={<CloudSyncOutlined aria-hidden="true" />}
+              loading={loading}
+              disabled={loading || !canSync}
+              aria-busy={loading}
+              aria-label={canSync ? "立即更新平台规则" : "立即更新平台规则（需要工作区内容编辑权限）"}
+              style={{ minHeight: 44, marginRight: 8 }}
+              onClick={onSyncNow}
+            >
+              立即更新
+            </Button>
+            <Button
+              icon={<ReloadOutlined aria-hidden="true" />}
+              loading={loading}
+              disabled={loading}
+              aria-busy={loading}
+              aria-label={loading ? "正在刷新规则同步状态" : "刷新规则同步状态"}
+              style={{ minHeight: 44 }}
+              onClick={onRefresh}
+            >
+              {loading ? "刷新中" : "刷新状态"}
+            </Button>
+          </span>
         }
       >
       {error ? (
@@ -87,7 +104,7 @@ export function RuleSyncStatusSection({
               ? "六个平台规则均在检查窗口内"
               : `${blocked} 个平台未通过规则新鲜度门禁`
         }
-        description="生成与发布前会按当前店铺平台调用对应规则；未配置或过期时必须保持阻断或人工复核，不能把旧规则视为有效。"
+        description="平台规则来自各平台官方签名清单，服务端 worker 默认每 7 天自动检查一次；规则管理员也可立即更新。未配置或过期时必须保持阻断或人工复核，不能把旧规则视为有效。"
       />
       <Table<RuleSyncStatus>
         rowKey="platform"

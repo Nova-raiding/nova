@@ -8,11 +8,16 @@ export function assertRelayEvidence(method, result, { environment, fixtureFallba
   const providerRequestId = execution.providerRequestId ?? execution.provider_request_id ?? result?.providerRequestId ?? result?.provider_request_id
   const usage = execution.usage ?? result?.usage
   const cost = execution.costCny ?? execution.cost_cny ?? result?.costCny ?? result?.cost_cny
+  const numericCost = typeof cost === 'number'
+    ? cost
+    : typeof cost === 'string' && /^\d+(?:\.\d+)?$/u.test(cost.trim())
+      ? Number(cost.trim())
+      : undefined
   const missing = []
   if (simulated || execution.providerExecuted !== true) missing.push('provider_execution')
   if (typeof providerRequestId !== 'string' || !providerRequestId.trim()) missing.push('provider_request_id')
   if (!usage || typeof usage !== 'object' || Array.isArray(usage) || Object.keys(usage).length === 0) missing.push('usage')
-  if (cost === undefined || cost === null || (typeof cost !== 'number' && typeof cost !== 'string')) missing.push('cost_cny')
+  if (numericCost === undefined || !Number.isFinite(numericCost) || numericCost < 0) missing.push('cost_cny')
   if (missing.length > 0) {
     const error = new Error('model relay evidence is incomplete; result delivery is blocked')
     error.code = 'MODEL_RELAY_EVIDENCE_REQUIRED'

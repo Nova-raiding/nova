@@ -9,6 +9,13 @@ describe('commercial purchase error contract', () => {
       'COMMERCIAL_PURCHASE_KIND_MISMATCH',
       'PRIVATE_PURCHASE_UNAVAILABLE',
       'COMMERCIAL_ORDER_NOT_FOUND',
+      'PRIVATE_TRIAL_ELIGIBILITY_NOT_FOUND',
+      'PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID',
+      'PRIVATE_TRIAL_VALIDATION_UNVERIFIED',
+      'PRIVATE_TRIAL_WINDOW_EXPIRED',
+      'PRIVATE_TRIAL_PAYMENT_SUBJECT_MISMATCH',
+      'PRIVATE_TRIAL_CREDIT_ALREADY_USED',
+      'PRIVATE_TRIAL_ACCOUNTING_APPROVAL_REQUIRED',
     ])
     for (const code of COMMERCIAL_PURCHASE_ERROR_CODES) expect(isCommercialPurchaseErrorCode(code)).toBe(true)
     expect(isCommercialPurchaseErrorCode('billing.recharge.create')).toBe(false)

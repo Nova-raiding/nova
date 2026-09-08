@@ -58,6 +58,8 @@ export interface VerifiedPaymentGrantInput {
   amountFen: number
   currency: 'CNY'
   paidAt: string
+  /** Provider subject/account reference. Required for private-trial manual transfer reconciliation. */
+  paymentSubjectRef?: string
   /** Server-derived period. Monthly periods are checked as one calendar month; private periods as exactly seven days. */
   period?: { start: string; end: string }
   grantExpiresAt?: string | null
@@ -173,6 +175,7 @@ function validateOrderSku(sku: CommercialCatalogSkuSnapshot, now: string): void 
 }
 
 function pointBenefit(snapshot: CommercialCatalogSkuSnapshot): number {
+  if (snapshot.kind === 'onboarding') return 500
   const code = snapshot.kind === 'monthly' ? 'monthly_creative_points' : 'creative_points'
   const values = snapshot.benefits.filter(benefit => benefit.code === code && benefit.quantity !== null)
   if (values.length !== 1 || !Number.isSafeInteger(values[0]!.quantity) || values[0]!.quantity! <= 0) {
@@ -183,7 +186,7 @@ function pointBenefit(snapshot: CommercialCatalogSkuSnapshot): number {
 
 function validatePeriod(sku: CommercialCatalogSkuSnapshot, period: VerifiedPaymentGrantInput['period']): { start: string; end: string } | null {
   if (sku.kind === 'point_pack') return null
-  if (sku.kind === 'onboarding') throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule dates remain unresolved')
+  if (sku.kind === 'onboarding') return null
   if (!period) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'an approved subscription period is required')
   const start = instant(period.start, 'period.start')
   const end = instant(period.end, 'period.end')
@@ -192,6 +195,33 @@ function validatePeriod(sku: CommercialCatalogSkuSnapshot, period: VerifiedPayme
   else expected.setUTCMonth(expected.getUTCMonth() + 1)
   if (end !== expected.toISOString()) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', sku.kind === 'private_trial' ? 'private trial period must be exactly seven days' : 'monthly subscription period must be one calendar month')
   return { start, end }
+}
+
+function monthlyAnniversary(start: string, monthOffset: number): string {
+  const value = new Date(start)
+  const targetMonth = value.getUTCMonth() + monthOffset
+  const targetYear = value.getUTCFullYear() + Math.floor(targetMonth / 12)
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(
+    targetYear,
+    normalizedMonth,
+    Math.min(value.getUTCDate(), lastDay),
+    value.getUTCHours(),
+    value.getUTCMinutes(),
+    value.getUTCSeconds(),
+    value.getUTCMilliseconds(),
+  )).toISOString()
+}
+
+function resolvedOnboardingSchedule(sku: CommercialCatalogSkuSnapshot, paidAt: string): Array<{ sequence: number; dueAt: string; expiresAt: string }> {
+  const schedule = sku.payload.grantSchedule
+  if (!schedule || typeof schedule !== 'object') throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule is unresolved')
+  const value = schedule as Record<string, unknown>
+  if (value.grantCount !== 6 || value.pointsPerGrant !== 500 || value.cadence !== 'monthly' || value.startsAt !== 'payment_verified' || value.grantExpiresAtRule !== 'next_monthly_anniversary' || value.schedulingStatus !== 'resolved') {
+    throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule is unresolved')
+  }
+  return Array.from({ length: 6 }, (_, index) => ({ sequence: index + 1, dueAt: monthlyAnniversary(paidAt, index), expiresAt: monthlyAnniversary(paidAt, index + 1) }))
 }
 
 /**
@@ -374,14 +404,28 @@ export class PostgresCommercialContractRepository {
       if (order.paymentProvider !== input.provider || order.amountFen !== input.amountFen || order.currency !== input.currency) {
         throw new CommercialContractError('COMMERCIAL_PAYMENT_MISMATCH', 'provider, amount or currency does not match immutable order snapshot')
       }
+      const conversion = (row.snapshot as unknown as { private_trial_conversion?: { payment_subject_digest?: string } }).private_trial_conversion
+      if (conversion?.payment_subject_digest) {
+        if (!input.paymentSubjectRef || digest(input.paymentSubjectRef) !== conversion.payment_subject_digest) {
+          throw new CommercialContractError('COMMERCIAL_PAYMENT_MISMATCH', 'private-trial payment subject does not match the approved conversion evidence')
+        }
+      }
       validateOrderSku(sku, paidAt)
       const period = validatePeriod(sku, input.period)
       const points = pointBenefit(sku)
       let expiresAt = input.grantExpiresAt == null ? null : instant(input.grantExpiresAt, 'grantExpiresAt')
       if (sku.kind === 'point_pack') {
-        if ((sku.payload.expiryRule ?? null) === null || expiresAt === null) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'point-pack expiry policy remains unresolved')
+        if (sku.payload.expiryRule === 'purchase_plus_30_natural_days' && sku.payload.expiryDays === 30) {
+          const expiry = new Date(paidAt)
+          expiry.setUTCDate(expiry.getUTCDate() + 30)
+          expiresAt = expiry.toISOString()
+        } else if ((sku.payload.expiryRule ?? null) === null || expiresAt === null) {
+          throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'point-pack expiry policy remains unresolved')
+        }
       } else if (period) {
         expiresAt = period.end
+      } else if (sku.kind === 'onboarding') {
+        expiresAt = resolvedOnboardingSchedule(sku, paidAt)[0]!.expiresAt
       }
 
       const prior = await client.query<{ payloadHash: string; orderId: string }>(
@@ -400,9 +444,9 @@ export class PostgresCommercialContractRepository {
 
       await client.query(
         `INSERT INTO commercial_payment_events_v2
-          (id,workspace_id,order_id,provider,provider_event_id,nonce,payload_hash,event_type,verified,amount_fen,currency,received_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'paid',true,$8,$9,$10::timestamptz)`,
-        [`cpe_${randomUUID()}`, workspaceId, input.orderId, input.provider, input.providerEventId, input.nonce, input.payloadHash, input.amountFen, input.currency, paidAt],
+          (id,workspace_id,order_id,provider,provider_event_id,nonce,payload_hash,event_type,verified,amount_fen,currency,payment_subject_ref,received_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'paid',true,$8,$9,$10,$11::timestamptz)`,
+        [`cpe_${randomUUID()}`, workspaceId, input.orderId, input.provider, input.providerEventId, input.nonce, input.payloadHash, input.amountFen, input.currency, input.paymentSubjectRef ?? null, paidAt],
       )
       if (period) {
         const periodId = `csp_${randomUUID()}`
@@ -439,6 +483,40 @@ export class PostgresCommercialContractRepository {
          VALUES ($1,$2,$3,'commercial_order_v2',$4,$5,$6::timestamptz,$7::jsonb,$8::timestamptz)`,
         [grantId, workspaceId, operationId, input.orderId, points, expiresAt, JSON.stringify({ sku_version_id: sku.versionId, payment_event_id: input.providerEventId }), paidAt],
       )
+      if (sku.kind === 'onboarding') {
+        const schedule = resolvedOnboardingSchedule(sku, paidAt)
+        for (const item of schedule) {
+          await client.query(
+            `INSERT INTO onboarding_point_grant_schedules_v2
+              (id,workspace_id,onboarding_order_id,sequence,points,due_at,expires_at,policy_ref,status,grant_id,blockers,entitlement_snapshot_id,source_checksum,created_by_actor_id,creation_reason,creation_evidence)
+              VALUES ($1,$2,$3,$4,500,$5::timestamptz,$6::timestamptz,'commercial.onboarding.v2',$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
+             ON CONFLICT (workspace_id,onboarding_order_id,sequence) DO NOTHING`,
+            [
+              `opgs_${digest({ workspaceId, orderId: input.orderId, sequence: item.sequence }).slice(0, 28)}`,
+              workspaceId,
+              input.orderId,
+              item.sequence,
+              item.dueAt,
+              item.expiresAt,
+              item.sequence === 1 ? 'granted' : 'scheduled',
+              item.sequence === 1 ? grantId : null,
+              JSON.stringify([]),
+              row.snapshotId,
+              sku.checksum,
+              input.providerEventId,
+              'verified onboarding payment grant schedule',
+              JSON.stringify({ payment_event_id: input.providerEventId, sku_version_id: sku.versionId }),
+            ],
+          )
+        }
+        const scheduleRows = await client.query<{ count: string | number }>(
+          `SELECT count(*) AS count
+             FROM onboarding_point_grant_schedules_v2
+            WHERE workspace_id=$1 AND onboarding_order_id=$2 AND status IN ('scheduled','granted') AND blockers='[]'::jsonb`,
+          [workspaceId, input.orderId],
+        )
+        if (safeInteger(scheduleRows.rows[0]?.count ?? 0, 'onboardingScheduleCount') !== 6) throw new CommercialContractError('COMMERCIAL_POLICY_UNRESOLVED', 'onboarding grant schedule was not committed completely')
+      }
       const balance = await client.query<{ available: string | number; reserved: string | number; settled: string | number; revision: string | number }>(
         `UPDATE creative_point_access_state
             SET available_points=COALESCE(available_points,0)+$2,

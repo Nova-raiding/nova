@@ -1,5 +1,6 @@
 {
   "exclude": [
+    "artifacts/",
     "**/dist/**",
     "**/src/*.js",
     "**/src/*.d.ts",

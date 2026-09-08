@@ -69,17 +69,6 @@ describe('MemorySupportRepository', () => {
     expect([...first.items, ...second.items].every(ticket => ticket.workspaceId === 'ws_1')).toBe(true)
   })
 
-  it('builds a tenant-scoped CRM projection without exposing event comments', async () => {
-    const repository = new MemorySupportRepository()
-    const one = await repository.create(createInput())
-    await repository.create(createInput({ subject: '同客户第二单', idempotencyKey: 'create-ticket-002', priority: 'urgent' }))
-    await repository.comment({ workspaceId: 'ws_1', ticketId: one.ticket.id, body: '内部敏感备注', visibility: 'internal', expectedRevision: 1, actorId: 'support_1', idempotencyKey: 'comment-ticket-001' })
-
-    const crm = await repository.listCrmProjection('ws_1')
-    expect(crm).toEqual([expect.objectContaining({ customerId: 'customer_1', totalTickets: 2, openTickets: 2, urgentTickets: 1 })])
-    expect(JSON.stringify(crm)).not.toContain('内部敏感备注')
-  })
-
   it('records an idempotent SLA action without changing ticket status', async () => {
     const repository = new MemorySupportRepository()
     const created = await repository.create(createInput())
@@ -89,6 +78,17 @@ describe('MemorySupportRepository', () => {
     expect(action.event.eventType).toBe('sla_at_risk')
     expect(replay.replayed).toBe(true)
     expect((await repository.listEvents('ws_1', created.ticket.id)).at(-1)).toMatchObject({ eventType: 'sla_at_risk', sequence: 2 })
+  })
+
+  it('filters the queue by the projected SLA state', async () => {
+    const repository = new MemorySupportRepository()
+    const created = await repository.create(createInput({ idempotencyKey: 'sla-filter-001' }))
+    expect((await repository.list({ workspaceId: 'ws_1', slaState: 'on_track' })).items.map(ticket => ticket.id)).toContain(created.ticket.id)
+
+    await repository.transition({ workspaceId: 'ws_1', ticketId: created.ticket.id, status: 'in_progress', reason: '开始处理', expectedRevision: 1, actorId: 'support_1', idempotencyKey: 'sla-filter-transition-001' })
+    await repository.transition({ workspaceId: 'ws_1', ticketId: created.ticket.id, status: 'resolved', reason: '问题已解决', expectedRevision: 2, actorId: 'support_1', idempotencyKey: 'sla-filter-transition-002' })
+    expect((await repository.list({ workspaceId: 'ws_1', slaState: 'met' })).items.map(ticket => ticket.id)).toContain(created.ticket.id)
+    expect((await repository.list({ workspaceId: 'ws_1', slaState: 'on_track' })).items.map(ticket => ticket.id)).not.toContain(created.ticket.id)
   })
 })
 
@@ -117,22 +117,6 @@ describe('PostgresSupportRepository', () => {
     expect(queries.find(item => item.sql.includes('set_config'))?.values).toEqual(['ws_tenant'])
     expect(queries.find(item => item.sql.includes('FROM workspace_support_tickets'))?.values?.[0]).toBe('ws_tenant')
     expect(client.release).toHaveBeenCalledOnce()
-  })
-
-  it('orders the bounded CRM projection by latest activity before applying its limit', async () => {
-    const queries: string[] = []
-    const query = vi.fn(async (sql: string) => {
-      queries.push(sql)
-      return { rows: [] }
-    })
-    const client: SqlClient = { query: query as SqlClient['query'], release: vi.fn() }
-    const repository = new PostgresSupportRepository({ connect: async () => client })
-
-    await repository.listCrmProjection('ws_1', 25)
-
-    const projectionQuery = queries.find(sql => sql.includes('WITH ranked AS')) ?? ''
-    expect(projectionQuery).toContain('ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC, id DESC)')
-    expect(projectionQuery).toMatch(/WHERE customer_rank=1\s+ORDER BY created_at DESC, id DESC\s+LIMIT \$2/)
   })
 
   it('rolls back when an append-only event cannot be persisted', async () => {

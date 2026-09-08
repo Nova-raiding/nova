@@ -9,6 +9,8 @@ const report = (overrides: Record<string, unknown> = {}) => parseCommercialReadi
   message: "报告已返回",
   blockers: [],
   capabilities: {},
+  catalog: {},
+  policies: {},
   registry: [],
   provider: {},
   creative_points: {},
@@ -61,5 +63,27 @@ describe("CommercialReadinessPanel", () => {
     const checks = evaluateCommercialReadiness(report({ capabilities: { refund: { configured: true, blocking_reason: "REFUND_POLICY_UNAPPROVED" } } }));
 
     expect(checks.policyChecks.find(item => item.label === "退款规则")?.check).toMatchObject({ ready: false, reason: "REFUND_POLICY_UNAPPROVED" });
+  });
+
+  it("accepts null blocking reasons and reads catalog/policy evidence from their dedicated sections", () => {
+    const checks = evaluateCommercialReadiness(report({
+      catalog: {
+        onboarding: { executable: true, blocking_reason: null },
+        trial: { executable: true, blocking_reason: null },
+        monthly_basic: { executable: true, blocking_reason: null },
+        monthly_growth: { executable: true, blocking_reason: null },
+        monthly_custom: { executable: true, blocking_reason: null },
+        points_500: { executable: true, blocking_reason: null },
+        points_2000: { executable: true, blocking_reason: null },
+      },
+      policies: {
+        trial_credit: { configured: true }, point_grant: { configured: true }, point_expiry: { configured: true },
+        refund: { configured: true, blocking_reason: null }, subscription_stop: { configured: true },
+      },
+      registry: [{ operation: "catalog.image.generate", enabled: true }],
+    }));
+
+    expect(checks.skuChecks.every(item => item.check.ready)).toBe(true);
+    expect(checks.policyChecks.every(item => item.check.ready)).toBe(true);
   });
 });

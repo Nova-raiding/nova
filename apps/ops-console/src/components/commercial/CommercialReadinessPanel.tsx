@@ -30,7 +30,7 @@ const displayName: Record<string, string> = { image: "标准图片", image_edit:
 const isRecord = (value: unknown): value is ReadinessEvidence => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 function findEvidence(report: CommercialReadinessReport, aliases: readonly string[]): ReadinessEvidence | null {
-  const sources: ReadinessEvidence[] = [report.capabilities, report.provider, report.creativePoints];
+  const sources: ReadinessEvidence[] = [report.catalog, report.policies, report.capabilities, report.provider, report.creativePoints];
   for (const source of sources) for (const alias of aliases) if (isRecord(source[alias])) return source[alias];
   return null;
 }
@@ -45,7 +45,7 @@ function reasonOf(evidence: ReadinessEvidence | null, fallback: string): string 
 function checkSku(report: CommercialReadinessReport, key: string): Check {
   const evidence = findEvidence(report, [key, `sku_${key}`, `${key}_sku`]);
   if (!evidence) return { ready: false, reason: "就绪报告未返回该 SKU 的可执行证据" };
-  if (evidence.executable === true && evidence.blocking_reason === undefined && evidence.blockingReason === undefined) return { ready: true, reason: "已返回可执行证据" };
+  if (evidence.executable === true && evidence.blocking_reason == null && evidence.blockingReason == null) return { ready: true, reason: "已返回可执行证据" };
   return { ready: false, reason: reasonOf(evidence, "SKU 未达到可执行状态") };
 }
 
@@ -53,7 +53,7 @@ function checkPolicy(report: CommercialReadinessReport, aliases: readonly string
   const evidence = findEvidence(report, aliases);
   if (!evidence) return { ready: false, reason: `就绪报告未返回“${label}”配置证据` };
   const configured = evidence.configured === true || evidence.ready === true || evidence.executable === true;
-  if (configured && evidence.blocking_reason === undefined && evidence.blockingReason === undefined) return { ready: true, reason: "已返回配置证据" };
+  if (configured && evidence.blocking_reason == null && evidence.blockingReason == null) return { ready: true, reason: "已返回配置证据" };
   return { ready: false, reason: reasonOf(evidence, "规则未达到可执行状态") };
 }
 
@@ -99,7 +99,7 @@ export function CommercialReadinessPanel({ authorization, client = commercialOpe
     <Descriptions size="small" column={3} style={{ marginTop: 16 }} items={[{ key: "environment", label: "环境", children: <Tag>{report.environment || "未知"}</Tag> }, { key: "blockers", label: "全局阻断项", children: report.blockers.length || "未知" }, { key: "generated", label: "报告时间", children: report.generatedAt ? new Date(report.generatedAt).toLocaleString() : <Typography.Text type="danger">未知 · 阻断</Typography.Text> }]} />
     <Row gutter={[12, 12]} style={{ marginTop: 16 }}><Col xs={24} xl={12}><CheckList title="可执行 SKU" items={skuChecks} /></Col><Col xs={24} xl={12}><CheckList title="方案规则" items={[...policyChecks, { label: "计费操作注册表", check: registryCheck }]} /></Col></Row>
     <Card size="small" type="inner" title="已返回的创意点能力费率" style={{ marginTop: 12 }}>
-      {capabilityEntries.length ? <Row gutter={[8, 8]}>{capabilityEntries.map(([name, raw]) => { const evidence = isRecord(raw) ? raw : null; const check: Check = evidence?.executable === true && evidence.blocking_reason === undefined ? { ready: true, reason: "已返回可执行费率" } : { ready: false, reason: reasonOf(evidence, "费率未返回可执行证据") }; return <Col key={name} xs={24} sm={12} md={6}><Card size="small" title={displayName[name] ?? name}><StatusTag check={check} /><Typography.Text type={check.ready ? "secondary" : "danger"} style={{ display: "block", marginTop: 6 }}>{check.reason}</Typography.Text></Card></Col>; })}</Row> : <Alert type="error" showIcon title="未知 · 阻断" description="就绪报告未返回任何商业能力费率。" />}
+      {capabilityEntries.length ? <Row gutter={[8, 8]}>{capabilityEntries.map(([name, raw]) => { const evidence = isRecord(raw) ? raw : null; const check: Check = evidence?.executable === true && evidence.blocking_reason == null && evidence.blockingReason == null ? { ready: true, reason: "已返回可执行费率" } : { ready: false, reason: reasonOf(evidence, "费率未返回可执行证据") }; return <Col key={name} xs={24} sm={12} md={6}><Card size="small" title={displayName[name] ?? name}><StatusTag check={check} /><Typography.Text type={check.ready ? "secondary" : "danger"} style={{ display: "block", marginTop: 6 }}>{check.reason}</Typography.Text></Card></Col>; })}</Row> : <Alert type="error" showIcon title="未知 · 阻断" description="就绪报告未返回任何商业能力费率。" />}
     </Card>
     <Card size="small" type="inner" title="底层结算证据" style={{ marginTop: 12 }}><Descriptions size="small" column={3} items={[{ key: "balance", label: "点数账本", children: report.creativePoints.point_balance_repository === true ? <Tag color="success">已配置</Tag> : <Tag color="error">未知 / 阻断</Tag> }, { key: "settlement", label: "预占与结算", children: report.creativePoints.reservation_and_settlement_repository === true ? <Tag color="success">已配置</Tag> : <Tag color="error">未知 / 阻断</Tag> }, { key: "audit", label: "可审计结算", children: report.creativePoints.auditable === true ? <Tag color="success">已配置</Tag> : <Tag color="error">未知 / 阻断</Tag> }]} /></Card>
     {report.blockers.length ? <List size="small" header={<Typography.Text strong>需要处理的全局阻断项</Typography.Text>} dataSource={report.blockers} renderItem={(blocker) => <List.Item><List.Item.Meta title={<><Tag color="error">{blocker.scope}</Tag><Typography.Text code>{blocker.code}</Typography.Text></>} description={<><div>{blocker.detail}</div><Typography.Text type="secondary">下一步：{blocker.nextAction}</Typography.Text></>} /></List.Item>} style={{ marginTop: 16 }} /> : null}

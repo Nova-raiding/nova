@@ -3,7 +3,15 @@
 审计日期：2026-09-08（Asia/Shanghai）  
 方案来源：[商业化方案 (1).md](</Users/lixiaomei/Downloads/商业化方案 (1).md>)  
 审计范围：商业目录、购买/授予、创意点、连续权益、worker 门禁、服务履约、平台连接器、数据生命周期、生产发布证据。  
-约束：本次只新增文档和测试，不修改 API 或 frontend。
+本轮已落地 API/MCP、worker、账本和迁移闭环；生产中转、对象存储、扫描器和平台 OAuth 仍按真实配置门禁 fail-closed。
+
+## 2026-09-08 实现复核增量
+
+- 本地 PostgreSQL 已真实迁移到 169：167 私测抵扣闭环、168 赠送批次 dispatch、169 赠送批次过期事实表均存在。
+- 5000 元正式接入、基础版、成长版和两个点包的 v2 目录快照已 executable；费率为图片 1 点、批注编辑 1 点、文本 1 点、标准 15 秒视频 90 点。
+- 六批次 500 点按支付成功后的月度排程生成；每批次按次月边界过期，第 6 批后不再生成第 7 批。worker 已接入 due dispatch/expiration。
+- 私测流程已具备资格创建、业务审批、验证完成、1999 元试用窗口、1999 元抵扣、财务审批、3001 元待支付订单和人工转账核验入口。
+- 图片、图片编辑、文本/视频生成入口已接入 V2 创意点预留；余额不足返回充值动作，provider 成功回执带用量/成本后结算，失败释放，未知结果保留对账。
 
 ## 判定口径
 
@@ -44,10 +52,10 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 | 方案功能 | 实现文件/入口 | 测试 | 真实运行证据 | 状态 |
 |---|---|---|---|---|
 | 插件账户开通 | `packages/application/src/commercial-purchase-service.ts`、认证/授权模块、`apps/plugin` | purchase/auth/plugin contract tests | 当前 production doctor 未取得 ChatGPT host/plugin bridge 的真实 evidence | 🟡 |
-| 5000 元一次性接入费 | `commercial-plan-catalog.ts`、`146_commercial_catalog_v2.sql` | `commercial-plan-catalog.test.ts`、catalog repository tests | catalog 7 个版本但 executable=0 | ⛔ |
+| 5000 元一次性接入费 | `commercial-plan-catalog.ts`、`166_commercial_catalog_executable_v2.sql` | `commercial-plan-catalog.test.ts`、catalog repository tests | 本地 PostgreSQL 已应用 166，v2 onboarding executable | 🟡 |
 | 连续 6 个月每月 500 点 | `commercial-plan-catalog.ts`、`service-fulfillment.ts` | `service-fulfillment.test.ts`、`commercial-plan-coverage.test.ts` | 已解析纯规则；尚无数据库 grant worker 的真实执行证据 | 🟡 |
 | 每批点数次月过期 | `service-fulfillment.ts` 的 grant schedule 规则、creative point lifecycle | point lifecycle/repository tests | 无真实定时发放和过期流水证据 | 🟡 |
-| 第 6 个月后停止赠送 | grant schedule 规则、worker/ledger | service fulfillment tests | 无真实第 7 个月边界运行证据 | 🟡 |
+| 第 6 个月后停止赠送 | `onboarding-grant-dispatch-repository.ts`、worker/ledger | dispatch/migration tests | 169 已应用；仍需生产定时运行证据 | 🟡 |
 | 系统部署与基础调试 | `scripts/dev-doctor.ts`、compose/infra | release/runtime gate tests | doctor 显示 API、ops UI、production config 等仍有失败项 | 🟡 |
 | 固定规则 | rules/knowledge/approval 模块 | rules/approval tests | 没有已授权平台规则的生产同步证据 | 🟡 |
 | 商品品类规则 | rules/knowledge 模块 | rule contract tests | 没有真实平台同步和生效回执 | 🟡 |
@@ -80,31 +88,31 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 
 | 方案功能 | 实现文件/入口 | 测试 | 真实运行证据 | 状态 |
 |---|---|---|---|---|
-| 1999 元/7 天 SKU | `commercial-plan-catalog.ts`、catalog migration | catalog tests | SKU draft、不可执行 | ⛔ |
+| 1999 元/7 天 SKU | private-trial conversion state machine | private-trial service/migration tests | 私测 SKU 对外仍保持 private，不走公开购买入口 | 🟡 |
 | 一个品牌、一个店铺、500 点 | private validation offer、entitlement projection | catalog/entitlement tests | 没有试用订单授予证据 | ⛔ |
 | 1 小时 1 对 1 | service fulfillment | fulfillment tests | 没有试用订单服务消耗证据 | 🟡 |
 | 核心功能和一次复盘 | generation/knowledge/service fulfillment | feature tests | 中转、平台授权、存储等生产门禁仍未通过 | 🟡 |
-| 7 天内购买正式版抵扣 5000 元 | `PrivateValidationOffer.onboardingOffset` | catalog test only records unresolved state | 没有抵扣订单、补差价、资格窗口真实证据 | ❌ |
+| 7 天内购买正式版抵扣 5000 元 | `private-trial-conversion-repository.ts`、payment verify MCP | private-trial service/migration tests | 资格窗口、1999 抵扣、3001 待支付和 manual_transfer 核验已形成 | 🟡 |
 | 测试版不公开 | offer visibility=`private` | catalog test | 没有白名单/邀请/私有购买链接运行证据 | ❌ |
 
 ## 3. 月费套餐
 
 | 套餐 | 目录值 | 实现/测试 | 真实运行证据 | 状态 |
 |---|---|---|---|---|
-| 基础版 2000/月 | 1 品牌、5 店铺、5000 点、5 小时、4 工作小时响应、无复盘 | `LOCAL_PLAN_ENTITLEMENTS` + catalog tests | SKU draft；`50g` 单位未解析 | ⛔ |
-| 成长版 5000/月 | 3 品牌、15 店铺、12500 点、10 小时、2 工作小时响应、每月复盘 | 同上 | SKU draft；真实服务/SLA 未绑定订单 | ⛔ |
+| 基础版 2000/月 | 1 品牌、5 店铺、5000 点、5 小时、4 工作小时响应、无复盘 | `LOCAL_PLAN_ENTITLEMENTS` + catalog tests | 本地 PostgreSQL 166 已批准且 executable；真实服务/SLA 仍未绑定订单 | 🟡 |
+| 成长版 5000/月 | 3 品牌、15 店铺、12500 点、10 小时、2 工作小时响应、每月复盘 | 同上 | 本地 PostgreSQL 166 已批准且 executable；真实服务/SLA 仍未绑定订单 | 🟡 |
 | 定制版 10000/月起 | 数量、点数、小时数、SLA、复盘和流程按合同 | custom entitlement validation + fulfillment | 没有报价、里程碑、审批和定制交付运行证据 | 🟡 |
 
 | 月费共同能力 | 实现/测试覆盖 | 真实运行证据 | 状态 |
 |---|---|---|---|
-| 持续系统、云知识库、品牌知识库 | application/knowledge/storage | object storage 仍 local；production readiness=false | 🟡 |
+| 持续系统、云知识库、品牌知识库 | application/knowledge/storage | 本地单人环境可用；对象存储/KMS production gate 仍未通过 | 🟡 |
 | 自然语言、文本、图片、视频生成 | AI relay/multimodal/application | 当前运行环境未提供可核验的中转鉴权、用量、成本证据 | 🟡 |
 | 图片标注/编辑 | image generation/edit contracts | 代码和测试存在；生产 relay/asset evidence 不足 | 🟡 |
 | 批量营销素材 | campaign/batch delivery | 没有生产批量交付回执 | 🟡 |
 | 竞品分析 | competitor knowledge/reference | 没有周期报告商品和运行回执 | 🟡 |
 | 记忆学习 | preferences/knowledge/learning | 没有到期冻结和恢复运行证据 | 🟡 |
 | 自动检查 | review/rules/scanner | scanner production gate 未通过 | 🟡 |
-| 50g 存储 | storage quota ledger | 单位未决；对象存储/KMS production gate 未通过 | ⛔ |
+| 50g 存储 | storage quota ledger | 已按十进制 50,000,000,000 bytes 固化；对象存储/KMS production gate 未通过 | 🟡 |
 | 1 对 1、响应 SLA、月度复盘 | service fulfillment/support SLA | 有服务记录模型，无套餐订单绑定和真实交付 evidence | 🟡 |
 | API/内部系统接入 | HTTP/API/MCP surfaces | API 有基础，定制项目报价、里程碑、验收缺失 | 🟡 |
 
@@ -130,13 +138,13 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 
 | 规则 | 实现/测试 | 真实运行证据 | 状态 |
 |---|---|---|---|
-| 标准图片 1 点 | draft rate + catalog test | 未批准，不能结算 | ⛔ |
-| 图片标注编辑 1 点 | draft rate + catalog test | 未批准，不能结算 | ⛔ |
-| 15 秒视频 90 点起 | draft rate | 变量公式未定，不能结算 | ⛔ |
-| 文本生成 | draft rate，点数未定 | 未批准，不能结算 | ⛔ |
-| 500 点/300 元、2000 点/1000 元 | point pack catalog + lifecycle repository | 过期规则未定，SKU 不可执行 | ⛔ |
+| 标准图片 1 点 | active v2 rate + MCP reserve/settle/release | 本地 Postgres 169、API/worker 健康；真实 relay 成本证据仍是生产门禁 | 🟡 |
+| 图片标注编辑 1 点 | active v2 rate + MCP reserve/settle/release | 本地 API/账本闭环；真实 provider receipt 仍需生产证据 | 🟡 |
+| 15 秒视频 90 点起 | active v2 rate + MCP reserve/settle/release | 本地 API/账本闭环；真实视频 provider 仍需生产证据 | 🟡 |
+| 文本生成 | active v2 rate + MCP reserve/settle/release | 本地 API/worker 健康；真实 relay 成本证据仍是生产门禁 | 🟡 |
+| 点包价格与有效期 | point pack catalog + lifecycle repository | catalog/point lifecycle tests；本地真实订单/核验/幂等回放已验证 | v2 点包价格和 30 个自然日有效期已冻结并迁移 | 🟡 |
 | 扫描、商品录入、知识库查询、历史记录免费 | operation registry/access service | 生产平台和商业权益未贯通 | 🟡 |
-| 点数用完购买点包/升级 | wallet reserve/settle/release + purchase skeleton | 点包和升级 SKU 不可执行 | 🟡 |
+| 点数用完购买点包/升级 | wallet reserve/settle/release + purchase skeleton | 点包可创建订单并由平台人工转账核验后原子授予；升级仍需正式订单与履约证据 | 🟡 |
 | 月度点数当月有效 | lifecycle/expiry foundation | 没有月末真实流水证据 | 🟡 |
 
 ## 7. 停服、数据、退款和交付
@@ -181,10 +189,10 @@ npm exec vitest run --no-file-parallelism \
 npm run dev:doctor:production
 ```
 
-本次针对性测试结果：4 个测试文件、42 个测试通过。  
+本次针对性测试结果：4 个测试文件、42 个测试通过；本轮商业访问、worker 商业复核、Ops 工作台回归为 5 个测试文件、143 个测试通过。
 生产 doctor 当前仍报告商业目录 `executable=0`、已批准费率为 0、生产 readiness 未通过，并且存在中转 evidence、ChatGPT host/plugin bridge、支付、六平台 OAuth、对象存储、扫描器和 ops UI 等生产缺口。
 
-因此本矩阵的最终结论是：**商业化底层代码和 fail-closed 门禁已经有较完整基础，但方案尚未形成可对外售卖的真实生产闭环。**
+因此本矩阵的当前结论是：**单人本地测试闭环已可执行（包含创意点不足引导购买、预占、provider 回执结算、失败释放、账本和人工转账开通）；方案尚未形成可对外售卖的真实生产闭环。**
 
 ## 缺口清单（按上线阻断排序）
 
@@ -199,4 +207,3 @@ npm run dev:doctor:production
 9. 将现有模型中转的真实鉴权、用量、成本、错误和五模态 evidence 接入 release gate。
 10. 实现续费宽限、90 天通知/清理、恢复费、退款规则和故障补偿。
 11. 完成 admin/ops 桌面后台生产部署，并验证运营开通、服务履约和账务审计。
-

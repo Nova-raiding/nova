@@ -1,0 +1,55 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260906",
+  "modality": "ocr",
+  "observed_at": "2026-09-06T01:47:06.856Z",
+  "http_status": 200,
+  "response_headers": {
+    "x-oneapi-request-id": "202609060147062264265398268d9d6grNVNA8K"
+  },
+  "result": {
+    "modality": "ocr",
+    "endpoint": "/chat/completions",
+    "model": "agnes-2.5-flash",
+    "httpStatus": 200,
+    "providerRequestId": "202609060147062264265398268d9d6grNVNA8K",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.00008196,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "id": "45b7c325bbd0433481594ed319533229",
+    "created": 1788659226,
+    "model": "agnes-2.5-flash",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"ocr_text\":\"\"}",
+          "role": "assistant"
+        },
+        "provider_specific_fields": {
+          "matched_stop": 248046
+        }
+      }
+    ],
+    "usage": {
+      "completion_tokens": 6,
+      "prompt_tokens": 362,
+      "total_tokens": 368,
+      "prompt_tokens_details": {
+        "cached_tokens": 256,
+        "image_tokens": 64
+      }
+    },
+    "metadata": {
+      "weight_version": "default"
+    }
+  }
+}

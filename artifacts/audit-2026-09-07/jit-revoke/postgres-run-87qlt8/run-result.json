@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-07T12:40:50.141Z",
+  "endedAt": "2026-09-07T12:41:07.495Z",
+  "status": "passed",
+  "scriptSha256": "a8d88d1cb9cc2220d9f2bb7ccee80373a79a6b11b04062d53f1834d70c624e8c",
+  "sourceHashes": {
+    "packages/persistence/src/authorization-repository.release.postgres.test.ts": "a2563bacc5dc1ecb1d54ebcd5f595d3dfce93e2d5d99380d9f8638e8f3780005",
+    "packages/persistence/src/authorization-rls-boundary.postgres.test.ts": "a4b8861d16878ad034ae680aa23466589a8ac1fda0cee841523780599080102b",
+    "packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts": "ee89984e491c5ce9c05dcf7c4e6ad65c632650b2646cc5a69bddb3c3437cdc5c",
+    "packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts": "6832bc860101bedcbbe078dd5808c387e745f7620f11c915ecac8805f69a56f3",
+    "packages/persistence/src/migration-105-release.postgres.test.ts": "b7ae1e0d3e3a63f60cbe343ced5ed83d91c6e76d2b201287c07841fac02b14ea",
+    "packages/persistence/src/migration-109-release.postgres.test.ts": "831bc621669152f04f2505b7f698ef6b4228651c38f0114ec993bf7e2cf3daa1",
+    "tests/isolated-ops-fixture.ts": "91b773a56984dc57dae5ee45f9d11e6aad4f68bc6934c5e8c6641acd3168f40f",
+    "scripts/run-safe-tests.ts": "3920906ddb4d9aa528de1e193d5869a9121fef2c8bde0fb0bf6b6e8609283086",
+    "vitest.config.ts": "7e51a81b6802859305c143012074334388decced8186e1cfab8e86eba5f0facf"
+  },
+  "manifest": [
+    {
+      "file": "packages/persistence/src/authorization-repository.release.postgres.test.ts",
+      "count": 1
+    },
+    {
+      "file": "packages/persistence/src/authorization-rls-boundary.postgres.test.ts",
+      "count": 1
+    },
+    {
+      "file": "packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts",
+      "count": 1
+    },
+    {
+      "file": "packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts",
+      "count": 2
+    },
+    {
+      "file": "packages/persistence/src/migration-105-release.postgres.test.ts",
+      "count": 1
+    },
+    {
+      "file": "packages/persistence/src/migration-109-release.postgres.test.ts",
+      "count": 2
+    }
+  ],
+  "expectedFiles": 6,
+  "expectedTests": 8,
+  "observedFiles": 6,
+  "observedTests": 8,
+  "observedPassed": 8,
+  "observedSkipped": 0,
+  "childExitCode": 0,
+  "errors": [],
+  "runId": "38292313-419e-467e-b076-eba41c44ff91",
+  "serverVersion": "17.11",
+  "containers": [
+    {
+      "id": "4f56d7610c09fa26c7424d90cdddb5e784f7d0caa1d8c914f85bafe577aba336",
+      "name": "merchant-ops-fixture-postgres-38292313-419e-467e-b076-eba41c44ff91",
+      "runId": "38292313-419e-467e-b076-eba41c44ff91",
+      "kind": "postgres",
+      "image": "postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73",
+      "hostPort": 32791,
+      "autoRemove": true,
+      "labels": {
+        "merchant.fixture.kind": "postgres",
+        "merchant.fixture.purpose": "isolated-ops-oidc-acceptance",
+        "merchant.fixture.run-id": "38292313-419e-467e-b076-eba41c44ff91"
+      },
+      "dataStorage": "tmpfs"
+    },
+    {
+      "id": "a34356ed5ea74c67bbbf8b8b899618aca98633bd6dc4b436441a2be94f9dd7a9",
+      "name": "merchant-ops-fixture-redis-38292313-419e-467e-b076-eba41c44ff91",
+      "runId": "38292313-419e-467e-b076-eba41c44ff91",
+      "kind": "redis",
+      "image": "redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2",
+      "hostPort": 32792,
+      "autoRemove": true,
+      "labels": {
+        "merchant.fixture.kind": "redis",
+        "merchant.fixture.purpose": "isolated-ops-oidc-acceptance",
+        "merchant.fixture.run-id": "38292313-419e-467e-b076-eba41c44ff91"
+      },
+      "dataStorage": "tmpfs"
+    }
+  ],
+  "disposal": {
+    "stopped": [
+      "a34356ed5ea74c67bbbf8b8b899618aca98633bd6dc4b436441a2be94f9dd7a9",
+      "4f56d7610c09fa26c7424d90cdddb5e784f7d0caa1d8c914f85bafe577aba336"
+    ],
+    "leftRunning": []
+  },
+  "databaseSource": "newly-created-isolated-fixture",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "modelCalls": 0,
+  "evidenceRetained": true,
+  "legacyTestCleanup": "some selected tests terminate connections and drop only their own UUID database inside this run-owned cluster"
+}

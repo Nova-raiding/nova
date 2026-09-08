@@ -1,0 +1,26 @@
+{
+  "at": "2026-09-07T12:42:29.092Z",
+  "postgres": {
+    "files": 6,
+    "tests": 8,
+    "passed": 8,
+    "skipped": 0,
+    "version": "17.11",
+    "sourceHashesMatch": true,
+    "reportValidated": true
+  },
+  "cleanup": {
+    "ownedContainerCount": 6,
+    "allExactIdsAbsent": true,
+    "stopped": [
+      "a34356ed5ea74c67bbbf8b8b899618aca98633bd6dc4b436441a2be94f9dd7a9",
+      "4f56d7610c09fa26c7424d90cdddb5e784f7d0caa1d8c914f85bafe577aba336",
+      "1ab713af7d9a7faf15922c634e6523e5e3023b966a61738d4d9d8dd548e81f6b",
+      "668d808a80240723eb8d2b0f2f2472aa4ff4f7356196ffcc8287dd95daea1504",
+      "53677fea430b24ddc587f4d82fe1813cc341f04900058757db56c517a200137d",
+      "1bb7f8b0c98c334c5e6b4e50b64070d4f43becee64ffbfd48cba7534c13f3161"
+    ],
+    "leftRunning": []
+  },
+  "sharedDockerAction": "read-only ID inventory; no stop/delete"
+}

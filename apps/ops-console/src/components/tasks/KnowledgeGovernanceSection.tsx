@@ -4,6 +4,7 @@ import { AssetRightsPanel } from "./knowledge/AssetRightsPanel";
 import { CompetitorReferencesPanel } from "./knowledge/CompetitorReferencesPanel";
 import { KnowledgeRulesPanel } from "./knowledge/KnowledgeRulesPanel";
 import { LearningSuggestionsPanel } from "./knowledge/LearningSuggestionsPanel";
+import { BrandPreferencePanel } from "./knowledge/BrandPreferencePanel";
 
 interface KnowledgeGovernanceSectionProps {
   model: OpsConsoleModel;
@@ -40,9 +41,15 @@ export function KnowledgeGovernanceSection({
         </Tag>
       }
     >
+      <Alert
+        type="info"
+        showIcon
+        title="这里维护当前工作区的运营规则与经验，不是平台官方规则。平台规则按京东、淘宝、天猫、拼多多、小红书、抖音分别同步，请前往“平台规则”查看新鲜度并更新。"
+        style={{ marginBottom: 16 }}
+      />
       <Row gutter={[16, 16]}>
         <Col xs={12} md={6}>
-          <Statistic title="知识规则" value={knowledgeRules.length} />
+          <Statistic title="工作区规则" value={knowledgeRules.length} />
         </Col>
         <Col xs={12} md={6}>
           <Statistic title="待审核资产" value={pendingAssetCount} />
@@ -58,13 +65,18 @@ export function KnowledgeGovernanceSection({
         items={[
           {
             key: "knowledge",
-            label: "知识规则",
+            label: "工作区规则",
             children: <KnowledgeRulesPanel model={model} />,
           },
           {
             key: "assets",
             label: "资产权益",
             children: <AssetRightsPanel model={model} />,
+          },
+          {
+            key: "preferences",
+            label: "品牌偏好",
+            children: <BrandPreferencePanel model={model} />,
           },
           {
             key: "learning",

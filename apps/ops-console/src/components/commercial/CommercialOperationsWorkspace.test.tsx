@@ -2,10 +2,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CommercialOperationsController } from "../../hooks/useCommercialOperations.js";
 import { commercialBlockDisplayState, CommercialAccessStatusBar, CommercialErrorSummary, CommercialOperationsWorkspace } from "./CommercialOperationsWorkspace.js";
+import { parseCommercialReadiness } from "../../api/commercialOperationsClient.js";
 
 const query = { view: "blocks", record: "", status: "", query: "", page: 1, sort: "", order: "" } as const;
 
 describe("CommercialOperationsWorkspace", () => {
+  it("parses the read-only production readiness report and preserves blockers", () => {
+    const report = parseCommercialReadiness({
+      schema_version: "commercial.readiness.v1", ready: false, environment: "production", message: "仍被阻断",
+      generated_at: "2026-09-06T00:00:00.000Z", blockers: [{ code: "RATE_CARD_UNAVAILABLE", severity: "blocking", scope: "image", detail: "费率未批准", next_action: "审批费率卡" }],
+      capabilities: { image: { executable: false, blocking_reason: "RATE_CARD_UNAVAILABLE" } }, registry: [{ operation: "catalog.image.generate", enabled: false }], provider: {}, creative_points: {},
+    });
+    expect(report.ready).toBe(false);
+    expect(report.blockers[0]).toMatchObject({ code: "RATE_CARD_UNAVAILABLE", nextAction: "审批费率卡" });
+    expect(report.registry[0]).toMatchObject({ operation: "catalog.image.generate", enabled: false });
+  });
   it("keeps service fulfillment commands evidence-bound and revision-protected", async () => {
     const source = await import("node:fs").then(fs => fs.readFileSync(new URL("../../api/commercialOperationsClient.ts", import.meta.url), "utf8"));
     expect(source).toContain('ops.commercial.service-fulfillment.schedule');

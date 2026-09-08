@@ -1,0 +1,457 @@
+{
+  "config": {
+    "rootDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-07T23-14-25.935Z-41ae7b1a-b11e-417b-8970-4c4aab9067ce/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/lixiaomei/Desktop/code/codexSkills",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "walk every Ops Console section through the real browser UI",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 52139,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 58\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"trace_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"trace_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"d755ae43-f6bd-4675-a8c4-cac00da13ccc\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_f5628add-44f6-44f9-9a9f-84662e003dd8\\\",\\\"trace_id\\\":\\\"req_f5628add-44f6-44f9-9a9f-84662e003dd8\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"c654c3f4-869b-46f0-8774-dba4b6a5d815\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_2b7ba08f-e092-4b0d-907f-abb271b8778d\\\",\\\"trace_id\\\":\\\"req_2b7ba08f-e092-4b0d-907f-abb271b8778d\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"eb643229-c19b-48aa-af6e-7f46e1a500ec\\\",\\\"method\\\":\\\"ops.alerts.list\\\",\\\"params\\\":{\\\"status\\\":\\\"open\\\",\\\"limit\\\":\\\"100\\\",\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_ffab2b0e-892b-4d98-9170-f466bac0daf6\\\",\\\"trace_id\\\":\\\"req_ffab2b0e-892b-4d98-9170-f466bac0daf6\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"32b38b52-8832-4638-bd2d-88bb2f2b03a5\\\",\\\"method\\\":\\\"ops.growth.funnel\\\",\\\"params\\\":{\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_4d9bf353-b4ec-4bd8-bf47-dceee0e792f1\\\",\\\"trace_id\\\":\\\"req_4d9bf353-b4ec-4bd8-bf47-dceee0e792f1\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"e2b99ee1-38c7-4e7c-8306-e549b8ea095a\\\",\\\"method\\\":\\\"ops.workspaces.list\\\",\\\"params\\\":{\\\"offset\\\":\\\"0\\\",\\\"limit\\\":\\\"20\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"trace_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"trace_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"25c88f49-8596-47d2-a8cc-e5bab81dc7fc\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_54ce431b-a58b-4e14-a403-f9170e778399\\\",\\\"trace_id\\\":\\\"req_54ce431b-a58b-4e14-a403-f9170e778399\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"d1f6bcbe-a7ff-4193-9362-41df7ea9a9b1\\\",\\\"method\\\":\\\"ops.feature-flags.list\\\",\\\"params\\\":{\\\"environment\\\":\\\"production\\\",\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_d1b67613-dc21-4e6a-ad9c-5085104f6321\\\",\\\"trace_id\\\":\\\"req_d1b67613-dc21-4e6a-ad9c-5085104f6321\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"22136a1f-930c-4ae6-b0fa-4fa4cf6f78cc\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"100\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 58\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"trace_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"trace_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"d755ae43-f6bd-4675-a8c4-cac00da13ccc\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_f5628add-44f6-44f9-9a9f-84662e003dd8\\\",\\\"trace_id\\\":\\\"req_f5628add-44f6-44f9-9a9f-84662e003dd8\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"c654c3f4-869b-46f0-8774-dba4b6a5d815\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_2b7ba08f-e092-4b0d-907f-abb271b8778d\\\",\\\"trace_id\\\":\\\"req_2b7ba08f-e092-4b0d-907f-abb271b8778d\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"eb643229-c19b-48aa-af6e-7f46e1a500ec\\\",\\\"method\\\":\\\"ops.alerts.list\\\",\\\"params\\\":{\\\"status\\\":\\\"open\\\",\\\"limit\\\":\\\"100\\\",\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_ffab2b0e-892b-4d98-9170-f466bac0daf6\\\",\\\"trace_id\\\":\\\"req_ffab2b0e-892b-4d98-9170-f466bac0daf6\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"32b38b52-8832-4638-bd2d-88bb2f2b03a5\\\",\\\"method\\\":\\\"ops.growth.funnel\\\",\\\"params\\\":{\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_4d9bf353-b4ec-4bd8-bf47-dceee0e792f1\\\",\\\"trace_id\\\":\\\"req_4d9bf353-b4ec-4bd8-bf47-dceee0e792f1\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"e2b99ee1-38c7-4e7c-8306-e549b8ea095a\\\",\\\"method\\\":\\\"ops.workspaces.list\\\",\\\"params\\\":{\\\"offset\\\":\\\"0\\\",\\\"limit\\\":\\\"20\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"trace_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"trace_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"25c88f49-8596-47d2-a8cc-e5bab81dc7fc\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_54ce431b-a58b-4e14-a403-f9170e778399\\\",\\\"trace_id\\\":\\\"req_54ce431b-a58b-4e14-a403-f9170e778399\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"d1f6bcbe-a7ff-4193-9362-41df7ea9a9b1\\\",\\\"method\\\":\\\"ops.feature-flags.list\\\",\\\"params\\\":{\\\"environment\\\":\\\"production\\\",\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_d1b67613-dc21-4e6a-ad9c-5085104f6321\\\",\\\"trace_id\\\":\\\"req_d1b67613-dc21-4e6a-ad9c-5085104f6321\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"22136a1f-930c-4ae6-b0fa-4fa4cf6f78cc\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"100\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:96:34",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                      "column": 34,
+                      "line": 96
+                    },
+                    "snippet": "  94 |     return false\n  95 |   })\n> 96 |   expect(unexpectedBadResponses).toEqual([])\n     |                                  ^\n  97 |   const unexpectedRpcErrors = rpcErrors.filter((entry) => entry.error?.code !== 'MEMBER_ROLE_MISMATCH')\n  98 |   expect(unexpectedRpcErrors).toEqual([])\n  99 |   expect(requestFailures).toEqual([])"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                        "column": 34,
+                        "line": 96
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 58\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"trace_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"trace_id\\\":\\\"req_7d1340b7-4a4f-4d60-9ac5-f4ccdbae67d9\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"d755ae43-f6bd-4675-a8c4-cac00da13ccc\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_f5628add-44f6-44f9-9a9f-84662e003dd8\\\",\\\"trace_id\\\":\\\"req_f5628add-44f6-44f9-9a9f-84662e003dd8\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"c654c3f4-869b-46f0-8774-dba4b6a5d815\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_2b7ba08f-e092-4b0d-907f-abb271b8778d\\\",\\\"trace_id\\\":\\\"req_2b7ba08f-e092-4b0d-907f-abb271b8778d\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"eb643229-c19b-48aa-af6e-7f46e1a500ec\\\",\\\"method\\\":\\\"ops.alerts.list\\\",\\\"params\\\":{\\\"status\\\":\\\"open\\\",\\\"limit\\\":\\\"100\\\",\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_ffab2b0e-892b-4d98-9170-f466bac0daf6\\\",\\\"trace_id\\\":\\\"req_ffab2b0e-892b-4d98-9170-f466bac0daf6\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"32b38b52-8832-4638-bd2d-88bb2f2b03a5\\\",\\\"method\\\":\\\"ops.growth.funnel\\\",\\\"params\\\":{\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_4d9bf353-b4ec-4bd8-bf47-dceee0e792f1\\\",\\\"trace_id\\\":\\\"req_4d9bf353-b4ec-4bd8-bf47-dceee0e792f1\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"e2b99ee1-38c7-4e7c-8306-e549b8ea095a\\\",\\\"method\\\":\\\"ops.workspaces.list\\\",\\\"params\\\":{\\\"offset\\\":\\\"0\\\",\\\"limit\\\":\\\"20\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"trace_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"trace_id\\\":\\\"req_f3749b3b-e6d8-498d-87cc-2461e96e0ff4\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"25c88f49-8596-47d2-a8cc-e5bab81dc7fc\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_54ce431b-a58b-4e14-a403-f9170e778399\\\",\\\"trace_id\\\":\\\"req_54ce431b-a58b-4e14-a403-f9170e778399\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"d1f6bcbe-a7ff-4193-9362-41df7ea9a9b1\\\",\\\"method\\\":\\\"ops.feature-flags.list\\\",\\\"params\\\":{\\\"environment\\\":\\\"production\\\",\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_d1b67613-dc21-4e6a-ad9c-5085104f6321\\\",\\\"trace_id\\\":\\\"req_d1b67613-dc21-4e6a-ad9c-5085104f6321\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"22136a1f-930c-4ae6-b0fa-4fa4cf6f78cc\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"100\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  94 |     return false\n  95 |   })\n> 96 |   expect(unexpectedBadResponses).toEqual([])\n     |                                  ^\n  97 |   const unexpectedRpcErrors = rpcErrors.filter((entry) => entry.error?.code !== 'MEMBER_ROLE_MISMATCH')\n  98 |   expect(unexpectedRpcErrors).toEqual([])\n  99 |   expect(requestFailures).toEqual([])\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js:96:34"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:14:32.738Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-07T23-14-25.935Z-41ae7b1a-b11e-417b-8970-4c4aab9067ce/test-results/dogfood-chatgpt-all-functi-28935-through-the-real-browser-UI/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-all.spec.js",
+                    "column": 34,
+                    "line": 96
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-bed75de6c367b57696c0",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "does not report model configuration success when model status fails",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1695,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:15:25.382Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0411c0cf49f1d2cc9183-15deecbc14659188a876",
+          "file": "dogfood/chatgpt-all-functions/ops-all.spec.js",
+          "line": 120,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operates the platform user directory without destructive confirmation",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 120052,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                        "column": 31,
+                        "line": 73
+                      },
+                      "message": "Error: page.waitForEvent: Test timeout of 120000ms exceeded.\n=========================== logs ===========================\nwaiting for event \"download\"\n============================================================\n\n  71 |     }\n  72 |   }\n> 73 |   const exportDownload = page.waitForEvent('download')\n     |                               ^\n  74 |   await page.getByRole('button', { name: '导出当前筛选' }).click()\n  75 |   const downloaded = await exportDownload\n  76 |   expect(downloaded.suggestedFilename()).toMatch(/^ops-users-\\d{4}-\\d{2}-\\d{2}\\.csv$/u)\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js:73:31"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:16:24.343Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-07T23-14-25.935Z-41ae7b1a-b11e-417b-8970-4c4aab9067ce/test-results/dogfood-chatgpt-all-functi-203b8-ut-destructive-confirmation/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-e331058b5d4d2c88859f",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 35,
+          "column": 1
+        },
+        {
+          "title": "keeps member governance in the workspace workbench",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "requires a workspace-only merchant_admin/owner token fixture",
+                  "location": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                    "line": 140,
+                    "column": 8
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 356,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:18:25.881Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "requires a workspace-only merchant_admin/owner token fixture",
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-users.spec.js",
+                        "line": 140,
+                        "column": 8
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "6522f71e1b3fcc2fbb2c-02b18fadf9258823ef5a",
+          "file": "dogfood/chatgpt-all-functions/ops-users.spec.js",
+          "line": 139,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "inventory Ops Console through the real browser UI",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7706,
+                  "error": {
+                    "message": "Error: Ops Console inventory should not observe HTTP error responses\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 44\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"trace_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"trace_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"9b5bc8a1-4712-4e57-8854-927f2bce810b\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"trace_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"trace_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"cd54289e-ebd3-420b-b248-09655c9e2842\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_a76530d0-ef0f-4a97-a7a9-fac3894d5ba2\\\",\\\"trace_id\\\":\\\"req_a76530d0-ef0f-4a97-a7a9-fac3894d5ba2\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"79a4e3db-a3bd-4fa5-b93f-9ab5e37f924f\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_35aff7e3-5658-41a1-af85-7040f22b4253\\\",\\\"trace_id\\\":\\\"req_35aff7e3-5658-41a1-af85-7040f22b4253\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"74d596df-2f2d-44d9-afdd-34c096700ca7\\\",\\\"method\\\":\\\"ops.growth.funnel\\\",\\\"params\\\":{\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_40c1e7d0-bf23-4970-9d94-c5454e7a46d3\\\",\\\"trace_id\\\":\\\"req_40c1e7d0-bf23-4970-9d94-c5454e7a46d3\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"7ec384e5-3ffd-47b2-bba6-b573601b273b\\\",\\\"method\\\":\\\"ops.alerts.list\\\",\\\"params\\\":{\\\"status\\\":\\\"open\\\",\\\"limit\\\":\\\"100\\\",\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_fd46ac2c-540b-4298-83af-695c0eb0d1e0\\\",\\\"trace_id\\\":\\\"req_fd46ac2c-540b-4298-83af-695c0eb0d1e0\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"00033dc8-53f1-426b-9e07-6455fd802ad9\\\",\\\"method\\\":\\\"ops.workspaces.list\\\",\\\"params\\\":{\\\"offset\\\":\\\"0\\\",\\\"limit\\\":\\\"20\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+                    "stack": "Error: Ops Console inventory should not observe HTTP error responses\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 44\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"trace_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"trace_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"9b5bc8a1-4712-4e57-8854-927f2bce810b\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"trace_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"trace_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"cd54289e-ebd3-420b-b248-09655c9e2842\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_a76530d0-ef0f-4a97-a7a9-fac3894d5ba2\\\",\\\"trace_id\\\":\\\"req_a76530d0-ef0f-4a97-a7a9-fac3894d5ba2\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"79a4e3db-a3bd-4fa5-b93f-9ab5e37f924f\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_35aff7e3-5658-41a1-af85-7040f22b4253\\\",\\\"trace_id\\\":\\\"req_35aff7e3-5658-41a1-af85-7040f22b4253\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"74d596df-2f2d-44d9-afdd-34c096700ca7\\\",\\\"method\\\":\\\"ops.growth.funnel\\\",\\\"params\\\":{\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_40c1e7d0-bf23-4970-9d94-c5454e7a46d3\\\",\\\"trace_id\\\":\\\"req_40c1e7d0-bf23-4970-9d94-c5454e7a46d3\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"7ec384e5-3ffd-47b2-bba6-b573601b273b\\\",\\\"method\\\":\\\"ops.alerts.list\\\",\\\"params\\\":{\\\"status\\\":\\\"open\\\",\\\"limit\\\":\\\"100\\\",\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_fd46ac2c-540b-4298-83af-695c0eb0d1e0\\\",\\\"trace_id\\\":\\\"req_fd46ac2c-540b-4298-83af-695c0eb0d1e0\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"00033dc8-53f1-426b-9e07-6455fd802ad9\\\",\\\"method\\\":\\\"ops.workspaces.list\\\",\\\"params\\\":{\\\"offset\\\":\\\"0\\\",\\\"limit\\\":\\\"20\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js:47:91",
+                    "location": {
+                      "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js",
+                      "column": 91,
+                      "line": 47
+                    },
+                    "snippet": "  45 |     const consoleErrors = consoleMessages.filter(message => message.type === 'error' || message.type === 'pageerror')\n  46 |     expect(response?.ok(), 'Ops Console entry page should return a successful response').toBe(true)\n> 47 |     expect(badResponses, 'Ops Console inventory should not observe HTTP error responses').toEqual([])\n     |                                                                                           ^\n  48 |     expect(requestFailures, 'Ops Console inventory should not observe failed network requests').toEqual([])\n  49 |     expect(consoleErrors, 'Ops Console inventory should not observe console or page errors').toEqual([])\n  50 |   } finally {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js",
+                        "column": 91,
+                        "line": 47
+                      },
+                      "message": "Error: Ops Console inventory should not observe HTTP error responses\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 44\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"trace_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"trace_id\\\":\\\"req_bddd2353-a36d-42c4-819d-361a432a1087\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"9b5bc8a1-4712-4e57-8854-927f2bce810b\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"trace_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"],\\\"error\\\":{\\\"code\\\":\\\"COMMERCIAL_OPERATION_DISABLED\\\",\\\"message\\\":\\\"商业操作尚未满足上线门禁，已拒绝执行\\\",\\\"details\\\":{\\\"request_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"trace_id\\\":\\\"req_13e2ac4b-e3fb-4c0a-9291-0c6ba1ed5139\\\",\\\"next_actions\\\":[\\\"commercial.access.get\\\",\\\"creative-points.balance.get\\\"]}}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"cd54289e-ebd3-420b-b248-09655c9e2842\\\",\\\"method\\\":\\\"ops.commercial.model-markup.get\\\",\\\"params\\\":{}}\",\u001b[39m\n\u001b[31m+     \"status\": 503,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_a76530d0-ef0f-4a97-a7a9-fac3894d5ba2\\\",\\\"trace_id\\\":\\\"req_a76530d0-ef0f-4a97-a7a9-fac3894d5ba2\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"AUDIT_CENTER_FORBIDDEN\\\",\\\"message\\\":\\\"当前身份无权执行该运营操作\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"79a4e3db-a3bd-4fa5-b93f-9ab5e37f924f\\\",\\\"method\\\":\\\"ops.audit.platform.list\\\",\\\"params\\\":{\\\"limit\\\":\\\"50\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_35aff7e3-5658-41a1-af85-7040f22b4253\\\",\\\"trace_id\\\":\\\"req_35aff7e3-5658-41a1-af85-7040f22b4253\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"74d596df-2f2d-44d9-afdd-34c096700ca7\\\",\\\"method\\\":\\\"ops.growth.funnel\\\",\\\"params\\\":{\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_40c1e7d0-bf23-4970-9d94-c5454e7a46d3\\\",\\\"trace_id\\\":\\\"req_40c1e7d0-bf23-4970-9d94-c5454e7a46d3\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"7ec384e5-3ffd-47b2-bba6-b573601b273b\\\",\\\"method\\\":\\\"ops.alerts.list\\\",\\\"params\\\":{\\\"status\\\":\\\"open\\\",\\\"limit\\\":\\\"100\\\",\\\"platform_scope\\\":\\\"platform\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"body\": \"{\\\"request_id\\\":\\\"req_fd46ac2c-540b-4298-83af-695c0eb0d1e0\\\",\\\"trace_id\\\":\\\"req_fd46ac2c-540b-4298-83af-695c0eb0d1e0\\\",\\\"workspace_id\\\":\\\"ws_demo\\\",\\\"data\\\":null,\\\"warnings\\\":[],\\\"next_actions\\\":[],\\\"error\\\":{\\\"code\\\":\\\"FORBIDDEN\\\",\\\"message\\\":\\\"该运营操作需要对应的工作区或平台运营权限\\\"}}\",\u001b[39m\n\u001b[31m+     \"method\": \"POST\",\u001b[39m\n\u001b[31m+     \"requestBody\": \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":\\\"00033dc8-53f1-426b-9e07-6455fd802ad9\\\",\\\"method\\\":\\\"ops.workspaces.list\\\",\\\"params\\\":{\\\"offset\\\":\\\"0\\\",\\\"limit\\\":\\\"20\\\"}}\",\u001b[39m\n\u001b[31m+     \"status\": 403,\u001b[39m\n\u001b[31m+     \"url\": \"http://127.0.0.1:59806/api/mcp\",\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n\n  45 |     const consoleErrors = consoleMessages.filter(message => message.type === 'error' || message.type === 'pageerror')\n  46 |     expect(response?.ok(), 'Ops Console entry page should return a successful response').toBe(true)\n> 47 |     expect(badResponses, 'Ops Console inventory should not observe HTTP error responses').toEqual([])\n     |                                                                                           ^\n  48 |     expect(requestFailures, 'Ops Console inventory should not observe failed network requests').toEqual([])\n  49 |     expect(consoleErrors, 'Ops Console inventory should not observe console or page errors').toEqual([])\n  50 |   } finally {\n    at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js:47:91"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:15:27.092Z",
+                  "annotations": [],
+                  "attachments": [],
+                  "errorLocation": {
+                    "file": "/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops.spec.js",
+                    "column": 91,
+                    "line": 47
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-a18e51edc5655ddbab2c",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "fails closed with no local connection credentials and exposes diagnostics on demand",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1890,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:15:35.239Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-aa6c7661665df7ef3549",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 56,
+          "column": 1
+        },
+        {
+          "title": "turns an authenticated-session 401 into a reauthentication gate",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2047,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:15:37.140Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-cc683d122c2d46299ebf",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 81,
+          "column": 1
+        },
+        {
+          "title": "renders the real workspace brand tree with revision and store navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 44684,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-07T23:15:39.192Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b404d4c69ab91951634e-64b7823a47e9221e3885",
+          "file": "dogfood/chatgpt-all-functions/ops.spec.js",
+          "line": 110,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-07T23:14:31.387Z",
+    "duration": 235392.82200000001,
+    "expected": 4,
+    "skipped": 1,
+    "unexpected": 3,
+    "flaky": 0
+  }
+}

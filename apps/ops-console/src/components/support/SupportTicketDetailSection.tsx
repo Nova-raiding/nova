@@ -60,6 +60,21 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
         style={{ marginBottom: 16 }}
       /> : <Alert type="warning" showIcon role="status" title="SLA 履约时钟待回填" description="该历史工单尚未携带 SLA 快照；系统不会推测截止时间，请由运营完成回填后再判断是否超时。" style={{ marginBottom: 16 }} />}
       <Typography.Paragraph>{ticket.description}</Typography.Paragraph>
+      <Card size="small" title="客户与问题上下文" style={{ marginBottom: 16 }}>
+        <Space wrap>
+          <Typography.Text strong>{ticket.customerName}</Typography.Text>
+          <Typography.Text type="secondary">客户 ID：{ticket.customerId}</Typography.Text>
+          {ticket.customerEmail ? <Typography.Text copyable={{ text: ticket.customerEmail }}>邮箱：{ticket.customerEmail}</Typography.Text> : null}
+          {ticket.tags.map(tag => <Tag key={tag}>{tag}</Tag>)}
+        </Space>
+      </Card>
+      <Card size="small" title="关联处理对象" style={{ marginBottom: 16 }}>
+        <Space orientation="vertical" size={4}>
+          {ticket.relatedTaskId ? <Space size={8}><Typography.Text copyable={{ text: ticket.relatedTaskId }}>任务 ID：{ticket.relatedTaskId}</Typography.Text><Typography.Link href={`/ops/tasks?task_id=${encodeURIComponent(ticket.relatedTaskId)}`}>回到任务队列</Typography.Link></Space> : null}
+          {ticket.relatedOrderId ? <Typography.Text copyable={{ text: ticket.relatedOrderId }}>订单 ID：{ticket.relatedOrderId}</Typography.Text> : null}
+          {!ticket.relatedTaskId && !ticket.relatedOrderId ? <Typography.Text type="secondary">未关联任务或订单；如问题来自生成、发布或支付，请补充关联 ID 后再流转。</Typography.Text> : null}
+        </Space>
+      </Card>
       <Space wrap style={{ marginBottom: 24 }}>
         <Button disabled={model.mutating} onClick={() => setAssignOpen(true)}>分配负责人</Button>
         <Button disabled={model.mutating} onClick={() => setTransitionOpen(true)}>变更状态</Button>

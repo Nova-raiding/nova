@@ -6,6 +6,7 @@ import type {
   SupportTicketContract,
   SupportTicketPriority,
   SupportTicketStatus,
+  SupportSlaState,
 } from "../../../../../packages/contracts/src/ops/support.js";
 import type { SupportDomainModel } from "../../hooks/useSupportDomain.js";
 
@@ -14,6 +15,7 @@ const statusLabels: Record<SupportTicketStatus, string> = {
 };
 const priorityLabels: Record<SupportTicketPriority, string> = { low: "低", normal: "普通", high: "高", urgent: "紧急" };
 const priorityColors: Record<SupportTicketPriority, string> = { low: "default", normal: "blue", high: "orange", urgent: "red" };
+const slaLabels: Record<SupportSlaState, string> = { on_track: "正常", at_risk: "临期", breached: "已超时", met: "已达成" };
 
 type CreateForm = Omit<CreateSupportTicketCommand, "workspaceId" | "idempotencyKey">;
 
@@ -52,6 +54,14 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
           onChange={event => model.setFilters({ ...model.filters, query: event.target.value })}
           onSearch={() => void model.reload()}
         />
+        <Input
+          aria-label="按客户 ID 筛选"
+          placeholder="客户 ID"
+          allowClear
+          value={model.filters.customerId ?? ""}
+          onChange={event => model.setFilters({ ...model.filters, customerId: event.target.value || undefined })}
+          onPressEnter={() => void model.reload()}
+        />
         <Select
           aria-label="按状态筛选"
           allowClear
@@ -69,6 +79,23 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
           style={{ minWidth: 140 }}
           options={Object.entries(priorityLabels).map(([value, label]) => ({ value, label }))}
           onChange={priority => model.setFilters({ ...model.filters, priority })}
+        />
+        <Select
+          aria-label="按 SLA 状态筛选"
+          allowClear
+          placeholder="全部 SLA"
+          value={model.filters.slaState}
+          style={{ minWidth: 140 }}
+          options={Object.entries(slaLabels).map(([value, label]) => ({ value, label }))}
+          onChange={slaState => model.setFilters({ ...model.filters, slaState: slaState as SupportSlaState | undefined })}
+        />
+        <Input
+          aria-label="按负责人筛选"
+          placeholder="负责人 ID"
+          allowClear
+          value={model.filters.assigneeId ?? ""}
+          onChange={event => model.setFilters({ ...model.filters, assigneeId: event.target.value || undefined })}
+          onPressEnter={() => void model.reload()}
         />
       </Space>
       {model.error ? (
@@ -106,6 +133,7 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
           { title: "状态", dataIndex: "status", width: 120, render: value => <Tag>{statusLabels[value as SupportTicketStatus]}</Tag> },
           { title: "优先级", dataIndex: "priority", width: 100, render: value => <Tag color={priorityColors[value as SupportTicketPriority]}>{priorityLabels[value as SupportTicketPriority]}</Tag> },
           { title: "负责人", dataIndex: "assignedTo", width: 160, render: value => value || "未分配" },
+          { title: "关联对象", width: 220, render: (_, ticket) => <Space orientation="vertical" size={0}>{ticket.relatedTaskId ? <Typography.Text copyable={{ text: ticket.relatedTaskId }}>任务：{ticket.relatedTaskId}</Typography.Text> : null}{ticket.relatedOrderId ? <Typography.Text copyable={{ text: ticket.relatedOrderId }}>订单：{ticket.relatedOrderId}</Typography.Text> : null}{!ticket.relatedTaskId && !ticket.relatedOrderId ? <Typography.Text type="secondary">未关联</Typography.Text> : null}</Space> },
           { title: "创建时间", dataIndex: "createdAt", width: 190, render: value => new Date(String(value)).toLocaleString() },
         ]}
       />}
@@ -128,6 +156,8 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
           <Form.Item name="customerId" label="客户 ID" rules={[{ required: true, max: 256 }]}><Input maxLength={256} /></Form.Item>
           <Form.Item name="customerName" label="客户名称" rules={[{ required: true, max: 200 }]}><Input maxLength={200} /></Form.Item>
           <Form.Item name="customerEmail" label="客户邮箱" rules={[{ type: "email", max: 320 }]}><Input type="email" maxLength={320} /></Form.Item>
+          <Form.Item name="relatedTaskId" label="关联任务 ID" extra="从任务、生成或发布异常创建工单时填写，便于客服接回处理链路"><Input maxLength={256} /></Form.Item>
+          <Form.Item name="relatedOrderId" label="关联订单 ID"><Input maxLength={256} /></Form.Item>
           <Form.Item name="tags" label="标签"><Select mode="tags" tokenSeparators={[","]} maxCount={20} aria-label="工单标签" /></Form.Item>
         </Form>
       </Modal>

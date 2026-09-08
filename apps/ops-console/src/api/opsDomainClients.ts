@@ -5,7 +5,7 @@ import type { FeatureFlagsClient } from "../hooks/useFeatureFlags.js";
 import type { FinanceSearchClient } from "../hooks/useFinanceSearch.js";
 import type { IncidentsClient } from "../hooks/useIncidents.js";
 import type { AuditCenterClient, AuditCenterFilters } from "../hooks/useAuditCenter.js";
-import { supportTicketEventTypes, supportTicketPriorities, supportTicketStatuses, type SupportCrmExportContract, type SupportTicketContract, type SupportTicketEventContract, type SupportTicketPageContract } from "../../../../packages/contracts/src/ops/support.js";
+import { supportTicketEventTypes, supportTicketPriorities, supportTicketStatuses, type SupportTicketContract, type SupportTicketEventContract, type SupportTicketPageContract } from "../../../../packages/contracts/src/ops/support.js";
 import type { SupportSlaCorrectionApprovalProgress, SupportSlaCorrectionDecision, SupportSlaCorrectionRun, SupportSlaMonthlyReport } from "../../../../packages/contracts/src/ops/support-sla-report.js";
 import { incidentSeverities, incidentStatuses } from "../../../../packages/contracts/src/ops/incidents.js";
 import { auditSources, type AuditCenterExport, type AuditCenterPage, type AuditCenterDetail, type AuditCenterQuery } from "../../../../packages/contracts/src/ops/audit-center.js";
@@ -104,10 +104,6 @@ export const parseSupportDetail = (value: unknown) => {
 export const parseSupportMutation = (value: unknown) => {
   if (!object(value) || !supportTicket(value.ticket) || !supportEvent(value.event) || !bool(value.replayed)) fail("客服工单变更", "ticket/event/replayed");
   return value as unknown as { ticket: SupportTicketContract; event: SupportTicketEventContract; replayed: boolean };
-};
-export const parseSupportCrmExport = (value: unknown): SupportCrmExportContract => {
-  if (!object(value) || !text(value.generatedAt) || !text(value.workspaceId) || !Array.isArray(value.columns) || !Array.isArray(value.rows)) fail("客服 CRM 导出", "export");
-  return value as unknown as SupportCrmExportContract;
 };
 const supportSlaReport = (value: unknown): value is SupportSlaMonthlyReport => object(value)
   && ["reportId", "workspaceId", "periodStart", "periodEnd", "cutoffAt", "checksum"].every(key => text(value[key]))
@@ -259,7 +255,10 @@ export const supportClient: SupportDomainClient = {
     ...(input.platformScope ? { platform_scope: "platform" } : {}),
     ...(input.status ? { status: input.status } : {}),
     ...(input.priority ? { priority: input.priority } : {}),
+    ...(input.slaState ? { sla_state: input.slaState } : {}),
+    ...(input.assigneeId ? { assignee_id: input.assigneeId } : {}),
     ...(input.query ? { query: input.query } : {}),
+    ...(input.customerId ? { customer_id: input.customerId } : {}),
     ...(input.cursor ? { cursor_json: JSON.stringify(input.cursor) } : {}),
     limit: String(input.limit),
   })),
@@ -275,7 +274,6 @@ export const supportClient: SupportDomainClient = {
   assign: async (input) => parseSupportMutation(await rpcForWorkspace(input.workspaceId, "ops.support.ticket.assign", { ticket_id: input.ticketId, assignee_id: input.assigneeId, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey })),
   transition: async (input) => parseSupportMutation(await rpcForWorkspace(input.workspaceId, "ops.support.ticket.transition", { ticket_id: input.ticketId, status: input.status, reason: input.reason, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey })),
   comment: async (input) => parseSupportMutation(await rpcForWorkspace(input.workspaceId, "ops.support.ticket.comment", { ticket_id: input.ticketId, body: input.body, visibility: input.visibility, expected_revision: String(input.expectedRevision), idempotency_key: input.idempotencyKey })),
-  exportCrm: async (workspaceId) => parseSupportCrmExport(await rpcForWorkspace(workspaceId, "ops.support.crm.export", { limit: "5000" })),
   report: async (input) => parseSupportSlaReport(await rpcForWorkspace<SupportSlaMonthlyReport>(input.workspaceId, "ops.support.sla.report", { period_start: input.periodStart, period_end: input.periodEnd, cutoff_at: input.cutoffAt, ...(input.reportId ? { report_id: input.reportId } : {}) })),
   createCorrection: async (input) => parseSupportSlaCorrection(await rpcForWorkspace<SupportSlaCorrectionRun | { status: "no_change"; original_report_id: string; checksum: string }>(input.workspaceId, "ops.support.sla.correction.create", { original_report_id: input.originalReportId, period_start: input.periodStart, period_end: input.periodEnd, cutoff_at: input.cutoffAt, reason: input.reason, idempotency_key: input.idempotencyKey })),
   decideCorrection: async (input) => parseSupportSlaCorrectionDecision(await rpcForWorkspace<SupportSlaCorrectionDecision | SupportSlaCorrectionApprovalProgress>(input.workspaceId, "ops.support.sla.correction.decide", { correction_id: input.correctionId, decision: input.decision, reason: input.reason, idempotency_key: input.idempotencyKey })),

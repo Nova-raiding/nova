@@ -1,0 +1,18 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/quality-entrypoints.test.ts (5 tests) 238ms
+ ✓ apps/api/src/worker-authorization-recheck.test.ts (34 tests) 179ms
+ ✓ packages/persistence/src/migration.test.ts (11 tests) 104ms
+ ✓ packages/persistence/src/migration-163.test.ts (4 tests) 31ms
+ ✓ packages/persistence/src/authorization-repository.test.ts (20 tests) 24ms
+ ✓ packages/persistence/src/authorization-repository.postgres.test.ts (9 tests) 16ms
+ ✓ tests/release-metadata-gate.test.ts (3 tests) 13ms
+ ✓ packages/persistence/src/authorization-repository.consumed-grant.test.ts (3 tests) 6ms
+
+ Test Files  8 passed (8)
+      Tests  89 passed (89)
+   Start at  18:47:55
+   Duration  4.31s (transform 1.85s, setup 0ms, import 2.67s, tests 612ms, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/auth163/frozen-owner-auth-focused.json

@@ -2,7 +2,7 @@ import { accessSync, constants, existsSync, readFileSync, readdirSync } from 'no
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
-import { codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
+import { apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
 
 const REQUIRED_CREATIVE_POINT_FORCE_RLS_TABLES = [
   'creative_point_access_state',
@@ -134,8 +134,13 @@ if (composeReady) {
 for (const [id, url] of [['api', 'http://127.0.0.1:8787/healthz'], ['api_ready', 'http://127.0.0.1:8787/readyz'], ['merchant_ui', 'http://127.0.0.1:18081/'], ['ops_ui', 'http://127.0.0.1:18082/']] as const) {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1500) })
-    add(`runtime:${id}`, response.ok ? 'pass' : 'warn', `${id} ${url} -> HTTP ${response.status}`)
-  } catch { add(`runtime:${id}`, 'warn', `${id} ${url} 未运行`, id === 'ops_ui' ? '运行 npm run dev:ops-console。' : '运行 npm run dev:stack。') }
+    const payload = id === 'api_ready' ? await response.clone().json().catch(() => undefined) : undefined
+    const probeReady = id === 'api_ready' ? apiProbeReady(payload, response.ok, production) : response.ok
+    add(`runtime:${id}`, probeReady ? 'pass' : production ? 'fail' : 'warn', `${id} ${url} -> HTTP ${response.status}${id === 'api_ready' && production ? `, production_ready=${String(probeReady)}` : ''}`, '生产模式必须由真实 production setup 与 productionGate=true 的 /readyz 响应证明；本地/fixture 200 不足以放行。')
+  } catch {
+    const level: Level = production && (id === 'api' || id === 'api_ready') ? 'fail' : 'warn'
+    add(`runtime:${id}`, level, `${id} ${url} 未运行`, id === 'ops_ui' ? '运行 npm run dev:ops-console。' : '运行 npm run dev:stack。')
+  }
 }
 
 try {

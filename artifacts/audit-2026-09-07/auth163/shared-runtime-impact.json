@@ -1,0 +1,37 @@
+{
+  "runId": "auth163-20260907",
+  "operation": "existing npm run check interrupted after identifying shared-runtime write/fault tests",
+  "exitCode": 130,
+  "sharedAsset": {
+    "entityId": "asset_3802cd26-79cc-4e58-b05b-a1aef1948f60",
+    "syntheticName": "scanner-callback-1788777726486-n2l5vh9d5gh.png",
+    "workspaceId": "ws_demo",
+    "createdAt": "2026-09-07T10:42:06.611189+00:00",
+    "scanStatus": "clean",
+    "deleted": false,
+    "source": "tests/local-docker-runtime-contract.test.ts:202"
+  },
+  "sharedRedis": {
+    "state": "running",
+    "health": "healthy",
+    "startedAt": "2026-09-07T10:41:42.108476599Z",
+    "source": "tests/local-docker-fault-acceptance.test.ts:69 contains stop/start",
+    "attribution": "restart observed in run window; interrupted report cannot prove test completion; docker event query returned no records"
+  },
+  "apiProbes": {
+    "at": "2026-09-07T10:46:08.212Z",
+    "ports": [
+      8787,
+      8788
+    ],
+    "paths": [
+      "/livez",
+      "/healthz",
+      "/readyz"
+    ],
+    "allHttpStatus": 200
+  },
+  "businessSchemaMigration": false,
+  "authorizationRowsModifiedByRepair": false,
+  "sharedDataCleanupPerformed": false
+}

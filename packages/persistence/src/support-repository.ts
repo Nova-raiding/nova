@@ -5,7 +5,7 @@ import {
   type SqlPool,
   withWorkspaceTransaction,
 } from './repository.js'
-import { createSupportSlaProjection, deriveSupportSlaState, projectSupportSlaFromEvents, type SupportSlaProjection } from '@merchant-marketing/contracts'
+import { createSupportSlaProjection, deriveSupportSlaState, projectSupportSlaFromEvents, type SupportSlaProjection, type SupportSlaState } from '@merchant-marketing/contracts'
 
 export type SupportTicketStatus = 'open' | 'in_progress' | 'waiting_customer' | 'resolved' | 'closed'
 export type SupportTicketPriority = 'low' | 'normal' | 'high' | 'urgent'
@@ -47,18 +47,6 @@ export interface SupportTicketEvent {
 
 export interface SupportTicketPageCursor { createdAt: string; id: string }
 export interface SupportTicketPage { items: SupportTicket[]; nextCursor?: SupportTicketPageCursor }
-export interface SupportCrmProjection {
-  workspaceId: string
-  customerId: string
-  customerName: string
-  customerEmail?: string
-  totalTickets: number
-  openTickets: number
-  urgentTickets: number
-  lastTicketAt: string
-  lastTicketStatus: SupportTicketStatus
-}
-
 export interface CreateSupportTicketInput {
   workspaceId: string
   subject: string
@@ -78,6 +66,7 @@ export interface SupportTicketListInput {
   workspaceId: string
   status?: SupportTicketStatus
   priority?: SupportTicketPriority
+  slaState?: SupportSlaState
   assigneeId?: string
   customerId?: string
   query?: string
@@ -113,7 +102,6 @@ export interface SupportRepository {
   transition(input: SupportTicketMutationInput & { status: SupportTicketStatus; reason: string }): Promise<SupportTicketMutationResult>
   comment(input: SupportTicketMutationInput & { body: string; visibility: 'internal' | 'customer' }): Promise<SupportTicketMutationResult>
   recordSlaAction(input: SupportSlaActionInput): Promise<SupportTicketMutationResult>
-  listCrmProjection(workspaceId: string, limit?: number): Promise<SupportCrmProjection[]>
 }
 
 export class SupportTicketNotFoundError extends Error {
@@ -167,7 +155,6 @@ function projectTicketSla(ticket: SupportTicket, events: readonly SupportTicketE
 export class MemorySupportRepository implements SupportRepository {
   private readonly tickets = new Map<string, SupportTicket & { createIdempotencyKey: string; createIdentity: string }>()
   private readonly events = new Map<string, SupportTicketEvent>()
-
   async create(input: CreateSupportTicketInput): Promise<SupportTicketMutationResult> {
     const workspaceId = requireWorkspaceScope(input.workspaceId)
     const eventKey = `${workspaceId}:${input.idempotencyKey}`
@@ -218,6 +205,7 @@ export class MemorySupportRepository implements SupportRepository {
       .filter(ticket => ticket.workspaceId === workspaceId)
       .filter(ticket => !input.status || ticket.status === input.status)
       .filter(ticket => !input.priority || ticket.priority === input.priority)
+      .filter(ticket => !input.slaState || deriveSupportSlaState(projectTicketSla(ticket, [...this.events.values()].filter(event => event.ticketId === ticket.id)).sla) === input.slaState)
       .filter(ticket => !input.assigneeId || ticket.assignedTo === input.assigneeId)
       .filter(ticket => !input.customerId || ticket.customerId === input.customerId)
       .filter(ticket => !query || [ticket.ticketNumber, ticket.subject, ticket.customerId, ticket.customerName].some(value => value.toLocaleLowerCase().includes(query)))
@@ -298,29 +286,6 @@ export class MemorySupportRepository implements SupportRepository {
     return { ticket: cloneTicket(projectTicketSla(ticket, [...this.events.values()].filter(item => item.ticketId === ticket.id))), event: cloneEvent(event), replayed: false }
   }
 
-  async listCrmProjection(workspaceId: string, limit = 1000): Promise<SupportCrmProjection[]> {
-    const scope = requireWorkspaceScope(workspaceId)
-    const max = clampLimit(limit, 5000)
-    const grouped = new Map<string, SupportTicket[]>()
-    for (const ticket of this.tickets.values()) {
-      if (ticket.workspaceId !== scope) continue
-      const rows = grouped.get(ticket.customerId) ?? []
-      rows.push(ticket)
-      grouped.set(ticket.customerId, rows)
-    }
-    return [...grouped.values()].map(rows => {
-      rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
-      const latest = rows[0]!
-      return {
-        workspaceId: scope, customerId: latest.customerId, customerName: latest.customerName,
-        ...(latest.customerEmail ? { customerEmail: latest.customerEmail } : {}),
-        totalTickets: rows.length,
-        openTickets: rows.filter(row => !['resolved', 'closed'].includes(row.status)).length,
-        urgentTickets: rows.filter(row => row.priority === 'urgent').length,
-        lastTicketAt: latest.createdAt, lastTicketStatus: latest.status,
-      }
-    }).sort((a, b) => b.lastTicketAt.localeCompare(a.lastTicketAt) || a.customerId.localeCompare(b.customerId)).slice(0, max)
-  }
 }
 
 type TicketRow = {
@@ -393,12 +358,13 @@ export class PostgresSupportRepository implements SupportRepository {
         WHERE workspace_id=$1
           AND ($2::text IS NULL OR status=$2)
           AND ($3::text IS NULL OR priority=$3)
-          AND ($4::text IS NULL OR assigned_to=$4)
-          AND ($5::text IS NULL OR customer_id=$5)
-          AND ($6::text IS NULL OR ticket_number ILIKE '%' || $6 || '%' OR subject ILIKE '%' || $6 || '%' OR customer_id ILIKE '%' || $6 || '%' OR customer_name ILIKE '%' || $6 || '%')
-          AND ($7::timestamptz IS NULL OR (created_at,id) < ($7::timestamptz,$8::uuid))
-        ORDER BY created_at DESC, id DESC LIMIT $9`, [workspaceId, input.status ?? null, input.priority ?? null,
-        input.assigneeId ?? null, input.customerId ?? null, input.query?.trim() || null, input.cursor?.createdAt ?? null,
+          AND ($4::text IS NULL OR (sla_snapshot_json->>'state')=$4)
+          AND ($5::text IS NULL OR assigned_to=$5)
+          AND ($6::text IS NULL OR customer_id=$6)
+          AND ($7::text IS NULL OR ticket_number ILIKE '%' || $7 || '%' OR subject ILIKE '%' || $7 || '%' OR customer_id ILIKE '%' || $7 || '%' OR customer_name ILIKE '%' || $7 || '%')
+          AND ($8::timestamptz IS NULL OR (created_at,id) < ($8::timestamptz,$9::uuid))
+        ORDER BY created_at DESC, id DESC LIMIT $10`, [workspaceId, input.status ?? null, input.priority ?? null,
+        input.slaState ?? null, input.assigneeId ?? null, input.customerId ?? null, input.query?.trim() || null, input.cursor?.createdAt ?? null,
         input.cursor?.id ?? null, limit + 1])
       const rows = await Promise.all(result.rows.map(async row => projectTicketSla(mapTicket(row), await this.listEventsInTransaction(client, workspaceId, row.id))))
       const items = rows.slice(0, limit)
@@ -502,35 +468,4 @@ export class PostgresSupportRepository implements SupportRepository {
     return mapEvent(result.rows[0]!)
   }
 
-  async listCrmProjection(workspaceId: string, limit = 1000): Promise<SupportCrmProjection[]> {
-    const scope = requireWorkspaceScope(workspaceId)
-    const max = clampLimit(limit, 5000)
-    return withWorkspaceTransaction(this.pool, scope, async client => {
-      const result = await client.query<{
-        workspace_id: string; customer_id: string; customer_name: string; customer_email: string | null
-        total_tickets: number | string; open_tickets: number | string; urgent_tickets: number | string
-        last_ticket_at: string | Date; last_ticket_status: SupportTicketStatus
-      }>(`WITH ranked AS (
-          SELECT workspace_id, customer_id, customer_name, customer_email, status, priority, created_at, id,
-            ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC, id DESC) AS customer_rank,
-            COUNT(*) OVER (PARTITION BY customer_id) AS total_tickets,
-            COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed')) OVER (PARTITION BY customer_id) AS open_tickets,
-            COUNT(*) FILTER (WHERE priority='urgent') OVER (PARTITION BY customer_id) AS urgent_tickets
-          FROM workspace_support_tickets
-          WHERE workspace_id=$1
-        )
-        SELECT workspace_id, customer_id, customer_name, customer_email, total_tickets, open_tickets,
-          urgent_tickets, created_at AS last_ticket_at, status AS last_ticket_status
-        FROM ranked
-        WHERE customer_rank=1
-        ORDER BY created_at DESC, id DESC
-        LIMIT $2`, [scope, max])
-      return result.rows.map(row => ({
-        workspaceId: row.workspace_id, customerId: row.customer_id, customerName: row.customer_name,
-        ...(row.customer_email ? { customerEmail: row.customer_email } : {}), totalTickets: Number(row.total_tickets),
-        openTickets: Number(row.open_tickets), urgentTickets: Number(row.urgent_tickets),
-        lastTicketAt: iso(row.last_ticket_at), lastTicketStatus: row.last_ticket_status,
-      })).sort((a, b) => b.lastTicketAt.localeCompare(a.lastTicketAt) || a.customerId.localeCompare(b.customerId))
-    })
-  }
 }

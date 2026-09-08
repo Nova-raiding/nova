@@ -1,0 +1,7 @@
+{
+  "changedFiles": [
+    "apps/plugin/mcp/bridge.mjs"
+  ],
+  "affectedTests": [],
+  "totalDependentsTraversed": 1
+}

@@ -160,3 +160,11 @@ describe('image local edit invariants', () => {
     expect(result).toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'REGION_OUTSIDE_EDITABLE_AREA' })] })
   })
 })
+
+
+describe('unbound video context', () => {
+  it('allows an explicit candidate without inventing brand or rule snapshots', () => {
+    expect(createVideoRenderingRequest({ prompt: '商品展示', context: { candidateOnly: true, brand: null, product: { id: 'product-1', version: '1' }, rules: [] } }).ok).toBe(true)
+    expect(createVideoRenderingRequest({ prompt: '商品展示', context: { brand: null, product: { id: 'product-1', version: '1' }, rules: [] } }).ok).toBe(false)
+  })
+})

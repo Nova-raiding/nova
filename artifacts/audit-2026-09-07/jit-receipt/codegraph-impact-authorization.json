@@ -1,0 +1,56 @@
+{
+  "symbol": "AuthorizationGovernanceSection",
+  "depth": 3,
+  "nodeCount": 8,
+  "edgeCount": 8,
+  "affected": [
+    {
+      "name": "AuthorizationGovernanceSection",
+      "kind": "function",
+      "filePath": "apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx",
+      "startLine": 48
+    },
+    {
+      "name": "UsersGovernanceWorkspace",
+      "kind": "function",
+      "filePath": "apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx",
+      "startLine": 21
+    },
+    {
+      "name": "UsersPage",
+      "kind": "function",
+      "filePath": "apps/ops-console/src/pages/UsersPage.tsx",
+      "startLine": 33
+    },
+    {
+      "name": "UsersPage.test.tsx",
+      "kind": "file",
+      "filePath": "apps/ops-console/src/pages/UsersPage.test.tsx",
+      "startLine": 1
+    },
+    {
+      "name": "opsPageRegistry.tsx",
+      "kind": "file",
+      "filePath": "apps/ops-console/src/navigation/opsPageRegistry.tsx",
+      "startLine": 1
+    },
+    {
+      "name": "UsersGovernanceWorkspace.test.ts",
+      "kind": "file",
+      "filePath": "apps/ops-console/src/components/users/UsersGovernanceWorkspace.test.ts",
+      "startLine": 1
+    },
+    {
+      "name": "UsersPage.tsx",
+      "kind": "file",
+      "filePath": "apps/ops-console/src/pages/UsersPage.tsx",
+      "startLine": 1
+    },
+    {
+      "name": "UsersGovernanceWorkspace.tsx",
+      "kind": "file",
+      "filePath": "apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx",
+      "startLine": 1
+    }
+  ]
+}

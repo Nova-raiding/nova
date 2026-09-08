@@ -1,0 +1,328 @@
+
+> merchant-marketing-codex@0.1.1 check
+> npm run typecheck && npm test && npm run test:ops-console && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio
+
+
+> merchant-marketing-codex@0.1.1 typecheck
+> tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+
+> merchant-marketing-codex@0.1.1 test
+> vitest run --no-file-parallelism
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+container source manifest failed: required worker input is missing: apps/worker
+container source manifest failed: symbolic links are forbidden in source inputs: apps/api/src/package-link.json
+container source manifest failed: required root build metadata is missing: package-lock.json
+container source manifest failed: manifest paths are not strictly sorted
+container source manifest failed: manifest contains an unsafe path: "../escape.ts"
+ ❯ packages/persistence/src/billing-repository.test.ts (38 tests | 17 failed) 28ms
+     × replays the same recharge intent when PostgreSQL returns bigint as text 6ms
+     × replays the same wallet debit without mistaking the driver type for a changed amount 2ms
+     × replays a provider settlement whose original and delta amounts are bigint text 1ms
+     × accepts an equal numeric payment callback and returns a numeric domain amount 0ms
+     × emits a numeric amount when a recharge refund completes 3ms
+     × preserves the largest exactly representable amount and a negative wallet balance 1ms
+     × rejects a database amount that cannot be represented safely: 9007199254740993 1ms
+     × rejects a database amount that cannot be represented safely: -9007199254740993 0ms
+     × rejects a database amount that cannot be represented safely: 1.5 1ms
+     × rejects a database amount that cannot be represented safely: invalid 0ms
+     × rejects a database amount that cannot be represented safely:  0ms
+     × rejects an unsafe aggregate balance before authorizing a new debit 2ms
+     × rejects invalid debit input before starting a transaction: 0 2ms
+     × rejects invalid debit input before starting a transaction: -1 1ms
+     × rejects invalid debit input before starting a transaction: 1.5 1ms
+     × rejects invalid debit input before starting a transaction: 9007199254740992 0ms
+     × rejects invalid debit input before starting a transaction: NaN 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 17 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > replays the same recharge intent when PostgreSQL returns bigint as text
+BillingOrderIdempotencyConflictError: billing order idempotency key was reused with a different payment intent
+ ❯ packages/persistence/src/billing-repository.ts:68:60
+
+ ❯ withWorkspaceTransaction packages/persistence/src/repository.ts:563:20
+ ❯ packages/persistence/src/billing-repository.test.ts:32:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > replays the same wallet debit without mistaking the driver type for a changed amount
+AssertionError: promise rejected "WalletDebitIdempotencyConflictError: wall… { code: '…' }" instead of resolving
+ ❯ packages/persistence/src/billing-repository.test.ts:39:204
+
+
+Caused by: WalletDebitIdempotencyConflictError: wallet debit idempotency key was reused with a different amount or description
+ ❯ packages/persistence/src/billing-repository.ts:122:167
+ ❯ withWorkspaceTransaction packages/persistence/src/repository.ts:563:20
+ ❯ packages/persistence/src/billing-repository.test.ts:39:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'WALLET_DEBIT_IDEMPOTENCY_CONFLICT' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > replays a provider settlement whose original and delta amounts are bigint text
+AssertionError: promise rejected "WalletDebitIdempotencyConflictError: wall… { code: '…' }" instead of resolving
+ ❯ packages/persistence/src/billing-repository.test.ts:46:222
+
+
+Caused by: WalletDebitIdempotencyConflictError: wallet debit idempotency key was reused with a different amount or description
+ ❯ packages/persistence/src/billing-repository.ts:145:68
+ ❯ withWorkspaceTransaction packages/persistence/src/repository.ts:563:20
+ ❯ packages/persistence/src/billing-repository.test.ts:46:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'WALLET_DEBIT_IDEMPOTENCY_CONFLICT' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > accepts an equal numeric payment callback and returns a numeric domain amount
+AssertionError: promise rejected "Error: billing callback amount mismatch" instead of resolving
+ ❯ packages/persistence/src/billing-repository.test.ts:53:226
+
+
+Caused by: Error: billing callback amount mismatch
+ ❯ packages/persistence/src/billing-repository.ts:178:57
+ ❯ withWorkspaceTransaction packages/persistence/src/repository.ts:563:20
+ ❯ packages/persistence/src/billing-repository.test.ts:53:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > emits a numeric amount when a recharge refund completes
+AssertionError: expected { id: 'debit_1', …(6) } to match object { amountFen: 1000 }
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "amountFen": 1000,
++   "amountFen": "1000",
+  }
+
+ ❯ packages/persistence/src/billing-repository.test.ts:62:278
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > preserves the largest exactly representable amount and a negative wallet balance
+AssertionError: expected [ { id: 'debit_1', …(6) } ] to match object [ { amountFen: 9007199254740991 } ]
+(6 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  [
+    {
+-     "amountFen": 9007199254740991,
++     "amountFen": "9007199254740991",
+    },
+  ]
+
+ ❯ packages/persistence/src/billing-repository.test.ts:71:59
+     69|     client.enqueue(); client.enqueue(); client.enqueue({ balance_fen: …
+     70|     const repository = new PostgresBillingRepository(new RecordingPool…
+     71|     await expect(repository.listTransactions('ws_wallet')).resolves.to…
+       |                                                           ^
+     72|     await expect(repository.balanceFen('ws_wallet')).resolves.toBe(-10…
+     73|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects a database amount that cannot be represented safely: 9007199254740993
+AssertionError: promise resolved "[ { id: 'debit_1', …(6) } ]" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+[
+  {
+    "amountFen": "9007199254740993",
+    "createdAt": "2026-08-26T01:00:00.000Z",
+    "description": "模型生成调用",
+    "id": "debit_1",
+    "orderId": "model:request-1",
+    "type": "debit",
+    "workspaceId": "ws_wallet",
+  },
+]
+
+ ❯ packages/persistence/src/billing-repository.test.ts:78:105
+     76|     const client = new RecordingClient()
+     77|     client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amo…
+     78|     await expect(new PostgresBillingRepository(new RecordingPool(clien…
+       |                                                                                                         ^
+     79|     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+     80|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects a database amount that cannot be represented safely: -9007199254740993
+AssertionError: promise resolved "[ { id: 'debit_1', …(6) } ]" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+[
+  {
+    "amountFen": "-9007199254740993",
+    "createdAt": "2026-08-26T01:00:00.000Z",
+    "description": "模型生成调用",
+    "id": "debit_1",
+    "orderId": "model:request-1",
+    "type": "debit",
+    "workspaceId": "ws_wallet",
+  },
+]
+
+ ❯ packages/persistence/src/billing-repository.test.ts:78:105
+     76|     const client = new RecordingClient()
+     77|     client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amo…
+     78|     await expect(new PostgresBillingRepository(new RecordingPool(clien…
+       |                                                                                                         ^
+     79|     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+     80|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects a database amount that cannot be represented safely: 1.5
+AssertionError: promise resolved "[ { id: 'debit_1', …(6) } ]" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+[
+  {
+    "amountFen": "1.5",
+    "createdAt": "2026-08-26T01:00:00.000Z",
+    "description": "模型生成调用",
+    "id": "debit_1",
+    "orderId": "model:request-1",
+    "type": "debit",
+    "workspaceId": "ws_wallet",
+  },
+]
+
+ ❯ packages/persistence/src/billing-repository.test.ts:78:105
+     76|     const client = new RecordingClient()
+     77|     client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amo…
+     78|     await expect(new PostgresBillingRepository(new RecordingPool(clien…
+       |                                                                                                         ^
+     79|     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+     80|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects a database amount that cannot be represented safely: invalid
+AssertionError: promise resolved "[ { id: 'debit_1', …(6) } ]" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+[
+  {
+    "amountFen": "invalid",
+    "createdAt": "2026-08-26T01:00:00.000Z",
+    "description": "模型生成调用",
+    "id": "debit_1",
+    "orderId": "model:request-1",
+    "type": "debit",
+    "workspaceId": "ws_wallet",
+  },
+]
+
+ ❯ packages/persistence/src/billing-repository.test.ts:78:105
+     76|     const client = new RecordingClient()
+     77|     client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amo…
+     78|     await expect(new PostgresBillingRepository(new RecordingPool(clien…
+       |                                                                                                         ^
+     79|     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+     80|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects a database amount that cannot be represented safely: 
+AssertionError: promise resolved "[ { id: 'debit_1', …(6) } ]" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+[
+  {
+    "amountFen": "",
+    "createdAt": "2026-08-26T01:00:00.000Z",
+    "description": "模型生成调用",
+    "id": "debit_1",
+    "orderId": "model:request-1",
+    "type": "debit",
+    "workspaceId": "ws_wallet",
+  },
+]
+
+ ❯ packages/persistence/src/billing-repository.test.ts:78:105
+     76|     const client = new RecordingClient()
+     77|     client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amo…
+     78|     await expect(new PostgresBillingRepository(new RecordingPool(clien…
+       |                                                                                                         ^
+     79|     expect(client.calls.at(-1)?.text).toBe('ROLLBACK')
+     80|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects an unsafe aggregate balance before authorizing a new debit
+AssertionError: expected [Function] to throw error including 'BILLING_AMOUNT_INVALID' but got 'Cannot read properties of undefined (…'
+
+Expected: "BILLING_AMOUNT_INVALID"
+Received: "Cannot read properties of undefined (reading 'id')"
+
+ ❯ packages/persistence/src/billing-repository.test.ts:85:203
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects invalid debit input before starting a transaction: 0
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects invalid debit input before starting a transaction: -1
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects invalid debit input before starting a transaction: NaN
+AssertionError: expected [Function] to throw error including 'BILLING_AMOUNT_INVALID' but got 'Cannot read properties of undefined (…'
+
+Expected: "BILLING_AMOUNT_INVALID"
+Received: "Cannot read properties of undefined (reading 'id')"
+
+ ❯ packages/persistence/src/billing-repository.test.ts:91:200
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/17]⎯
+
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects invalid debit input before starting a transaction: 1.5
+ FAIL  packages/persistence/src/billing-repository.test.ts > PostgresBillingRepository PostgreSQL bigint decoding > rejects invalid debit input before starting a transaction: 9007199254740992
+AssertionError: expected [Function] to throw error including 'BILLING_AMOUNT_INVALID' but got 'BILLING_INSUFFICIENT_BALANCE'
+
+Expected: "BILLING_AMOUNT_INVALID"
+Received: "BILLING_INSUFFICIENT_BALANCE"
+
+ ❯ packages/persistence/src/billing-repository.test.ts:91:200
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/17]⎯
+
+
+ Test Files  1 failed | 600 passed | 42 skipped (643)
+      Tests  17 failed | 4108 passed | 64 skipped (4189)
+   Start at  16:27:10
+   Duration  276.68s (transform 6.56s, setup 0ms, import 85.62s, tests 110.21s, environment 36ms)
+

@@ -71,7 +71,7 @@ describe("ops console component architecture", () => {
       expect(registry).toContain(`import("./routes/${routeName}.js")`);
     }
     expect(registry).toContain('storage: lazy(');
-    expect(registry.match(/lazy\(/gu)).toHaveLength(13);
+    expect(registry.match(/lazy\(/gu)).toHaveLength(14);
   });
 
   it("separates transport and domain types from React page files", () => {

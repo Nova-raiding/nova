@@ -1,0 +1,69 @@
+{
+  "fixture_ref": "sha256:023b5f148caace4fde6c",
+  "read_boundary": {
+    "role": "merchant_ops",
+    "read_only": "on",
+    "platform_scope": "platform_ops"
+  },
+  "captured_ticket": "JIT-CAPTURE-44a22d01-7036-4e9d-9419-bc908c8ee1ac",
+  "subject_ref": "sha256:103c1a462ec224e8bda4",
+  "actor_ref": "sha256:3a804a66e5243903aefb",
+  "grants": [
+    {
+      "workspace_id": "ws_ops_fixture_13c126681e3e441eb7141fd40f056e13",
+      "ticket_ref": "JIT-CAPTURE-44a22d01-7036-4e9d-9419-bc908c8ee1ac",
+      "access_mode": "read",
+      "capabilities": [
+        "customer.content.read"
+      ],
+      "resource_scope": {
+        "workspace_ids": [
+          "ws_ops_fixture_13c126681e3e441eb7141fd40f056e13"
+        ]
+      },
+      "issued_at": "2026-09-07T12:03:45.187Z",
+      "expires_at": "2026-09-07T12:13:38.361Z",
+      "revoked_at": null,
+      "use_count": 0,
+      "max_uses": 2,
+      "revision": 1,
+      "authorization_revision": "2",
+      "subject_authorization_revision": "2",
+      "issued_event_count": 1,
+      "revoked_event_count": 0,
+      "grant_ref": "sha256:fc029670e219ec2ccd6e"
+    }
+  ],
+  "audit": [
+    {
+      "decision_id": "authz_85263550-64ad-4400-b165-b3a242d091ab",
+      "request_id": "req_cabf459a-8a56-430e-b224-20c8022d5a7a",
+      "method": "ops.authorization.grant.issue",
+      "capability": "authorization.grant.manage",
+      "workbench": "platform",
+      "result": "allow",
+      "reason_code": "AUTHZ_ALLOWED",
+      "resource_type": "platform",
+      "resource_id": "*",
+      "obligations_missing": [],
+      "created_at": "2026-09-07T12:03:45.151Z"
+    },
+    {
+      "decision_id": "authz_7be2a24e-12d2-41aa-b388-97f2c092de09",
+      "request_id": "req_a5567108-84d5-41d0-b536-bcfe1b0a6227",
+      "method": "ops.authorization.grant.revoke",
+      "capability": "authorization.grant.manage",
+      "workbench": "platform",
+      "result": "deny",
+      "reason_code": "AUTHZ_OBLIGATION_REQUIRED",
+      "resource_type": "platform",
+      "resource_id": "*",
+      "obligations_missing": [
+        "approval"
+      ],
+      "created_at": "2026-09-07T12:03:49.592Z"
+    }
+  ],
+  "audit_correlation": "own actor plus capture time window; decision_id also available in browser facts",
+  "rawConnectionStringsSaved": false
+}

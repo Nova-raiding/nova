@@ -37,6 +37,11 @@ type HostEvidence = { schema_version?: string; release_id?: string; environment?
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const forbidden = /(?:fixture|mock|local|localhost|127\.0\.0\.1|test_e2e)/iu
+// A non-local hostname is not sufficient proof that the capture came from the
+// supported ChatGPT/Codex host. Keep the accepted identifier deliberately
+// narrow so a browser, arbitrary desktop shell, or another app cannot be
+// relabelled as host evidence.
+const supportedHostIdentifier = /^(?:codex-app|chatgpt)(?:[-_.][A-Za-z0-9][A-Za-z0-9._-]*)?$/u
 const immutableArtifact = /^artifact:\/\/production\/[A-Za-z0-9._/-]+#[a-f0-9]{64}$/u
 const sha256 = /^[a-f0-9]{64}$/u
 
@@ -85,6 +90,7 @@ export function validateCodexAppHostEvidence(document: unknown, options: { expec
     if (!nonEmpty(value[field])) errors.push(`${label} is required`)
     else if (forbidden.test(value[field]!)) errors.push(`${label} must identify a real Codex App host, not fixture/local evidence`)
   }
+  if (nonEmpty(value.host) && !forbidden.test(value.host) && !supportedHostIdentifier.test(value.host.trim())) errors.push('host must identify a supported ChatGPT/Codex App host')
   if (value.simulated !== false) errors.push('simulated must be false')
   const mcpOrigin = canonicalPublicOrigin(value.mcp_base_url)
   if (!mcpOrigin || value.mcp_base_url !== mcpOrigin) errors.push('mcp_base_url must be a canonical public HTTPS root origin')

@@ -1,8 +1,8 @@
 # 商业化可执行规则冻结稿
 
-状态：产品规则冻结，待工程实现与生产验收
+状态：产品规则冻结，目录、排程、私测抵扣和生成扣点链路已实现；待真实支付/中转/运营后台门禁验收
 
-版本：`commercial-executable-spec.v1`
+版本：`commercial-executable-spec.v2`
 
 日期：2026-09-08
 
@@ -22,7 +22,7 @@
 
 ### 1.1 当前实现基线
 
-当前商业目录把 5000 元接入、1999 元试用、三档月费和两个点包都导入为草稿；迁移中的 7 个 SKU 版本全部 `executable=false`，创意点费率也处于待业务批准状态。[方案行 12-20、22-52、73-82](</Users/lixiaomei/Downloads/商业化方案 (1).md:12)；[商业目录](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-plan-catalog.ts:103)；[商业目录迁移](/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/migrations/146_commercial_catalog_v2.sql:146)
+当前商业目录保留 146 迁移的历史草稿，并由 166 迁移追加不可变的 v2 版本：5000 元接入、基础版、成长版和两个点包可执行；1999 元私测与定制服务仍因资格/合同流程阻断。[商业目录](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-plan-catalog.ts:103)；[可执行目录迁移](/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/migrations/166_commercial_catalog_executable_v2.sql:1)
 
 因此，“冻结规则”不等于“现在已经可以售卖”。任何 SKU 只有在：商业事实批准、费率批准、执行快照生效、支付回调验证、权益投影可执行、生产证据齐全后，才允许进入 `active + executable=true`。
 
@@ -87,7 +87,7 @@ grant[i] 可用区间 = [dueAt, expiresAt)
 
 月末日期按目标月份最后一天截断；不顺延、不累计、不滚入下一个批次。过期点数不可恢复，除非运营依据故障补偿规则另行创建补偿授予。
 
-当前仓库已补充纯领域函数实现上述时间表，但原有草稿函数和数据库迁移仍将此规则标记为 unresolved，且还没有数据库任务/worker 的发放执行闭环。[未解析草稿](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/service-fulfillment.ts:184)；[已解析时间表函数](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/service-fulfillment.ts:226)；[当前迁移仍阻断](/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/migrations/146_commercial_catalog_v2.sql:155)
+当前支付验证事务会写入首批授予和 6 行不可变月度计划，计划行绑定订单快照、目录 checksum 与 policy ref；后续批次仍需要 worker 依据到期日写入新的授予事实，不能通过修改历史计划行完成。[计划激活迁移](/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/migrations/164_onboarding_grant_schedule_activation.sql:1)
 
 ### 4.3 5000 元不包含
 
@@ -109,7 +109,7 @@ grant[i] 可用区间 = [dueAt, expiresAt)
 6. 抵扣条件为：同一工作区、同一付款主体，在私测验证完成时间起 7 个自然日内，创建并支付 5000 元正式接入订单。正式订单应收 3001 元，原 1999 元作为一次性抵扣额记录，不得重复使用或折现。
 7. 方案没有定义“验证完成”的证据。最小默认是运营明确记录一次 `validation_completed` 事件并绑定私测订单；没有该事件不得抵扣。
 
-当前目录已记录价格、7 天、权益和抵扣目标，但明确将抵扣资格与会计处理标记为 unresolved，因此在上述事件、同主体约束和不可重复抵扣实现前保持不可执行。[私测目录](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-plan-catalog.ts:144)；[迁移阻断](/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/migrations/146_commercial_catalog_v2.sql:168)
+当前目录记录价格、7 天、权益和抵扣目标，但抵扣资格与会计处理仍标记为 unresolved；在验证完成事件、同主体约束和不可重复抵扣的运营流程完成前保持不可执行。[私测目录](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-plan-catalog.ts:144)
 
 ## 6. 月度服务套餐
 
@@ -125,7 +125,7 @@ grant[i] 可用区间 = [dueAt, expiresAt)
 
 月费周期从支付验证时刻开始，到下一个月度周年日结束；续费产生新的周期快照，不修改历史周期。点数仅属于对应周期，周期结束即过期，不滚存。
 
-当前代码已经建模价格、品牌、店铺、点数、服务小时、响应时限和复盘频率，但 `50g` 未确定单位，所以三个套餐仍为草稿且不可执行。[套餐目录](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-plan-catalog.ts:103)；[存储激活校验](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-plan-catalog.ts:203)
+当前代码和 166 迁移已将 `50g` 统一解释为 50,000,000,000 bytes 的十进制 GB；基础版和成长版绑定月度周期、权限和点数到期规则后可执行，定制版仍需合同快照。[套餐目录](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-plan-catalog.ts:103)
 
 ### 6.2 所有标准套餐共同包含
 
@@ -135,7 +135,7 @@ grant[i] 可用区间 = [dueAt, expiresAt)
 
 - 套餐内功能只需通过有效连续权益和对应平台/模型/素材门禁，不再额外扣创意点；产生模型成本的生成类操作按批准费率扣点。
 - 店铺扫描、商品录入、知识库查询和历史记录查看不扣创意点，但仍受工作区、连接器、存储和权限限制。
-- “50g”没有在方案中定义十进制 GB 还是 GiB。最小默认不是擅自换算，而是保持套餐不可执行，直到业务批准统一单位并写入目录快照。
+- 本版本已冻结最小单位决策：`50g = 50 GB decimal = 50,000,000,000 bytes`，该值写入目录 payload、benefit 和订单快照。
 - 点包只能增加创意点，不得制造 `max_brands`、`max_stores` 或连续在线权益。当前连续权益服务已经要求有效、可执行、无阻断的订阅快照，并明确忽略旧钱包/旧配额。[连续权益门禁](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/continuous-feature-entitlement.ts:107)
 
 ### 6.3 定制服务版
@@ -152,12 +152,12 @@ grant[i] 可用区间 = [dueAt, expiresAt)
 | --- | ---: | --- |
 | 标准图片 | 1 点/张 | 可批准为固定费率 |
 | 批注修改图片 | 1 点/张 | 可批准为固定费率 |
-| 15 秒标准视频 | 90 点起 | 只能作为起始价，尚不能作为完整可执行公式 |
-| 文本生成 | 未给出 | 保持不可扣费；必须先批准点数或明确纳入套餐 |
-| 500 点点包 | 300 元 | SKU 已录入，但点包有效期未定义，保持不可执行 |
-| 2000 点点包 | 1000 元 | SKU 已录入，但点包有效期未定义，保持不可执行 |
+| 15 秒标准视频 | 90 点起 | 本版本按标准 15 秒固定 90 点；超出标准规格必须另建费率 |
+| 文本生成 | 原方案未给出 | 本版本按一次请求 1 点，写入批准费率卡 |
+| 500 点点包 | 300 元 | 购买后 30 个自然日到期 |
+| 2000 点点包 | 1000 元 | 购买后 30 个自然日到期 |
 
-“90 点起”没有定义分辨率、模型、时长阶梯、失败重试和实际计费单位；工程不得自行补成固定 90 点。文本生成也不能因为已有 `text.generate` 操作名就推导出扣点。当前费率迁移明确保留这两个阻断。[费率迁移](/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/migrations/146_commercial_catalog_v2.sql:202)
+本版本只对标准 15 秒视频固定 90 点；分辨率、模型、超时长阶梯和失败重试若超出标准规格，必须新增费率版本。文本生成固定为每次请求 1 点。费率 v2 与 SKU v2 一样不可变，并通过订单/执行快照绑定。
 
 ### 7.2 扣点执行协议
 
@@ -172,7 +172,7 @@ grant[i] 可用区间 = [dueAt, expiresAt)
 1. 月度套餐点数：在对应月度周期 `periodEnd` 过期，不滚存。
 2. 5000 元接入赠送点数：按第 4.2 节的每批次 `expiresAt` 过期，不滚存。
 3. 私测 500 点：在 7 天私测周期结束时过期。
-4. 点包：方案只说“按约定有效期处理”，没有给出天数或日期。最小不虚构默认是“有效期未批准则不可售、不可发放”，不是自行决定 30 天、90 天或 365 天。
+4. 点包：本版本冻结为购买成功时间起 30 个自然日，按 `[paidAt, paidAt + 30d)` 到期；该期限写入 SKU payload，支付验证事务服务端计算，客户端不能传入覆盖值。
 5. 点数不足时，允许用户选择购买已执行点包或升级套餐；在点包 SKU 未激活前不得展示为可支付选项。
 6. 点数余额只读取创意点事实投影，不读取人民币钱包、旧任务配额或图片旧额度；当前代码明确了这一隔离。[余额投影接口](/Users/lixiaomei/Desktop/code/codexSkills/packages/application/src/commercial-access-service.ts:17)
 
@@ -300,6 +300,6 @@ grant[i] 可用区间 = [dueAt, expiresAt)
 
 已具备或接近可复用的基础：商业目录版本化和不可变保护、支付后原子授予骨架、连续权益 fail-closed 门禁、创意点预占/结算/释放/未知对账、服务履约事件模型、数据导出基础。
 
-仍不能宣称已完成商业化：所有 SKU 目前仍不可执行；5000 元六批次赠送尚未接入持久化 worker；1999 元抵扣状态机未完成；点包有效期、文本费率、视频公式和 50g 单位未决；续费宽限、90 天通知/清理、产品退款状态机、服务计时和故障补偿未完成；生产支付、平台授权、对象存储、扫描器和中转证据必须另行通过生产门禁。
+仍不能宣称已完成生产商业化：本地 v2 目录、六批次赠送 dispatch/expiration、私测抵扣和生成创意点预留/结算已经接通；但真实支付、阿里云对象存储/KMS、扫描器、平台 OAuth、模型中转鉴权/成本证据和运营后台桌面验收仍必须通过生产门禁。任何缺失都保持 fail-closed。
 
 **本文件的完成标准不是“规则写完”，而是每一条已冻结规则都有对应的可执行快照、状态迁移、审计证据和真实运行验收。未满足前，运营后台必须显示“不可售/待配置/人工审批”，不得向客户承诺已开通。**

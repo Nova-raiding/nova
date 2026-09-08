@@ -1,9 +1,17 @@
 # Codex App 插件 E2E 验收报告
 
-日期：2026-08-25  
-插件：`merchant-marketing@merchant-local`  
-工作区：`ws_demo`  
-环境：Codex CLI 0.149.0 / 本地 fixture API
+日期：2026-09-08
+插件：`merchant-marketing@merchant-local`
+工作区：`ws_demo`
+环境：Codex CLI 0.153.4 / 本地 Compose API
+
+> 2026-09-08 当前复核：停用重复启用的旧 `merchant-marketing@personal` 来源，仅保留 `merchant-marketing@merchant-local`。源码与安装缓存的 8 个运行文件 SHA-256 全部一致，安装缓存真实 `tools/list` 返回 143 个唯一商家工具，包含 `rule.sync.now` 且不暴露 `ops.*`。切断缺少 `MERCHANT_MCP_BASE_URL` 的旧 Bridge 后，旧会话按预期关闭传输；刷新安装缓存后，新建的 Codex 宿主线程 `01a07ea4-801f-74e1-bdf9-202e07cd10f7` 与 `01a07eb3-2c48-7633-b4b5-2b6df16473fa` 分别通过当前安装 Bridge 调用 `merchant.start` 成功，服务端均返回 `provide_product / needs_input` 与“请上传商品图片或资料”。重建 API、扫描 worker 与运营台后，线程 `01a07ee4-5919-7871-ac5a-60636b29331b` 再次只调用一次 `merchant.start` 并返回“好的，我已理解你的目标。”。该结果证明本机新宿主进程、安装插件、Bridge、鉴权、工作区绑定和 API 主入口已连通；由于当前 MCP 仍是 `127.0.0.1`，且未覆盖正式宿主要求的全部 15 个场景，它只属于本地宿主诊断证据，不能填写生产 `CODEX_APP_HOST_EVIDENCE_PATH` 或解除 Production gate。
+
+> 最终运行态复验：API、API replica 与六个 worker 使用迁移 169 的同一源码快照重建并全部健康后，新宿主线程 `01a07f39-f742-7451-bd18-71caf560be7e` 严格只调用一次 `merchant.start`，成功返回“欢迎使用大麦。你要处理哪个平台、店铺或商品？”。本次没有调用其他商家工具，也没有开启平台写入；证据边界仍是本机 Codex 宿主到本地 MCP/API，不替代外部 ChatGPT 生产宿主证据。
+
+> 刷新安装缓存后的复验：源码、marketplace 和安装缓存的 8 个运行文件 SHA-256 全部一致后，新宿主线程 `01a07f3c-e0d1-75f3-bbaa-fe49e219eb8f` 只调用一次 `merchant.start` 并成功返回“欢迎使用大麦。”。这条记录是当前安装 Bridge 的最终本地宿主证据。
+
+> 2026-09-08 新建宿主 smoke：线程 `01a07f59-8b1f-7b83-b852-4939d6bf727b` 只调用一次 `merchant.start`，未调用其他商家工具，返回“欢迎使用大麦。你要处理哪个平台、店铺或商品？”，并正常结束。该结果复核了当前安装缓存、Bridge、宿主 relay、鉴权和本地 API 的主入口；返回数据仍明确标记为演示店铺，MCP 地址仍为 loopback，因此不能作为正式 ChatGPT 外部宿主或生产平台写入证据。
 
 ## 验收范围
 
@@ -23,7 +31,7 @@
 |---|---|---|
 | 插件安装 | 通过 | `codex plugin list --marketplace merchant-local --json` 显示已安装、已启用 |
 | 插件 manifest | 通过 | 官方 plugin validator 通过 |
-| MCP bridge 发现 | 通过 | 安装缓存 `tools/list` 返回 67 个工具，包含素材事实人工确认入口 |
+| MCP bridge 发现 | 通过 | 安装缓存 `tools/list` 返回 143 个唯一商家工具，包含 `merchant.start` 与 `rule.sync.now`，且不暴露 `ops.*` |
 | 素材事实人工确认 | 通过 | 安装缓存 bridge 调用运行中 API 成功；未扫描、畸形 JSON、跨租户和人工确认后自动覆盖均被拒绝，人工事实保持 `manual/succeeded` |
 | bridge 品类调用 | 通过 | `catalog.categories` 返回 1312 服装/防晒外套 |
 | API 健康 | 通过 | `GET /healthz` 返回 `status: ok` |

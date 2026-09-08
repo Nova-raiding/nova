@@ -1,9 +1,11 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
+import { NON_HERMETIC_TEST_FILES } from './tests/test-suite-isolation.js'
 
 export default defineConfig({
   test: {
     environment: 'node',
     fileParallelism: false,
+    exclude: [...configDefaults.exclude, ...NON_HERMETIC_TEST_FILES],
     // Cold E2E workers dynamically import the API composition root after
     // stubbing process env. Transforming that graph can exceed Vitest's 10s
     // hook default even though the server subsequently binds successfully.

@@ -1,0 +1,25 @@
+{
+  "runId": "beb75afd-0074-4829-a2a1-55bcad258e5f",
+  "evidenceDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-08T07-44-11.963Z-d565871c-e53d-4ec3-8597-64e61885ef62",
+  "baseUrl": "http://127.0.0.1:54154",
+  "apiPort": 54152,
+  "uiPort": 54153,
+  "gatewayPort": 54154,
+  "persistence": {
+    "mode": "postgres",
+    "ready": true
+  },
+  "redis": {
+    "ready": true
+  },
+  "authorization": {
+    "mode": "enforce",
+    "durableAssignmentsRequired": true,
+    "identityProvider": "local signed OIDC fixture"
+  },
+  "models": {
+    "configured": false,
+    "called": false
+  },
+  "sharedConfigurationRead": false
+}

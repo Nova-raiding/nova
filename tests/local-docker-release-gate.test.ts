@@ -1,16 +1,18 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { requireIsolatedLocalRuntime, type LocalRuntimeTestContext } from './local-runtime-test-safety.js'
 
-const compose = ['compose', '--env-file', '.env', '-p', 'local', '-f', 'infra/local/docker-compose.yml']
+let runtime: LocalRuntimeTestContext
+beforeEach(() => { runtime = requireIsolatedLocalRuntime() })
 
 function docker(args: string[]) {
-  return execFileSync('docker', args, { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  return execFileSync('docker', [...runtime.dockerArgs, ...args], { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
 async function json(url: string) {
-  const response = await fetch(url)
+  const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10_000) })
   return { status: response.status, body: await response.json() as {
     data?: { ready?: boolean; persistence?: { mode?: string; ready?: boolean }; release?: Record<string, string | null> }
     error?: { code?: string }
@@ -21,8 +23,8 @@ async function json(url: string) {
 
 describe('local Docker migration and release gate', () => {
   it('proves healthy API release probes and honest local metadata blocking', async () => {
-    const health = await json('http://127.0.0.1:8787/healthz')
-    const release = await json('http://127.0.0.1:8787/releasez')
+    const health = await json(`${runtime.apiBaseUrl}/healthz`)
+    const release = await json(`${runtime.apiBaseUrl}/releasez`)
 
     expect(health.status).toBe(200)
     expect(health.body.error).toBeNull()
@@ -49,7 +51,7 @@ describe('local Docker migration and release gate', () => {
     expect(versions).toEqual(Array.from({ length: versions.length }, (_, index) => index + 1))
 
     const row = docker([
-      ...compose,
+      ...runtime.composeArgs,
       'exec', '-T', 'postgres', 'psql', '-U', 'merchant', '-d', 'merchant', '-Atqc',
       "SELECT count(*)::int || ':' || min(version)::int || ':' || max(version)::int || ':' || string_agg(version::text, ',' ORDER BY version) FROM schema_migrations",
     ])

@@ -2,20 +2,23 @@ import { expect } from '@playwright/test'
 
 // Platform tests must use the signed operations identity boundary. A merchant
 // bearer token must never be promoted to a platform session by the test setup.
-export async function openPlatformConsole(page, path = '/') {
+export async function openPlatformConsole(page, path = '/', options = {}) {
   const base = process.env.OPS_OIDC_BASE_URL
   const username = process.env.LOCAL_OIDC_TEST_USERNAME
   const password = process.env.LOCAL_OIDC_TEST_PASSWORD
+  const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
   if (!base || !username || !password) throw new Error('OPS_OIDC_BASE_URL and local OIDC login credentials are required; run node --import tsx scripts/run-ops-oidc-e2e.ts')
-  await page.addInitScript(() => {
+  if (!workspaceId) throw new Error('OPS_E2E_WORKSPACE_ID is required; the managed runner provides an isolated workspace')
+  const workbench = options.workbench === 'workspace' ? 'workspace' : 'platform'
+  await page.addInitScript(({ workbench, workspaceId }) => {
     localStorage.removeItem('ops_api_token')
     localStorage.removeItem('ops_actor_id')
     localStorage.removeItem('ops_workspace_id')
-    localStorage.setItem('ops_workbench', 'platform')
-    sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: 'ws_demo', workbench: 'platform' }))
-    sessionStorage.setItem('ops_workspace_id', 'ws_demo')
-    sessionStorage.setItem('ops_workbench', 'platform')
-  })
+    localStorage.setItem('ops_workbench', workbench)
+    sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId, workbench }))
+    sessionStorage.setItem('ops_workspace_id', workspaceId)
+    sessionStorage.setItem('ops_workbench', workbench)
+  }, { workbench, workspaceId })
   await page.goto(new URL(path, base).toString(), { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('textbox', { name: '运营账号', exact: true })).toBeVisible()
   await page.getByRole('textbox', { name: '运营账号', exact: true }).fill(username)

@@ -1,0 +1,18 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/quality-entrypoints.test.ts (5 tests) 221ms
+ ✓ apps/api/src/worker-authorization-recheck.test.ts (34 tests) 153ms
+ ✓ packages/persistence/src/migration.test.ts (11 tests) 81ms
+ ✓ packages/persistence/src/migration-163.test.ts (4 tests) 22ms
+ ✓ packages/persistence/src/authorization-repository.test.ts (20 tests) 21ms
+ ✓ packages/persistence/src/authorization-repository.postgres.test.ts (9 tests) 14ms
+ ✓ tests/release-metadata-gate.test.ts (3 tests) 11ms
+ ✓ packages/persistence/src/authorization-repository.consumed-grant.test.ts (3 tests) 5ms
+
+ Test Files  8 passed (8)
+      Tests  89 passed (89)
+   Start at  18:40:18
+   Duration  4.12s (transform 1.78s, setup 0ms, import 2.65s, tests 529ms, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/auth163/owner-auth-focused.json

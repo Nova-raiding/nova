@@ -110,11 +110,14 @@ describe('complete commercial operation registry E1 totality', () => {
     expect(ROLE_CAPABILITIES.support_agent).not.toContain('commercial.service_fulfillment.write')
   })
 
-  it('defines future write capabilities without granting or advertising fake methods', () => {
+  it('defines future write capabilities and grants private conversion control only to platform operators', () => {
     const writes = ['commercial.access.recover', 'commercial.catalog.draft', 'commercial.catalog.approve', 'commercial.catalog.publish', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.rate.draft', 'commercial.rate.approve', 'commercial.rate.publish'] as const
     expect(CAPABILITIES).toEqual(expect.arrayContaining([...writes]))
-    for (const capabilities of Object.values(ROLE_CAPABILITIES)) {
-      for (const capability of writes) expect(capabilities).not.toContain(capability)
+    expect(ROLE_CAPABILITIES.ops_admin).toEqual(expect.arrayContaining(['commercial.private_sku.grant', 'commercial.payment.reconcile']))
+    expect(ROLE_CAPABILITIES.platform_admin).toEqual(expect.arrayContaining(['commercial.private_sku.grant', 'commercial.payment.reconcile']))
+    for (const capabilities of Object.values(ROLE_CAPABILITIES).filter(capabilities => capabilities !== ROLE_CAPABILITIES.ops_admin && capabilities !== ROLE_CAPABILITIES.platform_admin)) {
+      expect(capabilities).not.toContain('commercial.private_sku.grant')
+      expect(capabilities).not.toContain('commercial.payment.reconcile')
     }
     expect(ROLE_CAPABILITIES.ops_admin).toContain('commercial.point.adjust')
     expect(ROLE_CAPABILITIES.ops_admin).not.toContain('commercial.point.adjust.approve')
@@ -148,10 +151,11 @@ describe('complete commercial operation registry E1 totality', () => {
     expect(resolveMcp('ops.marketing.generation.retry')).toMatchObject({ outcome: 'DENY_DISABLED', policy: { domain: 'COMMERCIAL', classification: 'POINT_CHARGED' } })
   })
 
-  it('keeps every charged method blocked until persisted rate and reservation evidence exists', () => {
-    expect(MCP_POINT_CHARGED_ENABLED_METHODS).toEqual([])
+  it('exposes only the four charged generation methods with persisted rate and reservation evidence', () => {
+    expect(MCP_POINT_CHARGED_ENABLED_METHODS).toEqual(['catalog.image.generate', 'multimodal.image.edit', 'content.generate', 'multimodal.generate', 'multimodal.video.request'])
     for (const method of MCP_POINT_CHARGED_ENABLED_METHODS) {
-      expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'POINT_CHARGED', rate_action: method } })
+      const rateAction = method === 'catalog.image.generate' ? 'image.generate.standard' : method === 'multimodal.image.edit' ? 'image.edit.annotation' : method === 'multimodal.video.request' ? 'video.generate.standard_15s' : 'text.generate'
+      expect(resolveMcp(method)).toMatchObject({ outcome: 'REGISTERED', policy: { classification: 'POINT_CHARGED', rate_action: rateAction } })
     }
     for (const method of MCP_POINT_CHARGED_DISABLED_METHODS) {
       expect(resolveMcp(method)).toMatchObject({ outcome: 'DENY_DISABLED', policy: { classification: 'POINT_CHARGED' } })

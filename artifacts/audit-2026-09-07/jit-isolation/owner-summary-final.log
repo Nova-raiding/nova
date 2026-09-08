@@ -1,0 +1,18 @@
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/test-summary.test.ts --reporter=default --reporter=json --outputFile=artifacts/audit-2026-09-07/jit-isolation/owner-summary-final.json
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/test-summary.test.ts (23 tests) 2146ms
+     ✓ runs the CLI with isolated child fixtures and preserves raw reports in distinct run directories  977ms
+     ✓ routes Vitest through the safe launcher and isolates/cleans smoke storage even after child exit 0  621ms
+     ✓ routes Vitest through the safe launcher and isolates/cleans smoke storage even after child exit 7  538ms
+
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+   Start at  20:02:41
+   Duration  2.45s (transform 77ms, setup 0ms, import 104ms, tests 2.15s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-summary-final.json

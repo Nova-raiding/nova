@@ -2,11 +2,11 @@ import type {
   AssignSupportTicketCommand,
   CommentOnSupportTicketCommand,
   CreateSupportTicketCommand,
-  SupportCrmExportContract,
   SupportPermission,
   SupportRole,
   SupportTicketPageCursor,
   SupportTicketPriority,
+  SupportSlaState,
   SupportTicketStatus,
   TransitionSupportTicketCommand,
 } from '../../../../packages/contracts/src/ops/support.js'
@@ -47,6 +47,7 @@ const transitions: Readonly<Record<SupportTicketStatus, readonly SupportTicketSt
 
 const priorities = new Set<SupportTicketPriority>(['low', 'normal', 'high', 'urgent'])
 const statuses = new Set<SupportTicketStatus>(['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'])
+const slaStates = new Set<SupportSlaState>(['on_track', 'at_risk', 'breached', 'met'])
 
 function required(value: string, field: string, max: number, min = 1): string {
   const normalized = value.trim()
@@ -129,6 +130,7 @@ export class SupportService {
     assertAccess(context, input.workspaceId, 'support.ticket.read')
     if (input.status && !statuses.has(input.status)) throw new SupportValidationError('status', 'status is invalid')
     if (input.priority && !priorities.has(input.priority)) throw new SupportValidationError('priority', 'priority is invalid')
+    if (input.slaState && !slaStates.has(input.slaState)) throw new SupportValidationError('slaState', 'slaState is invalid')
     if (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) throw new SupportValidationError('limit', 'limit must be between 1 and 100')
     const cursor = pageCursor(input.cursor)
     const assigneeId = optional(input.assigneeId, 'assigneeId', 256)
@@ -138,6 +140,7 @@ export class SupportService {
       workspaceId: input.workspaceId,
       ...(input.status ? { status: input.status } : {}),
       ...(input.priority ? { priority: input.priority } : {}),
+      ...(input.slaState ? { slaState: input.slaState } : {}),
       ...(assigneeId ? { assigneeId } : {}),
       ...(customerId ? { customerId } : {}),
       ...(query ? { query } : {}),
@@ -203,17 +206,6 @@ export class SupportService {
     })
   }
 
-  async exportCrm(context: SupportAuthorizationContext, workspaceId: string, limit = 5000): Promise<SupportCrmExportContract> {
-    assertAccess(context, workspaceId, 'support.crm.export')
-    if (context.role !== 'platform_ops') throw new SupportAuthorizationError()
-    if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw new SupportValidationError('limit', 'limit must be between 1 and 5000')
-    return {
-      generatedAt: this.clock().toISOString(),
-      workspaceId,
-      columns: ['customer_id', 'customer_name', 'customer_email', 'total_tickets', 'open_tickets', 'urgent_tickets', 'last_ticket_at', 'last_ticket_status'],
-      rows: await this.repository.listCrmProjection(workspaceId, limit),
-    }
-  }
 }
 
 export type { SupportTicketPageCursor }

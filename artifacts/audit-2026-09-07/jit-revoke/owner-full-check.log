@@ -1,0 +1,878 @@
+
+> merchant-marketing-codex@0.1.1 check
+> npm run typecheck && npm test && npm run test:ops-console && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio
+
+
+> merchant-marketing-codex@0.1.1 typecheck
+> tsc -b --pretty false && tsc -p apps/ops-console/tsconfig.json --pretty false && tsc -p demo/merchant-studio/tsconfig.json --pretty false
+
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ apps/plugin/mcp/bridge.test.ts (130 tests) 15490ms
+     ✓ keeps merchant.start attachment_count aligned with the shared contract and byte-identical in marketplace  520ms
+ ✓ .codex-marketplace/plugins/merchant-marketing/mcp/bridge.test.ts (130 tests) 15612ms
+     ✓ keeps merchant.start attachment_count aligned with the shared contract and byte-identical in marketplace  569ms
+ ✓ tests/production-config-gate.test.ts (22 tests) 5816ms
+     ✓ requires all four platform capability flag groups  432ms
+     ✓ rejects a partial social-platform rollout  690ms
+     ✓ accepts the nested production-config OIDC spelling used by the release document  387ms
+     ✓ requires a positive per-task model cost cap  566ms
+     ✓ fails closed when the production asset scanner contract is incomplete or unsafe  741ms
+     ✓ requires isolated scanner credentials and receipt signing trust roots  652ms
+     ✓ requires HTTPS signed asset-display configuration  543ms
+     ✓ requires a provider query endpoint for payment status reconciliation  310ms
+stderr | apps/api/src/asset-parse-durable.e2e.test.ts > durable asset parse API wiring > does not mutate service when mcp durable confirmation fails
+{"event":"request.unhandled_error","request_id":"req_f99a8621-072c-434a-81bc-dbc08e08ccc8","trace_id":"req_f99a8621-072c-434a-81bc-dbc08e08ccc8","method":"POST","route":"/mcp","error_name":"Error","error_message":"durable confirm unavailable","error_stack":"Error: durable confirm unavailable\n    at Proxy.<anonymous> (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/asset-parse-durable.e2e.test.ts:174:64)\n    at confirmDurableAssetFacts (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:2550:40)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:14479:21)"}
+
+stderr | apps/api/src/asset-parse-durable.e2e.test.ts > durable asset parse API wiring > does not mutate service when rest durable confirmation fails
+{"event":"request.unhandled_error","request_id":"req_84a20762-fcde-4c36-8a08-8cffd9c91b46","trace_id":"req_84a20762-fcde-4c36-8a08-8cffd9c91b46","method":"POST","route":"/v1/assets/asset_909b2683-ecdc-413c-b7c6-31c77b94f2a9/facts","error_name":"Error","error_message":"durable confirm unavailable","error_stack":"Error: durable confirm unavailable\n    at Proxy.<anonymous> (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/asset-parse-durable.e2e.test.ts:174:64)\n    at confirmDurableAssetFacts (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:2550:40)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at route (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:17301:23)"}
+
+ ✓ apps/api/src/asset-parse-durable.e2e.test.ts (10 tests) 4658ms
+     ✓ lets mcp manual confirmation defeat an old parser timeout outcome  1022ms
+     ✓ lets rest manual confirmation defeat an old parser timeout outcome  1025ms
+ ✓ tests/kubernetes-release-gate.test.ts (26 tests) 5164ms
+     ✓ renders every production scale overlay with effective immutable image replacements and passes the release validator  635ms
+     ✓ accepts the complete production image set and returns a stable canonical set digest  325ms
+     ✓ rejects weakened or overridden production authorization configuration even with a recomputed config digest  444ms
+     ✓ fails closed when scanner identity, definitions floor, replica quorum, or bootstrap Service routing drift  898ms
+     ✓ allows only workload-scoped Secret keys and rejects optional or whole-Secret volume access  432ms
+     ✓ binds ConfigMap references to the signed manifest and pod template digest  304ms
+ ✓ apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx (9 tests) 4170ms
+     ✓ submits the real JIT form with the API workspace_ids contract and the loaded revision  2237ms
+     ✓ retains entered values on RPC failure and does not submit again while a request is pending  1187ms
+ ✓ tests/operations-scripts.test.ts (34 tests) 6738ms
+     ✓ blocks deployment without immutable image and production connection metadata  5866ms
+stderr | apps/api/src/ops-jit-revoke-enforce.test.ts > E1 signed OIDC JIT revoke under enforced durable authorization > rejects a freshly signed duplicate of the old revoke intent without a second mutation or revision increment
+{"event":"request.unhandled_error","request_id":"req_879ad156-e1c3-496a-b8cc-f406c6f3693f","trace_id":"req_879ad156-e1c3-496a-b8cc-f406c6f3693f","method":"POST","route":"/mcp","error_name":"AuthorizationRepositoryError","error_message":"AUTHORIZATION_GRANT_NOT_FOUND","error_stack":"AuthorizationRepositoryError: AUTHORIZATION_GRANT_NOT_FOUND\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:276:130)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/ops-jit-revoke-enforce.test.ts:29:33)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:11429:38)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+stderr | apps/api/src/ops-jit-revoke-enforce.test.ts > E1 signed OIDC JIT revoke under enforced durable authorization > revoke rejects stale grant revision in the real repository without changing grant, revisions, or successful mutations
+{"event":"request.unhandled_error","request_id":"req_aead0ba4-825e-4651-9250-318d6a052252","trace_id":"req_aead0ba4-825e-4651-9250-318d6a052252","method":"POST","route":"/mcp","error_name":"AuthorizationRepositoryError","error_message":"AUTHORIZATION_GRANT_REVISION_CONFLICT","error_stack":"AuthorizationRepositoryError: AUTHORIZATION_GRANT_REVISION_CONFLICT\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:277:56)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/ops-jit-revoke-enforce.test.ts:29:33)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:11429:38)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+stderr | apps/api/src/ops-jit-revoke-enforce.test.ts > E1 signed OIDC JIT revoke under enforced durable authorization > revoke rejects stale subject revision in the real repository without changing grant, revisions, or successful mutations
+{"event":"request.unhandled_error","request_id":"req_98e94e07-ce74-4f29-a62b-f5294cb23f49","trace_id":"req_98e94e07-ce74-4f29-a62b-f5294cb23f49","method":"POST","route":"/mcp","error_name":"AuthorizationRepositoryError","error_message":"AUTHORIZATION_REVISION_CONFLICT","error_stack":"AuthorizationRepositoryError: AUTHORIZATION_REVISION_CONFLICT\n    at ObservedAuthorizationRepository.bump (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:236:170)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:279:80)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/ops-jit-revoke-enforce.test.ts:29:33)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:11429:38)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+stderr | apps/api/src/ops-jit-revoke-enforce.test.ts > E1 signed OIDC JIT revoke under enforced durable authorization > revoke rejects wrong subject in the real repository without changing grant, revisions, or successful mutations
+{"event":"request.unhandled_error","request_id":"req_72e9fe12-a741-4220-8215-559d19f418a0","trace_id":"req_72e9fe12-a741-4220-8215-559d19f418a0","method":"POST","route":"/mcp","error_name":"AuthorizationRepositoryError","error_message":"AUTHORIZATION_GRANT_NOT_FOUND","error_stack":"AuthorizationRepositoryError: AUTHORIZATION_GRANT_NOT_FOUND\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/authorization-repository.ts:276:130)\n    at ObservedAuthorizationRepository.revokeGrant (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/ops-jit-revoke-enforce.test.ts:29:33)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:11429:38)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+ ✓ apps/api/src/ops-jit-revoke-enforce.test.ts (39 tests) 1050ms
+ ✓ tests/container-source-freshness.test.ts (17 tests) 4552ms
+     ✓ reads both immutable images without running them and matches the latest migration SHA-256  633ms
+     ✓ fails when the workspace migration directory or image assets are missing  357ms
+     ✓ rejects duplicate migration versions in either the workspace or an image  332ms
+     ✓ rejects an image whose highest migration is stale  429ms
+     ✓ rejects an image whose highest migration has different bytes  447ms
+     ✓ rejects Worker source changes even when migrations still match  402ms
+     ✓ fails closed for an image manifest with an extra entry  391ms
+ ✓ apps/api/src/product-image-review.e2e.test.ts (11 tests) 1111ms
+ ✓ tests/rendered-production-config-gate.test.ts (36 tests) 3059ms
+     ✓ binds the checked-in runtime and ingress contract in every production scale overlay  450ms
+ ✓ apps/api/src/server.e2e.test.ts (63 tests) 1518ms
+ ✓ tests/test-summary.test.ts (23 tests) 1528ms
+     ✓ runs the CLI with isolated child fixtures and preserves raw reports in distinct run directories  709ms
+     ✓ routes Vitest through the safe launcher and isolates/cleans smoke storage even after child exit 0  330ms
+     ✓ routes Vitest through the safe launcher and isolates/cleans smoke storage even after child exit 7  481ms
+ ✓ tests/deploy-database-url-gate.test.ts (17 tests) 2022ms
+ ✓ tests/release-sim-security-gate.test.ts (20 tests) 2061ms
+ ✓ apps/plugin/mcp/merchant-conversation-flow.test.ts (7 tests) 1302ms
+     ✓ preserves a new conversation goal and completes automatic scanning in the same turn  533ms
+ ✓ tests/apply-migrations-runner.test.ts (5 tests) 1914ms
+     ✓ rejects checksum drift and releases the session advisory lock  304ms
+     ✓ releases an advisory lock after a failed invocation so the next run can proceed  509ms
+     ✓ serializes concurrent runners and leaves no lock after contention  836ms
+ ✓ tests/http-load-smoke.test.ts (1 test) 1877ms
+     ✓ runs 50 isolated workspaces through one temporary HTTP server and deduplicates writes  1876ms
+ ✓ apps/ops-console/src/pages/StoresPage.test.tsx (11 tests) 387ms
+ ✓ apps/plugin/install-smoke.test.ts (12 tests) 752ms
+container source manifest failed: required worker input is missing: apps/worker
+container source manifest failed: symbolic links are forbidden in source inputs: apps/api/src/package-link.json
+container source manifest failed: required root build metadata is missing: package-lock.json
+container source manifest failed: manifest paths are not strictly sorted
+container source manifest failed: manifest contains an unsafe path: "../escape.ts"
+ ✓ tests/container-source-manifest.test.ts (5 tests) 1096ms
+     ✓ validates total digest, strict ordering, duplicate paths, and path safety independently  328ms
+ ✓ apps/api/src/four-platform-authorization.e2e.test.ts (8 tests) 987ms
+ ✓ tests/production-evidence-gate-scripts.test.ts (6 tests) 706ms
+ ✓ apps/api/src/asset-parse.e2e.test.ts (3 tests) 1185ms
+stderr | apps/api/src/security.e2e.test.ts > security and access-control acceptance gates > keeps platform_ops out of customer marketing data while preserving platform summaries
+{"event":"request.unhandled_error","request_id":"req_85188688-baa3-43b5-aca9-2902bae34b26","trace_id":"req_85188688-baa3-43b5-aca9-2902bae34b26","method":"POST","route":"/mcp","error_name":"Error","error_message":"OPERATIONAL_ALERT_NOT_FOUND","error_stack":"Error: OPERATIONAL_ALERT_NOT_FOUND\n    at MemoryOperationalAlertsRepository.acknowledge (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/alerts-repository.ts:76:21)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:12004:64)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+ ✓ apps/api/src/security.e2e.test.ts (67 tests) 1428ms
+     ✓ filters brands by grant and enforces minimum brand roles for writes in staging  422ms
+ ✓ tests/release-sim-worker-freshness.test.ts (2 tests) 1248ms
+     ✓ fails closed when the worker image migration tail is older than the workspace  582ms
+     ✓ fails closed when the worker source manifest digest does not match its manifest bytes  665ms
+ ✓ apps/api/src/asset-download.e2e.test.ts (1 test) 644ms
+ ✓ apps/api/src/video-cost-preflight.e2e.test.ts (2 tests) 989ms
+ ✓ apps/api/src/platform-governance-integration.e2e.test.ts (3 tests) 844ms
+stdout | apps/api/src/model-usage-settlement.test.ts > API model usage settlement invariants > rejects a provider usage receipt without an action id
+merchant API listening on {"address":"127.0.0.1","family":"IPv4","port":55795} (memory)
+
+ ✓ apps/api/src/model-usage-settlement.test.ts (18 tests) 911ms
+ ✓ apps/api/src/mcp-content-knowledge-http.e2e.test.ts (1 test) 867ms
+ ✓ apps/api/src/task-answers.e2e.test.ts (1 test) 666ms
+ ✓ apps/api/src/asset-scan-worker.e2e.test.ts (9 tests) 361ms
+ ✓ apps/api/src/platform-mapping-contract.test.ts (4 tests) 688ms
+ ✓ apps/api/src/sync-job.e2e.test.ts (1 test) 927ms
+ ✓ tests/rendered-production-config-contract.test.ts (3 tests) 1109ms
+     ✓ binds generated API and worker source manifests to an exact digest file  1098ms
+ ✓ apps/api/src/connector-runtime-mapping.e2e.test.ts (2 tests) 3038ms
+     ✓ requires an exact persisted approval for connector sync and isolates tenants  431ms
+ ✓ apps/api/src/spreadsheet-batch-import.e2e.test.ts (1 test) 2103ms
+ ✓ packages/application/src/service.test.ts (137 tests) 1740ms
+ ✓ apps/api/src/feature-gap.e2e.test.ts (25 tests) 525ms
+ ✓ tests/release-manifest-gate.test.ts (5 tests) 576ms
+     ✓ binds the exact evidence bytes, freshness and existing production signatures without creating a production key  351ms
+ ✓ apps/ops-console/src/components/commercial/CommercialOperationsWorkspace.test.tsx (10 tests) 793ms
+ ✓ apps/api/src/mcp-completion-content.e2e.test.ts (1 test) 257ms
+ ✓ packages/persistence/src/migration.test.ts (11 tests) 300ms
+ ✓ packages/storage/src/object-storage.test.ts (30 tests) 325ms
+ ✓ tests/quality-entrypoints.test.ts (6 tests) 318ms
+     ✓ keeps every deterministic source test reachable from the root check  308ms
+ ✓ tests/plugin-manifest.test.ts (8 tests) 241ms
+stderr | apps/api/src/mcp-completion-ops.e2e.test.ts > MCP completion operations per-method HTTP evidence > executes enabled completion methods and proves disabled commercial methods, contracts, authorization, tenant isolation, and idempotency
+{"event":"request.unhandled_error","request_id":"req_b2c6443e-cb44-48ee-90d8-102704da6f2d","trace_id":"req_b2c6443e-cb44-48ee-90d8-102704da6f2d","method":"POST","route":"/mcp","error_name":"Error","error_message":"DATA_DELETION_REQUEST_NOT_FOUND","error_stack":"Error: DATA_DELETION_REQUEST_NOT_FOUND\n    at MemoryDataLifecycleRepository.cancel (/Users/lixiaomei/Desktop/code/codexSkills/packages/persistence/src/data-lifecycle-repository.ts:38:62)\n    at routeMcp (/Users/lixiaomei/Desktop/code/codexSkills/apps/api/src/server.ts:12512:80)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"}
+
+ ✓ apps/api/src/mcp-completion-ops.e2e.test.ts (1 test) 281ms
+ ✓ tests/local-compose-ops-ui.test.ts (3 tests) 345ms
+ ✓ apps/api/src/ops-session-grant-contract.test.ts (4 tests) 267ms
+ ✓ packages/persistence/src/migration-092.test.ts (3 tests) 48ms
+ ✓ apps/ops-console/src/components/stores/CanonicalProductConsistencySection.test.tsx (15 tests) 202ms
+ ✓ packages/persistence/src/migration-070-072.test.ts (5 tests) 72ms
+ ✓ apps/ops-console/src/components/finance/ReconciliationSection.test.ts (9 tests) 186ms
+ ✓ apps/api/src/ops-integration.test.ts (7 tests) 215ms
+ ✓ apps/ops-console/src/components/stores/PlatformSummarySection.test.tsx (3 tests) 63ms
+ ✓ apps/ops-console/src/components/finance/RechargeOrdersSection.test.tsx (2 tests) 127ms
+ ✓ apps/api/src/rules.e2e.test.ts (11 tests) 244ms
+ ✓ apps/ops-console/src/components/finance/FinanceSearchSection.test.ts (6 tests) 158ms
+ ✓ apps/api/src/ops-rbac-acceptance.test.ts (9 tests) 178ms
+ ✓ packages/persistence/src/postgres-repository.test.ts (10 tests) 138ms
+ ✓ apps/ops-console/src/pages/UsersPage.test.tsx (3 tests) 147ms
+ ✓ apps/api/src/audit-member-integration.test.ts (2 tests) 120ms
+ ✓ tests/ui-accessibility-blockers.test.ts (4 tests) 54ms
+stderr | apps/ops-console/src/components/support/SupportQueueSection.test.tsx > SupportQueueSection error recovery > announces an initial load failure and provides a keyboard-reachable refresh
+Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+
+stderr | apps/ops-console/src/components/support/SupportQueueSection.test.tsx > SupportQueueSection error recovery > keeps the recovery message explicit while preserving previously loaded tickets
+Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+
+ ✓ apps/ops-console/src/components/support/SupportQueueSection.test.tsx (2 tests) 114ms
+ ✓ apps/ops-console/src/components/finance/MembersSection.test.ts (4 tests) 107ms
+ ✓ tests/canonical-product-report-semantics.test.ts (7 tests) 131ms
+ ✓ apps/worker/src/worker.test.ts (84 tests) 114ms
+ ✓ apps/api/src/worker-authorization-recheck.test.ts (34 tests) 195ms
+ ✓ apps/ops-console/src/components/audit/AuditCenterSection.test.ts (8 tests) 126ms
+ ✓ packages/persistence/src/migration-095.test.ts (1 test) 82ms
+ ✓ apps/ops-console/src/components/authz/permissionUx.test.tsx (22 tests) 125ms
+ ✓ apps/api/src/ops-rbac-http-platform-accounts-parity.acceptance.test.ts (5 tests) 116ms
+ ✓ packages/application/src/document-parser.test.ts (3 tests) 66ms
+ ✓ tests/mcp-surface-contract.test.ts (10 tests) 128ms
+ ✓ apps/api/src/creative-point-statement-pagination-parity.test.ts (2 tests) 71ms
+ ✓ apps/api/src/mcp-native-http.e2e.test.ts (8 tests) 85ms
+ ✓ packages/persistence/src/migration-release-integrity.test.ts (11 tests) 63ms
+ ✓ apps/api/src/brand-review.e2e.test.ts (1 test) 93ms
+ ✓ apps/ops-console/src/components/storage/StorageReconciliationSection.test.tsx (6 tests) 84ms
+stdout | tests/prd-smart-questioning-golden.test.ts > PRD smart-questioning golden evaluation > reports zero P0 misses and zero false blocking questions
+SMART_QUESTIONING_GOLDEN {"scenarios":29,"rounds":33,"expectedP0":14,"detectedP0":14,"p0Misses":0,"falseBlocking":0,"misses":[],"falseBlocks":[]}
+
+ ✓ tests/prd-smart-questioning-golden.test.ts (5 tests) 61ms
+ ✓ apps/api/src/server.test.ts (95 tests) 127ms
+ ✓ apps/ops-console/src/components/models/ModelStatusSection.test.ts (3 tests) 102ms
+ ✓ apps/api/src/audit-export-contract.test.ts (4 tests) 59ms
+ ✓ apps/ops-console/src/components/support/SupportSlaReportSection.test.tsx (3 tests) 82ms
+ ✓ tests/local-oidc-gateway.test.ts (5 tests) 76ms
+ ✓ apps/ops-console/src/components/rules/RuleSyncStatusSection.test.tsx (3 tests) 100ms
+ ✓ apps/api/src/ops-rbac-http-delivery-readiness-parity.acceptance.test.ts (2 tests) 79ms
+ ✓ demo/merchant-studio/api.test.ts (6 tests) 39ms
+stderr | apps/ops-console/src/components/support/SupportTicketDetailSection.test.tsx > SupportTicketDetailSection > renders a focusable, actionable error without losing the selected ticket
+Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+
+ ✓ apps/ops-console/src/components/support/SupportTicketDetailSection.test.tsx (4 tests) 89ms
+ ✓ apps/api/src/brand-extraction.e2e.test.ts (3 tests) 93ms
+ ✓ tests/fault-acceptance.test.ts (1 test) 44ms
+ ✓ apps/ops-console/src/components/stores/CanonicalConsistencySummary.test.tsx (5 tests) 107ms
+ ✓ apps/api/src/ops-rbac-rules-audit-acceptance.test.ts (3 tests) 111ms
+ ✓ apps/api/src/asset-preference.e2e.test.ts (1 test) 108ms
+ ✓ apps/api/src/merchant-first-value.e2e.test.ts (4 tests) 103ms
+ ✓ apps/api/src/production-readiness.e2e.test.ts (21 tests) 83ms
+ ✓ apps/ops-console/src/components/incidents/IncidentsTable.test.tsx (2 tests) 79ms
+ ✓ apps/ops-console/src/components/OpsHeader.test.tsx (18 tests) 82ms
+ ✓ tests/connectors-local-profile-smoke.test.ts (24 tests) 81ms
+ ✓ apps/ops-console/src/components/feature-flags/FeatureFlagsTable.test.tsx (5 tests) 100ms
+ ✓ apps/ops-console/src/components/stores/StoreDirectorySection.test.tsx (3 tests) 98ms
+ ✓ apps/api/src/ops-rbac-http-mcp-categories.acceptance.test.ts (2 tests) 76ms
+ ✓ apps/api/src/brand-profile-http-mcp-parity.acceptance.test.ts (2 tests) 76ms
+ ✓ apps/api/src/ops-rbac-http-platform-capabilities-parity.acceptance.test.ts (2 tests) 82ms
+ ✓ apps/api/src/brand-extract-http-mcp-parity.acceptance.test.ts (3 tests) 82ms
+ ✓ packages/persistence/src/migration-049.test.ts (5 tests | 1 skipped) 68ms
+ ✓ apps/ops-console/src/pages/IncidentsPage.test.tsx (2 tests) 81ms
+ ✓ apps/api/src/ops-rbac-http-platform-connect-parity.acceptance.test.ts (2 tests) 79ms
+ ✓ apps/ops-console/src/components/tasks/filterClear.test.ts (3 tests) 60ms
+ ✓ apps/api/src/ops-rbac-http-rules-parity.acceptance.test.ts (2 tests) 84ms
+ ✓ apps/api/src/brand-profile-upsert-http-mcp-parity.acceptance.test.ts (2 tests) 77ms
+ ✓ apps/ops-console/src/components/models/ModelServiceSummary.test.tsx (1 test) 61ms
+ ✓ apps/api/src/ops-rbac-http-mcp-creative-points.acceptance.test.ts (3 tests) 75ms
+ ✓ apps/ops-console/src/components/canonical-governance-accessibility.test.tsx (3 tests) 74ms
+ ✓ packages/persistence/src/migration-059.test.ts (3 tests) 39ms
+ ✓ apps/api/src/ops-http-mcp-parity.e2e.test.ts (2 tests) 82ms
+ ✓ packages/connectors/src/connector.http.contract.test.ts (48 tests) 66ms
+ ✓ packages/application/src/version-vector.test.ts (33 tests) 91ms
+ ✓ apps/api/src/review-decisions.e2e.test.ts (1 test) 72ms
+ ✓ apps/ops-console/src/components/finance/OfferTable.test.tsx (3 tests) 64ms
+ ✓ tests/quality-gates.test.ts (3 tests) 85ms
+ ✓ apps/api/src/request-observability.e2e.test.ts (4 tests) 72ms
+ ✓ apps/ops-console/src/components/audit/AuditTrailSection.test.tsx (1 test) 61ms
+ ✓ tests/ops-control-plane-parity.test.ts (5 tests) 64ms
+ ✓ tests/release-manifest.test.ts (2 tests) 76ms
+ ✓ apps/api/src/api-contract-request-scope.test.ts (2 tests) 62ms
+ ✓ packages/persistence/src/migration-039.test.ts (2 tests) 35ms
+ ✓ apps/ops-console/src/components/storage/StorageReconciliationSummary.test.tsx (2 tests) 60ms
+ ✓ packages/persistence/src/migration-102.test.ts (2 tests) 34ms
+ ✓ packages/persistence/src/migration-077.test.ts (2 tests) 30ms
+ ✓ apps/api/src/mcp-envelope-validation.e2e.test.ts (3 tests) 183ms
+ ✓ apps/ops-console/src/components/tasks/knowledge/DeliveryGovernancePanel.test.ts (6 tests) 213ms
+ ✓ packages/security/src/asset-scan-receipt.test.ts (5 tests) 22ms
+ ✓ packages/connectors/src/http-connector.test.ts (26 tests) 199ms
+ ✓ tests/ops-api-surface.test.ts (4 tests) 123ms
+ ✓ apps/api/src/rules-version-http-mcp-parity.acceptance.test.ts (1 test) 266ms
+ ✓ packages/persistence/src/migration-067.test.ts (1 test) 150ms
+ ✓ apps/ops-console/src/components/OpsPageError.test.tsx (16 tests) 61ms
+ ✓ tests/prd-17.2-p0-golden.e2e.test.ts (10 tests) 55ms
+stderr | apps/ops-console/src/components/stores/ProductSpreadsheetImport.test.tsx > product spreadsheet import > keeps platform scope out of arbitrary customer imports
+Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.
+Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+
+stderr | apps/ops-console/src/components/stores/ProductSpreadsheetImport.test.tsx > product spreadsheet import > shows the actual workspace and permission denial without an enabled import action
+Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.
+Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+
+ ✓ apps/ops-console/src/components/stores/ProductSpreadsheetImport.test.tsx (3 tests) 79ms
+ ✓ packages/ai/src/generator.test.ts (26 tests) 62ms
+ ✓ apps/worker/src/clamav-scanner.test.ts (16 tests) 61ms
+ ✓ apps/ops-console/src/components/stores/CanonicalBackfillConflictSection.test.tsx (8 tests) 58ms
+ ✓ apps/api/src/rules-audit-pack-id-parity.test.ts (1 test) 54ms
+ ✓ packages/application/src/competitor-reference-policy.test.ts (12 tests) 53ms
+ ✓ apps/worker/src/publish-execution-event-binding.test.ts (1 test) 30ms
+ ✓ apps/api/src/platform-rule-sync.e2e.test.ts (1 test) 49ms
+ ✓ apps/api/src/task-create-idempotency.e2e.test.ts (2 tests) 47ms
+ ✓ apps/api/src/ops-rbac-http-product-confirm.acceptance.test.ts (1 test) 38ms
+ ✓ packages/connectors/src/vault-provider.test.ts (6 tests) 50ms
+ ✓ packages/ai/src/video-generator.test.ts (25 tests) 48ms
+ ✓ packages/persistence/src/migration-073.test.ts (1 test) 2ms
+ ✓ packages/ai/src/image-generator.test.ts (25 tests) 46ms
+ ✓ packages/persistence/src/migration-134.test.ts (1 test) 18ms
+ ✓ apps/worker/src/asset-scan-durable.test.ts (8 tests) 48ms
+ ✓ packages/persistence/src/migration-160.test.ts (2 tests) 19ms
+ ✓ packages/persistence/src/migration-096.test.ts (1 test) 34ms
+ ✓ packages/ai/src/provider-usage-log.test.ts (6 tests) 99ms
+ ✓ packages/persistence/src/migration-047.test.ts (1 test) 58ms
+ ✓ apps/ops-console/src/components/OpsDataState.test.tsx (4 tests) 43ms
+ ✓ packages/connectors/src/sync-contract.test.ts (5 tests) 51ms
+ ✓ tests/production-evidence-gate.test.ts (10 tests) 54ms
+ ✓ packages/storage/src/archive-lifecycle-contract.test.ts (8 tests) 56ms
+ ✓ apps/ops-console/src/api/opsClient.test.ts (13 tests) 92ms
+ ✓ packages/connectors/src/canary.test.ts (5 tests) 43ms
+ ✓ apps/api/src/ops-rbac-http-platform-revoke.acceptance.test.ts (1 test) 59ms
+ ✓ packages/billing/src/payment-provider.test.ts (12 tests) 49ms
+ ✓ packages/persistence/src/model-usage-repository.test.ts (21 tests) 48ms
+ ✓ packages/persistence/src/migration-069.test.ts (1 test) 56ms
+ ✓ packages/ai/src/relay-pricing.test.ts (10 tests) 41ms
+ ✓ tests/model-relay-contract.test.ts (24 tests) 38ms
+ ✓ apps/ops-console/src/components/OpsPageBoundary.test.ts (4 tests) 29ms
+ ✓ packages/persistence/src/migration-156.test.ts (2 tests) 24ms
+ ✓ apps/ops-console/src/hooks/useFinanceSearch.test.ts (5 tests) 56ms
+ ✓ apps/api/src/ops-rbac-http-canonical-backfill.acceptance.test.ts (1 test) 37ms
+ ✓ apps/ops-console/src/components/OpsSidebar.test.tsx (8 tests) 31ms
+ ✓ tests/handler-policy-inventory-contract.test.ts (3 tests) 40ms
+ ✓ packages/persistence/src/migration-149.test.ts (3 tests) 19ms
+ ✓ packages/persistence/src/migration-078.test.ts (2 tests) 18ms
+ ✓ packages/persistence/src/migration-159.test.ts (2 tests) 19ms
+ ✓ packages/persistence/src/migration-051.test.ts (3 tests | 1 skipped) 18ms
+ ✓ packages/ai/src/image-facts.test.ts (3 tests) 35ms
+ ✓ packages/persistence/src/migration-109.test.ts (3 tests) 25ms
+ ✓ apps/api/src/ops-rbac-http-product-detail.acceptance.test.ts (1 test) 32ms
+ ✓ packages/ai/src/relay-contract-audit.test.ts (26 tests) 32ms
+ ✓ tests/detail-page-decision-export.test.ts (1 test) 32ms
+ ✓ apps/api/src/ops-rbac-http-brand-profile.acceptance.test.ts (1 test) 32ms
+ ✓ packages/persistence/src/migration-093.test.ts (2 tests) 19ms
+ ✓ apps/ops-console/src/components/PageHeader.test.tsx (3 tests) 33ms
+ ✓ tests/configure-codex-relay.test.ts (16 tests) 33ms
+ ✓ packages/persistence/src/migration-066.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-142.test.ts (1 test) 17ms
+ ✓ packages/ai/src/relay-usage.test.ts (25 tests) 32ms
+ ✓ apps/ops-console/src/components/users/UsersGovernanceWorkspace.test.ts (4 tests) 31ms
+ ✓ tests/model-relay-local-contract.test.ts (21 tests) 35ms
+ ✓ packages/workers/src/durable.test.ts (27 tests) 27ms
+ ✓ apps/api/src/http-authz-scope-audit.e2e.test.ts (1 test) 28ms
+ ✓ apps/ops-console/src/components/authz/OpsWorkbenchSwitcher.test.tsx (2 tests) 32ms
+ ✓ packages/persistence/src/migration-083.test.ts (1 test) 18ms
+ ✓ packages/persistence/src/migration-091.test.ts (2 tests) 18ms
+ ✓ packages/application/src/connector-runtime.test.ts (14 tests) 28ms
+ ✓ packages/persistence/src/migration-052.test.ts (1 test) 21ms
+ ✓ packages/persistence/src/platform-media-spec-repository.test.ts (10 tests | 1 skipped) 23ms
+ ✓ packages/persistence/src/migration-103.test.ts (1 test) 27ms
+ ✓ apps/api/src/alert-notifier.test.ts (2 tests) 29ms
+ ✓ packages/ai/src/provider-request.test.ts (5 tests) 26ms
+ ✓ tests/mcp-http-parity-contract.test.ts (4 tests) 28ms
+ ✓ packages/persistence/src/migration-139.test.ts (1 test) 21ms
+ ✓ packages/persistence/src/migration-100.test.ts (1 test) 34ms
+ ✓ apps/worker/src/mapping-preflight-adapter.test.ts (8 tests) 24ms
+ ✓ packages/persistence/src/migration-147.test.ts (1 test) 21ms
+ ✓ packages/persistence/src/migration-124.test.ts (1 test) 22ms
+ ✓ packages/persistence/src/migration-135.test.ts (1 test) 25ms
+ ✓ packages/application/src/commercial-side-effect-matrix.test.ts (6 tests) 27ms
+ ✓ packages/persistence/src/authorization-repository.test.ts (20 tests) 25ms
+ ✓ packages/multimodal/src/delivery-bundle-manifest.test.ts (17 tests) 31ms
+ ✓ packages/persistence/src/migration-163.test.ts (4 tests) 31ms
+ ✓ packages/persistence/src/migration-088.test.ts (3 tests | 1 skipped) 24ms
+stderr | apps/ops-console/src/pages/OpsConsoleController.test.ts > Ops Ant Design runtime provider > provides a callable message error API to model error paths
+Warning: [antd: Message] You are calling notice in render which will break in React 18 concurrent mode. Please trigger in effect instead.
+
+ ✓ apps/ops-console/src/pages/OpsConsoleController.test.ts (11 tests) 26ms
+ ✓ packages/persistence/src/migration-086.test.ts (2 tests | 1 skipped) 16ms
+ ✓ packages/contracts/src/commercial-operation-registry.test.ts (14 tests) 24ms
+ ✓ packages/persistence/src/migration-053.test.ts (3 tests | 1 skipped) 25ms
+ ✓ packages/persistence/src/migration-106.test.ts (1 test) 18ms
+ ✓ packages/persistence/src/migration-087.test.ts (2 tests | 1 skipped) 15ms
+ ✓ packages/persistence/src/migration-121.test.ts (1 test) 21ms
+ ✓ packages/persistence/src/migration-101.test.ts (1 test) 18ms
+ ✓ packages/persistence/src/migration-064.test.ts (2 tests | 1 skipped) 14ms
+ ✓ packages/connectors/src/platform-adapters/alibaba-top.test.ts (11 tests) 21ms
+ ✓ packages/application/src/platform-field-mapping-gate.test.ts (27 tests) 21ms
+ ✓ packages/persistence/src/migration-094.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-125.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-097.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/finance-search-repository.test.ts (6 tests) 24ms
+ ✓ packages/persistence/src/migration-155.test.ts (2 tests) 17ms
+ ✓ packages/persistence/src/migration-046.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-116.test.ts (1 test) 17ms
+ ✓ packages/quotas/src/lock.test.ts (1 test) 24ms
+ ✓ packages/application/src/protected-product-intent.test.ts (47 tests) 20ms
+ ✓ packages/persistence/src/migration-120.test.ts (1 test) 18ms
+ ✓ packages/persistence/src/migration-099.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-130.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-162.test.ts (2 tests) 21ms
+ ✓ packages/persistence/src/migration-158.test.ts (2 tests) 24ms
+ ✓ packages/persistence/src/migration-157.test.ts (3 tests) 24ms
+ ✓ packages/persistence/src/audit-center-repository.test.ts (7 tests) 21ms
+ ✓ packages/persistence/src/migration-138.test.ts (1 test) 22ms
+ ✓ packages/persistence/src/migration-153.test.ts (4 tests) 23ms
+ ✓ tests/multimodal-delivery-golden.test.ts (8 tests) 23ms
+ ✓ packages/persistence/src/migration-119.test.ts (1 test) 22ms
+ ✓ apps/worker/src/creative-point-relay-settlement.test.ts (14 tests) 23ms
+ ✓ packages/persistence/src/migration-132.test.ts (1 test) 19ms
+ ✓ packages/persistence/src/support-repository.test.ts (10 tests) 20ms
+ ✓ packages/persistence/src/migration-105.test.ts (3 tests) 19ms
+ ✓ packages/persistence/src/migration-136.test.ts (1 test) 18ms
+ ✓ packages/persistence/src/migration-110.test.ts (1 test) 17ms
+ ✓ packages/connectors/src/platform-adapters/jd.test.ts (6 tests) 19ms
+ ✓ packages/contracts/src/mcp.test.ts (9 tests) 19ms
+ ✓ packages/knowledge/src/knowledge.test.ts (13 tests) 19ms
+ ✓ packages/persistence/src/migration-068.test.ts (1 test) 18ms
+ ✓ apps/api/src/mcp-authorization-coverage.test.ts (16 tests) 17ms
+ ✓ packages/persistence/src/migration-145.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/creative-point-repository.test.ts (9 tests) 18ms
+ ✓ packages/persistence/src/migration-111.test.ts (1 test) 20ms
+ ✓ packages/persistence/src/migration-117.test.ts (1 test) 19ms
+ ✓ tests/local-runtime-test-safety.test.ts (70 tests) 15ms
+ ✓ packages/persistence/src/migration-065.test.ts (1 test) 28ms
+ ✓ packages/persistence/src/migration-090.test.ts (1 test) 24ms
+ ✓ packages/persistence/src/migration-112.test.ts (1 test) 21ms
+ ✓ packages/workers/src/object-orphan-cleaner.test.ts (6 tests) 24ms
+ ✓ packages/persistence/src/migration-045.test.ts (1 test) 23ms
+ ✓ packages/persistence/src/migration-146.test.ts (3 tests) 27ms
+ ✓ packages/application/src/canonical-product-consistency.coverage.test.ts (14 tests) 17ms
+ ✓ packages/connectors/src/platform-preflight.test.ts (8 tests) 16ms
+ ✓ packages/persistence/src/migration-140.test.ts (1 test) 18ms
+ ✓ packages/persistence/src/migration-151.test.ts (2 tests) 18ms
+ ✓ packages/persistence/src/migration-115.test.ts (1 test) 17ms
+ ✓ packages/application/src/merchant-intent-extractor.test.ts (9 tests) 18ms
+ ✓ packages/persistence/src/migration-123.test.ts (1 test) 19ms
+ ✓ packages/persistence/src/migration-127.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-089.test.ts (1 test) 17ms
+ ✓ packages/persistence/src/migration-122.test.ts (1 test) 18ms
+ ✓ packages/persistence/src/migration-152.test.ts (2 tests) 19ms
+ ✓ packages/persistence/src/migration-114.test.ts (1 test) 17ms
+ ✓ tests/scanner-release-scripts.test.ts (4 tests) 20ms
+ ✓ packages/persistence/src/migration-118.test.ts (1 test) 20ms
+ ✓ packages/persistence/src/migration-043.test.ts (1 test) 20ms
+ ✓ packages/persistence/src/image-generation-execution-repository.test.ts (6 tests) 16ms
+ ✓ packages/persistence/src/incidents-repository.test.ts (6 tests) 19ms
+ ✓ packages/persistence/src/migration-144.test.ts (1 test) 22ms
+ ✓ packages/persistence/src/migration-136-workspace-audit.postgres.test.ts (2 tests | 1 skipped) 19ms
+ ✓ packages/persistence/src/migration-141.test.ts (1 test) 20ms
+ ✓ packages/persistence/src/migration-143.test.ts (1 test) 21ms
+ ✓ packages/persistence/src/platform-authorization-audit-repository.test.ts (6 tests) 17ms
+ ✓ packages/persistence/src/authorization-repository.postgres.test.ts (9 tests) 16ms
+ ✓ packages/persistence/src/migration-126.test.ts (2 tests | 1 skipped) 19ms
+ ✓ packages/persistence/src/business-repository.test.ts (12 tests) 17ms
+ ✓ packages/persistence/src/migration-154.test.ts (3 tests) 20ms
+ ✓ packages/persistence/src/migration-098.test.ts (1 test) 20ms
+ ✓ packages/application/src/canonical-product-consistency.test.ts (20 tests) 18ms
+ ✓ packages/application/src/creative-direction-quality.test.ts (5 tests) 12ms
+ ✓ packages/workers/src/publish-adapter.test.ts (3 tests) 13ms
+ ✓ apps/api/src/ops/feature-flags-service.test.ts (4 tests) 16ms
+ ✓ demo/merchant-studio/src/DetailDecisionContract.test.ts (10 tests) 16ms
+ ✓ tests/capability-evidence-gate.test.ts (10 tests) 15ms
+ ✓ tests/ops-console-contract.test.ts (8 tests) 16ms
+ ✓ packages/persistence/src/feature-flags-repository.test.ts (5 tests) 16ms
+ ✓ packages/persistence/src/commercial-contract-repository.test.ts (5 tests) 15ms
+ ✓ packages/persistence/src/canonical-product-backfill.test.ts (9 tests) 16ms
+ ✓ apps/api/src/ops/incidents-service.test.ts (4 tests) 16ms
+ ✓ apps/api/src/ops/commercial-ops-read-model.test.ts (11 tests) 15ms
+ ✓ packages/contracts/src/ops/support-sla-report.test.ts (3 tests) 13ms
+ ✓ apps/api/src/ops/audit-center-service.test.ts (6 tests) 17ms
+ ✓ packages/application/src/canonical-product-queue.test.ts (5 tests) 14ms
+ ✓ packages/persistence/src/billing-repository.test.ts (38 tests) 15ms
+ ✓ tests/local-capacity-soak-contract.test.ts (2 tests) 15ms
+ ✓ packages/contracts/src/authz.test.ts (32 tests) 16ms
+ ✓ packages/seo/src/index.test.ts (10 tests) 14ms
+ ✓ packages/persistence/src/migration-063.test.ts (2 tests | 1 skipped) 14ms
+ ✓ tests/safe-test-launcher.test.ts (31 tests) 10ms
+ ✓ packages/persistence/src/migration-084.test.ts (3 tests | 1 skipped) 18ms
+ ✓ packages/workers/src/worker.fault.test.ts (7 tests) 14ms
+ ✓ packages/persistence/src/migration-104.test.ts (2 tests | 1 skipped) 15ms
+ ✓ packages/application/src/campaign-delivery-manifest.test.ts (7 tests) 11ms
+ ✓ apps/api/src/scanner-health.test.ts (7 tests) 13ms
+ ✓ packages/workers/src/scanner-heartbeat.test.ts (6 tests) 14ms
+ ✓ packages/workers/src/support-sla-scan.test.ts (8 tests) 14ms
+ ✓ tests/release-metadata-gate.test.ts (3 tests) 13ms
+ ✓ packages/review/src/review.test.ts (27 tests) 12ms
+ ✓ packages/persistence/src/repository.test.ts (4 tests) 14ms
+ ✓ packages/persistence/src/brand-unit-repository.test.ts (26 tests) 14ms
+ ✓ packages/persistence/src/migration-085.test.ts (2 tests | 1 skipped) 15ms
+ ✓ packages/persistence/src/context-snapshot-repository.test.ts (4 tests) 16ms
+ ✓ packages/review/src/platform-rule-sync.test.ts (2 tests) 14ms
+ ✓ packages/persistence/src/identity-lifecycle-repository.test.ts (3 tests) 15ms
+ ✓ packages/storage/src/reconciliation.test.ts (9 tests) 15ms
+ ✓ packages/application/src/commercial-access-service.test.ts (11 tests) 13ms
+ ✓ packages/application/src/canonical-product-target-consistency.test.ts (1 test) 11ms
+ ✓ packages/contracts/src/ops/incidents.test.ts (3 tests) 13ms
+ ✓ apps/ops-console/src/hooks/useIncidents.test.ts (4 tests) 12ms
+ ✓ apps/worker/src/scanner-heartbeat.test.ts (5 tests) 12ms
+ ✓ packages/connectors/src/config.test.ts (13 tests) 13ms
+ ✓ tests/runtime-db-role.test.ts (9 tests) 12ms
+ ✓ packages/review/src/image-review.test.ts (3 tests) 3ms
+ ✓ demo/merchant-studio/src/CanonicalConsistencyPanel.test.ts (3 tests) 12ms
+ ✓ tests/isolated-postgres-entrypoint.test.ts (22 tests) 12ms
+ ✓ packages/multimodal/src/public-api.contract.test.ts (2 tests) 12ms
+ ✓ packages/persistence/src/interactive-confirmation-ticket-repository.test.ts (15 tests) 10ms
+ ✓ tests/object-storage-evidence-gate.test.ts (6 tests) 10ms
+ ✓ tests/isolated-ops-fixture.test.ts (24 tests) 9ms
+ ✓ demo/merchant-studio/src/DeliveryReadinessPanel.test.ts (2 tests) 10ms
+ ✓ packages/persistence/src/asset-parse-repository.test.ts (23 tests | 1 skipped) 9ms
+ ✓ packages/persistence/src/subscription-repository.test.ts (8 tests) 9ms
+ ✓ apps/api/src/asset-upload-security.test.ts (24 tests) 9ms
+ ✓ packages/multimodal/src/asset-preview-planner.test.ts (20 tests) 10ms
+ ✓ packages/persistence/src/action-ledger-repository.test.ts (15 tests) 9ms
+ ✓ tests/ui-production-contract.test.ts (27 tests) 9ms
+ ✓ apps/api/src/asset-parse-runtime.test.ts (4 tests) 11ms
+ ✓ apps/worker/src/commercial-access-recheck.test.ts (12 tests) 10ms
+ ✓ packages/application/src/continuous-feature-entitlement.test.ts (14 tests) 8ms
+ ✓ packages/connectors/src/connector.contract.test.ts (31 tests) 9ms
+ ✓ packages/persistence/src/asset-scan-repository.test.ts (8 tests) 8ms
+ ✓ packages/multimodal/src/delivery-variant-planner.test.ts (11 tests) 10ms
+ ✓ packages/application/src/brand-units.test.ts (12 tests) 10ms
+ ✓ apps/ops-console/src/api/opsDomainClients.test.ts (4 tests) 8ms
+ ✓ packages/persistence/src/migration-108.test.ts (2 tests) 4ms
+ ✓ tests/backup-attestation-gate.test.ts (1 test) 7ms
+ ✓ packages/persistence/src/members-repository.test.ts (7 tests) 8ms
+ ✓ packages/persistence/src/payment-callback-repository.test.ts (3 tests) 3ms
+ ✓ packages/multimodal/src/video-storyboard-quality.test.ts (10 tests) 8ms
+ ✓ tests/connector-fixture-golden.test.ts (24 tests) 7ms
+ ✓ tests/release-bundle-gate.test.ts (3 tests) 7ms
+ ✓ apps/ops-console/src/hooks/publishBatchDecision.test.ts (6 tests) 3ms
+ ✓ packages/contracts/src/http-authz.test.ts (5 tests) 9ms
+ ✓ apps/ops-console/src/hooks/useAuditCenter.test.ts (5 tests) 7ms
+ ✓ packages/contracts/src/connector-job-contract.test.ts (2 tests) 3ms
+ ✓ apps/worker/src/commercial-zero-side-effect-matrix.test.ts (3 tests) 8ms
+ ✓ packages/persistence/src/asset-scan-redrive-repository.test.ts (10 tests) 8ms
+ ✓ apps/api/src/publish-fenced-orchestrator.test.ts (6 tests) 6ms
+ ✓ packages/workers/src/execution-authorization.test.ts (21 tests) 10ms
+ ✓ tests/capacity-workload.test.ts (15 tests) 7ms
+ ✓ packages/application/src/canonical-scope.test.ts (7 tests) 3ms
+ ✓ demo/merchant-studio/src/task-visual-contract.test.ts (4 tests) 9ms
+ ✓ tests/openapi-contract.test.ts (2 tests) 7ms
+ ✓ demo/merchant-studio/src/image-candidate-pagination.test.ts (3 tests) 3ms
+ ✓ apps/api/src/model-daily-budget-contract.test.ts (5 tests) 8ms
+ ✓ packages/persistence/src/migration-079.test.ts (1 test) 3ms
+ ✓ tests/ops-navigation.test.ts (3 tests) 2ms
+ ✓ tests/ops-e2e-isolation.test.ts (12 tests) 8ms
+ ✓ apps/api/src/ops/support-service.test.ts (5 tests) 8ms
+ ✓ packages/multimodal/src/visual-authenticity-gate.test.ts (12 tests) 11ms
+ ✓ apps/api/src/storage-reconciliation-contract.test.ts (4 tests) 3ms
+ ✓ packages/persistence/src/canonical-backfill-conflict-repository.test.ts (7 tests) 8ms
+ ✓ packages/storage/src/reconciliation-runner.test.ts (7 tests) 7ms
+ ✓ packages/ai/src/platform-model-gate.test.ts (9 tests) 7ms
+ ✓ tests/codex-app-host-evidence-gate.test.ts (13 tests) 6ms
+ ✓ apps/api/src/request-observability.test.ts (9 tests) 5ms
+ ✓ packages/connectors/src/capability-evidence.test.ts (3 tests) 7ms
+ ✓ tests/release-evidence-fail-closed.test.ts (3 tests) 8ms
+ ✓ tests/connection-budget.test.ts (1 test) 5ms
+ ✓ packages/application/src/service-fulfillment.test.ts (9 tests) 15ms
+ ✓ packages/persistence/src/mapping-preflight-approval-repository.test.ts (4 tests | 1 skipped) 6ms
+ ✓ apps/api/src/ops/finance-search-service.test.ts (5 tests) 7ms
+ ✓ apps/ops-console/src/components/tasks/knowledge/revisionCreation.test.ts (9 tests) 7ms
+ ✓ packages/contracts/src/commercial-access.test.ts (12 tests) 6ms
+ ✓ packages/workers/src/execution-reservation.test.ts (5 tests) 6ms
+ ✓ tests/observability-health-contract.test.ts (4 tests) 5ms
+ ✓ packages/application/src/campaign-delivery-orchestrator.test.ts (3 tests) 6ms
+ ✓ packages/workers/src/commercial-access.test.ts (8 tests) 6ms
+ ✓ packages/domain-tests/domain.test.ts (12 tests) 6ms
+ ✓ packages/persistence/src/commercial-extensions-repository.test.ts (6 tests) 7ms
+ ✓ packages/persistence/src/alerts-repository.test.ts (1 test) 4ms
+ ✓ apps/api/src/ops/commercial-point-adjustment.test.ts (6 tests) 7ms
+ ✓ tests/capacity-evidence-gate.test.ts (14 tests) 8ms
+ ✓ apps/ops-console/src/hooks/useOpsConsoleModel.helpers.test.ts (13 tests) 8ms
+ ✓ packages/contracts/src/ops/support-sla.test.ts (6 tests) 6ms
+ ✓ packages/domain/src/service-capacity.test.ts (4 tests) 4ms
+ ✓ tests/release-metadata-gate-duplicate-name.test.ts (1 test) 8ms
+ ✓ packages/persistence/src/object-orphan-repository.test.ts (6 tests) 7ms
+ ✓ tests/dev-doctor-runtime.test.ts (10 tests) 8ms
+ ✓ packages/persistence/src/asset-scan-attempt-repository.test.ts (5 tests) 8ms
+ ✓ apps/ops-console/src/authz/authorization.test.ts (17 tests) 6ms
+ ✓ packages/persistence/src/entitlement-repository.test.ts (5 tests) 7ms
+ ✓ tests/video-cost-preflight-contract.test.ts (1 test) 6ms
+ ✓ packages/connectors/src/platform-adapters/pinduoduo.test.ts (5 tests) 6ms
+ ✓ packages/domain/src/facts-contract.test.ts (3 tests) 3ms
+ ✓ packages/persistence/src/storage-quota-repository.test.ts (4 tests) 6ms
+ ✓ packages/security/src/workspace-rate-limit.test.ts (6 tests) 6ms
+ ✓ packages/persistence/src/creative-point-lifecycle-repository.test.ts (8 tests) 6ms
+ ✓ packages/application/src/commercial-execution.test.ts (3 tests) 6ms
+ ✓ packages/multimodal/src/multimodal.test.ts (11 tests) 6ms
+ ✓ apps/api/src/bounded-concurrency.test.ts (2 tests) 3ms
+ ✓ apps/ops-console/src/navigation/opsNavigation.test.ts (51 tests) 6ms
+ ✓ packages/application/src/brand-extractor.test.ts (2 tests) 6ms
+ ✓ packages/persistence/src/migration-113.test.ts (1 test) 2ms
+ ✓ packages/persistence/src/data-lifecycle-repository.test.ts (2 tests) 7ms
+ ✓ packages/security/src/oauth.test.ts (5 tests) 6ms
+ ✓ packages/persistence/src/reconciliation-evidence-repository.test.ts (4 tests) 7ms
+ ✓ packages/workers/src/subscription-downgrade-executor.test.ts (2 tests) 4ms
+ ✓ apps/api/src/image-generation-action-contract.test.ts (4 tests) 7ms
+ ✓ packages/security/src/request-security.test.ts (4 tests) 4ms
+ ✓ packages/persistence/src/canonical-backfill-run-repository.test.ts (7 tests) 6ms
+ ✓ packages/security/src/audit-export-security.test.ts (6 tests) 5ms
+ ✓ packages/persistence/src/commercial-point-adjustment-approval-repository.test.ts (2 tests) 5ms
+ ✓ packages/persistence/src/data-lifecycle-repository.postgres.test.ts (3 tests) 5ms
+ ✓ demo/merchant-studio/data-consistency.test.ts (2 tests) 2ms
+ ✓ tests/ops-component-architecture.test.ts (4 tests) 6ms
+ ✓ packages/persistence/src/workspace-data-export-repository.test.ts (2 tests) 5ms
+ ✓ demo/merchant-studio/src/image-generation-accessibility.test.ts (12 tests) 6ms
+ ✓ packages/persistence/src/migration-133.test.ts (1 test) 3ms
+ ✓ packages/contracts/src/domain.test.ts (2 tests) 3ms
+ ✓ apps/worker/src/authorization-recheck.test.ts (1 test) 4ms
+ ✓ packages/multimodal/src/platform-media-spec-runtime.test.ts (6 tests) 6ms
+ ✓ packages/application/src/canonical-backfill-queue.test.ts (7 tests) 3ms
+ ✓ packages/contracts/src/image-generation-callback.test.ts (13 tests) 5ms
+ ✓ packages/persistence/src/migration-integrity.test.ts (6 tests) 5ms
+ ✓ packages/application/src/spreadsheet-batch.test.ts (6 tests) 5ms
+ ✓ packages/application/src/publish-prepare-confirm.test.ts (7 tests) 6ms
+ ✓ demo/merchant-studio/src/detail-sop.test.ts (3 tests) 4ms
+ ✓ packages/persistence/src/migration-080.test.ts (1 test) 2ms
+ ✓ packages/persistence/src/feature-flags-migration.test.ts (1 test) 2ms
+ ✓ packages/contracts/src/ops/finance-search.test.ts (5 tests) 5ms
+ ✓ packages/persistence/src/reconciliation-status-repository.test.ts (4 tests) 5ms
+ ✓ packages/quotas/src/admission.test.ts (8 tests) 5ms
+ ✓ packages/persistence/src/authorization-repository.consumed-grant.test.ts (3 tests) 5ms
+ ✓ apps/api/src/content-modules-reader.test.ts (6 tests) 4ms
+ ✓ apps/ops-console/src/components/tasks/knowledge/MarketingQueuePanel.test.ts (12 tests) 5ms
+ ✓ packages/persistence/src/migration-081.test.ts (1 test) 2ms
+ ✓ packages/application/src/publish-receipt-traceability.test.ts (7 tests) 5ms
+ ✓ apps/ops-console/src/hooks/useMembers.test.ts (4 tests) 5ms
+ ✓ apps/ops-console/src/hooks/dataDeletionDecision.test.ts (5 tests) 6ms
+ ✓ tests/supply-chain-reproducibility.test.ts (4 tests) 5ms
+ ✓ packages/connectors/src/social-platforms.test.ts (2 tests) 3ms
+ ✓ demo/merchant-studio/entry-points.test.ts (8 tests) 6ms
+ ✓ packages/persistence/src/rule-repository.test.ts (4 tests) 6ms
+ ✓ apps/ops-console/src/components/support/SupportCrmExportSection.test.tsx (1 test) 2ms
+ ✓ demo/merchant-studio/src/delivery-readiness.test.ts (4 tests) 3ms
+ ✓ demo/merchant-studio/src/ContextRecoveryCard.test.ts (5 tests) 3ms
+ ✓ packages/persistence/src/knowledge-hydration-repository.test.ts (3 tests) 4ms
+ ✓ packages/application/src/detail-page-orchestrator.test.ts (9 tests) 6ms
+ ✓ packages/application/src/commercial-plan-catalog.test.ts (7 tests) 5ms
+ ✓ apps/ops-console/src/pages/OpsConsoleController.workbench.test.ts (5 tests) 3ms
+ ✓ tests/source-artifact-hygiene.test.ts (1 test) 6ms
+ ✓ packages/persistence/src/commercial-catalog-repository.test.ts (8 tests) 5ms
+ ✓ tests/merchant-api-pagination-normalization.test.ts (2 tests) 3ms
+ ✓ packages/security/src/worker-request-proof.test.ts (5 tests) 4ms
+ ✓ packages/contracts/src/content-export-http-mcp-parity.test.ts (2 tests) 4ms
+ ✓ tests/model-relay-evidence-gate.test.ts (6 tests) 5ms
+ ✓ tests/merchant-navigation.test.ts (10 tests) 5ms
+ ✓ packages/persistence/src/operations-repository.test.ts (6 tests) 7ms
+ ✓ apps/ops-console/src/api/commercialOperationsClient.test.ts (5 tests) 4ms
+ ✓ tests/detail-page-decision-contract.mock.test.ts (8 tests) 5ms
+ ✓ packages/review/src/platform-rule-manifest.test.ts (2 tests) 5ms
+ ✓ packages/persistence/src/asset-promotion-cleanup-repository.test.ts (2 tests) 5ms
+ ✓ demo/merchant-studio/src/image-generation-styles.test.ts (11 tests) 4ms
+ ✓ packages/config/src/index.test.ts (5 tests) 3ms
+ ✓ tests/canonical-product-cutover-contract.test.ts (2 tests) 3ms
+ ✓ packages/persistence/src/migration-107.test.ts (1 test) 3ms
+ ✓ packages/persistence/src/unified-link-audit-repository.test.ts (2 tests) 6ms
+ ✓ packages/persistence/src/ops-data-repository.test.ts (4 tests) 6ms
+ ✓ apps/ops-console/src/components/sections/overview/DataReadinessSection.test.ts (5 tests) 5ms
+ ✓ apps/worker/src/generation-input.test.ts (14 tests) 4ms
+ ✓ apps/plugin/host-evidence-contract.test.ts (3 tests) 4ms
+ ✓ demo/merchant-studio/src/product-import-accessibility.test.ts (2 tests) 3ms
+ ✓ packages/domain/src/onboarding.test.ts (5 tests) 5ms
+ ✓ packages/persistence/src/workspace-bootstrap-repository.test.ts (2 tests) 5ms
+ ✓ packages/persistence/src/object-orphan-repository.postgres.test.ts (3 tests | 1 skipped) 6ms
+ ✓ packages/contracts/src/ops-mcp-integration.test.ts (5 tests) 5ms
+ ✓ packages/workers/src/runner.test.ts (3 tests) 5ms
+ ✓ packages/application/src/commercial-purchase-service.test.ts (3 tests) 9ms
+ ✓ demo/merchant-studio/src/asset-status.test.ts (5 tests) 4ms
+ ✓ tests/fault-evidence-gate.test.ts (8 tests) 4ms
+ ✓ demo/merchant-studio/src/campaign-lifecycle.test.ts (7 tests) 5ms
+ ✓ apps/ops-console/src/components/tasks/knowledge/assetScanRecovery.test.ts (6 tests) 5ms
+ ✓ apps/ops-console/src/components/users/PermissionMatrixSection.test.ts (4 tests) 4ms
+ ✓ apps/ops-console/src/components/incidents/IncidentDetailDrawer.test.tsx (2 tests) 4ms
+ ✓ packages/application/src/asset-parse-lifecycle.test.ts (1 test) 5ms
+ ✓ packages/application/src/commercial-entitlement-projection.test.ts (7 tests) 5ms
+ ✓ packages/persistence/src/seed-demo.test.ts (1 test) 5ms
+ ✓ packages/application/src/image-generation-action-contract.test.ts (4 tests) 5ms
+ ✓ packages/security/src/jit-grant-concurrency.test.ts (4 tests) 4ms
+ ✓ packages/application/src/workspace-data-export.test.ts (1 test) 5ms
+ ✓ packages/persistence/src/support-sla-report-repository.test.ts (2 tests) 5ms
+ ✓ apps/ops-console/src/components/finance/financePermissions.test.ts (7 tests) 10ms
+ ✓ packages/security/src/scanner-request-proof.test.ts (4 tests) 7ms
+ ✓ packages/ai/src/direct-relay-config.test.ts (6 tests) 7ms
+ ✓ apps/api/src/asset-scan-automation.test.ts (3 tests) 3ms
+ ✓ apps/ops-console/src/hooks/useCommercialOperations.test.ts (8 tests) 4ms
+ ✓ apps/ops-console/src/api/deliveryGovernanceClient.test.ts (3 tests) 4ms
+ ✓ apps/api/src/authz-decision-audit.test.ts (9 tests) 4ms
+ ✓ apps/api/src/redis-resilience.test.ts (2 tests) 4ms
+ ✓ demo/merchant-studio/src/merchant-ia.test.ts (5 tests) 4ms
+ ✓ packages/persistence/src/usage-repository.test.ts (3 tests) 4ms
+ ✓ packages/storage/src/lifecycle-policy.test.ts (3 tests) 3ms
+ ✓ packages/domain/src/task-contract.test.ts (3 tests) 5ms
+ ✓ apps/ops-console/src/pages/FeatureFlagsPage.test.tsx (6 tests) 4ms
+ ✓ apps/ops-console/src/components/tasks/knowledge/CampaignLifecycleControl.test.ts (4 tests) 4ms
+ ✓ tests/local-relay-start-contract.test.ts (2 tests) 2ms
+ ✓ tests/canonical-product-cutover-evidence-gate.test.ts (2 tests) 2ms
+ ✓ packages/domain/src/publish-contract.test.ts (3 tests) 3ms
+ ✓ demo/merchant-studio/src/platform-connection-status.test.ts (3 tests) 4ms
+ ✓ apps/ops-console/src/components/users/UserDirectorySection.test.ts (7 tests) 5ms
+ ✓ apps/ops-console/src/hooks/useFeatureFlags.test.ts (3 tests) 5ms
+ ✓ apps/ops-console/src/components/tasks/knowledge/ImageExecutionEvidenceModal.test.tsx (4 tests) 3ms
+ ✓ apps/ops-console/src/components/sections/overview/modelReadiness.test.ts (3 tests) 3ms
+ ✓ demo/merchant-studio/src/api-error-classification.test.ts (4 tests) 3ms
+ ✓ demo/merchant-studio/product-assets.test.ts (2 tests) 3ms
+ ✓ apps/ops-console/src/main.test.ts (3 tests) 4ms
+ ✓ apps/ops-console/src/components/OpsSidebar.selection.test.ts (2 tests) 5ms
+ ✓ apps/ops-console/src/components/models/ModelChannelMatrix.test.ts (2 tests) 3ms
+ ✓ apps/ops-console/src/hooks/opsLoadCoordinator.test.ts (3 tests) 3ms
+ ✓ packages/application/src/canonical-execution-binding.test.ts (3 tests) 4ms
+ ✓ tests/platform-config-template.test.ts (4 tests) 4ms
+ ✓ packages/persistence/src/migration-082.test.ts (1 test) 4ms
+ ✓ tests/prd-v13-stateless-runtime.test.ts (3 tests) 3ms
+ ✓ packages/contracts/src/authz-role-source-boundary.test.ts (2 tests) 3ms
+ ✓ packages/application/src/payment-fixture-guard.test.ts (5 tests) 3ms
+ ✓ tests/local-docker-runtime-evidence.test.ts (3 tests) 4ms
+ ✓ tests/canonical-product-cutover-coverage.test.ts (3 tests) 3ms
+ ✓ demo/merchant-studio/src/image-job-polling.test.ts (3 tests) 3ms
+ ✓ apps/ops-console/src/components/authz/DangerActionModal.test.tsx (2 tests) 3ms
+ ✓ apps/plugin/scheduled/scheduled-contract.test.ts (6 tests) 4ms
+ ✓ tests/authorization-release-dynamic-gate.test.ts (2 tests) 3ms
+ ✓ tests/compose-acceptance-evidence.test.ts (4 tests) 3ms
+ ✓ apps/ops-console/src/components/finance/modelUsageSettlement.test.ts (4 tests) 3ms
+ ✓ apps/ops-console/src/components/sections/overview/platformPublishReadiness.test.ts (1 test) 2ms
+ ✓ tests/ops-commercial-contract-gaps.test.ts (2 tests) 2ms
+ ✓ demo/merchant-studio/src/image-job-list.test.ts (3 tests) 2ms
+ ✓ packages/contracts/src/envelope.test.ts (2 tests) 3ms
+ ✓ demo/merchant-studio/batch-readiness.test.ts (4 tests) 3ms
+ ✓ apps/api/src/knowledge-hydration-checkpoint.test.ts (4 tests) 3ms
+ ✓ packages/workers/src/publish-observation.test.ts (1 test) 2ms
+ ✓ demo/merchant-studio/src/main.test.ts (1 test) 2ms
+ ✓ apps/ops-console/src/pages/SupportPage.test.tsx (2 tests) 3ms
+ ✓ demo/merchant-studio/src/error-notice-accessibility.test.ts (3 tests) 2ms
+ ✓ apps/ops-console/src/components/ops-rbac-ui-design.acceptance.test.ts (3 tests) 4ms
+ ✓ demo/merchant-studio/src/image-candidate-loading.test.ts (2 tests) 3ms
+ ✓ tests/batch-target.test.ts (2 tests) 2ms
+ ✓ demo/merchant-studio/src/image-generation-state.test.ts (3 tests) 3ms
+ ✓ apps/ops-console/src/pages/AuditPage.test.ts (1 test) 2ms
+ ✓ apps/ops-console/src/components/finance/rechargeOrders.test.ts (3 tests) 2ms
+ ✓ demo/merchant-studio/responsive-entry.test.ts (3 tests) 2ms
+ ✓ apps/ops-console/src/navigation/opsWorkbenchLocation.test.ts (2 tests) 2ms
+ ✓ apps/ops-console/src/components/feature-flags/FeatureFlagAuditDrawer.test.tsx (3 tests) 2ms
+ ✓ demo/merchant-studio/src/data-consistency.test.ts (3 tests) 2ms
+ ✓ demo/merchant-studio/rule-context.test.ts (2 tests) 2ms
+ ✓ demo/merchant-studio/src/image-generation-candidate-recovery.test.ts (2 tests) 2ms
+ ✓ apps/ops-console/src/components/OpsSidebar.styles.test.ts (2 tests) 2ms
+ ✓ apps/api/src/platform-capability-response.test.ts (2 tests) 2ms
+ ✓ packages/contracts/src/commercial-order.test.ts (1 test) 2ms
+ ✓ packages/connectors/src/write-boundary.test.ts (3 tests) 2ms
+ ✓ apps/ops-console/src/pages/ModelsPage.test.ts (2 tests) 2ms
+ ✓ apps/ops-console/src/components/finance/ConfigurationCenterSection.test.tsx (2 tests) 2ms
+ ✓ packages/persistence/src/migration-148.test.ts (2 tests) 2ms
+ ✓ apps/api/src/worker-system-delivery-authorization.test.ts (2 tests) 2ms
+ ✓ packages/contracts/src/errors.test.ts (2 tests) 2ms
+ ✓ apps/ops-console/src/hooks/useDeliveryGovernance.test.ts (1 test) 2ms
+ ✓ apps/ops-console/src/components/stores/BrandTreeSection.test.tsx (1 test) 2ms
+ ↓ tests/commercial-zero-side-effect-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ tests/outbox-retry.postgres.test.ts (3 tests | 3 skipped)
+ ↓ tests/postgres-rls-attack-matrix.test.ts (1 test | 1 skipped)
+ ↓ apps/worker/src/creative-point-relay-settlement.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/application-rls-allow-scope-mismatch.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/authorization-audit-rls.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/authorization-execution-reservation-rls.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts (2 tests | 2 skipped)
+ ↓ packages/persistence/src/authorization-repository.release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/authorization-rls-boundary.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/authorization-rls-probe.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/billing-repository.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/business-repository.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/campaign-lifecycle.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/commercial-contract-repository.release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/creative-point-security-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-067-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-068-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-069-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-070-072-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-073-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-074-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-077-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-078-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-079-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-081-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-105-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-109-release.postgres.test.ts (2 tests | 2 skipped)
+ ↓ packages/persistence/src/migration-118-release.postgres.test.ts (2 tests | 2 skipped)
+ ↓ packages/persistence/src/migration-119-120-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-128-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-129-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-130-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-131-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-137-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/migration-integrity-release.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/model-daily-budget.postgres.test.ts (5 tests | 5 skipped)
+ ↓ packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/platform-authorization-audit.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/resource-id-scope.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/storage-quota-repository.postgres.test.ts (1 test | 1 skipped)
+ ↓ packages/persistence/src/workspace-data-export-repository.release.postgres.test.ts (1 test | 1 skipped)
+
+ Test Files  598 passed | 44 skipped (642)
+      Tests  4489 passed | 70 skipped (4559)
+   Start at  20:36:19
+   Duration  301.60s (transform 7.37s, setup 0ms, import 94.91s, tests 121.69s, environment 48ms)
+
+
+> merchant-marketing-codex@0.1.1 test:ops-console
+> npm test --workspace merchant-ops-console
+
+
+> merchant-ops-console@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills/apps/ops-console
+
+
+ Test Files  88 passed (88)
+      Tests  500 passed (500)
+   Start at  20:41:21
+   Duration  21.70s (transform 3.85s, setup 0ms, import 109.88s, tests 19.64s, environment 12ms)
+
+
+> merchant-marketing-codex@0.1.1 release:metadata:validate
+> tsx tests/release-metadata-gate.ts
+
+release metadata gate passed: VERSION, package metadata, CHANGELOG, plugin mirrors, MCP registry and migrations are aligned
+
+> merchant-marketing-codex@0.1.1 build:ops-console
+> npm run build --workspace merchant-ops-console
+
+
+> merchant-ops-console@0.1.0 build
+> tsc -p tsconfig.build.json && vite build
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 3215 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                     3.13 kB │ gzip:   0.87 kB
+dist/assets/antd-runtime-B5BXDqMa.css               2.98 kB │ gzip:   1.13 kB
+dist/assets/index-DAgEBuXP.css                     19.80 kB │ gzip:   4.69 kB
+dist/assets/antd-row-D3cqtphD.js                    0.06 kB │ gzip:   0.07 kB
+dist/assets/antd-button-ChFi9OH_.js                 0.06 kB │ gzip:   0.08 kB
+dist/assets/react-Bd5ulOAF.js                       0.43 kB │ gzip:   0.30 kB
+dist/assets/modelReadiness-DQTR_EiA.js              0.60 kB │ gzip:   0.41 kB
+dist/assets/rolldown-runtime-W7wSyTde.js            0.97 kB │ gzip:   0.56 kB
+dist/assets/antd-modal-BUSNqD2S.js                  1.38 kB │ gzip:   0.75 kB
+dist/assets/antd-layout-CK9C0HlJ.js                 1.55 kB │ gzip:   0.80 kB
+dist/assets/antd-flex-DpIFjlaF.js                   2.08 kB │ gzip:   0.99 kB
+dist/assets/antd-col-F4QYtzlY.js                    2.74 kB │ gzip:   1.42 kB
+dist/assets/antd-statistic-T6gL3p1f.js              4.14 kB │ gzip:   1.92 kB
+dist/assets/antd-divider-mNd8uCBQ.js                4.59 kB │ gzip:   1.75 kB
+dist/assets/antd-runtime-DUldMNl7.js                5.11 kB │ gzip:   2.24 kB
+dist/assets/antd-config-provider-BO1gT_9L.js        5.18 kB │ gzip:   2.20 kB
+dist/assets/StoragePage-BC-6r4Is.js                 6.44 kB │ gzip:   2.83 kB
+dist/assets/antd-timeline--2ukEjyU.js               6.63 kB │ gzip:   2.53 kB
+dist/assets/antd-switch-DaDIoX2s.js                 7.50 kB │ gzip:   2.62 kB
+dist/assets/antd-checkbox-BDYTjsEZ.js               7.54 kB │ gzip:   3.14 kB
+dist/assets/antd-descriptions-DXFNjHle.js           7.86 kB │ gzip:   2.79 kB
+dist/assets/antd-tag-BVgxe22P.js                    8.50 kB │ gzip:   3.32 kB
+dist/assets/antd-alert-10l3fiOL.js                  8.67 kB │ gzip:   3.38 kB
+dist/assets/antd-segmented-FL8vAHcL.js              9.24 kB │ gzip:   3.54 kB
+dist/assets/ModelsPage-DrF84FYb.js                 10.21 kB │ gzip:   3.92 kB
+dist/assets/antd-radio-CF-RYtbL.js                 10.94 kB │ gzip:   3.71 kB
+dist/assets/RulesPage-C4cG6t_5.js                  11.46 kB │ gzip:   4.64 kB
+dist/assets/antd-drawer-cS91h5jN.js                14.33 kB │ gzip:   5.54 kB
+dist/assets/antd-progress-BNa1S259.js              14.90 kB │ gzip:   5.76 kB
+dist/assets/KnowledgePage-DTfAGtXh.js              15.27 kB │ gzip:   5.16 kB
+dist/assets/CommercialReadinessPanel-DCf3g_sl.js   15.60 kB │ gzip:   4.81 kB
+dist/assets/MembersPage-DIZXQ7gR.js                16.35 kB │ gzip:   6.16 kB
+dist/assets/AuditPage-C9H7S2PW.js                  16.73 kB │ gzip:   5.78 kB
+dist/assets/antd-typography-CFSyQ8CH.js            17.24 kB │ gzip:   6.79 kB
+dist/assets/IncidentsRoute-CxrD_sCz.js             17.38 kB │ gzip:   5.83 kB
+dist/assets/FeatureFlagsRoute-Bj5u7Ci0.js          18.63 kB │ gzip:   6.90 kB
+dist/assets/antd-input-number-H8SoXwm9.js          19.60 kB │ gzip:   7.12 kB
+dist/assets/OverviewPage-COGiAI-p.js               22.87 kB │ gzip:   8.09 kB
+dist/assets/SupportRoute-BfGInWbJ.js               24.50 kB │ gzip:   8.43 kB
+dist/assets/antd-form-BSnrCSvH.js                  26.57 kB │ gzip:  10.30 kB
+dist/assets/antd-upload-DWHrwA-D.js                27.73 kB │ gzip:   9.90 kB
+dist/assets/antd-steps-PTuA97H1.js                 29.96 kB │ gzip:   8.57 kB
+dist/assets/antd-result-BhSgnSVT.js                33.84 kB │ gzip:  10.41 kB
+dist/assets/antd-input-DrvjNlM6.js                 43.32 kB │ gzip:  13.15 kB
+dist/assets/FinancePage-BWRTUwZY.js                45.42 kB │ gzip:  12.15 kB
+dist/assets/StoresPage-DpA2YXHe.js                 49.03 kB │ gzip:  14.70 kB
+dist/assets/antd-icons-B9mqB-CV.js                 57.60 kB │ gzip:  12.97 kB
+dist/assets/antd-dropdown-DpT87uWd.js              58.70 kB │ gzip:  17.28 kB
+dist/assets/antd-app-xAU45EtY.js                   65.63 kB │ gzip:  21.36 kB
+dist/assets/antd-card-_RHtgBQq.js                  74.28 kB │ gzip:  23.09 kB
+dist/assets/antd-list-B-Yfw4WE.js                 105.08 kB │ gzip:  33.73 kB
+dist/assets/antd-table-DtRUkZcs.js                133.94 kB │ gzip:  42.80 kB
+dist/assets/TasksPage-Bi4_HOwn.js                 177.90 kB │ gzip:  53.12 kB
+dist/assets/index-4q1N8R0o.js                     189.93 kB │ gzip:  56.83 kB
+dist/assets/antd-_util-Cx8ZCuHy.js                404.39 kB │ gzip: 135.25 kB
+
+✓ built in 370ms
+
+> merchant-marketing-codex@0.1.1 build:merchant-studio
+> npm run build --prefix demo/merchant-studio
+
+
+> merchant-studio-demo@0.1.0 build
+> tsc -b && vite build
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 3296 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.59 kB │ gzip:   0.39 kB
+dist/assets/index-BEg828Cl.css   94.68 kB │ gzip:  18.01 kB
+dist/assets/index-CvkO1Fcl.js   830.65 kB │ gzip: 257.80 kB
+
+✓ built in 340ms
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.

@@ -1,0 +1,333 @@
+[
+  {
+    "path": "apps/api/src/server.ts",
+    "bytes": 1583824,
+    "lines": 18546,
+    "imports": 114,
+    "importPackages": [
+      "node:http",
+      "node:fs",
+      "node:crypto",
+      ".",
+      "pg",
+      "redis",
+      "@aws-sdk",
+      "application",
+      "review",
+      "persistence",
+      "security",
+      "connectors",
+      "ai",
+      "storage",
+      "contracts",
+      "knowledge",
+      "workers",
+      "multimodal",
+      "seo",
+      "billing"
+    ],
+    "largest": [
+      {
+        "name": "routeMcp",
+        "line": 10051,
+        "lines": 5899
+      },
+      {
+        "name": "route",
+        "line": 15979,
+        "lines": 2417
+      },
+      {
+        "name": "initializePersistence",
+        "line": 2562,
+        "lines": 212
+      },
+      {
+        "name": "executeReadyImageContinuationOnce",
+        "line": 8154,
+        "lines": 148
+      },
+      {
+        "name": "recordRelayUsage",
+        "line": 179,
+        "lines": 127
+      },
+      {
+        "name": "merchantFirstValuePreview",
+        "line": 8853,
+        "lines": 121
+      },
+      {
+        "name": "applySignedAssetScanResult",
+        "line": 7921,
+        "lines": 98
+      },
+      {
+        "name": "authenticate",
+        "line": 5742,
+        "lines": 89
+      },
+      {
+        "name": "executeDurableAssetParse",
+        "line": 2470,
+        "lines": 76
+      },
+      {
+        "name": "hydrateKnowledge",
+        "line": 3293,
+        "lines": 74
+      }
+    ]
+  },
+  {
+    "path": "packages/application/src/service.ts",
+    "bytes": 384851,
+    "lines": 4845,
+    "imports": 19,
+    "importPackages": [
+      "node:crypto",
+      "node:fs",
+      "node:path",
+      "node:util",
+      "review",
+      "ai",
+      ".",
+      "multimodal"
+    ],
+    "largest": [
+      {
+        "name": "MerchantService",
+        "line": 1289,
+        "lines": 3354
+      },
+      {
+        "name": "normalizeBrandVisualRules",
+        "line": 1082,
+        "lines": 71
+      },
+      {
+        "name": "parseCompetitorReference",
+        "line": 459,
+        "lines": 65
+      },
+      {
+        "name": "normalizeCodexBody",
+        "line": 4761,
+        "lines": 43
+      },
+      {
+        "name": "detailPageDecisionContract",
+        "line": 4662,
+        "lines": 42
+      },
+      {
+        "name": "contentVersionVector",
+        "line": 1163,
+        "lines": 35
+      },
+      {
+        "name": "contentModules",
+        "line": 4705,
+        "lines": 32
+      },
+      {
+        "name": "publicCreativeDirectionQualityReport",
+        "line": 1035,
+        "lines": 26
+      },
+      {
+        "name": "generatedMainImage",
+        "line": 1208,
+        "lines": 22
+      },
+      {
+        "name": "defaultStaticBrief",
+        "line": 4738,
+        "lines": 18
+      }
+    ]
+  },
+  {
+    "path": "apps/plugin/mcp/bridge.mjs",
+    "bytes": 265308,
+    "lines": 2772,
+    "imports": 7,
+    "importPackages": [
+      "node:crypto",
+      "node:fs",
+      "node:os",
+      "node:path",
+      "node:readline",
+      "node:url",
+      "."
+    ],
+    "largest": [
+      {
+        "name": "callRemote",
+        "line": 2078,
+        "lines": 165
+      },
+      {
+        "name": "handle",
+        "line": 2610,
+        "lines": 150
+      },
+      {
+        "name": "merchantImageCandidateStructuredContent",
+        "line": 2264,
+        "lines": 146
+      },
+      {
+        "name": "merchantConversationProjection",
+        "line": 1559,
+        "lines": 105
+      },
+      {
+        "name": "userFacingToolText",
+        "line": 1128,
+        "lines": 63
+      },
+      {
+        "name": "merchantAssetStructuredContent",
+        "line": 2443,
+        "lines": 58
+      },
+      {
+        "name": "detailDecisionSummary",
+        "line": 1079,
+        "lines": 48
+      },
+      {
+        "name": "userFacingErrorText",
+        "line": 1192,
+        "lines": 46
+      },
+      {
+        "name": "safeErrorDetails",
+        "line": 1255,
+        "lines": 45
+      },
+      {
+        "name": "merchantContextMetadata",
+        "line": 1451,
+        "lines": 43
+      }
+    ]
+  },
+  {
+    "path": "apps/worker/src/main.ts",
+    "bytes": 133007,
+    "lines": 1690,
+    "imports": 33,
+    "importPackages": [
+      "node:url",
+      "node:crypto",
+      "node:fs",
+      "pg",
+      "persistence",
+      "workers",
+      ".",
+      "application",
+      "connectors",
+      "ai",
+      "quotas",
+      "security",
+      "contracts"
+    ],
+    "largest": [
+      {
+        "name": "runWorker",
+        "line": 1230,
+        "lines": 422
+      },
+      {
+        "name": "executeAssetScan",
+        "line": 960,
+        "lines": 121
+      },
+      {
+        "name": "readWorkerConfig",
+        "line": 1082,
+        "lines": 60
+      },
+      {
+        "name": "pollOnce",
+        "line": 1143,
+        "lines": 49
+      },
+      {
+        "name": "scannerOperationalMetrics",
+        "line": 1193,
+        "lines": 36
+      },
+      {
+        "name": "createApiCommercialAccessGuard",
+        "line": 513,
+        "lines": 35
+      },
+      {
+        "name": "postImageGenerationReconciliationStatus",
+        "line": 743,
+        "lines": 35
+      },
+      {
+        "name": "createApiExecutionAuthorizationGuard",
+        "line": 476,
+        "lines": 33
+      },
+      {
+        "name": "reconcileImageGenerationWorkspace",
+        "line": 853,
+        "lines": 33
+      },
+      {
+        "name": "assertWorkerReadinessDependencies",
+        "line": 175,
+        "lines": 32
+      }
+    ]
+  },
+  {
+    "path": "apps/worker/src/handler.ts",
+    "bytes": 22584,
+    "lines": 377,
+    "imports": 8,
+    "importPackages": [
+      "workers",
+      "ai",
+      "quotas"
+    ],
+    "largest": [
+      {
+        "name": "createOutboxHandler",
+        "line": 50,
+        "lines": 294
+      },
+      {
+        "name": "isProviderOutcomeUnknown",
+        "line": 345,
+        "lines": 19
+      },
+      {
+        "name": "throwIfLeaseLost",
+        "line": 365,
+        "lines": 4
+      },
+      {
+        "name": "createWorkerProjection",
+        "line": 41,
+        "lines": 3
+      },
+      {
+        "name": "unknownFailure",
+        "line": 370,
+        "lines": 3
+      },
+      {
+        "name": "isObject",
+        "line": 374,
+        "lines": 3
+      }
+    ]
+  }
+]

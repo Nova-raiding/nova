@@ -1,0 +1,1 @@
+{"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "这一步需要你的明确确认。确认后可以继续，未执行任何写操作。"}], "structuredContent": {"code": "INTERACTIVE_WRITE_DISABLED", "message": "当前操作需要商家明确确认。请先确认后继续；如果创意点余额为零、未知或不足，系统只会返回服务端授权的恢复入口。", "technical_hint": "interactive_write_session_required"}, "isError": true}}

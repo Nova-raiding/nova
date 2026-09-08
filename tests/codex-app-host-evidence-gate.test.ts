@@ -54,6 +54,10 @@ describe('Codex App host evidence gate', () => {
     ]))
   })
 
+  it.each(['chrome-desktop', 'electron-shell', 'ios-app', 'arbitrary-external-host'])('rejects a non-ChatGPT host label: %s', host => {
+    expect(validateCodexAppHostEvidence({ ...evidence, host })).toContain('host must identify a supported ChatGPT/Codex App host')
+  })
+
   it('rejects host evidence that omits the ChatGPT image selection journey', () => {
     const invalid = structuredClone(evidence)
     invalid.scenarios = invalid.scenarios.filter(({ id }) => id !== 'candidate_images_rendered')

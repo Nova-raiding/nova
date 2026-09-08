@@ -1,0 +1,7 @@
+{
+  "changedFiles": [
+    "scripts/run-safe-tests.ts"
+  ],
+  "affectedTests": [],
+  "totalDependentsTraversed": 0
+}

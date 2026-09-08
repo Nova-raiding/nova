@@ -1,0 +1,94 @@
+{
+  "tool": "shot-scraper video",
+  "toolExit": 0,
+  "progress": [
+    "Real signed OIDC login",
+    "Open JIT and read durable current revision",
+    "Negative TTL probe through actual form",
+    "Submit exact workspace JIT and refresh persisted grant",
+    "Real revoke click preserves known enforce denial"
+  ],
+  "rawStoryboardSaved": false,
+  "rawToolOutputSaved": false,
+  "facts": {
+    "events": [
+      {
+        "at": "2026-09-07T12:03:42.866Z",
+        "method": "ops.authorization.grants.list",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_6c78d56f-7657-4c86-9c4d-69449b65da78",
+        "resource_scope": null,
+        "expected_authorization_revision": null,
+        "authorization_revision": 1,
+        "grant_count": 1
+      },
+      {
+        "at": "2026-09-07T12:03:45.234Z",
+        "method": "ops.authorization.grant.issue",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_cabf459a-8a56-430e-b224-20c8022d5a7a",
+        "resource_scope": {
+          "workspace_ids": [
+            "ws_ops_fixture_13c126681e3e441eb7141fd40f056e13"
+          ]
+        },
+        "expected_authorization_revision": "1",
+        "authorization_revision": 2,
+        "grant_count": null
+      },
+      {
+        "at": "2026-09-07T12:03:45.444Z",
+        "method": "ops.authorization.grants.list",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_3f7a267d-b22d-4d19-bf80-0e72e3cf1084",
+        "resource_scope": null,
+        "expected_authorization_revision": null,
+        "authorization_revision": 2,
+        "grant_count": 2
+      },
+      {
+        "at": "2026-09-07T12:03:46.038Z",
+        "method": "ops.authorization.grants.list",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_3105d9ec-f364-4bdc-8195-53aa99f3cda4",
+        "resource_scope": null,
+        "expected_authorization_revision": null,
+        "authorization_revision": 2,
+        "grant_count": 2
+      },
+      {
+        "at": "2026-09-07T12:03:49.637Z",
+        "method": "ops.authorization.grant.revoke",
+        "status": 403,
+        "error_code": "FORBIDDEN",
+        "reason_code": "AUTHZ_OBLIGATION_REQUIRED",
+        "obligations_missing": [
+          "approval"
+        ],
+        "decision_id": "authz_7be2a24e-12d2-41aa-b388-97f2c092de09",
+        "request_id": "req_a5567108-84d5-41d0-b536-bcfe1b0a6227",
+        "resource_scope": null,
+        "expected_authorization_revision": "2",
+        "authorization_revision": null,
+        "grant_count": null
+      }
+    ],
+    "invalid_ttl_locally_blocked": true
+  }
+}

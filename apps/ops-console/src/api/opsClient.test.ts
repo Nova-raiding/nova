@@ -35,10 +35,8 @@ describe("workspace RPC boundary", () => {
     expect(removeItem.mock.calls.map(([key]) => key)).toEqual([
       "ops_connection_config_v1",
       "ops_api_base",
-      "ops_workspace_id",
       "ops_actor_id",
       "ops_api_token",
-      "ops_workbench",
     ]);
 
     removeItem.mockClear();

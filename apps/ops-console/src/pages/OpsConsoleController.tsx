@@ -19,11 +19,35 @@ import { normalizeDiagnosticTokens } from "../components/opsErrorPresentation.js
 
 const { Content } = Layout;
 
+function opsAuthLink(kind: "login" | "register", managed = managedOpsSession): string | undefined {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
+  const configured = kind === "login" ? env.VITE_OPS_LOGIN_URL : env.VITE_OPS_REGISTER_URL;
+  if (configured?.trim()) return configured.trim();
+  // In local Compose the API provides a fixture OAuth endpoint. Production
+  // deployments must inject the enterprise gateway URL; never invent one.
+  if (kind === "login" && !managed) {
+    const base = typeof window === "undefined" ? "/api" : (readOpsConnectionConfig().apiBase || "/api");
+    const callback = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "/";
+    const url = new URL(`${base.replace(/\/$/u, "")}/oauth/authorize`, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    url.searchParams.set("redirect_uri", callback);
+    url.searchParams.set("state", "ops-local-login");
+    return url.toString();
+  }
+  return undefined;
+}
+
 export function OpsSessionRecoveryGuidance({ managed, error }: { managed: boolean; error?: string }) {
+  const loginUrl = opsAuthLink("login", managed);
+  const registerUrl = opsAuthLink("register", managed);
   return <div>
     <p>当前身份尚未通过运营权限验证，暂时无法打开运营页面或执行操作。</p>
-    {managed ? <p>请返回组织登录入口，使用获授权的运营账号重新登录，再回到此页点击“重试权限验证”。如果仍无法进入，请联系管理员核对账号的运营权限和工作区。</p>
-      : <p>请点击右上角“登录 / 连接”，核对工作区，并使用管理员提供的运营凭据保存并刷新。商家登录凭据不能用于平台运营控制台；如无运营凭据，请联系管理员开通。</p>}
+    {managed ? <>
+      <p>请使用组织 SSO 登录运营账号，再回到此页点击“重试权限验证”。运营账号由组织管理员邀请并分配角色。</p>
+      {loginUrl ? <p><strong>组织登录入口：</strong><a href={loginUrl} target="_self" rel="noreferrer">登录运营后台</a></p> : <p><strong>组织登录入口：</strong>当前部署未配置 SSO 登录入口，请联系管理员配置 VITE_OPS_LOGIN_URL。</p>}
+      {registerUrl ? <p><a href={registerUrl} target="_self" rel="noreferrer">申请运营账号</a></p> : <p><strong>注册方式：</strong>运营账号采用邀请制。请让平台管理员在“用户与成员”中发出邀请，接受邀请后再使用上面的组织登录；系统不会开放无审批的公共注册。</p>}
+    </>
+      : <><p>请点击右上角“登录 / 连接”，核对工作区，并使用管理员提供的运营凭据保存并刷新。商家登录凭据不能用于平台运营控制台。</p><p><strong>注册方式：</strong>本地安全会话不提供公共注册；由管理员在“用户与成员”中邀请成员，并为其分配角色。</p></>}
+    <p><strong>绑定 ChatGPT 插件：</strong>在 ChatGPT 中启用“大麦商家营销”后回复“开始使用大麦”。插件会用当前登录身份创建或恢复工作区，并返回绑定状态；不要手工填写他人的工作区 ID 或 Token。</p>
     <p>若刚刚恢复网络或管理员已更新权限，可直接重试。</p>
     <details><summary>查看失败详情（供管理员排查）</summary><p>{error ?? "权限会话加载失败"}</p></details>
   </div>;
@@ -243,8 +267,8 @@ function Dashboard({
           availableWorkbenches={availableWorkbenches}
           switchingWorkbench={switchingWorkbench}
           onWorkbenchChange={onWorkbenchChange}
-          onJitExpired={() => { model.clearAuthorizationScopedData(); void model.load(); }}
-          onJitExit={() => { model.clearAuthorizationScopedData(); void model.load(); }}
+          onJitExpired={() => { model.clearJitRevocationReceipt(); model.clearAuthorizationScopedData(); void model.load(); }}
+          onJitExit={() => { model.clearJitRevocationReceipt(); model.clearAuthorizationScopedData(); void model.load(); }}
           onRefresh={() => {
             void model.load();
             if (model.canModelMarkup && canViewOpsDomain("models", model.authorization) && readOpsConnectionConfig().workbench === "platform")
@@ -407,6 +431,7 @@ function OpsConsoleRuntime({
     // destroy the draft before the confirmation decision is made.
     onWorkbenchChange(next, pushHistory, () => {
       model.clearAuthorizationScopedData();
+      model.clearJitRevocationReceipt();
       prepare?.();
     }, cancel);
   };

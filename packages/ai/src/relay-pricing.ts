@@ -11,6 +11,8 @@ interface PricingModel {
   completion_ratio: number
   enable_groups: string[]
   pricing_version?: string
+  billing_mode?: string
+  duration_pricing?: { fallback_price?: number; size_prices?: Record<string, number> }
 }
 
 interface PricingPayload {
@@ -43,7 +45,7 @@ export interface RelayPricingQuote {
     completion_ratio: number
     raw_quota: number
     rounded_quota: number
-    formula_version: 'new-api-quota-v1' | 'relay-video-cny-per-second-v1'
+    formula_version: 'new-api-quota-v1' | 'relay-video-cny-per-second-v1' | 'relay-video-resolution-v1'
     video_price_cny_per_second?: number
   }
 }
@@ -164,7 +166,14 @@ export class RelayPricingClient {
       const durationSeconds = typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined
       if (!durationSeconds) throw new RelayPricingError('MODEL_PRICING_DURATION_EVIDENCE_MISSING', 'duration-priced video requires positive duration evidence')
       videoPriceCnyPerSecond = this.options.videoPriceCnyPerSecond?.[usage.model]
-      if (finitePositive(videoPriceCnyPerSecond)) {
+      if (model.billing_mode === 'per_duration' && model.duration_pricing) {
+        videoPriceCnyPerSecond = undefined
+        const resolution = typeof usage.metadata?.resolution === 'string' ? usage.metadata.resolution.toUpperCase() : undefined
+        const price = resolution ? model.duration_pricing.size_prices?.[resolution] : undefined
+        if (!finitePositive(price)) throw new RelayPricingError('MODEL_PRICING_RESOLUTION_REQUIRED', 'video pricing requires an explicitly priced output resolution')
+        rawQuota = price * durationSeconds * groupRatio * status.quota_per_unit
+        formulaVersion = 'relay-video-resolution-v1'
+      } else if (finitePositive(videoPriceCnyPerSecond)) {
         // Some New API relays expose model_ratio as an internal quota ratio,
         // while their actual billing is published directly in CNY/second.
         // Do not convert that ratio into money a second time.

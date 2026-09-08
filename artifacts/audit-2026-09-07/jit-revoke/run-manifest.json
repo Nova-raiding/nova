@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-09-07T12:46:49.539Z",
+  "status": "DONE_WITH_CONCERNS",
+  "policyVersion": "2026-09-07.v1",
+  "productionFiles": [
+    "packages/contracts/src/authz.ts"
+  ],
+  "testFiles": [
+    "apps/api/src/server.test.ts",
+    "apps/api/src/authz-decision-audit.test.ts",
+    "apps/api/src/security.e2e.test.ts",
+    "apps/api/src/ops-jit-revoke-enforce.test.ts"
+  ],
+  "commandResults": {
+    "focused": {
+      "exit": 0,
+      "files": 7,
+      "passed": 296,
+      "failed": 0,
+      "skipped": 0
+    },
+    "postgres": {
+      "exit": 0,
+      "version": "17.11",
+      "files": 6,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    "check": {
+      "exit": 0,
+      "rootFilesPassed": 598,
+      "rootFilesSkipped": 44,
+      "rootPassed": 4489,
+      "rootSkipped": 70,
+      "opsFiles": 88,
+      "opsPassed": 500,
+      "opsSkipped": 0
+    },
+    "desktop": {
+      "exit": 1,
+      "failed": 1,
+      "notRun": 1,
+      "issue": 200,
+      "revoke": 200,
+      "blocker": "recent revocation receipt missing after authorization context refresh"
+    }
+  },
+  "releaseVerdict": "NO-GO",
+  "sourceCheck": {
+    "count": 1432,
+    "changedDuringCheck": [
+      {
+        "path": "apps/ops-console/src/pages/TasksPage.tsx",
+        "before": "63e708ba14e8e0b9138e549305b5730e4ab180510519c009f2c11ea4df076967",
+        "after": "85dea48a519978d2f476a1477215413e4bff211e1491c0cb20fa898ba4e3fb10"
+      },
+      {
+        "path": "ops-all-inventory.json",
+        "before": "d45db8d82fb173a6786b9e1acbdb49f318b9ef9b82052cb6450f05e56b8b807e",
+        "after": "094e1e57385f6990061599cf127914445aeaef1b308a40574e0ab7636f157c92"
+      },
+      {
+        "path": "ops-inventory.json",
+        "before": "76a6f1eb1e5a773b8e57a1bbd5f103d9d4018862d3a39970954e067670ba2ef0",
+        "after": "49d5744f76b786821e6408de975d4700beec2aa01450b27a1fe400e7b19cdb54"
+      }
+    ],
+    "wholeReleaseFrozen": false
+  },
+  "cleanup": {
+    "ownedContainers": 6,
+    "allExactIdsAbsent": true,
+    "evidence": "artifacts/audit-2026-09-07/jit-revoke/owner-postgres-cleanup-verified.json",
+    "removedData": "rebuildable synthetic tmpfs fixtures only"
+  },
+  "externalModelsCalled": false,
+  "sharedDataChanged": false,
+  "deployed": false,
+  "artifacts": {
+    "packages/contracts/src/authz.ts": {
+      "sha256": "edc27b0c779347bc44484627427ff19cc615762650cb80b685821f608d0a078b",
+      "bytes": 39474
+    },
+    "apps/api/src/server.test.ts": {
+      "sha256": "5d02e4b9198a9c773540f2de1971d8c9cfda5062360dc7f94a3c478efb5a710d",
+      "bytes": 74167
+    },
+    "apps/api/src/authz-decision-audit.test.ts": {
+      "sha256": "302db92b1d1c3a2358caeb9c210c62a79ce15a09b05f0595b54c8ef4f8be040f",
+      "bytes": 4715
+    },
+    "apps/api/src/security.e2e.test.ts": {
+      "sha256": "2ede7602ed93d944da9ef2eef54dc1807fa8b4b0fb4a560a7ab80a0345030c0e",
+      "bytes": 175328
+    },
+    "apps/api/src/ops-jit-revoke-enforce.test.ts": {
+      "sha256": "5624eab8309d74f01c9dd85522fb83de5b6360a582a480571faca3a3e5f9c5ee",
+      "bytes": 22918
+    },
+    "doc/todo/quality/jit-revoke-policy-verification-2026-09-07.md": {
+      "sha256": "a29a2e10e6b5dc9fb1cb2b9cb85420e05515c5448fc647da63bb3df8b092ac84",
+      "bytes": 9159
+    },
+    "doc/todo/quality/jit-desktop-test-isolation-2026-09-07.md": {
+      "sha256": "a865e6abc4b30648218bc470e749cf1ac845e84d608c81b71b72c32faf111304",
+      "bytes": 13631
+    },
+    "doc/todo/quality/test-strategy-2026-09-07.md": {
+      "sha256": "4066a6003ca35153dd25f348f3a2d9e0e200c7ea3aedfe0e8a46f76f3d8900c5",
+      "bytes": 35572
+    },
+    "doc/todo/quality/project-review-2026-09-07.md": {
+      "sha256": "6b5a9868e4883c1c8a21a2cd82cdfcfe929ebe6fea80f111149edd20c678e784",
+      "bytes": 25508
+    },
+    "doc/todo/quality/remediation-2026-09-07.md": {
+      "sha256": "ef857c9268a8b85bb1bc426ba0030b05cd61e2cdd31ee622c94ba5e2c96fd597",
+      "bytes": 12193
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/run-authorization-postgres-isolated.ts": {
+      "sha256": "a8d88d1cb9cc2220d9f2bb7ccee80373a79a6b11b04062d53f1834d70c624e8c",
+      "bytes": 16213
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-typecheck.log": {
+      "sha256": "2cbe1785f58217a49592de52e95e71820c71c93733b57cc3c79da9c5034c4b04",
+      "bytes": 185
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-focused-final.log": {
+      "sha256": "177dc7a02674fdbec66deefc8b5881dd181be9252315e39f25de5427b3d974c2",
+      "bytes": 6580
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/agent-http-policy-red.json": {
+      "sha256": "4dd1e348e13699f1379c4d036507599612c1270b7a5a986ddeab43230cfbac52",
+      "bytes": 28996
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-postgres-cleanup-verified.json": {
+      "sha256": "1ef075a1a37fb8a1be9a9f47e00f9b1ac9b6aec09fedbe6f9fa3c6942f1008ad",
+      "bytes": 846
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-focused-final.json": {
+      "sha256": "393b20934bbca98456ca50fe26b43553a228d6de447785a03be0ebb04ce68b1d",
+      "bytes": 112671
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/scope-and-decisions.md": {
+      "sha256": "792a38aa4dd89433a9a19f57131b613c5a6ec0036287be5b435aad50d241b8f7",
+      "bytes": 3077
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-desktop-lifecycle.log": {
+      "sha256": "83a29b5ca7a13ef2ffe3a36437e230d5bc25c1459eadb32fd46c242e8541d0b8",
+      "bytes": 5465
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/run-result.json": {
+      "sha256": "f7e75954fc4db0dcf7a3ca6c9ca1798cce52250b5056c4075edcae6e71f26127",
+      "bytes": 4248
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/fixture-ready-38292313-419e-467e-b076-eba41c44ff91.json": {
+      "sha256": "835006cf4a42c1905016600353fadcca4d48bd21d770beec01556606aaaf46f1",
+      "bytes": 3742
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/post-run-verification.json": {
+      "sha256": "65da5bb2343f27e3c1caa1c4f0a072cea024e73d9ac287f8c5e53ecccfe87960",
+      "bytes": 1246
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/fixture-disposal-38292313-419e-467e-b076-eba41c44ff91.json": {
+      "sha256": "47a85c0ce60613b081b2087cba69fb858834993c5885faca749980b2f23cabb1",
+      "bytes": 303
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/vitest.log": {
+      "sha256": "2b33cc429955dad8834bd154045caf08f540e70577a80a86edae52e53b44f9de",
+      "bytes": 2589
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/fixture-containers-38292313-419e-467e-b076-eba41c44ff91.json": {
+      "sha256": "3123d316fe44b0082e4f9dfff7c7c1d63c8a8a3be652f513bf9b875413af0473",
+      "bytes": 1413
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-run-87qlt8/vitest.json": {
+      "sha256": "9d5d7ee1b5ead93c1bba160f0678fc1a600aa5f52b260cd75bd5f12a26fecee0",
+      "bytes": 5225
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/source-fullcheck-before.json": {
+      "sha256": "842ab7c65091fd108ae248ee20d9031b8ccc46d12dbc7c8238ede325388a56eb",
+      "bytes": 181879
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-live-evidence-crosscheck.json": {
+      "sha256": "78c58fc9b97dd5487548846e69162baeeb10bc16e95c6c91dce038ecca9b2c08",
+      "bytes": 437
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/security-persistence-readonly-evidence.json": {
+      "sha256": "d58ac9c0b311c69fff44328d249b61102b1893dd805fdbfd7238ec6fed8ca7ec",
+      "bytes": 35684
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-full-check.log": {
+      "sha256": "b4c70c13f16d8a75203cabee0d479dfe450a20d93b0e95c58da453f04e3e7833",
+      "bytes": 68312
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/security-persistence-review.md": {
+      "sha256": "2c1d28c03f475e839ed711c798d976f3b188b6650e24190d42aeac6204fdba12",
+      "bytes": 5744
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/postgres-runner-preflight.md": {
+      "sha256": "88bbcb1c0f68a0c3024661114c1fdef7b2310c705f1e9ccbbf0bbcb425347b78",
+      "bytes": 2105
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-focused-green.log": {
+      "sha256": "ab9c8d374c5478df498494282c94da555e35b290b0935caf536709d5db4305ba",
+      "bytes": 5533
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-focused-green.json": {
+      "sha256": "5bf8b1818284f7860a5f39585eddff283611ab395034ae837fd51e52b62cae9e",
+      "bytes": 110102
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/owner-policy-red.json": {
+      "sha256": "8a9b6f6dce1f1fb331da5e23202876e2407476901e1a61b8e94ff38557be9815",
+      "bytes": 2392
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/source-fullcheck-after.json": {
+      "sha256": "ee6b99a4595d8323470e64c6ebd7e8be772a78397f305ad1e8a2896205d74900",
+      "bytes": 182569
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/capture-live-desktop.ts": {
+      "sha256": "eaa9b720643f0de73bc26c3291e24d60aeb8e7160ebedc5fef3d16e2009fad81",
+      "bytes": 23330
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/codegraph-policy-impact.raw.txt": {
+      "sha256": "7ad4a734e7a41c1c68f0a10b0ed1279490b125ee3138d12317464edadc9ab6ec",
+      "bytes": 7970
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/source-before.json": {
+      "sha256": "639af35e165f9bb4c2e6522c8e1bcb5c2a6fff1f2c10cc482367b15253aa7a26",
+      "bytes": 17366
+    },
+    "artifacts/audit-2026-09-07/jit-revoke/agent-http-policy-final-green.json": {
+      "sha256": "6f69e31f9f646671184f4132a77e53fa2907a171e6b3e25d6f7fdc71b0edcc3c",
+      "bytes": 15572
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/playwright.json": {
+      "sha256": "6dee29c1dc846f64296ee5c70549b1f3041707710ff1bcb9c9f2645c0f60d21b",
+      "bytes": 9513
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/runtime.json": {
+      "sha256": "517ce425635a81ca78203b56ff91b56c7c5ac6f47b408324cb7a48f4e981f56d",
+      "bytes": 650
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/fixture-disposal-51724d7d-560e-4d28-a220-734b16e6e496.json": {
+      "sha256": "b9542f2d6a87d2375a72a853bfcf4a4759660c33064176784d4cb5572c04d114",
+      "bytes": 303
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-33-38.950Z-e23223f1-350d-4012-8a99-ccb651a3c872/playwright.json": {
+      "sha256": "f0448fe1606949959b7a6970fa04bdc2a96f749505fe3f14b8fefd2944826c53",
+      "bytes": 9514
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/live-desktop-revoke-capture/jit-signed-login-issue-revoke.mp4": {
+      "sha256": "cfb0b3e25f6f86a97852acbafec40c282eb812ca2423b36948bdae06773e4592",
+      "bytes": 3335406
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/live-desktop-revoke-capture/shot-scraper.redacted.json": {
+      "sha256": "bc2880712790e785f06b77c187fe9cc863916baaef83a3d0b80ce14e15855f52",
+      "bytes": 4738
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/live-desktop-revoke-capture/postgres-readonly-diagnostic.redacted.json": {
+      "sha256": "6c4fe689165d6cac9cef4015d27cbc1da3830536fbfe78f9d8e01bee15468c7f",
+      "bytes": 2918
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/live-desktop-revoke-capture/capture-blocked.json": {
+      "sha256": "0bade4775b8b15ec3e3dae46dd03ffc4d81c3ceba8c61a93913439a1c662d559",
+      "bytes": 180
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/live-desktop-revoke-capture/03-revoke-empty-reason-disabled.png": {
+      "sha256": "c085e5a75842fa2e1d8eb7eadc36f3cfcefeae2663f30e21d32d5880b7923fb8",
+      "bytes": 144515
+    },
+    "artifacts/ops-jit-isolation/2026-09-07T12-37-48.612Z-1b265e61-3f40-4518-afd2-e6f8544fd344/live-desktop-revoke-capture/failure-final-frame.png": {
+      "sha256": "bfe90ebd9a89c60b31cff78ca29dd873e16b070abfa71863391f06d03e7338a5",
+      "bytes": 474581
+    }
+  }
+}

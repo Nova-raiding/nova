@@ -1,0 +1,128 @@
+{
+  "workspace.interactive.confirm": {
+    "content": [
+      {
+        "type": "text",
+        "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+      }
+    ],
+    "structuredContent": {
+      "enabled": true,
+      "expires_at": "2026-09-07T09:10:35.665Z",
+      "scope": "current_interactive_session",
+      "automation": "read_only",
+      "ticket": {
+        "nonce_hash": "d56ff156a5edf5f263ea6a38b5eee52d635bdcce983e4ef44b6c908ad0d1ebfb",
+        "intent_hash": "0ab58e0b634027f727ccc4519db550daf9ed4481e23e5c1cb236836978fc7190",
+        "expires_at": "2026-09-07T09:10:35.665Z"
+      }
+    },
+    "isError": false
+  },
+  "catalog.image.generate": {
+    "content": [
+      {
+        "type": "text",
+        "text": "这一步没有完成，当前任务和已有产物已保留。请根据提示修正后再继续。"
+      }
+    ],
+    "structuredContent": {
+      "code": "IMAGE_SKU_SCOPE_MISMATCH",
+      "message": "这一步没有完成，当前任务和已有产物已保留。请根据提示修正后再继续。"
+    },
+    "isError": true
+  },
+  "asset.list": {
+    "content": [
+      {
+        "type": "text",
+        "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+      }
+    ],
+    "structuredContent": {
+      "assets": [
+        {
+          "asset_id": "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac",
+          "name": "merchant-product-main-v2.png",
+          "mime_type": "image/png",
+          "size_bytes": 1250706,
+          "created_at": "2026-09-07T08:29:25.873Z",
+          "source": "merchant_upload",
+          "scan_status": "clean",
+          "rights_status": "pending",
+          "readiness_status": "draft",
+          "display": {
+            "primary_status": "awaiting_rights",
+            "label": "等待确认使用权",
+            "source_state": "draft",
+            "reasons": [
+              "等待商用权益确认"
+            ],
+            "next_action": {
+              "method": "asset.rights.update",
+              "label": "确认商用权益",
+              "allowed": true
+            }
+          }
+        }
+      ],
+      "readiness": {
+        "draft": 1,
+        "ready": 0,
+        "blocked": 0,
+        "total": 1
+      },
+      "storage_quota": {
+        "used_bytes": 1250706,
+        "reserved_bytes": 0,
+        "limit_bytes": 5368709120,
+        "available_bytes": 5367458414,
+        "status": "available"
+      },
+      "asset_actions": [
+        {
+          "asset_id": "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac",
+          "name": "merchant-product-main-v2.png",
+          "scan_status": "quarantined",
+          "readiness_status": "draft",
+          "display": {
+            "primary_status": "awaiting_rights",
+            "label": "等待确认使用权",
+            "source_state": "draft",
+            "reasons": [
+              "等待商用权益确认"
+            ],
+            "next_action": {
+              "method": "asset.rights.update",
+              "label": "确认商用权益",
+              "allowed": true
+            }
+          },
+          "next_step": "确认商用权益",
+          "user_action_required": false
+        }
+      ],
+      "empty_state": null
+    },
+    "isError": false
+  },
+  "creative-points.balance.get": {
+    "content": [
+      {
+        "type": "text",
+        "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+      }
+    ],
+    "structuredContent": {
+      "schema_version": "creative-points.balance.v1",
+      "workspace_id": "ws_be87dca95d714bc1bbdb6c21",
+      "balance_state": "known",
+      "available_points": 10000,
+      "reserved_points": 0,
+      "settled_points": 0,
+      "access_revision": "1",
+      "updated_at": "2026-09-07T08:55:35.778Z"
+    },
+    "isError": false
+  }
+}

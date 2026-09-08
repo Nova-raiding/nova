@@ -88,7 +88,7 @@ export function validateModelRelayEvidence(document: unknown, options: { expecte
       if (!nonEmpty(result.pricingVersion)) errors.push(`${modality}.pricingVersion is required for relay_pricing_snapshot`)
       if (!nonEmpty(result.pricingGroup)) errors.push(`${modality}.pricingGroup is required for relay_pricing_snapshot`)
     }
-    if (options.artifactRoot) errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot, `${modality}.evidence_ref`))
+    if (options.requireProduction || options.artifactRoot) errors.push(...validateArtifact(result.evidence_ref, options.artifactRoot ?? '', `${modality}.evidence_ref`))
   }
   return errors
 }

@@ -1,0 +1,29 @@
+
+> merchant-marketing-codex@0.1.1 test:postgres:isolated
+> node --import tsx scripts/run-isolated-postgres-tests.ts
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts (1 test) 1823ms
+     ✓ enforces tenant scope, idempotency, revision, quota, correction audit and unresolved 6x500 schedule  1822ms
+ ✓ packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts (1 test) 1494ms
+     ✓ keeps runs workspace-scoped and makes stale updates non-repeatable  1493ms
+ ✓ packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts (1 test) 1646ms
+     ✓ enforces maker/approver separation, RLS, append-only facts, replay and revision fencing  1645ms
+ ✓ packages/persistence/src/canonical-product-backfill.postgres.test.ts (1 test) 2092ms
+     ✓ keeps dry-runs side-effect free and replays bounded batches idempotently  2091ms
+ ✓ packages/persistence/src/migration-127-release.postgres.test.ts (1 test) 2032ms
+     ✓ stops on historical platform membership drift and resumes only after audited repair  2030ms
+ ✓ packages/persistence/src/migration-106-release.postgres.test.ts (1 test) 1744ms
+     ✓ keeps canonical and legacy brands aligned on insert and legacy updates  1743ms
+ ✓ packages/persistence/src/migration-148-release.postgres.test.ts (1 test) 148ms
+ ✓ packages/persistence/src/migration-146-release.postgres.test.ts (1 test) 238ms
+
+ Test Files  8 passed (8)
+      Tests  8 passed (8)
+   Start at  19:57:45
+   Duration  12.96s (transform 207ms, setup 0ms, import 458ms, tests 11.22s, environment 1ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-c59WPX/vitest.json
+Isolated PostgreSQL acceptance passed; report: /Users/lixiaomei/Desktop/code/codexSkills/artifacts/isolated-postgres/run-c59WPX/vitest.json

@@ -1,0 +1,16 @@
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/local-runtime-test-safety.test.ts tests/isolated-postgres-entrypoint.test.ts --reporter=default --reporter=json --outputFile=artifacts/audit-2026-09-07/jit-isolation/owner-guards-postgres-entry.json
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/local-runtime-test-safety.test.ts (70 tests) 19ms
+ ✓ tests/isolated-postgres-entrypoint.test.ts (22 tests) 19ms
+
+ Test Files  2 passed (2)
+      Tests  92 passed (92)
+   Start at  19:57:27
+   Duration  727ms (transform 176ms, setup 0ms, import 356ms, tests 38ms, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-guards-postgres-entry.json

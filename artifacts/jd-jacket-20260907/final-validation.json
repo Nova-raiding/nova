@@ -1,0 +1,39 @@
+{
+  "typecheck": {
+    "passed": true
+  },
+  "video_pricing_api_mcp_tests": {
+    "files": 5,
+    "tests": 55,
+    "passed": true
+  },
+  "plugin_mirror_after_skill_update": {
+    "tests": 8,
+    "passed": true
+  },
+  "healthy_containers": 13,
+  "image_package": {
+    "files": 8,
+    "crc_and_sha256_verified": true
+  },
+  "video_quality": {
+    "passed": true,
+    "source_asset_id": "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac",
+    "output_asset_id": "asset_761eeb71-d2a2-4353-a845-aa02e5f000b8",
+    "provider_job_id": "task_Ag4nS6Z3YCpS1llh3ALH7i8aOVBP79Yu",
+    "archive_state": "archived",
+    "full_decode_errors": 0,
+    "visually_reviewed_frames": 10,
+    "observations": "原商品浅蓝色、帽型、拉链、口袋保持一致，镜头推进，无新增Logo、文字、人物或明显变形",
+    "duration_seconds": 5.038005,
+    "resolution": [
+      1440,
+      1440
+    ],
+    "fps": 30
+  },
+  "full_delivery_package": {
+    "files": 9,
+    "crc_and_sha256_verified": true
+  }
+}

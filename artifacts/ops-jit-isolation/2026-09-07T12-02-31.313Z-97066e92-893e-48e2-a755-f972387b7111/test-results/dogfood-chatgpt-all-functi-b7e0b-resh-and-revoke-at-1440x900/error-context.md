@@ -1,0 +1,301 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - link "跳转到主要内容" [ref=e6] [cursor=pointer]:
+      - /url: "#ops-main-content"
+    - complementary "运营主导航" [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: 大麦
+          - generic [ref=e11]:
+            - strong [ref=e12]: 大麦运营中心
+            - generic [ref=e13]: 平台运营与商家服务
+        - generic [ref=e14]: 平台运营控制面
+        - region "当前操作范围" [ref=e15]:
+          - generic [ref=e16]:
+            - generic [ref=e17]: 当前操作范围
+            - generic [ref=e18]: 平台级
+          - status [ref=e19]: 正在查看平台聚合与控制面数据
+          - generic [ref=e20]:
+            - generic [ref=e21]: 平台范围
+            - strong [ref=e22]: 全平台
+          - generic [ref=e23]:
+            - generic [ref=e24]: 工作区上下文
+            - strong [ref=e25]: 未进入工作区
+          - generic [ref=e26]: 客户内容默认不可见；进入工作区需受控授权
+        - navigation "平台运营功能导航" [ref=e27]:
+          - region "平台治理" [ref=e28]:
+            - heading "平台治理" [level=2] [ref=e29]
+            - button "总览" [ref=e30] [cursor=pointer]:
+              - img "safety-certificate" [ref=e31] [cursor=pointer]:
+                - img [ref=e32] [cursor=pointer]
+              - text: 总览
+            - button "用户与租户" [ref=e34] [cursor=pointer]:
+              - img "team" [ref=e35] [cursor=pointer]:
+                - img [ref=e36] [cursor=pointer]
+              - text: 用户与租户
+            - button "客服与 CRM" [ref=e38] [cursor=pointer]:
+              - img "customer-service" [ref=e39] [cursor=pointer]:
+                - img [ref=e40] [cursor=pointer]
+              - text: 客服与 CRM
+            - button "事故中心" [ref=e42] [cursor=pointer]:
+              - img "alert" [ref=e43] [cursor=pointer]:
+                - img [ref=e44] [cursor=pointer]
+              - text: 事故中心
+          - region "商家运营" [ref=e46]:
+            - heading "商家运营" [level=2] [ref=e47]
+            - button "任务与内容" [ref=e48] [cursor=pointer]:
+              - img "cloud-sync" [ref=e49] [cursor=pointer]:
+                - img [ref=e50] [cursor=pointer]
+              - text: 任务与内容
+            - button "平台连接" [ref=e53] [cursor=pointer]:
+              - img "global" [ref=e54] [cursor=pointer]:
+                - img [ref=e55] [cursor=pointer]
+              - text: 平台连接
+            - button "平台规则" [ref=e57] [cursor=pointer]:
+              - img "read" [ref=e58] [cursor=pointer]:
+                - img [ref=e59] [cursor=pointer]
+              - text: 平台规则
+          - region "模型与计费" [ref=e61]:
+            - heading "模型与计费" [level=2] [ref=e62]
+            - button "模型服务" [ref=e63] [cursor=pointer]:
+              - img "robot" [ref=e64] [cursor=pointer]:
+                - img [ref=e65] [cursor=pointer]
+              - text: 模型服务
+            - button "账务与退款" [ref=e67] [cursor=pointer]:
+              - img "dollar" [ref=e68] [cursor=pointer]:
+                - img [ref=e69] [cursor=pointer]
+              - text: 账务与退款
+          - region "风险与系统" [ref=e71]:
+            - heading "风险与系统" [level=2] [ref=e72]
+            - button "功能开关" [ref=e73] [cursor=pointer]:
+              - img "experiment" [ref=e74] [cursor=pointer]:
+                - img [ref=e75] [cursor=pointer]
+              - text: 功能开关
+            - button "存储与对账" [ref=e77] [cursor=pointer]:
+              - img "cloud-server" [ref=e78] [cursor=pointer]:
+                - img [ref=e79] [cursor=pointer]
+              - text: 存储与对账
+            - button "审计中心" [ref=e83] [cursor=pointer]:
+              - img "file-search" [ref=e84] [cursor=pointer]:
+                - img [ref=e85] [cursor=pointer]
+              - text: 审计中心
+        - button "通过客服与 CRM 受控支持客户问题" [ref=e87] [cursor=pointer]: 受控支持入口
+    - generic [ref=e88]:
+      - banner [ref=e89]:
+        - generic [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]: WORKSPACE OPERATIONS
+            - generic [ref=e93]: 桌面运营工作台
+          - heading "商业与平台控制台" [level=2] [ref=e94]
+          - region "当前身份与权限范围" [ref=e95]:
+            - generic [ref=e96]:
+              - img [ref=e98]:
+                - img [ref=e99]
+              - strong [ref=e103]: 平台管理员
+              - status [ref=e105]: 授权状态：已由服务端验证
+              - generic [ref=e107]: 身份 ops-fixture-actor-13c12668-1e3e-441e-b714-1fd40f056e13
+              - button "展开其余 1 个已验证角色" [ref=e110] [cursor=pointer]:
+                - generic [ref=e111] [cursor=pointer]: +1 个角色
+              - generic [ref=e113]: 平台控制台
+              - generic [ref=e115]: 平台全局
+              - generic [ref=e117]: 策略 2026-08-31.v2
+            - status [ref=e118]: 平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。
+        - button "连接诊断 / 登录配置" [ref=e121] [cursor=pointer]:
+          - generic [ref=e122] [cursor=pointer]: 登录 / 连接
+      - main [ref=e123]:
+        - status [ref=e124]
+        - status [ref=e125]:
+          - img "exclamation-circle" [ref=e127]:
+            - img [ref=e128]
+          - generic [ref=e130]:
+            - generic [ref=e131]: 部分运营数据未刷新
+            - generic [ref=e132]: 部分数据集刷新失败（ops.stores.list、ops.storage.reconciliation.list、ops.audit.platform.list、ops.brand-units.summary、ops.tasks.summary、ops.marketing.summary、ops.alerts.list、ops.growth.funnel、ops.workspaces.list）。页面保留上次成功数据，这些值可能已过期：当前账号没有访问部分运营数据的权限；请切换具备对应角色的运营账号。
+        - region "用户与租户" [ref=e133]:
+          - generic [ref=e134]:
+            - generic [ref=e135]:
+              - generic [ref=e136]:
+                - generic [ref=e137]: PLATFORM GOVERNANCE
+                - generic [ref=e138]: 当前工作区数据
+              - heading "用户与租户" [level=3] [ref=e139]
+              - generic [ref=e140]: 按任务管理用户身份、租户状态与平台授权；只展示当前角色可读取的治理区域，所有写入仍由服务端逐次鉴权并审计。
+            - button "刷新目录" [ref=e142] [cursor=pointer]:
+              - generic [ref=e143] [cursor=pointer]: 刷新目录
+            - status [ref=e144]:
+              - strong [ref=e146]: 当前下一步
+              - generic [ref=e147]: 先确认服务端能力投影与当前工作区范围，再执行需要原因、修订号和审计的治理操作。
+          - generic [ref=e148]:
+            - alert [ref=e151]:
+              - img "close-circle" [ref=e153]:
+                - img [ref=e154]
+              - generic [ref=e156]:
+                - generic [ref=e157]: 无法加载运营数据
+                - paragraph [ref=e160]: 部分数据集刷新失败（ops.stores.list、ops.storage.reconciliation.list、ops.audit.platform.list、ops.brand-units.summary、ops.tasks.summary、ops.marketing.summary、ops.alerts.list、ops.growth.funnel、ops.workspaces.list）。页面保留上次成功数据，这些值可能已过期：当前账号没有访问部分运营数据的权限；请切换具备对应角色的运营账号。
+              - button "重试加载运营数据" [ref=e162] [cursor=pointer]:
+                - generic [ref=e163] [cursor=pointer]: 重 试
+            - status [ref=e165]:
+              - img "info-circle" [ref=e167]:
+                - img [ref=e168]
+              - generic [ref=e170]:
+                - generic [ref=e171]: 用户治理能力已由服务端确认
+                - generic [ref=e172]: 页面分区、只读状态和写入入口均依据 ops.session 返回的 capability projection；页面不会从角色名称推断权限。
+            - generic "用户治理工作区" [ref=e175]:
+              - tablist [ref=e176]:
+                - generic [ref=e178]:
+                  - tab "用户目录" [ref=e180] [cursor=pointer]
+                  - tab "租户治理" [ref=e182] [cursor=pointer]
+                  - tab "权限与角色" [selected] [ref=e184] [cursor=pointer]
+              - tabpanel "权限与角色" [ref=e187]:
+                - generic [ref=e188]:
+                  - generic [ref=e190]:
+                    - generic [ref=e191]: 角色与 JIT 授权中心
+                    - generic [ref=e193]: 平台控制面
+                  - generic [ref=e194]:
+                    - alert [ref=e195]:
+                      - img "info-circle" [ref=e197]:
+                        - img [ref=e198]
+                      - generic [ref=e200]:
+                        - generic [ref=e201]: 所有变更由服务端重新授权并写入持久审计
+                        - generic [ref=e202]: 平台角色不授予客户正文访问；进入客户工作区必须使用精确 workspace、能力、TTL、工单和审批人绑定的 JIT grant。platform_owner 不在日常入口开放。
+                    - generic [ref=e203]:
+                      - tablist [ref=e204]:
+                        - generic [ref=e206]:
+                          - tab "功能权限矩阵" [ref=e208] [cursor=pointer]
+                          - tab "平台角色" [ref=e210] [cursor=pointer]
+                          - tab "JIT 授权" [selected] [ref=e212] [cursor=pointer]
+                      - tabpanel "JIT 授权" [ref=e215]:
+                        - generic [ref=e216]:
+                          - generic [ref=e218]:
+                            - textbox "JIT 目标身份 ID" [ref=e220]: 44a1511a-82d6-4cd6-b062-c2b776116828
+                            - textbox "JIT 目标工作区 ID" [ref=e222]: ws_ops_fixture_13c126681e3e441eb7141fd40f056e13
+                            - button "读取有效 JIT" [ref=e224] [cursor=pointer]:
+                              - generic [ref=e225] [cursor=pointer]: 读取有效 JIT
+                          - table [ref=e233]:
+                            - rowgroup [ref=e234]:
+                              - row "状态 模式 能力 工单 使用 到期 操作" [ref=e235]:
+                                - columnheader "状态" [ref=e236]
+                                - columnheader "模式" [ref=e237]
+                                - columnheader "能力" [ref=e238]
+                                - columnheader "工单" [ref=e239]
+                                - columnheader "使用" [ref=e240]
+                                - columnheader "到期" [ref=e241]
+                                - columnheader "操作" [ref=e242]
+                            - rowgroup [ref=e243]:
+                              - row "有效 read customer.content.read jit-1440x900-f9968f19-8b75-4302-b13b-27fc079b2b9a 0/2 2026-09-07T12:13:36.509Z 立即撤销" [ref=e244]:
+                                - cell "有效" [ref=e245]:
+                                  - generic [ref=e246]: 有效
+                                - cell "read" [ref=e247]:
+                                  - generic [ref=e248]: read
+                                - cell "customer.content.read" [ref=e249]:
+                                  - generic [ref=e250]: customer.content.read
+                                - cell "jit-1440x900-f9968f19-8b75-4302-b13b-27fc079b2b9a" [ref=e251]
+                                - cell "0/2" [ref=e252]
+                                - cell "2026-09-07T12:13:36.509Z" [ref=e253]
+                                - cell "立即撤销" [ref=e254]:
+                                  - button "立即撤销" [ref=e255] [cursor=pointer]:
+                                    - generic [ref=e256] [cursor=pointer]: 立即撤销
+                          - status [ref=e258]:
+                            - img "info-circle" [ref=e260]:
+                              - img [ref=e261]
+                            - generic [ref=e263]:
+                              - generic [ref=e264]: 精确授权范围
+                              - generic [ref=e265]: 此 JIT 仅覆盖工作区 ws_ops_fixture_13c126681e3e441eb7141fd40f056e13，不会自动扩展到其他工作区。
+                          - form "签发 JIT 授权" [ref=e267]:
+                            - generic [ref=e268]:
+                              - generic [ref=e271]:
+                                - generic "权限模式" [ref=e273]: "* 权限模式"
+                                - generic [ref=e277] [cursor=pointer]:
+                                  - generic "只读" [ref=e278] [cursor=pointer]:
+                                    - text: 只读
+                                    - combobox "* 权限模式" [ref=e279] [cursor=pointer]
+                                  - img "down" [ref=e281] [cursor=pointer]:
+                                    - img [ref=e282] [cursor=pointer]
+                              - generic [ref=e286]:
+                                - generic "能力（逗号分隔）" [ref=e288]: "* 能力（逗号分隔）"
+                                - textbox "* 能力（逗号分隔）" [ref=e292]
+                              - generic [ref=e295]:
+                                - generic "工单/事故" [ref=e297]: "* 工单/事故"
+                                - textbox "* 工单/事故" [ref=e301]
+                              - generic [ref=e304]:
+                                - generic "最大使用次数" [ref=e306]: "* 最大使用次数"
+                                - generic [ref=e310]:
+                                  - spinbutton "* 最大使用次数" [ref=e311]: "1"
+                                  - generic:
+                                    - button "Increase Value" [ref=e312] [cursor=pointer]:
+                                      - img "up" [ref=e313] [cursor=pointer]:
+                                        - img [ref=e314] [cursor=pointer]
+                                    - button "Decrease Value" [disabled] [ref=e316]:
+                                      - img "down" [ref=e317]:
+                                        - img [ref=e318]
+                              - generic [ref=e322]:
+                                - generic "审批人" [ref=e324]: "* 审批人"
+                                - textbox "* 审批人" [ref=e328]
+                              - generic [ref=e331]:
+                                - generic "审批时间（ISO UTC）" [ref=e333]: "* 审批时间（ISO UTC）"
+                                - textbox "* 审批时间（ISO UTC）" [ref=e337]
+                              - generic [ref=e338]:
+                                - generic [ref=e340]:
+                                  - generic "到期时间（读≤15m / 写≤5m）" [ref=e342]: "* 到期时间（读≤15m / 写≤5m）"
+                                  - generic [ref=e343]:
+                                    - textbox "* 到期时间（读≤15m / 写≤5m）" [ref=e346]
+                                    - generic [ref=e348]: 使用 ISO 时间；提交前会校验有效期与权限模式
+                                - generic [ref=e349]: 只读权限最多 15 分钟，写入权限最多 5 分钟
+                              - generic [ref=e352]:
+                                - generic "授权原因" [ref=e354]: "* 授权原因"
+                                - textbox "* 授权原因" [ref=e358]
+                            - button "签发 JIT" [ref=e359] [cursor=pointer]:
+                              - generic [ref=e360] [cursor=pointer]: 签发 JIT
+  - generic [ref=e361]:
+    - dialog "立即撤销 7ca0e247-b2dd-4b6f-bd62-f0b91913db17":
+      - generic [ref=e362]:
+        - button "关闭" [ref=e363] [cursor=pointer]:
+          - img "close" [ref=e365] [cursor=pointer]:
+            - img [ref=e366] [cursor=pointer]
+        - generic [ref=e370]: 立即撤销 7ca0e247-b2dd-4b6f-bd62-f0b91913db17
+        - generic [ref=e372]:
+          - table [ref=e376]:
+            - rowgroup [ref=e377]:
+              - row "JIT 授权 7ca0e247-b2dd-4b6f-bd62-f0b91913db17" [ref=e378]:
+                - cell "JIT 授权" [ref=e379]:
+                  - generic [ref=e380]: JIT 授权
+                - cell "7ca0e247-b2dd-4b6f-bd62-f0b91913db17" [ref=e381]:
+                  - generic [ref=e382]: 7ca0e247-b2dd-4b6f-bd62-f0b91913db17
+              - row "作用范围 workspace:ws_ops_fixture_13c126681e3e441eb7141fd40f056e13" [ref=e383]:
+                - cell "作用范围" [ref=e384]:
+                  - generic [ref=e385]: 作用范围
+                - cell "workspace:ws_ops_fixture_13c126681e3e441eb7141fd40f056e13" [ref=e386]:
+                  - generic [ref=e387]: workspace:ws_ops_fixture_13c126681e3e441eb7141fd40f056e13
+              - row "影响 撤销后该身份将立即失去当前工作区的临时访问能力。" [ref=e388]:
+                - cell "影响" [ref=e389]:
+                  - generic [ref=e390]: 影响
+                - cell "撤销后该身份将立即失去当前工作区的临时访问能力。" [ref=e391]:
+                  - generic [ref=e392]: 撤销后该身份将立即失去当前工作区的临时访问能力。
+              - row "当前 revision 1" [ref=e393]:
+                - cell "当前 revision" [ref=e394]:
+                  - generic [ref=e395]: 当前 revision
+                - cell "1" [ref=e396]:
+                  - code [ref=e399]: "1"
+          - generic [ref=e401]: 提交后将写入审计记录；请确认对象、范围和影响均正确。
+          - alert "危险操作失败" [active] [ref=e403]:
+            - alert [ref=e404]:
+              - img "close-circle" [ref=e406]:
+                - img [ref=e407]
+              - generic [ref=e409]:
+                - generic [ref=e410]: 操作未完成
+                - generic [ref=e412]: 当前账号没有访问部分运营数据的权限；请切换具备对应角色的运营账号。 请检查原因后重试。
+          - generic [ref=e414]: 撤销原因
+          - textbox "撤销原因" [ref=e416]: 隔离桌面验收完成撤销 jit-1440x900-f9968f19-8b75-4302-b13b-27fc079b2b9a
+          - generic [ref=e418]: 说明撤销原因，包含工单或证据编号。
+          - generic [ref=e420]:
+            - button "取 消" [ref=e422] [cursor=pointer]:
+              - generic [ref=e423] [cursor=pointer]: 取 消
+            - button "确认撤销" [ref=e425] [cursor=pointer]:
+              - generic [ref=e426] [cursor=pointer]: 确认撤销
+  - alert [ref=e427]:
+    - generic [ref=e428]:
+      - img "close-circle" [ref=e430]:
+        - img [ref=e431]
+      - generic [ref=e433]: 当前账号没有访问部分运营数据的权限；请切换具备对应角色的运营账号。
+```

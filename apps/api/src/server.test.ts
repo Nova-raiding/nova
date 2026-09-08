@@ -2,14 +2,15 @@ import { createHmac } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
-import { requirePublishAuthorizationSnapshot } from './server.js'
+import { appendProtectedProductConstraints, assertUniqueBatchTaskIds, authorizationDenialDetails, authorizationGrantFailureDetails, authorizationPolicyUnavailableDetails, authorizationRepositoryDomainError, batchStateFromItems, buildBoundedKnowledgeGenerationContext, canonicalConflictResolutionCheck, canonicalConflictScanItems, canonicalConsistencyApiReport, canonicalTaskReadView, compareProviderUsageRecords, csvCell, customerDataMethodForHttp, enforceMcpCommercialAccess, executionContract, featureFlagRequestsCanonicalRead, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, httpAuthorizationPathParams, hydrateOutboxSnapshot, imageGenerationReconciliationIdempotencyKey, internalAutomationTickAllowed, isNativeMcpToolEnabled, isPlatformScopeMethod, KNOWLEDGE_CONTEXT_LIMITS, minimumBrandRoleForPolicy, modelSettlementDomainError, nativeMcpCommercialErrorData, nativeMcpErrorData, persistAssetSnapshotAndEvent, readWorkspaceStatusInTransaction, releaseStorageQuotaAfterConfirmedDeletion, service, shouldHydrateKnowledgeForMethod, taskContextLinkId, timelineEvent, validateCustomerDataAccessGrant, workerAuthorizationDecisionMatches, workspaceCapabilitySourceForBrandScope, workspaceStoreDirectory } from './server.js'
+import { requireApprovedAssetForImageGeneration, requirePublishAuthorizationSnapshot } from './server.js'
 import { DomainError } from '../../../packages/application/src/service.js'
 import { resolveCanonicalProductReadScope } from '../../../packages/application/src/canonical-product-consistency.js'
-import { getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
+import { AUTHZ_POLICY_VERSION, getMcpMethodPolicy } from '../../../packages/contracts/src/authz.js'
 import { getHttpOperationPolicy } from '../../../packages/contracts/src/http-authz.js'
 import type { AuthorizationDecision } from '../../../packages/contracts/src/index.js'
 import type { SqlPool } from '../../../packages/persistence/src/index.js'
+import { AuthorizationRepositoryError } from '../../../packages/persistence/src/index.js'
 import { imageReconciliationIdempotencyKey as workerImageReconciliationIdempotencyKey } from '../../../apps/worker/src/main.js'
 
 describe('central commercial access gate', () => {
@@ -32,7 +33,7 @@ describe('central commercial access gate', () => {
   })
 
   it('fails disabled and unclassified operations before business dispatch', async () => {
-    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'content.generate')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED', status: 503 })
+    await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'content.codex.prepare')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_DISABLED', status: 503 })
     await expect(enforceMcpCommercialAccess(request, 'ws_commercial_unknown', 'unregistered.business.action')).rejects.toMatchObject({ code: 'COMMERCIAL_OPERATION_UNCLASSIFIED', status: 503 })
   })
 
@@ -106,7 +107,7 @@ describe('central commercial access gate', () => {
     expect(isNativeMcpToolEnabled('commercial.order.create')).toBe(true)
     expect(isNativeMcpToolEnabled('commercial.order.payment.get')).toBe(true)
     expect(isNativeMcpToolEnabled('billing.recharge.create')).toBe(false)
-    expect(isNativeMcpToolEnabled('content.generate')).toBe(false)
+    expect(isNativeMcpToolEnabled('content.generate')).toBe(true)
     expect(isNativeMcpToolEnabled('ops.finance.export')).toBe(false)
     expect(isNativeMcpToolEnabled('unregistered.business.action')).toBe(false)
   })
@@ -122,7 +123,7 @@ describe('central commercial access gate', () => {
     expect(source).toContain("case 'commercial.order.create':")
     expect(source).toContain("case 'commercial.order.payment.get':")
     expect(source).toContain("path === '/v1/commercial/orders'")
-    expect(source).toContain("['purchase', 'upgrade', 'point_pack'].includes(purchaseKind)")
+    expect(source).toContain("['purchase', 'onboarding_once', 'upgrade', 'point_pack'].includes(purchaseKind)")
     expect(source).toContain("resolveApprovedExecutableSku(sku_code, { includePrivate: false, capabilities: [] })")
     expect(source).toContain("snapshot.lifecycle !== 'approved'")
     expect(source).toContain("snapshot.executable !== true")
@@ -167,6 +168,35 @@ describe('central commercial access gate', () => {
     expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'completed')")
     expect(fulfillment).toContain("appendServiceFulfillmentCommand(req, params, 'adjusted')")
     expect(fulfillment).not.toContain("case 'ops.commercial.service-fulfillment.cancel'")
+  })
+
+  it('keeps the production readiness report read-only and evidence based', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    const start = source.indexOf("case 'ops.commercial.readiness.report':")
+    const end = source.indexOf("case 'ops.commercial.service-fulfillment.list':", start)
+    const report = source.slice(start, end)
+    expect(report).toContain("read_only: true")
+    expect(report).toContain("persistence.creativePointLifecycle")
+    expect(report).toContain("modelCostEvidenceByModality()")
+    expect(report).toContain("video.generate.standard_15s")
+    expect(report).toContain("COMMERCIAL_READINESS_REPOSITORY_UNAVAILABLE")
+    expect(report).toContain("不会修改费率、余额、注册表或执行状态")
+    expect(report).not.toContain("MCP_POINT_CHARGED_ENABLED_METHODS.push")
+  })
+})
+
+describe('authorization repository HTTP error mapping', () => {
+  it.each([
+    ['AUTHORIZATION_GRANT_NOT_FOUND', 404, '授权对象不存在或不属于当前工作区'],
+    ['AUTHORIZATION_GRANT_REVISION_CONFLICT', 409, '授权状态已变化，请刷新后重试'],
+    ['AUTHORIZATION_GRANT_INVALID', 400, '授权请求参数无效，请核对后重试'],
+  ] as const)('maps %s to a client-actionable response', (code, status, message) => {
+    const mapped = authorizationRepositoryDomainError(new AuthorizationRepositoryError(code))
+    expect(mapped).toMatchObject({ code, status, message })
+  })
+
+  it('does not reinterpret unrelated errors as authorization failures', () => {
+    expect(authorizationRepositoryDomainError(new Error('unrelated'))).toBeUndefined()
   })
 })
 
@@ -297,7 +327,7 @@ describe('provider usage reconciliation', () => {
 
 describe('worker authorization snapshot eligibility', () => {
   const decision = (overrides: Partial<AuthorizationDecision> = {}): AuthorizationDecision => ({
-    decision_id: 'authz_1', policy_version: '2026-08-31.v2', method: 'content.generate', capability: 'customer.content.update', workbench: 'workspace',
+    decision_id: 'authz_1', policy_version: AUTHZ_POLICY_VERSION, method: 'content.generate', capability: 'customer.content.update', workbench: 'workspace',
     scope: { required: 'workspace', resource_id: 'ws_a', resolved: [{ type: 'workspace', ids: ['ws_a'] }] }, mode: 'enforce', enforced: true,
     authorized: true, allowed: true, result: 'allow', reason_code: 'AUTHZ_ALLOWED', explicit_deny: false,
     obligations: { required: [], satisfied: [], missing: [] }, ...overrides,
@@ -316,7 +346,7 @@ describe('worker authorization snapshot eligibility', () => {
 
 describe('authorization denial error details', () => {
   const base: AuthorizationDecision = {
-    decision_id: 'authz_denied', policy_version: '2026-08-31.v2', method: 'content.generate', capability: 'customer.content.update', workbench: 'workspace',
+    decision_id: 'authz_denied', policy_version: AUTHZ_POLICY_VERSION, method: 'content.generate', capability: 'customer.content.update', workbench: 'workspace',
     scope: { required: 'workspace', resource_id: 'secret-resource-id', resolved: [{ type: 'workspace', ids: ['secret-workspace-id'] }] }, mode: 'enforce', enforced: true,
     authorized: false, allowed: false, result: 'deny', reason_code: 'AUTHZ_CAPABILITY_MISSING', explicit_deny: false,
     obligations: { required: ['reason'], satisfied: [], missing: ['reason'] },
@@ -334,7 +364,7 @@ describe('authorization denial error details', () => {
     expect(details).toEqual({
       decision_id: 'authz_denied', capability: 'customer.content.update', reason_code: reasonCode,
       required_scope: 'workspace', workbench: 'workspace', explicit_deny: reasonCode === 'AUTHZ_EXPLICIT_DENY',
-      obligations_missing: ['reason'], policy_version: '2026-08-31.v2',
+      obligations_missing: ['reason'], policy_version: AUTHZ_POLICY_VERSION,
     })
     expect(JSON.stringify(details)).not.toContain('secret-resource-id')
     expect(JSON.stringify(details)).not.toContain('secret-workspace-id')
@@ -345,7 +375,7 @@ describe('authorization denial error details', () => {
 
     expect(details).toEqual({
       decision_id: 'authz_denied', capability: 'customer.content.update', required_scope: 'workspace',
-      workbench: 'workspace', policy_version: '2026-08-31.v2', grant_id: 'grant_safe_id',
+      workbench: 'workspace', policy_version: AUTHZ_POLICY_VERSION, grant_id: 'grant_safe_id',
     })
     expect(JSON.stringify(details)).not.toContain('secret-resource-id')
     expect(JSON.stringify(details)).not.toContain('secret-workspace-id')
@@ -353,10 +383,10 @@ describe('authorization denial error details', () => {
 
   it('describes missing policy catalog entries consistently across MCP and HTTP', () => {
     expect(authorizationPolicyUnavailableDetails({ transport: 'mcp', method: 'unknown.method' })).toEqual({
-      policy_version: '2026-08-31.v2', transport: 'mcp', method: 'unknown.method',
+      policy_version: AUTHZ_POLICY_VERSION, transport: 'mcp', method: 'unknown.method',
     })
     expect(authorizationPolicyUnavailableDetails({ transport: 'http', method: 'ops.unknown', operation: 'GET /v1/unknown' })).toEqual({
-      policy_version: '2026-08-31.v2', transport: 'http', method: 'ops.unknown', operation: 'GET /v1/unknown',
+      policy_version: AUTHZ_POLICY_VERSION, transport: 'http', method: 'ops.unknown', operation: 'GET /v1/unknown',
     })
   })
 })
@@ -801,7 +831,7 @@ describe('API application wiring', () => {
     expect(customerDataMethodForHttp('GET', '/v1/products')).toBe('catalog.search')
     expect(customerDataMethodForHttp('GET', '/v1/assets/a1/products')).toBe('asset.list')
     expect(customerDataMethodForHttp('POST', '/v1/products/p1/confirm')).toBe('catalog.facts.confirm')
-    expect(customerDataMethodForHttp('GET', '/v1/products/p1/image-review')).toBe('catalog.image.review')
+    expect(customerDataMethodForHttp('GET', '/v1/products/p1/image-review')).toBe('catalog.image.get')
     expect(customerDataMethodForHttp('POST', '/v1/publish-jobs')).toBe('publish.confirm')
     expect(customerDataMethodForHttp('GET', '/v1/platform-accounts')).toBe('platform.store.list')
     expect(customerDataMethodForHttp('POST', '/v1/platform-accounts/taobao/authorize')).toBe('platform.connect')
@@ -939,5 +969,36 @@ describe('API application wiring', () => {
   it('labels terminal outbox failures as dead letters instead of delivered events', () => {
     const event = timelineEvent({ id: 'evt_dead', workspaceId: 'ws_a', aggregateId: 'gen_a', eventType: 'generation.requested', sequence: 1, payload: {}, publishedAt: new Date().toISOString(), createdAt: new Date().toISOString(), lastError: { code: 'GENERATION_JOB_TERMINAL', retryable: false } })
     expect(event.delivery).toBe('dead_letter')
+  })
+})
+
+
+describe('uploaded image candidate admission', () => {
+  function source() {
+    const asset = service.registerAsset({ workspaceId: 'ws_candidate_rights', name: 'jacket.png', mimeType: 'image/png', sizeBytes: 10, sha256: 'a'.repeat(64), storageKey: 'quarantine/ws_candidate_rights/source' })
+    Object.assign(asset, { scanStatus: 'clean', scanVerdict: 'clean', scanReceiptId: 'receipt-candidate', scanReceiptDigest: 'b'.repeat(64), storageKey: 'clean/ws_candidate_rights/source', rightsStatus: 'pending', rightsScope: 'unknown', aiModificationAllowed: undefined })
+    service.assets.set(asset.id, asset)
+    return asset
+  }
+  it('allows requested unbound drafts without claiming commercial rights, but keeps bound generation gated', () => {
+    const asset = source()
+    expect(() => requireApprovedAssetForImageGeneration(asset.workspaceId, { platform: 'jd' }, [asset.id], true)).not.toThrow()
+    expect(asset.rightsStatus).toBe('pending')
+    expect(asset.aiModificationAllowed).toBeUndefined()
+    expect(() => requireApprovedAssetForImageGeneration(asset.workspaceId, { platform: 'jd' }, [asset.id])).toThrow()
+  })
+  it.each([
+    { scanStatus: 'quarantined' }, { scanReceiptDigest: undefined },
+    { rightsStatus: 'rejected' }, { rightsScope: 'unusable' }, { rightsScope: 'internal_only' },
+    { aiModificationAllowed: false }, { applicablePlatforms: ['taobao'] },
+    { validTo: '2020-01-01T00:00:00Z' },
+  ])('keeps explicit restrictions and trusted scanning enforced: %j', patch => {
+    const asset = source()
+    Object.assign(asset, patch)
+    expect(() => requireApprovedAssetForImageGeneration(asset.workspaceId, { platform: 'jd' }, [asset.id], true)).toThrow()
+  })
+  it('rejects another workspace source', () => {
+    const asset = source()
+    expect(() => requireApprovedAssetForImageGeneration('ws_other_candidate', { platform: 'jd' }, [asset.id], true)).toThrow()
   })
 })

@@ -1,0 +1,99 @@
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { mkdirSync, openSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { createLocalOidcGateway } from '../tests/local-oidc-gateway.js'
+
+// Local acceptance only: reuse the running stack's real PostgreSQL/Redis and
+// service configuration, but isolate the signed OIDC API and UI listeners.
+const sourceContainer = process.env.OPS_E2E_SOURCE_CONTAINER?.trim() || (() => {
+  const candidates = execFileSync('docker', ['ps', '--filter', 'label=com.docker.compose.service=api', '--format', '{{.ID}}'], { encoding: 'utf8' })
+    .split(/\r?\n/u).map(value => value.trim()).filter(Boolean)
+  if (!candidates[0]) throw new Error('No running API container found; set OPS_E2E_SOURCE_CONTAINER explicitly')
+  return candidates[0]
+})()
+const inspected = JSON.parse(execFileSync('docker', ['inspect', sourceContainer], { encoding: 'utf8' }))[0]
+const serviceEnv = Object.fromEntries((inspected.Config.Env as string[]).map(value => {
+  const index = value.indexOf('='); return [value.slice(0, index), value.slice(index + 1)]
+}))
+for (const key of ['PATH', 'HOME', 'HOSTNAME', 'NODE_VERSION', 'YARN_VERSION']) delete serviceEnv[key]
+function hostUrl(raw: string, port: number) { const url = new URL(raw); url.hostname = '127.0.0.1'; url.port = String(port); return url.toString() }
+const apiPort = Number(process.env.OPS_E2E_API_PORT ?? 8797)
+const uiPort = Number(process.env.OPS_E2E_UI_PORT ?? 18092)
+const gatewayPort = Number(process.env.OPS_E2E_GATEWAY_PORT ?? 18093)
+const evidenceDir = resolve(process.env.OPS_E2E_OUTPUT_DIR ?? 'artifacts/ops-oidc-e2e')
+mkdirSync(evidenceDir, { recursive: true })
+const signingSecret = randomBytes(32).toString('hex')
+const password = randomBytes(24).toString('hex')
+const children: ChildProcess[] = []
+let gateway: ReturnType<typeof createLocalOidcGateway> | undefined
+let cleanedUp = false
+function cleanup() {
+  if (cleanedUp) return
+  cleanedUp = true
+  gateway?.closeAllConnections?.()
+  gateway?.close?.()
+  for (const child of children) child.kill('SIGTERM')
+}
+process.once('SIGINT', () => { cleanup(); process.exit(130) })
+process.once('SIGTERM', () => { cleanup(); process.exit(143) })
+function launch(command: string, args: string[], env: NodeJS.ProcessEnv, name: string) {
+  const child = spawn(command, args, { env, stdio: ['ignore', openSync(resolve(evidenceDir, `${name}.log`), 'w'), openSync(resolve(evidenceDir, `${name}.error.log`), 'w')] })
+  children.push(child); return child
+}
+async function ready(url: string) {
+  for (let attempt = 0; attempt < 90; attempt++) {
+    try { if ((await fetch(url)).ok) return } catch {}
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+  throw new Error(`Local service did not become ready: ${url}`)
+}
+gateway = createLocalOidcGateway({
+  // The API child binds IPv4 loopback explicitly. Keep the gateway upstream
+  // on the same address family; `localhost` may resolve to ::1 on macOS and
+  // leave the browser stuck at the unverified OIDC session state.
+  uiUpstream: `http://127.0.0.1:${uiPort}`, apiUpstream: `http://127.0.0.1:${apiPort}`,
+  username: 'ops-browser-e2e', password, sessionSecret: randomBytes(32).toString('hex'),
+  oidcSigningSecret: signingSecret, issuer: 'http://127.0.0.1/local-test-idp',
+  // Keep the acceptance identity configurable so the same real browser runner
+  // can exercise platform and workspace workbenches. The defaults preserve the
+  // platform walk while workspace tests can provide an explicit owner fixture.
+  subject: process.env.LOCAL_OIDC_SUBJECT ?? 'actor_demo',
+  // Platform operations still carries an explicit workspace context for the
+  // local acceptance fixture; an empty scope is correctly rejected by API.
+  workspaceId: process.env.OPS_E2E_WORKSPACE_ID ?? 'ws_demo',
+  roles: (process.env.LOCAL_OIDC_ROLES ?? 'platform_ops').split(',').map(value => value.trim()).filter(Boolean),
+  workbench: process.env.LOCAL_OIDC_WORKBENCH === 'workspace' ? 'workspace' : 'platform',
+})
+try {
+  launch(resolve('node_modules/.bin/tsx'), ['apps/api/src/server.ts'], {
+    ...process.env, ...serviceEnv, PORT: String(apiPort), OPS_AUTH_MODE: 'oidc', OIDC_PROXY_SIGNING_SECRET: signingSecret,
+    // The local gateway is the only identity boundary for this acceptance
+    // run; never let a copied merchant-host override select bearer auth.
+    MERCHANT_BEARER_HOSTNAME: '',
+    DATABASE_URL: hostUrl(serviceEnv.DATABASE_URL!, 54329), OPS_DATABASE_URL: hostUrl(serviceEnv.OPS_DATABASE_URL!, 54329),
+    REDIS_URL: hostUrl(serviceEnv.REDIS_URL!, 63799), RUN_MIGRATIONS_ON_STARTUP: 'false', REQUEST_OBSERVABILITY_LOGS: process.env.OPS_E2E_REQUEST_LOGS ?? 'true',
+    ALLOWED_ORIGINS: `http://127.0.0.1:${gatewayPort}`, ASSET_STORAGE_ROOT: resolve(evidenceDir, 'local-objects'),
+  }, 'api')
+  const uiEnvironment = {
+    ...process.env, VITE_API_BASE: '/api', VITE_API_PROXY_TARGET: `http://127.0.0.1:${gatewayPort}`, VITE_OPS_AUTH_MODE: 'oidc', VITE_OPS_BUILD_MODE: 'oidc', VITE_OPS_TRACE: 'true', VITE_OPS_E2E: 'true',
+  }
+  const uiOutput = resolve(evidenceDir, 'ui-dist')
+  const build = launch(resolve('node_modules/.bin/vite'), ['build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
+  const buildCode = await new Promise<number>(resolve => build.on('exit', code => resolve(code ?? 1)))
+  if (buildCode !== 0) throw new Error(`Ops UI build failed; see ${evidenceDir}/ui-build.error.log`)
+  // Exercise the emitted application without a development HMR client.
+  launch(resolve('node_modules/.bin/vite'), ['preview', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui')
+  await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`), ready(`http://127.0.0.1:${uiPort}/`)])
+  await new Promise<void>(resolve => gateway!.listen(gatewayPort, '127.0.0.1', resolve))
+  const requested = process.argv.slice(2)
+  const args = requested.length ? requested : ['dogfood/chatgpt-all-functions/ops-all.spec.js', 'dogfood/chatgpt-all-functions/ops-users.spec.js', '--grep', 'walk every|does not report|operates the platform']
+  const run = spawn(resolve('node_modules/.bin/playwright'), ['test', ...args, '--workers=1', '--output', resolve(evidenceDir, 'test-results')], { stdio: 'inherit', env: {
+    ...process.env, OPS_OIDC_BASE_URL: `http://127.0.0.1:${gatewayPort}`, LOCAL_OIDC_TEST_USERNAME: 'ops-browser-e2e', LOCAL_OIDC_TEST_PASSWORD: password,
+    OPS_E2E_OUTPUT_DIR: evidenceDir,
+  } })
+  children.push(run)
+  process.exitCode = await new Promise<number>(resolve => run.on('exit', code => resolve(code ?? 1)))
+} finally {
+  cleanup()
+}

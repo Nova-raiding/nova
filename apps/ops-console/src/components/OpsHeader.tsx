@@ -7,6 +7,11 @@ import type { OpsWorkbench } from "../types/ops.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import { RoleScopeBar } from "./authz/RoleScopeBar.js";
 
+function managedLoginUrl(): string | undefined {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
+  return env.VITE_OPS_LOGIN_URL?.trim() || undefined;
+}
+
 interface OpsHeaderProps {
   managedSession: boolean;
   roles?: string[];
@@ -148,13 +153,15 @@ export function OpsHeader({
 
   return (
     <Layout.Header className="ops-header">
-      <div>
-        <Typography.Text className="eyebrow">
-          WORKSPACE OPERATIONS
-        </Typography.Text>
+      <div className="ops-header-identity">
+        <div className="ops-header-kicker">
+          <Typography.Text className="eyebrow">WORKSPACE OPERATIONS</Typography.Text>
+          <span className="ops-header-mode">桌面运营工作台</span>
+        </div>
         <Typography.Title level={2}>商业与平台控制台</Typography.Title>
         <RoleScopeBar session={session} authorization={resolvedAuthorization} activeWorkbench={activeWorkbench} availableWorkbenches={availableWorkbenches} switching={switchingWorkbench} onWorkbenchChange={onWorkbenchChange} onJitExpired={onJitExpired} onJitExit={onJitExit} />
       </div>
+      <div className="ops-header-actions">
       <div className="ops-connection-toolbar">
         <div className="ops-connection-summary">
           <span className="ops-connection-summary-label">{localOpsSessionEnabled ? "本机安全会话" : "连接状态"}</span>
@@ -173,6 +180,7 @@ export function OpsHeader({
         >
           {connectionOpen ? "收起安全状态" : localOpsSessionEnabled ? "查看安全状态" : "登录 / 连接"}
         </Button>
+      </div>
       </div>
       <Drawer
         title={<span id={connectionTitleId}>连接诊断</span>}
@@ -265,7 +273,14 @@ export function OpsHeader({
           />
         </label> : null}
         {managedSession ? (
-          <Tag color="green" className="ops-status-tag">SSO 托管会话</Tag>
+          <>
+            <Tag color="green" className="ops-status-tag">SSO 托管会话</Tag>
+            {!sessionLoaded ? (
+              managedLoginUrl()
+                ? <Button type="primary" href={managedLoginUrl()} target="_self" rel="noreferrer" style={{ minHeight: 44 }}>登录运营后台</Button>
+                : <Alert type="warning" showIcon title="未配置组织登录入口" description="请部署方设置 VITE_OPS_LOGIN_URL；没有入口时只能由已登录管理员邀请成员。" />
+            ) : null}
+          </>
         ) : (
           <>
             <Alert
@@ -321,6 +336,20 @@ export function OpsHeader({
                 ? "真实 Postgres/API 数据"
                 : `非生产数据：${dataSource.persistence ?? "未识别"}`}
           </Tag>
+        ) : null}
+        {session?.workspace_id ? (
+          <Alert
+            type="info"
+            showIcon
+            title="ChatGPT 插件绑定"
+            description={
+              <Space orientation="vertical" size={6}>
+                <span>在 ChatGPT 中启用“大麦商家营销”，发送“开始使用大麦”。插件会按当前认证身份自动恢复此工作区。</span>
+                <Typography.Text code copyable={{ text: session.workspace_id }}>工作区：{session.workspace_id}</Typography.Text>
+                <Typography.Text type="secondary">请勿把运营 Token 粘贴到 ChatGPT 对话；插件必须通过已配置的 MCP/OAuth 网关绑定。</Typography.Text>
+              </Space>
+            }
+          />
         ) : null}
         <div role="group" aria-label="连接诊断操作" style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <Button htmlType="button" style={{ minHeight: 44 }} onClick={() => setConnectionOpen(false)}>关闭</Button>

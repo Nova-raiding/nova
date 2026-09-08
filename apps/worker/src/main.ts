@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { unlink, writeFile } from 'node:fs/promises'
 import { Pool } from 'pg'
-import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
+import { contextEnvelopeHash, loadMigrations, PostgresAssetScanAttemptRepository, PostgresCreativePointLifecycleRepository, PostgresCreativePointRepository, PostgresOnboardingGrantDispatchRepository, PostgresOutboxRepository, withWorkspaceTransaction, type AssetScanAttemptRecord, type AssetScanAttemptRepository, type Migration, type SqlPool } from '../../../packages/persistence/src/index.js'
 import { PostgresMappingPreflightApprovalRepository } from '../../../packages/persistence/src/mapping-preflight-approval-repository.js'
 import { DurableOutboxDispatcher, InMemoryQueue, RedisQueueAdapter, type DurableOutboxEvent, type QueuePort, type RedisQueueTransport } from '../../../packages/workers/src/durable.js'
 import { createOutboxHandler, createWorkerProjection } from './handler.js'
@@ -1241,6 +1241,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const mappingExecution = new WorkerMappingExecutionContext()
   const mappingApprovals = new PostgresMappingPreflightApprovalRepository(pool as unknown as SqlPool)
   const sqlPool = pool as unknown as SqlPool
+  const onboardingGrantDispatch = new PostgresOnboardingGrantDispatchRepository(sqlPool)
   const scanAttempts = new PostgresAssetScanAttemptRepository(sqlPool)
   const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
   const runtime = new ConnectorRuntime({
@@ -1403,10 +1404,17 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!providerOperationKey) throw new Error('image generation execution response is missing provider operation reservation')
     await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'begin_provider_dispatch', ownerToken, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
     imageUsageContexts.set(actionId, { runKey, contextHash: intentHash, ...(signal ? { signal } : {}) })
-    const sourceRefs = Array.isArray(payload.source_asset_data_urls) && payload.source_asset_data_urls.length
-      ? payload.source_asset_data_urls.filter((value): value is string => typeof value === 'string')
-      : Array.isArray(payload.source_asset_ids) ? payload.source_asset_ids.filter((value): value is string => typeof value === 'string') : []
-    const input: ImageGenerationInput = { productTitle, direction, count, ...(typeof payload.category === 'string' && payload.category ? { category: payload.category } : {}), ...(payload.image_mode === 'create' || payload.image_mode === 'optimize' ? { mode: payload.image_mode } : {}), ...(sourceRefs.length ? { sourceImages: sourceRefs } : {}), ...(payload.visual_brief && isObject(payload.visual_brief) ? { visualBrief: payload.visual_brief as ImageGenerationInput['visualBrief'] } : {}), usageContext: { workspaceId: event.workspaceId, actionId, runKey } }
+    // Keep asset IDs and resolved pixels on their respective relay fields.
+    // Passing IDs through `sourceImages` silently dropped the reference image
+    // in the image generator's data-URL validation, so the provider generated
+    // an unrelated product/color despite an optimize request.
+    const sourceAssetRefs = Array.isArray(payload.source_asset_ids)
+      ? payload.source_asset_ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : []
+    const sourceImages = Array.isArray(payload.source_asset_data_urls)
+      ? payload.source_asset_data_urls.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : []
+    const input: ImageGenerationInput = { productTitle, direction, count, ...(typeof payload.category === 'string' && payload.category ? { category: payload.category } : {}), ...(payload.image_mode === 'create' || payload.image_mode === 'optimize' ? { mode: payload.image_mode } : {}), ...(sourceAssetRefs.length ? { sourceAssetRefs } : {}), ...(sourceImages.length ? { sourceImages } : {}), ...(payload.visual_brief && isObject(payload.visual_brief) ? { visualBrief: payload.visual_brief as ImageGenerationInput['visualBrief'] } : {}), usageContext: { workspaceId: event.workspaceId, actionId, runKey } }
     try {
       let images: string[]
       try {
@@ -1596,6 +1604,17 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           const reconciliation = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => postStorageReconciliation({ apiBaseUrl: config.apiBaseUrl!, apiToken: config.apiToken!, workspaceId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}) }))
           nextStorageReconciliationAt = Date.now() + config.storageReconciliationIntervalMs
           Object.assign(result as unknown as Record<string, unknown>, { storageReconciliation: { completed: reconciliation.filter(item => item.status === 'fulfilled').length, failed: reconciliation.filter(item => item.status === 'rejected').length } })
+        }
+        if ((config.role === 'reconcile' || config.role === 'all') && workspaces.length > 0) {
+          const onboardingDispatches = await allSettledWithConcurrency(workspaces, config.workspaceBatchSize, workspaceId => onboardingGrantDispatch.dispatchDue({ workspaceId, limit: Math.min(100, config.batchSize) }))
+          Object.assign(result as unknown as Record<string, unknown>, {
+            onboardingGrantDispatch: {
+              completed: onboardingDispatches.filter(item => item.status === 'fulfilled').length,
+              failed: onboardingDispatches.filter(item => item.status === 'rejected').length,
+              dispatched: onboardingDispatches.reduce((sum, item) => sum + (item.status === 'fulfilled' ? item.value.dispatched : 0), 0),
+              expired: onboardingDispatches.reduce((sum, item) => sum + (item.status === 'fulfilled' ? item.value.expired : 0), 0),
+            },
+          })
         }
         if (config.role === 'reconcile' && startedAt >= nextModelUsageReconciliationAt) {
           if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for model usage reconciliation')

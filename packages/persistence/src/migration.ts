@@ -29,6 +29,11 @@ const MIGRATION_ADVISORY_LOCK = 731942851
 // performs the forward-only reservation hardening.
 const LEGACY_MIGRATION_CHECKSUMS = new Map<number, ReadonlySet<string>>([
   [144, new Set(['9519b2dbee21371a0bc7429c50e61ab3a677a4fd3965707328bd18489f2ad2e7'])],
+  // Migration 168 was applied to the local release database by the
+  // scheduler branch before its source file was consolidated with the
+  // expiration-fact hardening. Keep that applied identity accepted; 169 is
+  // the forward-only repair for the missing expiration table.
+  [168, new Set(['37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1'])],
 ])
 
 export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION' | 'MIGRATION_VERSION_INVALID'
@@ -404,6 +409,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const imageGenerationExecutionDispatchFence = await readFile(new URL('./migrations/119_image_generation_execution_dispatch_fence.sql', import.meta.url), 'utf8')
   const imageGenerationExecutionStateRepair = await readFile(new URL('./migrations/161_image_generation_execution_state_repair.sql', import.meta.url), 'utf8')
   const imageGenerationExecutionStateConstraintNameRepair = await readFile(new URL('./migrations/162_image_generation_execution_state_constraint_name_repair.sql', import.meta.url), 'utf8')
+  const authorizationWorkspaceScopeContract = await readFile(new URL('./migrations/163_authorization_workspace_scope_contract.sql', import.meta.url), 'utf8')
   const enforceModelUsageBudgetRunLinkage = await readFile(new URL('./migrations/118_enforce_model_usage_budget_run_linkage.sql', import.meta.url), 'utf8')
   const authorizationExecutionReservations = await readFile(new URL('./migrations/120_authorization_execution_reservations.sql', import.meta.url), 'utf8')
   const authorizationExecutionReservationsAcl = await readFile(new URL('./migrations/121_authorization_execution_reservations_acl.sql', import.meta.url), 'utf8')
@@ -445,6 +451,13 @@ export async function loadMigrations(): Promise<Migration[]> {
   const creativePointReversalAllocationGuard = await readFile(new URL('./migrations/158_creative_point_reversal_allocation_guard.sql', import.meta.url), 'utf8')
   const commercialPointAdjustmentApprovals = await readFile(new URL('./migrations/159_commercial_point_adjustment_approvals.sql', import.meta.url), 'utf8')
   const commercialPointAdjustmentApprovalAcl = await readFile(new URL('./migrations/160_commercial_point_adjustment_approval_acl.sql', import.meta.url), 'utf8')
+  const onboardingGrantScheduleActivation = await readFile(new URL('./migrations/164_onboarding_grant_schedule_activation.sql', import.meta.url), 'utf8')
+  const objectStorageOrphanRuntimeAcl = await readFile(new URL('./migrations/165_object_storage_orphan_runtime_acl.sql', import.meta.url), 'utf8')
+  const commercialCatalogExecutableV2 = await readFile(new URL('./migrations/166_commercial_catalog_executable_v2.sql', import.meta.url), 'utf8')
+  const privateTrialConversionClosure = await readFile(new URL('./migrations/167_private_trial_conversion_closure.sql', import.meta.url), 'utf8')
+  const onboardingGrantDispatch = await readFile(new URL('./migrations/168_onboarding_grant_dispatch.sql', import.meta.url), 'utf8')
+  const onboardingGrantExpiration = await readFile(new URL('./migrations/169_onboarding_grant_expiration.sql', import.meta.url), 'utf8')
+  const commercialRefundEvents = await readFile(new URL('./migrations/170_commercial_refund_events.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -608,6 +621,14 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 160, name: 'commercial_point_adjustment_approval_acl', sql: commercialPointAdjustmentApprovalAcl },
     { version: 161, name: 'image_generation_execution_state_repair', sql: imageGenerationExecutionStateRepair },
     { version: 162, name: 'image_generation_execution_state_constraint_name_repair', sql: imageGenerationExecutionStateConstraintNameRepair },
+    { version: 163, name: 'authorization_workspace_scope_contract', sql: authorizationWorkspaceScopeContract },
+    { version: 164, name: 'onboarding_grant_schedule_activation', sql: onboardingGrantScheduleActivation },
+    { version: 165, name: 'object_storage_orphan_runtime_acl', sql: objectStorageOrphanRuntimeAcl },
+    { version: 166, name: 'commercial_catalog_executable_v2', sql: commercialCatalogExecutableV2 },
+    { version: 167, name: 'private_trial_conversion_closure', sql: privateTrialConversionClosure },
+    { version: 168, name: 'onboarding_grant_dispatch', sql: onboardingGrantDispatch },
+    { version: 169, name: 'onboarding_grant_expiration', sql: onboardingGrantExpiration },
+    { version: 170, name: 'commercial_refund_events', sql: commercialRefundEvents },
   ]
 }
 

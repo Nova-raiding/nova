@@ -11,7 +11,7 @@ const baseUrl = process.env.OPS_OIDC_BASE_URL ?? process.env.OPS_BASE_URL ?? 'ht
 // These domains require a workspace-scoped policy and are covered by
 // workspace fixtures, never by the platform token walk.
 const platformSections = ['总览', '用户与租户', '平台连接', '模型服务', '功能开关', '存储与对账', '账务与退款', '审计中心']
-const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服与 CRM': '客服与客户关系', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '账务与商业配置' }
+const headings = { '总览': '运营总览', '成员与权限': '成员与权限', '客服': '客服工作台', '平台连接': '平台连接汇总', '存储与对账': '存储与对账', '账务与退款': '账务与商业配置' }
 
 const snapshot = async (page, section) => ({
   section,
@@ -42,7 +42,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
     // Route changes intentionally abort stale queries owned by the page that
     // just unmounted. Keep recording real transport failures without treating
     // browser cancellation as an API outage.
-    if (request.failure()?.errorText === 'net::ERR_ABORTED') return
+    if (request.failure()?.errorText === 'net::ERR_ABORTED' || request.url().startsWith('https://fonts.googleapis.com/')) return
     requestFailures.push({ method: request.method(), url: request.url(), error: request.failure()?.errorText, requestBody: request.postData() })
   })
   page.on('response', async response => {
@@ -65,7 +65,7 @@ test('walk every Ops Console section through the real browser UI', async () => {
   for (const [index, section] of platformSections.entries()) {
     await page.locator('button').filter({ hasText: new RegExp(`^${section}$`, 'u') }).first().click()
     const expectedHeading = headings[section] ?? section
-    await page.locator('h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
+    await page.locator('h1,h2,h3').filter({ hasText: new RegExp(`^${expectedHeading}$`, 'u') }).waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForTimeout(5_000)
     if (section === '用户与租户') {
       await expect(page.getByRole('tab', { name: '用户目录', exact: true })).toBeVisible()

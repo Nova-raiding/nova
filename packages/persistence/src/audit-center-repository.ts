@@ -4,7 +4,7 @@ import { requireWorkspaceScope, type SqlPool, withWorkspaceTransaction } from '.
 
 type AuditRow = { id: string; source: AuditSource; workspace_id: string; actor_id: string; action: string; resource_type: string; resource_id: string; reason: string; occurred_at: string | Date; evidence: Record<string, unknown> }
 type Cursor = { v: 1; fingerprint: string; occurredAt: string; source: AuditSource; id: string }
-export interface AuditCenterRepository { list(query: AuditCenterQuery): Promise<AuditCenterPage>; detail(workspaceId: string, source: AuditSource, id: string): Promise<AuditCenterDetail | undefined>; exportRows(query: Omit<AuditCenterQuery, 'cursor' | 'limit'>, limit: number): Promise<{ records: AuditCenterRecord[]; truncated: boolean }> }
+export interface AuditCenterRepository { list(query: AuditCenterQuery): Promise<AuditCenterPage>; listPlatform?(query: Omit<AuditCenterQuery, 'workspaceId' | 'cursor'>, workspaceIds: readonly string[]): Promise<AuditCenterPage>; detail(workspaceId: string, source: AuditSource, id: string): Promise<AuditCenterDetail | undefined>; exportRows(query: Omit<AuditCenterQuery, 'cursor' | 'limit'>, limit: number): Promise<{ records: AuditCenterRecord[]; truncated: boolean }> }
 export class AuditCenterCursorError extends Error { readonly code = 'AUDIT_CENTER_CURSOR_INVALID'; constructor() { super('audit cursor is invalid'); this.name = 'AuditCenterCursorError' } }
 
 const sensitive = /(authorization|cookie|credential|password|secret|token|payment.?url|idempotency|receipt.?hash|request.?hash|raw|metadata|error|email|phone|address|content|description|body|title|detail|payload|text|html|markdown|selling.?points|facts|attributes|images|sku)/i
@@ -55,8 +55,25 @@ export class MemoryAuditCenterRepository implements AuditCenterRepository {
 }
 
 const projection = `id, source, workspace_id, actor_id, action, resource_type, resource_id, reason, occurred_at, evidence`
+async function withPlatformScope<T>(pool: SqlPool, work: (client: import('./repository.js').SqlClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect()
+  try { await client.query('BEGIN'); await client.query(`SELECT set_config('app.platform_scope', 'platform_ops', true)`); const value = await work(client); await client.query('COMMIT'); return value }
+  catch (error) { try { await client.query('ROLLBACK') } catch {} throw error }
+  finally { client.release?.() }
+}
 export class PostgresAuditCenterRepository implements AuditCenterRepository {
   constructor(private readonly pool: SqlPool) {}
+  async listPlatform(query: Omit<AuditCenterQuery, 'workspaceId' | 'cursor'>, workspaceIds: readonly string[]): Promise<AuditCenterPage> {
+    const ids = [...new Set(workspaceIds.map(value => value.trim()).filter(Boolean))]
+    return withPlatformScope(this.pool, async client => {
+      const filter = `workspace_id = ANY($1::text[]) AND (cardinality($2::text[])=0 OR source=ANY($2::text[])) AND ($3::text IS NULL OR actor_id=$3) AND ($4::text IS NULL OR action=$4) AND ($5::text IS NULL OR resource_type=$5) AND ($6::timestamptz IS NULL OR occurred_at >= $6) AND ($7::timestamptz IS NULL OR occurred_at <= $7) AND ($8::text IS NULL OR position(lower($8) in lower(concat_ws(' ',actor_id,action,resource_type,resource_id,reason))) > 0)`
+      const values = [ids, query.sources ?? [], query.actorId ?? null, query.action ?? null, query.resourceType ?? null, query.fromAt ?? null, query.toAt ?? null, query.text ?? null]
+      const count = await client.query<{ total_records: number | string }>(`SELECT count(*)::int AS total_records FROM ops_audit_center WHERE ${filter}`, values)
+      const rows = await client.query<AuditRow>(`SELECT ${projection} FROM ops_audit_center WHERE ${filter} ORDER BY occurred_at DESC,workspace_id DESC,source DESC,id DESC LIMIT $9`, [...values, query.limit + 1])
+      const page = rows.rows.slice(0, query.limit)
+      return { records: page.map(summary), totalRecords: Number(count.rows[0]?.total_records ?? 0), truncated: rows.rows.length > query.limit }
+    })
+  }
   async list(query: AuditCenterQuery): Promise<AuditCenterPage> {
     const workspaceId = requireWorkspaceScope(query.workspaceId); const fp = fingerprint(query); const cursor = query.cursor ? decode(query.cursor, fp) : undefined
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {

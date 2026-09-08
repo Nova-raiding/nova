@@ -1,0 +1,15 @@
+{
+  "file": "商品展示-四镜头-v2.mp4",
+  "sha256": "e28fb7fd93040e88dfda490f31cfd224d98ff37f178aeb393c8a5ababf770ae3",
+  "duration_seconds": 10.030998,
+  "width": 1440,
+  "height": 1440,
+  "fps": 30,
+  "full_ffmpeg_decode": "passed",
+  "visual_review": "four shots; original pale blue hood, same-color zipper and side pockets preserved; no invented hat cords; local candidate, unpublished",
+  "provider_model": "wan3.0-video-prime",
+  "provider_job_id": "task_MnNDoXFdgXI3uPiayxcYYnPICd89Q5W4",
+  "provider_request_id": "202609071210277472502978268d9d6Xg4vnuYP",
+  "provider_cost_cny": 15.32652,
+  "provider_cost_settlement": "settled"
+}

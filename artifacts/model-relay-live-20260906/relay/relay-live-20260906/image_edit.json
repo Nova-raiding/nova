@@ -1,0 +1,64 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260906",
+  "modality": "image_edit",
+  "observed_at": "2026-09-06T01:47:05.946Z",
+  "http_status": 200,
+  "response_headers": {
+    "req-cost-time": "48460",
+    "x-oneapi-request-id": "202609060146172225505898268d9d6nn1Waskr",
+    "x-request-id": "89f53145-ae89-99cb-b090-c7174422854a"
+  },
+  "result": {
+    "modality": "image_edit",
+    "endpoint": "/images/edits",
+    "model": "qwen-image-3.0",
+    "httpStatus": 200,
+    "providerRequestId": "202609060146172225505898268d9d6nn1Waskr",
+    "usageObserved": true,
+    "costObserved": true,
+    "costSource": "relay_pricing_snapshot",
+    "costCny": 0.1590707,
+    "pricingVersion": "a42d372ccf0b5dd13ecf71203521f9d2",
+    "pricingGroup": "VIP",
+    "state": "ready"
+  },
+  "relay_response": {
+    "data": [
+      {
+        "url": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/dc/20260906/6fb5d90d/89f53145-ae89-99cb-b090-c7174422854a_qwen_image3_serving_output_0.png?Expires=1788745625&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=C0m7GpQ14EAvNxJRoALKU0XcsJg%3D",
+        "b64_json": "",
+        "revised_prompt": ""
+      }
+    ],
+    "created": 1788659177,
+    "metadata": {
+      "output": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "message": {
+              "content": [
+                {
+                  "image": "https://dashscope-a717.oss-accelerate.aliyuncs.com/1d/dc/20260906/6fb5d90d/89f53145-ae89-99cb-b090-c7174422854a_qwen_image3_serving_output_0.png?Expires=1788745625&OSSAccessKeyId=LTAI5tPxpiCM2hjmWrFXrym1&Signature=C0m7GpQ14EAvNxJRoALKU0XcsJg%3D",
+                  "type": "image"
+                }
+              ],
+              "role": "assistant"
+            }
+          }
+        ],
+        "rewrite_status": "success"
+      },
+      "usage": {
+        "input_image_count": 0,
+        "input_image_type": "qima_input_1k",
+        "output_height": 1024,
+        "output_image_count": 1,
+        "output_image_type": "qima_output_1k",
+        "output_width": 1024
+      },
+      "request_id": "89f53145-ae89-99cb-b090-c7174422854a"
+    }
+  }
+}

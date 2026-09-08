@@ -48,7 +48,7 @@
 
 | 能力族 | 后端方法示例 | 缺口 |
 |---|---|---|
-| 支持/CRM | `ops.support.tickets.list/get/create/assign/transition/comment`, `ops.support.sla.*`, `ops.support.crm.export` | API 完整，但需确认客服页面是否覆盖 SLA 修正、导出和评论审计 |
+| 客服支持 | `ops.support.tickets.list/get/create/assign/transition/comment`, `ops.support.sla.*` | 页面覆盖工单、SLA 修正和评论审计；任务/订单关联已接入，仍需真实工作区数据验收 |
 | 事故中心 | `ops.incidents.*` | 页面存在基础事故域，需核对 commander、scope update 与时间线是否全部可操作 |
 | 商业运营 | `ops.commercial.timeline.list`, access-blocks, entitlements, points-ledger, orders, rate-cards, fulfillment | 商业工作台存在，但方法族多于页面显式入口，容易只显示摘要不显示证据 |
 | 功能开关 | `ops.feature-flags.*` | 页面有入口，但 evaluate/events/emergency 需验证是否可回溯 |
@@ -177,3 +177,7 @@
 商家插件相关的真实浏览器场景共 25 项，通过 25 项，覆盖 Merchant Studio 漫游、交互校验、发布确认与重试、模型中转可见性、真实数据失败关闭、任务与同步流程。
 
 Ops 专用 runner 最终结果为 7 通过、1 跳过；覆盖全平台页面巡检、模型状态失败关闭、无凭据连接诊断、401 重新认证、平台导航和用户目录治理。跳过项是需要独立 workspace token fixture 的工作区成员治理。全量聚合命令仍可能在没有 OIDC runner 环境变量时出现前置失败，因此验收结果以专用 runner 的真实桌面会话为准，不能把环境前置失败当成插件功能缺陷。
+
+## CodeGraph 新鲜度门禁
+
+CodeGraph 元数据显示索引状态为 `complete`、文件数 1136；按数据库 content hash 与当前工作区比对，发现 70 个文件已变化，涉及知识库组件、Ops 路由、MCP/API 和模型代码。生产级验收前必须重新索引并记录索引时间、工作区提交和变更文件数；在此之前 CodeGraph 只能作为关系线索。

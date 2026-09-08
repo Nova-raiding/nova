@@ -10,6 +10,7 @@ export interface RelayUsageContext {
   contextLinkId?: string
   contextHash?: string
   billingUnits?: number
+  resolution?: string
   durationSeconds?: number
   /** Stable identity of this exact provider call when no provider request ID is returned. */
   providerAttemptId?: string
@@ -161,6 +162,8 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     || evidenceIdentity(nestedData?.request_id)
     || evidenceIdentity(result?.provider_request_id)
     || evidenceIdentity(result?.request_id)
+    || evidenceIdentity(metadata?.provider_request_id)
+    || evidenceIdentity(metadata?.request_id)
   // Cost is not usage. A relay that reports only a price has not provided
   // enough metering evidence to settle a model call safely.
   // Image relays commonly meter by generated image units rather than tokens.
@@ -172,7 +175,16 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // the caller supplies the requested count as the bounded billing context.
   const imageResultObserved = defaults.modality === 'image' && ((Array.isArray(root.data) && root.data.length > 0) || (data && Array.isArray(data.data) && data.data.length > 0))
   const videoEvidenceNode = data ?? result ?? nestedData ?? root
-  const videoRequestAccepted = defaults.modality === 'video' && Boolean(providerRequestId || defaults.context?.providerAttemptId) && Boolean(videoEvidenceNode && ['id', 'task_id', 'job_id'].some(key => typeof videoEvidenceNode[key] === 'string' && videoEvidenceNode[key].trim()))
+  // A generic response `id` is not proof that a video job was accepted: chat
+  // style relays often echo an id even when no render was queued. Accept it
+  // only with an explicit async lifecycle status; task_id/job_id remain
+  // bounded identifiers regardless of status. This covers both the legacy
+  // `{data:{id,status}}` envelope and the newer `task_status` response.
+  const explicitVideoJobId = Boolean(videoEvidenceNode && ['task_id', 'job_id'].some(key => typeof videoEvidenceNode[key] === 'string' && videoEvidenceNode[key].trim()))
+  const videoStatus = typeof videoEvidenceNode?.status === 'string' ? videoEvidenceNode.status : typeof videoEvidenceNode?.task_status === 'string' ? videoEvidenceNode.task_status : undefined
+  const acceptedVideoStatuses = new Set(['queued', 'pending', 'created', 'submitted', 'processing', 'running', 'in_progress'])
+  const statusBoundVideoId = typeof videoEvidenceNode?.id === 'string' && videoEvidenceNode.id.trim().length > 0 && typeof videoStatus === 'string' && acceptedVideoStatuses.has(videoStatus.toLowerCase())
+  const videoRequestAccepted = defaults.modality === 'video' && Boolean(providerRequestId || defaults.context?.providerAttemptId) && (explicitVideoJobId || statusBoundVideoId)
   const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || (defaults.modality === 'image' && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved || videoRequestAccepted
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
@@ -193,6 +205,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
       usage_observed: usageObserved,
       ...(videoRequestAccepted ? { video_request_accepted: true } : {}),
       ...(defaults.context?.billingUnits ? { billing_units: defaults.context.billingUnits } : {}),
+      ...(defaults.context?.resolution ? { resolution: defaults.context.resolution } : {}),
       ...(defaults.context?.durationSeconds ? { duration_seconds: defaults.context.durationSeconds } : {}),
       ...(typeof root.id === 'string' && root.id.trim() ? { provider_response_id: root.id.trim() } : {}),
     },

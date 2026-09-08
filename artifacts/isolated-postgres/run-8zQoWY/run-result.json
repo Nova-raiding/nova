@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-08T03:55:49.049Z",
+  "endedAt": "2026-09-08T03:56:02.048Z",
+  "runId": "43e5300b-c965-4fd0-89f3-42f9b02c9e8e",
+  "selectedFiles": [
+    "packages/persistence/src/canonical-product-backfill.postgres.test.ts",
+    "packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts",
+    "packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts",
+    "packages/persistence/src/migration-106-release.postgres.test.ts",
+    "packages/persistence/src/migration-127-release.postgres.test.ts",
+    "packages/persistence/src/migration-146-release.postgres.test.ts",
+    "packages/persistence/src/migration-148-release.postgres.test.ts",
+    "packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts",
+    "packages/persistence/src/migration-164-release.postgres.test.ts",
+    "packages/persistence/src/migration-166-release.postgres.test.ts"
+  ],
+  "childExitCode": 0,
+  "status": "passed",
+  "report": "vitest.json",
+  "errors": [],
+  "fixtureOnly": true,
+  "databaseSource": "newly-created-isolated-fixture",
+  "rolePasswordCompatibility": "isolated-test-fixture-only",
+  "inheritedBusinessEnvironment": false,
+  "sharedContainersTouched": false,
+  "disposal": {
+    "stopped": [
+      "2cefae1c852acc3601be42d9daa959f90831447886da08a2ba8e49f86a1e5344",
+      "3081a34d717bcb2d3933ca3039c10ba89a0073f3cc29bd10247eeb58310387d0"
+    ],
+    "leftRunning": []
+  }
+}

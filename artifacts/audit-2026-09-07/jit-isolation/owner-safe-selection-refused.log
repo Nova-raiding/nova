@@ -1,0 +1,5 @@
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/local-docker-fault-acceptance.test.ts
+
+tests/local-docker-fault-acceptance.test.ts requires a dedicated integration entrypoint with an explicitly isolated runtime; it is excluded from the safe default suite.

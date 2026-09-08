@@ -1,0 +1,200 @@
+{
+  "runId": "auth163-20260907",
+  "status": "DONE_WITH_CONCERNS",
+  "releaseDecision": "NO-GO",
+  "sourceSnapshotWindow": {
+    "before": "2026-09-07T10:46:31.954Z",
+    "after": "2026-09-07T10:49:48.377Z",
+    "files": 1388,
+    "changed": []
+  },
+  "implementationFileCount": 15,
+  "implementation": [
+    {
+      "path": "packages/persistence/src/authorization-repository.ts",
+      "sha256": "fddf498a8cab4d7c0c9e90f02c33e6676c9fe9fddb3a97e0eeea4ee570bdb46f"
+    },
+    {
+      "path": "packages/persistence/src/authorization-repository.test.ts",
+      "sha256": "4ba27d2709732100c60a003d1de92aed1e28fcdb3338ade4e45fccf114055203"
+    },
+    {
+      "path": "packages/persistence/src/authorization-repository.release.postgres.test.ts",
+      "sha256": "a2563bacc5dc1ecb1d54ebcd5f595d3dfce93e2d5d99380d9f8638e8f3780005"
+    },
+    {
+      "path": "packages/persistence/src/authorization-grant-scope-integrity.postgres.test.ts",
+      "sha256": "6832bc860101bedcbbe078dd5808c387e745f7620f11c915ecac8805f69a56f3"
+    },
+    {
+      "path": "packages/persistence/src/migrations/163_authorization_workspace_scope_contract.sql",
+      "sha256": "2fde0aa8fdd8dbf8e1340f0b8df87a3e98ffbeeffd6da1420249486cb753df39"
+    },
+    {
+      "path": "apps/api/src/worker-authorization-recheck.test.ts",
+      "sha256": "961828c0414131ef2baab5421d815ea1d876877d24dede19311c3b90de111ce3"
+    },
+    {
+      "path": "packages/persistence/src/migration.ts",
+      "sha256": "8db58ca89e6ed43cb3cc87ba6f5c0b1fd0e27386243decb8e139de23f7a693d4"
+    },
+    {
+      "path": "packages/persistence/src/migration.test.ts",
+      "sha256": "4d9239a7d5ac9bc37903cfb045983b8f1141a49976ee7cb9e0de35e9e49c3915"
+    },
+    {
+      "path": "packages/persistence/src/migration-163.test.ts",
+      "sha256": "959c688791df16551ae4082bafa913e6765cd64f61f1ad24ee9cbd020b9e896e"
+    },
+    {
+      "path": "release-metadata.json",
+      "sha256": "518b5aebc9abea40afab4345a3fe8ae9c8a17c757305d8afc95251c94396762c"
+    },
+    {
+      "path": "package.json",
+      "sha256": "5e288f34c011841f4dcde3d747ef9abed38745cc9f49af7aaaa420e2855e68b7"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "222d0fdc3fea0072acfafcb7b9e22481eb758127edf20e1e7353fe891026153a"
+    },
+    {
+      "path": "packages/persistence/src/authorization-rls-boundary.postgres.test.ts",
+      "sha256": "a4b8861d16878ad034ae680aa23466589a8ac1fda0cee841523780599080102b"
+    },
+    {
+      "path": "packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts",
+      "sha256": "ee89984e491c5ce9c05dcf7c4e6ad65c632650b2646cc5a69bddb3c3437cdc5c"
+    },
+    {
+      "path": "packages/persistence/src/migration-105-release.postgres.test.ts",
+      "sha256": "b7ae1e0d3e3a63f60cbe343ced5ed83d91c6e76d2b201287c07841fac02b14ea"
+    }
+  ],
+  "reports": [
+    {
+      "path": "artifacts/audit-2026-09-07/auth163/postgres-1788776776612.json",
+      "sha256": "5077876d38b2c7e04241d7c0ad0b99d19ae6b805529190822b630f42c2a8f35a",
+      "success": false,
+      "files": 2,
+      "assertions": 2,
+      "counts": {
+        "failed": 2
+      }
+    },
+    {
+      "path": "artifacts/audit-2026-09-07/auth163/migration-registration-red.json",
+      "sha256": "70522dfc61e3c5908927a677a9864feb3d4f4f059e509e47b84fe74867d39f58",
+      "success": false,
+      "files": 1,
+      "assertions": 2,
+      "counts": {
+        "failed": 1,
+        "passed": 1
+      }
+    },
+    {
+      "path": "artifacts/audit-2026-09-07/auth163/postgres-1788777565347.json",
+      "sha256": "f1d2e263ee200aedb2966ac7e9c66e246633624b7e85e430db549f76e08d187e",
+      "success": true,
+      "files": 5,
+      "assertions": 6,
+      "counts": {
+        "passed": 6
+      }
+    },
+    {
+      "path": "artifacts/audit-2026-09-07/auth163/owner-auth-focused.json",
+      "sha256": "bb83b6594cee51177834f86c386a87e6a9911321e6933275217193a9a1697f17",
+      "success": true,
+      "files": 8,
+      "assertions": 89,
+      "counts": {
+        "passed": 89
+      }
+    },
+    {
+      "path": "artifacts/audit-2026-09-07/auth163/ci-denominator.json",
+      "sha256": "1c1690028b7f8d9afc3792200ba3aa0a3127892e26aa017f626bed535894e31e",
+      "success": true,
+      "files": 2,
+      "assertions": 9,
+      "counts": {
+        "passed": 9
+      }
+    },
+    {
+      "path": "artifacts/audit-2026-09-07/auth163/postgres-1788778074082.json",
+      "sha256": "ee7a66285dd8bdab0ded39a04f23890170e210ee5572fc6b9d8ae8477e036464",
+      "success": true,
+      "files": 5,
+      "assertions": 6,
+      "counts": {
+        "passed": 6
+      }
+    },
+    {
+      "path": "artifacts/audit-2026-09-07/auth163/frozen-owner-auth-focused.json",
+      "sha256": "3eb1f4b6c7fa877f3dd079e6f98f6d8f07e6b0c0a162a3e4a8c3955fdcd72498",
+      "success": true,
+      "files": 8,
+      "assertions": 89,
+      "counts": {
+        "passed": 89
+      }
+    }
+  ],
+  "checks": {
+    "typecheck": {
+      "exitCode": 0
+    },
+    "fullCheck": {
+      "exitCode": 130,
+      "completed": false,
+      "reason": "Stopped after discovering shared-runtime mutation tests; two migration-tail failures observed; no complete denominator"
+    },
+    "opsUnit": {
+      "files": 87,
+      "passed": 495,
+      "failed": 0,
+      "skipped": 0,
+      "exitCode": 0
+    },
+    "opsBuild": {
+      "exitCode": 0
+    },
+    "releaseMetadata": {
+      "exitCode": 0
+    },
+    "diffCheck": {
+      "exitCode": 0
+    }
+  },
+  "environment": {
+    "postgresVersion": "17.11",
+    "image": "postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73",
+    "isolatedContainer": "merchant-auth163-pg-20260907",
+    "isolatedContainerId": "25ff4fa90b47e9ecd4627f2994abbcdc8fc9cf8cf343b3a7a06545a1e519038f",
+    "cleanup": {
+      "completed": true,
+      "at": "2026-09-07T10:49:48.638Z",
+      "onlyOwnedSyntheticContainer": true,
+      "reportsPreserved": true
+    },
+    "sharedSchemaObserved": 162,
+    "businessSchemaOrGrantMigration": false,
+    "sharedTestAssetMutationObserved": true
+  },
+  "blockingItems": [
+    "desktop JIT form emits obsolete type/ids scope; component and submission regression outside approved 15-file patch",
+    "full test runner contains shared Redis fault injection and ws_demo upload; must isolate/opt-in before another whole-suite run",
+    "target-environment schema and image remain unverified for 163",
+    "real ChatGPT host, configured relay usage/cost, commercial and release E3/E4 gates outstanding"
+  ],
+  "evidenceLevels": {
+    "signedHttp": "E1: real signed loopback HTTP with controlled memory persistence",
+    "postgres": "E2: real roles, RLS, repository, trigger, upgrade and concurrency; not combined with HTTP",
+    "desktop": "Not accepted; existing unit/mocked matrix does not verify grant submission",
+    "host": "Read-only workspace health connected; zero connected stores; no business action executed"
+  }
+}

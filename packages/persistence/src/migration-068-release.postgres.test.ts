@@ -140,7 +140,7 @@ describe('persistence migration 068 release acceptance', () => {
       expect(await new MigrationRunner(upgrade, migrations).run()).toEqual([])
       expect(await campaignSchemaFingerprint(upgrade)).toEqual(await campaignSchemaFingerprint(fresh))
 
-      await run('pg_dump', ['--format=custom', '--schema-only', '--no-owner', '--file', dumpPath, databaseUrl(base, freshName)])
+      await run(process.env.PG_DUMP_BIN ?? 'pg_dump', ['--format=custom', '--schema-only', '--no-owner', '--file', dumpPath, databaseUrl(base, freshName)])
       await run('pg_restore', ['--dbname', databaseUrl(base, restoreName), '--no-owner', dumpPath])
       expect(await campaignSchemaFingerprint(restored)).toEqual(await campaignSchemaFingerprint(fresh))
     } finally {

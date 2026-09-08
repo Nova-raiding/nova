@@ -1,0 +1,51 @@
+{
+  "merchant.start": {
+    "content": [
+      {
+        "type": "text",
+        "text": "欢迎使用大麦。\n你想先连接哪个平台？"
+      }
+    ],
+    "structuredContent": {
+      "conversation_state": {
+        "stage": "connect_store",
+        "status": "needs_input",
+        "primary_action": {
+          "method": "platform.connect",
+          "label": "连接平台店铺",
+          "required_inputs": [
+            "platform"
+          ]
+        }
+      },
+      "completed_summary": "欢迎使用大麦。",
+      "question": "你想先连接哪个平台？",
+      "expected_input": {
+        "kind": "platform_selection",
+        "accepts": [
+          "natural_language"
+        ]
+      }
+    },
+    "isError": false
+  },
+  "creative-points.balance.get": {
+    "content": [
+      {
+        "type": "text",
+        "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+      }
+    ],
+    "structuredContent": {
+      "schema_version": "creative-points.balance.v1",
+      "workspace_id": "ws_be87dca95d714bc1bbdb6c21",
+      "balance_state": "known",
+      "available_points": 10000,
+      "reserved_points": 0,
+      "settled_points": 0,
+      "access_revision": "1",
+      "updated_at": "2026-09-07T08:24:48.205Z"
+    },
+    "isError": false
+  }
+}

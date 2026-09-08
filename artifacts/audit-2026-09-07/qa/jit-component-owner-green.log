@@ -1,0 +1,13 @@
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx (9 tests) 5712ms
+     ✓ submits the real JIT form with the API workspace_ids contract and the loaded revision  3488ms
+     ✓ retains entered values on RPC failure and does not submit again while a request is pending  1387ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  19:52:21
+   Duration  8.67s (transform 155ms, setup 0ms, import 2.80s, tests 5.71s, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/qa/jit-component-owner-green.json

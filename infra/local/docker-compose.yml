@@ -184,6 +184,10 @@ services:
       MERCHANT_TEST_APPROVED_RATES: ${MERCHANT_TEST_APPROVED_RATES:-true}
       PERSISTENCE_MODE: ${PERSISTENCE_MODE:-postgres}
       ALLOW_LOCAL_PAYMENT_FIXTURE: "true"
+      # Local acceptance exercises the same immutable V2 order/payment facts
+      # through platform-reviewed manual transfer; production must override
+      # this with a real provider adapter and verified callback.
+      COMMERCIAL_PAYMENT_PROVIDER: ${COMMERCIAL_PAYMENT_PROVIDER:-manual_transfer}
       PLUGIN_WRITE_ENABLED: "false"
       # Keep direct `docker compose up` aligned with the relay launcher. An
       # explicitly supplied environment value still wins, while an unset
@@ -205,11 +209,14 @@ services:
       IMAGE_GENERATION_PATH: ${IMAGE_GENERATION_PATH:-/images/generations}
       IMAGE_EDIT_MODEL: ${IMAGE_EDIT_MODEL:-qwen-image-3.0}
       IMAGE_EDIT_PATH: ${IMAGE_EDIT_PATH:-/images/generations}
-      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-300000}
+      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-120000}
       IMAGE_EDIT_TIMEOUT_MS: ${IMAGE_EDIT_TIMEOUT_MS:-300000}
       IMAGE_RESPONSE_FORMAT: ${IMAGE_RESPONSE_FORMAT:-url}
       OCR_MODEL: ${OCR_MODEL:-agnes-2.5-flash}
       VIDEO_MODEL: ${VIDEO_MODEL:-happyhorse-1.1-t2v}
+      VIDEO_IMAGE_MODEL: ${VIDEO_IMAGE_MODEL:-}
+      VIDEO_RESOLUTION: ${VIDEO_RESOLUTION:-}
+      VIDEO_REQUEST_FORMAT: ${VIDEO_REQUEST_FORMAT:-json}
       VIDEO_DURATION_SECONDS: ${VIDEO_DURATION_SECONDS:-5}
       VIDEO_GENERATION_PATH: ${VIDEO_GENERATION_PATH:-/video/generations}
       VIDEO_STATUS_PATH: ${VIDEO_STATUS_PATH:-/video/generations/{job_id}}
@@ -224,7 +231,9 @@ services:
       MODEL_VIDEO_MAX_REQUEST_CNY: ${MODEL_VIDEO_MAX_REQUEST_CNY:-20.00}
       MODEL_RELAY_COST_EVIDENCE: ${MODEL_RELAY_COST_EVIDENCE:-false}
       MODEL_RELAY_TEXT_COST_EVIDENCE: ${MODEL_RELAY_TEXT_COST_EVIDENCE:-false}
-      MODEL_RELAY_OCR_COST_EVIDENCE: ${MODEL_RELAY_OCR_COST_EVIDENCE:-false}
+      # OCR calls must settle against the relay pricing snapshot; leaving this
+      # off makes successful provider responses remain pending forever.
+      MODEL_RELAY_OCR_COST_EVIDENCE: ${MODEL_RELAY_OCR_COST_EVIDENCE:-true}
       MODEL_RELAY_IMAGE_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_COST_EVIDENCE:-true}
       MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE:-false}
       MODEL_RELAY_VIDEO_COST_EVIDENCE: ${MODEL_RELAY_VIDEO_COST_EVIDENCE:-false}
@@ -259,7 +268,10 @@ services:
       # A scanner configured for real callbacks must not advertise API
       # readiness while the callback trust root is absent. This catches stale
       # local containers after .env changes before uploads become pending.
-      test: ["CMD-SHELL", "(test \"$${NODE_ENV}\" != production || test \"$${ASSET_SCANNER_MODE}\" != clamav_worker || test -n \"$${ASSET_SCAN_TRUSTED_PUBLIC_KEYS}\") && wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
+      # A ClamAV worker cannot complete signed callbacks without the API trust
+      # root. Keep local acceptance fail-closed too, so a direct Compose start
+      # cannot look healthy and only fail later during an asset upload.
+      test: ["CMD-SHELL", "(test \"$${ASSET_SCANNER_MODE}\" != clamav_worker || test -n \"$${ASSET_SCAN_TRUSTED_PUBLIC_KEYS}\") && wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -289,6 +301,9 @@ services:
       # in-memory repository and browser requests become replica-dependent.
       PERSISTENCE_MODE: postgres
       OTEL_SERVICE_NAME: merchant-api-replica
+    networks:
+      default:
+        aliases: [api-replica]
 
   worker-sync:
     <<: *worker-common
@@ -322,7 +337,7 @@ services:
       IMAGE_MODEL: ${IMAGE_MODEL:-qwen-image-3.0}
       IMAGE_GENERATION_PATH: ${IMAGE_GENERATION_PATH:-/images/generations}
       IMAGE_STATUS_PATH: ${IMAGE_STATUS_PATH:-}
-      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-300000}
+      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-120000}
       IMAGE_RESPONSE_FORMAT: ${IMAGE_RESPONSE_FORMAT:-url}
       WORKER_READY_FILE: /tmp/merchant-worker-generation-ready
       OTEL_SERVICE_NAME: merchant-worker-generation

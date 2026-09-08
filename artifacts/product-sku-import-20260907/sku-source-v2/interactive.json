@@ -1,0 +1,24 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。"
+      }
+    ],
+    "structuredContent": {
+      "enabled": true,
+      "expires_at": "2026-09-07T13:06:08.902Z",
+      "scope": "current_interactive_session",
+      "automation": "read_only",
+      "ticket": {
+        "nonce_hash": "a16b4633c586bbf59eafbb8b6fd80aea8320b7fe2f6d5863567cbe8c5b6cbfe3",
+        "intent_hash": "0ab58e0b634027f727ccc4519db550daf9ed4481e23e5c1cb236836978fc7190",
+        "expires_at": "2026-09-07T13:06:08.902Z"
+      }
+    },
+    "isError": false
+  }
+}

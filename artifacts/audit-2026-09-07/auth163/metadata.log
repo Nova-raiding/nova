@@ -1,0 +1,5 @@
+
+> merchant-marketing-codex@0.1.1 release:metadata:validate
+> tsx tests/release-metadata-gate.ts
+
+release metadata gate passed: VERSION, package metadata, CHANGELOG, plugin mirrors, MCP registry and migrations are aligned

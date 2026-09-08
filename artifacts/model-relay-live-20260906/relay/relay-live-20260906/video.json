@@ -1,0 +1,28 @@
+{
+  "schema_version": "1",
+  "release_id": "relay-live-20260906",
+  "modality": "video",
+  "observed_at": "2026-09-06T02:35:36.267Z",
+  "http_status": 503,
+  "response_headers": {
+    "x-oneapi-request-id": "202609060235360248284838268d9d6dWCKDQ1n"
+  },
+  "result": {
+    "modality": "video",
+    "endpoint": "/video/generations",
+    "model": "wan3.0-video",
+    "state": "blocked",
+    "httpStatus": 503,
+    "providerRequestId": "202609060235360248284838268d9d6dWCKDQ1n",
+    "usageObserved": false,
+    "costObserved": false,
+    "detail": "relay returned HTTP 503"
+  },
+  "relay_response": {
+    "error": {
+      "code": "model_not_found",
+      "message": "No available channel for model wan3.0-video under group SVIP (distributor) (request id: 202609060235360248284838268d9d6dWCKDQ1n)",
+      "type": "new_api_error"
+    }
+  }
+}

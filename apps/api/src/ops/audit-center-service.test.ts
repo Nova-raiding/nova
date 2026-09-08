@@ -13,6 +13,14 @@ describe('audit center service', () => {
     await expect(service.listPlatform({ actorId: 'x', roles: ['support'], authorizedWorkspaceIds: [] }, { limit: 10 }, ['ws_1'])).rejects.toBeInstanceOf(AuditCenterServiceError)
     await expect(service.listPlatform(ops, { workspace_id: '*' }, ['ws_1'])).rejects.toThrow('workspaceId')
   })
+  it('uses the repository bulk path when available', async () => {
+    let received: readonly string[] = []
+    const repository = {
+      listPlatform: async (_query: unknown, workspaceIds: readonly string[]) => { received = workspaceIds; return { records: [], totalRecords: 0, truncated: false } },
+    } as never
+    await new AuditCenterService(repository).listPlatform(ops, { limit: 10 }, ['ws_1', 'ws_1', 'ws_2'])
+    expect(received).toEqual(['ws_1', 'ws_2'])
+  })
   it('returns only redacted detail evidence', async () => { const detail = await new AuditCenterService(new MemoryAuditCenterRepository([event])).detail(ops, { workspaceId: 'ws_1', source: 'operation', id: 'event_1' }); expect(detail.evidence.fields).toEqual({ safe: 'visible' }); expect(JSON.stringify(detail)).not.toContain('secret') })
   it('bounds exports and neutralizes spreadsheet formulas', async () => { const result = await new AuditCenterService(new MemoryAuditCenterRepository([event]), () => new Date('2026-08-29T01:00:00Z')).exportCsv(ops, { workspaceId: 'ws_1', limit: 50 }); expect(result.rowCount).toBe(1); expect(result.csv).toContain("\"'=cmd\""); expect(result.csv).toContain("\"'+formula\""); expect(result.csv).toContain("\"'@target\"") })
   it('rejects cursor pagination instead of silently exporting a different slice', async () => {

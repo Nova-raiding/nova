@@ -36,7 +36,7 @@ describe('authorization RLS/ACL boundary PostgreSQL probe', () => {
       await database.query(`INSERT INTO platform_identities (id,issuer,external_subject,display_name) VALUES ($1,'boundary-probe',$2,'Boundary Probe')`, [identityId, `subject-${identityId}`])
       await database.query(`INSERT INTO authorization_revisions (subject_identity_id,revision,updated_by,update_reason) VALUES ($1,1,'probe','boundary regression')`, [identityId])
       await database.query(`INSERT INTO platform_role_assignments (id,subject_identity_id,role,assigned_by,reason,valid_from,authorization_revision) VALUES ($1,$2,'support_agent','probe','boundary regression',$3,1)`, [assignmentId, identityId, now])
-      await database.query(`INSERT INTO ops_access_grants (id,grant_kind,access_mode,subject_identity_id,workspace_id,capabilities,resource_scope,scope_hash,reason,ticket_ref,issued_by,approved_by,approved_at,issued_at,expires_at,max_uses,authorization_revision) VALUES ($1,'support','read',$2,'boundary_ws',ARRAY['customer.content.read'], '{"ticket_ids":["boundary-ticket"]}', $3,'boundary regression','BOUNDARY-1','issuer','approver',$4,$4,$5,1,1)`, [grantId, identityId, 'a'.repeat(64), now, '2026-09-01T10:15:00.000Z'])
+      await database.query(`INSERT INTO ops_access_grants (id,grant_kind,access_mode,subject_identity_id,workspace_id,capabilities,resource_scope,scope_hash,reason,ticket_ref,issued_by,approved_by,approved_at,issued_at,expires_at,max_uses,authorization_revision) VALUES ($1,'support','read',$2,'boundary_ws',ARRAY['customer.content.read'], '{"workspace_ids":["boundary_ws"]}', $3,'boundary regression','BOUNDARY-1','issuer','approver',$4,$4,$5,1,1)`, [grantId, identityId, 'a'.repeat(64), now, '2026-09-01T10:15:00.000Z'])
       await database.query(`INSERT INTO platform_role_assignment_events (id,assignment_id,subject_identity_id,event_type,actor_id,reason,authorization_revision,assignment_revision,snapshot_json,created_at) VALUES ($1,$2,$3,'assigned','probe','boundary regression',1,1,'{}',$4)`, [randomUUID(), assignmentId, identityId, now])
       await database.query(`INSERT INTO ops_access_grant_events (id,grant_id,subject_identity_id,workspace_id,event_type,actor_id,reason,authorization_revision,grant_revision,snapshot_json,created_at) VALUES ($1,$2,$3,'boundary_ws','issued','probe','boundary regression',1,1,'{}',$4)`, [randomUUID(), grantId, identityId, now])
 
@@ -88,7 +88,6 @@ describe('authorization RLS/ACL boundary PostgreSQL probe', () => {
       await app?.end()
       await ops?.end()
       await database?.end()
-      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1', [databaseName])
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`)
       await admin.end()
     }

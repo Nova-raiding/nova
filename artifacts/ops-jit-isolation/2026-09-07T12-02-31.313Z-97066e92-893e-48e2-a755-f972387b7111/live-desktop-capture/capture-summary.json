@@ -1,0 +1,18 @@
+{
+  "status": "evidence_captured_known_revoke_failure",
+  "featureVerdict": "FAIL",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "captureToolExit": 0,
+  "invalidTtlProbe": "local_rejection_no_issue_rpc",
+  "issue": "200_and_persisted",
+  "revoke": "403_AUTHZ_OBLIGATION_REQUIRED_not_executed",
+  "persistedGrantCount": 1,
+  "revokeExecuted": false,
+  "modelsCalled": false,
+  "sharedServicesUsed": false,
+  "startedAt": "2026-09-07T12:03:38.361Z",
+  "finishedAt": "2026-09-07T12:03:54.407Z"
+}

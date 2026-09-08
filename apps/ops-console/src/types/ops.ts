@@ -261,7 +261,7 @@ export type Rule = {
   lifecycleStatus?: string;
   scope: string;
   scopeValue?: string;
-  source: { kind: string; reference: string; checkedAt: string };
+  source: { kind: string; reference: string; checkedAt: string; trust?: "verified" | "unverified" };
   revision: number;
   effectiveFrom?: string;
   effectiveTo?: string;
@@ -297,6 +297,17 @@ export type LearningSuggestion = {
   proposedRule: { scope: string; scopeValue?: string; content: string };
   createdAt: string;
   confirmedBy?: string;
+};
+export type BrandPreference = {
+  id: string;
+  workspaceId: string;
+  preferences: Record<string, unknown>;
+  version: string;
+  status: "draft" | "active" | "archived";
+  source?: string;
+  revision: number;
+  updatedBy: string;
+  updatedAt: string;
 };
 export type CompetitorAnalysis = {
   id: string;
@@ -588,6 +599,10 @@ export type PlatformOperation = {
   platform: string;
   state?: string;
   accountId?: string;
+  accountCount?: number;
+  connectedAccountCount?: number;
+  dataMode?: string;
+  simulated?: boolean;
   readEnabled?: boolean;
   writeEnabled?: boolean;
   capabilities?: Array<{

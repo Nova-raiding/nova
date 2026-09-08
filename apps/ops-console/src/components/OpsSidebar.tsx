@@ -55,7 +55,7 @@ export const mainItems: Array<{ domain: OpsDomain; label: string; icon: ReactNod
     { domain: "overview", label: "总览", icon: <SafetyCertificateOutlined /> },
     { domain: "users", label: "用户与租户", icon: <TeamOutlined /> },
     { domain: "members", label: "成员与权限", icon: <UsergroupAddOutlined /> },
-    { domain: "support", label: "客服与 CRM", icon: <CustomerServiceOutlined /> },
+    { domain: "support", label: "客服", icon: <CustomerServiceOutlined /> },
     { domain: "incidents", label: "事故中心", icon: <AlertOutlined /> },
     { domain: "tasks", label: "任务与内容", icon: <CloudSyncOutlined /> },
     { domain: "knowledge", label: "知识库", icon: <DatabaseOutlined /> },
@@ -191,7 +191,7 @@ export function OpsSidebar({
       {showControlledSupport ? <button
         className="sider-subitem controlled-support-entry"
         type="button"
-        aria-label="通过客服与 CRM 受控支持客户问题"
+        aria-label="通过客服工作台受控支持客户问题"
         onClick={() => navigate("support")}
       >
         受控支持入口

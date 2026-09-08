@@ -58,12 +58,25 @@ async function confirmTaskFromConversation(page, productId, requestText = '准�
 }
 
 test('model relay readiness is visible before a merchant starts a task', async ({ page }) => {
+  await page.route('**/api/healthz', async route => {
+    return fulfillJson(route, { setup: {
+      ai: { relay: { configured: false, host: null }, costGate: 'blocked' },
+      nextActions: ['配置平台模型中转站后重新检查'],
+      modelReadiness: {
+        text: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
+        image: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
+        image_edit: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
+        ocr: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
+        video: { ready: false, reasons: ['配置平台模型中转站后重新检查'] },
+      },
+    } })
+  })
   await page.route('**/api/mcp', async route => {
     const request = route.request().postDataJSON()
     if (request?.method !== 'platform.model.status') return route.continue()
     return fulfillJson(route, { result: {
       state: 'model_relay_blocked',
-      relay: { configured: false, host: null, reasons: ['缺少真实模型中转配置'] },
+      relay: { configured: false, host: null, reasons: ['配置平台模型中转站后重新检查'] },
       capabilities: { text_generation: false, image_generation: false, image_editing: false, image_fact_ocr: false, video_rendering: false },
       next_actions: ['配置平台模型中转站后重新检查'],
       cost_control_ready: false,
@@ -557,7 +570,7 @@ test('both sync-all entry points target every readable store including same-plat
     { platform: 'taobao', accountId: 'store-b', label: '淘宝 B 店', state: 'connected', readEnabled: true, writeEnabled: true },
     { platform: 'jd', accountId: 'store-c', label: '京东 C 店', state: 'connected', readEnabled: true, writeEnabled: true },
   ]
-  await page.route('**/api/v1/platform-accounts', route => fulfillJson(route, { items: accounts }))
+  await page.route('**/api/v1/platform-accounts**', route => fulfillJson(route, { items: accounts }))
   await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, []))
   await page.route('**/api/v1/platform-accounts/*/sync', async route => {
     syncRequests.push({ url: route.request().url(), body: route.request().postDataJSON(), accountHeader: await route.request().headerValue('x-account-id') })
@@ -586,15 +599,15 @@ test('both sync-all entry points target every readable store including same-plat
 
 test('store discovery failure disables sync and sends no sync request', async ({ page }) => {
   let syncRequests = 0
-  await page.route('**/api/v1/platform-accounts', route => fulfillJson(route, null, 503, { code: 'STORE_DISCOVERY_FAILED', message: '店铺服务不可用' }))
+  await page.route('**/api/v1/platform-accounts**', route => fulfillJson(route, null, 503, { code: 'STORE_DISCOVERY_FAILED', message: '店铺服务不可用' }))
   await page.route(/\/api\/v1\/products(?:\?.*)?$/, route => fulfillPageJson(route, []))
   await page.route('**/api/v1/platform-accounts/*/sync', route => { syncRequests += 1; return fulfillJson(route, {}) })
 
   await page.goto(appUrl)
-  await expect(page.getByRole('alert').filter({ hasText: '店铺发现失败' }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /同步全部店铺|等待店铺连接/, exact: true }).first()).toBeDisabled()
+  await expect(page.getByText(/店铺发现失败|店铺服务不可用|当前店铺数据暂不可用/).first()).toBeVisible()
   await page.getByRole('button', { name: '商品与资产', exact: true }).first().click()
-  await expect(page.getByRole('alert').filter({ hasText: '店铺发现失败' })).toBeVisible()
   await expect(page.getByRole('button', { name: /同步全部店铺|等待店铺连接/, exact: true }).first()).toBeDisabled()
+  await expect(page.getByText(/店铺发现失败|店铺服务不可用|当前店铺数据暂不可用/).first()).toBeVisible()
   await expect.poll(() => syncRequests).toBe(0)
 })

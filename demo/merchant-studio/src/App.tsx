@@ -56,8 +56,8 @@ import {
   confirmPublish,
   confirmTaskPlan,
   createRechargeOrder,
+  createCampaignBatch,
   createTask,
-  createTaskGroup,
   decideReviewFinding,
   describeApiError,
   diffContentVersions,
@@ -88,6 +88,7 @@ import {
   fetchTaskTimeline,
   fetchWorkspaceMetrics,
   generateProductImages,
+  generateCampaignBatch,
   generateContent,
   importProduct,
   isNotConfigured,
@@ -186,10 +187,7 @@ import {
 import { DeliveryReadinessPanel } from './DeliveryReadinessPanel.js'
 import { CampaignLifecyclePanel } from './CampaignLifecyclePanel.js'
 import { batchTargetKey, toggleBatchTarget } from './batch-target.js'
-import {
-  batchCompletionMessage,
-  resolveBatchReadiness,
-} from './batch-readiness.js'
+import { resolveBatchReadiness } from './batch-readiness.js'
 import { resolveRuleContext } from './rule-context.js'
 import { resolveDataConsistency } from './data-consistency.js'
 import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
@@ -1473,7 +1471,7 @@ function Overview({
         if (requestId === accountsRequestId.current) {
           setAccounts(null)
           setAccountsError(
-            `平台连接读取失败：${describeApiError(error)}。当前不会执行店铺同步；请重试或检查平台连接。`,
+            `店铺发现失败：${describeApiError(error)}。当前不会执行店铺同步；请重试或检查平台连接。`,
           )
         }
       })
@@ -1822,6 +1820,14 @@ function Overview({
         </div>
       </section>
 
+      {accountsError && (
+        <ErrorNotice
+          message={accountsError}
+          onRetry={loadAccounts}
+          retryLabel="重试店铺发现"
+        />
+      )}
+
       <EntryPointCards onOpenEntry={onOpenEntry} />
 
       <section className="metric-grid" aria-label="关键运营指标">
@@ -1943,7 +1949,7 @@ function Overview({
           <div className="panel-heading">
             <div>
               <span className="section-kicker">PLUGIN WALLET</span>
-              <h3>钱包与能力状态</h3>
+              <h3>创意点与能力状态</h3>
             </div>
             <StatusChip
               tone={
@@ -1962,12 +1968,11 @@ function Overview({
             <Card className="wallet-summary-card" bordered={false}>
               <div className="wallet-summary">
                 <div>
-                  <span className="wallet-label">可用余额</span>
+                  <span className="wallet-label">可用创意点</span>
                   <Statistic
                     className="wallet-statistic"
-                    value={billing?.balance_cny ?? 0}
-                    precision={2}
-                    prefix="¥"
+                    value={billing?.available_points ?? '-'}
+                    suffix={billing?.available_points === null || billing?.available_points === undefined ? '' : ' 点'}
                     loading={!billing && !billingError}
                   />
                     <p>{modelAccessMessage}</p>
@@ -1976,22 +1981,10 @@ function Overview({
                   <Tag color={billing?.capability_entitlements?.balance.state === 'available' ? 'green' : 'gold'}>
                     {entitlementLabel('balance', billing?.capability_entitlements?.balance)}
                   </Tag>
-                  {billing?.capability_entitlements?.balance.state !== 'available' && (
-                    <Button
-                      type="primary"
-                      onClick={() => {
-                        setRechargeAmount('100')
-                        setRechargeError('')
-                        setRechargeOpen(true)
-                      }}
-                    >
-                      创建充值订单
-                    </Button>
-                  )}
                 </Space>
               </div>
               <small className="wallet-note">
-                余额、套餐额度、生成和平台发布分别判断；支付订单只有回调确认后才会到账。
+                生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额未知或不足时不会调用模型。
               </small>
             </Card>
           </div>
@@ -2450,6 +2443,8 @@ type Target = {
   accountId?: string
   storeName?: string
   listingId?: string
+  brandId?: string
+  canonicalProductId?: string
   taskId?: string
   taskIntentKey?: string
   resolvedTask?: Task
@@ -3416,6 +3411,11 @@ function AssetLibrary({
             ? `全部 ${assets?.length ?? 0} 项`
             : `${assetEntry === 'images' ? '图片' : '知识文档'} ${visibleAssets.length} 项`}
         </span>
+        {assetEntry === 'images' && assetStorageReady && (
+          <span className="asset-preview-count" role="status" aria-live="polite">
+            已验证可预览 {Object.keys(assetPreviews).length} 张
+          </span>
+        )}
       </div>
       <div
         id="asset-entry-panel"
@@ -3932,6 +3932,8 @@ function AssetLibrary({
                         ? '解析中…'
                         : asset.parseStatus === 'succeeded'
                           ? '已完成解析'
+                          : asset.parseStatus === 'failed'
+                            ? '重试解析'
                           : asset.scanStatus === 'clean'
                             ? '解析素材'
                             : '等待扫描'}
@@ -4681,6 +4683,9 @@ function Products({
         issue: product.factsConfirmed ? 0 : 1,
         sourceAssetIds: product.sourceAssetIds ?? [],
         canonicalScope: product.canonical_scope,
+        brandId: product.brandId ?? product.canonical_scope?.brand_id ?? undefined,
+        listingId: product.canonical_scope?.listing_id ?? undefined,
+        canonicalProductId: product.canonical_scope?.canonical_product_id ?? undefined,
       }))
     : baseUrl
       ? []
@@ -4900,16 +4905,38 @@ function Products({
     setError('')
     setGroupMessage('')
     try {
-      const result = await createTaskGroup(
-        baseUrl,
-        selectedTargets.map((item) => ({
+      const brandIds = [...new Set(selectedTargets.map((item) => item.brandId).filter((id): id is string => Boolean(id)))]
+      if (brandIds.length !== 1 || selectedTargets.some((item) => !item.brandId)) {
+        throw new Error('批量生产要求所选商品属于同一个品牌，请先完成品牌绑定后再创建任务组。')
+      }
+      const campaign = await createCampaignBatch(baseUrl, {
+        brand_id: brandIds[0]!,
+        targets: selectedTargets.map((item) => ({
           product_id: item.productId,
           platform: item.platform,
-          ...(item.accountId ? { account_id: item.accountId } : {}),
+          account_id: item.accountId!,
+          ...(item.canonicalProductId ? { canonical_product_id: item.canonicalProductId } : {}),
+          ...(item.listingId ? { listing_id: item.listingId } : {}),
         })),
-        '多平台同步发布任务',
-      )
-      setGroupMessage(batchCompletionMessage(result.id, result.tasks.length))
+        request_text: '批量生产商品营销内容：标题、卖点、详情表达及主图候选',
+        idempotency_key: `merchant-studio-campaign-${selectedTargets.map((item) => batchTargetKey(item)).sort().join('|')}`,
+      })
+      const campaignId = campaign.id ?? campaign.campaignId
+      if (!campaignId) throw new Error('批量计划已返回，但缺少 campaign_id，无法进入逐项生产。')
+      let generated: typeof campaign | undefined
+      try {
+        generated = await generateCampaignBatch(baseUrl, campaignId, '按商品事实和品牌规则逐项生成营销内容，等待审核。')
+      } catch (cause) {
+        // The plan is durable even when a precondition (facts, canonical
+        // listing, points, or provider readiness) blocks generation. Keep the
+        // campaign visible so the operator can resolve and resume it.
+        setGroupMessage(`批量计划已创建（${campaignId}），逐项生成被门禁阻止：${describeApiError(cause)}。请处理阻断项后在营销任务中继续。`)
+      }
+      const taskIds = generated?.taskIds ?? []
+      if (generated && taskIds.length) {
+        setGroupMessage(`批量计划已创建并进入逐项生产（${taskIds.length} 个子任务）。请在营销任务中逐项审核后发布。`)
+        onOpenTasks()
+      }
       setSelectedTargets([])
       setGroupConfirmOpen(false)
     } catch (cause) {
@@ -6304,7 +6331,10 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
           pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'success')
         }
       } catch (cause) {
-        shouldPoll = true
+        const apiError = cause as { code?: string; status?: number }
+        // A missing deep-linked job is terminal for this panel. Retrying it
+        // forever makes an invalid URL look like a healthy loading state.
+        shouldPoll = !(apiError.status === 404 || ['GENERATION_JOB_NOT_FOUND', 'IMAGE_GENERATION_JOB_NOT_FOUND'].includes(apiError.code ?? ''))
         pollDelayRef.current = nextImageJobPollDelay(pollDelayRef.current, 'error')
         if (active) {
           setConfigurationError(isImageGenerationConfigurationError(cause))
@@ -7401,16 +7431,10 @@ function TaskWorkspace({
     () => groupTasksForRecovery(taskList ?? []),
     [taskList],
   )
+  // Keep the image-job deep link in the canonical task route.  It is removed
+  // only by an explicit navigation action (for example the breadcrumb back
+  // to the task queue), never while the detail panel is resolving.
   const imageJobId = new URLSearchParams(window.location.search).get('image_job')?.trim()
-  useEffect(() => {
-    // An image job is a standalone entry route. Once a concrete marketing
-    // task is restored, remove the stale query marker so the URL and page
-    // agree about which workflow is active.
-    if (!target || !imageJobId) return
-    const url = new URL(window.location.href)
-    url.searchParams.delete('image_job')
-    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
-  }, [target, imageJobId])
   useEffect(() => {
     if (!timelineOpen) return
     timelineCloseRef.current?.focus()
@@ -7448,7 +7472,7 @@ function TaskWorkspace({
         <section className="page-intro">
           <div>
             <span className="section-kicker">TASK QUEUE</span>
-            <h2>营销任务</h2>
+            <h2>任务队列</h2>
             <p>从这里恢复已有任务；只有从商品页点击“创建任务”才会新建任务。</p>
           </div>
           <StatusChip tone="blue">

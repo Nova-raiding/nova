@@ -87,10 +87,13 @@ export const COMMERCIAL_MCP_FOUNDATION_POLICIES = defineCommercialOperationRegis
   { surface: 'MCP', operation: 'platform.connect', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
   { surface: 'MCP', operation: 'catalog.sync', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
   { surface: 'MCP', operation: 'content.export', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_REQUIRED_NO_CHARGE', rate_action: null },
-  { surface: 'MCP', operation: 'catalog.image.generate', domain: 'COMMERCIAL', enabled: false, classification: 'POINT_CHARGED', rate_action: 'catalog.image.generate' },
-  { surface: 'MCP', operation: 'multimodal.image.edit', domain: 'COMMERCIAL', enabled: false, classification: 'POINT_CHARGED', rate_action: 'multimodal.image.edit' },
-  { surface: 'MCP', operation: 'content.generate', domain: 'COMMERCIAL', enabled: false, classification: 'POINT_CHARGED', rate_action: 'content.generate' },
-  { surface: 'MCP', operation: 'multimodal.video.request', domain: 'COMMERCIAL', enabled: false, classification: 'POINT_CHARGED', rate_action: 'multimodal.video.request' },
+  { surface: 'MCP', operation: 'catalog.image.generate', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'image.generate.standard' },
+  { surface: 'MCP', operation: 'multimodal.image.edit', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'image.edit.annotation' },
+  { surface: 'MCP', operation: 'content.generate', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'text.generate' },
+  // The handler selects the exact image/text/video rate from the validated
+  // modality; this registry entry admits the shared ChatGPT entry point.
+  { surface: 'MCP', operation: 'multimodal.generate', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'text.generate' },
+  { surface: 'MCP', operation: 'multimodal.video.request', domain: 'COMMERCIAL', enabled: true, classification: 'POINT_CHARGED', rate_action: 'video.generate.standard_15s' },
 ] as const)
 
 export const COMMERCIAL_ACCESS_ERROR_CODES = [

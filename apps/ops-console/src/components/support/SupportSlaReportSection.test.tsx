@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { SupportDomainModel } from "../../hooks/useSupportDomain.js";
 import { SupportSlaReportSection, supportSlaActionErrorMessage } from "./SupportSlaReportSection.js";
 
-const base = (): SupportDomainModel => ({ workspaceId: "ws_1", tickets: [], filters: { query: "" }, loading: false, loadingMore: false, detailLoading: false, mutating: false, error: "", hasMore: false, setFilters: vi.fn(), reload: vi.fn(), loadMore: vi.fn(), selectTicket: vi.fn(), clearSelection: vi.fn(), create: vi.fn(), assign: vi.fn(), transition: vi.fn(), comment: vi.fn(), exportCrm: vi.fn(), reportLoading: false, loadReport: vi.fn() });
+const base = (): SupportDomainModel => ({ workspaceId: "ws_1", tickets: [], filters: { query: "" }, loading: false, loadingMore: false, detailLoading: false, mutating: false, error: "", hasMore: false, setFilters: vi.fn(), reload: vi.fn(), loadMore: vi.fn(), selectTicket: vi.fn(), clearSelection: vi.fn(), create: vi.fn(), assign: vi.fn(), transition: vi.fn(), comment: vi.fn(), reportLoading: false, loadReport: vi.fn() });
 
 describe("SupportSlaReportSection", () => {
   it("explains the empty state without implying zero performance", () => {

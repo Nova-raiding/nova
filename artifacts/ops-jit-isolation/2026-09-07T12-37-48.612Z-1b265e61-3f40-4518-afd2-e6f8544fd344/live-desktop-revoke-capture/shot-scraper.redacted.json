@@ -1,0 +1,152 @@
+{
+  "tool": "shot-scraper video",
+  "toolExit": 1,
+  "progress": [
+    "Real signed OIDC login",
+    "Open JIT and read durable current revision",
+    "Negative TTL probe through actual form",
+    "Submit exact workspace JIT and refresh persisted grant",
+    "Empty revoke reason remains disabled without an RPC",
+    "Real revoke succeeds and disappears from the active list"
+  ],
+  "rawStoryboardSaved": false,
+  "rawToolOutputSaved": false,
+  "facts": {
+    "events": [
+      {
+        "at": "2026-09-07T12:38:09.643Z",
+        "method": "ops.authorization.grants.list",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_f56eaeee-2efb-4f4a-a117-515f8900002a",
+        "resource_scope": null,
+        "expected_authorization_revision": null,
+        "grant_revision": null,
+        "revoked": false,
+        "captured_grant_present": null,
+        "authorization_revision": 2,
+        "grant_count": 0
+      },
+      {
+        "at": "2026-09-07T12:38:12.404Z",
+        "method": "ops.authorization.grant.issue",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_baa79ae9-8d27-40f8-8e10-fed57eddfc21",
+        "resource_scope": {
+          "workspace_ids": [
+            "ws_ops_fixture_51724d7d560e4d28a220734b16e6e496"
+          ]
+        },
+        "expected_authorization_revision": "2",
+        "grant_revision": 1,
+        "revoked": false,
+        "captured_grant_present": null,
+        "authorization_revision": 3,
+        "grant_count": null
+      },
+      {
+        "at": "2026-09-07T12:38:12.618Z",
+        "method": "ops.authorization.grants.list",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_ca070417-0e9f-4293-a3c3-f7c0b07af134",
+        "resource_scope": null,
+        "expected_authorization_revision": null,
+        "grant_revision": null,
+        "revoked": false,
+        "captured_grant_present": true,
+        "authorization_revision": 3,
+        "grant_count": 1
+      },
+      {
+        "at": "2026-09-07T12:38:13.203Z",
+        "method": "ops.authorization.grants.list",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_ec8e79d5-3a25-432d-8495-17524f16c80b",
+        "resource_scope": null,
+        "expected_authorization_revision": null,
+        "grant_revision": null,
+        "revoked": false,
+        "captured_grant_present": true,
+        "authorization_revision": 3,
+        "grant_count": 1
+      },
+      {
+        "at": "2026-09-07T12:38:18.959Z",
+        "method": "ops.authorization.grant.revoke",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_3d6de69b-8a6e-462e-a0f2-39730853c7e2",
+        "resource_scope": null,
+        "expected_authorization_revision": "3",
+        "grant_revision": 2,
+        "revoked": true,
+        "captured_grant_present": null,
+        "authorization_revision": 4,
+        "grant_count": null
+      },
+      {
+        "at": "2026-09-07T12:38:19.045Z",
+        "method": "ops.authorization.grants.list",
+        "status": 200,
+        "error_code": null,
+        "reason_code": null,
+        "obligations_missing": null,
+        "decision_id": null,
+        "request_id": "req_3d42df30-ce37-4db5-8060-4afa31cbdac6",
+        "resource_scope": null,
+        "expected_authorization_revision": null,
+        "grant_revision": null,
+        "revoked": false,
+        "captured_grant_present": false,
+        "authorization_revision": 4,
+        "grant_count": 0
+      }
+    ],
+    "started": [
+      {
+        "at": "2026-09-07T12:38:09.448Z",
+        "method": "ops.authorization.grants.list"
+      },
+      {
+        "at": "2026-09-07T12:38:12.209Z",
+        "method": "ops.authorization.grant.issue"
+      },
+      {
+        "at": "2026-09-07T12:38:12.404Z",
+        "method": "ops.authorization.grants.list"
+      },
+      {
+        "at": "2026-09-07T12:38:13.072Z",
+        "method": "ops.authorization.grants.list"
+      },
+      {
+        "at": "2026-09-07T12:38:18.865Z",
+        "method": "ops.authorization.grant.revoke"
+      },
+      {
+        "at": "2026-09-07T12:38:18.959Z",
+        "method": "ops.authorization.grants.list"
+      }
+    ],
+    "invalid_ttl_locally_blocked": true,
+    "empty_revoke_reason_locally_blocked": true
+  }
+}

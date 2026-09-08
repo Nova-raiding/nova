@@ -1,0 +1,9 @@
+{
+  "provider_job_id": "task_Ohjho0Xb7T6v7x98WlMX76wI9DOjR9aq",
+  "status": "SUCCESS",
+  "relay_action": "textGenerate",
+  "quota": 373999,
+  "quality_passed": false,
+  "reason": "首帧不是原商品；新增衣架、黑色拉链、肩部蓝条、袖口魔术贴，商品款式被改变",
+  "delivered": false
+}

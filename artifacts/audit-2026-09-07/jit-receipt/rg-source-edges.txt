@@ -1,0 +1,49 @@
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:2:import { Alert, App, Button, Card, Col, Form, Input, InputNumber, Row, Select, Space, Table, Tabs, Tag, Typography } from "antd";
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:50:  const canReadRoles = model.authorization.can("authorization.role.read");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:52:  const canReadGrants = model.authorization.can("authorization.grant.read");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:69:  const [recentGrantRevocation, setRecentGrantRevocation] = useState<{ grantId: string; workspaceId: string; revokedAt: string }>();
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:96:  if (!canReadRoles && !canReadGrants) return null;
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:147:        setRecentGrantRevocation({
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:152:        await loadGrants();
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:153:        model.clearAuthorizationScopedData();
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:154:        await model.load();
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:170:    <Tabs destroyOnHidden items={[
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:171:      ...(canReadRoles ? [{ key: "matrix", label: "功能权限矩阵", children: <PermissionMatrixSection /> }] : []),
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:172:      ...(canReadRoles ? [{ key: "roles", label: "平台角色", children: <Space orientation="vertical" size="middle" className="full-width">
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:207:      ...(canReadGrants ? [{ key: "grants", label: "JIT 授权", children: <Space orientation="vertical" size="middle" className="full-width">
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:222:        {recentGrantRevocation ? <div role="status" aria-live="polite" aria-atomic="true">
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:227:            description={`授权 ${recentGrantRevocation.grantId} 已于 ${recentGrantRevocation.revokedAt} 撤销，并从工作区 ${recentGrantRevocation.workspaceId} 的有效列表中移除。`}
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:253:              await loadGrants();
+apps/ops-console/src/pages/UsersPage.tsx:5:import { UsersGovernanceWorkspace } from "../components/users/UsersGovernanceWorkspace";
+apps/ops-console/src/pages/UsersPage.tsx:61:      <UsersGovernanceWorkspace model={model} onRefresh={() => void model.load()} />
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:64:import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:440:  const [opsSession, setOpsSession] = useState<OpsSession>();
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:442:  opsSessionRef.current = opsSession;
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:480:  const clearAuthorizationScopedData = () => {
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:535:    opsSessionRef.current = undefined;
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:536:    setOpsSession(undefined);
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:601:      let resolvedSession = opsSessionRef.current;
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:602:      let sessionAttempted = Boolean(resolvedSession);
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:603:      if (!resolvedSession) {
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:607:          resolvedSession = value as unknown as OpsSession;
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:608:          loadCoordinatorRef.current.commit(loadRequest, () => { opsSessionRef.current = resolvedSession; setOpsSession(resolvedSession!); });
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:611:      const resolvedAuthorization = createAuthorizationProjection(resolvedSession, managedOpsSession);
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:631:      const commercialTargetWorkspaceId = resolvedSession?.workspace_id?.trim()
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:686:        sessionAttempted ? Promise.resolve(resolvedSession) : optional("ops.session"),
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:842:        opsSessionRef.current = nextSession;
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:843:        setOpsSession(nextSession);
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:975:    () => createAuthorizationProjection(opsSession, managedOpsSession),
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:2526:    setOpsSession,
+apps/ops-console/src/hooks/useOpsConsoleModel.ts:2527:    clearAuthorizationScopedData,
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:2:import { Alert, Button, Tabs, type TabsProps } from "antd";
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:21:export function UsersGovernanceWorkspace({ model, onRefresh }: { model: OpsConsoleModel; onRefresh?: () => void }) {
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:22:  const sectionKeys = useMemo(() => visibleUsersGovernanceSections(model.authorization), [model.authorization]);
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:23:  const [activeSection, setActiveSection] = useState<UsersGovernanceSectionKey>(sectionKeys[0] ?? "directory");
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:27:    if (!sectionKeys.includes(activeSection) && sectionKeys[0]) setActiveSection(sectionKeys[0]);
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:28:  }, [activeSection, sectionKeys]);
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:31:    if (!sectionKeys.length) unavailableRef.current?.focus({ preventScroll: true });
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:32:  }, [sectionKeys.length]);
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:34:  if (!sectionKeys.length) {
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:53:  const items: TabsProps["items"] = sectionKeys.map((key) => {
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:70:      <Tabs
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:71:        activeKey={activeSection}

@@ -1,10 +1,15 @@
 import { execFileSync } from "node:child_process"
 import { readdirSync } from "node:fs"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
+import { requireIsolatedLocalRuntime, type LocalRuntimeTestContext } from './local-runtime-test-safety.js'
 
-const composeFile = "infra/local/docker-compose.yml"
-const project = ["compose", "-p", "local", "-f", composeFile]
+let runtime: LocalRuntimeTestContext
+let project: string[]
+beforeEach(() => {
+  runtime = requireIsolatedLocalRuntime()
+  project = runtime.composeArgs
+})
 
 type ComposeContainer = {
   Service?: string
@@ -19,7 +24,7 @@ type DockerHealth = {
 }
 
 function docker(args: string[], input?: string) {
-  return execFileSync("docker", args, {
+  return execFileSync("docker", [...runtime.dockerArgs, ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
     input,
@@ -86,7 +91,7 @@ describe("local Docker runtime contract", () => {
     for (const service of expectedServices) {
       const id = byService.get(service)?.ID
       expect(id, `${service} must expose a container id`).toMatch(/^[0-9a-f]{12,64}$/u)
-      const evidence = JSON.parse(docker(["inspect", "--format", "{{json .}}", id!])) as {
+      const evidence = JSON.parse(docker(["inspect", "--format", '{"Image":{{json .Image}},"State":{"Status":{{json .State.Status}},"StartedAt":{{json .State.StartedAt}}}', id!])) as {
         Image?: string
         State?: { Status?: string; StartedAt?: string }
       }
@@ -199,12 +204,15 @@ describe("local Docker runtime contract", () => {
   it("refreshes scanner callback evidence through a real local scan", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const body = Buffer.from(`\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRlocal-callback-${suffix}`, "binary")
-    const upload = await fetch("http://127.0.0.1:8787/v1/assets/upload", {
+    runtime.assertIsolated()
+    const upload = await fetch(`${runtime.apiBaseUrl}/v1/assets/upload`, {
       method: "POST",
+      redirect: 'error',
+      signal: AbortSignal.timeout(15_000),
       headers: {
-        Authorization: "Bearer workspace-local-token",
+        Authorization: `Bearer ${runtime.apiToken}`,
         "content-type": "image/png",
-        "x-workspace-id": "ws_demo",
+        "x-workspace-id": runtime.workspaceId,
         "x-asset-name": `scanner-callback-${suffix}.png`,
       },
       body,
@@ -215,6 +223,7 @@ describe("local Docker runtime contract", () => {
     expect(uploaded.data).toMatchObject({ id: expect.any(String), scanStatus: "quarantined" })
 
     const assetId = uploaded.data!.id!
+    expect(assetId).toMatch(/^[A-Za-z0-9_-]{1,128}$/u)
     const deadline = Date.now() + 30_000
     let callback: { callback_status: string; callback_accepted_at: string | null } | undefined
     while (Date.now() < deadline) {
@@ -232,7 +241,7 @@ describe("local Docker runtime contract", () => {
         "-F",
         "\t",
         "-c",
-        `SELECT callback_status, COALESCE(callback_accepted_at::text, '') FROM asset_scan_attempts WHERE workspace_id='ws_demo' AND outbox_event_id IN (SELECT id FROM outbox_events WHERE workspace_id='ws_demo' AND aggregate_id='${assetId}') ORDER BY created_at DESC LIMIT 1`,
+        `SELECT callback_status, COALESCE(callback_accepted_at::text, '') FROM asset_scan_attempts WHERE workspace_id='${runtime.workspaceId}' AND outbox_event_id IN (SELECT id FROM outbox_events WHERE workspace_id='${runtime.workspaceId}' AND aggregate_id='${assetId}') ORDER BY created_at DESC LIMIT 1`,
       ])
       const [status, acceptedAt] = rows.split("\t")
       if (status) {

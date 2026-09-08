@@ -1,0 +1,1 @@
+{"profile":"pilot_50_http_fake","transport":"real_http","connectorMode":"fake","cloudGate":false,"workspaces":50,"requests":400,"duplicatePublishRequests":100,"acceptedPublishJobs":100,"uniquePublishJobs":50,"duplicateWrites":50,"errors":[]}

@@ -1,0 +1,32 @@
+{
+  "conversion": {
+    "quota_per_unit": 500000,
+    "usd_exchange_rate": 6.83
+  },
+  "records": [
+    {
+      "provider_request_id": "202609070928413227757388268d9d6VgQ9TZtH",
+      "model": "qwen-image-2.0",
+      "quota": 12453,
+      "cost_cny": 0.17010798000000002
+    },
+    {
+      "provider_request_id": "202609070925251484666918268d9d6gd4AFNa8",
+      "model": "qwen-image-2.0",
+      "quota": 12453,
+      "cost_cny": 0.17010798000000002
+    },
+    {
+      "provider_request_id": "202609070911293347445848268d9d6Glm2Ux1i",
+      "model": "qwen-image-2.0",
+      "quota": 49810,
+      "cost_cny": 0.6804046
+    },
+    {
+      "provider_request_id": "202609070908100594885178268d9d6ckwETlVC",
+      "model": "qwen-image-2.0",
+      "quota": 12453,
+      "cost_cny": 0.17010798000000002
+    }
+  ]
+}

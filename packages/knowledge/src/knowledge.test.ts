@@ -82,6 +82,19 @@ describe('knowledge module', () => {
     expect(knowledge.getAsset('ws-a', asset.id)).toEqual(asset)
   })
 
+  it('stores an isolated, revision-safe brand preference and rehydrates it', () => {
+    const knowledge = createModule()
+    const first = knowledge.updateBrandPreference({ workspaceId: 'ws-a', preferences: { tone: '克制', preferredTerms: ['安心'] }, version: '1.0.0', updatedBy: 'owner', status: 'active' })
+    expect(first).toMatchObject({ workspaceId: 'ws-a', revision: 1, version: '1.0.0', status: 'active', updatedBy: 'owner' })
+    expect(knowledge.getBrandPreference('ws-b')).toBeUndefined()
+    const second = knowledge.updateBrandPreference({ workspaceId: 'ws-a', preferences: { tone: '温和' }, version: '1.1.0', updatedBy: 'reviewer', expectedRevision: 1 })
+    expect(second).toMatchObject({ id: first.id, revision: 2, version: '1.1.0', status: 'active' })
+    expect(() => knowledge.updateBrandPreference({ workspaceId: 'ws-a', preferences: {}, version: '1.2.0', updatedBy: 'owner', expectedRevision: 1 })).toThrowError(new KnowledgeError('VERSION_CONFLICT'))
+    const restored = createModule()
+    restored.hydrate([{ eventType: 'knowledge.brand.preference.updated', aggregateId: second.id, sequence: second.revision, payload: second as unknown as Record<string, unknown> }])
+    expect(restored.getBrandPreference('ws-a')).toEqual(second)
+  })
+
   it('turns feedback and platform rejection into non-activating learning suggestions', () => {
     const knowledge = createModule()
     const rejection = knowledge.recordFeedback({ workspaceId: 'ws-a', kind: 'platform_rejection', platform: 'jd', reason: '缺少功效依据', details: '功效词需要提供检测报告' })

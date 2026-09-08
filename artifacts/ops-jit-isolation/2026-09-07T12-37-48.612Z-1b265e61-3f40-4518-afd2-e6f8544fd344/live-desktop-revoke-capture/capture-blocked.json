@@ -1,0 +1,7 @@
+{
+  "status": "capture_failed",
+  "featureVerdict": "FAIL",
+  "code": "CAPTURE_TOOL_FAILED",
+  "startedAt": "2026-09-07T12:38:04.380Z",
+  "finishedAt": "2026-09-07T12:39:34.346Z"
+}

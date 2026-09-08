@@ -44,7 +44,6 @@ describe('operations console API surface', () => {
     const expected = [
       'ops.support.tickets.list', 'ops.support.ticket.get', 'ops.support.ticket.create',
       'ops.support.ticket.assign', 'ops.support.ticket.transition', 'ops.support.ticket.comment',
-      'ops.support.crm.export',
       'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline', 'ops.incident.create',
       'ops.incident.transition', 'ops.incident.comment', 'ops.incident.commander.assign',
       'ops.incident.scope.update',
@@ -54,7 +53,7 @@ describe('operations console API surface', () => {
       'ops.audit.list', 'ops.audit.detail', 'ops.audit.export',
     ]
     const contract = new Set<string>(MCP_METHODS)
-    expect(expected).toHaveLength(26)
+    expect(expected).toHaveLength(25)
     expect(expected.filter(method => !contract.has(method))).toEqual([])
   })
 

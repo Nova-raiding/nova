@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { MCP_METHODS } from '../packages/contracts/src/mcp.js'
+import { countMerchantBridgeTools } from '../scripts/merchant-bridge-surface.js'
 
 export interface ReleaseMetadataSnapshot {
   declared: {
@@ -27,30 +28,9 @@ function json(path: string): Record<string, any> {
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, any>
 }
 
-const merchantHiddenMethods = new Set([
-  'billing.model-usage.reconciliation.run',
-  'billing.model-usage.resolve',
-  'billing.usage.consume',
-  'billing.usage.refund',
-  'billing.refund',
-  'billing.reconciliation.run',
-  'platform.settings.update',
-  'platform.revoke',
-  'platform.model.status',
-  'asset.scan',
-  'content.codex.prepare',
-  'content.codex.commit',
-])
-
 function countBridgeTools(root: string): number {
   const source = readFileSync(resolve(root, 'apps/plugin/mcp/bridge.mjs'), 'utf8')
-  const start = source.indexOf('const METHODS = {')
-  const end = source.indexOf('\n}\n\n', start)
-  const methods = start >= 0 && end > start ? source.slice(start, end) : ''
-  const names = [...methods.matchAll(/^  '([^']+)'\s*:/gmu)].map(match => match[1]!)
-  const disabledBlock = source.match(/const COMMERCIAL_DISABLED_METHODS = new Set\(\[(.*?)\]\)/su)?.[1] ?? ''
-  const disabled = new Set([...disabledBlock.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
-  return names.filter(name => !name.startsWith('ops.') && !merchantHiddenMethods.has(name) && !disabled.has(name)).length
+  return countMerchantBridgeTools(source)
 }
 
 function countOpsDomains(root: string): number {

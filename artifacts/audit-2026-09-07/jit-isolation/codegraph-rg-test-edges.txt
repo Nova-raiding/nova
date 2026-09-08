@@ -1,0 +1,176 @@
+22:    "test": "node --import tsx scripts/run-safe-tests.ts --no-file-parallelism",
+32:    "test:browser:ops": "node --import tsx scripts/run-ops-oidc-e2e.ts dogfood/chatgpt-all-functions/ops-all.spec.js dogfood/chatgpt-all-functions/ops-users.spec.js dogfood/chatgpt-all-functions/ops.spec.js --workers=1",
+55:    "test:watch": "node --import tsx scripts/run-safe-tests.ts watch",
+57:    "test:postgres:isolated": "node --import tsx scripts/run-isolated-postgres-tests.ts",
+58:    "test:browser:ops:jit": "node --import tsx scripts/run-ops-oidc-e2e.ts",
+62:    "check": "npm run typecheck && npm test && npm run test:ops-console && npm run release:metadata:validate && npm run build:ops-console && npm run build:merchant-studio"
+vitest.config.ts:1:import { configDefaults, defineConfig } from 'vitest/config'
+vitest.config.ts:2:import { NON_HERMETIC_TEST_FILES } from './tests/test-suite-isolation.js'
+vitest.config.ts:8:    exclude: [...configDefaults.exclude, ...NON_HERMETIC_TEST_FILES],
+tests/test-summary.test.ts:1:import { describe, expect, it } from 'vitest'
+tests/test-summary.test.ts:23:const evidence = { directory: '/evidence/run-unique', vitestReport: '/evidence/run-unique/vitest.json', vitestStdout: '/evidence/run-unique/vitest.stdout.log', vitestStderr: '/evidence/run-unique/vitest.stderr.log', smokeStdout: '/evidence/run-unique/http-smoke.stdout.log', smokeStderr: '/evidence/run-unique/http-smoke.stderr.log', summary: '/evidence/run-unique/summary.json' }
+tests/test-summary.test.ts:30:  mkdirSync(join(root, 'node_modules/vitest'), { recursive: true })
+tests/test-summary.test.ts:34:    function report() { const output = process.argv.find(arg => arg.startsWith('--outputFile=')).slice('--outputFile='.length); writeFileSync(output, ${JSON.stringify(rawReport)}); console.log('vitest fixture output'); }`
+tests/test-summary.test.ts:35:  writeFileSync(join(root, 'node_modules/vitest/vitest.mjs'), `${capture}; capture('vitest'); report();`)
+tests/test-summary.test.ts:37:    if (process.argv[2]?.endsWith('/scripts/run-safe-tests.ts')) { capture('vitest'); report(); }
+tests/test-summary.test.ts:118:        expect(readFileSync(summary.evidence.vitestReport, 'utf8')).toBe(rawReport)
+tests/test-summary.test.ts:119:        expect(readFileSync(summary.evidence.vitestStdout, 'utf8')).toContain('vitest fixture output')
+tests/test-summary.test.ts:147:      const vitest = JSON.parse(readFileSync(join(root, 'child-vitest.json'), 'utf8'))
+tests/test-summary.test.ts:148:      expect(vitest.args[0]).toBe(join(root, 'scripts/run-safe-tests.ts'))
+tests/test-summary.test.ts:149:      expect(vitest.args).toContain(`--outputFile=${summary.evidence.vitestReport}`)
+tests/test-summary.test.ts:150:      for (const kind of ['vitest', 'smoke']) {
+tests/test-summary.test.ts:161:      expect(readFileSync(summary.evidence.vitestReport, 'utf8')).toBe(rawReport)
+tests/test-summary.ts:6:import { buildSafeTestEnvironment } from '../scripts/run-safe-tests.js'
+tests/test-summary.ts:10:type EvidencePaths = { directory: string; vitestReport: string; vitestStdout: string; vitestStderr: string; smokeStdout: string; smokeStderr: string; summary: string }
+tests/test-summary.ts:92:    errors: { vitestExitCode: input.testRun.status, smokeExitCode: input.smokeRun.status, testFailures: counts?.tests.failed ?? null, smokeErrors: load?.errors ?? null, reportErrors, childErrors },
+tests/test-summary.ts:115:    directory, vitestReport: join(directory, 'vitest.json'), vitestStdout: join(directory, 'vitest.stdout.log'), vitestStderr: join(directory, 'vitest.stderr.log'),
+tests/test-summary.ts:124:    const testRun = runCaptured(root, [tsx, resolve(root, 'scripts/run-safe-tests.ts'), '--reporter=json', `--outputFile=${evidence.vitestReport}`], evidence.vitestStdout, evidence.vitestStderr, environment)
+tests/test-summary.ts:129:    try { reportText = readFileSync(evidence.vitestReport, 'utf8') } catch { /* Missing evidence must fail in the summary. */ }
+tests/quality-entrypoints.test.ts:3:import { describe, expect, it } from 'vitest'
+tests/quality-entrypoints.test.ts:4:import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
+tests/quality-entrypoints.test.ts:38:      if ((NON_HERMETIC_TEST_FILES as readonly string[]).includes(file)) return false
+tests/quality-entrypoints.test.ts:46:    expect(script('test')).toContain('scripts/run-safe-tests.ts')
+tests/quality-entrypoints.test.ts:61:    expect(script('test:local-release-gate')).toContain('--config vitest.runtime.config.ts tests/local-docker-release-gate.test.ts')
+tests/quality-entrypoints.test.ts:84:    expect(NON_HERMETIC_TEST_FILES).toHaveLength(13)
+tests/quality-entrypoints.test.ts:85:    expect(script('test:runtime:isolated')).toContain('--config vitest.runtime.config.ts')
+tests/quality-entrypoints.test.ts:86:    expect(script('test:postgres:isolated')).toContain('scripts/run-isolated-postgres-tests.ts')
+tests/quality-entrypoints.test.ts:87:    expect(script('test:browser:ops:jit')).toContain('scripts/run-ops-oidc-e2e.ts')
+tests/quality-entrypoints.test.ts:88:    expect(readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')).toContain('...NON_HERMETIC_TEST_FILES')
+tests/quality-entrypoints.test.ts:92:    expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
+scripts/run-ops-oidc-e2e.ts:8:import { createIsolatedOpsFixture, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
+scripts/run-ops-oidc-e2e.ts:28:  return args.length ? [...args] : ['dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js']
+scripts/run-ops-oidc-e2e.ts:100:    fixtureSetup = createIsolatedOpsFixture({ evidenceDir })
+scripts/run-ops-oidc-e2e.ts:144:      OPS_E2E_OUTPUT_DIR: evidenceDir, PLAYWRIGHT_JSON_OUTPUT_NAME: resolve(evidenceDir, 'playwright.json'),
+scripts/run-ops-oidc-e2e.ts:153:    const run = launch(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--workers=1', '--reporter=line,json', '--output', resolve(evidenceDir, 'test-results')], environment, 'browser', true)
+scripts/run-ops-oidc-e2e.ts:165:  if (process.argv.includes('--help')) console.log('Usage: node --import tsx scripts/run-ops-oidc-e2e.ts [dogfood/chatgpt-all-functions/ops*.spec.js]\nAlways provisions isolated PG17/Redis and a fresh signed OIDC identity. Shared stack configuration is not accepted.')
+tests/safe-test-launcher.test.ts:1:import { describe, expect, it, vi } from 'vitest'
+tests/safe-test-launcher.test.ts:2:import { buildSafeTestEnvironment, buildSafeVitestArgs, runSafeTests, type SafeTestRuntime } from '../scripts/run-safe-tests.js'
+tests/safe-test-launcher.test.ts:3:import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
+tests/safe-test-launcher.test.ts:25:  it.each(NON_HERMETIC_TEST_FILES)('rejects an explicit real-runtime test before spawning: %s', file => {
+tests/safe-test-launcher.test.ts:31:  it.each(['--config=integration.ts', '-c', '--root=/shared/project', '--dir', '--project=integration', '--workspace=integration.ts', '--exclude=anything', '--passWithNoTests', '--watch', '--ui'])('rejects an isolation-bypassing argument: %s', argument => {
+tests/safe-test-launcher.test.ts:43:    expect(NON_HERMETIC_TEST_FILES).toHaveLength(13)
+tests/safe-test-launcher.test.ts:44:    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(13)
+tests/safe-test-launcher.test.ts:45:    expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
+tests/safe-test-launcher.test.ts:46:    expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
+tests/ops-e2e-isolation.test.ts:2:import { describe, expect, it } from 'vitest'
+tests/ops-e2e-isolation.test.ts:3:import { opsChildEnvironment, validateOpsE2eArguments } from '../scripts/run-ops-oidc-e2e.js'
+tests/ops-e2e-isolation.test.ts:6:  const source = readFileSync('scripts/run-ops-oidc-e2e.ts', 'utf8')
+tests/ops-e2e-isolation.test.ts:8:    expect(source).toContain('createIsolatedOpsFixture')
+tests/ops-e2e-isolation.test.ts:33:    expect(validateOpsE2eArguments([], {})).toEqual(['dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js'])
+scripts/run-safe-tests.ts:6:import { NON_HERMETIC_TEST_FILES } from '../tests/test-suite-isolation.js'
+scripts/run-safe-tests.ts:26:  '--config', '-c', '--root', '-r', '--dir', '--project', '--workspace', '--include', '--exclude',
+scripts/run-safe-tests.ts:43:    const blocked = NON_HERMETIC_TEST_FILES.find(file => selection === file
+scripts/run-safe-tests.ts:47:    if (blocked) throw new Error(`${blocked} requires a dedicated integration entrypoint with an explicitly isolated runtime; it is excluded from the safe default suite.`)
+scripts/run-safe-tests.ts:49:  // A typo, excluded filter, or empty project must fail rather than claim a
+scripts/run-safe-tests.ts:70:      const child = spawn(process.execPath, [join(projectRoot, 'node_modules/vitest/vitest.mjs'), ...args], {
+scripts/run-safe-tests.ts:97:  const vitestArgs = buildSafeVitestArgs(args)
+scripts/run-safe-tests.ts:100:    return await runtime.runVitest(vitestArgs, buildSafeTestEnvironment(source, storageRoot))
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:2:import { describeGrantScope, describeGrantStatus, parseGrantCapabilities, validateJitExpiry } from "./AuthorizationGovernanceSection";
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:12:describe("AuthorizationGovernanceSection", () => {
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:13:  const source = readFileSync(new URL("./AuthorizationGovernanceSection.tsx", import.meta.url), "utf8");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:28:    expect(validateJitExpiry("2026-09-01T00:10:00.000Z", "read", now)).toBeUndefined();
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:29:    expect(validateJitExpiry("2026-09-01T00:06:00.000Z", "write", now)).toContain("最长 5 分钟");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:30:    expect(validateJitExpiry("2026-09-01T00:16:00.000Z", "read", now)).toContain("最长 15 分钟");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:35:    expect(validateJitExpiry("not-a-date", "read", now)).toContain("有效的 ISO");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:36:    expect(validateJitExpiry("2026-08-31T23:59:59.000Z", "read", now)).toContain("晚于当前时间");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:70:describe("AuthorizationGovernanceSection browser form submission", () => {
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:71:  let browser: Browser | undefined;
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:100:            import { AuthorizationGovernanceSection } from '/src/components/users/AuthorizationGovernanceSection.tsx';
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:106:            createRoot(document.getElementById('root')).render(React.createElement(App, null, React.createElement(AuthorizationGovernanceSection, { model })));
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:125:    browser = await chromium.launch({ channel: "chrome", headless: true });
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:129:    try { await browser?.close(); }
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:147:    const loaded = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.grants.list");
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:163:    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:166:      await page.route(`${baseUrl}/api/mcp`, async route => {
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:169:        await respond(route, request, request.method === "ops.authorization.grants.list" ? grantList : { id: "issued-jit-ui" });
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:173:      await expect.poll(() => requests.filter(request => request.method === "ops.authorization.grant.issue").length).toBe(1);
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:174:      const params = requests.find(request => request.method === "ops.authorization.grant.issue")!.params;
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:183:      await expect.poll(() => requests.filter(request => request.method === "ops.authorization.grants.list").length).toBe(2);
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:189:    const page = await browser!.newPage({ viewport: { width: 1280, height: 800 } });
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:194:      await page.route(`${baseUrl}/api/mcp`, async route => {
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.test.tsx:196:        if (request.method === "ops.authorization.grants.list") return respond(route, request, grantList);
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:29:export function validateJitExpiry(value: unknown, accessMode: "read" | "write", now = Date.now()): string | undefined {
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:48:export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleModel }) {
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:110:    try { setGrants(await rpc<GrantList>("ops.authorization.grants.list", { subject_identity_id: subjectIdentityId.trim(), target_workspace_id: targetWorkspaceId.trim() }) ?? undefined); }
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:140:        await rpc("ops.authorization.grant.revoke", {
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:251:              await rpc("ops.authorization.grant.issue", { subject_identity_id: subjectIdentityId.trim(), target_workspace_id: targetWorkspaceId.trim(), grant_kind: "support", access_mode: values.access_mode, capabilities_json: JSON.stringify(capabilities), resource_scope_json: JSON.stringify({ workspace_ids: [targetWorkspaceId.trim()] }), ticket_ref: values.ticket_ref, approved_by: values.approved_by, approved_at: values.approved_at, expires_at: values.expires_at, max_uses: String(values.max_uses), expected_authorization_revision: String(grants?.authorization_revision ?? 0), reason: values.reason });
+apps/ops-console/src/components/users/AuthorizationGovernanceSection.tsx:269:              const error = validateJitExpiry(value, getFieldValue("access_mode") ?? "read");
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:53:  if (request.method() !== 'POST' || url.origin !== gatewayUrl.origin || url.pathname !== '/api/mcp') return null
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:80:  if (method === 'ops.authorization.grants.list') return {
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:111:async function rpcThroughUi(page, methods, action, evidence) {
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:114:  const waiting = methods.map(method => page.waitForResponse(response => mcpPayload(response.request())?.method === method, { timeout: 30_000 }).then(async response => {
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:154:  const [{ result: session }] = await rpcThroughUi(page, ['ops.session'], () => page.getByRole('button', { name: '安全登录', exact: true }).click(), evidence)
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:165:for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:  test(`isolated live JIT issue, refresh and revoke at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:167:    const caseId = `jit-${viewport.width}x${viewport.height}-${randomUUID()}`
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:173:      raw_browser_trace_saved: false,
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:174:      viewport,
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:186:    await page.setViewportSize(viewport)
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:193:      const [{ result: initial }] = await rpcThroughUi(page, ['ops.authorization.grants.list'], () => readGrants.click(), evidence)
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:211:      const [issuedExchange, automaticRefresh] = await rpcThroughUi(page, ['ops.authorization.grant.issue', 'ops.authorization.grants.list'], () => form.getByRole('button', { name: '签发 JIT', exact: true }).click(), evidence)
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:236:      const [{ result: refreshed }] = await rpcThroughUi(page, ['ops.authorization.grants.list'], () => readGrants.click(), evidence)
+dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:259:      const [revokedExchange, revokedRefresh] = await rpcThroughUi(page, ['ops.authorization.grant.revoke', 'ops.authorization.grants.list'], () => confirm.click(), evidence)
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:5:import { AuthorizationGovernanceSection } from "./AuthorizationGovernanceSection";
+apps/ops-console/src/components/users/UsersGovernanceWorkspace.tsx:65:    return { key, label: "权限与角色", children: <AuthorizationGovernanceSection model={model} /> };
+3:import { persistenceReady, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests } from './server.js'
+26:describe('worker authorization recheck API', () => {
+50:      }, workspaceId, resourceId, { eventId: 'evt_workspace_job' })).resolves.toMatchObject({ authorized: true, resource_id: resourceId, reservation_id: 'worker-execution:evt_workspace_job:generation.execute' })
+85:      expect(reserved).toMatchObject({ authorized: true, reservation_id: 'worker-execution:evt_authz_api:generation.execute', event_id: 'evt_authz_api' })
+87:      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), decisionId: 'decision_conflict' }, 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', details: { event_id: 'evt_authz_api', reservation_id: 'worker-execution:evt_authz_api:generation.execute' } })
+247:    const response = await fetch(`http://127.0.0.1:${address.port}${target}`, { headers: {
+256:describe('E1 worker execution-check: real signed HTTP with controlled memory repositories', () => {
+11407:    case 'ops.authorization.grant.issue': {
+11426:    case 'ops.authorization.grant.revoke': {
+ 1585986 apps/api/src/server.ts
+apps/api/src/worker-authorization-recheck.test.ts:3:import { persistenceReady, recheckWorkerAuthorizationSnapshot, server, service, setAuthorizationRepositoryForTests } from './server.js'
+apps/api/src/worker-authorization-recheck.test.ts:42:    const reserve = vi.spyOn(repository, 'reserveExecution')
+apps/api/src/worker-authorization-recheck.test.ts:45:      await expect(recheckWorkerAuthorizationSnapshot({
+apps/api/src/worker-authorization-recheck.test.ts:81:      await expect(recheckWorkerAuthorizationSnapshot(snapshot(1, 1), 'ws_authz_api', 'task_authz_api')).resolves.toMatchObject({ authorized: true })
+apps/api/src/worker-authorization-recheck.test.ts:84:      const reserved = await recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })
+apps/api/src/worker-authorization-recheck.test.ts:86:      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).resolves.toMatchObject({ reservation_id: (reserved as { reservation_id: string }).reservation_id })
+apps/api/src/worker-authorization-recheck.test.ts:87:      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), decisionId: 'decision_conflict' }, 'ws_authz_api', 'task_authz_api', { eventId: 'evt_authz_api' })).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID', details: { event_id: 'evt_authz_api', reservation_id: 'worker-execution:evt_authz_api:generation.execute' } })
+apps/api/src/worker-authorization-recheck.test.ts:88:      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), grantIds: ['forged-grant'] }, 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+apps/api/src/worker-authorization-recheck.test.ts:97:      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_REVOKED' })
+apps/api/src/worker-authorization-recheck.test.ts:98:      await expect(recheckWorkerAuthorizationSnapshot({ ...snapshot(2, 2), identityId: 'other-identity' }, 'ws_authz_api', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
+apps/api/src/worker-authorization-recheck.test.ts:99:      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws-other', 'task_authz_api')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
+apps/api/src/worker-authorization-recheck.test.ts:100:      await expect(recheckWorkerAuthorizationSnapshot(snapshot(2, 2), 'ws_authz_api', 'task-other')).rejects.toMatchObject({ code: 'AUTHZ_EXECUTION_SNAPSHOT_INVALID' })
+apps/api/src/worker-authorization-recheck.test.ts:193:  const reserve = vi.spyOn(repository, 'reserveExecution')
+apps/api/src/worker-authorization-recheck.test.ts:243:      ? `/v1/publish-jobs/${requestedResource}/execution-check?event_id=${options.eventId ?? event.id}`
+apps/api/src/worker-authorization-recheck.test.ts:244:      : `/v1/worker-events/${options.eventId ?? event.id}/execution-check?aggregate_id=${requestedResource}&operation=${options.operation ?? operation}`
+apps/api/src/worker-authorization-recheck.test.ts:256:describe('E1 worker execution-check: real signed HTTP with controlled memory repositories', () => {
+apps/api/src/server.ts:67:import { parseWorkerAuthorizationSnapshot, type CriticalWorkerOperation, type WorkerAuthorizationSnapshot } from '../../../packages/workers/src/execution-authorization.js'
+apps/api/src/server.ts:4292:export async function recheckWorkerAuthorizationSnapshot(snapshot: WorkerAuthorizationSnapshot, workspaceId: string, resourceId: string, execution?: { eventId: string }) {
+apps/api/src/server.ts:4338:  let reservation: Awaited<ReturnType<AuthorizationRepository['reserveExecution']>>
+apps/api/src/server.ts:4340:    reservation = await authzRepository.reserveExecution({
+apps/api/src/server.ts:4382:  const current = await recheckWorkerAuthorizationSnapshot(candidate, workspaceId, resourceId)
+apps/api/src/server.ts:8543:      || /^\/v1\/worker-events\/[^/]+\/execution-check$/.test(path)
+apps/api/src/server.ts:8544:      || /^\/v1\/publish-jobs\/[^/]+\/(?:execution-check|media)$/.test(path)
+apps/api/src/server.ts:8598:    if (/^\/v1\/publish-jobs\/[^/]+\/(?:execution-check|media)$/u.test(path)) return ['publish', 'reconcile']
+apps/api/src/server.ts:8599:    if (/^\/v1\/worker-events\/[^/]+\/execution-check$/u.test(path)) return ['sync', 'generation', 'publish', 'reconcile', 'scan']
+apps/api/src/server.ts:12902:        legacy_non_authoritative: { currency: 'CNY', wallet_balance_cny: (balanceFen / 100).toFixed(2), pending_authorization_cny: (pendingAuthorizationFen / 100).toFixed(2), settlement_pending_count: pendingActions.length, billing_mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', historical_task_quota: usage ? { included_tasks: usage.includedTasks, used_tasks: usage.usedTasks, remaining_tasks: usage.remainingTasks } : null, store_capacity: stores, provider_ready: process.env.PAYMENT_MODE === 'provider' && paymentProviderReadiness().ready, note: '仅供历史对账；不得参与业务准入、恢复建议或 worker execution-check。' },
+apps/api/src/server.ts:18263:  const workerExecutionCheckMatch = path.match(/^\/v1\/worker-events\/([^/]+)\/execution-check$/)
+apps/api/src/server.ts:18264:  const publishExecutionCheckMatch = path.match(/^\/v1\/publish-jobs\/([^/]+)\/execution-check$/)
+apps/api/src/server.ts:18290:      snapshot = parseWorkerAuthorizationSnapshot(event, requestedOperation)
+apps/api/src/server.ts:18295:      recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, event.aggregateId, { eventId: event.id }),
+apps/api/src/server.ts:18325:    try { eventSnapshot = parseWorkerAuthorizationSnapshot(publishEvent, 'publish.execute') } catch { throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_INVALID', '发布事件缺少有效且精确绑定的授权快照', 403) }
+apps/api/src/server.ts:18327:    const authorizationRecheck = await recheckWorkerAuthorizationSnapshot(snapshot, workspaceId, job.id, { eventId: publishEvent.id })
+scripts/run-ops-oidc-e2e.ts:7:import { createLocalOidcGateway } from '../tests/local-oidc-gateway.js'
+scripts/run-ops-oidc-e2e.ts:8:import { createIsolatedOpsFixture, type IsolatedOpsFixture } from '../tests/isolated-ops-fixture.js'
+scripts/run-ops-oidc-e2e.ts:56:  let gateway: ReturnType<typeof createLocalOidcGateway> | undefined
+scripts/run-ops-oidc-e2e.ts:62:    // not exit before that promise yields the exact resources we must dispose.
+scripts/run-ops-oidc-e2e.ts:64:    gateway?.closeAllConnections?.()
+scripts/run-ops-oidc-e2e.ts:65:    if (gateway?.listening) await new Promise<void>(closed => gateway!.close(() => closed()))
+scripts/run-ops-oidc-e2e.ts:73:      const disposed = await fixture.dispose()
+scripts/run-ops-oidc-e2e.ts:74:      if (disposed.leftRunning.length) throw new Error('OPS_E2E_FIXTURE_CLEANUP_REQUIRES_REVIEW')
+scripts/run-ops-oidc-e2e.ts:100:    fixtureSetup = createIsolatedOpsFixture({ evidenceDir })
+scripts/run-ops-oidc-e2e.ts:105:    const gatewayPort = await freeLoopbackPort()
+scripts/run-ops-oidc-e2e.ts:106:    if (new Set([apiPort, uiPort, gatewayPort]).size !== 3) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
+scripts/run-ops-oidc-e2e.ts:107:    const baseUrl = `http://127.0.0.1:${gatewayPort}`
+scripts/run-ops-oidc-e2e.ts:111:    gateway = createLocalOidcGateway({
+scripts/run-ops-oidc-e2e.ts:122:      DATABASE_URL: fixture.databaseUrl, OPS_DATABASE_URL: fixture.opsDatabaseUrl, REDIS_URL: fixture.redisUrl,
+scripts/run-ops-oidc-e2e.ts:127:    const api = launch(process.execPath, ['--import', 'tsx', 'apps/api/src/server.ts'], apiEnvironment, 'api')
+scripts/run-ops-oidc-e2e.ts:133:    const build = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
+scripts/run-ops-oidc-e2e.ts:134:    if (await exited(build) !== 0) throw new Error('OPS_E2E_UI_BUILD_FAILED')
+scripts/run-ops-oidc-e2e.ts:139:    await new Promise<void>((done, reject) => { gateway!.once('error', reject); gateway!.listen(gatewayPort, '127.0.0.1', done) })
+scripts/run-ops-oidc-e2e.ts:147:      runId: fixture.runId, evidenceDir, baseUrl, apiPort, uiPort, gatewayPort,
+artifacts/audit-2026-09-07/codegraph/clean-build.json:25:        "message": "File exceeds max size (1583824 > 1048576)",

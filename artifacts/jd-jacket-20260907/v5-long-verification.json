@@ -1,0 +1,12 @@
+{
+  "file": "完整详情页长图-v5.png",
+  "width": 1024,
+  "height": 4096,
+  "job_id": "imggen_b91462d6-9d36-4dc5-b354-de184589e7cf",
+  "asset_id": "asset_5e668ca0-6558-410f-9206-e336c0b063ee",
+  "model": "qwen-image-3.0",
+  "route": "configured relay /images/generations, native input.messages and parameters.size",
+  "reference_asset": "asset_059d67f0-57b8-494e-8eda-7bd2fc9883ac",
+  "visual_review": "complete long page with five sections; pale-blue garment, plain zipper, side pockets and elastic cuffs; no invented black hood cords; AI candidate, fine product details remain subject to merchant review",
+  "publication": "unpublished"
+}

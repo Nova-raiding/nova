@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 1,
+  "finishedAt": "2026-09-07T12:15:43.584Z",
+  "scope": "Desktop JIT issue form and hermetic test entrypoints; no authorization-policy change",
+  "unit": [
+    {
+      "report": "owner-integrated-entrypoints-green.json",
+      "success": true,
+      "files": 5,
+      "passed": 77,
+      "failed": 0,
+      "skippedOrPending": 0
+    },
+    {
+      "report": "owner-guards-postgres-entry.json",
+      "success": true,
+      "files": 2,
+      "passed": 92,
+      "failed": 0,
+      "skippedOrPending": 0
+    },
+    {
+      "report": "owner-summary-final.json",
+      "success": true,
+      "files": 1,
+      "passed": 23,
+      "failed": 0,
+      "skippedOrPending": 0
+    },
+    {
+      "report": "owner-environment-regressions.json",
+      "success": true,
+      "files": 3,
+      "passed": 69,
+      "failed": 0,
+      "skippedOrPending": 0
+    }
+  ],
+  "postgres": {
+    "schemaVersion": 1,
+    "startedAt": "2026-09-07T11:57:41.493Z",
+    "endedAt": "2026-09-07T11:58:01.364Z",
+    "runId": "ff07407b-cb81-4cd2-9dfe-24fb70cf3034",
+    "selectedFiles": [
+      "packages/persistence/src/canonical-product-backfill.postgres.test.ts",
+      "packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts",
+      "packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts",
+      "packages/persistence/src/migration-106-release.postgres.test.ts",
+      "packages/persistence/src/migration-127-release.postgres.test.ts",
+      "packages/persistence/src/migration-146-release.postgres.test.ts",
+      "packages/persistence/src/migration-148-release.postgres.test.ts",
+      "packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts"
+    ],
+    "childExitCode": 0,
+    "status": "passed",
+    "report": "vitest.json",
+    "errors": [],
+    "fixtureOnly": true,
+    "databaseSource": "newly-created-isolated-fixture",
+    "rolePasswordCompatibility": "isolated-test-fixture-only",
+    "inheritedBusinessEnvironment": false,
+    "sharedContainersTouched": false,
+    "disposal": {
+      "stopped": [
+        "a47b0c3ab4d280ac94764dbfd16f913cc352119d600b53df6ea355027a6dd714",
+        "fbdd0003a2483d44a545a9f089ea7a7385111911d1bf2a76d7fc46ec5cfd8944"
+      ],
+      "leftRunning": []
+    }
+  },
+  "desktop": {
+    "stats": {
+      "startTime": "2026-09-07T12:03:30.917Z",
+      "duration": 7423.8150000000005,
+      "expected": 0,
+      "skipped": 1,
+      "unexpected": 1,
+      "flaky": 0
+    },
+    "capture": {
+      "status": "evidence_captured_known_revoke_failure",
+      "featureVerdict": "FAIL",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "captureToolExit": 0,
+      "invalidTtlProbe": "local_rejection_no_issue_rpc",
+      "issue": "200_and_persisted",
+      "revoke": "403_AUTHZ_OBLIGATION_REQUIRED_not_executed",
+      "persistedGrantCount": 1,
+      "revokeExecuted": false,
+      "modelsCalled": false,
+      "sharedServicesUsed": false,
+      "startedAt": "2026-09-07T12:03:38.361Z",
+      "finishedAt": "2026-09-07T12:03:54.407Z"
+    },
+    "runtime": {
+      "runId": "13c12668-1e3e-441e-b714-1fd40f056e13",
+      "evidenceDir": "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111",
+      "baseUrl": "http://127.0.0.1:63341",
+      "apiPort": 63339,
+      "uiPort": 63340,
+      "gatewayPort": 63341,
+      "persistence": {
+        "mode": "postgres",
+        "ready": true
+      },
+      "redis": {
+        "ready": true
+      },
+      "authorization": {
+        "mode": "enforce",
+        "durableAssignmentsRequired": true,
+        "identityProvider": "local signed OIDC fixture"
+      },
+      "models": {
+        "configured": false,
+        "called": false
+      },
+      "sharedConfigurationRead": false
+    }
+  },
+  "logSummaries": [
+    {
+      "file": "owner-full-check.log",
+      "summaryLines": [
+        "> merchant-marketing-codex@0.1.1 check",
+        "> merchant-marketing-codex@0.1.1 typecheck",
+        "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯",
+        " Test Files  1 failed | 595 passed | 44 skipped (640)",
+        "      Tests  1 failed | 4445 passed | 70 skipped (4516)",
+        "   Duration  382.96s (transform 11.36s, setup 0ms, import 130.86s, tests 157.01s, environment 43ms)"
+      ]
+    },
+    {
+      "file": "owner-full-check-final.log",
+      "summaryLines": [
+        "> merchant-marketing-codex@0.1.1 check",
+        "> merchant-marketing-codex@0.1.1 typecheck",
+        " Test Files  597 passed | 44 skipped (641)",
+        "      Tests  4449 passed | 70 skipped (4519)",
+        "   Duration  381.18s (transform 9.95s, setup 0ms, import 139.65s, tests 144.16s, environment 44ms)",
+        " Test Files  88 passed (88)",
+        "      Tests  500 passed (500)",
+        "   Duration  26.18s (transform 3.41s, setup 0ms, import 129.10s, tests 22.73s, environment 14ms)",
+        "> merchant-marketing-codex@0.1.1 build:ops-console",
+        "> merchant-ops-console@0.1.0 build",
+        "> merchant-marketing-codex@0.1.1 build:merchant-studio",
+        "> merchant-studio-demo@0.1.0 build"
+      ]
+    },
+    {
+      "file": "owner-release-gates.log",
+      "summaryLines": [
+        " Test Files  113 passed | 6 skipped (119)",
+        "      Tests  538 passed | 13 skipped (551)",
+        "   Duration  73.91s (transform 2.96s, setup 0ms, import 7.64s, tests 47.85s, environment 9ms)"
+      ]
+    }
+  ],
+  "sourceSnapshots": [
+    {
+      "at": "2026-09-07T11:58:48.400Z",
+      "phase": "before-check",
+      "head": "9986fe31e787b8f205f07db00d7a8ee40cd7866d",
+      "sourceCount": 1427,
+      "digest": "71220bbb82742ccbc8629ce969e405ff348c3ccdf58ecf249d500c8485cc6dca"
+    },
+    {
+      "at": "2026-09-07T12:06:12.237Z",
+      "phase": "after-check",
+      "head": "9986fe31e787b8f205f07db00d7a8ee40cd7866d",
+      "sourceCount": 1429,
+      "digest": "478326a751ce3dbffa017cf636b944779b48d3ab99f49ff28871c9f64d195246"
+    },
+    {
+      "at": "2026-09-07T12:08:29.917Z",
+      "phase": "mid-final-check",
+      "head": "9986fe31e787b8f205f07db00d7a8ee40cd7866d",
+      "sourceCount": 1429,
+      "digest": "050daa1258422eec3850defe793ed773793e553eb5eecd99eab606d06fd6276e"
+    },
+    {
+      "at": "2026-09-07T12:15:43.057Z",
+      "phase": "final",
+      "head": "9986fe31e787b8f205f07db00d7a8ee40cd7866d",
+      "sourceCount": 1429,
+      "digest": "b428834041891ef443bd271d2278fe042c5eb1335a6e89daba37a22f371c7ab7"
+    }
+  ],
+  "sourceChanges": [
+    {
+      "from": "before-check",
+      "to": "after-check",
+      "added": [
+        "apps/ops-console/src/components/stores/ProductSpreadsheetImport.test.tsx",
+        "apps/ops-console/src/components/stores/ProductSpreadsheetImport.tsx"
+      ],
+      "changed": [
+        "apps/ops-console/src/pages/StoresPage.tsx",
+        "packages/application/src/spreadsheet-batch.test.ts",
+        "packages/application/src/spreadsheet-batch.ts",
+        "tests/test-summary.test.ts",
+        "tests/test-summary.ts"
+      ],
+      "removed": []
+    },
+    {
+      "from": "after-check",
+      "to": "mid-final-check",
+      "added": [],
+      "changed": [
+        "tests/capacity-workload.test.ts"
+      ],
+      "removed": []
+    },
+    {
+      "from": "mid-final-check",
+      "to": "final",
+      "added": [],
+      "changed": [
+        "apps/ops-console/src/pages/StoresPage.tsx",
+        "apps/ops-console/src/pages/TasksPage.tsx"
+      ],
+      "removed": []
+    }
+  ],
+  "cleanup": {
+    "disposals": [
+      {
+        "path": "artifacts/ops-jit-isolation/2026-09-07T11-41-38.187Z-69b54fe6-12ea-4f3a-8f78-e57a6608d74b/fixture-disposal-d6e2fc0f-9a1a-4026-8902-69059e8a7aa1.json",
+        "runId": "d6e2fc0f-9a1a-4026-8902-69059e8a7aa1",
+        "stopped": [
+          "d85987e058991074315a9ea231d3372f1f216a8d130efe85a4975731ed5c0afd",
+          "9d00dff3f863c6064e148403b528f55f516856b356bc3eb788fb152a4c371fa9"
+        ],
+        "leftRunning": [],
+        "evidenceRetained": true,
+        "externalContainersTouched": false
+      },
+      {
+        "path": "artifacts/ops-jit-isolation/2026-09-07T11-43-51.092Z-902bf162-be5f-4152-8495-98461ad325aa/fixture-disposal-1e86d475-f0f3-4bc6-a4a5-918c111ccd10.json",
+        "runId": "1e86d475-f0f3-4bc6-a4a5-918c111ccd10",
+        "stopped": [
+          "3c910027aa79d6a8adee87d2aef93219a0467a5ea9b2225a9bf19735f3aa37a3",
+          "b124e5f83a5a8771f1c8043c2dd921de3b6108fbe4d3874809c69fbf2bfc53ad"
+        ],
+        "leftRunning": [],
+        "evidenceRetained": true,
+        "externalContainersTouched": false
+      },
+      {
+        "path": "artifacts/ops-jit-isolation/2026-09-07T11-48-11.350Z-17e83b9b-3f5f-4d5b-b497-f8e5629806b0/fixture-disposal-c9ca6488-327d-425f-8ab2-1b83b550a3b5.json",
+        "runId": "c9ca6488-327d-425f-8ab2-1b83b550a3b5",
+        "stopped": [
+          "8b4548467b48addd4f075e6eb927962f5a5f17085086a1cbfb4497b2e13c31ce",
+          "b952c6848aa6a00db6e326cae3d5e7f69f44cea8532ac843d8d5d2267c3836a9"
+        ],
+        "leftRunning": [],
+        "evidenceRetained": true,
+        "externalContainersTouched": false
+      },
+      {
+        "path": "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/fixture-disposal-13c12668-1e3e-441e-b714-1fd40f056e13.json",
+        "runId": "13c12668-1e3e-441e-b714-1fd40f056e13",
+        "stopped": [
+          "cd373a1407e42122ec0e01f631545f1ff717ef9f15313c5cd1d97b5d9ce1a4b2",
+          "456697b5606bde73ad775fafe30853acbcd459eecd0afe73f9df3f319598afa9"
+        ],
+        "leftRunning": [],
+        "evidenceRetained": true,
+        "externalContainersTouched": false
+      },
+      {
+        "path": "artifacts/isolated-postgres/run-V4DwbJ/fixture-disposal-bafc5ab8-6dc1-4be6-975b-13aaea023ec7.json",
+        "runId": "bafc5ab8-6dc1-4be6-975b-13aaea023ec7",
+        "stopped": [
+          "72733d105627e831a69a91396c694ff7e05531c837c0d7036d7205b374a306e4",
+          "58a5bf5d810e85a3c92b05f5ffaabcc66c9a86a62d633b1af3c42d1959c59836"
+        ],
+        "leftRunning": [],
+        "evidenceRetained": true,
+        "externalContainersTouched": false
+      },
+      {
+        "path": "artifacts/isolated-postgres/run-c59WPX/fixture-disposal-ff07407b-cb81-4cd2-9dfe-24fb70cf3034.json",
+        "runId": "ff07407b-cb81-4cd2-9dfe-24fb70cf3034",
+        "stopped": [
+          "a47b0c3ab4d280ac94764dbfd16f913cc352119d600b53df6ea355027a6dd714",
+          "fbdd0003a2483d44a545a9f089ea7a7385111911d1bf2a76d7fc46ec5cfd8944"
+        ],
+        "leftRunning": [],
+        "evidenceRetained": true,
+        "externalContainersTouched": false
+      }
+    ],
+    "stoppedIdsStillPresent": [],
+    "leftForReview": [],
+    "syntheticDataRebuildable": true,
+    "evidenceRetained": true
+  },
+  "sharedRuntimeReadOnlySnapshot": {
+    "at": "2026-09-07T12:15:43.587Z",
+    "containers": [
+      "local-worker-generation-1\tUp 2 minutes (healthy)",
+      "local-api-1\tUp 6 minutes (healthy)",
+      "local-api-replica-1\tUp 6 minutes (healthy)",
+      "local-worker-scan-1\tUp 44 minutes (healthy)",
+      "local-worker-sync-1\tUp 44 minutes (healthy)",
+      "local-worker-reconcile-1\tUp 44 minutes (healthy)",
+      "local-worker-automation-1\tUp 44 minutes (healthy)",
+      "local-worker-publish-1\tUp 44 minutes (healthy)",
+      "local-ops-ui-1\tUp 4 hours (healthy)",
+      "local-ui-1\tUp 4 hours (healthy)",
+      "local-clamav-1\tUp 12 minutes (healthy)",
+      "local-postgres-1\tUp 4 hours (healthy)",
+      "local-redis-1\tUp 2 hours (healthy)"
+    ],
+    "dependencies": [
+      {
+        "name": "/local-clamav-1",
+        "startedAt": "2026-09-07T12:03:27.265944958Z",
+        "oomKilled": false,
+        "restartCount": 10,
+        "status": "running",
+        "health": "healthy"
+      },
+      {
+        "name": "/local-redis-1",
+        "startedAt": "2026-09-07T10:41:42.108476599Z",
+        "oomKilled": false,
+        "restartCount": 0,
+        "status": "running",
+        "health": "healthy"
+      },
+      {
+        "name": "/local-postgres-1",
+        "startedAt": "2026-09-07T08:15:21.330535127Z",
+        "oomKilled": false,
+        "restartCount": 0,
+        "status": "running",
+        "health": "healthy"
+      }
+    ],
+    "note": "Point-in-time health only, not stability certification; ClamAV restart cause was not investigated in this scope."
+  },
+  "nonHermeticDenominator": {
+    "defaultExcludedFiles": 13,
+    "isolatedPostgresFiles": 8,
+    "explicitRuntimeFiles": 4,
+    "runtimeScenarios": 9,
+    "legacyCanonicalApiFiles": 1,
+    "legacyCanonicalApiScenarios": 6
+  },
+  "externalAcceptance": {
+    "paidModelCalls": 0,
+    "productionDeployed": false,
+    "sharedBusinessDatabaseMigrated": false,
+    "realChatGptHostVerified": false,
+    "officialIdpVerified": false
+  },
+  "verdict": "NO-GO: revoke approval/schema conflict; dedicated remaining runtime and external E3/E4 gates incomplete; dirty moving workspace is not a frozen release",
+  "artifactSha256": {
+    "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-integrated-entrypoints-green.json": "c7f80a169927f800bde0988e8146e8bcf8343b451e48eff1eb6f151de93746eb",
+    "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-guards-postgres-entry.json": "a0d2e6811b380f28b78fc14e18f88361e7d3870cbbfe4f1310b3af303fdc750f",
+    "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-summary-final.json": "6f950813ef13e6abc843621af2579addfce2569a232744a38359ef448643e526",
+    "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-environment-regressions.json": "f22e82c4c9dff284c3a40c91a0b492b7f4c041b7414b3f76b20f7f9d11809b76",
+    "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-full-check.log": "6af797623a058fd3ed26fe3e115f24337c0755c02e2b102f2bbb54511bcd7c54",
+    "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-full-check-final.log": "0c5b448b92257d49e62a803d2977c46683ce3e678e8483fc558d33df2b03c9dd",
+    "/Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-release-gates.log": "3923dc79a2a62868b74961feb29a29599f90d8805c6cf6165dd05da952c974c4",
+    "artifacts/isolated-postgres/run-c59WPX/vitest.json": "0cec1d6f48c08f33287f4a3c64956975a7aee01b23a628935b5b67ee01dc4c7e",
+    "artifacts/isolated-postgres/run-c59WPX/run-result.json": "2bc8291aa43ded51bba55456946a0f5678a890df6e8151c92a005641c9a43d39",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/playwright.json": "c3aa2a5fb15db591db12f2f742c1b72db0c9ad6552628bab5ac4fe43ebc6c565",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/runtime.json": "343482eaabb46a9ed8e589b5a4cdc5c343365166646f058eb0894093c372f4af",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/live-desktop-capture/capture-summary.json": "3e1b7af710af4dff61c006aca7cee7cfd758dd000889d3224878e6db7aa0c0b3",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/live-desktop-capture/postgres-readonly.redacted.json": "05f29e6bd06a98b55727a7460e9c5a18b3f821b274b739fb9af7db521aef9889",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/live-desktop-capture/shot-scraper.redacted.json": "7182a6ff37ebd5a1658b83a556bd0ac1afc34b330c9f51ba0ed530323c26456a",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/live-desktop-capture/jit-signed-login-issue-revoke-denied.mp4": "5fd337dcadbc1ad60d10edeb06df7d5463816d1ed6dcc8b8f84b280a30cb4831",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/live-desktop-capture/frame-03-invalid-ttl-submit.png": "188e00fa3c5bf1e9470288450bb2a775b01b9aee81084ec151b004f1a2d5ebb0",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/live-desktop-capture/02-issued-and-explicitly-refreshed.png": "9c6fbc0fa0abd524ec5f18a33bb0c0af5d60c0b5f4d8853893d9fad1612e690d",
+    "artifacts/ops-jit-isolation/2026-09-07T12-02-31.313Z-97066e92-893e-48e2-a755-f972387b7111/live-desktop-capture/04-revoke-denied-input-retained.png": "212c33629a4646247c1c77bd867433365c94cee5346f02a6a6b4d266aa12819c"
+  }
+}

@@ -12,7 +12,7 @@ import { ContinuousFeatureEntitlementService, type ContinuousFeatureEntitlementS
 import { ERROR_CODES } from '@merchant-marketing/contracts'
 
 describe('commercial plan coverage gates', () => {
-  it('keeps every unresolved commercial rule non-executable', () => {
+  it('keeps unresolved commercial rules blocked while allowing only resolved approved entries', () => {
     const catalog = [
       ...LOCAL_PLAN_ENTITLEMENTS,
       ONBOARDING_OFFER,
@@ -23,20 +23,26 @@ describe('commercial plan coverage gates', () => {
 
     expect(catalog.length).toBeGreaterThan(0)
     for (const item of catalog) {
-      expect(item.executable, JSON.stringify(item)).toBe(false)
-      expect(item.lifecycle, JSON.stringify(item)).toBe('draft')
+      const blockers = 'blockers' in item ? item.blockers : []
+      if (blockers.length > 0) {
+        expect(item.executable, JSON.stringify(item)).toBe(false)
+        expect(item.lifecycle, JSON.stringify(item)).toBe('draft')
+      } else {
+        expect(item.executable, JSON.stringify(item)).toBe(true)
+        expect(item.lifecycle, JSON.stringify(item)).toBe('active')
+      }
     }
     for (const item of catalog.filter(item => 'blockers' in item && item.blockers.length > 0)) {
       expect(item.blockers?.length ?? 0, JSON.stringify(item)).toBeGreaterThan(0)
     }
   })
 
-  it('requires an approved, resolved snapshot before a plan can become executable', () => {
-    expect(() => validateResolvedPlanEntitlements(LOCAL_PLAN_ENTITLEMENTS[0]!)).toThrow('PLAN_STORAGE_UNIT_REQUIRED_FOR_ACTIVATION')
+  it('accepts an approved, resolved snapshot and preserves its explicit storage unit', () => {
+    expect(validateResolvedPlanEntitlements(LOCAL_PLAN_ENTITLEMENTS[0]!)).toMatchObject({ executable: true, lifecycle: 'active', storage: { unit: 'GB_DECIMAL' } })
 
     const resolved = {
       ...LOCAL_PLAN_ENTITLEMENTS[0]!,
-      storage: { sourceLabel: '50g' as const, normalizedBytes: 50_000_000_000, normalizationStatus: 'resolved' as const },
+      storage: { sourceLabel: '50g' as const, normalizedBytes: 50_000_000_000 as const, normalizationStatus: 'resolved' as const, unit: 'GB_DECIMAL' as const },
       lifecycle: 'active' as const,
       executable: true,
       blockers: [],

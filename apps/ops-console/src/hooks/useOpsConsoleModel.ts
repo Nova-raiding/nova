@@ -24,6 +24,7 @@ import type {
   Rule,
   RuleSyncStatus,
   KnowledgeAsset,
+  BrandPreference,
   LearningSuggestion,
   CompetitorAnalysis,
   WorkspaceMetrics,
@@ -62,6 +63,15 @@ import { submitRevisionCreation, type RevisionCreationValues } from "../componen
 import { auditCenterClient, featureFlagsClient, financeSearchClient, incidentsClient, supportClient } from "../api/opsDomainClients.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
+
+export type JitRevocationReceipt = {
+  grantId: string;
+  workspaceId: string;
+  revokedAt: string;
+  actorId: string;
+  sessionWorkspaceId?: string;
+  workbench: "platform" | "workspace";
+};
 
 export interface OpsLoadFilterOverrides {
   queueFilters?: QueueFilters;
@@ -106,6 +116,7 @@ export const OPS_BACKGROUND_HYDRATION_POLICY = {
   "ops.storage.reconciliation.list": "storage.reconciliation.read",
   "knowledge.rule.list": "customer.content.read",
   "knowledge.asset.list": "customer.content.read",
+  "knowledge.brand.preference.get": "customer.content.read",
   "knowledge.learning.list": "customer.content.read",
   "knowledge.competitor.list": "customer.content.read",
   "ops.marketing.queue": "marketing.queue.read",
@@ -404,6 +415,7 @@ export function useOpsConsoleModel() {
   const ruleMutationInFlight = useRef(false);
   const [knowledgeRules, setKnowledgeRules] = useState<Rule[]>([]);
   const [knowledgeAssets, setKnowledgeAssets] = useState<KnowledgeAsset[]>([]);
+  const [brandPreference, setBrandPreference] = useState<BrandPreference>();
   const [learningSuggestions, setLearningSuggestions] = useState<
     LearningSuggestion[]
   >([]);
@@ -437,6 +449,38 @@ export function useOpsConsoleModel() {
   const [opsSession, setOpsSession] = useState<OpsSession>();
   const opsSessionRef = useRef<OpsSession | undefined>(undefined);
   opsSessionRef.current = opsSession;
+  // These are UI continuity state, not authorization state. They survive the
+  // short deny-all window while a fresh server session is loaded, but are
+  // cleared when a different verified actor/workbench is observed.
+  const [jitRevocationReceipt, setJitRevocationReceipt] = useState<JitRevocationReceipt>();
+  const [usersGovernanceSection, setUsersGovernanceSection] = useState("directory");
+  const [authorizationGovernanceTab, setAuthorizationGovernanceTab] = useState("matrix");
+
+  const acceptLoadedSession = (nextSession: OpsSession) => {
+    const previousReceipt = jitRevocationReceipt;
+    if (previousReceipt && (
+      previousReceipt.actorId !== nextSession.actor_id
+      || (previousReceipt.sessionWorkspaceId && nextSession.workspace_id && previousReceipt.sessionWorkspaceId !== nextSession.workspace_id)
+      || previousReceipt.workbench !== (nextSession.workbench ?? "workspace")
+    )) {
+      setJitRevocationReceipt(undefined);
+    }
+    opsSessionRef.current = nextSession;
+    setOpsSession(nextSession);
+  };
+
+  const recordJitRevocation = (receipt: Omit<JitRevocationReceipt, "actorId" | "workbench">) => {
+    const session = opsSessionRef.current;
+    if (!session?.actor_id) return;
+    setJitRevocationReceipt({
+      ...receipt,
+      actorId: session.actor_id,
+      ...(session.workspace_id ? { sessionWorkspaceId: session.workspace_id } : {}),
+      workbench: session.workbench ?? "workspace",
+    });
+  };
+
+  const clearJitRevocationReceipt = () => setJitRevocationReceipt(undefined);
   const [dataSource, setDataSource] = useState<OpsDataSource>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -602,7 +646,7 @@ export function useOpsConsoleModel() {
         sessionAttempted = true;
         if (value && typeof value === "object" && !Array.isArray(value)) {
           resolvedSession = value as unknown as OpsSession;
-          loadCoordinatorRef.current.commit(loadRequest, () => { opsSessionRef.current = resolvedSession; setOpsSession(resolvedSession!); });
+          loadCoordinatorRef.current.commit(loadRequest, () => { acceptLoadedSession(resolvedSession!); });
         }
       }
       const resolvedAuthorization = createAuthorizationProjection(resolvedSession, managedOpsSession);
@@ -667,6 +711,7 @@ export function useOpsConsoleModel() {
         storageReconciliationResult,
         knowledgeRuleResult,
         assetResult,
+        brandPreferenceResult,
         learningResult,
         competitorResult,
         queueResult,
@@ -724,6 +769,7 @@ export function useOpsConsoleModel() {
         platformOperator ? authorizedOptional("ops.storage.reconciliation.list", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.rule.list"),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.asset.list"),
+        platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.brand.preference.get"),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.learning.list", { status: "pending" }),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("knowledge.competitor.list"),
         !platformOperator && hasCustomerDataRole
@@ -792,6 +838,7 @@ export function useOpsConsoleModel() {
       applyLoadedValue(metricsResult, (value) => setWorkspaceMetrics(value as unknown as WorkspaceMetrics));
       applyLoadedValue(storageReconciliationResult, (value) => setStorageReconciliationWorkspaces(((value ?? []) as Array<Record<string, unknown>>).map(item => ({ ...item, workspaceId: item.workspaceId ?? item.workspace_id })) as unknown as NonNullable<WorkspaceMetrics["storageReconciliation"]>[]));
       applyLoadedValue(assetResult, (value) => setKnowledgeAssets((value ?? []) as unknown as KnowledgeAsset[]));
+      applyLoadedValue(brandPreferenceResult, (value) => setBrandPreference((value ?? undefined) as unknown as BrandPreference | undefined));
       applyLoadedValue(learningResult, (value) => setLearningSuggestions((value ?? []) as unknown as LearningSuggestion[]));
       applyLoadedValue(competitorResult, (value) => setCompetitors((value ?? []) as unknown as CompetitorAnalysis[]));
       applyLoadedValue(knowledgeRuleResult, (value) => setKnowledgeRules((value ?? []) as unknown as Rule[]));
@@ -833,8 +880,7 @@ export function useOpsConsoleModel() {
         !Array.isArray(sessionResult)
       ) {
         const nextSession = sessionResult as unknown as OpsSession;
-        opsSessionRef.current = nextSession;
-        setOpsSession(nextSession);
+        acceptLoadedSession(nextSession);
       }
       const health = healthResult as unknown as {
         environment?: string;
@@ -1323,10 +1369,13 @@ export function useOpsConsoleModel() {
       anchor.style.display = "none";
       document.body.appendChild(anchor);
       anchor.click();
+      // Keep the anchor alive long enough for Chromium's download observer to
+      // consume the blob URL. Immediate cleanup can drop the download event in
+      // isolated OIDC browser runs even though the file was generated.
       window.setTimeout(() => {
         anchor.remove();
         URL.revokeObjectURL(url);
-      }, 0);
+      }, 1_000);
       message.success(result.truncated ? "已导出前 5000 条用户成员关系，请继续缩小筛选范围" : "用户目录已导出");
       return true;
     } catch (cause) {
@@ -1730,6 +1779,9 @@ export function useOpsConsoleModel() {
     sourceCheckedAt: string;
     version: string;
     status: string;
+    severity?: string;
+    action?: string;
+    tags?: string;
   }) => {
     if (!canRules) {
       message.error("当前会话为只读，缺少规则管理员权限");
@@ -1746,6 +1798,9 @@ export function useOpsConsoleModel() {
         source_checked_at: values.sourceCheckedAt,
         version: values.version,
         status: values.status,
+        ...(values.severity ? { severity: values.severity } : {}),
+        ...(values.action ? { action: values.action } : {}),
+        ...(values.tags ? { tags_json: JSON.stringify(values.tags.split(/[,，]/u).map((tag) => tag.trim()).filter(Boolean)) } : {}),
       });
       message.success("知识规则已录入");
       knowledgeRuleForm.resetFields();
@@ -1781,6 +1836,27 @@ export function useOpsConsoleModel() {
       message.error(
         cause instanceof Error ? cause.message : "知识资产录入失败",
       );
+    }
+  };
+  const updateBrandPreference = async (values: { preferencesJson: string; version: string; status: BrandPreference["status"]; source?: string }) => {
+    if (!canKnowledge) {
+      message.error("当前会话为只读，缺少知识治理权限");
+      return false;
+    }
+    try {
+      const preferences = JSON.parse(values.preferencesJson);
+      if (!preferences || typeof preferences !== "object" || Array.isArray(preferences)) throw new Error("品牌偏好必须是 JSON 对象");
+      const result = await rpc("knowledge.brand.preference.update", {
+        preferences_json: JSON.stringify(preferences), version: values.version.trim(), status: values.status,
+        ...(values.source?.trim() ? { source: values.source.trim() } : {}),
+        ...(brandPreference ? { expected_revision: String(brandPreference.revision) } : {}),
+      });
+      setBrandPreference(result as unknown as BrandPreference);
+      message.success("品牌偏好已保存，后续生成会引用生效版本");
+      return true;
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "品牌偏好保存失败");
+      return false;
     }
   };
   const updateKnowledgeAsset = async (
@@ -2086,9 +2162,9 @@ export function useOpsConsoleModel() {
         if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(undefined);
         return;
       }
-      const access = await rpc("ops.commercial.access.summary", { target_workspace_id: opsWorkspaceId }) as { error_code?: string };
+      const access = await rpc("ops.commercial.access.summary", { target_workspace_id: opsWorkspaceId }) as { allowed?: boolean; error_code?: string };
       if (!modelMarkupLoadCoordinatorRef.current.isCurrent(request)) return;
-      if (access.error_code === "COMMERCIAL_OPERATION_DISABLED") {
+      if (access.allowed !== true || access.error_code === "COMMERCIAL_OPERATION_DISABLED") {
         setModelMarkup(undefined);
         return;
       }
@@ -2459,6 +2535,9 @@ export function useOpsConsoleModel() {
     setKnowledgeRules,
     knowledgeAssets,
     setKnowledgeAssets,
+    brandPreference,
+    setBrandPreference,
+    updateBrandPreference,
     learningSuggestions,
     setLearningSuggestions,
     competitors,
@@ -2494,6 +2573,13 @@ export function useOpsConsoleModel() {
     setSelectedStoreScope,
     opsSession,
     setOpsSession,
+    jitRevocationReceipt,
+    recordJitRevocation,
+    clearJitRevocationReceipt,
+    usersGovernanceSection,
+    setUsersGovernanceSection,
+    authorizationGovernanceTab,
+    setAuthorizationGovernanceTab,
     clearAuthorizationScopedData,
     authorization,
     opsWorkspaceId,

@@ -13,6 +13,7 @@ export interface MerchantRoute {
   target?: MerchantRouteTarget
   searchQuery: string
   entry?: MerchantEntryPoint
+  imageJobId?: string
 }
 
 type AnimationFrameScheduler = (callback: FrameRequestCallback) => number
@@ -56,7 +57,10 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
     const productId = params.get('product_id')?.trim()
     return { page: 'rules', searchQuery: '', ...(productId ? { target: { kind: 'product' as const, productId, platform: platformFromQuery(params.get('platform')), accountId: params.get('account_id')?.trim() || undefined } } : {}) }
   }
-  if (segment === 'tasks') return { page: 'task', searchQuery: '' }
+  if (segment === 'tasks') {
+    const imageJobId = params.get('image_job')?.trim()
+    return { page: 'task', searchQuery: '', ...(imageJobId ? { imageJobId } : {}) }
+  }
   if (segment === 'tasks/new') {
     const productId = params.get('product_id')?.trim()
     return {
@@ -79,7 +83,7 @@ export function merchantRouteFromLocation(location: Pick<Location, 'hash' | 'pat
 
 export function urlForMerchantRoute(
   location: Pick<Location, 'pathname' | 'search'>,
-  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint },
+  route: { page: MerchantPage; target?: MerchantRouteTarget; searchQuery?: string; entry?: MerchantEntryPoint; imageJobId?: string },
 ): string {
   const basePath = merchantRoutePattern.test(location.pathname)
     ? location.pathname.replace(merchantRoutePattern, '')
@@ -106,6 +110,7 @@ export function urlForMerchantRoute(
     if (route.target.platform) params.set('platform', route.target.platform)
     if (route.target.accountId) params.set('account_id', route.target.accountId)
   }
+  if (route.page === 'task' && route.imageJobId?.trim()) params.set('image_job', route.imageJobId.trim())
   const query = params.toString()
   return `${path}${query ? `?${query}` : ''}`
 }

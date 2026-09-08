@@ -1,9 +1,37 @@
+import { spawnSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { collectReleaseMetadata, validateReleaseMetadata } from './release-metadata-gate.js'
 
 describe('repository release metadata gate', () => {
   it('keeps the live repository release metadata aligned', () => {
     expect(validateReleaseMetadata(collectReleaseMetadata())).toEqual([])
+  })
+
+  it('matches the actual merchant Bridge tools/list surface', () => {
+    const snapshot = collectReleaseMetadata()
+    const result = spawnSync(process.execPath, [resolve('apps/plugin/mcp/bridge.mjs')], {
+      encoding: 'utf8',
+      input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`,
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:9',
+        MERCHANT_WORKSPACE_ID: 'ws_release_metadata',
+      },
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(0)
+    const response = JSON.parse(result.stdout.trim().split(/\r?\n/u)[0]!) as {
+      result: { tools: Array<{ name: string }> }
+    }
+    const names = response.result.tools.map(tool => tool.name)
+    const declaredCount = snapshot.declared.merchantBridgeToolCount
+    if (typeof declaredCount !== 'number') throw new Error('release metadata merchant bridge tool count is missing')
+    expect(names).toHaveLength(declaredCount)
+    expect(new Set(names).size).toBe(names.length)
+    expect(names).toContain('rule.sync.now')
+    expect(names.some(name => name.startsWith('ops.'))).toBe(false)
   })
 
   it('rejects version, plugin, MCP and migration drift', () => {

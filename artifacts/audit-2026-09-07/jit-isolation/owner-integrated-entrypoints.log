@@ -1,0 +1,68 @@
+
+> merchant-marketing-codex@0.1.1 test
+> node --import tsx scripts/run-safe-tests.ts --no-file-parallelism tests/ops-e2e-isolation.test.ts tests/quality-entrypoints.test.ts tests/supply-chain-reproducibility.test.ts tests/isolated-ops-fixture.test.ts tests/safe-test-launcher.test.ts --reporter=default --reporter=json --outputFile=artifacts/audit-2026-09-07/jit-isolation/owner-integrated-entrypoints.json
+
+
+ RUN  v4.1.11 /Users/lixiaomei/Desktop/code/codexSkills
+
+ ✓ tests/quality-entrypoints.test.ts (6 tests) 345ms
+     ✓ keeps every deterministic source test reachable from the root check  334ms
+ ❯ tests/safe-test-launcher.test.ts (31 tests | 1 failed) 16ms
+     ✓ passes only necessary system settings and never inherits business or execution credentials 2ms
+     ✓ retains ordinary Vitest arguments while forcing a failing empty selection 1ms
+     ✓ rejects an explicit real-runtime test before spawning: tests/local-docker-runtime-contract.test.ts 1ms
+     ✓ rejects an explicit real-runtime test before spawning: tests/local-docker-fault-acceptance.test.ts 0ms
+     ✓ rejects an explicit real-runtime test before spawning: tests/local-docker-release-gate.test.ts 0ms
+     ✓ rejects an explicit real-runtime test before spawning: tests/local-creative-points-seed-runtime.test.ts 0ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/canonical-product-backfill.postgres.test.ts 0ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts 0ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts 1ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/migration-106-release.postgres.test.ts 0ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/migration-127-release.postgres.test.ts 1ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/migration-146-release.postgres.test.ts 1ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/migration-148-release.postgres.test.ts 0ms
+     ✓ rejects an explicit real-runtime test before spawning: packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts 1ms
+     ✓ rejects an explicit real-runtime test before spawning: apps/api/src/canonical-backfill-contract.test.ts 0ms
+     ✓ rejects an isolation-bypassing argument: --config=integration.ts 0ms
+     ✓ rejects an isolation-bypassing argument: -c 0ms
+     ✓ rejects an isolation-bypassing argument: --root=/shared/project 0ms
+     ✓ rejects an isolation-bypassing argument: --dir 0ms
+     ✓ rejects an isolation-bypassing argument: --project=integration 0ms
+     ✓ rejects an isolation-bypassing argument: --workspace=integration.ts 0ms
+     ✓ rejects an isolation-bypassing argument: --exclude=anything 0ms
+     ✓ rejects an isolation-bypassing argument: --passWithNoTests 0ms
+     ✓ rejects an isolation-bypassing argument: --watch 0ms
+     ✓ rejects an isolation-bypassing argument: --ui 0ms
+     × rejects an isolation-bypassing argument: watch 3ms
+     ✓ keeps the explicit isolation manifest unique and limited to the audited 13 files 1ms
+     ✓ spawns with the safe environment and cleans only the newly-created directory 1ms
+     ✓ preserves a child failure and cleans the owned directory after the child has finished 0ms
+     ✓ cleans after a spawn error without touching the inherited storage root 1ms
+     ✓ fails before filesystem or child activity for a forbidden explicit selection 0ms
+ ✓ tests/isolated-ops-fixture.test.ts (24 tests) 11ms
+ ✓ tests/supply-chain-reproducibility.test.ts (4 tests) 5ms
+ ✓ tests/ops-e2e-isolation.test.ts (12 tests) 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/safe-test-launcher.test.ts > safe default test launcher > rejects an isolation-bypassing argument: watch
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/safe-test-launcher.test.ts:32:51
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  1 failed | 76 passed (77)
+   Start at  19:54:07
+   Duration  1.31s (transform 117ms, setup 0ms, import 249ms, tests 386ms, environment 0ms)
+
+JSON report written to /Users/lixiaomei/Desktop/code/codexSkills/artifacts/audit-2026-09-07/jit-isolation/owner-integrated-entrypoints.json

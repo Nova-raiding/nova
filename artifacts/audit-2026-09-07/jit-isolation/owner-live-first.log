@@ -1,0 +1,49 @@
+{"evidenceDir":"/Users/lixiaomei/Desktop/code/codexSkills/artifacts/ops-jit-isolation/2026-09-07T11-41-38.187Z-69b54fe6-12ea-4f3a-8f78-e57a6608d74b","runId":"d6e2fc0f-9a1a-4026-8902-69059e8a7aa1","isolated":true,"persistence":"postgres","testFiles":["dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js"]}
+
+Running 2 tests using 1 worker
+
+[1A[2K(node:34030) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K(node:34030) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1A[2K[1/2] dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1440x900
+[1A[2K  1) dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1440x900 
+
+    Error: ops.session HTTP status
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m200[39m
+    Received: [31m503[39m
+
+      131 |       },
+      132 |     })
+    > 133 |     expect(response.status(), `${method} HTTP status`).toBe(200)
+          |                                                        ^
+      134 |     expect(Boolean(error), `${method} must succeed through the real API`).toBe(false)
+      135 |     expect(result, `${method} must return a result`).toBeDefined()
+      136 |     return { payload, result }
+        at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:133:56
+        at rpcThroughUi (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:138:11)
+        at login (/Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:154:33)
+        at /Users/lixiaomei/Desktop/code/codexSkills/dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:189:7
+
+    attachment #1: failure-masked (image/png) ──────────────────────────────────────────────────────
+    artifacts/ops-jit-isolation/2026-09-07T11-41-38.187Z-69b54fe6-12ea-4f3a-8f78-e57a6608d74b/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/failure-masked-90322783a9f134e750616dba7cad1bba197e79dd.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: redacted-rpc-step-trace (application/json) ──────────────────────────────────────
+    artifacts/ops-jit-isolation/2026-09-07T11-41-38.187Z-69b54fe6-12ea-4f3a-8f78-e57a6608d74b/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/attachments/redacted-rpc-step-trace-745d9dc00f586a535e708f6698d32097f0d4bd59.json
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: artifacts/ops-jit-isolation/2026-09-07T11-41-38.187Z-69b54fe6-12ea-4f3a-8f78-e57a6608d74b/test-results/dogfood-chatgpt-all-functi-b7e0b-resh-and-revoke-at-1440x900/error-context.md
+
+
+[1A[2K[2/2] dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1280x800
+[1A[2K  1 failed
+    dogfood/chatgpt-all-functions/ops-jit-isolated.spec.js:166:3 › isolated live JIT issue, refresh and revoke at 1440x900 
+  1 did not run
