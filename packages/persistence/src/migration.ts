@@ -458,6 +458,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const onboardingGrantDispatch = await readFile(new URL('./migrations/168_onboarding_grant_dispatch.sql', import.meta.url), 'utf8')
   const onboardingGrantExpiration = await readFile(new URL('./migrations/169_onboarding_grant_expiration.sql', import.meta.url), 'utf8')
   const commercialRefundEvents = await readFile(new URL('./migrations/170_commercial_refund_events.sql', import.meta.url), 'utf8')
+  const commercialRefundRuntimeAcl = await readFile(new URL('./migrations/171_commercial_refund_runtime_acl.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -629,6 +630,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 168, name: 'onboarding_grant_dispatch', sql: onboardingGrantDispatch },
     { version: 169, name: 'onboarding_grant_expiration', sql: onboardingGrantExpiration },
     { version: 170, name: 'commercial_refund_events', sql: commercialRefundEvents },
+    { version: 171, name: 'commercial_refund_runtime_acl', sql: commercialRefundRuntimeAcl },
   ]
 }
 
