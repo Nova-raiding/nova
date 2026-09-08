@@ -70,6 +70,8 @@ describe('service fulfillment PostgreSQL release evidence', () => {
       const schedule = await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 1, idempotencyKey: 'event:schedule:1', actorId: 'ops_a', reason: 'Customer selected a time', scheduleAt: '2026-09-05T02:00:00.000Z', evidence: { request: 'evidence://schedule/1' } })
       expect(schedule.allocation).toMatchObject({ revision: 2, status: 'scheduled', usedQuantity: 0 })
       expect(await repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 1, idempotencyKey: 'event:schedule:1', actorId: 'ops_a', reason: 'Customer selected a time', scheduleAt: '2026-09-05T02:00:00.000Z', evidence: { request: 'evidence://schedule/1' } })).toEqual(schedule)
+      await expect(repository.appendEvent({ workspaceId: 'ws_service_a', allocationId: allocation.id, type: 'scheduled', expectedRevision: 2, idempotencyKey: 'event:schedule:outside-period', actorId: 'ops_a', reason: 'must not schedule outside entitlement', scheduleAt: '2026-10-01T00:00:00.000Z', evidence: { request: 'evidence://schedule/outside' } }))
+        .rejects.toMatchObject({ code: 'SERVICE_FULFILLMENT_PERIOD_EXPIRED' })
 
       await expect(repository.appendEvent({ workspaceId: 'ws_service_b', allocationId: allocation.id, type: 'started', expectedRevision: 2, idempotencyKey: 'cross-tenant', actorId: 'ops_b', reason: 'must not see tenant A', evidence: { request: 'cross-tenant' } }))
         .rejects.toMatchObject({ code: 'SERVICE_ALLOCATION_NOT_FOUND' })

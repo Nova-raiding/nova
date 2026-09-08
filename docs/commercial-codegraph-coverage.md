@@ -152,7 +152,7 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 | 方案规则 | 实现/测试 | 真实运行证据 | 状态 |
 |---|---|---|---|
 | 到期停止生成、扫描、规则更新、学习同步、新任务 | V2 continuous entitlement + worker recheck | 没有完整生产 worker 运行证据 | 🟡 |
-| 停止维护和 1 对 1 | fulfillment/support 基础 | 没有到期后自动停止排期 evidence | ❌ |
+| 停止维护和 1 对 1 | 服务分配必须绑定 executable 且当前有效的权益周期；预约时间必须落在权益周期内；周期结束后数据库事务拒绝新履约事件 | 本地 PostgreSQL 回归测试覆盖跨周期预约拒绝；真实生产到期 worker/客户预约证据仍需配置 | 🟡 |
 | 续费 7 天宽限 | 未发现完整续费宽限实现 | 现有 7 天是删除宽限，不能替代续费宽限 | ❌ |
 | 到期后导出 | data export request/repository | 无到期窗口运行证据 | 🟡 |
 | 90 天保留、提前通知、清理 | retention config + deletion approval/execution | 对象存储 production gate 和通知/自动清理 evidence 不足 | 🟡 |
@@ -190,7 +190,7 @@ npm run dev:doctor:production
 ```
 
 本次针对性测试结果：4 个测试文件、42 个测试通过；本轮商业访问、worker 商业复核、Ops 工作台回归为 5 个测试文件、143 个测试通过。
-生产 doctor 当前仍报告商业目录 `executable=0`、已批准费率为 0、生产 readiness 未通过，并且存在中转 evidence、ChatGPT host/plugin bridge、支付、六平台 OAuth、对象存储、扫描器和 ops UI 等生产缺口。
+当前生产 doctor 已报告商业目录 `executable=5`、已批准费率为 1，商业持久化和本地容器健康；生产 readiness 仍未通过，并且存在中转 evidence、ChatGPT host/plugin bridge、支付、六平台 OAuth、对象存储、扫描器、告警和发布证据等生产缺口。
 
 因此本矩阵的当前结论是：**单人本地测试闭环已可执行（包含创意点不足引导购买、预占、provider 回执结算、失败释放、账本和人工转账开通）；方案尚未形成可对外售卖的真实生产闭环。**
 

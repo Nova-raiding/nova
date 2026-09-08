@@ -122,6 +122,7 @@ export type ServiceFulfillmentRepositoryErrorCode =
   | 'SERVICE_FULFILLMENT_IDEMPOTENCY_CONFLICT'
   | 'SERVICE_FULFILLMENT_REVISION_CONFLICT'
   | 'SERVICE_FULFILLMENT_TRANSITION_INVALID'
+  | 'SERVICE_FULFILLMENT_PERIOD_EXPIRED'
   | 'SERVICE_FULFILLMENT_QUOTA_EXCEEDED'
   | 'SERVICE_FULFILLMENT_CORRECTION_INVALID'
   | 'ONBOARDING_GRANT_SCHEDULE_CONFLICT'
@@ -212,6 +213,31 @@ const nextStatus = (current: ServiceFulfillmentStatus, type: ServiceFulfillmentE
   throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_TRANSITION_INVALID', `${current} cannot transition through ${type}`)
 }
 
+/**
+ * Service time is an entitlement, not a free-standing ops task. Keep this
+ * check pure so boundary behavior is testable without weakening the SQL
+ * transaction gate used by the repository.
+ */
+export function assertServiceFulfillmentPeriod(input: {
+  type: ServiceFulfillmentEventType
+  scheduleAt: string | null
+  periodStart: string | null
+  periodEnd: string | null
+  nowMs?: number
+}): void {
+  const nowMs = input.nowMs ?? Date.now()
+  if (input.periodEnd !== null && Date.parse(input.periodEnd) <= nowMs) {
+    throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_PERIOD_EXPIRED', 'service fulfillment period has expired')
+  }
+  if (input.type !== 'scheduled' || input.scheduleAt === null) return
+  const scheduledAt = Date.parse(input.scheduleAt)
+  const startsBeforePeriod = input.periodStart !== null && scheduledAt < Date.parse(input.periodStart)
+  const endsAfterPeriod = input.periodEnd !== null && scheduledAt >= Date.parse(input.periodEnd)
+  if (startsBeforePeriod || endsAfterPeriod) {
+    throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_PERIOD_EXPIRED', 'scheduled service must fall inside the entitlement period')
+  }
+}
+
 type AllocationRow = { id: string; workspace_id: string; order_snapshot_id: string; entitlement_snapshot_id: string; service_type: string; unit: ServiceUnit; allocated_quantity: number | string | null; contract_label: string | null; period_start: string | Date | null; period_end: string | Date | null; source_checksum: string; created_by_actor_id: string; creation_reason: string; creation_evidence: Record<string, unknown>; request_hash: string; revision: number | string; status: ServiceFulfillmentStatus; used_quantity: number | string; created_at: string | Date; updated_at: string | Date }
 type EventRow = { id: string; workspace_id: string; allocation_id: string; event_type: ServiceFulfillmentEventType; revision: number | string; idempotency_key: string; request_hash: string; actor_id: string; reason: string; schedule_at: string | Date | null; actual_quantity: number | string | null; corrects_event_id: string | null; before_state: Record<string, unknown>; after_state: Record<string, unknown>; allocation_after: AllocationRow; evidence: Record<string, unknown>; created_at: string | Date }
 type ScheduleRow = { id: string; workspace_id: string; onboarding_order_id: string; entitlement_snapshot_id: string; sequence: number | string; points: number | string; due_at: string | Date | null; expires_at: string | Date | null; status: 'blocked_policy_unresolved' | 'scheduled' | 'granted' | 'canceled'; blockers: unknown; source_checksum: string; created_by_actor_id: string; creation_reason: string; creation_evidence: Record<string, unknown>; created_at: string | Date }
@@ -240,9 +266,12 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
             AND es.subscription_period_id=sp.id
             AND es.subscription_period_revision=sp.revision
           WHERE os.workspace_id=$1 AND os.id=$2 AND es.id=$3
+            AND sp.status='active' AND sp.period_start <= now() AND sp.period_end > now()
             AND es.executable=true AND es.unresolved_blockers='[]'::jsonb
+            AND ($4::timestamptz IS NULL OR $4::timestamptz >= sp.period_start)
+            AND ($5::timestamptz IS NULL OR $5::timestamptz <= sp.period_end)
           LIMIT 1`,
-        [value.workspaceId, value.orderSnapshotId, value.entitlementSnapshotId],
+        [value.workspaceId, value.orderSnapshotId, value.entitlementSnapshotId, value.periodStart, value.periodEnd],
       )
       if (!source.rows[0]) throw new ServiceFulfillmentRepositoryError('SERVICE_ALLOCATION_SOURCE_INVALID', 'service allocation requires one executable entitlement snapshot bound to the order snapshot')
       const inserted = await client.query<AllocationRow>(`INSERT INTO workspace_service_allocations (id,workspace_id,idempotency_key,request_hash,order_snapshot_id,entitlement_snapshot_id,service_type,unit,allocated_quantity,contract_label,period_start,period_end,source_checksum,created_by_actor_id,creation_reason,creation_evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb) ON CONFLICT (workspace_id,idempotency_key) DO NOTHING RETURNING ${allocationProjection}`, [`svc_${randomUUID()}`, value.workspaceId, value.idempotencyKey, requestHash, value.orderSnapshotId, value.entitlementSnapshotId, value.serviceType, value.unit, value.allocatedQuantity, value.contractLabel, value.periodStart, value.periodEnd, value.sourceChecksum, value.actorId, value.reason, JSON.stringify(value.evidence)])
@@ -270,6 +299,7 @@ export class PostgresServiceFulfillmentRepository implements ServiceFulfillmentR
         return { allocation: mapAllocation(concurrentReplay.rows[0].allocation_after), event: mapEvent(concurrentReplay.rows[0]) }
       }
       if (number(current.revision) !== value.expectedRevision) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_REVISION_CONFLICT', 'service allocation revision changed')
+      assertServiceFulfillmentPeriod({ type: value.type, scheduleAt: value.scheduleAt, periodStart: iso(current.period_start), periodEnd: iso(current.period_end) })
       if (value.type === 'completed' && current.unit !== 'contract_label' && (value.actualQuantity === null || value.actualQuantity < 1)) throw new ServiceFulfillmentRepositoryError('SERVICE_FULFILLMENT_INPUT_INVALID', 'completed count/minute service requires a positive actualQuantity')
       const status = nextStatus(current.status, value.type)
       let usedQuantity = number(current.used_quantity)
