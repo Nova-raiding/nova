@@ -9,6 +9,7 @@ import { MerchantService, assetReadiness, imageArchiveReceiptDigest, imageGenera
 import { CommercialAccessService, type CommercialAccessServiceResult } from '../../../packages/application/src/commercial-access-service.js'
 import { CommercialPurchaseError, CommercialPurchaseService } from '../../../packages/application/src/commercial-purchase-service.js'
 import type { ContinuousFeatureEntitlementSnapshotV2 } from '../../../packages/application/src/continuous-feature-entitlement.js'
+import { CommercialCountCapacityError, resolveCommercialCountBenefit, type CommercialCountBenefitCode } from './commercial-count-capacity.js'
 import { canonicalBackfillConflictQueueFailure, canonicalBackfillRunCanRetry } from '../../../packages/application/src/canonical-backfill-queue.js'
 import { defaultRuleCenterSeeds, type RuleHit, type RulePack } from '../../../packages/review/src/rule-center.js'
 import { reviewProductImages } from '../../../packages/review/src/review.js'
@@ -6374,22 +6375,23 @@ async function storeCapacity(workspaceId: string) {
   return { used, included, remaining: Math.max(0, included - used), planCode: subscription.planCode, planName: subscription.planName }
 }
 
-async function commercialBenefitQuantity(workspaceId: string, code: string): Promise<number | null> {
+async function commercialBenefitQuantity(workspaceId: string, code: CommercialCountBenefitCode): Promise<number | null> {
   const repository = persistence.commercialContracts
   if (!repository) return null
-  const now = Date.now()
   const snapshots = await repository.listEntitlementSnapshots(workspaceId, 100)
-  const active = snapshots
-    .filter(snapshot => snapshot.executable && snapshot.unresolvedBlockers.length === 0 && snapshot.periodStatus === 'active' && Date.parse(snapshot.periodStart) <= now && Date.parse(snapshot.periodEnd) > now)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
-  if (!active) throw new DomainError('COMMERCIAL_ENTITLEMENT_REQUIRED', '当前工作区没有有效的 V2 商业权益，无法使用套餐额度', 402, { next_actions: ['commercial.catalog.get', 'commercial.order.create', 'commercial.access.get'] })
-  const benefit = active.resolvedBenefits.find(value => isObject(value) && value.code === code)
-  const quantity = isObject(benefit) && typeof benefit.quantity === 'number' ? benefit.quantity : null
-  if (quantity === null || !Number.isSafeInteger(quantity) || quantity < 0) return null
-  return quantity
+  try {
+    return await resolveCommercialCountBenefit({ workspaceId, code, snapshots })
+  } catch (error) {
+    if (!(error instanceof CommercialCountCapacityError)) throw error
+    const unavailable = error.code === 'COMMERCIAL_ENTITLEMENT_UNAVAILABLE'
+    const ambiguous = error.code === 'COMMERCIAL_ENTITLEMENT_AMBIGUOUS'
+    throw new DomainError(error.code, unavailable ? 'V2 商业权益额度证据不可用，无法安全判定套餐额度' : ambiguous ? '检测到多个重叠的 V2 商业权益，无法安全判定套餐额度' : '当前工作区没有有效的 V2 商业权益，无法使用套餐额度', unavailable ? 503 : ambiguous ? 409 : 402, {
+      next_actions: ['commercial.catalog.get', 'commercial.order.create', 'commercial.access.get'],
+    })
+  }
 }
 
-async function requireCommercialCountCapacity(input: { workspaceId: string; code: 'max_brands' | 'max_stores'; used: number; label: string }) {
+async function requireCommercialCountCapacity(input: { workspaceId: string; code: CommercialCountBenefitCode; used: number; label: string }) {
   const included = await commercialBenefitQuantity(input.workspaceId, input.code)
   if (included === null || input.used <= included) return { used: input.used, included }
   throw new DomainError('COMMERCIAL_QUOTA_EXCEEDED', `当前套餐已使用 ${input.used}/${included}${input.label}`, 402, {
