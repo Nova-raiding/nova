@@ -26,8 +26,12 @@ describe("CommercialOperationsWorkspace", () => {
     expect(source).toContain("expected_revision: String(expectedRevision)");
     expect(source).toContain("evidence_json");
     expect(source).toContain('ops.commercial.service-allocation.create');
+    expect(source).toContain('accepted_at: input.acceptedAt');
     expect(source).toContain('expected_revision: "0"');
     expect(source).toContain('source_checksum');
+    const panel = await import("node:fs").then(fs => fs.readFileSync(new URL("./ServiceFulfillmentPanel.tsx", import.meta.url), "utf8"));
+    expect(panel).toContain('客户确认时间');
+    expect(panel).toContain('acceptedAt: new Date(acceptedAt).toISOString()');
   });
   it("renders unknown as unavailable and never as zero", () => {
     const html = renderToStaticMarkup(<CommercialAccessStatusBar state={{ status: "ready", data: {

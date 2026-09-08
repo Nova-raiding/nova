@@ -9592,6 +9592,9 @@ async function recordOperationAudit(input: Omit<import('../../../packages/persis
   await (persistence.operations ?? memoryOperations).append({ ...input, reason: redactAuditReason(input.reason) })
 }
 
+const SERVICE_BOUNDARY_POLICY_VERSION = 'commercial.service-boundary.v1'
+const SERVICE_BOUNDARY_POLICY_CHECKSUM = createHash('sha256').update('commercial.service-boundary.v1|included:system-guidance,normal-troubleshooting,brand-config,generation-guidance,rejection-analysis,workflow-optimization|excluded:unlimited-revisions,full-production,full-marketing-strategy,daily-operations,24x7,non-business-emergency,internal-development|outcomes:not-guaranteed').digest('hex')
+
 function commercialOpsReadInput<T>(project: () => T): T {
   try {
     return project()
@@ -10909,6 +10912,27 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const ticket = await (persistence.interactiveConfirmationTickets ?? memoryInteractiveConfirmationTickets).issue({ workspaceId, actorId, sessionId, intentHash, nonceHash: storedNonceHash, expiresAt })
         return result({ enabled: true, scope: 'current_interactive_session', expires_in_seconds: 900, automation: 'read_only', ticket: { nonce_hash: rawNonce, intent_hash: ticket.intentHash, expires_at: ticket.expiresAt }, message: '仅当前交互会话开放写操作；钱包、事实、审核、平台能力和发布确认门禁仍然生效' })
       }
+    case 'commercial.service-boundary.accept': {
+      const actorId = requestActor(req)
+      const policyVersion = required(params, 'policy_version')
+      const policyChecksum = required(params, 'policy_checksum')
+      const acceptanceRef = required(params, 'acceptance_ref')
+      const customerSubjectRef = actorId
+      const acceptedAt = required(params, 'accepted_at')
+      const idempotencyKey = required(params, 'idempotency_key')
+      if (policyVersion !== SERVICE_BOUNDARY_POLICY_VERSION || policyChecksum !== SERVICE_BOUNDARY_POLICY_CHECKSUM) throw new DomainError('SERVICE_BOUNDARY_POLICY_VERSION_INVALID', '服务边界协议版本或校验和已失效，请刷新后重新确认', 409, { current_policy_version: SERVICE_BOUNDARY_POLICY_VERSION, current_policy_checksum: SERVICE_BOUNDARY_POLICY_CHECKSUM })
+      const acceptedTime = Date.parse(acceptedAt)
+      if (!Number.isFinite(acceptedTime) || new Date(acceptedTime).toISOString() !== acceptedAt || acceptedTime > Date.now()) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'accepted_at 必须是规范 ISO 格式且不晚于当前时间的时间戳', 400)
+      const operations = persistence.operations ?? memoryOperations
+      const existing = await operations.find(workspaceId, 'commercial.service-boundary.accept', 'service_boundary_acceptance', acceptanceRef)
+      if (existing) {
+        const same = existing.actorId === actorId && existing.after.customer_subject_ref === customerSubjectRef && existing.after.policy_version === policyVersion && existing.after.policy_checksum === policyChecksum && existing.after.accepted_at === acceptedAt && existing.after.idempotency_key === idempotencyKey && existing.after.accepted === true
+        if (!same) throw new DomainError('SERVICE_BOUNDARY_ACCEPTANCE_CONFLICT', 'acceptance_ref 已绑定其他客户确认事实', 409)
+        return result({ schema_version: 'commercial.service-boundary.acceptance.v1', acceptance_ref: acceptanceRef, customer_subject_ref: customerSubjectRef, policy_version: policyVersion, policy_checksum: policyChecksum, accepted_at: acceptedAt, accepted: true, replayed: true })
+      }
+      await recordOperationAudit({ workspaceId, actorId, action: 'commercial.service-boundary.accept', resourceType: 'service_boundary_acceptance', resourceId: acceptanceRef, before: {}, after: { acceptance_ref: acceptanceRef, customer_subject_ref: customerSubjectRef, policy_version: policyVersion, policy_checksum: policyChecksum, accepted_at: acceptedAt, idempotency_key: idempotencyKey, accepted: true }, reason: '客户确认人工服务边界及结果声明' })
+      return result({ schema_version: 'commercial.service-boundary.acceptance.v1', acceptance_ref: acceptanceRef, customer_subject_ref: customerSubjectRef, policy_version: policyVersion, policy_checksum: policyChecksum, accepted_at: acceptedAt, accepted: true, replayed: false })
+    }
     case 'merchant.start': {
       const requestedPlatform = typeof params.requested_platform === 'string' ? params.requested_platform : undefined
       const requestedGoal = typeof params.requested_goal === 'string' ? params.requested_goal.trim() : undefined
@@ -12081,7 +12105,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const registry = COMMERCIAL_OPERATION_REGISTRY.filter(policy => policy.classification === 'POINT_CHARGED').map(policy => ({ operation: policy.operation, enabled: policy.enabled }))
       return result({ schema_version: 'commercial.readiness.v1', read_only: true, environment: isProduction() ? 'production' : 'non_production', ready: blockers.length === 0, catalog: catalogEvidence, policies, registry, capabilities, provider: { relay_configured: relay.ready, relay_host: relay.endpointHost ?? null, modalities: providerEvidence }, creative_points: settlement, blockers, generated_at: new Date().toISOString(), message: blockers.length === 0 ? '商业生产能力满足当前就绪检查。' : '商业生产能力仍被门禁阻断；报告只读，不会修改费率、余额、注册表或执行状态。' })
     }
+    case 'ops.commercial.private-trial.invite.create':
+    case 'ops.commercial.private-trial.invite.list':
+    case 'ops.commercial.private-trial.invite.revoke':
     case 'ops.commercial.private-trial.eligibility.create':
+    case 'ops.commercial.private-trial.order.create':
+    case 'ops.commercial.private-trial.trial-payment.verify':
     case 'ops.commercial.private-trial.eligibility.approve':
     case 'ops.commercial.private-trial.validation.complete':
     case 'ops.commercial.private-trial.credit.prepare':
@@ -12093,7 +12122,28 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const evidence = params.evidence_json === undefined ? {} : parseJsonObjectParameter(params, 'evidence_json')
       const service = new PrivateTrialConversionService(persistence.privateTrialConversion)
       try {
-        if (method === 'ops.commercial.private-trial.eligibility.create') return result(await service.createEligibility({ workspaceId: targetWorkspaceId, customerRef: required(params, 'customer_ref'), actorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence }))
+        if (method === 'ops.commercial.private-trial.invite.create') return result(await persistence.privateTrialConversion.createInvite({ workspaceId: targetWorkspaceId, customerRef: required(params, 'customer_ref'), expiresAt: required(params, 'expires_at'), actorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence }))
+        if (method === 'ops.commercial.private-trial.invite.list') {
+          const items = await persistence.privateTrialConversion.listInvites(targetWorkspaceId, params.limit === undefined ? 100 : requiredPositiveInteger(params, 'limit'))
+          return result({ schema_version: 'commercial.private-trial.invites.v1', items, total: items.length, next_cursor: null })
+        }
+        if (method === 'ops.commercial.private-trial.invite.revoke') return result(await persistence.privateTrialConversion.revokeInvite({ workspaceId: targetWorkspaceId, inviteId: required(params, 'invite_id'), actorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence }))
+        if (method === 'ops.commercial.private-trial.eligibility.create') return result(await service.createEligibility({ workspaceId: targetWorkspaceId, customerRef: required(params, 'customer_ref'), inviteCode: required(params, 'invite_code'), actorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence }))
+        if (method === 'ops.commercial.private-trial.order.create') {
+          if (!persistence.commercialCatalog || !persistence.commercialContracts) throw new DomainError('COMMERCIAL_ORDER_V2_REPOSITORY_UNAVAILABLE', '商业目录或订单仓储尚未配置', 503)
+          const eligibilityId = required(params, 'eligibility_id')
+          const sku = await persistence.commercialCatalog.resolveApprovedExecutableSku('private_validation_7d', { includePrivate: true, capabilities: ['commercial.private_sku.read'] })
+          const order = await persistence.commercialContracts.createOrder({ workspaceId: targetWorkspaceId, sku, paymentProvider: 'manual_transfer', createdByActorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), privateEligibilityId: eligibilityId })
+          return result({ order: commercialOrderView(order, sku.code), private_trial: { duration_days: 7, payment_required_fen: 199900 } })
+        }
+        if (method === 'ops.commercial.private-trial.trial-payment.verify') {
+          if (!persistence.commercialContracts) throw new DomainError('COMMERCIAL_ORDER_V2_REPOSITORY_UNAVAILABLE', '商业订单仓储尚未配置', 503)
+          const paidAt = required(params, 'paid_at')
+          const start = new Date(paidAt); if (Number.isNaN(start.valueOf())) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'paid_at must be an ISO timestamp', 400)
+          const end = new Date(start); end.setUTCDate(end.getUTCDate() + 7)
+          const payment = await persistence.commercialContracts.recordVerifiedPaymentAndGrant({ workspaceId: targetWorkspaceId, orderId: required(params, 'order_id'), provider: 'manual_transfer', providerEventId: required(params, 'provider_event_id'), providerOrderId: required(params, 'provider_order_id'), nonce: required(params, 'nonce'), payloadHash: required(params, 'payload_hash'), amountFen: 199900, currency: 'CNY', paidAt, paymentSubjectRef: required(params, 'payment_subject_ref'), period: { start: start.toISOString(), end: end.toISOString() } })
+          return result({ payment, private_trial: { granted: true, duration_days: 7, entitlement_snapshot: true, creative_points: 500, max_brands: 1, max_stores: 1 } })
+        }
         if (method === 'ops.commercial.private-trial.eligibility.approve') return result(await service.approveEligibility({ workspaceId: targetWorkspaceId, eligibilityId: required(params, 'eligibility_id'), expectedRevision: requiredPositiveInteger(params, 'expected_revision'), actorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence }))
         if (method === 'ops.commercial.private-trial.validation.complete') return result(await service.bindValidationCompletion({ workspaceId: targetWorkspaceId, eligibilityId: required(params, 'eligibility_id'), trialOrderId: required(params, 'trial_order_id'), completedAt: required(params, 'completed_at'), actorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence }))
         if (method === 'ops.commercial.private-trial.credit.prepare') return result(await service.prepareCredit({ workspaceId: targetWorkspaceId, eligibilityId: required(params, 'eligibility_id'), actorId: requestActor(req), idempotencyKey: required(params, 'idempotency_key'), reason: required(params, 'reason'), evidence }))
@@ -12188,6 +12238,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!repository) throw new DomainError('COMMERCIAL_SERVICE_FULFILLMENT_REPOSITORY_UNAVAILABLE', '服务履约事实仓储尚未配置，禁止创建伪分配', 503)
       const evidence = parseJsonObjectParameter(params, 'evidence_json')
       if (Object.keys(evidence).length === 0) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'evidence_json 不能为空对象', 400)
+      const boundary = evidence.service_boundary_acceptance
+      const acceptedAt = isObject(boundary) && typeof boundary.accepted_at === 'string' ? boundary.accepted_at : ''
+      const acceptedAtMs = Date.parse(acceptedAt)
+      if (!isObject(boundary) || boundary.accepted !== true || boundary.policy_version !== SERVICE_BOUNDARY_POLICY_VERSION || boundary.policy_checksum !== SERVICE_BOUNDARY_POLICY_CHECKSUM || typeof boundary.acceptance_ref !== 'string' || !boundary.acceptance_ref.trim() || typeof boundary.customer_subject_ref !== 'string' || !boundary.customer_subject_ref.trim() || !Number.isFinite(acceptedAtMs) || new Date(acceptedAtMs).toISOString() !== acceptedAt || acceptedAtMs > Date.now()) {
+        throw new DomainError('SERVICE_BOUNDARY_ACCEPTANCE_REQUIRED', '创建人工服务分配前必须提交客户已确认的服务边界、协议版本、确认凭证和确认时间', 409, { required_evidence: ['service_boundary_acceptance.accepted', 'service_boundary_acceptance.policy_version', 'service_boundary_acceptance.acceptance_ref', 'service_boundary_acceptance.customer_subject_ref', 'service_boundary_acceptance.accepted_at'] })
+      }
+      const acceptanceAudit = await (persistence.operations ?? memoryOperations).find(required(params, 'target_workspace_id'), 'commercial.service-boundary.accept', 'service_boundary_acceptance', boundary.acceptance_ref)
+      const acceptanceMatches = acceptanceAudit?.actorId === boundary.customer_subject_ref && acceptanceAudit.after.accepted === true && acceptanceAudit.after.policy_version === SERVICE_BOUNDARY_POLICY_VERSION && acceptanceAudit.after.policy_checksum === SERVICE_BOUNDARY_POLICY_CHECKSUM && acceptanceAudit.after.accepted_at === acceptedAt
+      if (!acceptanceMatches) throw new DomainError('SERVICE_BOUNDARY_ACCEPTANCE_REQUIRED', '未找到当前客户身份对该协议版本的真实确认记录，请先在商家插件中确认服务边界', 409, { acceptance_ref: boundary.acceptance_ref, next_action: 'commercial.service-boundary.accept' })
       const expectedRevision = requiredPositiveInteger(params, 'expected_revision', true)
       if (expectedRevision !== 0) throw new DomainError('SERVICE_FULFILLMENT_REVISION_CONFLICT', '新服务分配的 expected_revision 必须为 0', 409)
       try {

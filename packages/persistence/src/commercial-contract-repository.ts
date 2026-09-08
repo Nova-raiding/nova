@@ -197,6 +197,13 @@ function validatePeriod(sku: CommercialCatalogSkuSnapshot, period: VerifiedPayme
   return { start, end }
 }
 
+function privateTrialPeriod(paidAt: string): { start: string; end: string } {
+  const start = new Date(paidAt)
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 7)
+  return { start: start.toISOString(), end: end.toISOString() }
+}
+
 function monthlyAnniversary(start: string, monthOffset: number): string {
   const value = new Date(start)
   const targetMonth = value.getUTCMonth() + monthOffset
@@ -411,7 +418,11 @@ export class PostgresCommercialContractRepository {
         }
       }
       validateOrderSku(sku, paidAt)
-      const period = validatePeriod(sku, input.period)
+      // Private-trial payment verification is an operator-controlled path.
+      // Derive its seven-day period from the verified payment timestamp so a
+      // caller cannot omit the period and accidentally grant points without
+      // the matching brand/store entitlement snapshot.
+      const period = validatePeriod(sku, input.period ?? (sku.kind === 'private_trial' ? privateTrialPeriod(paidAt) : undefined))
       const points = pointBenefit(sku)
       let expiresAt = input.grantExpiresAt == null ? null : instant(input.grantExpiresAt, 'grantExpiresAt')
       if (sku.kind === 'point_pack') {

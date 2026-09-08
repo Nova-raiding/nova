@@ -410,6 +410,7 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
   const canOperate = controller.permissions.canGrantPrivateSku || controller.permissions.canReconcilePayment;
   const [workspace, setWorkspace] = useState(controller.targetWorkspaceId);
   const [customerRef, setCustomerRef] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [eligibilityId, setEligibilityId] = useState("");
   const [trialOrderId, setTrialOrderId] = useState("");
   const [creditId, setCreditId] = useState("");
@@ -436,9 +437,12 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
     <Space wrap>
       <Input aria-label="目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
       <Input aria-label="客户标识" placeholder="客户标识" value={customerRef} onChange={event => setCustomerRef(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !customerRef} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialEligibility(workspace, customerRef, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.eligibility_id === "string") setEligibilityId(row.eligibility_id); } return value; })}>创建 1999 元私测资格</Button>
+      <Button loading={busy} disabled={!workspace || !customerRef} onClick={() => void run(async () => controller.client.createPrivateTrialInvite(workspace, customerRef, new Date(Date.now() + 7 * 86400000).toISOString(), reason))}>生成私测邀请</Button>
+      <Input aria-label="私测邀请编码" placeholder="私测邀请编码（生成后粘贴/保存）" value={inviteCode} onChange={event => setInviteCode(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !customerRef || !inviteCode} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialEligibility(workspace, customerRef, inviteCode, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.eligibility_id === "string") setEligibilityId(row.eligibility_id); } return value; })}>使用邀请创建私测资格</Button>
       <Input aria-label="私测资格 ID" placeholder="私测资格 ID" value={eligibilityId} onChange={event => setEligibilityId(event.target.value)} />
       <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(() => controller.client.approvePrivateTrialEligibility(workspace, eligibilityId, revision, reason))}>业务审批</Button>
+      <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(async () => { const value = await controller.client.createPrivateTrialOrder(workspace, eligibilityId, "商业化方案：创建 1999 元私测订单"); if (value && typeof value === "object") { const row = value as Record<string, unknown>; const order = row.order; if (order && typeof order === "object" && typeof (order as Record<string, unknown>).order_id === "string") setTrialOrderId((order as Record<string, unknown>).order_id as string); } return value; })}>创建 1999 元私测订单</Button>
       <Button loading={busy} disabled={!workspace || !eligibilityId} onClick={() => void run(() => controller.client.completePrivateTrialValidation(workspace, eligibilityId, trialOrderId, new Date().toISOString(), reason))}>完成 7 天验证</Button>
       <Input aria-label="试用订单 ID" placeholder="试用订单 ID" value={trialOrderId} onChange={event => setTrialOrderId(event.target.value)} />
       <Button loading={busy} disabled={!workspace || !eligibilityId || !controller.permissions.canGrantPrivateSku} onClick={() => void run(async () => { const value = await controller.client.preparePrivateTrialCredit(workspace, eligibilityId, reason); if (value && typeof value === "object") { const row = value as Record<string, unknown>; if (typeof row.credit_id === "string") setCreditId(row.credit_id); } return value; })}>准备 3001 元抵扣</Button>
@@ -452,6 +456,7 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
       <Input aria-label="支付 nonce" placeholder="支付 nonce" value={nonce} onChange={event => setNonce(event.target.value)} />
       <Input aria-label="支付 payload hash" placeholder="支付 payload hash" value={payloadHash} onChange={event => setPayloadHash(event.target.value)} />
       <Button loading={busy} disabled={!workspace || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyCommercialOrderTransfer(workspace, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), reason))}>核验普通订单转账并发放点数</Button>
+      <Button loading={busy} disabled={!workspace || !trialOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyPrivateTrialPayment(workspace, trialOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), "商业化方案：核验 1999 元私测付款并授予试用权益"))}>核验 1999 元私测付款并授予权益</Button>
       <Button type="primary" loading={busy} disabled={!workspace || !creditId || !conversionOrderId || !paymentSubjectRef || !providerEventId || !providerOrderId || !nonce || !payloadHash || !controller.permissions.canReconcilePayment} onClick={() => void run(() => controller.client.verifyPrivateTrialTransfer(workspace, creditId, conversionOrderId, paymentSubjectRef, providerEventId, providerOrderId, nonce, payloadHash, new Date().toISOString(), reason))}>核验转账并开通</Button>
     </Space>
     {message ? <Typography.Paragraph copyable={{ text: message }} code>{message}</Typography.Paragraph> : null}

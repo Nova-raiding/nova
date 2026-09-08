@@ -13,6 +13,19 @@ interface PrivateTrialEligibilityView {
   expiresAt: string | null
 }
 
+export interface PrivateTrialInviteRecord {
+  id: string
+  workspaceId: string
+  customerRef: string
+  inviteCode: string | null
+  status: 'active' | 'redeemed' | 'revoked' | 'expired'
+  expiresAt: string
+  redeemedAt: string | null
+  redeemedEligibilityId: string | null
+  issuedByActorId: string
+  createdAt: string
+}
+
 export type PrivateTrialRepositoryErrorCode =
   | 'PRIVATE_TRIAL_ELIGIBILITY_NOT_FOUND'
   | 'PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID'
@@ -31,6 +44,8 @@ type EligibilityRow = {
   id: string; workspaceId: string; customerRef: string; status: PrivateTrialEligibilityStatus; revision: string | number; expiresAt: string | Date | null
   approvedByActorId: string | null; businessApprovedAt: string | Date | null; validationCompletedAt: string | Date | null; trialOrderId: string | null; paymentSubjectRef: string | null
 }
+type EligibilityReplayRow = EligibilityRow & { inviteCodeHash: string }
+type InviteRow = { id: string; workspaceId: string; customerRef: string; status: PrivateTrialInviteRecord['status']; expiresAt: string | Date; redeemedAt: string | Date | null; redeemedEligibilityId: string | null; issuedByActorId: string; createdAt: string | Date }
 type CreditRow = {
   id: string; status: 'pending_accounting_approval' | 'approved' | 'applied' | 'rejected' | 'expired'; eligibilityId: string | null; trialOrderId: string; onboardingOrderId: string | null
   offsetFen: string | number; payableFen: string | number; expiresAt: string | Date | null; paymentSubjectRef: string | null; approvedByActorId: string | null
@@ -38,7 +53,7 @@ type CreditRow = {
 type CatalogRow = Omit<CommercialCatalogSkuSnapshot, 'priceFen' | 'effectiveAt' | 'benefits'> & { priceFen: number | string | null; effectiveAt: string | Date | null; benefits: CommercialCatalogBenefit[] }
 
 interface PrivateTrialConversionPort {
-  createEligibility(input: { workspaceId: string; customerRef: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
+  createEligibility(input: { workspaceId: string; customerRef: string; inviteCode: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
   approveEligibility(input: { workspaceId: string; eligibilityId: string; expectedRevision: number; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
   bindValidationCompletion(input: { workspaceId: string; eligibilityId: string; trialOrderId: string; completedAt: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
   prepareCredit(input: { workspaceId: string; eligibilityId: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown>; now: string }): Promise<{ id: string; status: 'pending_accounting_approval' | 'approved' | 'applied' | 'rejected' | 'expired'; expiresAt: string }>
@@ -54,6 +69,7 @@ const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.m
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex')
 const date = (value: string | Date | null) => value === null ? null : new Date(value).toISOString()
 const asEligibility = (row: EligibilityRow): PrivateTrialEligibilityView => ({ id: row.id, workspaceId: row.workspaceId, customerRef: row.customerRef, status: row.status, revision: integer(row.revision, 'revision'), expiresAt: date(row.expiresAt) })
+const mapInvite = (row: InviteRow, inviteCode: string | null): PrivateTrialInviteRecord => ({ id: row.id, workspaceId: row.workspaceId, customerRef: row.customerRef, inviteCode, status: row.status, expiresAt: date(row.expiresAt)!, redeemedAt: date(row.redeemedAt), redeemedEligibilityId: row.redeemedEligibilityId, issuedByActorId: row.issuedByActorId, createdAt: date(row.createdAt)! })
 const nextSevenDays = (completedAt: string) => { const value = new Date(completedAt); value.setUTCDate(value.getUTCDate() + 7); return value.toISOString() }
 
 const eligibilityProjection = `id, workspace_id AS "workspaceId", customer_ref AS "customerRef", status, revision,
@@ -63,18 +79,88 @@ const eligibilityProjection = `id, workspace_id AS "workspaceId", customer_ref A
 export class PostgresPrivateTrialConversionRepository implements PrivateTrialConversionPort {
   constructor(private readonly pool: SqlPool) {}
 
+  async createInvite(input: { workspaceId: string; customerRef: string; expiresAt: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialInviteRecord> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId); const customerRef = required(input.customerRef, 'customerRef'); const expiresAt = instant(input.expiresAt, 'expiresAt')
+    if (Date.parse(expiresAt) <= Date.now()) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_WINDOW_EXPIRED', 'invite expiry must be in the future')
+    if (Object.keys(input.evidence).length === 0) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'invite evidence is required')
+    const inviteCode = `ptinvite_${randomUUID().replaceAll('-', '')}`; const inviteCodeHash = createHash('sha256').update(inviteCode).digest('hex'); const now = new Date().toISOString()
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const replay = await client.query<InviteRow>(`SELECT id,workspace_id AS "workspaceId",customer_ref AS "customerRef",status,expires_at AS "expiresAt",redeemed_at AS "redeemedAt",redeemed_eligibility_id AS "redeemedEligibilityId",issued_by_actor_id AS "issuedByActorId",created_at AS "createdAt" FROM private_trial_invites_v2 WHERE workspace_id=$1 AND idempotency_key=$2`, [workspaceId, required(input.idempotencyKey, 'idempotencyKey')])
+      if (replay.rows[0]) {
+        const existing = replay.rows[0]
+        if (existing.customerRef !== customerRef || date(existing.expiresAt) !== expiresAt) throw new PrivateTrialRepositoryError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'invite idempotency key is already bound to different inputs')
+        return mapInvite(existing, null)
+      }
+      const inserted = await client.query<InviteRow>(`INSERT INTO private_trial_invites_v2 (id,workspace_id,customer_ref,invite_code_hash,idempotency_key,expires_at,issued_by_actor_id,evidence,created_at) VALUES ($1,$2,$3,$4,$5,$6::timestamptz,$7,$8::jsonb,$9::timestamptz) RETURNING id,workspace_id AS "workspaceId",customer_ref AS "customerRef",status,expires_at AS "expiresAt",redeemed_at AS "redeemedAt",redeemed_eligibility_id AS "redeemedEligibilityId",issued_by_actor_id AS "issuedByActorId",created_at AS "createdAt"`, [`pti_${randomUUID()}`, workspaceId, customerRef, inviteCodeHash, required(input.idempotencyKey, 'idempotencyKey'), expiresAt, required(input.actorId, 'actorId'), JSON.stringify(input.evidence), now])
+      if (!inserted.rows[0]) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'private trial invite was not created')
+      await this.inviteEvent(client, workspaceId, inserted.rows[0].id, 'created', input.actorId, input.idempotencyKey, input.reason, input.evidence, now)
+      return mapInvite(inserted.rows[0], inviteCode)
+    })
+  }
+
+  async listInvites(workspaceId: string, limit = 100): Promise<PrivateTrialInviteRecord[]> {
+    const scope = requireWorkspaceScope(workspaceId)
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const rows = await client.query<InviteRow>(`SELECT id,workspace_id AS "workspaceId",customer_ref AS "customerRef",status,expires_at AS "expiresAt",redeemed_at AS "redeemedAt",redeemed_eligibility_id AS "redeemedEligibilityId",issued_by_actor_id AS "issuedByActorId",created_at AS "createdAt" FROM private_trial_invites_v2 WHERE workspace_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2`, [scope, Math.min(100, Math.max(1, limit))])
+      return rows.rows.map(row => mapInvite(row, null))
+    })
+  }
+
+  async revokeInvite(input: { workspaceId: string; inviteId: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialInviteRecord> {
+    const scope = requireWorkspaceScope(input.workspaceId); const now = new Date().toISOString()
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const replay = await client.query<InviteRow & { eventType: string; eventInviteId: string }>(`SELECT i.id,i.workspace_id AS "workspaceId",i.customer_ref AS "customerRef",i.status,i.expires_at AS "expiresAt",i.redeemed_at AS "redeemedAt",i.redeemed_eligibility_id AS "redeemedEligibilityId",i.issued_by_actor_id AS "issuedByActorId",i.created_at AS "createdAt",e.event_type AS "eventType",e.invite_id AS "eventInviteId" FROM private_trial_invite_events_v2 e JOIN private_trial_invites_v2 i ON i.workspace_id=e.workspace_id AND i.id=e.invite_id WHERE e.workspace_id=$1 AND e.idempotency_key=$2`, [scope, required(input.idempotencyKey, 'idempotencyKey')])
+      if (replay.rows[0]) {
+        if (replay.rows[0].eventType !== 'revoked' || replay.rows[0].eventInviteId !== input.inviteId) throw new PrivateTrialRepositoryError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'invite revocation idempotency key is already bound to another operation')
+        return mapInvite(replay.rows[0], null)
+      }
+      const updated = await client.query<InviteRow>(`UPDATE private_trial_invites_v2 SET status='revoked' WHERE workspace_id=$1 AND id=$2 AND status='active' RETURNING id,workspace_id AS "workspaceId",customer_ref AS "customerRef",status,expires_at AS "expiresAt",redeemed_at AS "redeemedAt",redeemed_eligibility_id AS "redeemedEligibilityId",issued_by_actor_id AS "issuedByActorId",created_at AS "createdAt"`, [scope, required(input.inviteId, 'inviteId')])
+      if (!updated.rows[0]) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_NOT_FOUND', 'active private trial invite was not found')
+      await this.inviteEvent(client, scope, input.inviteId, 'revoked', input.actorId, input.idempotencyKey, input.reason, input.evidence, now)
+      return mapInvite(updated.rows[0], null)
+    })
+  }
+
   async createEligibility(input: Parameters<PrivateTrialConversionPort['createEligibility']>[0]): Promise<PrivateTrialEligibilityView> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const now = new Date().toISOString()
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
-      const replay = await client.query<EligibilityRow>(`SELECT e.${eligibilityProjection} FROM private_trial_eligibility_events_v2 x JOIN private_trial_eligibilities_v2 e ON e.workspace_id=x.workspace_id AND e.id=x.eligibility_id WHERE x.workspace_id=$1 AND x.idempotency_key=$2`, [workspaceId, input.idempotencyKey])
-      if (replay.rows[0]) return asEligibility(replay.rows[0])
+      const replay = await client.query<EligibilityReplayRow>(`SELECT e.id,e.workspace_id AS "workspaceId",e.customer_ref AS "customerRef",e.status,e.revision,
+        e.expires_at AS "expiresAt",e.approved_by_actor_id AS "approvedByActorId",e.business_approved_at AS "businessApprovedAt",
+        e.validation_completed_at AS "validationCompletedAt",e.trial_order_id AS "trialOrderId",e.payment_subject_ref AS "paymentSubjectRef",
+        i.invite_code_hash AS "inviteCodeHash"
+        FROM private_trial_eligibility_events_v2 x JOIN private_trial_eligibilities_v2 e ON e.workspace_id=x.workspace_id AND e.id=x.eligibility_id
+        JOIN private_trial_invites_v2 i ON i.workspace_id=e.workspace_id AND i.redeemed_eligibility_id=e.id
+        WHERE x.workspace_id=$1 AND x.idempotency_key=$2`, [workspaceId, input.idempotencyKey])
+      if (replay.rows[0]) {
+        const inviteCodeHash = createHash('sha256').update(required(input.inviteCode, 'inviteCode')).digest('hex')
+        if (replay.rows[0].customerRef !== input.customerRef || replay.rows[0].inviteCodeHash !== inviteCodeHash) throw new PrivateTrialRepositoryError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'eligibility idempotency key is already bound to different inputs')
+        return asEligibility(replay.rows[0])
+      }
       const id = `pte_${randomUUID()}`
+      const invite = await this.lockRedeemableInvite(client, workspaceId, input.inviteCode, input.customerRef, now)
       const inserted = await client.query<EligibilityRow>(`INSERT INTO private_trial_eligibilities_v2 (id,workspace_id,customer_ref,status,evidence,revision,created_at) VALUES ($1,$2,$3,'pending_business_approval',$4::jsonb,1,$5::timestamptz) RETURNING ${eligibilityProjection}`, [id, workspaceId, required(input.customerRef, 'customerRef'), JSON.stringify(input.evidence), now])
       const row = inserted.rows[0]
       if (!row) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'private trial eligibility was not created')
+      await this.redeemInvite(client, workspaceId, invite, id, now)
       await this.event(client, workspaceId, row.id, 'created', input.actorId, input.idempotencyKey, input.reason, input.evidence, now)
       return asEligibility(row)
     })
+  }
+
+  private async lockRedeemableInvite(client: SqlClient, workspaceId: string, inviteCode: string, customerRef: string, now: string): Promise<InviteRow> {
+    const hash = createHash('sha256').update(required(inviteCode, 'inviteCode')).digest('hex')
+    const locked = await client.query<InviteRow>(`SELECT id,workspace_id AS "workspaceId",customer_ref AS "customerRef",status,expires_at AS "expiresAt",redeemed_at AS "redeemedAt",redeemed_eligibility_id AS "redeemedEligibilityId",issued_by_actor_id AS "issuedByActorId",created_at AS "createdAt" FROM private_trial_invites_v2 WHERE workspace_id=$1 AND invite_code_hash=$2 FOR UPDATE`, [workspaceId, hash])
+    const invite = locked.rows[0]
+    if (!invite || invite.customerRef !== customerRef) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'private trial invite is invalid for this customer')
+    if (invite.status !== 'active') throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'private trial invite is no longer active')
+    if (Date.parse(date(invite.expiresAt)!) <= Date.parse(now)) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_WINDOW_EXPIRED', 'private trial invite has expired')
+    return invite
+  }
+
+  private async redeemInvite(client: SqlClient, workspaceId: string, invite: InviteRow, eligibilityId: string, now: string) {
+    const updated = await client.query(`UPDATE private_trial_invites_v2 SET status='redeemed',redeemed_at=$3::timestamptz,redeemed_eligibility_id=$4 WHERE workspace_id=$1 AND id=$2 AND status='active'`, [workspaceId, invite.id, now, eligibilityId])
+    if (updated.rowCount !== 1) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'private trial invite was redeemed concurrently')
+    await this.inviteEvent(client, workspaceId, invite.id, 'redeemed', 'system', `redeem:${eligibilityId}`, 'private trial invite redeemed', { eligibility_id: eligibilityId, customer_ref: invite.customerRef }, now)
   }
 
   async approveEligibility(input: Parameters<PrivateTrialConversionPort['approveEligibility']>[0]): Promise<PrivateTrialEligibilityView> {
@@ -201,6 +287,7 @@ export class PostgresPrivateTrialConversionRepository implements PrivateTrialCon
     return result.rows[0]
   }
   private async event(client: SqlClient, workspaceId: string, eligibilityId: string, eventType: string, actorId: string, idempotencyKey: string, reason: string, evidence: Record<string, unknown>, now: string) { await client.query(`INSERT INTO private_trial_eligibility_events_v2 (id,workspace_id,eligibility_id,event_type,actor_id,idempotency_key,reason,evidence,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::timestamptz)`, [`ptevt_${randomUUID()}`, workspaceId, eligibilityId, eventType, actorId, idempotencyKey, reason, JSON.stringify(evidence), now]) }
+  private async inviteEvent(client: SqlClient, workspaceId: string, inviteId: string, eventType: 'created' | 'redeemed' | 'revoked' | 'expired', actorId: string, idempotencyKey: string, reason: string, evidence: Record<string, unknown>, now: string) { await client.query(`INSERT INTO private_trial_invite_events_v2 (id,workspace_id,invite_id,event_type,actor_id,idempotency_key,reason,evidence,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::timestamptz)`, [`ptievt_${randomUUID()}`, workspaceId, inviteId, eventType, actorId, idempotencyKey, reason, JSON.stringify(evidence), now]) }
   private async creditEvent(client: SqlClient, workspaceId: string, creditId: string, eventType: string, actorId: string, idempotencyKey: string, reason: string, evidence: Record<string, unknown>, now: string) { await client.query(`INSERT INTO private_trial_credit_events_v2 (id,workspace_id,credit_id,event_type,actor_id,idempotency_key,reason,evidence,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::timestamptz)`, [`ptcevt_${randomUUID()}`, workspaceId, creditId, eventType, actorId, idempotencyKey, reason, JSON.stringify(evidence), now]) }
   private creditSummary(row: CreditRow) { const expiresAt = date(row.expiresAt); if (!expiresAt) throw new PrivateTrialRepositoryError('PRIVATE_TRIAL_ELIGIBILITY_STATE_INVALID', 'credit expiry is missing'); return { id: row.id, status: row.status, expiresAt } }
   private orderView(credit: CreditRow, orderId: string, expiresAt: string): PrivateTrialConversionOrderView { return { eligibility_id: credit.eligibilityId ?? '', credit_id: credit.id, onboarding_order_id: orderId, list_amount_fen: 500000, offset_amount_fen: 199900, payable_amount_fen: 300100, status: 'pending', expires_at: expiresAt } }

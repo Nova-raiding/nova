@@ -39,9 +39,9 @@ describe('safe default test launcher', () => {
     expect(() => buildSafeVitestArgs(['watch', '--config=unsafe.ts'])).toThrow(/safe test entrypoint/u)
   })
 
-  it('keeps the explicit isolation manifest unique and limited to the audited 15 files', () => {
-    expect(NON_HERMETIC_TEST_FILES).toHaveLength(15)
-    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(15)
+  it('keeps the explicit isolation manifest unique and limited to the audited files', () => {
+    expect(NON_HERMETIC_TEST_FILES).toHaveLength(16)
+    expect(new Set(NON_HERMETIC_TEST_FILES).size).toBe(16)
     expect(NON_HERMETIC_TEST_FILES).toContain('apps/api/src/canonical-backfill-contract.test.ts')
     expect(NON_HERMETIC_TEST_FILES).toContain('tests/local-creative-points-seed-runtime.test.ts')
   })

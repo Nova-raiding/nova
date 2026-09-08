@@ -459,6 +459,9 @@ export async function loadMigrations(): Promise<Migration[]> {
   const onboardingGrantExpiration = await readFile(new URL('./migrations/169_onboarding_grant_expiration.sql', import.meta.url), 'utf8')
   const commercialRefundEvents = await readFile(new URL('./migrations/170_commercial_refund_events.sql', import.meta.url), 'utf8')
   const commercialRefundRuntimeAcl = await readFile(new URL('./migrations/171_commercial_refund_runtime_acl.sql', import.meta.url), 'utf8')
+  const privateTrialInvites = await readFile(new URL('./migrations/172_private_trial_invites.sql', import.meta.url), 'utf8')
+  const privateTrialInviteEvents = await readFile(new URL('./migrations/173_private_trial_invite_events.sql', import.meta.url), 'utf8')
+  const privateTrialEntitlementActivation = await readFile(new URL('./migrations/174_private_trial_entitlement_activation.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -631,6 +634,9 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 169, name: 'onboarding_grant_expiration', sql: onboardingGrantExpiration },
     { version: 170, name: 'commercial_refund_events', sql: commercialRefundEvents },
     { version: 171, name: 'commercial_refund_runtime_acl', sql: commercialRefundRuntimeAcl },
+    { version: 172, name: 'private_trial_invites', sql: privateTrialInvites },
+    { version: 173, name: 'private_trial_invite_events', sql: privateTrialInviteEvents },
+    { version: 174, name: 'private_trial_entitlement_activation', sql: privateTrialEntitlementActivation },
   ]
 }
 

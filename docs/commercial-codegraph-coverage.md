@@ -7,7 +7,7 @@
 
 ## 2026-09-08 实现复核增量
 
-- 本地 PostgreSQL 已真实迁移到 171：167 私测抵扣闭环、168 赠送批次 dispatch、169 赠送批次过期事实表、170 退款不可变流水、171 退款运行时 ACL 均存在。
+- 本地 PostgreSQL 已真实迁移到 174：167 私测抵扣闭环、168 赠送批次 dispatch、169 赠送批次过期事实表、170 退款不可变流水、171 退款运行时 ACL、172 私测邀请码、173 私测邀请码不可变事件/RLS/ACL、174 私测权益目录激活均存在。
 - 5000 元正式接入、基础版、成长版和两个点包的 v2 目录快照已 executable；费率为图片 1 点、批注编辑 1 点、文本 1 点、标准 15 秒视频 90 点。
 - 六批次 500 点按支付成功后的月度排程生成；每批次按次月边界过期，第 6 批后不再生成第 7 批。worker 已接入 due dispatch/expiration。
 - 私测流程已具备资格创建、业务审批、验证完成、1999 元试用窗口、1999 元抵扣、财务审批、3001 元待支付订单和人工转账核验入口。
@@ -89,11 +89,11 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 | 方案功能 | 实现文件/入口 | 测试 | 真实运行证据 | 状态 |
 |---|---|---|---|---|
 | 1999 元/7 天 SKU | private-trial conversion state machine | private-trial service/migration tests | 私测 SKU 对外仍保持 private，不走公开购买入口 | 🟡 |
-| 一个品牌、一个店铺、500 点 | private validation offer、entitlement projection | catalog/entitlement tests | 没有试用订单授予证据 | ⛔ |
+| 一个品牌、一个店铺、500 点 | 独立私测订单创建与 1999 元支付核验；支付事务创建 7 天 entitlement snapshot、500 点 grant/ledger，并保留 max_brands/max_stores | `private-trial-initial-grant.contract.test.ts`、迁移 174、商业契约测试 | 待本地 PostgreSQL 迁移 174 后执行完整 API/MCP 与桌面 Ops 验收；生产支付仍未配置 | 🟡 |
 | 1 小时 1 对 1 | service fulfillment | fulfillment tests | 没有试用订单服务消耗证据 | 🟡 |
 | 核心功能和一次复盘 | generation/knowledge/service fulfillment | feature tests | 中转、平台授权、存储等生产门禁仍未通过 | 🟡 |
 | 7 天内购买正式版抵扣 5000 元 | `private-trial-conversion-repository.ts`、payment verify MCP | private-trial service/migration tests | 资格窗口、1999 抵扣、3001 待支付和 manual_transfer 核验已形成 | 🟡 |
-| 测试版不公开 | offer visibility=`private` | catalog test | 没有白名单/邀请/私有购买链接运行证据 | ❌ |
+| 测试版不公开 | offer visibility=`private` + 私测邀请 | catalog/邀请 MCP + 172/173 migration | 邀请码只返回一次、数据库只存哈希；支持生成、列表不返明文、撤销、过期和按客户兑换；真实宿主证据仍缺 | 🟡 |
 
 ## 3. 月费套餐
 
@@ -121,7 +121,7 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 | 方案条目 | 实现/测试 | 真实运行证据 | 状态 |
 |---|---|---|---|
 | 系统指导、问题排查、品牌配置、生成指导、拒审分析、流程优化 | support、service fulfillment、rules、audit | 可以记录事件，但没有客户可见预约/小时消耗闭环 | 🟡 |
-| 不包含无限修改、全套代做、完整营销策略、日常运营、7×24/非工作时段 | 方案文本和部分服务模型 | 没有购买确认、协议版本、服务边界接受证据 | ❌ |
+| 不包含无限修改、全套代做、完整营销策略、日常运营、7×24/非工作时段 | 版本化服务边界协议 + 商家侧 `commercial.service-boundary.accept` + 分配前审计查验 | 商家身份、确认凭证、协议校验和、确认时间会写入审计；运营后台不能单独伪造确认；真实宿主证据仍缺 | 🟡 |
 
 ## 5. 增值服务
 
@@ -177,6 +177,17 @@ CodeGraph 证明了“文件、符号和关系被索引”，不证明运行环�
 
 ## 9. 当前真实运行证据和缺口
 
+### 私测首付授予测试任务
+
+私测目录通过迁移 174 进入 approved/executable，但仍只能从邀请、资格和运营权限入口创建。支付成功后，服务端从不可变 SKU 快照派生 7 天周期，在同一事务写入权益快照和 500 点账本：
+
+```bash
+npm exec vitest run --no-file-parallelism \
+  packages/application/src/private-trial-initial-grant.contract.test.ts
+```
+
+当前仍需在本地 PostgreSQL 运行迁移 174，并执行 API/MCP、隔离 PostgreSQL、桌面 Ops 与 ChatGPT 宿主验收；在这些运行证据完成前不能宣称生产支付闭环已上线。
+
 验证命令：
 
 ```bash
@@ -189,7 +200,7 @@ npm exec vitest run --no-file-parallelism \
 npm run dev:doctor:production
 ```
 
-本次针对性测试结果：4 个测试文件、42 个测试通过；本轮商业访问、worker 商业复核、Ops 工作台回归为 5 个测试文件、143 个测试通过。
+本次针对性测试结果：迁移、私测、API、Ops 工作台、商业注册表和 MCP 契约共 9 个测试文件、139 个测试通过；迁移 174 与首付授予回归正在验证。
 当前生产 doctor 已报告商业目录 `executable=5`、已批准费率为 1，商业持久化和本地容器健康；生产 readiness 仍未通过，并且存在中转 evidence、ChatGPT host/plugin bridge、支付、六平台 OAuth、对象存储、扫描器、告警和发布证据等生产缺口。
 
 因此本矩阵的当前结论是：**单人本地测试闭环已可执行（包含创意点不足引导购买、预占、provider 回执结算、失败释放、账本和人工转账开通）；方案尚未形成可对外售卖的真实生产闭环。**

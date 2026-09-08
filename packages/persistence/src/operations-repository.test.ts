@@ -29,4 +29,16 @@ describe('OperationsRepository audit sink boundary', () => {
     await new PostgresOperationsRepository({ connect: async () => client }).append(valid())
     expect(query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', "SELECT set_config('app.workspace_id', $1, true)", expect.stringContaining('INSERT INTO workspace_operation_audit'), 'COMMIT'])
   })
+
+  it('finds an exact audit resource without depending on the bounded list window', async () => {
+    const repository = new MemoryOperationsRepository()
+    const appended = await repository.append(valid())
+    await expect(repository.find('ws_a', 'member.update', 'workspace_member', 'member_a')).resolves.toEqual(appended)
+    await expect(repository.find('ws_a', 'member.update', 'workspace_member', 'missing')).resolves.toBeUndefined()
+
+    const query = vi.fn(async (sql: string) => sql.startsWith('SELECT set_config') ? { rows: [] } : sql.includes('FROM workspace_operation_audit') ? { rows: [appended] } : { rows: [] })
+    const client: SqlClient = { query: query as unknown as SqlClient['query'], release: vi.fn() }
+    await expect(new PostgresOperationsRepository({ connect: async () => client }).find('ws_a', 'member.update', 'workspace_member', 'member_a')).resolves.toEqual(appended)
+    expect(query.mock.calls.some(([sql]) => String(sql).includes('action=$2 AND resource_type=$3 AND resource_id=$4'))).toBe(true)
+  })
 })

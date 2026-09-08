@@ -21,7 +21,7 @@ describe('migration 166 executable commercial catalog PostgreSQL release evidenc
       database = new Pool({ connectionString: isolated.toString() })
       await database.query(await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8'))
       const applied = await new MigrationRunner(database, await loadMigrations()).run()
-      expect(applied.at(-1)).toBe(169)
+      expect(applied.at(-1)).toBe(174)
 
       const versions = await database.query<{ total: number; executable: number; blocked: number }>(`
         SELECT count(*)::int AS total,
@@ -29,7 +29,7 @@ describe('migration 166 executable commercial catalog PostgreSQL release evidenc
           count(*) FILTER (WHERE version=2 AND NOT executable)::int AS blocked
         FROM commercial_catalog_sku_versions
       `)
-      expect(versions.rows[0]).toEqual({ total: 14, executable: 5, blocked: 2 })
+      expect(versions.rows[0]).toEqual({ total: 14, executable: 6, blocked: 1 })
 
       const rates = await database.query<{ rules: number; executable: number }>(`
         SELECT count(*)::int AS rules, count(*) FILTER (WHERE r.executable)::int AS executable

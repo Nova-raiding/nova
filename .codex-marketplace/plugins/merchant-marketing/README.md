@@ -1,6 +1,6 @@
 # 大麦 Codex 插件
 
-当前 `tools/list` 为 143 个 MCP 工具，以运行态契约测试为准。
+当前 `tools/list` 为 144 个 MCP 工具，以运行态契约测试为准。
 
 这是可安装的 Codex Plugin 源目录，包含：
 

@@ -38,7 +38,7 @@ export class CommercialPurchaseService {
     if (!sku || sku.lifecycle !== 'approved' || sku.executable !== true || sku.blockers.length > 0 || !Number.isFinite(Date.parse(sku.effective_at)) || Date.parse(sku.effective_at) > Date.now()) {
       throw new CommercialPurchaseError(request.purchase_kind === 'onboarding_once' ? 'ONBOARDING_PURCHASE_UNAVAILABLE' : 'COMMERCIAL_PURCHASE_UNAVAILABLE', 'approved executable commercial SKU is unavailable')
     }
-    if (sku.kind === 'private_trial') throw new CommercialPurchaseError('PRIVATE_PURCHASE_UNAVAILABLE', 'private purchase eligibility and accounting policy remain unresolved')
+    if (sku.kind === 'private_trial') throw new CommercialPurchaseError('PRIVATE_PURCHASE_UNAVAILABLE', 'private purchase requires the audited invitation workflow')
     const expected = request.purchase_kind === 'onboarding_once'
       ? 'onboarding'
       : request.purchase_kind === 'point_pack'

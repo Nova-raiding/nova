@@ -62,6 +62,7 @@ export const CAPABILITIES = [
   'commercial.rate.publish',
   'commercial.service_fulfillment.read',
   'commercial.service_fulfillment.write',
+  'commercial.service_boundary.accept',
   'platform.summary.read',
   'platform.settings.read',
   'platform.settings.update',
@@ -344,7 +345,7 @@ const tenantRead: readonly CapabilityId[] = [
 ]
 const tenantOperate: readonly CapabilityId[] = [
   ...tenantRead, 'workspace.settings.update', 'customer.content.update',
-  'customer.publish.execute', 'automation.update', 'marketing.queue.read', 'marketing.queue.update', 'billing.workspace.update', 'merchant.onboarding.execute',
+  'customer.publish.execute', 'automation.update', 'marketing.queue.read', 'marketing.queue.update', 'billing.workspace.update', 'merchant.onboarding.execute', 'commercial.service_boundary.accept',
 ]
 const platformRead: readonly CapabilityId[] = [
   'platform.summary.read', 'workspace.directory.read', 'marketing.summary.read', 'model.status.read',
@@ -449,6 +450,11 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   read('commercial.rate.read', 'platform', 'finance', ['ops.commercial.rate-cards.list', 'ops.commercial.readiness.report']),
   write('commercial.private_trial.workflow', 'platform', 'finance', [
     'ops.commercial.private-trial.eligibility.create',
+    'ops.commercial.private-trial.order.create',
+    'ops.commercial.private-trial.trial-payment.verify',
+    'ops.commercial.private-trial.invite.create',
+    'ops.commercial.private-trial.invite.list',
+    'ops.commercial.private-trial.invite.revoke',
     'ops.commercial.private-trial.eligibility.approve',
     'ops.commercial.private-trial.validation.complete',
     'ops.commercial.private-trial.credit.prepare',
@@ -458,6 +464,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   ], 'allow_and_deny', ['reason', 'idempotency']),
     write('commercial.payment.reconcile', 'platform', 'finance', ['ops.commercial.order.payment.verify', 'ops.commercial.order.refund.list', 'ops.commercial.order.refund.request', 'ops.commercial.order.refund.approve', 'ops.commercial.order.refund.complete'], 'allow_and_deny', ['reason', 'idempotency']),
   read('commercial.service_fulfillment.read', 'platform', 'customer_metadata', ['ops.commercial.service-fulfillment.list']),
+  write('commercial.service_boundary.accept', 'workspace', 'customer_metadata', ['commercial.service-boundary.accept'], 'mutation', ['idempotency']),
   write('commercial.service_fulfillment.write', 'platform', 'customer_metadata', ['ops.commercial.service-allocation.create', 'ops.commercial.service-fulfillment.schedule', 'ops.commercial.service-fulfillment.start', 'ops.commercial.service-fulfillment.complete', 'ops.commercial.service-fulfillment.adjust'], 'mutation', ['reason', 'revision', 'idempotency', 'approval']),
   read('marketing.summary.read', 'platform', 'platform_summary', ['ops.marketing.summary', 'ops.alerts.list']),
   write('marketing.alert.update', 'platform', 'platform_summary', ['ops.alert.ack']),

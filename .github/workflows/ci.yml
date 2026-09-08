@@ -184,6 +184,9 @@ jobs:
           packages/persistence/src/migration-168.test.ts
           packages/persistence/src/migration-169.test.ts
           packages/persistence/src/migration-171.test.ts
+          packages/persistence/src/migration-172.test.ts
+          packages/persistence/src/migration-173.test.ts
+          packages/persistence/src/migration-174.test.ts
           packages/persistence/src/authorization-repository.release.postgres.test.ts
           packages/persistence/src/authorization-rls-boundary.postgres.test.ts
           packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts
@@ -221,6 +224,7 @@ jobs:
           packages/persistence/src/object-orphan-repository.postgres.test.ts
           packages/persistence/src/ops-workspace-summary-rls.postgres.test.ts
           packages/persistence/src/platform-authorization-audit.postgres.test.ts
+          packages/persistence/src/private-trial-invites.release.postgres.test.ts
           packages/persistence/src/product-rls-tenant-boundary.postgres.test.ts
           packages/persistence/src/resource-id-scope.postgres.test.ts
           packages/persistence/src/service-fulfillment-repository.release.postgres.test.ts

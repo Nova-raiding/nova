@@ -27,7 +27,7 @@ export interface PrivateTrialEligibilityView {
 }
 
 export interface PrivateTrialConversionPort {
-  createEligibility(input: { workspaceId: string; customerRef: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
+  createEligibility(input: { workspaceId: string; customerRef: string; inviteCode: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
   approveEligibility(input: { workspaceId: string; eligibilityId: string; expectedRevision: number; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
   bindValidationCompletion(input: { workspaceId: string; eligibilityId: string; trialOrderId: string; completedAt: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }): Promise<PrivateTrialEligibilityView>
   prepareCredit(input: { workspaceId: string; eligibilityId: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown>; now: string }): Promise<{ id: string; status: 'pending_accounting_approval' | 'approved' | 'applied' | 'rejected' | 'expired'; expiresAt: string }>
@@ -57,8 +57,8 @@ const iso = (value: string, name: string) => {
 export class PrivateTrialConversionService {
   constructor(private readonly port: PrivateTrialConversionPort, private readonly clock: () => Date = () => new Date()) {}
 
-  createEligibility(input: { workspaceId: string; customerRef: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }) {
-    return this.port.createEligibility({ ...input, workspaceId: text(input.workspaceId, 'workspaceId'), customerRef: text(input.customerRef, 'customerRef'), actorId: text(input.actorId, 'actorId'), idempotencyKey: text(input.idempotencyKey, 'idempotencyKey'), reason: text(input.reason, 'reason'), evidence: evidence(input.evidence) })
+  createEligibility(input: { workspaceId: string; customerRef: string; inviteCode: string; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }) {
+    return this.port.createEligibility({ ...input, inviteCode: text(input.inviteCode, 'inviteCode'), workspaceId: text(input.workspaceId, 'workspaceId'), customerRef: text(input.customerRef, 'customerRef'), actorId: text(input.actorId, 'actorId'), idempotencyKey: text(input.idempotencyKey, 'idempotencyKey'), reason: text(input.reason, 'reason'), evidence: evidence(input.evidence) })
   }
 
   approveEligibility(input: { workspaceId: string; eligibilityId: string; expectedRevision: number; actorId: string; idempotencyKey: string; reason: string; evidence: Record<string, unknown> }) {

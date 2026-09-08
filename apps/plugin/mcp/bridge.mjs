@@ -163,6 +163,10 @@ const DESTRUCTIVE_WRITE_METHODS = new Set([
   'catalog.product.disable', 'automation.pause', 'publish.confirm', 'publish.batch.confirm',
 ])
 const METHODS = {
+  'commercial.service-boundary.accept': {
+    description: '确认 commercial.service-boundary.v1（校验和 94cd78089cf960d4b556ed9990fcd653c03473bd143b94d0203ab978ea84d685）：包含系统指导、常规排障、品牌配置、生成指导、拒审分析、流程优化；不包含无限修改、全套代做、完整营销策略、日常运营、7×24/非工作时段应急、内部开发；结果不保证。客户身份由已认证会话派生。',
+    inputSchema: { type: 'object', properties: { policy_version: boundedString(128), policy_checksum: boundedString(128), acceptance_ref: boundedString(256), accepted_at: boundedString(64), idempotency_key: idempotencyKeyProperty }, required: ['policy_version', 'policy_checksum', 'acceptance_ref', 'accepted_at', 'idempotency_key'], additionalProperties: false },
+  },
   'merchant.start': {
     description: '开始使用大麦；服务端先完成商业准入判定，通过后才会幂等记当前意图并返回下一步。零点或状态未知时仅返回服务端授权的恢复操作。',
     inputSchema: {
