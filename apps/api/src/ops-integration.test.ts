@@ -34,7 +34,7 @@ describe('Ops domain API integration', () => {
     const workspaceId = `ws_ops_support_${Date.now()}`
     const call = <T>(method: string, params: Record<string, unknown>, role = 'support') => fetch(`${base}/mcp`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-role': role, 'x-actor-id': `${role}-actor` },
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-ops-workbench': role === 'platform_ops' ? 'platform' : 'workspace', 'x-role': role, 'x-actor-id': `${role}-actor` },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { workspace_id: workspaceId, ...params } }),
     }).then(response => response.json() as Promise<RpcEnvelope<T>>)
 
@@ -56,7 +56,8 @@ describe('Ops domain API integration', () => {
     const stale = await call('ops.support.ticket.comment', { ticket_id: created.data?.result.ticket.id, body: '并发旧版本评论', visibility: 'internal', expected_revision: '1', idempotency_key: 'support-comment-0001' })
     expect(stale.error?.code).toBe('SUPPORT_TICKET_REVISION_CONFLICT')
     const platformTickets = await call<{ items: Array<Record<string, unknown>>; aggregate: boolean }>('ops.support.tickets.list', { platform_scope: 'platform', limit: '25' }, 'platform_ops')
-    expect(platformTickets.error?.code).toBe('FORBIDDEN')
+    expect(platformTickets.error).toBeNull()
+    expect(platformTickets.data?.result).toMatchObject({ aggregate: true })
 
     const mismatched = await fetch(`${base}/mcp`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-role': 'support' },

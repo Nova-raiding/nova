@@ -5545,7 +5545,7 @@ export function authorizationPolicyUnavailableDetails(input: {
 }
 
 async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId: string, method: string, params: Record<string, unknown>) {
-  const policy = getMcpMethodPolicy(method)
+  const policy = effectiveMcpMethodPolicy(method, params)
   if (!policy) throw new DomainError('AUTHZ_POLICY_UNAVAILABLE', '当前方法缺少服务端授权策略，已拒绝执行', 503, authorizationPolicyUnavailableDetails({ transport: 'mcp', method }))
   if (!requiresStrictAuth()) return policy
   const runtime = mcpAuthorizationRuntimeConfig()
@@ -5553,13 +5553,18 @@ async function enforceRegisteredMcpCapability(req: IncomingMessage, workspaceId:
   // workspace before membership exists. All subsequent methods require the
   // projected capability and active membership.
   const projection = effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId)
+  const projectedAtoms = method === 'ops.support.tickets.list' && params.platform_scope === 'platform'
+    ? [...projection.atoms, ...projection.atoms
+      .filter(atom => atom.capability === policy.capability && atom.effect === 'allow' && atom.scope.type !== 'platform')
+      .map(atom => ({ ...atom, scope: { type: 'platform' as const, ids: ['*'] } }))]
+    : projection.atoms
   const capabilityDomain = policy.capability.split('.')[0]!
   const enforce = runtime.mode === 'enforce' || alwaysEnforcedMcpMethods.has(method) || runtime.enforceDomains.has(capabilityDomain)
   const principal = requestPrincipals.get(req)
   const resourceScope = params.__http_authorization_scope_conflict === true
     ? { type: policy.scope, id: '__http_path_scope_conflict__' }
     : await resolveLoadedAuthorizationResourceScope(policy, workspaceId, params, principal)
-  const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projection.atoms, params)
+  const decisionAtoms = await permissionAtomsForResolvedResource(req, workspaceId, policy, resourceScope, projectedAtoms, params)
   const decision = registeredMcpAuthorizationDecision({
     decisionId: `authz_${randomUUID()}`,
     method,
@@ -5699,7 +5704,7 @@ function mcpPolicyMatchesWorkbench(policy: NonNullable<ReturnType<typeof getMcpM
 
 async function enforceMcpWorkbenchBoundary(req: IncomingMessage, workspaceId: string, method: string, params: Record<string, unknown>) {
   if (!requiresStrictAuth()) return
-  const policy = getMcpMethodPolicy(method)
+  const policy = effectiveMcpMethodPolicy(method, params)
   if (!policy || mcpPolicyMatchesWorkbench(policy, requestPrincipals.get(req)?.workbench ?? 'workspace')) return
   // Resolve the shared authorization decision before any workspace membership,
   // lifecycle, hydration, or handler work. Workbench isolation is an enforced
@@ -6042,7 +6047,8 @@ type CustomerDataAccessGrant = {
   expiresAt: number
 }
 
-function isCustomerDataMethod(method: string) {
+function isCustomerDataMethod(method: string, params: Record<string, unknown> = {}) {
+  if (method === 'ops.support.tickets.list' && params.platform_scope === 'platform') return false
   return CUSTOMER_DATA_EXACT_METHODS.has(method) || CUSTOMER_DATA_METHOD_PREFIXES.some(prefix => method === prefix || method.startsWith(prefix))
 }
 
@@ -6118,8 +6124,8 @@ export function validateCustomerDataAccessGrant(raw: string | undefined, expecte
   return { grantId, actorId, workspaceId, scopes, issuedAt, expiresAt }
 }
 
-async function enforceCustomerDataAccess(req: IncomingMessage, workspaceId: string, method: string) {
-  if (!requiresStrictAuth() || !isPlatformOperations(req) || !isCustomerDataMethod(method) || localComposeOpsCustomerDataAccess()) return
+async function enforceCustomerDataAccess(req: IncomingMessage, workspaceId: string, method: string, params: Record<string, unknown> = {}) {
+  if (!requiresStrictAuth() || !isPlatformOperations(req) || !isCustomerDataMethod(method, params) || localComposeOpsCustomerDataAccess()) return
   const principal = requestPrincipals.get(req)
   const grant = validateCustomerDataAccessGrant(header(req, 'x-ops-customer-access-grant'), { actorId: principal?.actorId ?? '', workspaceId, method })
   await recordOperationAudit({ workspaceId, actorId: grant.actorId, action: 'ops.customer_data.access', resourceType: 'workspace', resourceId: workspaceId, before: {}, after: { grant_id: grant.grantId, scope: isCustomerDataWriteMethod(method) ? 'customer_data.write' : 'customer_data.read', method, expires_at: new Date(grant.expiresAt * 1000).toISOString() }, reason: '平台运营临时客户数据授权访问' })
@@ -9660,8 +9666,16 @@ const PLATFORM_COMMERCIAL_METHODS = new Set([
   'ops.commercial.rollout.upsert', 'ops.commercial.model-markup.get',
   'ops.commercial.model-markup.update',
 ])
-export function isPlatformScopeMethod(method: string): boolean {
-  return getMcpMethodPolicy(method)?.scope === 'platform'
+function effectiveMcpMethodPolicy(method: string, params: Record<string, unknown> = {}) {
+  const policy = getMcpMethodPolicy(method)
+  if (method === 'ops.support.tickets.list' && params.platform_scope === 'platform') {
+    return policy ? { ...policy, scope: 'platform' as const } : undefined
+  }
+  return policy
+}
+
+export function isPlatformScopeMethod(method: string, params: Record<string, unknown> = {}): boolean {
+  return effectiveMcpMethodPolicy(method, params)?.scope === 'platform'
 }
 const OPS_MCP_SCHEMA_OVERRIDE_METHODS = new Set(['ops.member.upsert', 'ops.member.suspend', 'catalog.image.review'])
 const OPS_DOMAIN_PARAMS_MAX_BYTES = 128 * 1024
@@ -10326,9 +10340,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   const request = input as unknown as McpRequest
   const method = typeof request.method === 'string' ? request.method : ''
   const params = paramsOf(input)
-  const isPlatformWideUserGovernance = isPlatformScopeMethod(method)
+  const isPlatformWideUserGovernance = isPlatformScopeMethod(method, params)
   const requestWorkbench = requestPrincipals.get(req)?.workbench ?? 'workspace'
-  const bypassWorkspaceLifecycleGate = isPlatformScopeMethod(method) || (method === 'ops.session' && requestWorkbench === 'platform')
+  const bypassWorkspaceLifecycleGate = isPlatformScopeMethod(method, params) || (method === 'ops.session' && requestWorkbench === 'platform')
   if (method === 'ops.session' && requestWorkbench === 'platform') {
     const scopeCandidates = [
       header(req, 'x-workspace-id')?.trim(),
@@ -10383,7 +10397,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     && !(method === 'ops.session' && requestPrincipals.get(req)?.activeAuthorizationGrants?.length)) {
     await enforceActiveWorkspaceMember(req, workspaceId)
   }
-  await enforceCustomerDataAccess(req, workspaceId, method)
+  await enforceCustomerDataAccess(req, workspaceId, method, params)
   if (testCommercialFixtureHarnessEnabled && workspaceId.trim() && workspaceId !== 'unknown' && !['workspace.bootstrap', 'workspace.health', 'merchant.start'].includes(method) && header(req, 'x-test-commercial-fixture') === 'server-e2e') {
     await grantCreativePointsForTests(workspaceId)
     grantContinuousFeatureEntitlementForTests(workspaceId)
