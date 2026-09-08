@@ -176,4 +176,43 @@ describe('PostgresCommercialContractRepository', () => {
     })).resolves.toMatchObject({ grantId: 'grant-existing', replayed: true })
     expect(replay.calls.filter(call => call.sql.includes('INSERT INTO onboarding_point_grant_schedules_v2'))).toHaveLength(0)
   })
+
+  it('commits a private trial payment with its seven-day entitlement snapshot and 500 points', async () => {
+    const sku = approvedSku({
+      id: 'sku-private', code: 'private_validation_7d', kind: 'private_trial', visibility: 'private',
+      requiredCapability: 'commercial.private_sku.read', priceFen: 199900, durationDays: 7,
+      benefits: [
+        { code: 'max_brands', quantity: 1, rawValue: null, rawUnit: 'brand', normalizedValue: null, policyRef: 'commercial.private_validation.v1', metadata: {} },
+        { code: 'max_stores', quantity: 1, rawValue: null, rawUnit: 'store', normalizedValue: null, policyRef: 'commercial.private_validation.v1', metadata: {} },
+        { code: 'creative_points', quantity: 500, rawValue: null, rawUnit: 'creative_points', normalizedValue: null, policyRef: 'commercial.private_validation.v1', metadata: {} },
+      ],
+    })
+    let revision = 0
+    const client = new ScriptedClient((sql, values) => {
+      if (sql.includes('FROM commercial_orders_v2 o')) return { rows: [{
+        id: 'trial-order', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId,
+        amountFen: 199900, currency: 'CNY', paymentProvider: 'manual_transfer', status: 'pending',
+        idempotencyKey: 'trial-order-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: null,
+        createdAt: '2026-09-02T00:00:00.000Z', paidAt: null, snapshotId: 'trial-snapshot', snapshot: { sku },
+      }] }
+      if (sql.includes('UPDATE creative_point_access_state')) { revision += 1; return { rows: [{ available: 500, reserved: 0, settled: 0, revision }] } }
+      if (sql.includes("UPDATE commercial_orders_v2 SET status='paid'")) return { rows: [{
+        id: 'trial-order', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId, amountFen: 199900,
+        currency: 'CNY', paymentProvider: 'manual_transfer', status: 'paid', idempotencyKey: 'trial-order-1',
+        requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: values[2], createdAt: '2026-09-02T00:00:00.000Z', paidAt: values[3],
+      }] }
+      return { rows: [] }
+    })
+    const result = await new PostgresCommercialContractRepository(pool(client)).recordVerifiedPaymentAndGrant({
+      workspaceId: 'ws-1', orderId: 'trial-order', provider: 'manual_transfer', providerEventId: 'trial-event', providerOrderId: 'trial-trade',
+      nonce: 'trial-nonce', payloadHash: 'c'.repeat(64), amountFen: 199900, currency: 'CNY', paidAt: '2026-09-02T00:00:00Z', paymentSubjectRef: 'customer-subject',
+    })
+    expect(result).toMatchObject({ availablePoints: 500, replayed: false })
+    const sql = client.calls.map(call => call.sql).join('\n')
+    expect(sql).toContain('INSERT INTO workspace_subscription_periods_v2')
+    expect(sql).toContain('INSERT INTO workspace_entitlement_snapshots_v2')
+    expect(sql).toContain('INSERT INTO creative_point_grants')
+    const entitlementCall = client.calls.find(call => call.sql.includes('INSERT INTO workspace_entitlement_snapshots_v2'))
+    expect(entitlementCall?.values).toContainEqual(JSON.stringify(sku.benefits))
+  })
 })
