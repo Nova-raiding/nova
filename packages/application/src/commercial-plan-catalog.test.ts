@@ -23,12 +23,13 @@ describe('local commercial catalog source contract', () => {
     }
   })
 
-  it('models the onboarding fee and six monthly grants without inventing dates or expiry', () => {
+  it('models the onboarding fee with the approved six-grant schedule while keeping the offer non-executable', () => {
     expect(ONBOARDING_OFFER).toMatchObject({
       priceCny: 5000,
-      grantSchedule: { grantCount: 6, pointsPerGrant: 500, cadence: 'monthly', startsAt: null, grantExpiresAtRule: null, schedulingStatus: 'unresolved' },
+      grantSchedule: { grantCount: 6, pointsPerGrant: 500, cadence: 'monthly', startsAt: 'payment_verified', grantExpiresAtRule: 'next_monthly_anniversary', schedulingStatus: 'resolved' },
       lifecycle: 'draft',
       executable: false,
+      blockers: [],
     })
   })
 

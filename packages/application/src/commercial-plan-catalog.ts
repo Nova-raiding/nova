@@ -35,13 +35,13 @@ export interface OnboardingOffer {
     grantCount: 6
     pointsPerGrant: 500
     cadence: 'monthly'
-    startsAt: null
-    grantExpiresAtRule: null
-    schedulingStatus: 'unresolved'
+    startsAt: 'payment_verified'
+    grantExpiresAtRule: 'next_monthly_anniversary'
+    schedulingStatus: 'resolved'
   }
   lifecycle: 'draft'
   executable: false
-  blockers: readonly ['ONBOARDING_GRANT_SCHEDULE_UNRESOLVED']
+  blockers: readonly []
 }
 
 export interface PrivateValidationOffer {
@@ -132,13 +132,13 @@ export const ONBOARDING_OFFER: OnboardingOffer = Object.freeze<OnboardingOffer>(
     grantCount: 6,
     pointsPerGrant: 500,
     cadence: 'monthly',
-    startsAt: null,
-    grantExpiresAtRule: null,
-    schedulingStatus: 'unresolved',
+    startsAt: 'payment_verified',
+    grantExpiresAtRule: 'next_monthly_anniversary',
+    schedulingStatus: 'resolved',
   },
   lifecycle: 'draft',
   executable: false,
-  blockers: ['ONBOARDING_GRANT_SCHEDULE_UNRESOLVED'],
+  blockers: [],
 })
 
 export const PRIVATE_VALIDATION_OFFER: PrivateValidationOffer = Object.freeze<PrivateValidationOffer>({

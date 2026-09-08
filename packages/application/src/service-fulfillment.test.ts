@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { planOnboardingDeliveryChecklist, planOnboardingGrantSchedule, ServiceFulfillmentError, ServiceFulfillmentService, type ServiceAllocation, type ServiceFulfillmentEvent } from './service-fulfillment.js'
+import { isOnboardingGrantActive, planOnboardingDeliveryChecklist, planOnboardingGrantSchedule, planResolvedOnboardingGrantSchedule, ServiceFulfillmentError, ServiceFulfillmentService, type ServiceAllocation, type ServiceFulfillmentEvent } from './service-fulfillment.js'
 
 const allocation: ServiceAllocation = {
   id: 'svc_1', workspaceId: 'ws_a', orderSnapshotId: 'ord_snap_1', entitlementSnapshotId: 'ent_snap_1',
@@ -22,6 +22,58 @@ describe('onboarding grant schedule planning', () => {
     expect(rows.every(row => row.points === 500 && row.status === 'unresolved' && row.dueAt === null && row.expiresAt === null)).toBe(true)
     expect(new Set(rows.map(row => row.naturalKey)).size).toBe(6)
     expect(rows[0]?.blockers).toEqual(['ONBOARDING_GRANT_START_DATE_UNRESOLVED', 'ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED'])
+  })
+
+  it('issues the first grant immediately and exactly five more at monthly anniversaries', () => {
+    const rows = planResolvedOnboardingGrantSchedule({ workspaceId: 'ws_a', onboardingOrderId: 'order_a', entitlementSnapshotId: 'snapshot_a', paidAt: '2026-01-15T10:20:30.123Z' })
+    expect(rows).toHaveLength(6)
+    expect(rows.map(row => row.sequence)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(rows.map(row => [row.dueAt, row.expiresAt])).toEqual([
+      ['2026-01-15T10:20:30.123Z', '2026-02-15T10:20:30.123Z'],
+      ['2026-02-15T10:20:30.123Z', '2026-03-15T10:20:30.123Z'],
+      ['2026-03-15T10:20:30.123Z', '2026-04-15T10:20:30.123Z'],
+      ['2026-04-15T10:20:30.123Z', '2026-05-15T10:20:30.123Z'],
+      ['2026-05-15T10:20:30.123Z', '2026-06-15T10:20:30.123Z'],
+      ['2026-06-15T10:20:30.123Z', '2026-07-15T10:20:30.123Z'],
+    ])
+    expect(rows.every(row => row.points === 500 && row.status === 'scheduled' && row.blockers.length === 0)).toBe(true)
+  })
+
+  it('clamps month-end anniversaries without drifting after February', () => {
+    const rows = planResolvedOnboardingGrantSchedule({ workspaceId: 'ws_a', onboardingOrderId: 'order_month_end', entitlementSnapshotId: 'snapshot_a', paidAt: '2024-01-31T23:00:00.000Z' })
+    expect(rows.slice(0, 3).map(row => [row.dueAt, row.expiresAt])).toEqual([
+      ['2024-01-31T23:00:00.000Z', '2024-02-29T23:00:00.000Z'],
+      ['2024-02-29T23:00:00.000Z', '2024-03-31T23:00:00.000Z'],
+      ['2024-03-31T23:00:00.000Z', '2024-04-30T23:00:00.000Z'],
+    ])
+  })
+
+  it('normalizes timezone-bearing payment instants before calculating UTC anniversaries', () => {
+    const rows = planResolvedOnboardingGrantSchedule({ workspaceId: 'ws_a', onboardingOrderId: 'order_tz', entitlementSnapshotId: 'snapshot_a', paidAt: '2026-01-31T23:30:00+08:00' })
+    expect(rows[0]).toMatchObject({ dueAt: '2026-01-31T15:30:00.000Z', expiresAt: '2026-02-28T15:30:00.000Z' })
+  })
+
+  it('uses stable natural keys for idempotent retries with the same order', () => {
+    const input = { workspaceId: 'ws_a', onboardingOrderId: 'order_retry', entitlementSnapshotId: 'snapshot_a', paidAt: '2026-01-15T10:20:30.123Z' }
+    const first = planResolvedOnboardingGrantSchedule(input)
+    const retry = planResolvedOnboardingGrantSchedule(input)
+    expect(retry).toEqual(first)
+    expect(first.map(row => row.naturalKey)).toEqual([
+      'order_retry:onboarding_grant:1', 'order_retry:onboarding_grant:2', 'order_retry:onboarding_grant:3',
+      'order_retry:onboarding_grant:4', 'order_retry:onboarding_grant:5', 'order_retry:onboarding_grant:6',
+    ])
+  })
+
+  it('treats the grant start as inclusive and the next anniversary as exclusive', () => {
+    const grant = planResolvedOnboardingGrantSchedule({ workspaceId: 'ws_a', onboardingOrderId: 'order_boundary', entitlementSnapshotId: 'snapshot_a', paidAt: '2026-01-31T23:30:00+08:00' })[0]!
+    expect(isOnboardingGrantActive(grant, grant.dueAt)).toBe(true)
+    expect(isOnboardingGrantActive(grant, grant.expiresAt)).toBe(false)
+    expect(isOnboardingGrantActive(grant, '2026-02-28T15:29:59.999Z')).toBe(true)
+  })
+
+  it('rejects missing or timezone-less payment timestamps', () => {
+    expect(() => planResolvedOnboardingGrantSchedule({ workspaceId: 'ws_a', onboardingOrderId: 'order_invalid', entitlementSnapshotId: 'snapshot_a', paidAt: '' })).toThrow(ServiceFulfillmentError)
+    expect(() => planResolvedOnboardingGrantSchedule({ workspaceId: 'ws_a', onboardingOrderId: 'order_invalid', entitlementSnapshotId: 'snapshot_a', paidAt: '2026-01-15T10:20:30.123' })).toThrow(ServiceFulfillmentError)
   })
 })
 

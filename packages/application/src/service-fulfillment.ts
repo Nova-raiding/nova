@@ -1,9 +1,9 @@
 /**
  * Policy-free service fulfillment orchestration.
  *
- * This module intentionally does not calculate SLA deadlines, round time,
- * charge for cancellation/no-show, infer refund eligibility, or activate the
- * six onboarding grants. Those policies are unresolved in the source PRD.
+ * This module intentionally does not calculate SLA deadlines, round time, or
+ * charge for cancellation/no-show. The six onboarding grants are executable
+ * here because their schedule is explicit in the commercial plan.
  */
 
 export const ONBOARDING_GRANT_COUNT = 6 as const
@@ -23,6 +23,19 @@ export interface OnboardingGrantScheduleDraft {
   expiresAt: null
   status: 'unresolved'
   blockers: readonly ['ONBOARDING_GRANT_START_DATE_UNRESOLVED', 'ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED']
+}
+
+export interface OnboardingGrantSchedule {
+  naturalKey: string
+  workspaceId: string
+  onboardingOrderId: string
+  entitlementSnapshotId: string
+  sequence: number
+  points: 500
+  dueAt: string
+  expiresAt: string
+  status: 'scheduled'
+  blockers: readonly []
 }
 
 export const STANDARD_ONBOARDING_PLATFORMS = ['taobao', 'tmall', 'jd', 'pinduoduo', 'douyin', 'xiaohongshu'] as const
@@ -154,10 +167,18 @@ const optionalQuantity = (value: number | null | undefined): number | null => {
 
 const optionalInstant = (value: string | null | undefined): string | null => {
   if (value == null) return null
-  if (!Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) {
-    throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'scheduleAt must be a canonical ISO timestamp')
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/u.test(value)) {
+    throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'instant must include an explicit timezone')
   }
-  return value
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) {
+    throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'instant must be a valid ISO timestamp with timezone')
+  }
+  const normalized = new Date(timestamp).toISOString()
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(normalized)) {
+    throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'instant must be a canonical ISO timestamp')
+  }
+  return normalized
 }
 
 const evidence = (value: Record<string, unknown> | undefined): Record<string, unknown> => {
@@ -169,8 +190,9 @@ const evidence = (value: Record<string, unknown> | undefined): Record<string, un
 }
 
 /**
- * Produces the only safe schedule while start/expiry policy is unresolved.
- * It is a six-row draft with no executable timestamps, never six grants.
+ * Legacy blocked path for callers that do not have the verified payment time.
+ * The executable path is planResolvedOnboardingGrantSchedule; callers must not
+ * turn these rows into point grants because their timestamps are absent.
  */
 export function planOnboardingGrantSchedule(input: {
   workspaceId: string
@@ -192,6 +214,74 @@ export function planOnboardingGrantSchedule(input: {
     status: 'unresolved' as const,
     blockers: ['ONBOARDING_GRANT_START_DATE_UNRESOLVED', 'ONBOARDING_GRANT_EXPIRY_RULE_UNRESOLVED'] as const,
   }))
+}
+
+function monthlyAnniversary(start: Date, monthOffset: number): string {
+  const targetMonthIndex = start.getUTCMonth() + monthOffset
+  const targetYear = start.getUTCFullYear() + Math.floor(targetMonthIndex / 12)
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12
+  const finalDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(
+    targetYear,
+    targetMonth,
+    Math.min(start.getUTCDate(), finalDay),
+    start.getUTCHours(),
+    start.getUTCMinutes(),
+    start.getUTCSeconds(),
+    start.getUTCMilliseconds(),
+  )).toISOString()
+}
+
+/**
+ * The commercial rule is an instant rule, so anniversaries are calculated in
+ * UTC. This prevents the host process timezone or DST from changing a grant's
+ * due/expiry timestamp. Month-end dates clamp to the last day of the target
+ * month (for example, Jan 31 -> Feb 28/29 -> Mar 31).
+ */
+function onboardingGrantWindow(grant: OnboardingGrantSchedule, at: string): boolean {
+  const instant = optionalInstant(at)
+  if (instant === null) return false
+  return instant >= grant.dueAt && instant < grant.expiresAt
+}
+
+/**
+ * Builds the approved six-period onboarding grant schedule. The first 500
+ * points are due when payment is verified. Each grant expires at the next
+ * monthly anniversary, so unused points never roll into the following period.
+ */
+export function planResolvedOnboardingGrantSchedule(input: {
+  workspaceId: string
+  onboardingOrderId: string
+  entitlementSnapshotId: string
+  paidAt: string
+}): OnboardingGrantSchedule[] {
+  const workspaceId = required(input.workspaceId, 'workspaceId')
+  const onboardingOrderId = required(input.onboardingOrderId, 'onboardingOrderId')
+  const entitlementSnapshotId = required(input.entitlementSnapshotId, 'entitlementSnapshotId')
+  const paidAt = optionalInstant(input.paidAt)
+  if (paidAt === null) throw new ServiceFulfillmentError('SERVICE_FULFILLMENT_INPUT_INVALID', 'paidAt is required')
+  const start = new Date(paidAt)
+  return Array.from({ length: ONBOARDING_GRANT_COUNT }, (_, index) => ({
+    naturalKey: `${onboardingOrderId}:onboarding_grant:${index + 1}`,
+    workspaceId,
+    onboardingOrderId,
+    entitlementSnapshotId,
+    sequence: index + 1,
+    points: ONBOARDING_GRANT_POINTS,
+    dueAt: monthlyAnniversary(start, index),
+    expiresAt: monthlyAnniversary(start, index + 1),
+    status: 'scheduled' as const,
+    blockers: [] as const,
+  }))
+}
+
+/**
+ * Returns whether an instant is inside a grant's validity window. The start
+ * is inclusive and the next monthly anniversary is exclusive, so adjacent
+ * grants never overlap and no instant is counted twice.
+ */
+export function isOnboardingGrantActive(grant: OnboardingGrantSchedule, at: string): boolean {
+  return onboardingGrantWindow(grant, at)
 }
 
 /** Builds only source-listed onboarding deliverables from a verified snapshot. */
