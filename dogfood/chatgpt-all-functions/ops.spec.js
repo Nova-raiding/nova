@@ -159,3 +159,90 @@ test('renders the real workspace brand tree with revision and store navigation',
   await context.close()
   await browser.close()
 })
+
+test('ops/tasks long list scrolling keeps page stable (no white-screen)', async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } })
+  const page = await context.newPage()
+  await openPlatformConsole(page, '/ops/tasks?workbench=platform', { workbench: 'platform' })
+  const consoleErrors = []
+  const requestFailures = []
+  const badResponses = []
+
+  page.on('console', message => {
+    if (message.type() === 'error' || message.type() === 'pageerror') {
+      consoleErrors.push(message.text())
+    }
+  })
+  page.on('pageerror', error => {
+    consoleErrors.push(error.message)
+  })
+  page.on('requestfailed', request => {
+    if (request.failure()?.errorText === 'net::ERR_ABORTED' || request.url().startsWith('https://fonts.googleapis.com/')) return
+    requestFailures.push({ method: request.method(), url: request.url(), error: request.failure()?.errorText })
+  })
+  page.on('response', async response => {
+    const status = response.status()
+    if (status >= 400 && status < 500 && status !== 401 && status !== 403) return
+    if (status >= 500) {
+      let body = ''
+      try {
+        body = (await response.text()).slice(0, 5_000)
+      } catch {}
+      badResponses.push({ method: response.request().method(), url: response.url(), status, body })
+    }
+  })
+
+  await page.goto(`${noAuthBaseUrl}ops/tasks?workbench=workspace`, { waitUntil: 'domcontentloaded' })
+
+  const workspaceGate = page.getByRole('heading', { name: '无法验证运营权限' })
+  const taskHeading = page.getByRole('heading', { name: '任务与内容', exact: true })
+  const unauthorized = await workspaceGate.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false)
+  if (unauthorized) {
+    await expect(page.getByText('当前身份尚未通过运营权限验证', { exact: false })).toBeVisible()
+    await context.close()
+    await browser.close()
+    return
+  }
+
+  await expect(taskHeading).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: '待处理队列', exact: true })).toBeVisible()
+  const stableSections = page.locator('.ops-tasks-work, .ops-tasks-input, .ops-tasks-overview')
+  await expect(stableSections.first()).toBeVisible()
+
+  const scrollPoints = [300, 600, 900, 1200, 1500]
+  for (const y of scrollPoints) {
+    await page.mouse.wheel(0, y)
+    await page.waitForTimeout(350)
+
+    const pageState = await page.evaluate(() => {
+      const bodyText = document.body?.innerText?.trim() ?? ''
+      const main = document.querySelector('.ops-tasks-page') ?? document.body
+      const mainHeight = main?.getBoundingClientRect?.().height ?? 0
+      const rootHeight = document.documentElement?.scrollHeight ?? 0
+      return {
+        bodyTextLength: bodyText.length,
+        bodyHeight: document.body?.getBoundingClientRect?.().height ?? 0,
+        mainHeight,
+        rootHeight,
+      }
+    })
+
+    await expect(page.getByRole('heading', { name: '任务与内容', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '待处理队列', exact: true })).toBeVisible()
+    await expect(stableSections.first()).toBeVisible()
+
+    expect(pageState.bodyTextLength).toBeGreaterThan(120)
+    expect(pageState.mainHeight).toBeGreaterThan(0)
+    expect(pageState.bodyHeight).toBeGreaterThan(0)
+    expect(pageState.rootHeight).toBeGreaterThan(0)
+    await expect(consoleErrors, `No runtime console errors at scroll offset ${y}`).toEqual([])
+  }
+
+  const failureCount = badResponses.length + requestFailures.length
+  await expect(failureCount, 'Ops tasks route should not have hard errors while scrolling').toBe(0)
+  await page.screenshot({ path: resolve('screenshots', 'ops-tasks-scroll-stability.png'), fullPage: false })
+
+  await context.close()
+  await browser.close()
+})
