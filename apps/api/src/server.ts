@@ -14637,7 +14637,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const target = rule.targetId ?? rule.scopeValue
         return Boolean(expected && target === expected)
       }
-      const filterRules = <T extends { status: string; scope: string; targetId?: string; scopeValue?: string }>(rules: T[]) => rules.filter(rule => (includeLifecycleStates || rule.status === 'active') && matchesContext(rule))
+      const filterRules = <T extends { status: string; scope: string; targetId?: string; scopeValue?: string; source?: { reference?: string } }>(rules: T[]) => rules.filter(rule => {
+        if (!matchesContext(rule)) return false
+        if (includeLifecycleStates) return true
+        // manual:// rows are fixtures or human drafts. They may remain visible
+        // in the Ops lifecycle view, but must never become merchant/plugin
+        // knowledge merely because their lifecycle status says "active".
+        return rule.status === 'active' && !rule.source?.reference?.startsWith('manual://')
+      })
       if (repository) return result(filterRules(await rulePacksForWorkspace(workspaceId)))
       if (isProduction()) throw new DomainError('RULE_REPOSITORY_NOT_CONFIGURED', '生产规则仓储未配置', 503)
       return result(filterRules(service.ruleCenter.list({ includeInactive: includeLifecycleStates })))
@@ -17303,7 +17310,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const workspaceId = resolveWorkspace(req)
     const requestedPlatform = url.searchParams.get('platform')?.trim()
     if (requestedPlatform && !SUPPORTED_PLATFORMS.includes(requestedPlatform as Platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
-    const appliesToPlatform = (rule: { status: string; scope?: string; targetId?: string; scopeValue?: string }) => rule.status === 'active' && (!requestedPlatform || rule.scope === 'global' || (rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === requestedPlatform))
+    const appliesToPlatform = (rule: { status: string; scope?: string; targetId?: string; scopeValue?: string; source?: { reference?: string } }) => rule.status === 'active'
+      && !rule.source?.reference?.startsWith('manual://')
+      && (!requestedPlatform || rule.scope === 'global' || (rule.scope === 'platform' && (rule.targetId ?? rule.scopeValue) === requestedPlatform))
     const respond = <T>(rules: T[]) => url.searchParams.has('limit') || url.searchParams.has('offset') ? paginatedResult(url, rules) : rules
     const repository = ruleRepository()
     if (repository) {
