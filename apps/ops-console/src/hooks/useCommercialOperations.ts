@@ -152,6 +152,15 @@ export function commercialViewUrl(location: Pick<Location, "pathname" | "search"
   return `${location.pathname}${query ? `?${query}` : ""}${location.hash}`;
 }
 
+export function commercialTargetWorkspaceUrl(location: Pick<Location, "pathname" | "search" | "hash">, workspaceId: string): string {
+  const params = new URLSearchParams(location.search);
+  const normalized = workspaceId.trim();
+  if (normalized) params.set("workspace", normalized);
+  else params.delete("workspace");
+  const query = params.toString();
+  return `${location.pathname}${query ? `?${query}` : ""}${location.hash}`;
+}
+
 export function commercialQueryUrl(
   location: Pick<Location, "pathname" | "search" | "hash">,
   patch: Partial<CommercialQueryState>,
@@ -188,6 +197,12 @@ export function useCommercialOperations(
   const summaryControllerRef = useRef<AbortController | undefined>(undefined);
   const privateSkuReadable = authorization.can(commercialCapabilities.privateSkuRead);
   const targetWorkspaceId = readCommercialTargetWorkspace(typeof window === "undefined" ? "" : window.location.search, authorization);
+
+  const setTargetWorkspace = useCallback((workspaceId: string) => {
+    if (typeof window === "undefined") return;
+    window.history.pushState({}, "", commercialTargetWorkspaceUrl(window.location, workspaceId));
+    setQueryState(readCommercialQuery(window.location.search));
+  }, []);
 
   const setView = useCallback((next: CommercialView) => {
     setQueryState((current) => ({ ...current, view: next, record: "", status: "", query: "", page: 1, sort: "", order: "" }));
@@ -305,7 +320,7 @@ export function useCommercialOperations(
     canWriteService: authorization.can(commercialCapabilities.serviceWrite),
   }), [authorization, privateSkuReadable]);
 
-  return { view, setView, query: queryState, setQuery, summary, data, loadSummary, loadView, permissions, targetWorkspaceId, client };
+  return { view, setView, query: queryState, setQuery, setTargetWorkspace, summary, data, loadSummary, loadView, permissions, targetWorkspaceId, client };
 }
 
 export type CommercialOperationsController = ReturnType<typeof useCommercialOperations>;

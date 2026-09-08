@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canLoadCommercialView, commercialQueryUrl, commercialViewUrl, readCommercialQuery, readCommercialTargetWorkspace, readCommercialView } from "./useCommercialOperations.js";
+import { canLoadCommercialView, commercialQueryUrl, commercialTargetWorkspaceUrl, commercialViewUrl, readCommercialQuery, readCommercialTargetWorkspace, readCommercialView } from "./useCommercialOperations.js";
 import type { AuthorizationProjection } from "../authz/authorization.js";
 
 describe("commercial operations deep links", () => {
@@ -18,6 +18,11 @@ describe("commercial operations deep links", () => {
   it("uses the explicit workspace deep-link for platform commercial reads", () => {
     const authorization = { scope: { kind: "platform" } } as AuthorizationProjection;
     expect(readCommercialTargetWorkspace("?workspace=ws_target&view=ledger", authorization)).toBe("ws_target");
+  });
+
+  it("applies a target workspace without dropping view filters", () => {
+    expect(commercialTargetWorkspaceUrl({ pathname: "/ops/finance", search: "?view=ledger&status=paid", hash: "#row" }, " ws_target "))
+      .toBe("/ops/finance?view=ledger&status=paid&workspace=ws_target#row");
   });
 
   it("falls back to the verified workspace scope when the deep-link omits it", () => {
