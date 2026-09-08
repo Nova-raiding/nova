@@ -25,6 +25,7 @@ import type {
   CreativePointRateItem,
   ServiceFulfillmentItem,
   CommercialTimelineEvent,
+  CommercialRefundKind,
 } from "../../api/commercialOperationsClient.js";
 import {
   commercialViewCapability,
@@ -34,6 +35,7 @@ import {
   type CommercialOperationsController,
   type CommercialView,
 } from "../../hooks/useCommercialOperations.js";
+import { refundPolicyApproval } from "../../api/commercialOperationsClient.js";
 import { PointAdjustmentPanel } from "./PointAdjustmentPanel.js";
 import { ServiceFulfillmentPanel } from "./ServiceFulfillmentPanel.js";
 
@@ -456,6 +458,46 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
   </section>;
 }
 
+function CommercialRefundOperationsPanel({ controller }: { controller: CommercialOperationsController }) {
+  const [workspace, setWorkspace] = useState(controller.targetWorkspaceId);
+  const [orderId, setOrderId] = useState("");
+  const [requestId, setRequestId] = useState("");
+  const [amountFen, setAmountFen] = useState("");
+  const [points, setPoints] = useState("0");
+  const [refundKind, setRefundKind] = useState<CommercialRefundKind>("monthly_unused_points");
+  const [requestEvidenceRef, setRequestEvidenceRef] = useState("");
+  const [externalRefundId, setExternalRefundId] = useState("");
+  const [policyApproval, setPolicyApproval] = useState('{"legal_review_ref":""}');
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  let policyApprovalReady = false;
+  try { refundPolicyApproval(policyApproval); policyApprovalReady = true; } catch { /* invalid evidence stays disabled */ }
+  if (!controller.permissions.canReconcilePayment) return null;
+  const run = async (action: () => Promise<unknown>) => { setBusy(true); setMessage(""); try { setMessage(JSON.stringify(await action())); } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); } finally { setBusy(false); } };
+  const reason = "商业化方案：订单退款人工审核";
+  return <section aria-label="商业订单退款" className="commercial-manual-operations">
+    <Typography.Title level={5}>商业订单退款 / 点数回滚</Typography.Title>
+    <Alert type="warning" showIcon message="退款必须经过双人审批、法律/补充协议证据和外部支付退款凭证；不会因为前端点击直接退款。" />
+    <Space wrap>
+      <Input aria-label="退款目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
+      <Input aria-label="退款订单 ID" placeholder="订单 ID" value={orderId} onChange={event => setOrderId(event.target.value)} />
+      <Input aria-label="退款请求 ID" placeholder="退款请求 ID（幂等）" value={requestId} onChange={event => setRequestId(event.target.value)} />
+      <Input aria-label="退款金额（分）" placeholder="退款金额（分）" value={amountFen} onChange={event => setAmountFen(event.target.value)} />
+      <Input aria-label="回滚创意点" placeholder="回滚创意点，默认 0" value={points} onChange={event => setPoints(event.target.value)} />
+      <Select aria-label="退款类型" value={refundKind} onChange={value => setRefundKind(value)} options={[
+        { value: "onboarding_pre_deployment", label: "部署前实施费" }, { value: "monthly_unused_points", label: "月费未使用点数" }, { value: "point_pack_unused_points", label: "点数包未使用点数" }, { value: "outage_compensation", label: "故障补偿" }, { value: "custom_milestone", label: "定制里程碑" },
+      ]} />
+      <Input aria-label="退款申请证据引用" placeholder={refundKind === "monthly_unused_points" ? "补充协议编号" : refundKind === "point_pack_unused_points" ? "到期政策编号" : refundKind === "outage_compensation" ? "事故 ID" : refundKind === "custom_milestone" ? "里程碑 ID" : "部署前自动记录 not_started"} value={requestEvidenceRef} disabled={refundKind === "onboarding_pre_deployment"} onChange={event => setRequestEvidenceRef(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !orderId || !requestId || !amountFen || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => void run(() => controller.client.requestCommercialRefund({ workspace, orderId, requestId, kind: refundKind, amountFen: Number(amountFen), pointsToRevoke: Number(points || "0"), reason, evidenceRef: requestEvidenceRef }))}>提交退款申请</Button>
+      <Input aria-label="政策审批证据 JSON" placeholder="政策审批证据 JSON" value={policyApproval} onChange={event => setPolicyApproval(event.target.value)} />
+      <Button loading={busy} disabled={!workspace || !requestId || !policyApprovalReady} onClick={() => void run(() => controller.client.approveCommercialRefund(workspace, requestId, policyApproval, reason))}>双人审批</Button>
+      <Input aria-label="外部退款凭证" placeholder="外部退款凭证 / 转账流水号" value={externalRefundId} onChange={event => setExternalRefundId(event.target.value)} />
+      <Button type="primary" loading={busy} disabled={!workspace || !requestId || !externalRefundId} onClick={() => void run(() => controller.client.completeCommercialRefund(workspace, requestId, externalRefundId, JSON.stringify({ source: "ops_console", action: "external_refund_verified" }), reason))}>登记退款并回滚点数</Button>
+    </Space>
+    {message ? <Typography.Paragraph copyable={{ text: message }} code>{message}</Typography.Paragraph> : null}
+  </section>;
+}
+
 export function CommercialOperationsWorkspace({ controller }: { controller: CommercialOperationsController }) {
   const viewHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { viewHeadingRef.current?.focus({ preventScroll: true }); }, [controller.view]);
@@ -463,6 +505,7 @@ export function CommercialOperationsWorkspace({ controller }: { controller: Comm
     <Space orientation="vertical" size="middle" className="full-width commercial-operations-workspace">
       <CommercialAccessStatusBar state={controller.summary} onRetry={() => void controller.loadSummary()} />
       <PrivateTrialOperationsPanel controller={controller} />
+      <CommercialRefundOperationsPanel controller={controller} />
       <PointAdjustmentPanel controller={controller} />
       <ServiceFulfillmentPanel controller={controller} />
       <Tabs activeKey={controller.view} onChange={key => controller.setView(key as CommercialView)} items={commercialViews.map(view => ({ key: view, label: commercialViewLabels[view] }))} />

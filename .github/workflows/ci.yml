@@ -183,6 +183,7 @@ jobs:
           packages/persistence/src/migration-167.test.ts
           packages/persistence/src/migration-168.test.ts
           packages/persistence/src/migration-169.test.ts
+          packages/persistence/src/migration-171.test.ts
           packages/persistence/src/authorization-repository.release.postgres.test.ts
           packages/persistence/src/authorization-rls-boundary.postgres.test.ts
           packages/persistence/src/authorization-event-scope-integrity.postgres.test.ts

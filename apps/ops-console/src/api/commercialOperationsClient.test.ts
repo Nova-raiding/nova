@@ -5,6 +5,8 @@ import {
   parseCommercialAccessSummary,
   parseLedger,
   parseCommercialTimeline,
+  commercialRefundEvidence,
+  refundPolicyApproval,
 } from "./commercialOperationsClient.js";
 
 describe("commercial operations DTO parsers", () => {
@@ -47,5 +49,20 @@ describe("commercial operations DTO parsers", () => {
   it("requires correlation and audit-safe fields on timeline events", () => {
     const result = parseCommercialTimeline({ items: [{ id: "model-usage:u1", workspace_id: "ws_1", kind: "model.usage", status: "settled", occurred_at: "2026-09-05T00:00:00Z", operation_id: "op_1", trace_id: "trace_1", request_id: "req_1", actor_id: "worker", reason: "settled", resource_id: "u1", evidence: { cost_cny: 0.1 } }] });
     expect(result.items[0]).toMatchObject({ operationId: "op_1", traceId: "trace_1", requestId: "req_1", actorId: "worker" });
+  });
+
+  it("maps every refund kind to the evidence field enforced by the repository", () => {
+    expect(commercialRefundEvidence("onboarding_pre_deployment", "")).toEqual({ deployment_status: "not_started" });
+    expect(commercialRefundEvidence("monthly_unused_points", " SUP-1 ")).toEqual({ supplement_agreement_ref: "SUP-1" });
+    expect(commercialRefundEvidence("point_pack_unused_points", "EXP-1")).toEqual({ expiry_policy_ref: "EXP-1" });
+    expect(commercialRefundEvidence("outage_compensation", "INC-1")).toEqual({ incident_id: "INC-1" });
+    expect(commercialRefundEvidence("custom_milestone", "MS-1")).toEqual({ milestone_id: "MS-1" });
+    expect(() => commercialRefundEvidence("monthly_unused_points", "  ")).toThrow("证据引用不能为空");
+  });
+
+  it("requires a concrete legal review reference before refund approval", () => {
+    expect(refundPolicyApproval('{"legal_review_ref":"LAW-1"}')).toEqual({ legal_review_ref: "LAW-1" });
+    expect(() => refundPolicyApproval('{"legal_review_ref":""}')).toThrow("非空 legal_review_ref");
+    expect(() => refundPolicyApproval("not-json")).toThrow("JSON 对象");
   });
 });

@@ -19,7 +19,30 @@ export const commercialOperationsMethods = {
   privateTrialConversionCreate: "ops.commercial.private-trial.conversion.create",
   privateTrialPaymentVerify: "ops.commercial.private-trial.payment.verify",
   orderPaymentVerify: "ops.commercial.order.payment.verify",
+  refundList: "ops.commercial.order.refund.list",
+  refundRequest: "ops.commercial.order.refund.request",
+  refundApprove: "ops.commercial.order.refund.approve",
+  refundComplete: "ops.commercial.order.refund.complete",
 } as const;
+
+export type CommercialRefundKind = "onboarding_pre_deployment" | "monthly_unused_points" | "point_pack_unused_points" | "outage_compensation" | "custom_milestone";
+
+export function commercialRefundEvidence(kind: CommercialRefundKind, evidenceRef: string): Record<string, string> {
+  const reference = evidenceRef.trim();
+  if (kind === "onboarding_pre_deployment") return { deployment_status: "not_started" };
+  if (!reference) throw new Error("退款类型对应的政策或业务证据引用不能为空");
+  const key = kind === "monthly_unused_points" ? "supplement_agreement_ref"
+    : kind === "point_pack_unused_points" ? "expiry_policy_ref"
+      : kind === "outage_compensation" ? "incident_id" : "milestone_id";
+  return { [key]: reference };
+}
+
+export function refundPolicyApproval(value: string): Record<string, unknown> {
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { throw new Error("政策审批证据必须是 JSON 对象"); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || typeof (parsed as Record<string, unknown>).legal_review_ref !== "string" || !(parsed as Record<string, string>).legal_review_ref.trim()) throw new Error("政策审批证据必须包含非空 legal_review_ref");
+  return parsed as Record<string, unknown>;
+}
 
 const operationId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 const serviceCommand = async (method: string, targetWorkspaceId: string, allocationId: string, expectedRevision: number, reason: string, extra: Record<string, string> = {}) => rpc(method, { target_workspace_id: targetWorkspaceId, allocation_id: allocationId, expected_revision: String(expectedRevision), idempotency_key: operationId("service_fulfillment"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }), ...extra });
@@ -442,6 +465,10 @@ export const commercialOperationsClient = {
   createPrivateTrialConversionOrder: (workspace: string, creditId: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialConversionCreate, { target_workspace_id: workspace, credit_id: creditId, idempotency_key: operationId("private_trial_conversion"), reason }, { signal }),
   verifyPrivateTrialTransfer: (workspace: string, creditId: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.privateTrialPaymentVerify, { target_workspace_id: workspace, credit_id: creditId, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("private_trial_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "manual_transfer_verified" }) }, { signal }),
   verifyCommercialOrderTransfer: (workspace: string, orderId: string, paymentSubjectRef: string, providerEventId: string, providerOrderId: string, nonce: string, payloadHash: string, paidAt: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.orderPaymentVerify, { target_workspace_id: workspace, order_id: orderId, payment_subject_ref: paymentSubjectRef, provider_event_id: providerEventId, provider_order_id: providerOrderId, nonce, payload_hash: payloadHash, paid_at: paidAt, idempotency_key: operationId("commercial_order_transfer_verify"), reason, evidence_json: JSON.stringify({ source: "ops_console", action: "commercial_order_manual_transfer_verified" }) }, { signal }),
+  listCommercialRefunds: (workspace: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundList, { target_workspace_id: workspace, limit: "100" }, { signal }),
+  requestCommercialRefund: (input: { workspace: string; orderId: string; requestId: string; kind: CommercialRefundKind; amountFen: number; pointsToRevoke: number; reason: string; evidenceRef: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundRequest, { target_workspace_id: input.workspace, order_id: input.orderId, request_id: input.requestId, refund_kind: input.kind, amount_fen: String(input.amountFen), points_to_revoke: String(input.pointsToRevoke), reason: input.reason, evidence_json: JSON.stringify(commercialRefundEvidence(input.kind, input.evidenceRef)) }, { signal }),
+  approveCommercialRefund: (workspace: string, requestId: string, policyApproval: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundApprove, { target_workspace_id: workspace, request_id: requestId, reason, policy_approval_json: JSON.stringify(refundPolicyApproval(policyApproval)) }, { signal }),
+  completeCommercialRefund: (workspace: string, requestId: string, externalRefundId: string, evidenceJson: string, reason: string, signal?: AbortSignal) => rpc(commercialOperationsMethods.refundComplete, { target_workspace_id: workspace, request_id: requestId, external_refund_id: externalRefundId, reason, evidence_json: evidenceJson }, { signal }),
   proposePointAdjustment: async (targetWorkspaceId: string, pointsDelta: number, reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.propose", { target_workspace_id: targetWorkspaceId, points_delta: String(pointsDelta), expected_revision: "0", idempotency_key: operationId("point_adjust_propose"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
   decidePointAdjustment: async (targetWorkspaceId: string, proposalId: string, decision: "approved" | "rejected", reason: string, signal?: AbortSignal) => rpc("ops.commercial.points.adjust.decide", { target_workspace_id: targetWorkspaceId, proposal_id: proposalId, decision, idempotency_key: operationId("point_adjust_decide"), reason, evidence_json: JSON.stringify({ source: "ops_console", mode: "test" }) }, { signal }),
   scheduleService: (workspace: string, allocation: string, revision: number, scheduleAt: string, reason: string) => serviceCommand("ops.commercial.service-fulfillment.schedule", workspace, allocation, revision, reason, { schedule_at: scheduleAt }),

@@ -12028,12 +12028,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         point_grant: { configured: true, grant_count: 6, points_per_grant: 500, expiry: 'next_monthly_anniversary' },
         point_expiry: { configured: true, monthly_points_expire_at: 'billing_period_end', point_pack_expiry_days: 30 },
         subscription_stop: { configured: true, authority: 'workspace_entitlement_snapshots_v2', fail_closed: true },
-        refund: { configured: false, blocking_reason: 'COMMERCIAL_REFUND_POLICY_UNRESOLVED' },
+        refund: { configured: Boolean(persistence.commercialRefunds), workflow: 'request→distinct-approval→external-refund-evidence→point-reversal→order-refunded', requires_legal_policy_approval: true, blocking_reason: persistence.commercialRefunds ? 'COMMERCIAL_REFUND_POLICY_APPROVAL_REQUIRED' : 'COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE' },
       }
       const blockers: Array<{ code: string; severity: 'blocking'; scope: string; detail: string; next_action: string }> = []
       for (const [key, item] of Object.entries(catalogEvidence)) if (item.executable !== true || item.blocking_reason) blockers.push({ code: String(item.blocking_reason ?? 'COMMERCIAL_SKU_NOT_EXECUTABLE'), severity: 'blocking', scope: `catalog.${key}`, detail: `商业 SKU ${key} 尚未返回可执行证据`, next_action: '完成目录审批、有效期、权益和订单快照校验后重新检查' })
       const refundPolicy = policies.refund!
-      if (refundPolicy.configured !== true) blockers.push({ code: 'COMMERCIAL_REFUND_POLICY_UNRESOLVED', severity: 'blocking', scope: 'policy.refund', detail: '商业订单退款边界、月费剩余点数退款和已消费点数回滚尚未形成可执行政策', next_action: '完成法律审核后的退款政策、订单状态绑定和不可变退款/回滚流水' })
+      if (refundPolicy.blocking_reason) blockers.push({ code: String(refundPolicy.blocking_reason), severity: 'blocking', scope: 'policy.refund', detail: '商业订单退款已具备不可变申请、审批、外部退款凭证和点数回滚流水，但仍需法律审核后的政策证据才能执行', next_action: '由财务/法务审批退款政策，并在每笔退款审批时提交 policy_approval 证据' })
       for (const [scope, rate] of Object.entries(capabilities)) if (rate.executable !== true) blockers.push({ code: String(rate.blocking_reason ?? 'RATE_NOT_EXECUTABLE'), severity: 'blocking', scope, detail: `能力 ${scope} 没有可执行的已批准费率`, next_action: '审批并发布带有效期、校验和的生产费率卡' })
       if (!relay.ready) blockers.push({ code: 'MODEL_RELAY_NOT_READY', severity: 'blocking', scope: 'provider', detail: '平台模型中转未通过生产就绪检查', next_action: '配置并验证 HTTPS 中转、真实鉴权和 provider 请求证据' })
       for (const [modality, evidence] of Object.entries(providerEvidence)) if (evidence.configured !== true || evidence.cost_evidence !== true) blockers.push({ code: evidence.configured ? 'PROVIDER_COST_EVIDENCE_MISSING' : 'PROVIDER_NOT_READY', severity: 'blocking', scope: modality, detail: evidence.configured ? 'provider 成本证据未完整验证' : 'provider 未通过能力就绪检查', next_action: '完成真实 canary，并保存 request id、usage、cost 和不可变回执哈希' })
@@ -12105,6 +12105,36 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       // paid_at/provider_order_id/status facts on both first verification and
       // idempotent replay.
       return result({ payment, manual_transfer: true, order: payment.order, sku_code: status.skuCode })
+    }
+    case 'ops.commercial.order.refund.list': {
+      if (!persistence.commercialRefunds) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款流水仓储尚未配置', 503)
+      return result({ items: await persistence.commercialRefunds.list(required(params, 'target_workspace_id'), params.limit === undefined ? 100 : Number(params.limit)) })
+    }
+    case 'ops.commercial.order.refund.request': {
+      if (!persistence.commercialRefunds) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款流水仓储尚未配置', 503)
+      try {
+        return result(await persistence.commercialRefunds.request({ workspaceId: required(params, 'target_workspace_id'), orderId: required(params, 'order_id'), requestId: required(params, 'request_id'), refundKind: required(params, 'refund_kind') as never, amountFen: requiredPositiveInteger(params, 'amount_fen'), pointsToRevoke: requiredPositiveInteger(params, 'points_to_revoke', true), reason: required(params, 'reason'), actorId: requestActor(req), evidence: parseJsonObjectParameter(params, 'evidence_json'), at: new Date().toISOString() }))
+      } catch (error) { if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409); throw error }
+    }
+    case 'ops.commercial.order.refund.approve': {
+      if (!persistence.commercialRefunds) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款流水仓储尚未配置', 503)
+      try {
+        return result(await persistence.commercialRefunds.approve({ workspaceId: required(params, 'target_workspace_id'), requestId: required(params, 'request_id'), actorId: requestActor(req), reason: required(params, 'reason'), policyApproval: parseJsonObjectParameter(params, 'policy_approval_json'), at: new Date().toISOString() }))
+      } catch (error) { if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409); throw error }
+    }
+    case 'ops.commercial.order.refund.complete': {
+      if (!persistence.commercialRefunds || !persistence.creativePoints || !persistence.creativePointLifecycle) throw new DomainError('COMMERCIAL_REFUND_REPOSITORY_UNAVAILABLE', '商业退款与创意点生命周期仓储尚未配置', 503)
+      const workspaceId = required(params, 'target_workspace_id'); const requestId = required(params, 'request_id')
+      try {
+        const history = await persistence.commercialRefunds.history(workspaceId, requestId); const approved = history.find(item => item.eventType === 'approved'); const requested = history.find(item => item.eventType === 'requested')
+        if (!approved || !requested) throw new DomainError('COMMERCIAL_REFUND_STATE_INVALID', '退款申请尚未完成双人审批', 409)
+        if (requested.pointsToRevoke > 0) {
+          const balance = await persistence.creativePoints.getBalance(workspaceId)
+          if (balance.availablePoints === null) throw new DomainError('CREATIVE_POINT_BALANCE_UNKNOWN', '退款前无法确认创意点余额', 503)
+          await persistence.creativePointLifecycle.adjust({ workspaceId, approvalId: `refund:${requestId}`, pointsDelta: -requested.pointsToRevoke, expectedAccessRevision: balance.revision, actorId: requested.actorId, approvedByActorId: approved.actorId, reason: required(params, 'reason'), evidence: { refund_request_id: requestId, external_refund_id: required(params, 'external_refund_id'), refund: parseJsonObjectParameter(params, 'evidence_json') }, idempotencyKey: `commercial.refund.points:${requestId}`, at: new Date().toISOString() })
+        }
+        return result(await persistence.commercialRefunds.complete({ workspaceId, requestId, actorId: requestActor(req), reason: required(params, 'reason'), externalRefundId: required(params, 'external_refund_id'), evidence: parseJsonObjectParameter(params, 'evidence_json'), at: new Date().toISOString() }))
+      } catch (error) { if (error instanceof DomainError) throw error; if (error instanceof CommercialRefundRepositoryError) throw new DomainError(error.code, error.message, 409); throw error }
     }
     case 'ops.commercial.service-fulfillment.list': {
       if (!persistence.serviceFulfillment) throw new DomainError('COMMERCIAL_SERVICE_FULFILLMENT_REPOSITORY_UNAVAILABLE', '服务履约事实仓储尚未配置，不能虚构服务进度', 503)

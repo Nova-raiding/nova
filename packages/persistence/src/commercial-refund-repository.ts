@@ -47,24 +47,28 @@ const evidence = (value: Record<string, unknown>, field = 'evidence'): Record<st
 const at = (value: string): string => { const date = new Date(value); if (Number.isNaN(date.valueOf())) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', 'at is invalid'); return date.toISOString() }
 const positive = (value: number, field: string): number => { if (!Number.isSafeInteger(value) || value <= 0) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', `${field} is invalid`); return value }
 const nonNegative = (value: number, field: string): number => { if (!Number.isSafeInteger(value) || value < 0) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', `${field} is invalid`); return value }
+const hasEvidenceRef = (value: Record<string, unknown>, key: string): boolean => typeof value[key] === 'string' && Boolean((value[key] as string).trim())
 
 export class PostgresCommercialRefundRepository implements CommercialRefundRepository {
   constructor(private readonly pool: SqlPool) {}
 
   async request(input: Parameters<CommercialRefundRepository['request']>[0]): Promise<CommercialRefundEvent> {
-    const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const createdAt = at(input.at); const amountFen = positive(input.amountFen, 'amountFen'); const pointsToRevoke = nonNegative(input.pointsToRevoke, 'pointsToRevoke'); evidence(input.evidence)
+    const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const createdAt = at(input.at); const amountFen = positive(input.amountFen, 'amountFen'); const pointsToRevoke = nonNegative(input.pointsToRevoke, 'pointsToRevoke'); const requestEvidence = evidence(input.evidence)
+    const evidenceKey = input.refundKind === 'onboarding_pre_deployment' ? 'deployment_status' : input.refundKind === 'monthly_unused_points' ? 'supplement_agreement_ref' : input.refundKind === 'point_pack_unused_points' ? 'expiry_policy_ref' : input.refundKind === 'outage_compensation' ? 'incident_id' : 'milestone_id'
+    if (input.refundKind === 'onboarding_pre_deployment' ? requestEvidence.deployment_status !== 'not_started' : !hasEvidenceRef(requestEvidence, evidenceKey)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', `${evidenceKey} is required for this refund kind`)
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const order = await client.query<{ amountFen: string | number; status: string }>('SELECT amount_fen AS "amountFen",status FROM commercial_orders_v2 WHERE workspace_id=$1 AND id=$2 FOR SHARE', [workspaceId, input.orderId])
       if (!order.rows[0]) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_ORDER_NOT_FOUND', 'commercial order was not found')
       if (order.rows[0].status !== 'paid' || amountFen > Number(order.rows[0].amountFen)) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'only a paid order with a bounded refund amount can be refunded')
       const existing = await this.latestIn(client, workspaceId, requestId)
       if (existing) { if (existing.eventType !== 'requested' || existing.amountFen !== amountFen || existing.pointsToRevoke !== pointsToRevoke) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_REQUEST_CONFLICT', 'refund request id is already bound to another request'); return existing }
-      return this.insert(client, workspaceId, { orderId: input.orderId, requestId, revision: 1, eventType: 'requested', refundKind: input.refundKind, amountFen, pointsToRevoke, reason, actorId, evidence: input.evidence, externalRefundId: null, at: createdAt })
+      return this.insert(client, workspaceId, { orderId: input.orderId, requestId, revision: 1, eventType: 'requested', refundKind: input.refundKind, amountFen, pointsToRevoke, reason, actorId, evidence: requestEvidence, externalRefundId: null, at: createdAt })
     })
   }
 
   async approve(input: Parameters<CommercialRefundRepository['approve']>[0]): Promise<CommercialRefundEvent> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const requestId = text(input.requestId, 'requestId'); const actorId = text(input.actorId, 'actorId'); const reason = text(input.reason, 'reason'); const createdAt = at(input.at); const policyApproval = evidence(input.policyApproval, 'policyApproval')
+    if (!hasEvidenceRef(policyApproval, 'legal_review_ref')) throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_INPUT_INVALID', 'legal_review_ref is required for refund approval')
     return withWorkspaceTransaction(this.pool, workspaceId, async client => {
       const prior = await this.latestIn(client, workspaceId, requestId)
       if (!prior || prior.eventType !== 'requested') throw new CommercialRefundRepositoryError('COMMERCIAL_REFUND_STATE_INVALID', 'refund request is not awaiting approval')

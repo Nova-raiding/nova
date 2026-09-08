@@ -1045,7 +1045,10 @@ describe('Codex stdio MCP bridge', () => {
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')
-      const disabledCommercial = new Set(COMMERCIAL_OPERATION_REGISTRY.filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && !policy.enabled).map(policy => policy.operation).filter(operation => !['catalog.image.generate', 'multimodal.image.edit'].includes(operation)))
+      const disabledCommercial = new Set([
+        ...COMMERCIAL_OPERATION_REGISTRY.filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && !policy.enabled).map(policy => policy.operation),
+        'catalog.title.optimize', 'content.generate', 'multimodal.generate', 'multimodal.video.request',
+      ].filter(operation => !['catalog.image.generate', 'multimodal.image.edit'].includes(operation)))
       expect(listed.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([...new Set([...MCP_METHODS.filter(method => !method.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(method) && !disabledCommercial.has(method)), 'catalog.image.select'])].sort())
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.select')).toMatchObject({
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

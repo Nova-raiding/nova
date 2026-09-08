@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Pool } from 'pg'
 import { PostgresAuthorizationRepository } from '../packages/persistence/src/authorization-repository.js'
-import { loadMigrations, MigrationRunner } from '../packages/persistence/src/migration.js'
+import { loadMigrations, MigrationRunner, type Migration } from '../packages/persistence/src/migration.js'
 
 export const ISOLATED_POSTGRES_IMAGE = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
 const PURPOSE = 'isolated-ops-oidc-acceptance'
@@ -41,6 +41,14 @@ export interface IsolatedOpsFixture {
   actorSubject: string
   containerEvidence: IsolatedContainerEvidence[]
   dispose(): Promise<IsolatedFixtureDisposal>
+}
+
+export function assertIsolatedMigrationChain(migrations: readonly Pick<Migration, 'version'>[], expectedVersion: number): void {
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 1
+    || migrations.length !== expectedVersion
+    || migrations.some((migration, index) => migration.version !== index + 1)) {
+    throw new Error('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
+  }
 }
 
 // No process.env spread, Docker context, credential config, provider, or model
@@ -170,9 +178,11 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     const roleSql = await readFile(new URL('../infra/local/ensure-app-role.sql', import.meta.url), 'utf8')
     await admin.query(roleSql)
     const migrations = await loadMigrations()
-    if (migrations.length !== 169 || migrations.some((migration, index) => migration.version !== index + 1)) throw new Error('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
+    const releaseMetadata = JSON.parse(await readFile(new URL('../release-metadata.json', import.meta.url), 'utf8')) as { expectedMigrationVersion?: unknown }
+    const expectedMigrationVersion = Number(releaseMetadata.expectedMigrationVersion)
+    assertIsolatedMigrationChain(migrations, expectedMigrationVersion)
     const applied = await new MigrationRunner(admin, migrations).run()
-    if (applied.length !== 169 || (await new MigrationRunner(admin, migrations).run()).length !== 0) throw new Error('ISOLATED_FIXTURE_MIGRATION_APPLY_MISMATCH')
+    if (applied.length !== expectedMigrationVersion || (await new MigrationRunner(admin, migrations).run()).length !== 0) throw new Error('ISOLATED_FIXTURE_MIGRATION_APPLY_MISMATCH')
     await admin.query(roleSql)
     const appPassword = randomBytes(32).toString('hex')
     const opsPassword = randomBytes(32).toString('hex')

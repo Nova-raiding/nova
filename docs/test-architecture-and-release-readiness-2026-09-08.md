@@ -74,7 +74,7 @@ npm run codex:relay:validate
 结果：
 
 - `typecheck` 通过。
-- metadata 通过：MCP 契约 **289**，商家 Bridge **143**，Ops 一级域 **14**，迁移尾 **169**。
+- metadata 通过：MCP 契约 **293**，商家 Bridge **144**，Ops 一级域 **14**，迁移尾 **170**。
 - `test:release-gates`：**119 个测试文件通过，6 个跳过；555 个测试通过，13 个跳过**。跳过项是需要显式 PostgreSQL release 环境的专项用例，不计为生产通过。
 - 本轮捕获并修复了宿主 relay 校验器误把“Codex 内置 `openai` + 文件型 ChatGPT 订阅认证”判为 provider mismatch 的问题；现在 `codex:relay:validate` 明确返回 `host_auth=chatgpt_subscription`，业务 relay 仍要求独立的真实配置。
 

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { disposeIsolatedContainers, ISOLATED_POSTGRES_IMAGE, isolatedContainerRunArgs, isolatedFixtureSpawnEnvironment, verifyIsolatedContainer } from './isolated-ops-fixture.js'
+import { assertIsolatedMigrationChain, disposeIsolatedContainers, ISOLATED_POSTGRES_IMAGE, isolatedContainerRunArgs, isolatedFixtureSpawnEnvironment, verifyIsolatedContainer } from './isolated-ops-fixture.js'
 
 const runId = '00000000-0000-4000-8000-000000000163'
 const plan = isolatedContainerRunArgs({ runId, kind: 'postgres', image: ISOLATED_POSTGRES_IMAGE })
@@ -100,7 +100,8 @@ describe('isolated Ops fixture safety boundary', () => {
   it('keeps the real migration/role seed and secret-free evidence path in the fixture implementation', () => {
     const source = readFileSync(new URL('./isolated-ops-fixture.ts', import.meta.url), 'utf8')
     expect(source).toContain('new MigrationRunner(admin, migrations).run()')
-    expect(source).toContain('migrations.length !== 169')
+    expect(source).toContain("new URL('../release-metadata.json', import.meta.url)")
+    expect(source).not.toMatch(/migrations\.length !== \d+/u)
     expect(source).toContain('new PostgresAuthorizationRepository(ops)')
     expect(source).toContain("new URL('../infra/local/ensure-app-role.sql', import.meta.url)")
     expect(source).not.toContain('...process.env')
@@ -113,5 +114,13 @@ describe('isolated Ops fixture safety boundary', () => {
     for (const line of source.split('\n').filter(line => line.includes('writeFile('))) {
       expect(line).not.toMatch(/adminDatabaseUrl|adminUrl|appUrl|opsUrl|postgresPassword|appPassword|opsPassword|redisPassword/u)
     }
+  })
+
+  it('binds the isolated database migration chain to release metadata instead of a stale literal', () => {
+    const current = Array.from({ length: 171 }, (_, index) => ({ version: index + 1 }))
+    expect(() => assertIsolatedMigrationChain(current, 171)).not.toThrow()
+    expect(() => assertIsolatedMigrationChain(current, 169)).toThrow('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
+    expect(() => assertIsolatedMigrationChain(current.filter(item => item.version !== 170), 170)).toThrow('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
+    expect(() => assertIsolatedMigrationChain(current, Number.NaN)).toThrow('ISOLATED_FIXTURE_MIGRATION_CHAIN_MISMATCH')
   })
 })
