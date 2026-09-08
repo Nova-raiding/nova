@@ -6364,10 +6364,41 @@ async function requireEnabledPlatform(workspaceId: string, platform: Platform) {
 }
 
 async function storeCapacity(workspaceId: string) {
+  const commercialIncluded = await commercialBenefitQuantity(workspaceId, 'max_stores')
   const subscription = await (persistence.subscriptions ?? memorySubscriptions).get(workspaceId)
   const used = service.listPlatformAccounts(workspaceId).filter(account => account.tokenState !== 'revoked').length
+  if (commercialIncluded !== null) {
+    return { used, included: commercialIncluded, remaining: Math.max(0, commercialIncluded - used), planCode: 'commercial_v2', planName: 'V2 商业权益' }
+  }
   const included = Math.max(0, subscription.includedStores)
   return { used, included, remaining: Math.max(0, included - used), planCode: subscription.planCode, planName: subscription.planName }
+}
+
+async function commercialBenefitQuantity(workspaceId: string, code: string): Promise<number | null> {
+  const repository = persistence.commercialContracts
+  if (!repository) return null
+  const now = Date.now()
+  const snapshots = await repository.listEntitlementSnapshots(workspaceId, 100)
+  const active = snapshots
+    .filter(snapshot => snapshot.executable && snapshot.unresolvedBlockers.length === 0 && snapshot.periodStatus === 'active' && Date.parse(snapshot.periodStart) <= now && Date.parse(snapshot.periodEnd) > now)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+  if (!active) throw new DomainError('COMMERCIAL_ENTITLEMENT_REQUIRED', '当前工作区没有有效的 V2 商业权益，无法使用套餐额度', 402, { next_actions: ['commercial.catalog.get', 'commercial.order.create', 'commercial.access.get'] })
+  const benefit = active.resolvedBenefits.find(value => isObject(value) && value.code === code)
+  const quantity = isObject(benefit) && typeof benefit.quantity === 'number' ? benefit.quantity : null
+  if (quantity === null || !Number.isSafeInteger(quantity) || quantity < 0) return null
+  return quantity
+}
+
+async function requireCommercialCountCapacity(input: { workspaceId: string; code: 'max_brands' | 'max_stores'; used: number; label: string }) {
+  const included = await commercialBenefitQuantity(input.workspaceId, input.code)
+  if (included === null || input.used <= included) return { used: input.used, included }
+  throw new DomainError('COMMERCIAL_QUOTA_EXCEEDED', `当前套餐已使用 ${input.used}/${included}${input.label}`, 402, {
+    used: input.used,
+    included,
+    quota: input.code,
+    next_actions: ['commercial.catalog.get', 'commercial.order.create', 'subscription.change'],
+    action_cards: commercialActionCards(),
+  })
 }
 
 function commercialActionCards() {
@@ -10499,6 +10530,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const requestedId = typeof params.brand_id === 'string' && params.brand_id.trim() ? params.brand_id.trim() : `brand_unit_${randomUUID().replaceAll('-', '').slice(0, 24)}`
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/u.test(requestedId)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'brand_id 必须是 2 至 64 个字母、数字、下划线或连字符', 400)
       await persistenceReady
+      const existingBrands = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId })
+      await requireCommercialCountCapacity({ workspaceId, code: 'max_brands', used: existingBrands.length + 1, label: '个品牌' })
       try {
         const unit = await (persistence.brandUnits ?? memoryBrandUnits).createBrand({ workspaceId, id: requestedId, name })
         return result({ ...unit, storage: persistence.mode, durable: persistence.mode === 'postgres', ...(persistence.mode === 'memory' ? { message: '当前为本地 fixture 运行；生产环境会写入 PostgreSQL。' } : {}) })
@@ -10517,6 +10550,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistenceReady
       const account = isProduction() ? service.getActivePlatformAccount(workspaceId, accountId, platform) : service.getPlatformAccount(workspaceId, accountId, platform)
       if (!account) throw new DomainError('PLATFORM_ACCOUNT_NOT_FOUND', '平台账号不存在或不属于当前工作区', 404)
+      const brands = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId })
+      const existingStores = new Set(brands.flatMap(brand => brand.storeBindings.map(binding => `${binding.platform}:${binding.accountId}`)))
+      const storeKey = `${platform}:${accountId}`
+      if (!existingStores.has(storeKey)) await requireCommercialCountCapacity({ workspaceId, code: 'max_stores', used: existingStores.size + 1, label: '家店铺' })
       try {
         const unit = await (persistence.brandUnits ?? memoryBrandUnits).bindStore({ workspaceId, brandId, platform, accountId, ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
         await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'brand.store.bind', resourceType: 'brand_store_binding', resourceId: `${brandId}:${platform}:${accountId}`, before: {}, after: { brand_id: brandId, platform, account_id: accountId, status: 'active' }, reason: typeof params.reason === 'string' && params.reason.trim() ? params.reason.trim() : '绑定品牌与平台店铺' })
