@@ -1037,9 +1037,9 @@ export function useOpsConsoleModel() {
   const canModelMarkup = authorization.canAny(["commercial.read", "commercial.update"]);
   const canKnowledge = authorization.can("customer.content.update");
   const canCompetitor = authorization.can("customer.content.update");
-  // Knowledge rules are workspace content and may be drafted by content
-  // operators. Platform rule lifecycle actions remain gated by canRules.
-  const canRules = authorization.canAny(["rule.update", "rule.publish.approve"]);
+  // Rule creation and lifecycle changes require the dedicated rule-governance
+  // capability; general knowledge editors must remain read-only here.
+  const canRules = authorization.can("rule.update");
   const canQueue = authorization.can("marketing.queue.update");
   const canMembers = authorization.can("workspace.member.manage");
   const dataSetError = (...methods: string[]) => dataSetErrorFor(dataSetErrors, methods);

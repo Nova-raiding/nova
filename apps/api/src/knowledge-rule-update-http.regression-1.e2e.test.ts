@@ -51,15 +51,19 @@ describe('knowledge rule update over authenticated HTTP', () => {
     const rulesToken = `rules-token-${suffix}`
     const ownerToken = `owner-token-${suffix}`
     await Promise.all([
-      api.workspaceMembers.upsert({ workspaceId, externalSubject: rulesActor, displayName: rulesActor, role: 'workspace_owner', status: 'active', invitedBy: 'qa-regression' }),
+      api.workspaceMembers.upsert({ workspaceId, externalSubject: rulesActor, displayName: rulesActor, role: 'support', status: 'active', invitedBy: 'qa-regression' }),
       api.workspaceMembers.upsert({ workspaceId, externalSubject: ownerActor, displayName: ownerActor, role: 'workspace_owner', status: 'active', invitedBy: 'qa-regression' }),
     ])
     await api.grantCreativePointsForTests(workspaceId)
     api.grantContinuousFeatureEntitlementForTests(workspaceId)
     vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
-      [rulesToken]: { workspaces: [workspaceId], actor_id: rulesActor, roles: ['workspace_owner', 'rules_admin'] },
+      [rulesToken]: { workspaces: [workspaceId], actor_id: rulesActor, roles: ['rules_admin'] },
       [ownerToken]: { workspaces: [workspaceId], actor_id: ownerActor, roles: ['workspace_owner'] },
     }))
+
+    const session = await call(rulesToken, workspaceId, 'ops.session', {})
+    expect(session.body.data!.result).toMatchObject({ capabilities: expect.arrayContaining(['rule.update']) })
+    expect((session.body.data!.result.capabilities as string[])).not.toContain('customer.content.update')
 
     const create = await call(rulesToken, workspaceId, 'knowledge.rule.create', {
       name: '可信平台规则', content: '不得使用绝对化承诺', scope: 'global', source_kind: 'official',

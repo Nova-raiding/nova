@@ -7,7 +7,7 @@ interface KnowledgeRulesPanelProps {
 }
 
 export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
-  const { canKnowledge, canRules, createKnowledgeRule, updateKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
+  const { canRules, createKnowledgeRule, updateKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
     model;
 
   return (
@@ -20,7 +20,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
           const first = errorFields[0]?.name;
           if (first) knowledgeRuleForm.scrollToField(first, { block: "center", focus: true });
         }}
-        disabled={!canKnowledge}
+        disabled={!canRules}
         style={{ marginBottom: 16 }}
         aria-label="录入工作区规则"
       >
@@ -90,7 +90,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
         <Form.Item name="tags" label="标签">
           <Input placeholder="标签，用逗号分隔" />
         </Form.Item>
-        <Button disabled={!canKnowledge} type="primary" htmlType="submit">
+        <Button disabled={!canRules} type="primary" htmlType="submit">
           录入知识规则
         </Button>
       </Form>
