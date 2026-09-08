@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { commitOpsWorkbenchTransition, shouldConfirmWorkbenchTransition, workbenchSwitchWarning } from "./OpsConsoleController.js";
-import { hasRuleDraftChanges } from "../components/tasks/RuleCenterSection.js";
+import { hasRuleDraftChanges, validateRuleChecksJson } from "../components/tasks/RuleCenterSection.js";
 
 describe("ops workbench transition", () => {
   it("aborts before committing context and URL atomically", () => {
@@ -46,5 +46,8 @@ describe("ops workbench transition", () => {
   it("recovers rule draft dirtiness from values after touched metadata is remounted", () => {
     expect(hasRuleDraftChanges({ checksJson: '{"forbiddenTerms":[]}' })).toBe(false);
     expect(hasRuleDraftChanges({ packId: "retained-draft", checksJson: '{"forbiddenTerms":[]}' })).toBe(true);
+    expect(validateRuleChecksJson('{"forbiddenTerms":[]}')).toBeUndefined();
+    expect(validateRuleChecksJson("标题不得夸大")).toBe("检查规则必须是合法 JSON");
+    expect(validateRuleChecksJson("[]")).toBe("检查规则必须是 JSON 对象");
   });
 });

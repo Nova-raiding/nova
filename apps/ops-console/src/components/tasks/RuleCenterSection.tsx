@@ -10,6 +10,17 @@ interface RuleCenterSectionProps {
 
 const initialChecksJson = '{"forbiddenTerms":[]}';
 
+export function validateRuleChecksJson(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return "请输入检查规则 JSON";
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "检查规则必须是 JSON 对象";
+  } catch {
+    return "检查规则必须是合法 JSON";
+  }
+  return undefined;
+}
+
 export function hasRuleDraftChanges(values: Readonly<Record<string, unknown>>) {
   return ["packId", "name", "version", "sourceReference", "reason"].some((key) => String(values[key] ?? "").trim())
     || (typeof values.checksJson === "string" && values.checksJson !== initialChecksJson);
@@ -99,7 +110,10 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
           name="checksJson"
           label="检查规则"
           initialValue={initialChecksJson}
-          rules={[{ required: true, message: "请输入检查规则 JSON" }]}
+          rules={[{ validator: async (_, value) => {
+            const error = validateRuleChecksJson(value);
+            if (error) throw new Error(error);
+          } }]}
         >
           <Input placeholder="checks JSON" />
         </Form.Item>

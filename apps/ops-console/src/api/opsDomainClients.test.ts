@@ -238,6 +238,10 @@ describe("Ops domain protocol clients", () => {
     expect(() => parseSupportPage({ items: [{ ...ticket, status: "invented" }] })).toThrow(/无效响应/);
   });
 
+  it("accepts the redacted platform support aggregate row", () => {
+    expect(parseSupportPage({ items: [{ ...ticket, workspaceId: "platform-aggregate", revision: 0, aggregate: true, count: 2 }] })).toMatchObject({ items: [{ aggregate: true, count: 2 }] });
+  });
+
   it("contains no deprecated Ops domain method names", () => {
     const deprecated = [
       "ops.support.ticket.list",

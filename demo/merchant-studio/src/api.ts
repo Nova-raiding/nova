@@ -507,6 +507,10 @@ export interface BrandExtraction {
 const apiUrl = (baseUrl: string, path: string) => `${baseUrl.replace(/\/$/, '')}${path}`
 const API_REQUEST_TIMEOUT_MS = 10_000
 const MAX_API_RESPONSE_BYTES = 4 * 1024 * 1024
+// A completed image job may intentionally carry several archived candidate
+// images as data URLs. Keep the general API cap strict, but give this one
+// explicitly image-bearing read a bounded 8 MiB budget.
+const MAX_IMAGE_JOB_RESPONSE_BYTES = 8 * 1024 * 1024
 
 async function readBoundedResponseText(response: Response, maxBytes: number): Promise<string> {
   const declaredLength = Number(response.headers.get('content-length') ?? '')
@@ -538,7 +542,7 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
   return chunks.join('')
 }
 
-export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo'): Promise<T> {
+export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo', maxResponseBytes = MAX_API_RESPONSE_BYTES): Promise<T> {
   const token = runtimeConfig('VITE_API_TOKEN')?.trim()
   const sameOriginProxy = baseUrl.trim().startsWith('/')
   if (!token && !sameOriginProxy) {
@@ -565,7 +569,7 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   }
   try {
     const response = await fetch(apiUrl(baseUrl, path), { ...init, headers, signal: controller.signal })
-    const raw = await readBoundedResponseText(response, MAX_API_RESPONSE_BYTES)
+    const raw = await readBoundedResponseText(response, maxResponseBytes)
     let envelope: ApiEnvelope<T> | null = null
     try { envelope = raw ? JSON.parse(raw) as ApiEnvelope<T> : null } catch {
       const error = new Error(`API request failed: ${response.status}`) as ApiError
@@ -773,7 +777,7 @@ export const selectVisualCandidates = (baseUrl: string, contentVersionId: string
 export const confirmTaskPlan = (baseUrl: string, taskId: string, expectedVersion?: number) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/plan/confirm`, { method: 'POST', body: JSON.stringify(expectedVersion === undefined ? {} : { expected_version: expectedVersion }) })
 export const enqueueContentGeneration = (baseUrl: string, taskId: string, idempotencyKey: string) => requestApi<GenerationJob>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/content-jobs`, { method: 'POST', headers: { 'idempotency-key': idempotencyKey } })
 export const fetchGenerationJob = (baseUrl: string, jobId: string) => requestApi<GenerationJob>(baseUrl, `/v1/generation-jobs/${encodeURIComponent(jobId)}`)
-export const fetchImageGenerationJob = (baseUrl: string, jobId: string) => requestApi<ImageGenerationJobWire>(baseUrl, `/v1/image-generation-jobs/${encodeURIComponent(jobId)}`).then(value => ({ jobId: value.job_id, revision: value.revision, state: value.state, archiveState: value.archive_state, productId: value.product_id, taskId: value.task_id, contentVersionId: value.content_version_id, imageMode: value.image_mode, direction: value.direction, requestedCount: value.requested_count, sourceAssetIds: value.source_asset_ids, sourceProductVersion: value.source_product_version, intentHash: value.intent_hash, executionState: value.execution_state, providerRequestId: value.provider_request_id, executionAttempt: value.execution_attempt, reconciliationRequired: value.reconciliation_required, errorCode: value.error_code, errorMessage: value.error_message, updatedAt: value.updated_at, createdAt: value.created_at, outputs: value.outputs.map(output => ({ visualRef: output.visual_ref, ordinal: output.ordinal, assetId: output.asset_id, archiveReceiptId: output.archive_receipt_id, archiveReceiptDigest: output.archive_receipt_digest, storageKey: output.storage_key, mimeType: output.mime_type, sizeBytes: output.size_bytes, sha256: output.sha256, createdAt: output.created_at, reviewStatus: output.review_status, gate: output.gate })), images: value.images, availabilityWarning: value.availability_warning, nextAction: value.next_action }))
+export const fetchImageGenerationJob = (baseUrl: string, jobId: string) => requestApi<ImageGenerationJobWire>(baseUrl, `/v1/image-generation-jobs/${encodeURIComponent(jobId)}`, {}, undefined, MAX_IMAGE_JOB_RESPONSE_BYTES).then(value => ({ jobId: value.job_id, revision: value.revision, state: value.state, archiveState: value.archive_state, productId: value.product_id, taskId: value.task_id, contentVersionId: value.content_version_id, imageMode: value.image_mode, direction: value.direction, requestedCount: value.requested_count, sourceAssetIds: value.source_asset_ids, sourceProductVersion: value.source_product_version, intentHash: value.intent_hash, executionState: value.execution_state, providerRequestId: value.provider_request_id, executionAttempt: value.execution_attempt, reconciliationRequired: value.reconciliation_required, errorCode: value.error_code, errorMessage: value.error_message, updatedAt: value.updated_at, createdAt: value.created_at, outputs: value.outputs.map(output => ({ visualRef: output.visual_ref, ordinal: output.ordinal, assetId: output.asset_id, archiveReceiptId: output.archive_receipt_id, archiveReceiptDigest: output.archive_receipt_digest, storageKey: output.storage_key, mimeType: output.mime_type, sizeBytes: output.size_bytes, sha256: output.sha256, createdAt: output.created_at, reviewStatus: output.review_status, gate: output.gate })), images: value.images, availabilityWarning: value.availability_warning, nextAction: value.next_action }))
 export const fetchImageGenerationJobs = (baseUrl: string, filters: { state?: string } = {}) => {
   const params = new URLSearchParams({ limit: '50', offset: '0' })
   if (filters.state) params.set('state', filters.state)

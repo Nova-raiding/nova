@@ -84,7 +84,8 @@ export const parseIncidentMutation = (value: unknown) => {
 const supportTicket = (value: unknown): value is SupportTicketContract => object(value)
   && ["id", "workspaceId", "ticketNumber", "subject", "description", "customerId", "customerName", "createdBy", "createdAt", "updatedAt"].every(key => text(value[key]))
   && supportTicketStatuses.includes(value.status as never) && supportTicketPriorities.includes(value.priority as never)
-  && textArray(value.tags) && Number.isSafeInteger(value.revision) && Number(value.revision) >= 1
+  && textArray(value.tags) && Number.isSafeInteger(value.revision)
+  && (Number(value.revision) >= 1 || (value.aggregate === true && Number(value.revision) === 0 && Number.isSafeInteger(value.count) && Number(value.count) >= 1))
   && ["customerEmail", "assignedTo", "relatedOrderId", "relatedTaskId"].every(key => optionalText(value[key]));
 const supportEvent = (value: unknown): value is SupportTicketEventContract => object(value)
   && ["id", "workspaceId", "ticketId", "actorId", "idempotencyKey", "createdAt"].every(key => text(value[key]))
