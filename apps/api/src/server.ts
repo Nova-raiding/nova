@@ -15984,12 +15984,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         // the Ops Console. Keep workspace owners without rule governance
         // capability blocked, while allowing the canonical reviewer role.
         const actorId = requireOperationsRole(req, ['rules_admin', 'reviewer'])
+        const status = required(params, 'status') as import('../../../packages/knowledge/src/index.js').RuleStatus
+        if (status !== 'draft') throw new DomainError('RULE_ACTIVATION_REQUIRES_UPDATE', '新规则必须先创建为草稿，再通过带版本与审计原因的更新流程启用', 409)
         const target = Object.fromEntries(['platform', 'category', 'brand', 'store', 'campaign'].filter(key => typeof params[key] === 'string' && String(params[key]).trim()).map(key => [key, String(params[key]).trim()]))
         const rule = knowledgeForWorkspace(workspaceId).createRule({
           workspaceId, name: required(params, 'name'), content: required(params, 'content'), scope: required(params, 'scope') as import('../../../packages/knowledge/src/index.js').RuleScope,
           ...(typeof params.scope_value === 'string' ? { scopeValue: params.scope_value } : {}), target,
           source: { kind: required(params, 'source_kind') as import('../../../packages/knowledge/src/index.js').RuleSourceKind, reference: required(params, 'source_reference'), checkedAt: required(params, 'source_checked_at') },
-          version: required(params, 'version'), status: required(params, 'status') as import('../../../packages/knowledge/src/index.js').RuleStatus,
+          version: required(params, 'version'), status,
           ...(typeof params.severity === 'string' ? { severity: params.severity as import('../../../packages/knowledge/src/index.js').RuleSeverity } : {}), ...(typeof params.action === 'string' ? { action: params.action as import('../../../packages/knowledge/src/index.js').RuleAction } : {}), ...(typeof params.owner_id === 'string' ? { ownerId: params.owner_id } : {}),
           ...(typeof params.effective_from === 'string' ? { effectiveFrom: params.effective_from } : {}), ...(typeof params.effective_to === 'string' ? { effectiveTo: params.effective_to } : {}),
           ...(typeof params.tags_json === 'string' ? { tags: JSON.parse(params.tags_json) as string[] } : {}),

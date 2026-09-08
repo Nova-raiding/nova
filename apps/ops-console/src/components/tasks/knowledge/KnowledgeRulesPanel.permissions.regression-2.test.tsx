@@ -24,5 +24,7 @@ describe("KnowledgeRulesPanel rule-admin boundary", () => {
   it("disables rule creation for a content editor without rule governance capability", () => {
     const html = renderToStaticMarkup(<ReadOnlyRulesHarness />);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*录入知识规则.*<\/button>/u);
+    expect(html).not.toContain("生效</div>");
+    expect(html).toContain("草稿（录入后单独启用）");
   });
 });

@@ -70,16 +70,11 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
         >
           <Input placeholder="版本" />
         </Form.Item>
-        <Form.Item
-          name="status"
-          label="状态"
-          initialValue="draft"
-          rules={[{ required: true, message: "请选择规则状态" }]}
-        >
-          <Select
-            style={{ width: 110 }}
-            options={[{ value: "draft", label: "草稿" }, { value: "active", label: "生效" }, { value: "inactive", label: "停用" }, { value: "archived", label: "归档" }]}
-          />
+        <Form.Item name="status" initialValue="draft" hidden>
+          <Input />
+        </Form.Item>
+        <Form.Item label="状态">
+          <Tag color="orange">草稿（录入后单独启用）</Tag>
         </Form.Item>
         <Form.Item name="severity" label="严重级别" initialValue="warning">
           <Select style={{ width: 110 }} options={[{ value: "info", label: "提示" }, { value: "warning", label: "警告" }, { value: "error", label: "阻断" }]} />

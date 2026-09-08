@@ -65,6 +65,13 @@ describe('knowledge rule update over authenticated HTTP', () => {
     expect(session.body.data!.result).toMatchObject({ capabilities: expect.arrayContaining(['rule.update']) })
     expect((session.body.data!.result.capabilities as string[])).not.toContain('customer.content.update')
 
+    const directActivation = await call(rulesToken, workspaceId, 'knowledge.rule.create', {
+      name: '绕过启用流程', content: '不得绕过版本与审计原因', scope: 'global', source_kind: 'official',
+      source_reference: 'https://rules.example.test/current', source_checked_at: '2026-09-08T00:00:00.000Z',
+      version: '1', status: 'active',
+    })
+    expect(directActivation).toMatchObject({ status: 409, body: { error: { code: 'RULE_ACTIVATION_REQUIRES_UPDATE' } } })
+
     const create = await call(rulesToken, workspaceId, 'knowledge.rule.create', {
       name: '可信平台规则', content: '不得使用绝对化承诺', scope: 'global', source_kind: 'official',
       source_reference: 'https://rules.example.test/current', source_checked_at: '2026-09-08T00:00:00.000Z',
