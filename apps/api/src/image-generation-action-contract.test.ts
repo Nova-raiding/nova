@@ -77,6 +77,9 @@ describe('image generation API action contract', () => {
     expect(retry).toContain('alreadyExists')
     expect(retry).toContain('if (!retried.alreadyExists)')
     expect(retry).toContain('idempotency_key: retryKey')
+    expect(retry).toContain("enforceMcpCommercialAccess(req, workspaceId, 'catalog.image.generate')")
+    expect(retry).toContain('reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)')
+    expect(retry).toContain('releaseReservedModelPoints(workspaceId, walletDebitKey')
 
     const safePreProvider = projectImageGenerationActions({
       state: 'failed',

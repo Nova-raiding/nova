@@ -1,4 +1,4 @@
-import { Button, Form, Input, Select, Table, Tag } from "antd";
+import { Button, Form, Input, Select, Space, Table, Tag } from "antd";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 import type { Rule } from "../../../types/ops";
 
@@ -7,7 +7,7 @@ interface KnowledgeRulesPanelProps {
 }
 
 export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
-  const { canKnowledge, createKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
+  const { canKnowledge, canRules, createKnowledgeRule, updateKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
     model;
 
   return (
@@ -118,6 +118,15 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
               <Tag color={row.status === "active" ? "green" : "orange"}>
                 {row.status}
               </Tag>
+            ),
+          },
+          {
+            title: "操作",
+            render: (_: unknown, row: Rule) => (
+              <Space>
+                <Button type="link" disabled={!canRules || row.status === "active" || row.source.reference.startsWith("manual://")} onClick={() => void updateKnowledgeRule(row, { status: "active" })}>启用</Button>
+                <Button type="link" danger disabled={!canRules || row.status === "inactive"} onClick={() => void updateKnowledgeRule(row, { status: "inactive" })}>停用</Button>
+              </Space>
             ),
           },
         ]}

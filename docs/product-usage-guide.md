@@ -359,7 +359,7 @@ flowchart LR
 | 项目 | 当前状态 |
 |---|---|
 | Repository / Plugin | `0.1.1` / `0.1.0+codex.20260907102000` |
-| MCP 契约 | 293 个方法；当前商家 Bridge 的真实 `tools/list` 返回 144 个工具；release metadata 已同步为 144 |
+| MCP 契约 | 294 个方法；当前商家 Bridge 的真实 `tools/list` 返回 143 个工具；release metadata 已同步为 143 |
 | Ops Console | 14 个一级域，平台/工作区双工作台 |
 | PostgreSQL / Redis | 本地运行就绪；迁移版本 171 |
 | 五模态模型中转 | 本地 relay contract 可解析，但五模态生产配置/成本证据尚未就绪 |

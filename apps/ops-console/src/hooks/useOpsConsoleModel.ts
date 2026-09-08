@@ -1811,6 +1811,14 @@ export function useOpsConsoleModel() {
       );
     }
   };
+  const updateKnowledgeRule = async (rule: Rule, patch: { status?: string; severity?: string; action?: string }) => {
+    if (!canRules) { message.error("当前会话为只读，缺少规则管理员权限"); return; }
+    try {
+      await rpc("knowledge.rule.update", { rule_id: rule.id, ...patch, expected_revision: String(rule.revision), reason: patch.status === "inactive" ? "运营台停用工作区知识规则" : "运营台更新工作区知识规则" });
+      message.success(patch.status === "inactive" ? "规则已停用" : "规则已更新");
+      await load();
+    } catch (cause) { message.error(cause instanceof Error ? cause.message : "知识规则更新失败"); }
+  };
   const createKnowledgeAsset = async (values: {
     kind: "brand" | "customer";
     name: string;
@@ -1822,11 +1830,13 @@ export function useOpsConsoleModel() {
       return;
     }
     try {
-      JSON.parse(values.contentJson);
+      let content: string | Record<string, unknown>;
+      try { content = JSON.parse(values.contentJson) as string | Record<string, unknown>; }
+      catch { content = values.contentJson.trim(); }
       await rpc("knowledge.asset.create", {
         kind: values.kind,
         name: values.name,
-        content_json: values.contentJson,
+        content_json: JSON.stringify(content),
         ...(values.source ? { source: values.source } : {}),
       });
       message.success("知识资产已录入，等待审批和权益确认");
@@ -2660,6 +2670,7 @@ export function useOpsConsoleModel() {
     acknowledgeAlert,
     confirmLearning,
     createKnowledgeRule,
+    updateKnowledgeRule,
     createKnowledgeAsset,
     updateKnowledgeAsset,
     dismissLearning,

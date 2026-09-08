@@ -289,6 +289,7 @@ export const MCP_METHODS = [
   'publish.confirm',
   'publish.get',
   'knowledge.rule.create',
+  'knowledge.rule.update',
   'knowledge.rule.list',
   'knowledge.asset.create',
   'knowledge.asset.update',
@@ -1323,6 +1324,11 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
     method: 'knowledge.rule.create',
     description: 'Create a workspace knowledge rule with source, scope, version and effective window.',
     params: params({ name: { type: 'string' }, content: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, scope_value: { type: 'string' }, platform: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' }, store: { type: 'string' }, campaign: { type: 'string' }, source_kind: { type: 'string', enum: ['official', 'internal', 'merchant', 'observed', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, version: { type: 'string' }, severity: { type: 'string', enum: ['info', 'warning', 'error'] }, action: { type: 'string', enum: ['warn', 'block', 'require_confirmation', 'suggest'] }, owner_id: { type: 'string' }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'inactive', 'archived'] }, tags_json: { type: 'string' } }, ['name', 'content', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'version', 'status']),
+  },
+  {
+    method: 'knowledge.rule.update',
+    description: 'Update a workspace knowledge rule while preserving its revision and audit trail.',
+    params: params({ rule_id: { type: 'string' }, name: { type: 'string' }, content: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'inactive', 'archived', 'expired'] }, severity: { type: 'string', enum: ['info', 'warning', 'error'] }, action: { type: 'string', enum: ['warn', 'block', 'require_confirmation', 'suggest'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, tags_json: { type: 'string' }, expected_revision: { type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 }, reason: { type: 'string', minLength: 3, maxLength: 1000 } }, ['rule_id', 'expected_revision', 'reason']),
   },
   {
     method: 'knowledge.rule.list',

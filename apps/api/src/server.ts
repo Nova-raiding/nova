@@ -14427,6 +14427,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const previous = service.getImageGenerationJob(workspaceId, jobId)
       await enforceProductBrandAccess(req, workspaceId, previous.productId)
       requirePlatformModelCostGate('image')
+      const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, 'catalog.image.generate')
       const durableRetry = process.env.IMAGE_GENERATION_EXECUTION_MODE?.trim().toLowerCase() === 'durable'
       if (durableRetry && (!persistence.persistSnapshotAndEvent || !persistence.outbox || !persistence.imageGenerationExecutions)) throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片安全重试的 Durable Worker 尚未完成生产配置', 503)
       const durableAuthorizationSnapshot = durableRetry ? workerAuthorizationSnapshot(req, workspaceId, previous.id, 'image_generation.execute', { method: 'catalog.image.retry', product_id: previous.productId, source_product_version: previous.sourceProductVersion, intent_hash: previous.intentHash }) : undefined
@@ -14438,6 +14439,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const imageRunKey = typeof previousRunKey === 'string' ? previousRunKey.trim() : `image:${previous.idempotencyKey}`
       const billingActorId = requestActor(req)
       const walletDebitKey = `image:${retryKey}`
+      const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
       let entitlementConsumed = false
       const existingRetry = [...service.imageGenerationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === retryKey)
       if (!existingRetry) {
@@ -14448,20 +14450,28 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       try {
         retried = service.retryImageGeneration({ workspaceId, jobId, idempotencyKey: retryKey, ...(typeof params.expected_revision === 'string' && /^\d+$/u.test(params.expected_revision) ? { expectedRevision: Number(params.expected_revision) } : {}) })
       } catch (error) {
+        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试未创建任务')
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试未创建任务' })
         else await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试未创建任务' })
         throw error
       }
       const retryAuthorizationSnapshot = durableRetry ? workerAuthorizationSnapshot(req, workspaceId, retried.job.id, 'image_generation.execute', { method: 'catalog.image.retry', product_id: retried.job.productId, source_product_version: retried.job.sourceProductVersion, intent_hash: retried.job.intentHash }) : undefined
-      if (durableRetry && !retryAuthorizationSnapshot) throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片安全重试缺少新任务的持久身份授权快照，已停止入队', 503)
+      if (durableRetry && !retryAuthorizationSnapshot) {
+        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试缺少身份授权快照')
+        throw new DomainError('AUTHZ_EXECUTION_SNAPSHOT_REQUIRED', '图片安全重试缺少新任务的持久身份授权快照，已停止入队', 503)
+      }
       if (!retried.alreadyExists) {
         await persistSnapshot(workspaceId, 'image_generation_job', retried.job, retried.job as unknown as Record<string, unknown>)
         await persistEvent(workspaceId, retried.job.id, 'image.generation.retry_requested', retried.job.revision, { job_id: retried.job.id, previous_job_id: previous.id, idempotency_key: retryKey, source_intent_hash: previous.intentHash })
       }
       if (durableRetry) {
-        if (!persistence.persistSnapshotAndEvent || !persistence.outbox || !persistence.imageGenerationExecutions) throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片安全重试的 Durable Worker 尚未完成生产配置', 503)
+        if (!persistence.persistSnapshotAndEvent || !persistence.outbox || !persistence.imageGenerationExecutions) {
+          await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试持久化未配置')
+          throw new DomainError('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED', '图片安全重试的 Durable Worker 尚未完成生产配置', 503)
+        }
         if (!existingRetry) {
-          await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: retried.job.id, entityVersion: retried.job.revision, payload: retried.job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: { job_id: retried.job.id, workspace_id: workspaceId, product_id: retried.job.productId, intent_hash: retried.job.intentHash, idempotency_key: retried.job.idempotencyKey, image_mode: retried.job.imageMode, direction: retried.job.direction, requested_count: retried.job.count, source_asset_ids: retried.job.sourceAssetIds ?? [], source_product_version: retried.job.sourceProductVersion, visual_brief: retried.job.visualBrief ?? null, action_id: walletDebitKey, run_key: imageRunKey, authorization_snapshot: serializedWorkerAuthorizationSnapshot(retryAuthorizationSnapshot!), retry_of_job_id: previous.id }})
+          const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id)
+          await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: retried.job.id, entityVersion: retried.job.revision, payload: retried.job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: { job_id: retried.job.id, workspace_id: workspaceId, product_id: retried.job.productId, intent_hash: retried.job.intentHash, idempotency_key: retried.job.idempotencyKey, image_mode: retried.job.imageMode, direction: retried.job.direction, requested_count: retried.job.count, source_asset_ids: retried.job.sourceAssetIds ?? [], source_product_version: retried.job.sourceProductVersion, visual_brief: retried.job.visualBrief ?? null, action_id: walletDebitKey, run_key: imageRunKey, authorization_snapshot: serializedWorkerAuthorizationSnapshot(retryAuthorizationSnapshot!), ...(commercialAccessSnapshot ? { commercial_access_snapshot: commercialAccessSnapshot } : {}), retry_of_job_id: previous.id }})
         }
         return result({ job_id: retried.job.id, previous_job_id: previous.id, state: 'queued', execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, job: publicImageJob(retried.job), next_action: { type: 'get_status', label: '查询任务状态', allowed: true } })
       }
@@ -14471,6 +14481,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         await persistSnapshot(workspaceId, 'image_generation_job', archived, archived as unknown as Record<string, unknown>)
         return result({ job_id: archived.id, previous_job_id: previous.id, state: archived.state, archive_state: archived.archiveState, retry_count: archived.retryCount ?? 1, job: publicImageJob(archived), ...(imageJobOutputsAreClean(archived) ? { images: completed.images } : {}) })
       } catch (error) {
+        await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试失败')
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试失败' })
         else if (!existingRetry) await refundPluginWalletDebit({ workspaceId, debitIdempotencyKey: walletDebitKey, actorId: billingActorId, reason: '图片安全重试失败' })
         await persistSnapshot(workspaceId, 'image_generation_job', retried.job, retried.job as unknown as Record<string, unknown>)
@@ -14492,6 +14503,15 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const product = service.products.get(job.productId)
         if (!product || product.workspaceId !== workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
         await resolveCanonicalTaskScope({ workspaceId, productId: product.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}), requireCanonical: true, requireListing: true })
+      }
+      // A terminal worker rejection (for example a stale authorization
+      // snapshot) must close the user-facing job. Leaving it queued makes the
+      // plugin poll forever and hides the actionable failure reason.
+      const aggregateEvents = await persistence.outbox?.listAggregateEvents(workspaceId, job.id, 100)
+      const terminalWorkerError = aggregateEvents?.find(event => event.eventType === 'image.generation.requested' && event.lastError?.retryable === false)?.lastError
+      if (terminalWorkerError && job.state !== 'failed' && job.state !== 'succeeded') {
+        job = service.markImageGenerationFailed({ workspaceId, jobId: job.id, errorCode: typeof terminalWorkerError.code === 'string' ? String(terminalWorkerError.code) : 'IMAGE_GENERATION_WORKER_REJECTED', errorMessage: typeof terminalWorkerError.message === 'string' ? String(terminalWorkerError.message) : '图片生成 worker 已终止任务' })
+        await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
       }
       const execution = await persistence.imageGenerationExecutions?.get({ workspaceId, jobId: job.id })
       // A scan callback can make quarantined outputs clean after the provider
@@ -15980,6 +16000,24 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, 400)
         throw error
       }
+    }
+    case 'knowledge.rule.update': {
+      try {
+        const actorId = requireOperationsRole(req, ['rules_admin', 'reviewer'])
+        const ruleId = required(params, 'rule_id')
+        const current = knowledgeForWorkspace(workspaceId).getRule(ruleId)
+        if (!current || current.workspaceId !== workspaceId) throw new DomainError('RULE_NOT_FOUND', '规则不存在', 404)
+        const expectedRevision = requiredPositiveInteger(params, 'expected_revision')
+        const reason = required(params, 'reason')
+        const source = typeof params.source_reference === 'string' || typeof params.source_checked_at === 'string'
+          ? { ...current.source, ...(typeof params.source_reference === 'string' ? { reference: params.source_reference } : {}), ...(typeof params.source_checked_at === 'string' ? { checkedAt: params.source_checked_at } : {}) }
+          : undefined
+        if (params.status === 'active' && (source ?? current.source).reference.startsWith('manual://')) throw new DomainError('RULE_SOURCE_UNVERIFIED', '未验证的人工规则不能激活为商家生成依据', 409)
+        const updated = knowledgeForWorkspace(workspaceId).updateRule(ruleId, { expectedRevision, ...(typeof params.name === 'string' ? { name: params.name } : {}), ...(typeof params.content === 'string' ? { content: params.content } : {}), ...(typeof params.version === 'string' ? { version: params.version } : {}), ...(typeof params.status === 'string' ? { status: params.status as import('../../../packages/knowledge/src/index.js').RuleStatus } : {}), ...(typeof params.severity === 'string' ? { severity: params.severity as import('../../../packages/knowledge/src/index.js').RuleSeverity } : {}), ...(typeof params.action === 'string' ? { action: params.action as import('../../../packages/knowledge/src/index.js').RuleAction } : {}), ...(source ? { source } : {}), ...(typeof params.tags_json === 'string' ? { tags: JSON.parse(params.tags_json) as string[] } : {}) })
+        await persistEvent(workspaceId, updated.id, 'knowledge.rule.updated', updated.revision, updated as unknown as Record<string, unknown>)
+        await recordOperationAudit({ workspaceId, actorId, action: 'knowledge.rule.update', resourceType: 'knowledge_rule', resourceId: updated.id, before: current as unknown as Record<string, unknown>, after: updated as unknown as Record<string, unknown>, reason })
+        return result(updated)
+      } catch (error) { if (error instanceof KnowledgeError) throw new DomainError(error.code, error.message, error.code === 'VERSION_CONFLICT' ? 409 : 400); throw error }
     }
     case 'knowledge.rule.list': {
       try {

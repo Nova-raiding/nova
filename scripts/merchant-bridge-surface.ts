@@ -4,7 +4,7 @@ export const MERCHANT_HIDDEN_METHODS = new Set([
   'billing.usage.consume', 'billing.usage.refund', 'billing.refund',
   'billing.reconciliation.run', 'platform.settings.update', 'platform.revoke',
   'platform.model.status', 'asset.scan', 'content.codex.prepare',
-  'content.codex.commit',
+  'content.codex.commit', 'knowledge.rule.update',
 ])
 
 export function countMerchantBridgeTools(source: string): number {

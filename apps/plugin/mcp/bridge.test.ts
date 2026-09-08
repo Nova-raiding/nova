@@ -58,6 +58,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'asset.scan',
   'content.codex.prepare',
   'content.codex.commit',
+  'knowledge.rule.update',
 ])
 
 function nextLine(stream: NodeJS.ReadableStream): Promise<any> {
@@ -1068,7 +1069,7 @@ describe('Codex stdio MCP bridge', () => {
         'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'creative.directions', 'creative.brief', 'creative.preview', 'creative.directions.update', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.codex.prepare', 'content.codex.commit', 'generation.get', 'content.review', 'content.review.decide', 'content.visual.select',
         'content.versions', 'content.diff', 'content.export', 'content.approve', 'content.modify', 'content.restore',
         'publish.prepare', 'publish.confirm', 'publish.get',
-        'knowledge.rule.create', 'knowledge.rule.list', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.asset.list', 'knowledge.feedback.record', 'knowledge.learning.list', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'multimodal.video.get',
+        'knowledge.rule.create', 'knowledge.rule.update', 'knowledge.rule.list', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.asset.list', 'knowledge.feedback.record', 'knowledge.learning.list', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'multimodal.video.get',
       ]) */
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'task.select_direction').inputSchema.properties.expected_version).toBeDefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'content.approve').inputSchema.properties.expected_version).toBeDefined()

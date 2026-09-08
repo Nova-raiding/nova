@@ -43,11 +43,11 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
             ]}
           />
         </Form.Item>
-        <Form.Item name="name" label="资产名称" rules={[{ required: true, message: "请输入资产名称" }]}> 
+        <Form.Item name="name" label="资产名称" rules={[{ required: true, message: "请输入资产名称" }]}>
           <Input placeholder="资产名称" />
         </Form.Item>
-        <Form.Item name="contentJson" label="资产内容" rules={[{ required: true, message: "请输入资产内容 JSON" }]}> 
-          <Input placeholder="内容 JSON" />
+        <Form.Item name="contentJson" label="资产内容" rules={[{ required: true, message: "请输入资产内容" }]}>
+          <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} placeholder="可填写普通说明，也可填写 JSON 结构" />
         </Form.Item>
         <Form.Item name="source" label="来源">
           <Input placeholder="来源" />

@@ -128,6 +128,7 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'asset.scan',
   'content.codex.prepare',
   'content.codex.commit',
+  'knowledge.rule.update',
 ])
 const isMerchantTool = name => !name.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(name)
 const boundedString = (maxLength, minLength = 1, description) => ({ type: 'string', minLength, maxLength, ...(description ? { description } : {}) })
@@ -821,6 +822,10 @@ const METHODS = {
   'knowledge.rule.create': {
     description: '录入平台、品类、品牌、店铺或大促节点规则，形成可追溯的规则版本。',
     inputSchema: { type: 'object', properties: { name: { type: 'string' }, content: { type: 'string' }, scope: { type: 'string', enum: ['global', 'platform', 'category', 'brand', 'store', 'campaign'] }, scope_value: { type: 'string' }, platform: { type: 'string' }, category: { type: 'string' }, brand: { type: 'string' }, store: { type: 'string' }, campaign: { type: 'string' }, source_kind: { type: 'string', enum: ['official', 'internal', 'merchant', 'observed', 'legal_review'] }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, version: { type: 'string' }, severity: { type: 'string', enum: ['info', 'warning', 'error'] }, action: { type: 'string', enum: ['warn', 'block', 'require_confirmation', 'suggest'] }, owner_id: { type: 'string' }, status: { type: 'string', enum: ['draft', 'active', 'inactive', 'archived'] }, effective_from: { type: 'string' }, effective_to: { type: 'string' }, tags_json: { type: 'string' } }, required: ['name', 'content', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'version', 'status'], additionalProperties: false },
+  },
+  'knowledge.rule.update': {
+    description: '更新工作区规则并保留版本与审计记录。',
+    inputSchema: { type: 'object', properties: { rule_id: { type: 'string' }, name: { type: 'string' }, content: { type: 'string' }, version: { type: 'string' }, status: { type: 'string' }, severity: { type: 'string' }, action: { type: 'string' }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, tags_json: { type: 'string' } }, required: ['rule_id'], additionalProperties: false },
   },
   'knowledge.rule.list': {
     description: '查询当前可用的平台、品类、品牌、店铺和大促规则。只读。',
@@ -2298,6 +2303,15 @@ function safeImageSubjectLabel(result, job, candidate) {
   return '商品主体'
 }
 
+function isDisplayImageUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return false
+  if (/^https:\/\//iu.test(value) || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(value) || /^\//u.test(value)) return true
+  try {
+    const allowedHost = new URL(process.env.MERCHANT_MCP_BASE_URL ?? '').hostname
+    return Boolean(allowedHost) && new URL(value).hostname === allowedHost
+  } catch { return false }
+}
+
 function merchantImageCandidateStructuredContent(method, result, args = {}) {
   if (method !== 'catalog.image.get' || !result || typeof result !== 'object' || Array.isArray(result)) return result
   const job = result.job && typeof result.job === 'object' && !Array.isArray(result.job) ? result.job : {}
@@ -2306,10 +2320,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     ? result.images.filter(image => typeof image === 'string' && /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/iu.test(image))
     : []
   const rawImageUrls = Array.isArray(result.image_urls)
-    ? result.image_urls.filter(image => typeof image === 'string' && (/^https:\/\//iu.test(image) || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(image)))
+    ? result.image_urls.filter(isDisplayImageUrl)
     : []
   const rawDownloadUrls = Array.isArray(result.download_urls)
-    ? result.download_urls.filter(image => typeof image === 'string' && (/^https:\/\//iu.test(image) || /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//iu.test(image)))
+    ? result.download_urls.filter(isDisplayImageUrl)
     : []
   const archived = String(job.archiveState ?? job.archive_state ?? '').toLowerCase() === 'archived'
   const requestedVisualRef = typeof args?.visual_ref === 'string' ? args.visual_ref.trim() : ''

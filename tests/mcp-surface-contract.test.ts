@@ -31,6 +31,7 @@ const merchantHiddenMethods = new Set([
   'asset.scan',
   'content.codex.prepare',
   'content.codex.commit',
+  'knowledge.rule.update',
 ])
 const commercialDisabledMethods = new Set([
   'ops.commercial.offers.list', 'ops.commercial.offer.upsert', 'ops.commercial.addons.list', 'ops.commercial.addon.upsert',

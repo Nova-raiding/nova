@@ -50,6 +50,7 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.canonical.backfill.conflicts.list',
   'ops.canonical.backfill.conflict.claim',
   'ops.canonical.backfill.conflict.resolve',
+  'knowledge.rule.update',
   'ops.rules.workspace.audit',
   'ops.audit.list',
   'ops.audit.platform.list',

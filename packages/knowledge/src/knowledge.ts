@@ -53,7 +53,7 @@ export type RuleCreateInput = Omit<RuleEntry, 'id' | 'revision' | 'createdAt' | 
 export type RuleUpdateInput = Partial<Pick<RuleEntry,
   'name' | 'description' | 'content' | 'scope' | 'scopeValue' | 'target' | 'source' |
   'version' | 'effectiveFrom' | 'effectiveTo' | 'status' | 'tags' | 'severity' | 'action' | 'ownerId'
->>
+>> & { expectedRevision?: number }
 
 export interface RuleQuery {
   workspaceId?: string
@@ -426,7 +426,7 @@ export class KnowledgeModule {
   /** Rebuild knowledge state from append-only events after an API restart. */
   hydrate(events: readonly KnowledgeEvent[]): void {
     for (const event of events) {
-      const known = new Set(['knowledge.rule.created', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.brand.preference.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
+      const known = new Set(['knowledge.rule.created', 'knowledge.rule.updated', 'knowledge.asset.created', 'knowledge.asset.updated', 'knowledge.brand.preference.updated', 'knowledge.competitor.created', 'knowledge.feedback.recorded', 'knowledge.learning.confirmed', 'knowledge.learning.dismissed', 'task_feedback_submitted', 'publish.observation'])
       if (!known.has(event.eventType)) throw new KnowledgeError('KNOWLEDGE_EVENT_UNKNOWN', `unsupported knowledge event: ${event.eventType}`)
       const fingerprint = stableSerialize(event)
       const eventKey = event.id ? `event:${event.id}` : undefined
@@ -457,7 +457,7 @@ export class KnowledgeModule {
         const match = id.match(/[-_:](\d+)$/u)
         if (match) this.sequence = Math.max(this.sequence, Number(match[1]))
       }
-      if (event.eventType === 'knowledge.rule.created' && id) this.rules.set(id, clone(payload as unknown as RuleEntry))
+      if ((event.eventType === 'knowledge.rule.created' || event.eventType === 'knowledge.rule.updated') && id) this.rules.set(id, clone(payload as unknown as RuleEntry))
       if ((event.eventType === 'knowledge.asset.created' || event.eventType === 'knowledge.asset.updated') && id) this.assets.set(id, clone(payload as unknown as AssetEntry))
       if (event.eventType === 'knowledge.brand.preference.updated' && id) this.brandPreferences.set(String((payload as Record<string, unknown>).workspaceId), clone(payload as unknown as BrandPreference))
       if (event.eventType === 'knowledge.competitor.created' && id) this.competitors.set(id, clone(payload as unknown as CompetitorAnalysis))
@@ -519,6 +519,7 @@ export class KnowledgeModule {
   updateRule(id: string, patch: RuleUpdateInput): RuleEntry {
     const current = this.rules.get(id)
     if (!current) throw new KnowledgeError('RULE_NOT_FOUND')
+    if (patch.expectedRevision !== undefined && patch.expectedRevision !== current.revision) throw new KnowledgeError('VERSION_CONFLICT')
     assertRuleEnums(patch)
     const nextScope = patch.scope ?? current.scope
     const scopeValue = patch.scopeValue ?? (patch.scope ? undefined : current.scopeValue)
