@@ -140,6 +140,31 @@ describe('four-platform fixture authorization lifecycle', () => {
     expect(aggregate.data?.result?.products).toHaveLength(2)
   })
 
+  it('attaches bounded knowledge context only when explicitly requested', async () => {
+    const base = await start()
+    const workspace = `ws_catalog_knowledge_context_${Date.now()}`
+    await grantCommercialAccess(workspace)
+    const connected = await call(base, workspace, 'platform.connect', { platform: 'taobao' })
+    const accountId = connected.data?.result?.account?.id as string
+    const synced = await call(base, workspace, 'catalog.sync.start', { platform: 'taobao', account_id: accountId, mode: 'full' })
+    expect(synced.error).toBeNull()
+
+    const withoutContext = await call(base, workspace, 'catalog.search', { platform: 'taobao', account_id: accountId })
+    expect(withoutContext.error).toBeNull()
+    expect(withoutContext.data?.result?.products?.[0]).not.toHaveProperty('knowledge_context')
+
+    const withContext = await call(base, workspace, 'catalog.search', { platform: 'taobao', account_id: accountId, include_knowledge: 'true' })
+    expect(withContext.error).toBeNull()
+    expect(withContext.data?.result?.products?.[0]?.knowledge_context).toMatchObject({
+      rules: expect.any(Array),
+      assets: expect.any(Array),
+      confirmedLearningSuggestions: expect.any(Array),
+    })
+    // Product facts remain authoritative and are returned alongside (never
+    // replaced by) the bounded knowledge context.
+    expect(withContext.data?.result?.products?.[0]).toMatchObject({ factsConfirmed: expect.any(Boolean), skus: expect.any(Array) })
+  })
+
   it('blocks first-run reads and sync when creative points are unavailable', async () => {
     const base = await start()
     const workspace = `ws_zero_balance_sync_${Date.now()}`
