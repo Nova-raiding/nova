@@ -2677,6 +2677,7 @@ export class MerchantService {
       .filter(([key, value]) => /颜色|色系|材质|面料|尺码|尺寸|规格|场景|功能|款式|适用|容量|重量|color|fabric|size|material/iu.test(key) && value.trim())
       .map(([key, value]) => `${key}:${value}`.slice(0, 60)).slice(0, 6)
     const trafficKeywords = [...new Set([
+      product.title,
       product.category,
       ...verifiedAttributeLabels.map(label => label.split(':').slice(1).join(':')),
       ...confirmedSellingPoints,
@@ -2688,6 +2689,7 @@ export class MerchantService {
       return [`${promotion.label}${priceLabel}`]
     })
     const marketingLabels = [...new Set([
+      product.title,
       brief?.headline,
       brief?.subheadline,
       brief?.priceExpression,
