@@ -354,14 +354,14 @@ flowchart LR
 
 ## 当前运行状态
 
-以下是 2026-09-08 本地环境的真实探针结果，不代表生产环境已经上线：
+以下是 2026-09-09 本地环境的真实探针结果，不代表生产环境已经上线：
 
 | 项目 | 当前状态 |
 |---|---|
 | Repository / Plugin | `0.1.1` / `0.1.0+codex.20260907102000` |
-| MCP 契约 | 294 个方法；当前商家 Bridge 的真实 `tools/list` 返回 143 个工具；release metadata 已同步为 143 |
+| MCP 契约 | 共享注册表与当前代码为准；当前商家 Bridge 的真实 `tools/list` 返回 145 个工具，且不含 `ops.*` |
 | Ops Console | 14 个一级域，平台/工作区双工作台 |
-| PostgreSQL / Redis | 本地运行就绪；迁移版本 171 |
+| PostgreSQL / Redis | 本地运行就绪；迁移版本 179 |
 | 五模态模型中转 | 本地 relay contract 可解析，但五模态生产配置/成本证据尚未就绪 |
 | 六平台连接器 | 当前为 `fixture_ready`；官方 OAuth/API 未配置 |
 | 平台写入 | 关闭 |
@@ -370,9 +370,9 @@ flowchart LR
 | 对象存储 | 本地模式 |
 | Production gate | 未通过 |
 | 交付证据 gate | 未验证，缺少真实性、真实渲染、OCR、人审和 bundle 哈希证据 |
-| 本次 ChatGPT 插件实时探针 | `merchant.start` 两次返回“服务暂时不可用”，本次宿主实时链路未验通 |
+| 本次插件入口实时探针 | 受支持的 `sh apps/plugin/mcp/bridge.sh` 入口与本地 API 健康调用通过；外部 ChatGPT 宿主刷新工具快照的生产证据仍缺失 |
 
-本地自动化证据：全仓 4508 项测试通过，70 项跳过；隔离 PostgreSQL 专项由独立入口执行并保留原始分母；Merchant Studio 浏览器主链路 22/22 通过；Ops Console OIDC 全量 7/8 通过、1 项条件跳过，独立 JIT 两视口 2/2 通过（workspace-only token fixture 场景仍按条件跳过）；类型检查和两个前端生产构建通过。跳过项和本地隔离证据均不替代生产验收。
+本地自动化证据：全仓 4678 项测试通过，71 项跳过；隔离 PostgreSQL 专项由独立入口执行并保留原始分母；Merchant Studio 浏览器主链路 22/22 通过；Ops Console OIDC 全量 10/10 通过；类型检查和前端生产构建通过。跳过项和本地隔离证据均不替代生产验收。
 
 这些结果证明代码、隔离运行环境和浏览器链路可工作，不证明六个平台真实 OAuth/写入、真实支付、生产对象存储、生产告警、容量或最终交付证据已经完成。
 

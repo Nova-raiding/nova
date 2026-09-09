@@ -18918,6 +18918,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
       error_message: job.errorMessage ?? null,
       updated_at: job.updatedAt,
       created_at: job.createdAt,
+      ...(job.preferredSelection ? { preferred_candidate: { visual_ref: job.preferredSelection.visualRef, selected_at: job.preferredSelection.selectedAt, status: 'preferred', review_required: true, approval_required: true, platform_published: false } } : {}),
       outputs: (job.outputs ?? []).map(output => {
         const asset = output.assetId ? service.assets.get(output.assetId) : undefined
         const blockers = [

@@ -186,7 +186,7 @@ npm exec vitest run --no-file-parallelism \
   packages/application/src/private-trial-initial-grant.contract.test.ts
 ```
 
-当前仍需在本地 PostgreSQL 运行迁移 174，并执行 API/MCP、隔离 PostgreSQL、桌面 Ops 与 ChatGPT 宿主验收；在这些运行证据完成前不能宣称生产支付闭环已上线。
+当前本地 PostgreSQL 已迁移至 179；仍需使用独立发布数据库完成 PostgreSQL/RLS 验收，并执行真实生产支付、平台 OAuth、桌面 Ops 与 ChatGPT 宿主验收；在这些运行证据完成前不能宣称生产支付闭环已上线。
 
 验证命令：
 
@@ -200,7 +200,7 @@ npm exec vitest run --no-file-parallelism \
 npm run dev:doctor:production
 ```
 
-本次针对性测试结果：迁移、私测、API、Ops 工作台、商业注册表和 MCP 契约共 9 个测试文件、139 个测试通过；迁移 174 已在本地 PostgreSQL 应用，并验证首付授予回归。
+本地针对性测试与全量回归已覆盖迁移、私测、API、Ops 工作台、商业注册表和 MCP 契约；本地 PostgreSQL 迁移尾为 179，并验证首付授予回归。独立发布 PostgreSQL/RLS 测试在未提供 `PERSISTENCE_RELEASE_DATABASE_URL` 时保持跳过。
 当前本地 readiness 已报告商业目录 `executable=6`、已批准费率为 1，商业持久化和本地容器健康；生产 readiness 仍未通过，并且存在中转 evidence、ChatGPT host/plugin bridge、真实支付、六平台 OAuth、对象存储、扫描器、告警和发布证据等生产缺口。
 
 因此本矩阵的当前结论是：**单人本地测试闭环已可执行（包含创意点不足引导购买、预占、provider 回执结算、失败释放、账本和人工转账开通）；方案尚未形成可对外售卖的真实生产闭环。**
