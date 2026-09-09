@@ -20,6 +20,7 @@ import { orchestrateDetailPageModules } from './detail-page-orchestrator.js'
 
 export type Platform = 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin'
 const supportedPlatforms: readonly Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
+const competitorReferenceMaxAgeMs = 90 * 24 * 60 * 60 * 1000
 
 // 淘宝/天猫共享同一套阿里商品视觉与投放生态，历史竞品报告可能以其中任一
 // 标签记录；其它平台仍要求严格同平台，避免把京东、拼多多等素材误带入任务。
@@ -518,6 +519,15 @@ function parseCompetitorReference(value: unknown, expectedScope?: { workspaceId:
     // captured platform analyses.
     if (expectedScope?.platform && referencePlatform !== 'web' && competitorPlatformFamily(referencePlatform) !== competitorPlatformFamily(expectedScope.platform)) {
       throw new DomainError('TASK_COMPETITOR_REFERENCE_PLATFORM_MISMATCH', '竞品参考必须来自当前任务的同一平台', 409, { expected_platform: expectedScope.platform, received_platform: policyInput.reference.platform })
+    }
+    // A visual benchmark is only useful while the platform/category treatment
+    // is still current. Keep generic historical `web` records auditable, but
+    // fail closed for newly captured platform-specific evidence older than 90
+    // days (or with a future timestamp).
+    const fetchedAtMs = Date.parse(policyInput.reference.fetchedAt)
+    const ageMs = Date.now() - fetchedAtMs
+    if (referencePlatform !== 'web' && (!Number.isFinite(fetchedAtMs) || ageMs < -5 * 60 * 1000 || ageMs > competitorReferenceMaxAgeMs)) {
+      throw new DomainError('TASK_COMPETITOR_REFERENCE_STALE', '竞品参考已过期，需重新抓取同平台公开页面', 409, { max_age_days: 90, fetched_at: policyInput.reference.fetchedAt })
     }
     const report = evaluateCompetitorReferencePolicy(policyInput)
     if (!report.allowed) throw new DomainError('TASK_COMPETITOR_REFERENCE_POLICY_BLOCKED', '竞品参考来源、授权、作用域或引用长度未通过合规门禁', 409, { findings: report.findings.map(item => ({ code: item.code, field: item.field, message: item.message })) })

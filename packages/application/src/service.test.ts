@@ -244,6 +244,19 @@ describe('MerchantService', () => {
       .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_PLATFORM_MISMATCH' }))
   })
 
+  it('rejects stale platform-specific competitor evidence before task creation', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
+    const reference = {
+      competitorAnalysisId: 'competitor_stale', structuralObservations: ['利益点→证据'], expressionObservations: ['短句'], differentiationAngles: ['清晰规格'], safeExpressionGuidance: ['只用本品事实'], compliance: { originalTextCopied: false, competitorBrandReused: false },
+      scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' },
+      source: { url: 'https://example.com/stale-reference', platform: 'taobao', fetchedAt: '2024-01-01T00:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } },
+      extracted: { structures: ['利益点→证据'], themes: ['短句'], trends: [], sellingPoints: [], originalSpans: [], assets: [] },
+    }
+    expect(() => service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_STALE' }))
+  })
+
   it('turns copied generated content into an unwaivable P0 review finding', async () => {
     const copied = '极简布局突出核心卖点'
     const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => ({ title: copied, detail: '本商品信息以已确认事实为准。', sellingPoints: ['关键事实可追溯'] }) } })
