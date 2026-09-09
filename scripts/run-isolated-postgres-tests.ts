@@ -31,7 +31,7 @@ export async function selectIsolatedPostgresTests(args: readonly string[]): Prom
   if (args.length === 1 && args[0] === '--all') return allPostgresTests()
   const selected = args.map(argument => posix.normalize(argument.replaceAll('\\', '/')))
   if (selected.some(file => !ISOLATED_POSTGRES_TEST_FILES.some(expected => file === expected)) || new Set(selected).size !== selected.length) {
-    throw new Error('This entrypoint accepts only exact audited PostgreSQL test files or --all; omit arguments to run the audited thirteen files.')
+    throw new Error('This entrypoint accepts only exact audited PostgreSQL test files or --all; omit arguments to run the audited fourteen files.')
   }
   return selected
 }

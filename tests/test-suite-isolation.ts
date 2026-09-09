@@ -11,6 +11,7 @@ export const NON_HERMETIC_TEST_FILES = [
   'packages/persistence/src/canonical-backfill-run-repository.postgres.test.ts',
   'packages/persistence/src/commercial-point-adjustment-approval-repository.release.postgres.test.ts',
   'packages/persistence/src/migration-106-release.postgres.test.ts',
+  'packages/persistence/src/migration-064-release.postgres.test.ts',
   'packages/persistence/src/migration-127-release.postgres.test.ts',
   'packages/persistence/src/migration-146-release.postgres.test.ts',
   'packages/persistence/src/migration-148-release.postgres.test.ts',

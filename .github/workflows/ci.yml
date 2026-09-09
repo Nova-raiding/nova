@@ -94,7 +94,7 @@ jobs:
           packages/persistence/src/migration-051.test.ts
           packages/persistence/src/migration-053.test.ts
           packages/persistence/src/migration-063.test.ts
-          packages/persistence/src/migration-064.test.ts
+          packages/persistence/src/migration-064-release.postgres.test.ts
           packages/persistence/src/migration-067-release.postgres.test.ts
           packages/persistence/src/migration-068-release.postgres.test.ts
           packages/persistence/src/migration-069-release.postgres.test.ts

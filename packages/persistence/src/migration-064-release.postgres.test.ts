@@ -4,7 +4,7 @@ import { Pool } from 'pg'
 import { loadMigrations, MigrationRunner } from './migration.js'
 import { PostgresWorkspaceBootstrapRepository } from './workspace-bootstrap-repository.js'
 
-const postgresIt = process.env.WORKSPACE_BOOTSTRAP_DATABASE_URL ? it : it.skip
+const postgresIt = process.env.WORKSPACE_BOOTSTRAP_DATABASE_URL || process.env.PERSISTENCE_RELEASE_DATABASE_URL ? it : it.skip
 
 describe('064 workspace identity bootstrap', () => {
   it('defines an identity-scoped unique binding and a non-destructive backfill', async () => {
@@ -19,7 +19,7 @@ describe('064 workspace identity bootstrap', () => {
   })
 
   postgresIt('reuses one active owner workspace across repository instances and isolates issuers', async () => {
-    const adminUrl = new URL(process.env.WORKSPACE_BOOTSTRAP_DATABASE_URL!)
+    const adminUrl = new URL(process.env.WORKSPACE_BOOTSTRAP_DATABASE_URL ?? process.env.PERSISTENCE_RELEASE_DATABASE_URL!)
     const databaseName = `workspace_bootstrap_${randomUUID().replaceAll('-', '')}`
     const admin = new Pool({ connectionString: adminUrl.toString() })
     let database: Pool | undefined
