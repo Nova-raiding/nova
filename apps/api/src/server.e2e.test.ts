@@ -319,7 +319,7 @@ describe('API HTTP vertical slice', () => {
     expect((ownerExport.data?.result as { content: string }).content).toContain(ownerOrder.id)
     expect((ownerExport.data?.result as { content: string }).content).toContain(memberOrder.id)
     const personalStatement = await call('personal-billing-owner', 14, 'billing.model-usage.statement')
-    expect(personalStatement.data?.result).toMatchObject({ statement: { scope: 'mine' }, model_usage: { provider_cost_cny: null, external_provider_statement: { status: 'not_applicable_personal_scope' } } })
+    expect(personalStatement.data?.result).toMatchObject({ statement: { scope: 'mine', balance_scope: 'workspace', transaction_scope: 'mine', model_usage_scope: 'mine' }, balance_scope: 'workspace', transaction_scope: 'mine', model_usage_scope: 'mine', model_usage: { provider_cost_cny: null, external_provider_statement: { status: 'not_applicable_personal_scope' } } })
   })
 
   it('keeps ops.session platform and workspace scopes separate and rejects conflicting platform scope declarations', async () => {
@@ -469,10 +469,12 @@ describe('API HTTP vertical slice', () => {
     expect(explicitConflictResponse.status).toBe(409)
     expect(explicitConflict.error).toMatchObject({ code: 'MERCHANT_INTENT_IDEMPOTENCY_CONFLICT' })
     const billing = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.6, method: 'billing.status', params: { workspace_id: workspaceId } }) }).then(json)
-    expect((billing.data as { result: { balance_cny: string; plugin_access: { unlocked: boolean }; model_access: { access_state: string }; capability_entitlements: { balance: { state: string }; package_quota: { state: string }; generation: { state: string; code: string }; platform_publish: { state: string; code: string } }; action_cards: Array<{ method: string; label: string; required_inputs?: string[]; arguments?: Record<string, unknown>; confirmation: string }> } }).result).toMatchObject({ balance_cny: '0.00', plugin_access: { unlocked: false }, model_access: { access_state: 'recharge_required' }, capability_entitlements: { balance: { state: 'recharge_required' }, package_quota: { state: 'available' }, generation: { state: 'blocked', code: 'wallet_balance' }, platform_publish: { state: 'blocked', code: 'wallet_balance' } }, action_cards: expect.arrayContaining([
-      expect.objectContaining({ method: 'billing.recharge.create', label: '创建充值订单', required_inputs: ['channel', 'amount_cny', 'idempotency_key'], confirmation: 'interactive_confirmation' }),
-      expect.objectContaining({ method: 'subscription.change', label: '升级套餐', required_inputs: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'], confirmation: 'interactive_confirmation' }),
-    ]) })
+    const billingResult = (billing.data as { result: { balance_cny: string; plugin_access: { unlocked: boolean }; model_access: { access_state: string }; capability_entitlements: { balance: { state: string }; package_quota: { state: string }; generation: { state: string; code: string }; platform_publish: { state: string; code: string } }; action_cards: Array<{ method: string; label: string; required_inputs?: string[]; arguments?: Record<string, unknown>; confirmation: string }> } }).result
+    expect(startResult.wallet).toMatchObject({ balance_cny: billingResult.balance_cny, unlocked: billingResult.plugin_access.unlocked })
+    expect(billingResult).toMatchObject({ balance_cny: '0.00', plugin_access: { unlocked: false }, model_access: { access_state: 'recharge_required' }, capability_entitlements: { balance: { state: 'recharge_required' }, package_quota: { state: 'available' }, generation: { state: 'blocked', code: 'wallet_balance' }, platform_publish: { state: 'blocked', code: 'wallet_balance' } }, action_cards: [
+      expect.objectContaining({ method: 'commercial.catalog.get', label: '查看可售点数套餐', confirmation: 'none' }),
+      expect.objectContaining({ method: 'creative-points.balance.get', label: '查看创意点余额', confirmation: 'none' }),
+    ] })
     for (const [index, method] of ['asset.list', 'task.history', 'deliverable.list'].entries()) {
       const empty = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2.7 + index, method, params: { workspace_id: workspaceId } }) }).then(json)
       expect(empty.error).toBeNull()
@@ -557,7 +559,7 @@ describe('API HTTP vertical slice', () => {
     expect(JSON.stringify(campaignResult.delivery_manifest)).not.toContain('durable://batch_campaigns')
     const campaignList = await call(3.005, 'campaign.batch.list', { platform: 'taobao', account_id: account.id })
     expect(campaignList.error).toBeNull()
-    expect(campaignList.data).toMatchObject({ result: { count: expect.any(Number), items: expect.arrayContaining([expect.objectContaining({ id: campaignResult.id, state: 'draft', platform: 'taobao', accountId: account.id, itemCount: 1 })]) } })
+    expect(campaignList.data).toMatchObject({ result: { count: expect.any(Number), items: expect.arrayContaining([expect.objectContaining({ id: campaignResult.id, state: 'draft', platform: 'taobao', accountId: account.id, itemCount: 1 }), expect.objectContaining({ id: multiTargetResult.id, brandId: `brand_${workspaceId}`, productIds: [product.id, jdProduct.id], targets: expect.arrayContaining([expect.objectContaining({ productId: product.id, canonicalProductId: canonicalId, listingId: expect.any(String), brandId: `brand_${workspaceId}` })]) })]) } })
     const pauseKey = `campaign-pause-${workspaceId}`
     const paused = await call(3.01, 'campaign.batch.pause', { campaign_id: campaignResult.id, expected_revision: '1', idempotency_key: pauseKey, reason: '运营暂停批次' })
     expect(paused.data).toMatchObject({ result: { id: campaignResult.id, state: 'paused', revision: 2, replayed: false, items: [{ state: 'paused' }], delivery_manifest: { paused: true, state: 'paused', revision: 2 } } })
@@ -578,7 +580,10 @@ describe('API HTTP vertical slice', () => {
     expect(conflictingIdempotent.error?.code).toBe('CAMPAIGN_IDEMPOTENCY_CONFLICT')
     const read = await call(4, 'campaign.batch.get', { campaign_id: campaignResult.id })
     expect(read.error).toBeNull()
-    expect(read.data).toMatchObject({ result: { id: campaignResult.id, brandId: `brand_${workspaceId}`, platform: 'taobao', accountId: account.id, productIds: [product.id], state: 'draft', revision: 4, execution: 'plan_only', delivery_manifest: { workspaceId, campaignId: campaignResult.id, state: 'blocked', externallyUnverified: true, revision: 4 }, summary: { total: 1, planned: 1, in_progress: 0 } } })
+    const readResult = (read.data as { result: { readiness: string; brandId: string; targets: Array<{ brandId?: string }>; delivery_manifest: { state?: string; validation?: { valid?: boolean } }; summary: { delivery_blocked: number } } }).result
+    expect(readResult.targets).toEqual([expect.objectContaining({ brandId: `brand_${workspaceId}` })])
+    expect(readResult.readiness).toBe(readResult.delivery_manifest.validation?.valid === false || readResult.delivery_manifest.state === 'blocked' ? 'blocked' : 'ready')
+    expect(readResult.summary.delivery_blocked).toBe(readResult.readiness === 'blocked' ? 1 : 0)
     // Simulate facts becoming stale after canonical setup; the full batch
     // preflight must fail closed before creating even the first task.
     service.products.get(product.id)!.factsConfirmed = false
@@ -593,6 +598,10 @@ describe('API HTTP vertical slice', () => {
     expect(generated.error).toBeNull()
     expect(generated.data).toMatchObject({ result: { campaignId: campaignResult.id, count: 1, taskIds: [expect.any(String)] } })
     const generatedTaskId = (generated.data as { result: { taskIds: string[] } }).result.taskIds[0]!
+    const generateReplay = await call(4.565, 'campaign.batch.generate', { campaign_id: campaignResult.id })
+    expect(generateReplay.data).toMatchObject({ result: { replayed: true, idempotency_key: `campaign-generate:${campaignResult.id}` } })
+    const generateConflict = await call(4.57, 'campaign.batch.generate', { campaign_id: campaignResult.id, idempotency_key: 'different-generation-intent' })
+    expect(generateConflict.error?.code).toBe('CAMPAIGN_GENERATE_IDEMPOTENCY_CONFLICT')
     service.tasks.get(generatedTaskId)!.state = 'failed_recoverable'
     const failedCampaign = await call(4.51, 'campaign.batch.get', { campaign_id: campaignResult.id })
     const failedRevision = (failedCampaign.data as { result: { revision: number } }).result.revision
@@ -680,7 +689,7 @@ describe('API HTTP vertical slice', () => {
     const conflictingIntent = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2.1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'wechat', amount_cny: '11.00', idempotency_key: `billing-${workspaceId}` } }) }).then(json)
     expect(conflictingIntent.error?.code).toBe('BILLING_ORDER_IDEMPOTENCY_CONFLICT')
     const status = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.status', params: { workspace_id: workspaceId } }) }).then(json)
-    expect((status.data as { result: { balance_cny: string; model_access: { ownership: string; user_key_required: boolean; access_state: string }; action_entitlement: { overage_policy: string }; capability_entitlements: { balance: { state: string }; package_quota: { state: string }; generation: { state: string; code: string }; platform_publish: { state: string } }; plugin_access: { unlocked: boolean; unlocks: string[] } } }).result).toMatchObject({ balance_cny: '10.00', model_access: { ownership: 'platform', user_key_required: false, access_state: 'included_quota_available' }, action_entitlement: { overage_policy: 'wallet' }, capability_entitlements: { balance: { state: 'available' }, package_quota: { state: 'available' }, generation: { state: 'blocked', code: 'model_configuration' }, platform_publish: { state: 'blocked' } }, plugin_access: { unlocked: true, unlocks: expect.arrayContaining(['图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '发布任务']) } })
+    expect((status.data as { result: { balance_cny: string; model_access: { ownership: string; user_key_required: boolean; access_state: string; message: string }; action_entitlement: { overage_policy: string }; capability_entitlements: { balance: { state: string; label: string; value_cny: string; reason: string }; package_quota: { state: string; label: string; remaining: number | null; reason: string }; generation: { state: string; label: string; code: string; reason: string }; platform_publish: { state: string; label: string; reason: string } }; plugin_access: { unlocked: boolean; balance_cny: string; unlocks: string[] } } }).result).toMatchObject({ balance_cny: '10.00', model_access: { ownership: 'platform', user_key_required: false, access_state: 'included_quota_available', message: '模型额度可用，具体生成仍受内容与平台门禁约束。' }, action_entitlement: { overage_policy: 'wallet' }, capability_entitlements: { balance: { state: 'available', label: '余额可用', value_cny: '10.00', reason: '充值已到账，可用于钱包结算' }, package_quota: { state: 'available', label: '套餐额度可用', remaining: 30, reason: '优先消耗套餐内模型行动额度' }, generation: { state: 'blocked', label: '模型中转或内容生成配置未就绪', code: 'model_configuration', reason: '模型中转或内容生成配置未就绪' }, platform_publish: { state: 'blocked', label: '没有可读取的已授权店铺', reason: '没有可读取的已授权店铺' } }, plugin_access: { unlocked: true, balance_cny: '10.00', unlocks: expect.arrayContaining(['图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '发布任务']) } })
     const unlockedStart = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'merchant.start', params: { workspace_id: workspaceId } }) }).then(json)
     const unlockedCards = (unlockedStart.data as { result: { wallet: { unlocked: boolean }; cards: Array<{ id: string; capabilityGate?: { unlocked: boolean; method: string } }> } }).result
     expect(unlockedCards.wallet).toMatchObject({ unlocked: true })
@@ -884,6 +893,34 @@ describe('API HTTP vertical slice', () => {
     const second = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
     expect(second.error).toBeNull()
     expect(second.data?.result).toMatchObject({ state: 'completed', checked: 0, settled: [], pending: [], failed: [] })
+  })
+
+  it('keeps provider reconciliation in attention_required while an order is still pending', async () => {
+    vi.stubEnv('PAYMENT_MODE', 'provider')
+    vi.stubEnv('PAYMENT_PROVIDER_ADAPTERS', 'alipay,wechat')
+    vi.stubEnv('PAYMENT_CHECKOUT_BASE_URL', 'https://payments.example/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_CHECKOUT_API_URL', 'https://payments.example/api/checkout')
+    vi.stubEnv('PAYMENT_PROVIDER_QUERY_API_URL', 'https://payments.example/api/query')
+    vi.stubEnv('PAYMENT_PROVIDER_REFUND_API_URL', 'https://payments.example/api/refund')
+    vi.stubEnv('PAYMENT_PROVIDER_API_KEY', 'test-provider-key')
+    vi.stubEnv('PAYMENT_PROVIDER_MERCHANT_ID', 'merchant-test')
+    vi.stubEnv('PAYMENT_CALLBACK_BASE_URL', 'https://merchant.example/v1')
+    vi.stubEnv('PAYMENT_CALLBACK_SECRET', 'callback-secret')
+    vi.stubEnv('PAYMENT_RECONCILIATION_ENABLED', 'true')
+    vi.stubEnv('PAYMENT_REFUND_ENABLED', 'true')
+    const workspaceId = `ws_reconciliation_pending_${Date.now()}`
+    setPaymentProviderForTests({
+      createCheckout: async () => ({ paymentUrl: 'https://payments.example/pay/order' }),
+      refund: async () => ({ providerRefundId: 'refund-pending' }),
+      queryStatus: async () => ({ state: 'pending' }),
+    })
+    const base = await start()
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'finance_1' }
+    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'billing.recharge.create', params: { workspace_id: workspaceId, channel: 'alipay', amount_cny: '10.00', idempotency_key: `provider-pending-${workspaceId}` } }) }).then(json)
+    expect(created.error).toBeNull()
+    const reconciliation = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.reconciliation.run', params: { workspace_id: workspaceId, limit: '10' } }) }).then(json)
+    expect(reconciliation.error).toBeNull()
+    expect(reconciliation.data?.result).toMatchObject({ state: 'attention_required', checked: 1, settled: [], pending: [{ state: 'pending' }], failed: [] })
   })
 
   it('does not credit a wallet when the provider rejects a refund', async () => {

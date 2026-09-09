@@ -689,6 +689,38 @@ function requireBrandUnit(workspaceId: string, brandId: string) {
   return unit
 }
 
+/** Keep the workspace brand profile and normalized brand-unit aggregate as one
+ * user-facing identity consumed by store binding and batch production. */
+async function brandProfileWithUnit(workspaceId: string, profile: NonNullable<ReturnType<typeof service.getBrandProfile>>, ensure = true) {
+  await persistenceReady
+  const repository = persistence.brandUnits ?? memoryBrandUnits
+  let unit = (await repository.listBrands({ workspaceId, brandId: profile.id }))[0]
+  if (!unit && ensure) {
+    const existingBrands = await repository.listBrands({ workspaceId })
+    await requireCommercialCountCapacity({ workspaceId, code: 'max_brands', used: existingBrands.length + 1, label: '个品牌' })
+    try {
+      unit = await repository.createBrand({ workspaceId, id: profile.id, name: profile.name })
+    } catch (error) {
+      // HTTP and MCP upserts may race. Re-read only within this workspace.
+      if (String(error).includes('BRAND_UNIT_CONFLICT') || (error as { code?: string })?.code === '23505') {
+        unit = (await repository.listBrands({ workspaceId, brandId: profile.id }))[0]
+      } else throw error
+    }
+  }
+  if (!unit) {
+    const candidates = await repository.listBrands({ workspaceId })
+    return {
+      ...profile,
+      brandUnitId: null,
+      brandUnit: null,
+      brandUnitCandidates: candidates.map(candidate => ({ id: candidate.id, name: candidate.name, revision: candidate.revision, storeBindings: candidate.storeBindings })),
+      brandUnitSelectionRequired: candidates.length > 0,
+      brandUnitNextAction: candidates.length > 0 ? 'brand-unit.list' : 'brand.upsert',
+    }
+  }
+  return { ...profile, brandUnitId: unit.id, brandUnit: unit }
+}
+
 function parseCampaignProductIds(value: unknown) {
   if (typeof value !== 'string') throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'product_ids_json 必须是 1 至 50 个商品 ID 的 JSON 数组', 400)
   let parsed: unknown
@@ -1964,13 +1996,26 @@ function rulePackProjection(version: PersistedRuleVersion): RulePack {
   return { id: version.id, name: version.name, version: version.version, scope: version.scope as RulePack['scope'], status: version.status as RulePack['status'], updatedAt: iso(version.updatedAt), source: { kind: version.sourceKind as RulePack['source']['kind'], reference: version.sourceReference, checkedAt: iso(version.sourceCheckedAt) }, checksum: version.checksum, revision: version.revision, ...(version.effectiveFrom ? { effectiveFrom: iso(version.effectiveFrom) } : {}), ...(version.effectiveTo ? { effectiveTo: iso(version.effectiveTo) } : {}), ...(version.severity ? { severity: version.severity as RulePack['severity'] } : {}), ...(version.action ? { action: version.action as RulePack['action'] } : {}), ...(version.targetId ? { targetId: version.targetId } : {}), ...(version.scopeValue ? { scopeValue: version.scopeValue } : {}), ...(version.activatedAt ? { activatedAt: iso(version.activatedAt) } : {}), ...(version.deactivatedAt ? { deactivatedAt: iso(version.deactivatedAt) } : {}) }
 }
 
-async function rulePacksForWorkspace(workspaceId: string) {
+async function rulePacksForWorkspace(workspaceId: string): Promise<RulePack[]> {
   const repository = ruleRepository()
   if (repository) {
     const rows = await repository.list(workspaceId)
-    return rows.map(rulePackProjection)
+    // A newly created local workspace may not have durable rows yet. Use the
+    // same bootstrap projection as the REST/MCP rule list so the Ops view and
+    // the merchant/plugin view do not silently disagree about an empty store.
+    return rows.length ? rows.map(rulePackProjection) : (await persistedRules(workspaceId) ?? []) as RulePack[]
   }
   return service.ruleCenter.list({ includeInactive: false })
+}
+
+async function trustedActiveRuleVersionsForWorkspace(workspaceId: string) {
+  const rows = ruleRepository()
+    ? (await persistedRules(workspaceId) ?? [])
+    : service.ruleCenter.list({ includeInactive: false })
+  return rows
+    .filter(rule => rule.status === 'active' && !rule.source.reference.startsWith('manual://'))
+    .map(rule => rule.version)
+    .sort()
 }
 
 async function trustedPlatformRuleSyncStatuses(workspaceId: string, intervalHours = Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 168)) {
@@ -3047,6 +3092,9 @@ async function imageCreativePointsEvidence(workspaceId: string, decision: Commer
   await persistenceReady
   const balance = await persistence.creativePoints?.getBalance(workspaceId)
   const action = await persistence.actionLedger?.get(workspaceId, actionKey)
+  const reservation = persistence.creativePoints?.getReservationByActionKey
+    ? await persistence.creativePoints.getReservationByActionKey(workspaceId, actionKey)
+    : null
   const balanceState = decision?.balance_state === 'known' && Number.isSafeInteger(decision.available_points)
     ? 'known'
     : balance && Number.isSafeInteger(balance.availablePoints)
@@ -3063,11 +3111,14 @@ async function imageCreativePointsEvidence(workspaceId: string, decision: Commer
     quoted_points: Number.isSafeInteger(decision?.quoted_points) ? decision!.quoted_points : null,
     reserved_points: balance?.reservedPoints ?? null,
     settled_points: balance?.settledPoints ?? null,
-    // The action ledger records customer settlement, while provider usage can
-    // settle at a different actual point amount. Never infer actual usage from
-    // the quote; included quota is the only safe zero-charge assertion here.
-    consumed_points: includedQuota ? 0 : null,
-    customer_charge_points: includedQuota ? 0 : null,
+    // Creative-point reservations are authoritative for point deduction. The
+    // money/action ledger may intentionally be zero for a gifted entitlement,
+    // but that must never erase the point reservation or report zero usage.
+    consumed_points: reservation?.status === 'settled' && Number.isSafeInteger(reservation.settledPoints) ? reservation.settledPoints : null,
+    customer_charge_points: reservation?.status === 'settled' && Number.isSafeInteger(reservation.settledPoints) ? reservation.settledPoints : null,
+    deducted_points: reservation?.status === 'settled' && Number.isSafeInteger(reservation.settledPoints) ? reservation.settledPoints : null,
+    point_reservation_status: reservation?.status ?? null,
+    point_reservation_points: reservation?.points ?? null,
     settlement: action?.settlement ?? null,
     settlement_status: settlementStatus,
     access_revision: decision?.access_revision ?? (balanceState === 'known' && balance ? String(balance.revision) : null),
@@ -4287,6 +4338,26 @@ async function prepareWorkspaceMetricsData(workspaceId: string): Promise<Workspa
   }
 }
 
+/**
+ * Metrics must use the same normalized task projection as the paged task
+ * collection. The in-memory service also replays outbox state snapshots for
+ * recovery, which is useful for execution but can include orphan snapshots
+ * that are not part of the durable task read model.
+ */
+async function listNormalizedTasksForMetrics(workspaceId: string): Promise<Task[]> {
+  if (!persistence.business) return service.listTasks(workspaceId)
+  const tasks: Task[] = []
+  const limit = 100
+  let offset = 0
+  while (true) {
+    const page = await persistence.business.listTasksPage(workspaceId, { limit, offset })
+    tasks.push(...page.items as unknown as Task[])
+    if (tasks.length >= page.total || page.items.length === 0) break
+    offset += page.items.length
+  }
+  return tasks
+}
+
 function publishEventPayload(job: import('../../../packages/application/src/service.js').PublishJob) {
   const payloadSnapshot = job.payloadSnapshot ?? {}
   const fields = structuredClone(payloadSnapshot.fields ?? {})
@@ -5295,7 +5366,18 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
   const taskBound = Boolean(taskId || contentVersionId)
   if ((direct?.id && !taskBound) || (direct?.type !== 'brand' && direct?.type !== 'account')) return direct
   const contentVersion = contentVersionId ? service.contentVersions.get(contentVersionId) : undefined
-  const requestedTask = taskId ? service.tasks.get(taskId) : undefined
+  let requestedTask = taskId ? service.tasks.get(taskId) : undefined
+  // Authorization runs before the route handler and may be the first request
+  // after an API restart. Load the exact task snapshot from the tenant-scoped
+  // repository so a durable task is not mistaken for an unresolved brand
+  // resource merely because the compatibility map is still cold.
+  if (!requestedTask && taskId && persistence.business) {
+    try {
+      const snapshot = await persistence.business.get(workspaceId, 'task', taskId)
+      service.hydrateSnapshot({ entityType: 'task', entity: snapshot.payload })
+      requestedTask = service.tasks.get(taskId)
+    } catch { /* the route-level scope check remains the final not-found boundary */ }
+  }
   const contentTask = contentVersion ? service.tasks.get(contentVersion.taskId) : undefined
   const requestedProductId = typeof params.product_id === 'string' && params.product_id.trim() ? params.product_id.trim() : undefined
   const requestedProduct = requestedProductId ? service.products.get(requestedProductId) : undefined
@@ -5323,6 +5405,10 @@ export async function resolveLoadedAuthorizationResourceScope(policy: NonNullabl
       const canonical = await (persistence.brandUnits ?? memoryBrandUnits).listCanonicalProducts({ workspaceId })
       const canonicalBrandIds = [...new Set(canonical.filter(item => item.sourceProductId === task.productId).map(item => item.brandId))]
       if (task.brandId && canonicalBrandIds.length === 1 && canonicalBrandIds[0] === task.brandId) return { type: 'brand' as const, id: task.brandId }
+      // A historical task may retain an explicit frozen brand scope while its
+      // canonical mapping is not available yet. Preserve that narrow scope
+      // for authorization; do not downgrade it to workspace access.
+      if (task.brandId && canonicalBrandIds.length === 0) return { type: 'brand' as const, id: task.brandId }
       // Legacy/fixture tasks may be intentionally unbranded. Keep the
       // operation task-bound and auditable instead of treating a missing
       // brand as an arbitrary caller-selected scope.
@@ -6030,6 +6116,7 @@ const CUSTOMER_DATA_EXACT_METHODS = new Set([
   'ops.audit.detail',
   'ops.support.tickets.list',
   'ops.support.ticket.get',
+  'support.customer.replies.list',
   'ops.support.ticket.create',
   'ops.support.ticket.assign',
   'ops.support.ticket.transition',
@@ -6038,7 +6125,7 @@ const CUSTOMER_DATA_EXACT_METHODS = new Set([
   'ops.support.sla.correction.create',
   'ops.support.sla.correction.decide',
 ])
-const CUSTOMER_DATA_READ_METHODS = new Set(['brand.get', 'brand.list', 'brand-unit.list', 'brand-unit.listing.list', 'catalog.search', 'catalog.categories', 'catalog.image.get', 'catalog.sync.get', 'deliverable.list', 'asset.list', 'asset.get', 'content.get', 'content.list', 'feedback.list', 'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.learning.list', 'knowledge.competitor.list', 'task.history', 'task.timeline', 'publish.get', 'ops.audit.detail'])
+const CUSTOMER_DATA_READ_METHODS = new Set(['brand.get', 'brand.list', 'brand-unit.list', 'brand-unit.listing.list', 'catalog.search', 'catalog.categories', 'catalog.image.get', 'catalog.sync.get', 'deliverable.list', 'asset.list', 'asset.get', 'content.get', 'content.list', 'feedback.list', 'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.learning.list', 'knowledge.competitor.list', 'task.history', 'task.timeline', 'publish.get', 'ops.audit.detail', 'support.customer.replies.list'])
 
 type CustomerDataAccessGrant = {
   grantId: string
@@ -6143,7 +6230,13 @@ function isPlatformOperations(req: IncomingMessage) {
 
 function canViewRuleLifecycle(req: IncomingMessage) {
   const roles = authorizedRoles(requestPrincipals.get(req))
-  return roles.includes('rules_admin') || roles.includes('platform_ops')
+  // The MCP bridge and merchant UI share the API, including local bearer
+  // credentials that may carry an Ops role.  Lifecycle rows are an Ops-only
+  // view; without an explicit Ops workbench assertion, rule.list must remain
+  // the merchant/plugin trusted-knowledge projection.
+  const requestedWorkbench = header(req, 'x-ops-workbench')?.trim()
+  return (requestedWorkbench === 'platform' || requestedWorkbench === 'workspace')
+    && (roles.includes('rules_admin') || roles.includes('platform_ops'))
 }
 
 function scopeCommercialRolloutTarget(req: IncomingMessage, currentWorkspaceId: string, targetWorkspaceId?: string) {
@@ -6199,7 +6292,13 @@ async function enforceBrandProfileHttpAccess(req: IncomingMessage, workspaceId: 
 
 function hasWorkspaceWideBrandAccess(req: IncomingMessage) {
   const role = requestPrincipals.get(req)?.memberRole
-  return role === 'workspace_owner' || role === 'merchant_admin' || role === 'platform_ops'
+  if (role === 'workspace_owner' || role === 'merchant_admin' || role === 'platform_ops') return true
+  // The isolated local Compose token intentionally uses a wildcard workspace
+  // grant and has no durable membership row. Keep that explicit fixture path
+  // usable for seeded brand-scoped reads without allowing gateway roles to
+  // substitute for membership in production or normal strict-auth sessions.
+  return localComposeOpsCustomerDataAccess()
+    && (requestPrincipals.get(req)?.roles ?? []).some(candidate => candidate === 'workspace_owner' || candidate === 'merchant_admin' || candidate === 'platform_ops')
 }
 
 async function enforceBrandAccess(req: IncomingMessage, workspaceId: string, brandId: string, minimumRole: BrandAccessRole = 'viewer') {
@@ -6255,9 +6354,11 @@ async function refreshCampaignProgress(campaign: CampaignBatchRow) {
   return await (persistence.brandUnits ?? memoryBrandUnits).updateCampaignProgress({ workspaceId: campaign.workspaceId, id: campaign.id, state, items: items.map(item => ({ id: item.id, ...(item.taskId ? { taskId: item.taskId } : {}), state: item.state, ...(item.error ? { error: item.error } : {}) })) })
 }
 
-function campaignWorkflow(campaign: CampaignBatchRow) {
+function campaignWorkflow(campaign: CampaignBatchRow, deliveryManifest?: { state?: string; validation?: { valid?: boolean } }) {
   const items = (campaign.items ?? []).map(item => ({ item_id: item.id, product_id: item.productId, platform: item.platform, account_id: item.accountId, task_id: item.taskId ?? null, state: item.state, blocker: item.error ?? null, next_action: item.error?.nextAction ?? (item.state === 'published' ? null : 'campaign.batch.get') }))
-  return { items, summary: { total: items.length, planned: items.filter(item => item.state === 'pending').length, published: items.filter(item => item.state === 'published').length, blocked: items.filter(item => ['blocked', 'failed', 'unknown', 'manual_attention'].includes(item.state)).length, review_required: items.filter(item => ['review_required', 'approved'].includes(item.state)).length, in_progress: items.filter(item => ['generating', 'publishing'].includes(item.state)).length } }
+  const deliveryIsBlocked = deliveryManifest?.validation?.valid === false || deliveryManifest?.state === 'blocked'
+  const deliveryBlocked = deliveryIsBlocked ? Math.max(1, items.length) : 0
+  return { items, readiness: deliveryBlocked > 0 ? 'blocked' as const : 'ready' as const, summary: { total: items.length, planned: items.filter(item => item.state === 'pending').length, published: items.filter(item => item.state === 'published').length, blocked: items.filter(item => ['blocked', 'failed', 'unknown', 'manual_attention'].includes(item.state)).length, delivery_blocked: deliveryBlocked, review_required: items.filter(item => ['review_required', 'approved'].includes(item.state)).length, in_progress: items.filter(item => ['generating', 'publishing'].includes(item.state)).length } }
 }
 
 function campaignDeliveryInput(campaign: CampaignBatchRow): CampaignDeliveryManifestInput {
@@ -6318,7 +6419,7 @@ async function validateCampaignDelivery(operation: CampaignDeliveryLifecycleOper
   } catch (error) {
     if (error instanceof CampaignManifestError && ['CAMPAIGN_ITEM_EVIDENCE_REQUIRED', 'CAMPAIGN_MANIFEST_INVALID', 'CAMPAIGN_TASK_SCOPE_MISMATCH'].includes(error.code)) {
       const missingListing = error.code === 'CAMPAIGN_MANIFEST_INVALID'
-      const items = (campaign.items ?? []).map(item => ({ id: item.id, productId: item.productId, platform: item.platform, accountId: item.accountId, state: 'blocked' as const, nextAction: 'resolve_review' as const, blockers: [{ code: error.code, message: missingListing ? '缺少唯一规范 listing，不能伪造 planned-listing 身份' : '缺少与当前平台、店铺和商品范围绑定的真实规格或规则证据', path: error.path ?? null }] }))
+      const items = (campaign.items ?? []).map(item => ({ id: item.id, productId: item.productId, platform: item.platform, accountId: item.accountId, state: 'blocked' as const, nextAction: missingListing ? 'canonical.product.consistency' as const : 'resolve_review' as const, blockers: [{ code: error.code, message: missingListing ? '缺少唯一规范 listing，不能伪造 planned-listing 身份' : '缺少与当前平台、店铺和商品范围绑定的真实规格或规则证据', path: error.path ?? null }] }))
       return { id: `delivery-manifest:${campaign.id}`, workspaceId, campaignId: campaign.id, brandId: campaign.brandId, state: campaign.state === 'paused' ? 'paused' as const : 'blocked' as const, paused: campaign.state === 'paused', revision: campaign.revision ?? 1, externallyUnverified: true, validation: { valid: false, code: error.code, path: error.path ?? null }, progress: { total: items.length, reviewed: 0, confirmed: 0, publishing: 0, published: 0, failed: 0, blocked: items.length, percent: 0 }, items }
     }
     if (error instanceof CampaignManifestError) throw new DomainError(error.code, error.message, 409, { path: error.path ?? null })
@@ -6432,18 +6533,16 @@ function commercialActionCards() {
 function billingActionCards() {
   return [
     {
-      method: 'billing.recharge.create',
-      label: '创建充值订单',
-      required_inputs: ['channel', 'amount_cny', 'idempotency_key'],
-      input_schema: { type: 'object', properties: { channel: { type: 'string', enum: ['alipay', 'wechat'] }, amount_cny: { type: 'string', pattern: '^[0-9]+(\\.[0-9]{1,2})?$' }, idempotency_key: { type: 'string' } }, required: ['channel', 'amount_cny', 'idempotency_key'] },
-      confirmation: 'interactive_confirmation',
+      method: 'commercial.catalog.get',
+      label: '查看可售点数套餐',
+      required_inputs: [],
+      confirmation: 'none',
     },
     {
-      method: 'subscription.change',
-      label: '升级套餐',
-      required_inputs: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'],
-      input_schema: { type: 'object', properties: { to_plan_code: { type: 'string' }, billing_cycle: { type: 'string', enum: ['monthly', 'annual'] }, channel: { type: 'string', enum: ['alipay', 'wechat'] }, reason: { type: 'string' }, idempotency_key: { type: 'string' } }, required: ['to_plan_code', 'billing_cycle', 'channel', 'reason', 'idempotency_key'] },
-      confirmation: 'interactive_confirmation',
+      method: 'creative-points.balance.get',
+      label: '查看创意点余额',
+      required_inputs: [],
+      confirmation: 'none',
     },
   ]
 }
@@ -10605,6 +10704,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           : typeof sourceProduct.rawPlatformFields?.brand_id === 'string'
             ? sourceProduct.rawPlatformFields.brand_id.trim()
             : ''
+        if (!recordedBrandId && persistence.mode === 'postgres') {
+          throw new DomainError('PRODUCT_BRAND_REQUIRED', '旧商品尚未绑定品，不能建立标准商品关系；请先从已绑定品的授权店铺重新同步或导入商品', 409, {
+            source_product_id: sourceProductId,
+            next_actions: ['catalog.sync.start', 'catalog.import'],
+          })
+        }
         if (recordedBrandId && recordedBrandId !== brandId) throw new DomainError('PRODUCT_BRAND_SCOPE_MISMATCH', 'source_product_id 已归属其他品，不能跨品建立 canonical 商品关系', 409, { source_product_id: sourceProductId, source_brand_id: recordedBrandId, requested_brand_id: brandId })
         if (!sourceProduct.factsConfirmed) throw new DomainError('CANONICAL_PRODUCT_FACTS_REQUIRED', '建立标准商品前必须先确认旧商品事实', 409, { source_product_id: sourceProductId, next_action: 'catalog.facts.confirm' })
         canonicalFacts = {
@@ -10789,7 +10894,26 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const visible = []
       for (const campaign of listed) {
         try { await enforceBrandAccess(req, workspaceId, campaign.brandId) } catch { continue }
-        visible.push({ id: campaign.id, state: campaign.state, revision: campaign.revision ?? 1, platform: campaign.platform, accountId: campaign.accountId, itemCount: campaign.items?.length ?? campaign.productIds.length, failedCount: campaign.items?.filter(item => item.state === 'failed').length ?? 0, createdAt: campaign.createdAt, updatedAt: campaign.updatedAt })
+        const deliveryManifest = await validateCampaignDelivery('get', workspaceId, campaign)
+        const workflow = campaignWorkflow(campaign, deliveryManifest)
+        const validation = 'validation' in deliveryManifest ? deliveryManifest.validation : undefined
+        visible.push({
+          id: campaign.id,
+          state: campaign.state,
+          revision: campaign.revision ?? 1,
+          platform: campaign.platform,
+          accountId: campaign.accountId,
+          brandId: campaign.brandId,
+          productIds: campaign.productIds,
+          targets: (campaign.targets ?? campaign.items?.map(item => ({ productId: item.productId, platform: item.platform, accountId: item.accountId, brandId: item.brandId, ...(item.canonicalProductId ? { canonicalProductId: item.canonicalProductId } : {}), ...(item.listingId ? { listingId: item.listingId } : {}), ...(item.taskId ? { taskId: item.taskId } : {}), state: item.state })) ?? campaign.productIds.map(productId => ({ productId, platform: campaign.platform, accountId: campaign.accountId, brandId: campaign.brandId }))).map(target => ({ ...target, brandId: ('brandId' in target && target.brandId) ? target.brandId : campaign.brandId })),
+          itemCount: campaign.items?.length ?? campaign.productIds.length,
+          failedCount: campaign.items?.filter(item => item.state === 'failed').length ?? 0,
+          readiness: workflow.readiness,
+          delivery: { state: deliveryManifest.state ?? null, valid: validation?.valid ?? null, code: validation?.code ?? null, path: validation?.path ?? null },
+          nextAction: validation?.valid === false ? 'canonical.product.consistency' : null,
+          createdAt: campaign.createdAt,
+          updatedAt: campaign.updatedAt,
+        })
       }
       return result({ items: visible, count: visible.length, storage: persistence.mode, durable: persistence.mode === 'postgres' })
     }
@@ -10801,7 +10925,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await enforceBrandAccess(req, workspaceId, campaign.brandId)
       campaign = await refreshCampaignProgress(campaign)
       const deliveryManifest = await validateCampaignDelivery('get', workspaceId, campaign)
-      return result({ ...campaign, count: campaign.productIds.length, ...campaignWorkflow(campaign), delivery_manifest: deliveryManifest, storage: persistence.mode, durable: persistence.mode === 'postgres', execution: campaign.taskIds?.length ? 'workflow_active' : 'plan_only', message: campaign.taskIds?.length ? '批量工作流已激活；每个商品会停在需要事实确认、方向确认、审核或发布确认的安全节点。' : '批量运营计划已持久化；调用 campaign.batch.generate 创建逐商品工作流。' })
+      const targets = campaign.targets?.map(target => ({ ...target, brandId: campaign.brandId }))
+      return result({ ...campaign, ...(targets ? { targets } : {}), count: campaign.productIds.length, ...campaignWorkflow(campaign, deliveryManifest), delivery_manifest: deliveryManifest, storage: persistence.mode, durable: persistence.mode === 'postgres', execution: campaign.taskIds?.length ? 'workflow_active' : 'plan_only', message: campaign.taskIds?.length ? '批量工作流已激活；每个商品会停在需要事实确认、方向确认、审核或发布确认的安全节点。' : '批量运营计划已持久化；调用 campaign.batch.generate 创建逐商品工作流。' })
     }
     case 'campaign.batch.generate': {
       await observeLegacyWalletShadow(workspaceId)
@@ -10810,11 +10935,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const campaign = await (persistence.brandUnits ?? memoryBrandUnits).getCampaign({ workspaceId, id: campaignId })
       if (!campaign) throw new DomainError('CAMPAIGN_BATCH_NOT_FOUND', '批量运营计划不存在或不属于当前工作区', 404, { campaign_id: campaignId })
       await enforceBrandAccess(req, workspaceId, campaign.brandId, 'editor')
+      const generationIdempotencyKey = typeof params.idempotency_key === 'string' && params.idempotency_key.trim()
+        ? params.idempotency_key.trim()
+        : `campaign-generate:${campaignId}`
       const priorTaskIds = campaign.taskIds
       if (priorTaskIds) {
+        if (campaign.generationIdempotencyKey && campaign.generationIdempotencyKey !== generationIdempotencyKey) {
+          throw new DomainError('CAMPAIGN_GENERATE_IDEMPOTENCY_CONFLICT', '批量生成幂等键已绑定到另一项生成意图，请先查询当前批次状态', 409, { campaign_id: campaignId, idempotency_key: campaign.generationIdempotencyKey })
+        }
         const refreshed = await refreshCampaignProgress(campaign)
         const deliveryManifest = await validateCampaignDelivery('generate', workspaceId, refreshed)
-        return result({ campaignId, taskIds: priorTaskIds, count: priorTaskIds.length, state: refreshed.state, ...campaignWorkflow(refreshed), delivery_manifest: deliveryManifest, replayed: true, execution: 'workflow_active', next_actions: [...new Set((refreshed.items ?? []).map(item => item.error?.nextAction).filter((action): action is string => Boolean(action)))] })
+        return result({ campaignId, taskIds: priorTaskIds, count: priorTaskIds.length, state: refreshed.state, ...campaignWorkflow(refreshed, deliveryManifest), delivery_manifest: deliveryManifest, replayed: true, idempotency_key: generationIdempotencyKey, execution: 'workflow_active', next_actions: [...new Set((refreshed.items ?? []).map(item => item.error?.nextAction).filter((action): action is string => Boolean(action)))] })
       }
       const requestText = typeof params.request_text === 'string' && params.request_text.trim() ? params.request_text.trim() : undefined
       const taskIds: string[] = []
@@ -10845,14 +10976,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         taskIds.push(task.id)
         if (!existingTask) {
           await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
-          await persistEvent(workspaceId, task.id, 'task.created', task.version, { ...task, campaign_id: campaignId, listing_id: target.listingId ?? null, source: 'campaign.batch.generate' })
+          await persistEvent(workspaceId, task.id, 'task.created', task.version, { ...task, campaign_id: campaignId, listing_id: target.listingId ?? null, idempotency_key: generationIdempotencyKey, source: 'campaign.batch.generate' })
         }
       }
-      await (persistence.brandUnits ?? memoryBrandUnits).updateCampaignTasks({ workspaceId, id: campaignId, taskIds, state: 'generating' })
+      await (persistence.brandUnits ?? memoryBrandUnits).updateCampaignTasks({ workspaceId, id: campaignId, taskIds, state: 'generating', generationIdempotencyKey })
       const refreshed = await refreshCampaignProgress((await (persistence.brandUnits ?? memoryBrandUnits).getCampaign({ workspaceId, id: campaignId }))!)
-      const workflow = campaignWorkflow(refreshed)
       const deliveryManifest = await validateCampaignDelivery('generate', workspaceId, refreshed)
-      return result({ campaignId, taskIds, count: taskIds.length, state: refreshed.state, ...workflow, delivery_manifest: deliveryManifest, replayed: false, execution: 'workflow_active', message: '已为每个商品创建独立工作流；系统会持久化当前节点，不会越过事实确认、方向确认、内容审核或发布确认。', next_actions: [...new Set((refreshed.items ?? []).map(item => item.error?.nextAction).filter((action): action is string => Boolean(action)))] })
+      const workflow = campaignWorkflow(refreshed, deliveryManifest)
+      return result({ campaignId, taskIds, count: taskIds.length, state: refreshed.state, ...workflow, delivery_manifest: deliveryManifest, replayed: false, idempotency_key: generationIdempotencyKey, execution: 'workflow_active', message: '已为每个商品创建独立工作流；系统会持久化当前节点，不会越过事实确认、方向确认、内容审核或发布确认。', next_actions: [...new Set((refreshed.items ?? []).map(item => item.error?.nextAction).filter((action): action is string => Boolean(action)))] })
     }
     case 'campaign.batch.pause':
     case 'campaign.batch.resume':
@@ -10889,7 +11020,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
       if (!transitioned.replayed) await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: `campaign.batch.${operation}`, resourceType: 'campaign', resourceId: campaignId, before: { state: current.state, revision: current.revision ?? 1 }, after: { state: transitioned.campaign.state, revision: transitioned.campaign.revision ?? null, item_ids: itemIds ?? null }, reason: required(params, 'reason').trim() })
       const deliveryManifest = await validateCampaignDelivery(operation, workspaceId, transitioned.campaign)
-      return result({ ...transitioned.campaign, ...campaignWorkflow(transitioned.campaign), delivery_manifest: deliveryManifest, replayed: transitioned.replayed, storage: persistence.mode, durable: persistence.mode === 'postgres' })
+      return result({ ...transitioned.campaign, ...campaignWorkflow(transitioned.campaign, deliveryManifest), delivery_manifest: deliveryManifest, replayed: transitioned.replayed, storage: persistence.mode, durable: persistence.mode === 'postgres' })
     }
     case 'workspace.bootstrap': {
       const displayName = required(params, 'display_name')
@@ -11008,6 +11139,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistenceReady
       const brandNavigation = await accessibleBrandNavigation(req, workspaceId)
       const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
+      // Billing is the authoritative monetary source for commercial access.
+      // The legacy wallet projection is retained only for historical
+      // reconciliation and must not disagree with billing.status in the
+      // merchant entry card.
+      const authoritativeBalanceFen = persistence.billing
+        ? await persistence.billing.balanceFen(workspaceId)
+        : walletBalanceFen(workspaceId)
       const pointAccessAllowed = pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0
       const current = onboarding.currentStep
       const platformOptions = merchantPlatformOptions(workspaceId, directory)
@@ -11033,7 +11171,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         onboarding: onboarding.steps,
         summary: onboarding.summary,
         creative_points: { balance_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: pointBalance?.availablePoints ?? null, reserved_points: pointBalance?.reservedPoints ?? null, access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
-        wallet: { balance_cny: (walletBalanceFen(workspaceId) / 100).toFixed(2), unlocked: walletBalanceFen(workspaceId) > 0, recharge_channels: ['alipay', 'wechat'], status_method: 'billing.status', recharge_method: 'billing.recharge.create', message: walletBalanceFen(workspaceId) > 0 ? '钱包余额可用于历史兼容对账；具体操作仍需精确门禁' : '当前未解锁商业操作，请先查看商业访问和充值状态' },
+        wallet: { balance_cny: (authoritativeBalanceFen / 100).toFixed(2), unlocked: authoritativeBalanceFen > 0, recharge_channels: ['alipay', 'wechat'], status_method: 'billing.status', recharge_method: 'billing.recharge.create', message: authoritativeBalanceFen > 0 ? '钱包余额可用于历史兼容对账；具体操作仍需精确门禁' : '当前未解锁商业操作，请先查看商业访问和充值状态' },
         stores: directory.map(store => ({ platform: store.platform, label: store.label, state: store.state, dataMode: store.dataMode, readable: store.readable, writeEnabled: store.writeEnabled })),
         availablePlatforms: SUPPORTED_PLATFORMS,
         platformOptions,
@@ -11065,8 +11203,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       plugin: { name: 'merchant-marketing', version: '0.1.0' },
       mcp: { status: 'ready', transport: '/mcp' },
       workspace: { id: workspaceId, status: (await getWorkspaceStatus(workspaceId)) === 'active' ? 'ready' : 'disabled' },
-      rules: { activeVersions: service.ruleCenter.activeVersionIds() },
-      ruleSync: await trustedPlatformRuleSyncStatuses(workspaceId, Number(process.env.PLATFORM_RULE_SYNC_INTERVAL_HOURS ?? 24)),
+      // Keep overview's rule projection on the same durable, trusted source
+      // as MCP rule.list. Do not expose in-memory/manual fixture versions as
+      // if they were platform policy evidence.
+      rules: { activeVersions: await trustedActiveRuleVersionsForWorkspace(workspaceId) },
+      ruleSync: await trustedPlatformRuleSyncStatuses(workspaceId),
       connectorReadiness: Object.fromEntries(SUPPORTED_PLATFORMS.map(platform => [platform, workspaceConnectorReadiness(platform)])),
       platforms: workspacePlatformStatus(workspaceId),
       commercial: { settings: await (persistence.commercial ?? memoryCommercial).getSettings(workspaceId), platforms: await (persistence.commercial ?? memoryCommercial).listPlatformSettings(workspaceId) },
@@ -11345,6 +11486,56 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const repository = persistence.support
       if (!repository) throw new DomainError('SUPPORT_REPOSITORY_UNAVAILABLE', '客服工单仓储未配置', 503)
       return result(await invokeOpsDomain(() => new SupportService(repository).get(supportContext(req, workspaceId), workspaceId, requiredStringValue(params, 'ticketId', 'ticket_id'))))
+    }
+    case 'support.customer.replies.list': {
+      const repository = persistence.support
+      if (!repository) throw new DomainError('SUPPORT_REPOSITORY_UNAVAILABLE', '客服工单仓储未配置', 503)
+      const ticketId = optionalStringValue(params, 'ticketId', 'ticket_id')
+      const relatedTaskId = optionalStringValue(params, 'relatedTaskId', 'related_task_id')
+      const relatedOrderId = optionalStringValue(params, 'relatedOrderId', 'related_order_id')
+      if (!ticketId && !relatedTaskId && !relatedOrderId) throw new DomainError(ERROR_CODES.INVALID_REQUEST, '请提供工单、任务或订单关联信息', 400)
+      const rawCursor = optionalStringValue(params, 'cursor')
+      let afterSequence = 0
+      let relatedCursor: { createdAt: string; id: string } | undefined
+      if (rawCursor) {
+        try {
+          const decoded = JSON.parse(Buffer.from(rawCursor, 'base64url').toString('utf8')) as unknown
+          if (isObject(decoded) && decoded.kind === 'tickets' && typeof decoded.createdAt === 'string' && typeof decoded.id === 'string' && decoded.id.trim()) {
+            relatedCursor = { createdAt: decoded.createdAt, id: decoded.id }
+          } else {
+            const sequence = isObject(decoded) && typeof decoded.sequence === 'number' ? decoded.sequence : undefined
+            if (sequence === undefined || !Number.isSafeInteger(sequence) || sequence < 0) throw new Error('invalid cursor')
+            afterSequence = sequence
+          }
+        } catch {
+          throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'cursor 无效', 400)
+        }
+      }
+      const requestedLimit = optionalNumberValue(params, 'limit') ?? 50
+      if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 到 100 的整数', 400)
+      let relatedNextCursor: { createdAt: string; id: string } | undefined
+      const tickets = ticketId
+        ? [await repository.get(workspaceId, ticketId)].filter((value): value is NonNullable<typeof value> => Boolean(value))
+        : await repository.list({ workspaceId, ...(relatedTaskId ? { relatedTaskId } : {}), ...(relatedOrderId ? { relatedOrderId } : {}), limit: requestedLimit, ...(relatedCursor ? { cursor: relatedCursor } : {}) }).then(value => { relatedNextCursor = value.nextCursor; return value.items })
+      if (ticketId && !tickets.length) throw new DomainError(ERROR_CODES.NOT_FOUND, '客服工单不存在或不属于当前工作区', 404)
+      const bundles = await Promise.all(tickets.map(async ticket => {
+        const replies = (await repository.listEvents(workspaceId, ticket.id))
+          .filter(event => event.sequence > (ticketId ? afterSequence : 0) && event.eventType === 'commented' && event.payload.visibility === 'customer' && typeof event.payload.body === 'string')
+          .map(event => ({ sequence: event.sequence, reply: { id: event.id, body: event.payload.body as string, created_at: event.createdAt } }))
+        const page = replies.slice(0, requestedLimit)
+        const lastReply = page.at(-1)
+        return {
+          ticket_id: ticket.id, ticket_number: ticket.ticketNumber, subject: ticket.subject, status: ticket.status,
+          related_task_id: ticket.relatedTaskId ?? null, related_order_id: ticket.relatedOrderId ?? null,
+          replies: page.map(item => item.reply),
+          next_cursor: ticketId && replies.length > requestedLimit && lastReply ? Buffer.from(JSON.stringify({ sequence: lastReply.sequence })).toString('base64url') : null,
+        }
+      }))
+      if (ticketId) {
+        const only = bundles[0]!
+        return result({ ticket_id: only.ticket_id, ticket_number: only.ticket_number, subject: only.subject, status: only.status, replies: only.replies, next_cursor: only.next_cursor })
+      }
+      return result({ tickets: bundles, next_cursor: relatedNextCursor ? Buffer.from(JSON.stringify({ kind: 'tickets', ...relatedNextCursor })).toString('base64url') : null })
     }
     case 'ops.support.ticket.create': {
       const repository = persistence.support
@@ -11789,6 +11980,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       // each repository call is still bounded by the pool and its own query.
       const summaries = await mapWithConcurrency(workspaceIds, 24, async targetWorkspaceId => {
         try {
+          await hydrateWorkspace(targetWorkspaceId)
           const tasks = service.listTasks(targetWorkspaceId)
           const byState = tasks.reduce((counts, task) => { counts[task.state] = (counts[task.state] ?? 0) + 1; return counts }, {} as Record<string, number>)
           const generationQueueCount = [...service.generationJobs.values()].filter(job => job.workspaceId === targetWorkspaceId && ['queued', 'running'].includes(job.state)).length
@@ -11818,7 +12010,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const byModality = records.reduce((counts, row) => { counts[row.modality] = (counts[row.modality] ?? 0) + 1; return counts }, {} as Record<string, number>)
       const byModel = records.reduce((counts, row) => { counts[row.model] = (counts[row.model] ?? 0) + 1; return counts }, {} as Record<string, number>)
       const bySettlementStatus = records.reduce((counts, row) => { counts[row.settlementStatus] = (counts[row.settlementStatus] ?? 0) + 1; return counts }, {} as Record<string, number>)
-      return result({ scope: 'platform', workspaceCount: workspaceIds.length, failedWorkspaceCount: summaries.filter(summary => summary.failed).length, recordCount: records.length, totalTokens: records.reduce((sum, row) => sum + (row.totalTokens ?? 0), 0), providerCostCny: Number(records.reduce((sum, row) => sum + (row.costCny ?? 0), 0).toFixed(6)), customerChargeCny: Number(records.reduce((sum, row) => sum + (row.customerChargeCny ?? 0), 0).toFixed(6)), unsettledRecordCount: records.filter(row => !['settled', 'waived'].includes(row.settlementStatus)).length, byModality, byModel, bySettlementStatus })
+      const failedWorkspaceCount = summaries.filter(summary => summary.failed).length
+      const missingCostEvidenceCount = records.filter(row => row.costCny === undefined || row.costCny === null).length
+      const providerCostStatus = failedWorkspaceCount > 0 ? 'unavailable' : missingCostEvidenceCount > 0 ? 'partial' : 'verified'
+      return result({ scope: 'platform', workspaceCount: workspaceIds.length, failedWorkspaceCount, recordCount: records.length, totalTokens: records.reduce((sum, row) => sum + (row.totalTokens ?? 0), 0), providerCostCny: providerCostStatus === 'verified' ? Number(records.reduce((sum, row) => sum + (row.costCny ?? 0), 0).toFixed(6)) : null, missingCostEvidenceCount, providerCostStatus, customerChargeCny: Number(records.reduce((sum, row) => sum + (row.customerChargeCny ?? 0), 0).toFixed(6)), unsettledRecordCount: records.filter(row => !['settled', 'waived'].includes(row.settlementStatus)).length, byModality, byModel, bySettlementStatus })
     }
     case 'ops.storage.reconciliation.list': {
       requirePlatformReadRole(req)
@@ -12477,6 +12672,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const workspaceIds = persistence.listWorkspaceIds ? await persistence.listWorkspaceIds() : [...knownWorkspaces]
       const summaries = await mapWithConcurrency(workspaceIds, 24, async targetWorkspaceId => {
         try {
+          await hydrateWorkspace(targetWorkspaceId)
           const tasks = service.listTasks(targetWorkspaceId)
           const taskById = new Map(tasks.map(task => [task.id, task]))
           const generationByState = [...service.generationJobs.values()]
@@ -13146,7 +13342,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (selectedAccountId && !selectedPlatform) throw new DomainError('STORE_PLATFORM_REQUIRED', '使用 account_id 选择店铺时必须同时指定 platform', 400)
       const selectedAccount = selectedAccountId ? service.getPlatformAccount(workspaceId, selectedAccountId, selectedPlatform) : undefined
       const allProducts = service.listProducts(workspaceId)
-      const allTasks = service.listTasks(workspaceId)
+      const allTasks = await listNormalizedTasksForMetrics(workspaceId)
       const allSyncJobs = service.listSyncJobs(workspaceId)
       const allPublishJobs = service.listPublishJobs(workspaceId)
       const productByIdAll = new Map(allProducts.map(product => [product.id, product]))
@@ -13341,7 +13537,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistenceReady
       const balanceFen = persistence.billing ? await persistence.billing.balanceFen(workspaceId) : walletBalanceFen(workspaceId)
       const usage = persistence.usage ? await persistence.usage.get(workspaceId) : undefined
-      const stores = await storeCapacity(workspaceId)
+      const storeCapacitySnapshot = await storeCapacity(workspaceId)
+      const stores = workspaceStoreDirectory(workspaceId)
       const actions = persistence.actionLedger ? await persistence.actionLedger.list(workspaceId, 1000) : []
       const pendingActions = actions.filter(item => ['authorized', 'pending_receipt', 'manual_attention'].includes(item.settlementStatus ?? ''))
       const pendingAuthorizationFen = pendingActions.reduce((sum, item) => sum + (item.reservedAmountFen ?? item.amountFen), 0)
@@ -13349,6 +13546,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const canViewWorkspaceBilling = !requiresStrictAuth() || billingRoles.some(role => ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'].includes(role))
       const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
       const pluginUnlocked = balanceFen > 0
+      const balanceCny = (balanceFen / 100).toFixed(2)
+      const setup = setupDiagnostics()
+      const capabilityEntitlements = billingCapabilityEntitlements({ balanceFen, usage, setup, stores })
       return result({
         schema_version: 'commercial.billing-status.v2',
         workspace_id: workspaceId,
@@ -13358,14 +13558,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         settled_points: pointBalance?.settledPoints ?? null,
         access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision),
         allowed: pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0,
-        balance_cny: (balanceFen / 100).toFixed(2),
-        plugin_access: { unlocked: pluginUnlocked, unlocks: pluginUnlocked ? ['图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '发布任务'] : [] },
-        model_access: { ownership: 'platform', user_key_required: false, access_state: pluginUnlocked ? 'included_quota_available' : 'recharge_required' },
+        balance_cny: balanceCny,
+        plugin_access: { unlocked: pluginUnlocked, balance_cny: balanceCny, unlocks: pluginUnlocked ? ['图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '发布任务'] : [] },
+        model_access: { ownership: 'platform', user_key_required: false, access_state: pluginUnlocked ? 'included_quota_available' : 'recharge_required', message: pluginUnlocked ? '模型额度可用，具体生成仍受内容与平台门禁约束。' : '钱包余额不足，充值后才能使用模型能力。' },
         action_entitlement: { overage_policy: 'wallet' },
-        capability_entitlements: { balance: { state: pluginUnlocked ? 'available' : 'recharge_required' }, package_quota: { state: 'available' }, generation: { state: 'blocked', code: pluginUnlocked ? 'model_configuration' : 'wallet_balance' }, platform_publish: { state: 'blocked', ...(pluginUnlocked ? {} : { code: 'wallet_balance' }) } },
+        capability_entitlements: capabilityEntitlements,
         action_cards: billingActionCards(),
         next_actions: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'],
-        legacy_non_authoritative: { currency: 'CNY', wallet_balance_cny: (balanceFen / 100).toFixed(2), pending_authorization_cny: (pendingAuthorizationFen / 100).toFixed(2), settlement_pending_count: pendingActions.length, billing_mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', historical_task_quota: usage ? { included_tasks: usage.includedTasks, used_tasks: usage.usedTasks, remaining_tasks: usage.remainingTasks } : null, store_capacity: stores, provider_ready: process.env.PAYMENT_MODE === 'provider' && paymentProviderReadiness().ready, note: '仅供历史对账；不得参与业务准入、恢复建议或 worker execution-check。' },
+        legacy_non_authoritative: { currency: 'CNY', wallet_balance_cny: (balanceFen / 100).toFixed(2), pending_authorization_cny: (pendingAuthorizationFen / 100).toFixed(2), settlement_pending_count: pendingActions.length, billing_mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', historical_task_quota: usage ? { included_tasks: usage.includedTasks, used_tasks: usage.usedTasks, remaining_tasks: usage.remainingTasks } : null, store_capacity: storeCapacitySnapshot, provider_ready: process.env.PAYMENT_MODE === 'provider' && paymentProviderReadiness().ready, note: '仅供历史对账；不得参与业务准入、恢复建议或 worker execution-check。' },
         viewer: { default_scope: 'mine', available_scopes: canViewWorkspaceBilling ? ['mine', 'workspace'] : ['mine'] },
       })
     }
@@ -13547,7 +13747,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const toAt = parseStatementTime(params.to_at)
       if (fromAt === null || toAt === null || (fromAt && toAt && fromAt >= toAt)) throw new DomainError('MODEL_USAGE_STATEMENT_PERIOD_INVALID', 'from_at/to_at 必须是有效且递增的 ISO 时间', 400)
       const allTransactions = persistence.billing ? await persistence.billing.listTransactions(workspaceId, 10000, billingScope.scope === 'mine' ? billingScope.actorId : undefined) : walletTransactions.filter(item => item.workspaceId === workspaceId && (billingScope.scope === 'workspace' || item.actorId === billingScope.actorId)).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-      const transactions = allTransactions.filter(item => (!fromAt || item.createdAt >= fromAt) && (!toAt || item.createdAt < toAt)).slice(0, limit)
+      const periodTransactions = allTransactions.filter(item => (!fromAt || item.createdAt >= fromAt) && (!toAt || item.createdAt < toAt))
+      const transactions = periodTransactions.slice(0, limit)
       const candidateModelUsage = persistence.modelUsage ? await persistence.modelUsage.listForStatement(workspaceId, { ...(fromAt ? { fromAt } : {}), ...(toAt ? { toAt } : {}), ...(billingScope.scope === 'mine' ? { actorId: billingScope.actorId } : {}) }) : []
       // Model usage is attributed to the actor that authorized its action.
       // Keep the report workspace-scoped, then join the bounded action ledger
@@ -13566,6 +13767,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         acc.byModality[item.modality] = (acc.byModality[item.modality] ?? 0) + 1
         return acc
       }, { totalTokens: 0, costCny: 0, customerChargeCny: 0, byModality: {} as Record<string, number> })
+      const missingCostEvidenceCount = modelUsage.filter(item => item.costCny === undefined).length
       const modelUsageByActor = modelUsage.reduce((groups, item) => {
         const actorId = billingScope.scope === 'mine' ? billingScope.actorId : item.actionId ? actorByAction.get(item.actionId) ?? 'unknown' : 'unknown'
         const current = groups.get(actorId) ?? { actor_id: actorId, record_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, provider_cost_cny: 0, customer_charge_cny: 0, unsettled_records: 0, by_modality: {} as Record<string, number> }
@@ -13581,7 +13783,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         return groups
       }, new Map<string, { actor_id: string; record_count: number; input_tokens: number; output_tokens: number; total_tokens: number; provider_cost_cny: number; customer_charge_cny: number; unsettled_records: number; by_modality: Record<string, number> }>())
       const byActor = [...modelUsageByActor.values()].map(item => ({ ...item, provider_cost_cny: canViewProviderCosts ? item.provider_cost_cny.toFixed(6) : null, customer_charge_cny: item.customer_charge_cny.toFixed(6) }))
-      const totals = transactions.reduce((acc, item) => { acc[item.type] = (acc[item.type] ?? 0) + item.amountFen; return acc }, {} as Record<string, number>)
+      // Summary amounts describe the selected ledger scope and period, not the
+      // first page of rows. The balance is already whole-workspace, so silently
+      // truncating recharge/debit/refund totals at the display limit is unsafe.
+      const totals = periodTransactions.reduce((acc, item) => { acc[item.type] = (acc[item.type] ?? 0) + item.amountFen; return acc }, {} as Record<string, number>)
       const balanceFen = persistence.billing ? await persistence.billing.balanceFen(workspaceId) : walletBalanceFen(workspaceId)
       const provider = paymentProviderReadiness()
       const unsettledModelUsage = modelUsage.filter(item => !['settled', 'waived'].includes(item.settlementStatus))
@@ -13605,10 +13810,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         : { status: 'not_applicable_personal_scope', source: 'workspace_provider_account', reason: '外部中转账单只支持工作区级对账；个人视图使用本地可归属用量台账' }
       const localReconciliationStatus = missingRunKeyCount > 0 || budgetLinkMismatchCount > 0 || unknownActorCount > 0 || walletMismatchCount > 0 || orphanActionCount > 0 ? 'needs_review' : unsettledModelUsage.length > 0 ? 'pending' : 'locally_consistent'
       const reconciliationStatus = localReconciliationStatus === 'needs_review' || externalProviderStatement.status === 'needs_review' ? 'needs_review' : localReconciliationStatus
-      return result({ currency: 'CNY', statement: { from_at: fromAt ?? null, to_at: toAt ?? null, scope: billingScope.scope, wallet_scope: 'workspace', source: 'model_usage_ledger' }, balance_cny: (balanceFen / 100).toFixed(2), recharge_cny: ((totals.recharge ?? 0) / 100).toFixed(2), debit_cny: ((totals.debit ?? 0) / 100).toFixed(2), refund_cny: ((totals.refund ?? 0) / 100).toFixed(2), transaction_count: transactions.length, transactions: transactions.map(publicMoneyRecord), model_usage: { record_count: modelUsage.length, total_tokens: modelUsageTotals.totalTokens, provider_cost_cny: canViewProviderCosts && billingScope.scope === 'workspace' ? modelUsageTotals.costCny.toFixed(6) : null, customer_charge_cny: modelUsageTotals.customerChargeCny.toFixed(6), unsettled_records: unsettledModelUsage.length, reconciliation_status: reconciliationStatus, reconciliation_checks: { unknown_actor_count: unknownActorCount, orphan_action_count: orphanActionCount, wallet_amount_mismatch_count: walletMismatchCount, missing_run_key_count: missingRunKeyCount, budget_link_mismatch_count: budgetLinkMismatchCount }, external_provider_statement: externalProviderStatement, by_actor: byActor, unsettled: billingScope.scope === 'workspace' ? unsettledModelUsage.slice(0, 100).map(item => ({ id: item.id, revision: item.revision, action_id: item.actionId ?? null, run_key: item.budgetRunKey ?? null, modality: item.modality, model: item.model, settlement_status: item.settlementStatus, allowed_decisions: allowedModelUsageSettlementDecisions(item), attempt_count: item.attemptCount, provider_request_id: canViewProviderCosts ? item.providerRequestId ?? null : null, observed_at: item.observedAt, next_attempt_at: item.nextAttemptAt ?? null, last_error: item.lastError ?? null, settlement_reason: typeof item.metadata?.settlement_reason === 'string' ? item.metadata.settlement_reason : item.settlementStatus })) : [], by_modality: modelUsageTotals.byModality }, action_ledger: { record_count: actionLedger.length, by_kind_settlement_state: actionSummary }, provider: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ready: process.env.PAYMENT_MODE === 'provider' && provider.ready, reasons: provider.reasons } })
+      return result({ currency: 'CNY', statement: { from_at: fromAt ?? null, to_at: toAt ?? null, scope: billingScope.scope, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, wallet_scope: 'workspace', source: 'model_usage_ledger' }, balance_scope: 'workspace', transaction_scope: billingScope.scope, model_usage_scope: billingScope.scope, balance_cny: (balanceFen / 100).toFixed(2), recharge_cny: ((totals.recharge ?? 0) / 100).toFixed(2), debit_cny: ((totals.debit ?? 0) / 100).toFixed(2), refund_cny: ((totals.refund ?? 0) / 100).toFixed(2), transaction_count: periodTransactions.length, returned_transaction_count: transactions.length, transaction_limit: limit, has_more_transactions: periodTransactions.length > transactions.length, transactions: transactions.map(publicMoneyRecord), model_usage: { record_count: modelUsage.length, total_tokens: modelUsageTotals.totalTokens, provider_cost_cny: canViewProviderCosts && billingScope.scope === 'workspace' && missingCostEvidenceCount === 0 ? modelUsageTotals.costCny.toFixed(6) : null, missing_cost_evidence_count: missingCostEvidenceCount, customer_charge_cny: modelUsageTotals.customerChargeCny.toFixed(6), unsettled_records: unsettledModelUsage.length, reconciliation_status: reconciliationStatus, reconciliation_checks: { unknown_actor_count: unknownActorCount, orphan_action_count: orphanActionCount, wallet_amount_mismatch_count: walletMismatchCount, missing_run_key_count: missingRunKeyCount, budget_link_mismatch_count: budgetLinkMismatchCount }, external_provider_statement: externalProviderStatement, by_actor: byActor, unsettled: billingScope.scope === 'workspace' ? unsettledModelUsage.slice(0, 100).map(item => ({ id: item.id, revision: item.revision, action_id: item.actionId ?? null, run_key: item.budgetRunKey ?? null, modality: item.modality, model: item.model, settlement_status: item.settlementStatus, allowed_decisions: allowedModelUsageSettlementDecisions(item), attempt_count: item.attemptCount, provider_request_id: canViewProviderCosts ? item.providerRequestId ?? null : null, observed_at: item.observedAt, next_attempt_at: item.nextAttemptAt ?? null, last_error: item.lastError ?? null, settlement_reason: typeof item.metadata?.settlement_reason === 'string' ? item.metadata.settlement_reason : item.settlementStatus })) : [], by_modality: modelUsageTotals.byModality }, action_ledger: { record_count: actionLedger.length, by_kind_settlement_state: actionSummary }, provider: { mode: process.env.PAYMENT_MODE === 'provider' ? 'provider' : 'fixture', ready: process.env.PAYMENT_MODE === 'provider' && provider.ready, reasons: provider.reasons } })
     }
     case 'billing.reconciliation.run': {
-      const actorId = requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'])
+      const actorId = requireOperationsRole(req, ['finance', 'finance_ops', 'ops_admin', 'platform_admin', 'platform_ops'])
       const limit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Math.min(100, Math.max(1, Number(params.limit))) : 50
       await persistenceReady
       if (!paymentProvider?.queryStatus) {
@@ -13618,10 +13823,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const orders = persistence.billing
         ? await persistence.billing.listOrders(workspaceId, ['pending'], limit)
         : [...rechargeOrders.values()].filter(order => order.workspaceId === workspaceId && order.state === 'pending').slice(0, limit)
+      const providerOrders = orders.filter(item => item.paymentMode === 'provider')
+      const skippedFixtureOrders = orders.length - providerOrders.length
       const settled: Array<{ order_id: string; provider_trade_id: string }> = []
       const pending: Array<{ order_id: string; state: string }> = []
       const failed: Array<{ order_id: string; code: string; message: string }> = []
-      for (const order of orders.filter(item => item.paymentMode === 'provider')) {
+      for (const order of providerOrders) {
         try {
           const providerStatus = await paymentProvider.queryStatus({ channel: order.channel, orderId: order.id, workspaceId })
           if (providerStatus.state !== 'paid') {
@@ -13659,7 +13866,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           failed.push({ order_id: order.id, code: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PAYMENT_RECONCILIATION_FAILED', message: error instanceof Error ? error.message : '支付服务商查单失败' })
         }
       }
-      return result({ state: failed.length ? 'attention_required' : 'completed', checked: orders.length, provider_orders: orders.filter(item => item.paymentMode === 'provider').length, settled, pending, failed, actor_id: actorId, idempotent_settlement: true })
+      return result({ state: failed.length || pending.length ? 'attention_required' : 'completed', checked: providerOrders.length, provider_orders: providerOrders.length, skipped_fixture_orders: skippedFixtureOrders, settled, pending, failed, actor_id: actorId, idempotent_settlement: true })
     }
     case 'billing.model-usage.reconciliation.run': {
       const actorId = requireOperationsRole(req, ['finance', 'platform_ops'])
@@ -14022,11 +14229,18 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       }
       const price = numeric('price'); const skuCount = numeric('sku_count'); const stock = numeric('stock')
       const accountId = typeof params.account_id === 'string' && params.account_id.trim() ? params.account_id.trim() : undefined
+      const brandId = typeof params.brand_id === 'string' && params.brand_id.trim() ? params.brand_id.trim() : undefined
       if (!SUPPORTED_PLATFORMS.includes(platform)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'platform 无效', 400)
       if (isProduction() && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产商品导入必须绑定已授权平台账号', 400)
       if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
+      if (brandId) {
+        if (!accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '绑定品牌导入商品必须同时指定已授权店铺', 400)
+        await enforceBrandAccess(req, workspaceId, brandId, 'editor')
+        const bindings = await (persistence.brandUnits ?? memoryBrandUnits).listBrands({ workspaceId, brandId, platform, accountId })
+        if (!bindings.length) throw new DomainError('BRAND_STORE_BINDING_REQUIRED', '导入商品前必须先将店铺绑定到指定品', 409, { brand_id: brandId, platform, account_id: accountId, next_actions: ['brand-unit.bind-store'] })
+      }
       const product = service.importProduct({
-        workspaceId, platform, ...(accountId ? { accountId } : {}),
+        workspaceId, platform, ...(brandId ? { brandId } : {}), ...(accountId ? { accountId } : {}),
         ...(typeof params.remote_id === 'string' && params.remote_id.trim() ? { remoteId: params.remote_id } : {}),
         ...(typeof params.local_product_key === 'string' ? { localProductKey: params.local_product_key } : {}),
         title: required(params, 'title'),
@@ -14423,8 +14637,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           await persistSnapshot(workspaceId, 'image_generation_job', existingImageJob, existingImageJob as unknown as Record<string, unknown>)
         }
       }
-      creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+      // Reserve before reading the evidence returned to MCP. This makes the
+      // response reflect the current balance and the points held for this
+      // request, including gifted/entitlement points.
+      creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       let job: ReturnType<typeof service.enqueueImageGeneration>
       try {
         job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(typeof params.task_id === 'string' && params.task_id.trim() ? { taskId: params.task_id.trim() } : {}), ...(typeof params.content_version_id === 'string' && params.content_version_id.trim() ? { contentVersionId: params.content_version_id.trim() } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}) })
@@ -14492,6 +14709,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       // and object-storage provider before exposing the result.
       const imageExecution = executionContract('image', Boolean(imageGenerator))
       if (job.state === 'succeeded') {
+        creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
         const images = imageJobOutputsAreClean(job) ? await readArchivedGeneratedImages(workspaceId, job) : []
       return result({ job_id: job.id, product_id: product.id, unbound_candidate: unboundCandidate, candidate_status: unboundCandidate ? '未绑定商品、仅候选、不可发布' : undefined, creative_points: creativePoints, execution: imageExecution, rule_preflight: rulePreflight, product_protection: productProtection, job: publicImageJob(job), ...(images.length ? { images, review: reviewProductImagesForMcp(images) } : {}), ...(job.archiveState === 'external_unarchived' ? { availabilityWarning: '图片提供方仅返回外部地址，本批次未形成可持久读取的归档文件' } : {}) })
       }
@@ -14555,6 +14773,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const billingActorId = requestActor(req)
       const walletDebitKey = `image:${retryKey}`
       const creativeReservation = await reserveCreativePointsForModel(workspaceId, walletDebitKey, commercialDecision)
+      let creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       let entitlementConsumed = false
       const existingRetry = [...service.imageGenerationJobs.values()].find(candidate => candidate.workspaceId === workspaceId && candidate.idempotencyKey === retryKey)
       if (!existingRetry) {
@@ -14588,13 +14807,14 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id)
           await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: retried.job.id, entityVersion: retried.job.revision, payload: retried.job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: { job_id: retried.job.id, workspace_id: workspaceId, product_id: retried.job.productId, intent_hash: retried.job.intentHash, idempotency_key: retried.job.idempotencyKey, image_mode: retried.job.imageMode, direction: retried.job.direction, requested_count: retried.job.count, source_asset_ids: retried.job.sourceAssetIds ?? [], source_product_version: retried.job.sourceProductVersion, visual_brief: retried.job.visualBrief ?? null, action_id: walletDebitKey, run_key: imageRunKey, authorization_snapshot: serializedWorkerAuthorizationSnapshot(retryAuthorizationSnapshot!), ...(commercialAccessSnapshot ? { commercial_access_snapshot: commercialAccessSnapshot } : {}), retry_of_job_id: previous.id }})
         }
-        return result({ job_id: retried.job.id, previous_job_id: previous.id, state: 'queued', execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, job: publicImageJob(retried.job), next_action: { type: 'get_status', label: '查询任务状态', allowed: true } })
+        return result({ job_id: retried.job.id, previous_job_id: previous.id, state: 'queued', creative_points: creativePoints, execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, job: publicImageJob(retried.job), next_action: { type: 'get_status', label: '查询任务状态', allowed: true } })
       }
       try {
         const completed = await service.completeImageGeneration({ workspaceId, jobId: retried.job.id, runKey: imageRunKey })
         const archived = await archiveGeneratedImages(workspaceId, retried.job.id, completed.images)
         await persistSnapshot(workspaceId, 'image_generation_job', archived, archived as unknown as Record<string, unknown>)
-        return result({ job_id: archived.id, previous_job_id: previous.id, state: archived.state, archive_state: archived.archiveState, retry_count: archived.retryCount ?? 1, job: publicImageJob(archived), ...(imageJobOutputsAreClean(archived) ? { images: completed.images } : {}) })
+        creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
+        return result({ job_id: archived.id, previous_job_id: previous.id, state: archived.state, archive_state: archived.archiveState, retry_count: archived.retryCount ?? 1, creative_points: creativePoints, job: publicImageJob(archived), ...(imageJobOutputsAreClean(archived) ? { images: completed.images } : {}) })
       } catch (error) {
         await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片安全重试失败')
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片安全重试失败' })
@@ -14844,8 +15064,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const name = required(params, 'name')
       const versionValue = required(params, 'version')
       const scope = required(params, 'scope')
-      const sourceKind = required(params, 'source_kind')
       const sourceReference = required(params, 'source_reference')
+      const sourceKind = sourceReference.startsWith('manual://') ? 'internal' : required(params, 'source_kind')
       const sourceCheckedAt = required(params, 'source_checked_at')
       const reason = required(params, 'reason')
       const status = typeof params.status === 'string' ? params.status : 'draft'
@@ -14995,7 +15215,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistEvent(workspaceId, updated.id, 'asset.preference_updated', updated.revision, { asset_id: updated.id, verdict, reasons: updated.preference?.reasons ?? [], actor_id: updated.preference?.updatedBy ?? requestActor(req) })
       return result(updated)
     }
-    case 'brand.get': return result(service.getBrandProfile(workspaceId) ?? null)
+    case 'brand.get': {
+      const profile = service.getBrandProfile(workspaceId)
+      return result(profile ? await brandProfileWithUnit(workspaceId, profile, false) : null)
+    }
     case 'brand.extract': {
       let assetIds: string[] | undefined
       if (typeof params.asset_ids_json === 'string') {
@@ -15031,9 +15254,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'conflict_resolutions_json 必须是字段到 existing/candidate 的 JSON 对象', 400) }
       }
       const profile = service.upsertBrandProfile({ workspaceId, name: required(params, 'name'), ...(typeof params.positioning === 'string' ? { positioning: params.positioning } : {}), ...(typeof params.audience === 'string' ? { audience: params.audience } : {}), ...(parseStringArray('tone_json') ? { tone: parseStringArray('tone_json') } : {}), ...(parseStringArray('forbidden_terms_json') ? { forbiddenTerms: parseStringArray('forbidden_terms_json') } : {}), ...(details ? { details } : {}), ...(visualRules ? { visualRules } : {}), ...(typeof params.source === 'string' ? { source: params.source } : {}), ...(resolutions ? { resolutions } : {}) })
-      await persistSnapshot(workspaceId, 'brand_profile', profile, profile as unknown as Record<string, unknown>)
-      await persistEvent(workspaceId, profile.id, 'brand_profile.updated', profile.revision, { brand_profile_id: profile.id, revision: profile.revision })
-      return result(profile)
+      const linkedProfile = await brandProfileWithUnit(workspaceId, profile)
+      await persistSnapshot(workspaceId, 'brand_profile', linkedProfile, linkedProfile as unknown as Record<string, unknown>)
+      await persistEvent(workspaceId, linkedProfile.id, 'brand_profile.updated', linkedProfile.revision, { brand_profile_id: linkedProfile.id, brand_unit_id: linkedProfile.brandUnitId, revision: linkedProfile.revision })
+      return result(linkedProfile)
     }
     case 'brand.tone.preview': {
       return result(service.previewBrandTone(workspaceId, { ...(typeof params.topic === 'string' ? { topic: params.topic } : {}), ...(typeof params.product_id === 'string' ? { productId: params.product_id } : {}) }))
@@ -16101,10 +16325,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const status = required(params, 'status') as import('../../../packages/knowledge/src/index.js').RuleStatus
         if (status !== 'draft') throw new DomainError('RULE_ACTIVATION_REQUIRES_UPDATE', '新规则必须先创建为草稿，再通过带版本与审计原因的更新流程启用', 409)
         const target = Object.fromEntries(['platform', 'category', 'brand', 'store', 'campaign'].filter(key => typeof params[key] === 'string' && String(params[key]).trim()).map(key => [key, String(params[key]).trim()]))
+        const sourceReference = required(params, 'source_reference')
+        const sourceKind = sourceReference.startsWith('manual://') ? 'internal' : required(params, 'source_kind')
         const rule = knowledgeForWorkspace(workspaceId).createRule({
           workspaceId, name: required(params, 'name'), content: required(params, 'content'), scope: required(params, 'scope') as import('../../../packages/knowledge/src/index.js').RuleScope,
           ...(typeof params.scope_value === 'string' ? { scopeValue: params.scope_value } : {}), target,
-          source: { kind: required(params, 'source_kind') as import('../../../packages/knowledge/src/index.js').RuleSourceKind, reference: required(params, 'source_reference'), checkedAt: required(params, 'source_checked_at') },
+          source: { kind: sourceKind as import('../../../packages/knowledge/src/index.js').RuleSourceKind, reference: sourceReference, checkedAt: required(params, 'source_checked_at') },
           version: required(params, 'version'), status,
           ...(typeof params.severity === 'string' ? { severity: params.severity as import('../../../packages/knowledge/src/index.js').RuleSeverity } : {}), ...(typeof params.action === 'string' ? { action: params.action as import('../../../packages/knowledge/src/index.js').RuleAction } : {}), ...(typeof params.owner_id === 'string' ? { ownerId: params.owner_id } : {}),
           ...(typeof params.effective_from === 'string' ? { effectiveFrom: params.effective_from } : {}), ...(typeof params.effective_to === 'string' ? { effectiveTo: params.effective_to } : {}),
@@ -16629,6 +16855,18 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   const requestWorkspace = (() => {
     try { return resolveWorkspace(req) } catch { return isProduction() ? 'unknown' : 'ws_demo' }
   })()
+  // Path-bound task operations use the task's canonical brand scope during
+  // authorization. On a cold replica that task is not in the compatibility
+  // service map yet, so resolving the shared policy before hydration would
+  // incorrectly deny a valid cross-replica read. Hydrate the durable workspace
+  // before the authz decision for these read/write paths; this is a read-only
+  // authorization prerequisite, not a business-state mutation.
+  const requiresDurableTaskAuthorizationHydration = Boolean(
+    persistence.business
+      && requestWorkspace !== 'unknown'
+      && /^\/v1\/tasks\/[^/]+(?:\/|$)/u.test(path),
+  )
+  if (requiresDurableTaskAuthorizationHydration) await hydrateWorkspace(requestWorkspace)
   const platformRateScope = requestPrincipals.get(req)?.workbench === 'platform' && requestWorkspace === 'unknown'
     ? `platform:${requestPrincipals.get(req)?.identityId || requestPrincipals.get(req)?.actorId || 'unidentified'}`
     : undefined
@@ -16636,9 +16874,9 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (httpOperationPolicy?.authentication === 'identity' && requestWorkspace !== 'unknown' && requestPrincipals.get(req)?.workbench === 'workspace') {
     await resolveActiveWorkspaceMember(req, requestWorkspace, false)
   }
-  // Resolve the shared capability decision immediately after authentication,
-  // before tenant hydration, membership/brand lookups or any route handler can
-  // create business state. body() is replay-safe because it caches the bytes.
+  // Resolve the shared capability decision immediately after authentication;
+  // any route-specific durable read above is limited to authorization scope
+  // resolution. body() is replay-safe because it caches the bytes.
   if (!workerRoute && !assetScannerRoute && !infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch) {
     await enforceRegisteredHttpCapability(req, url, requestWorkspace)
   }
@@ -17650,7 +17888,8 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   if (req.method === 'GET' && path === '/v1/brand-profile') {
     const workspaceId = resolveWorkspace(req)
     await enforceBrandProfileHttpAccess(req, workspaceId)
-    return send(res, 200, workspaceId, { profile: service.getBrandProfile(workspaceId) ?? null }, null, req)
+    const currentProfile = service.getBrandProfile(workspaceId)
+    return send(res, 200, workspaceId, { profile: currentProfile ? await brandProfileWithUnit(workspaceId, currentProfile, false) : null }, null, req)
   }
   if (req.method === 'POST' && path === '/v1/brand-profile/extract') {
     const input = await body(req)
@@ -17672,9 +17911,10 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const resolutions = isObject(input.conflict_resolutions) && Object.values(input.conflict_resolutions).every(value => value === 'existing' || value === 'candidate') ? input.conflict_resolutions as Record<string, 'existing' | 'candidate'> : undefined
     if (input.conflict_resolutions !== undefined && !resolutions) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'conflict_resolutions 必须是字段到 existing/candidate 的对象', 400)
     const profile = service.upsertBrandProfile({ workspaceId, name: required(input, 'name'), ...(typeof input.positioning === 'string' ? { positioning: input.positioning } : {}), ...(typeof input.audience === 'string' ? { audience: input.audience } : {}), ...(tone ? { tone } : {}), ...(forbiddenTerms ? { forbiddenTerms } : {}), ...(details ? { details } : {}), ...(visualRules ? { visualRules } : {}), ...(typeof input.source === 'string' ? { source: input.source } : {}), ...(resolutions ? { resolutions } : {}) })
-    await persistSnapshot(workspaceId, 'brand_profile', profile, profile as unknown as Record<string, unknown>)
-    await persistEvent(workspaceId, profile.id, 'brand_profile.updated', profile.revision, { brand_profile_id: profile.id, revision: profile.revision, source: typeof input.source === 'string' ? input.source : 'merchant_studio' })
-    return send(res, 200, workspaceId, profile, null, req)
+    const linkedProfile = await brandProfileWithUnit(workspaceId, profile)
+    await persistSnapshot(workspaceId, 'brand_profile', linkedProfile, linkedProfile as unknown as Record<string, unknown>)
+    await persistEvent(workspaceId, linkedProfile.id, 'brand_profile.updated', linkedProfile.revision, { brand_profile_id: linkedProfile.id, brand_unit_id: linkedProfile.brandUnitId, revision: linkedProfile.revision, source: typeof input.source === 'string' ? input.source : 'merchant_studio' })
+    return send(res, 200, workspaceId, linkedProfile, null, req)
   }
   if (req.method === 'GET' && path === '/v1/assets') {
     const workspaceId = resolveWorkspace(req)
