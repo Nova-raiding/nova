@@ -2634,7 +2634,7 @@ export class MerchantService {
     return [...new Set(selected.flatMap(sku => sku.sourceAssetIds ?? []))]
   }
   enqueueImageGeneration(input: { workspaceId: string; productId: string; taskId?: string; contentVersionId?: string; skuIds?: string[]; sourceAssetIds?: string[]; imageMode?: 'create' | 'optimize'; direction?: string; size?: string; count?: number; idempotencyKey: string; continuation?: Omit<ImageGenerationContinuation, 'requestedAt' | 'updatedAt'> }) {
-    if (input.size && !['1024x1024', '1024x1536', '1024x3072', '1024x4096'].includes(input.size)) throw new DomainError('IMAGE_SIZE_INVALID', '图片画布尺寸不受支持', 400)
+    if (input.size && !['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'].includes(input.size)) throw new DomainError('IMAGE_SIZE_INVALID', '图片画布尺寸不受支持', 400)
     const product = this.products.get(input.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
     let task: Task | undefined

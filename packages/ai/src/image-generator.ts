@@ -299,7 +299,23 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       // OpenAI-compatible edits require multipart image files. JSON image
       // fields on /images/generations may be silently ignored by relays.
       const editing = input.mode === 'optimize' && !nativeQwen
-      imageTrace('provider.request', { model: this.options.model, operation: editing ? 'image_edit' : 'image_generate', provider_request_id: providerKey, size: imageSize, count: input.count, mode: input.mode ?? 'create', source_image_count: sourceImages.length, source_asset_ref_count: sourceAssetRefs.length, long_page: isLongPage })
+      imageTrace('provider.request', {
+        model: this.options.model,
+        operation: editing ? 'image_edit' : 'image_generate',
+        provider_request_id: providerKey,
+        size: imageSize,
+        count: input.count,
+        mode: input.mode ?? 'create',
+        source_image_count: sourceImages.length,
+        source_asset_ref_count: sourceAssetRefs.length,
+        long_page: isLongPage,
+        marketing_layer: hasMarketingLayer,
+        selling_point_count: sellingPoints.length,
+        traffic_keyword_count: trafficKeywords.length,
+        promotion_label_count: promotionLabels.length,
+        logo_asset_count: logoAssetIds.length,
+        marketing_copy_count: copy.length,
+      })
       const editBody = editing ? new FormData() : undefined
       if (editBody) {
         editBody.set('model', this.options.model)

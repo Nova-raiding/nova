@@ -2593,6 +2593,12 @@ it('freezes a banner output variant from the requested activity slot', () => {
   expect(job.visualBrief).toMatchObject({ placement: 'product_image', outputVariant: 'banner' })
 })
 
+it('accepts and freezes a landscape canvas for banner generation', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '夏季活动 Banner', size: '1536x1024', idempotencyKey: 'landscape-banner-size', count: 1 })
+  expect(job.visualBrief).toMatchObject({ size: '1536x1024', outputVariant: 'banner' })
+})
+
 it('preserves SKU-specific source images and refuses a missing or foreign SKU source', () => {
   const service = new MerchantService({ seedFixture: false })
   const source = service.registerAsset({ workspaceId: 'sku-owner', name: 'blue.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'a'.repeat(64), storageKey: 'quarantine/sku-owner/blue.png' })
