@@ -199,7 +199,7 @@ describe('MerchantService', () => {
       competitorAnalysisId: 'competitor_policy_safe',
       structuralObservations: ['利益点后置证据'], expressionObservations: ['短句'], differentiationAngles: ['透明边界'], safeExpressionGuidance: ['仅用本品事实'], compliance: { originalTextCopied: false, competitorBrandReused: false },
       scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' },
-      source: { url: 'https://example.com/public-reference', platform: 'tmall', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页，无需登录即可访问' } },
+      source: { url: 'https://example.com/public-reference', platform: 'taobao', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页，无需登录即可访问' } },
       extracted: { structures: ['问题→证据→边界'], themes: ['透明表达'], trends: ['移动端短句'], sellingPoints: [], originalSpans: [{ text: '极简布局突出核心卖点' }], assets: [] },
     }
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } })
@@ -230,11 +230,25 @@ describe('MerchantService', () => {
       .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_POLICY_BLOCKED', details: expect.objectContaining({ findings: expect.arrayContaining([expect.objectContaining({ code: 'COMPETITOR_CROSS_TENANT_PRIVATE_SOURCE' })]) }) }))
   })
 
+  it('rejects a policy-v1 competitor reference captured for another platform', () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
+    const reference = {
+      competitorAnalysisId: 'competitor_platform_mismatch', structuralObservations: ['利益点后置证据'], expressionObservations: ['短句'], differentiationAngles: ['透明边界'], safeExpressionGuidance: ['仅用本品事实'], compliance: { originalTextCopied: false, competitorBrandReused: false },
+      scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' },
+      source: { url: 'https://example.com/jd-reference', platform: 'jd', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } },
+      extracted: { structures: ['问题→证据→边界'], themes: ['透明表达'], trends: [], sellingPoints: [], originalSpans: [], assets: [] },
+    }
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id })
+    expect(() => service.answerTask('ws_demo', task.id, { competitor_reference_json: JSON.stringify(reference) }))
+      .toThrowError(expect.objectContaining({ code: 'TASK_COMPETITOR_REFERENCE_PLATFORM_MISMATCH' }))
+  })
+
   it('turns copied generated content into an unwaivable P0 review finding', async () => {
     const copied = '极简布局突出核心卖点'
     const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => ({ title: copied, detail: '本商品信息以已确认事实为准。', sellingPoints: ['关键事实可追溯'] }) } })
     const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
-    const reference = { competitorAnalysisId: 'competitor_policy_copy', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/copy-source', platform: 'tmall', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [{ text: copied }], assets: [] } }
+    const reference = { competitorAnalysisId: 'competitor_policy_copy', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/copy-source', platform: 'taobao', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [], originalSpans: [{ text: copied }], assets: [] } }
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } })
     service.selectDirection(task.id, 'A', task.version)
     service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
@@ -287,7 +301,7 @@ describe('MerchantService', () => {
     const generated = { title: '本地商品方案', detail: '经实验室测试可连续防水48小时。', sellingPoints: ['经实验室测试可连续防水48小时'], modules: [{ ...decisionModule('hero', 1), body: '使用本地商品信息', imageGuidance: '直接使用 competitor-logo 制作主图' }] }
     const service = new MerchantService({ fixtureMode: true, contentGenerator: { generate: async () => generated } })
     const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
-    const reference = { competitorAnalysisId: 'competitor_policy_fact_asset', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/fact-source', platform: 'tmall', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [{ text: '经实验室测试可连续防水48小时' }], originalSpans: [], assets: [{ id: 'competitor-logo', kind: 'logo', description: '竞品 Logo' }] } }
+    const reference = { competitorAnalysisId: 'competitor_policy_fact_asset', structuralObservations: [], expressionObservations: [], differentiationAngles: [], safeExpressionGuidance: [], compliance: { originalTextCopied: false, competitorBrandReused: false }, scope: { workspaceId: 'ws_demo', brandId: brand.id, productId: 'prod_fixture_1' }, source: { url: 'https://example.com/fact-source', platform: 'taobao', fetchedAt: '2026-08-28T08:00:00.000Z', access: { kind: 'public', evidence: '公开商品页' } }, extracted: { structures: [], themes: [], trends: [], sellingPoints: [{ text: '经实验室测试可连续防水48小时' }], originalSpans: [], assets: [{ id: 'competitor-logo', kind: 'logo', description: '竞品 Logo' }] } }
     const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao', brandId: brand.id, answers: { competitor_reference_json: JSON.stringify(reference) } })
     service.selectDirection(task.id, 'A', task.version)
     service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)

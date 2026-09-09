@@ -20,6 +20,13 @@ import { orchestrateDetailPageModules } from './detail-page-orchestrator.js'
 
 export type Platform = 'jd' | 'taobao' | 'tmall' | 'pinduoduo' | 'xiaohongshu' | 'douyin'
 const supportedPlatforms: readonly Platform[] = ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']
+
+// 淘宝/天猫共享同一套阿里商品视觉与投放生态，历史竞品报告可能以其中任一
+// 标签记录；其它平台仍要求严格同平台，避免把京东、拼多多等素材误带入任务。
+function competitorPlatformFamily(platform: string): string {
+  const normalized = platform.trim().toLowerCase()
+  return normalized === 'taobao' || normalized === 'tmall' ? 'alibaba-commerce' : normalized
+}
 export type TaskState = 'draft' | 'ready_for_direction' | 'direction_selected' | 'plan_confirmed' | 'review_required' | 'approved' | 'publish_prepared' | 'publishing' | 'delivered' | 'failed_recoverable'
 export type PublishState = 'prepared' | 'confirmed' | 'queued' | 'submitting' | 'submitted' | 'reviewing' | 'published' | 'rejected' | 'unknown' | 'reconciling' | 'manual_attention'
 const publishStateSet = new Set<PublishState>(['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'])
@@ -459,7 +466,7 @@ export interface DurableRuleSnapshot {
   ruleChecks: { forbiddenTerms?: string[]; requiredFields?: string[] }
 }
 
-function parseCompetitorReference(value: unknown, expectedScope?: { workspaceId: string; brandId?: string; productId: string }): CompetitorReferenceSnapshot | undefined {
+function parseCompetitorReference(value: unknown, expectedScope?: { workspaceId: string; brandId?: string; productId: string; platform?: Platform }): CompetitorReferenceSnapshot | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>
@@ -504,6 +511,13 @@ function parseCompetitorReference(value: unknown, expectedScope?: { workspaceId:
       },
       extracted: extraction,
       candidate: { claims: [], assetUses: [] },
+    }
+    const referencePlatform = policyInput.reference.platform.trim().toLowerCase()
+    // Historical analyses may use the generic `web` source label. Preserve
+    // those records while enforcing exact same-platform evidence for newly
+    // captured platform analyses.
+    if (expectedScope?.platform && referencePlatform !== 'web' && competitorPlatformFamily(referencePlatform) !== competitorPlatformFamily(expectedScope.platform)) {
+      throw new DomainError('TASK_COMPETITOR_REFERENCE_PLATFORM_MISMATCH', '竞品参考必须来自当前任务的同一平台', 409, { expected_platform: expectedScope.platform, received_platform: policyInput.reference.platform })
     }
     const report = evaluateCompetitorReferencePolicy(policyInput)
     if (!report.allowed) throw new DomainError('TASK_COMPETITOR_REFERENCE_POLICY_BLOCKED', '竞品参考来源、授权、作用域或引用长度未通过合规门禁', 409, { findings: report.findings.map(item => ({ code: item.code, field: item.field, message: item.message })) })
@@ -1473,7 +1487,7 @@ export class MerchantService {
     const rulesCheckedAt = now()
     const ruleEvaluation = this.ruleCenter.evaluate({ platform: task.platform, category: product.category, store: product.storeName }, rulesCheckedAt)
     const durableRuleSnapshot = this.durableRuleSnapshots.get(`${task.workspaceId}:${product.id}`)
-    const competitorReference = parseCompetitorReference(task.answers.competitor_reference_json, { workspaceId: task.workspaceId, ...(brandId ? { brandId } : {}), productId: task.productId })
+    const competitorReference = parseCompetitorReference(task.answers.competitor_reference_json, { workspaceId: task.workspaceId, ...(brandId ? { brandId } : {}), productId: task.productId, platform: task.platform })
     const generationCompetitorReference = competitorReference ? {
       ...competitorReference,
       policy: {
@@ -3894,7 +3908,7 @@ export class MerchantService {
     if ((input.campaignId === undefined) !== (input.campaignItemId === undefined)) throw new DomainError('TASK_CAMPAIGN_SCOPE_INVALID', '批次任务必须同时绑定 campaignId 和 campaignItemId', 400)
     const task: Task = { id: taskId, workspaceId: input.workspaceId, productId: input.productId, platform: input.platform, ...(accountId ? { accountId } : {}), ...(resolvedBrandId ? { brandId: resolvedBrandId } : {}), ...(input.canonicalProductId ? { canonicalProductId: input.canonicalProductId } : {}), ...(input.listingId ? { listingId: input.listingId } : {}), ...(input.campaignId ? { campaignId: input.campaignId, campaignItemId: input.campaignItemId! } : {}), ...(region ? { region } : {}), ...(input.requestText ? { requestText: input.requestText.trim() } : {}), inputSnapshotId: `task:${taskId}:v1`, answers: { ...(useBrandAudience ? { audience: brand!.audience!.trim() } : {}), ...inferredAnswers, ...(brand ? { brand_id: brand.id } : {}), ...explicitAnswers }, missingQuestions: [], deferredQuestionIds: [], deferredQuestions: [], state: product.factsConfirmed ? 'ready_for_direction' : 'draft', version: 1, createdAt: now() }
     validateMerchantIntentAnswer(task.answers.merchant_intent_json)
-    if (task.answers.competitor_reference_json !== undefined) parseCompetitorReference(task.answers.competitor_reference_json, { workspaceId: task.workspaceId, ...(typeof task.answers.brand_id === 'string' && task.answers.brand_id.trim() ? { brandId: task.answers.brand_id.trim() } : {}), productId: task.productId })
+    if (task.answers.competitor_reference_json !== undefined) parseCompetitorReference(task.answers.competitor_reference_json, { workspaceId: task.workspaceId, ...(typeof task.answers.brand_id === 'string' && task.answers.brand_id.trim() ? { brandId: task.answers.brand_id.trim() } : {}), productId: task.productId, platform: task.platform })
     this.parsePromotionSnapshot(task, product)
     this.refreshTaskQuestions(task, product)
     this.tasks.set(task.id, task)
@@ -4108,7 +4122,7 @@ export class MerchantService {
     }
     if (answers.competitor_reference_json !== undefined) {
       const prospectiveBrandId = typeof persistedAnswers.brand_id === 'string' ? persistedAnswers.brand_id.trim() : typeof task.answers.brand_id === 'string' ? task.answers.brand_id.trim() : task.brandId
-      parseCompetitorReference(answers.competitor_reference_json, { workspaceId, ...(prospectiveBrandId ? { brandId: prospectiveBrandId } : {}), productId: product.id })
+      parseCompetitorReference(answers.competitor_reference_json, { workspaceId, ...(prospectiveBrandId ? { brandId: prospectiveBrandId } : {}), productId: product.id, platform: product.platform })
     }
     validateMerchantIntentAnswer(answers.merchant_intent_json)
     this.parsePromotionSnapshot({ ...task, answers: { ...task.answers, ...persistedAnswers } }, product)
