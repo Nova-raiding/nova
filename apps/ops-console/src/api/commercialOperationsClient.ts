@@ -175,6 +175,7 @@ export interface CommercialCatalogItem {
   priceLabel: string;
   cycleLabel: string | null;
   benefitsSummary: string;
+  benefits?: Array<{ code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null }>;
   approvalState: string;
   validFrom: string | null;
   validTo: string | null;
@@ -356,6 +357,11 @@ export function parseCatalog(value: unknown): CommercialPage<CommercialCatalogIt
     visibility: requiredText(row, method, "visibility", "visibility"), version: requiredText(row, method, "version", "version", "sku_version"),
     priceLabel: requiredText(row, method, "price_label", "price_label", "priceLabel"), cycleLabel: optionalText(pick(row, "cycle_label", "cycleLabel")),
     benefitsSummary: requiredText(row, method, "benefits_summary", "benefits_summary", "benefitsSummary"),
+    benefits: Array.isArray(row.benefits) ? row.benefits.flatMap((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+      const item = value as Record<string, unknown>;
+      return typeof item.code === "string" && item.code.trim() ? [{ code: item.code, quantity: typeof item.quantity === "number" && Number.isSafeInteger(item.quantity) ? item.quantity : null, rawValue: typeof item.raw_value === "string" ? item.raw_value : null, rawUnit: typeof item.raw_unit === "string" ? item.raw_unit : null }] : [];
+    }) : [],
     approvalState: requiredText(row, method, "approval_state", "approval_state", "approvalState", "status"),
     validFrom: optionalText(pick(row, "valid_from", "validFrom")), validTo: optionalText(pick(row, "valid_to", "validTo")),
     unresolved: stringArray(row.unresolved),
