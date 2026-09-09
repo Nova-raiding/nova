@@ -179,7 +179,7 @@ export function ConfigurationCenterSection({
                 />
                 <Table
                   rowKey="platform"
-                  pagination={false}
+                  pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
                   dataSource={platformRows}
                   columns={[
                   {

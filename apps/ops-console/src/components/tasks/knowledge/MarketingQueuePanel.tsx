@@ -593,7 +593,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
         {batchDetailLoading && <Typography.Text type="secondary">正在按平台、店铺和任务读取逐项状态…</Typography.Text>}
         {batchDetailError && <Alert type="error" showIcon role="alert" title="批次详情读取失败" description={batchDetailError} action={<Button onClick={() => { if (batchDetailTarget) void loadBatchDetail(batchDetailTarget); }}>重试</Button>} />}
         {batchDetail && batchDetail.items.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="服务端返回空批次；没有任何项目可安全操作"/>}
-        {batchDetail && batchDetail.items.length > 0 && <Table rowKey={publishBatchItemKey} pagination={false} scroll={{ x: 760 }} dataSource={batchDetail.items} columns={[
+        {batchDetail && batchDetail.items.length > 0 && <Table rowKey={publishBatchItemKey} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 760 }} dataSource={batchDetail.items} columns={[
           { title: "平台", dataIndex: "platform", render: (value?: string) => value ?? <Typography.Text type="danger">未返回</Typography.Text> },
           { title: "店铺账号", dataIndex: "accountId", render: (value?: string) => value ?? <Typography.Text type="danger">未绑定</Typography.Text> },
           { title: "商品 / 任务", render: (_: unknown, item: PublishBatchDetail["items"][number]) => <div><b>{item.productId ?? "商品 ID 未返回"}</b><br/><Typography.Text type="secondary">{item.taskId}</Typography.Text></div> },

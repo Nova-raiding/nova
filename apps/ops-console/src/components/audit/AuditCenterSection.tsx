@@ -102,7 +102,7 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
       </div>)}
     </div> : initialLoadFailed ? <Typography.Text type="secondary" role="status">审计数据尚未取得，请重试；当前状态不能解释为没有审计记录。</Typography.Text> : <div style={{ maxWidth: '100%', overflowX: 'auto' }}>
         <Table rowKey={record => `${record.source}:${record.id}`} size="small" loading={controller.loading}
-          dataSource={controller.records} columns={columns} pagination={false} scroll={{ x: 1270 }}
+          dataSource={controller.records} columns={columns} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 1270 }}
           locale={{ emptyText: controller.loading ? '正在加载' : '当前筛选条件下没有审计记录' }} />
       </div>}
 

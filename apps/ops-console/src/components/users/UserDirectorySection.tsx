@@ -237,7 +237,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { key: "risk", label: "风险策略", children: model.userDetail.identity.riskDecision ? <Tag color={model.userDetail.identity.riskDecision === "allow" ? "green" : model.userDetail.identity.riskDecision === "step_up" ? "gold" : "red"}>{model.userDetail.identity.riskLevel} / {model.userDetail.identity.riskDecision}</Tag> : "—" },
           ]} />
           {model.userDetail.identity.id ? <Alert showIcon type="warning" title="平台身份操作会影响所有租户" description={<Space wrap><Button aria-label={`${model.userDetail.identity.accessStatus === "active" ? "全局停用并撤销会话" : "恢复平台身份"} ${model.userDetail.identity.externalSubject}`} disabled={identityWritesDisabled} danger={model.userDetail.identity.accessStatus === "active"} onClick={() => setIdentityAction(model.userDetail!.identity.accessStatus === "active" ? "suspended" : "active")}>{model.userDetail.identity.accessStatus === "active" ? "全局停用并撤销会话" : "恢复平台身份"}</Button><Button aria-label={`调整 ${model.userDetail.identity.externalSubject} 的风险策略`} disabled={identityWritesDisabled} onClick={() => { setRiskLevel(model.userDetail!.identity.riskLevel ?? "low"); setRiskDecision(model.userDetail!.identity.riskDecision ?? "allow"); }}>调整风险策略</Button></Space>} /> : <Alert showIcon type="info" title="该成员尚未绑定持久平台身份" description="用户下次通过严格认证登录后，系统会绑定身份和会话；当前只能治理单个工作区成员关系。" />}
-          <div><Typography.Title level={5}>认证会话（已脱敏）</Typography.Title><Table size="small" rowKey="id" pagination={false} locale={{ emptyText: "暂无认证会话；用户完成严格认证后会在此留痕" }} scroll={{ x: 1080 }} dataSource={model.userDetail.sessions} columns={[
+          <div><Typography.Title level={5}>认证会话（已脱敏）</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无认证会话；用户完成严格认证后会在此留痕" }} scroll={{ x: 1080 }} dataSource={model.userDetail.sessions} columns={[
             { title: "类型", dataIndex: "sessionKind", width: 100 },
             { title: "状态", dataIndex: "status", width: 100, render: (value: string) => <Tag color={value === "active" ? "green" : value === "revoked" ? "red" : "default"}>{({ active: "有效", revoked: "已撤销", expired: "已过期" } as Record<string, string>)[value] ?? value}</Tag> },
             { title: "MFA", dataIndex: "mfaVerified", width: 80, render: (value: boolean) => value ? "已验证" : "否" },
@@ -252,13 +252,13 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "操作者", dataIndex: "actorId", width: 160, render: (value: string) => value || "系统" },
             { title: "原因与证据", dataIndex: "reason", width: 260, render: (value: string) => value || "系统观测" },
           ]} /></div>
-          <div><Typography.Title level={5}>所属租户与角色</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={false} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
+          <div><Typography.Title level={5}>所属租户与角色</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
             { title: "租户", dataIndex: "workspaceId", width: 180 },
             { title: "角色", dataIndex: "role", width: 140, render: (value: string) => roleLabels[value] ?? value },
             { title: "成员状态", dataIndex: "status", width: 110, render: (value: string) => memberStatusLabels[value] ?? value },
             { title: "租户状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => workspaceStatusLabels[value] ?? value },
           ]} /></div>
-          <div><Typography.Title level={5}>商业、钱包与任务状态</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial`} pagination={false} scroll={{ x: 920 }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无商业快照；不会把缺失账务数据解释为余额为零" }} columns={[
+          <div><Typography.Title level={5}>商业、钱包与任务状态</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 920 }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无商业快照；不会把缺失账务数据解释为余额为零" }} columns={[
             { title: "租户", dataIndex: "workspaceId", width: 180 },
             { title: "套餐", width: 160, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未配置" },
             { title: "订阅 / 权益", width: 150, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未确认" },

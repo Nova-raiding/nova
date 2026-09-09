@@ -295,7 +295,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
           rowKey={(row: PlatformOperation) =>
             row.platform
           }
-          pagination={false}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
           dataSource={
             platformOperations.length
               ? platformOperations

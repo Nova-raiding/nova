@@ -117,7 +117,7 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
       ) : <Table<SupportTicketContract>
         rowKey="id"
         loading={model.loading}
-        pagination={false}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={model.tickets}
         locale={{ emptyText: <Empty description="暂无符合条件的客服工单" /> }}
         scroll={{ x: 980 }}

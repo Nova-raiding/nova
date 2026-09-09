@@ -402,7 +402,7 @@ export function DataReadinessSection({ model }: OverviewSectionProps) {
       >
         <Table
           rowKey="kind"
-          pagination={false}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
           dataSource={[
             {
               kind: "六平台 capability",

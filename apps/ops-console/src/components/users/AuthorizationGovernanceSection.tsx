@@ -174,7 +174,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
           <Button style={{ minHeight: 44 }} onClick={() => void loadRoles()} loading={loading} disabled={!subjectIdentityId.trim()}>读取当前分配</Button>
         </Space>
         <OpsPageError error={roleLoadError} onRetry={() => void loadRoles()} />
-        <Table<RoleAssignment> size="small" rowKey="id" loading={loading} dataSource={roles?.assignments ?? []} pagination={false} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[
+        <Table<RoleAssignment> size="small" rowKey="id" loading={loading} dataSource={roles?.assignments ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份 ID 后读取平台角色" }} columns={[
           { title: "角色", dataIndex: "role", render: (value: string) => <Tag color="blue">{value}</Tag> },
           { title: "到期", dataIndex: "expiresAt", render: (value?: string) => value ?? "长期" },
           { title: "修订", dataIndex: "revision" },
@@ -226,7 +226,7 @@ export function AuthorizationGovernanceSection({ model }: { model: OpsConsoleMod
             description={`授权 ${model.jitRevocationReceipt.grantId} 已于 ${model.jitRevocationReceipt.revokedAt} 撤销，并从工作区 ${model.jitRevocationReceipt.workspaceId} 的有效列表中移除。`}
           />
         </div> : null}
-        <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={false} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
+        <Table<Grant> size="small" rowKey="id" loading={loading} dataSource={grants?.grants ?? []} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "输入身份与工作区后读取 JIT" }} scroll={{ x: 900 }} columns={[
           { title: "状态", render: (_value, row) => {
             const status = describeGrantStatus(row, grantStatusNow);
             return <Tag color={status.color}>{status.label}</Tag>;
