@@ -14193,6 +14193,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const readControl = await canonicalProductReadControl(workspaceId)
       const includeKnowledge = params.include_knowledge === true || params.include_knowledge === 'true'
       const products = await Promise.all((page.items as unknown as Product[]).map(async product => {
+        const requestedSkuId = typeof params.sku_id === 'string' ? params.sku_id.trim() : ''
+        const selectedSkus = requestedSkuId
+          ? (product.skus ?? []).filter(sku => sku.id === requestedSkuId || sku.name === requestedSkuId)
+          : []
         const canonicalCandidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
         const canonical = canonicalCandidates.length === 1 ? canonicalCandidates[0] : undefined
         const listings = canonical ? await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}) }) : []
@@ -14203,7 +14207,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           learningSuggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId, 'confirmed'),
           ...(knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId)?.status === 'active' ? { brandPreference: knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId) } : {}),
         }) : undefined
-        return { ...product, product_id: product.id, storeContext: product.accountId ? directory.get(`${product.platform}:${product.accountId}`) ?? { platform: product.platform, accountId: product.accountId } : null, canonical_scope: { verification_status: verificationStatus, read_mode: readControl.mode, canonical_product_id: canonical?.id ?? null, brand_id: canonical?.brandId ?? null, listing_id: listings.length === 1 ? listings[0]!.id : null, listing_count: listings.length, next_action: verificationStatus === 'verified' ? null : 'canonical.product.consistency' }, ...(knowledgeContext ? { knowledge_context: knowledgeContext } : {}) }
+        return { ...product, product_id: product.id, ...(requestedSkuId ? { selected_skus: selectedSkus } : {}), storeContext: product.accountId ? directory.get(`${product.platform}:${product.accountId}`) ?? { platform: product.platform, accountId: product.accountId } : null, canonical_scope: { verification_status: verificationStatus, read_mode: readControl.mode, canonical_product_id: canonical?.id ?? null, brand_id: canonical?.brandId ?? null, listing_id: listings.length === 1 ? listings[0]!.id : null, listing_count: listings.length, next_action: verificationStatus === 'verified' ? null : 'canonical.product.consistency' }, ...(knowledgeContext ? { knowledge_context: knowledgeContext } : {}) }
       }))
       const product_actions = products.map(product => {
         const base = { product_id: product.id, title: product.title, platform: product.platform, account_id: product.accountId ?? null, facts_confirmed: product.factsConfirmed }

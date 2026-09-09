@@ -148,12 +148,14 @@ describe('four-platform fixture authorization lifecycle', () => {
     const accountId = connected.data?.result?.account?.id as string
     const synced = await call(base, workspace, 'catalog.sync.start', { platform: 'taobao', account_id: accountId, mode: 'full' })
     expect(synced.error).toBeNull()
+    const skuId = synced.data?.result?.products?.[0]?.skus?.[0]?.id as string
+    expect(skuId).toBeTruthy()
 
     const withoutContext = await call(base, workspace, 'catalog.search', { platform: 'taobao', account_id: accountId })
     expect(withoutContext.error).toBeNull()
     expect(withoutContext.data?.result?.products?.[0]).not.toHaveProperty('knowledge_context')
 
-    const withContext = await call(base, workspace, 'catalog.search', { platform: 'taobao', account_id: accountId, include_knowledge: 'true' })
+    const withContext = await call(base, workspace, 'catalog.search', { platform: 'taobao', account_id: accountId, sku_id: skuId, include_knowledge: 'true' })
     expect(withContext.error).toBeNull()
     expect(withContext.data?.result?.products?.[0]?.knowledge_context).toMatchObject({
       rules: expect.any(Array),
@@ -162,7 +164,7 @@ describe('four-platform fixture authorization lifecycle', () => {
     })
     // Product facts remain authoritative and are returned alongside (never
     // replaced by) the bounded knowledge context.
-    expect(withContext.data?.result?.products?.[0]).toMatchObject({ factsConfirmed: expect.any(Boolean), skus: expect.any(Array) })
+    expect(withContext.data?.result?.products?.[0]).toMatchObject({ factsConfirmed: expect.any(Boolean), skus: expect.any(Array), selected_skus: [{ id: skuId }] })
   })
 
   it('blocks first-run reads and sync when creative points are unavailable', async () => {
