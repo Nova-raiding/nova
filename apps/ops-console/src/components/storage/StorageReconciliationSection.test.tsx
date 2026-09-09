@@ -3,6 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import { StorageReconciliationSection } from "./StorageReconciliationSection.js";
 
 describe("StorageReconciliationSection accessibility states", () => {
+  it("paginates workspace reconciliation rows at twenty per page", () => {
+    const summaries = Array.from({ length: 21 }, (_, index) => ({ workspaceId: `ws-${index + 1}`, status: "clean" as const, lastRunAt: "2026-08-29T10:00:00Z", freshness: "fresh" as const }));
+    const html = renderToStaticMarkup(<StorageReconciliationSection summaries={summaries} />);
+    expect((html.match(/role="listitem"/g) ?? []).length).toBe(20);
+    expect(html).toContain("1-20 / 21");
+  });
+
   it("shows redacted workspace status without object download fields", () => {
     const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "attention_required", lastRunAt: "2026-08-29T10:00:00Z", quota: { usedBytes: 4096, limitBytes: 8192, reservedBytes: 512, projectedBytes: 4608 }, counts: { references: 3, inventoryObjects: 4, matched: 2, missing: 1, metadataMismatches: 0, orphans: 1, crossWorkspace: 0, duplicates: 0 } }} />);
     expect(html).toContain("需要处理");

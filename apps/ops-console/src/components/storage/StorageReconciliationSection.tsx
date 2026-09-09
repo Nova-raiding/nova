@@ -1,6 +1,6 @@
-import { Alert, Button, Card, Col, Row, Statistic, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Pagination, Row, Statistic, Tag, Typography } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { StorageReconciliationSummary } from "../../types/ops";
 
 interface StorageReconciliationSectionProps {
@@ -24,11 +24,15 @@ const knownStorageStatuses = ["clean", "attention_required", "failed", "unavaila
 
 export function StorageReconciliationSection({ loading = false, error, summary, summaries = [], onRetry, fixtureDataPresent = false }: StorageReconciliationSectionProps) {
   const errorRef = useRef<HTMLDivElement>(null);
+  const [workspacePage, setWorkspacePage] = useState(1);
   const errorTitleId = useId();
   const errorDescriptionId = useId();
   useEffect(() => {
     if (error) errorRef.current?.focus({ preventScroll: true });
   }, [error]);
+  useEffect(() => {
+    setWorkspacePage(page => Math.min(page, Math.max(1, Math.ceil(summaries.filter(item => item.workspaceId).length / 20))));
+  }, [summaries]);
   const counts = summary?.counts;
   const unknownStatus = Boolean(summary && !knownStorageStatuses.includes(String(summary.status)));
   const freshnessUnknown = !summary?.lastRunAt || summary.freshness === "unknown";
@@ -41,6 +45,7 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
   const statusLabel = loading ? "加载中" : error ? "加载失败" : fixtureDataPresent ? "演示数据，未验证" : unknownStatus ? "状态未知，未验证" : unavailable ? "状态不可验证" : failed ? "对账失败" : expired ? "对账已过期" : stale ? "需要刷新" : attention ? "需要处理" : "对账正常";
   const statusColor = loading || error || unavailable || fixtureDataPresent ? "default" : failed || expired || stale || attention ? "orange" : "green";
   const workspaceRows = summaries.filter(item => item.workspaceId);
+  const workspacePageRows = workspaceRows.slice((workspacePage - 1) * 20, workspacePage * 20);
   const workspaceEmpty = !loading && !error && workspaceRows.length === 0;
   return (
     <>
@@ -71,7 +76,7 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
     </Card>
     {workspaceRows.length ? <Card title={`workspace 对账列表（${workspaceRows.length}）`} style={{ marginTop: 16 }}>
       <div role="list" aria-label="workspace 存储对账状态">
-        {workspaceRows.map(item => {
+        {workspacePageRows.map(item => {
           const itemExpired = item.freshness === "expired";
           const itemFailed = item.status === "failed";
           const itemStale = item.freshness === "stale";
@@ -83,6 +88,7 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
           </div>;
         })}
       </div>
+      {workspaceRows.length > 20 ? <Pagination current={workspacePage} pageSize={20} total={workspaceRows.length} showSizeChanger={false} showTotal={(total, range) => `${range[0]}-${range[1]} / ${total}`} onChange={setWorkspacePage} style={{ marginTop: 12 }} /> : null}
       <Typography.Paragraph type="secondary" style={{ margin: "12px 0 0" }}>列表仅用于定位 workspace 状态，不提供客户对象、素材内容、对象 key 或下载操作。</Typography.Paragraph>
     </Card> : workspaceEmpty ? <Card title="workspace 对账列表（0）" style={{ marginTop: 16 }}>
       <Alert
