@@ -154,10 +154,6 @@ export function OpsHeader({
   return (
     <Layout.Header className="ops-header">
       <div className="ops-header-identity">
-        <div className="ops-header-kicker">
-          <Typography.Text className="eyebrow">WORKSPACE OPERATIONS</Typography.Text>
-          <span className="ops-header-mode">桌面运营工作台</span>
-        </div>
         <Typography.Title level={2}>商业与平台控制台</Typography.Title>
         <RoleScopeBar session={session} authorization={resolvedAuthorization} activeWorkbench={activeWorkbench} availableWorkbenches={availableWorkbenches} switching={switchingWorkbench} onWorkbenchChange={onWorkbenchChange} onJitExpired={onJitExpired} onJitExit={onJitExit} />
       </div>
