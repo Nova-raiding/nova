@@ -15409,7 +15409,6 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const brandUnitId = typeof params.brand_unit_id === 'string' && params.brand_unit_id.trim() ? params.brand_unit_id.trim() : undefined
       if (brandUnitId) {
         await enforceBrandAccess(req, workspaceId, brandUnitId, 'editor')
-        await requireBrandUnit(workspaceId, brandUnitId)
       }
       const profile = service.upsertBrandProfile({ workspaceId, name: required(params, 'name'), ...(typeof params.positioning === 'string' ? { positioning: params.positioning } : {}), ...(typeof params.audience === 'string' ? { audience: params.audience } : {}), ...(parseStringArray('tone_json') ? { tone: parseStringArray('tone_json') } : {}), ...(parseStringArray('forbidden_terms_json') ? { forbiddenTerms: parseStringArray('forbidden_terms_json') } : {}), ...(details ? { details } : {}), ...(visualRules ? { visualRules } : {}), ...(brandUnitId ? { brandUnitId } : {}), ...(typeof params.source === 'string' ? { source: params.source } : {}), ...(resolutions ? { resolutions } : {}) })
       const linkedProfile = await brandProfileWithUnit(workspaceId, profile)
