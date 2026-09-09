@@ -2806,15 +2806,18 @@ function AssetProductUsageDialog({
 }) {
   const [bindings, setBindings] = useState<ProductAssetBinding[] | null>(null)
   const [error, setError] = useState('')
+  const loadBindings = () => {
+    setBindings(null)
+    setError('')
+    return fetchProductsByAsset(baseUrl, asset.id)
+      .then((result) => setBindings(result.items))
+      .catch((cause) => setError(describeApiError(cause)))
+  }
   useEffect(() => {
     let active = true
     void fetchProductsByAsset(baseUrl, asset.id)
-      .then((result) => {
-        if (active) setBindings(result.items)
-      })
-      .catch((cause) => {
-        if (active) setError(describeApiError(cause))
-      })
+      .then((result) => { if (active) setBindings(result.items) })
+      .catch((cause) => { if (active) setError(describeApiError(cause)) })
     return () => {
       active = false
     }
@@ -2840,8 +2843,7 @@ function AssetProductUsageDialog({
         <ErrorNotice
           message={`素材使用关系读取失败：${error}`}
           onRetry={() => {
-            setBindings(null)
-            setError('')
+            void loadBindings()
           }}
         />
       )}
@@ -4078,6 +4080,10 @@ function AssetLibrary({
                 key={asset.id}
                 data-asset-name={asset.name}
               >
+                {(() => {
+                  const assetBusy = assetAction.endsWith(`-${asset.id}`)
+                  return (
+                    <>
                 <div
                   className="asset-preview"
                   title={
@@ -4147,7 +4153,7 @@ function AssetLibrary({
                   {(() => {
                     const primaryAction = resolveAssetPrimaryAction(asset, {
                       configured: Boolean(baseUrl),
-                      busy: Boolean(assetAction),
+                      busy: assetBusy,
                     })
                     return (
                       <button
@@ -4157,7 +4163,7 @@ function AssetLibrary({
                         onClick={() => runPrimaryAssetAction(asset)}
                         disabled={primaryAction.disabled}
                       >
-                        {assetAction && primaryAction.kind !== 'refresh'
+                        {assetBusy && primaryAction.kind !== 'refresh'
                           ? '处理中…'
                           : primaryAction.label}
                       </button>
@@ -4167,7 +4173,7 @@ function AssetLibrary({
                     <button
                       className="text-button"
                       onClick={() => void openAsset(asset)}
-                      disabled={!baseUrl || !assetStorageReady || asset.scanStatus !== 'clean'}
+                      disabled={!baseUrl || !assetStorageReady || asset.scanStatus !== 'clean' || assetBusy}
                       title={!baseUrl ? '商家 API 未连接' : !assetStorageReady ? '对象存储未配置' : asset.scanStatus !== 'clean' ? '安全扫描通过后才能读取素材正文' : undefined}
                     >
                       {!assetStorageReady
@@ -4180,7 +4186,7 @@ function AssetLibrary({
                       data-testid={`asset-product-usage-open-${asset.id}`}
                       className="text-button"
                       onClick={() => setUsageAsset(asset)}
-                      disabled={!baseUrl}
+                      disabled={!baseUrl || assetBusy}
                     >
                       查看使用商品
                     </button>
@@ -4188,7 +4194,7 @@ function AssetLibrary({
                       data-testid={`asset-preference-open-${asset.id}`}
                       className="text-button"
                       onClick={() => openPreferenceEditor(asset)}
-                      disabled={!baseUrl || asset.scanStatus !== 'clean' || asset.parseStatus === 'failed' || asset.parseStatus === 'processing'}
+                      disabled={!baseUrl || asset.scanStatus !== 'clean' || asset.parseStatus === 'failed' || asset.parseStatus === 'processing' || assetBusy}
                       title={!baseUrl ? '商家 API 未连接' : asset.scanStatus !== 'clean' ? '安全扫描通过后才能评价素材' : asset.parseStatus === 'failed' ? '内容读取失败，请先重试读取或完成人工确认' : asset.parseStatus === 'processing' ? '内容读取完成后才能评价素材' : undefined}
                     >
                       评价素材
@@ -4202,7 +4208,7 @@ function AssetLibrary({
                         !baseUrl ||
                         asset.scanStatus !== 'clean' ||
                         asset.parseStatus === 'succeeded' ||
-                        Boolean(assetAction)
+                        assetBusy
                       }
                     >
                       {assetAction === `parse-${asset.id}`
@@ -4228,7 +4234,7 @@ function AssetLibrary({
                         !baseUrl ||
                         asset.scanStatus !== 'clean' ||
                         asset.rightsStatus === 'approved' ||
-                        Boolean(assetAction)
+                        assetBusy
                       }
                     >
                       {assetAction === `rights-${asset.id}`
@@ -4256,7 +4262,7 @@ function AssetLibrary({
                       disabled={
                         !baseUrl ||
                         asset.scanStatus !== 'clean' ||
-                        Boolean(assetAction)
+                        assetBusy
                       }
                     >
                       {assetAction === `facts-${asset.id}`
@@ -4338,6 +4344,9 @@ function AssetLibrary({
                     </div>
                   )}
                 </div>
+                    </>
+                  )
+                })()}
               </article>
             ))}
             {visibleAssets.length > renderedAssets.length && (
@@ -9022,7 +9031,7 @@ function TaskWorkspace({
                     </div>
                     {content?.body.brief && (
                       <div className="brief-card">
-                        <div className="doc-label">静态素材 Brief</div>
+                        <div className="doc-label">创意 Brief（脚本/分镜或静态素材）</div>
                         <p>
                           <b>{content.body.brief.placement}</b> ·{' '}
                           {content.body.brief.targetDimensions}
