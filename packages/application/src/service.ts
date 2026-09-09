@@ -132,6 +132,8 @@ export interface BrandProfile {
   details?: Record<string, unknown>
   /** Confirmed visual constraints consumed by every visual/content generation path. */
   visualRules?: BrandVisualRules
+  /** Explicitly selected normalized brand-unit aggregate for batch production. */
+  brandUnitId?: string
   conflicts?: BrandConflict[]
   revision: number
   updatedAt: string
@@ -2277,7 +2279,7 @@ export class MerchantService {
       { id: 'tone_c', style: '简洁利落', text: `用短句快速说清${subject}的核心价值、适用场景和选择理由，不夸大、不补写未经确认的参数。`, useWhen: '需要适配移动端快速浏览。' },
     ]
   }
-  upsertBrandProfile(input: { workspaceId: string; name: string; positioning?: string; audience?: string; tone?: string[]; forbiddenTerms?: string[]; details?: Record<string, unknown>; visualRules?: BrandVisualRules; source?: string; resolutions?: Record<string, 'existing' | 'candidate'> }) {
+  upsertBrandProfile(input: { workspaceId: string; name: string; positioning?: string; audience?: string; tone?: string[]; forbiddenTerms?: string[]; details?: Record<string, unknown>; visualRules?: BrandVisualRules; brandUnitId?: string; source?: string; resolutions?: Record<string, 'existing' | 'candidate'> }) {
     const id = `brand_${input.workspaceId}`
     const previous = this.brandProfiles.get(id)
     const source = input.source?.trim() || 'codex'
@@ -2312,7 +2314,7 @@ export class MerchantService {
         else conflicts.push(conflict)
       }
     }
-    const profile: BrandProfile = { id, workspaceId: input.workspaceId, name: String(values.name ?? previous?.name ?? '').trim(), ...(values.positioning !== undefined ? { positioning: String(values.positioning) } : previous?.positioning !== undefined ? { positioning: previous.positioning } : {}), ...(values.audience !== undefined ? { audience: String(values.audience) } : previous?.audience !== undefined ? { audience: previous.audience } : {}), ...(values.tone !== undefined ? { tone: [...(values.tone as string[])] } : previous?.tone ? { tone: [...previous.tone] } : {}), ...(values.forbiddenTerms !== undefined ? { forbiddenTerms: [...(values.forbiddenTerms as string[])] } : previous?.forbiddenTerms ? { forbiddenTerms: [...previous.forbiddenTerms] } : {}), ...(values.details !== undefined ? { details: structuredClone(values.details as Record<string, unknown>) } : previous?.details ? { details: structuredClone(previous.details) } : {}), ...(values.visualRules !== undefined ? { visualRules: structuredClone(values.visualRules as BrandVisualRules) } : previous?.visualRules ? { visualRules: structuredClone(previous.visualRules) } : {}), ...(conflicts.length ? { conflicts } : {}), revision: (previous?.revision ?? 0) + 1, updatedAt: now() }
+    const profile: BrandProfile = { id, workspaceId: input.workspaceId, name: String(values.name ?? previous?.name ?? '').trim(), ...(values.positioning !== undefined ? { positioning: String(values.positioning) } : previous?.positioning !== undefined ? { positioning: previous.positioning } : {}), ...(values.audience !== undefined ? { audience: String(values.audience) } : previous?.audience !== undefined ? { audience: previous.audience } : {}), ...(values.tone !== undefined ? { tone: [...(values.tone as string[])] } : previous?.tone ? { tone: [...previous.tone] } : {}), ...(values.forbiddenTerms !== undefined ? { forbiddenTerms: [...(values.forbiddenTerms as string[])] } : previous?.forbiddenTerms ? { forbiddenTerms: [...previous.forbiddenTerms] } : {}), ...(values.details !== undefined ? { details: structuredClone(values.details as Record<string, unknown>) } : previous?.details ? { details: structuredClone(previous.details) } : {}), ...(values.visualRules !== undefined ? { visualRules: structuredClone(values.visualRules as BrandVisualRules) } : previous?.visualRules ? { visualRules: structuredClone(previous.visualRules) } : {}), ...((input.brandUnitId ?? previous?.brandUnitId) ? { brandUnitId: (input.brandUnitId ?? previous?.brandUnitId)!.trim() } : {}), ...(conflicts.length ? { conflicts } : {}), revision: (previous?.revision ?? 0) + 1, updatedAt: now() }
     const referencedAssetIds = [...(profile.visualRules?.logo?.assetIds ?? []), ...(profile.visualRules?.fonts?.flatMap(font => font.assetId ? [font.assetId] : []) ?? [])]
     for (const assetId of referencedAssetIds) {
       const asset = this.assets.get(assetId)

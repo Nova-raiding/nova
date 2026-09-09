@@ -615,8 +615,8 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { asset_ids_json: { type: 'string', description: '可选：1～50 个素材 ID 的 JSON 字符串数组；省略时检查全部工作区素材。' } }, additionalProperties: false },
   },
   'brand.upsert': {
-    description: '保存品牌档案新版本及已确认的 Logo、品牌色和字体强规则。',
-    inputSchema: { type: 'object', properties: { name: { type: 'string' }, positioning: { type: 'string' }, audience: { type: 'string' }, tone_json: { type: 'string' }, forbidden_terms_json: { type: 'string' }, details_json: { type: 'string' }, visual_rules_json: { type: 'string' }, source: { type: 'string' }, conflict_resolutions_json: { type: 'string' } }, required: ['name'], additionalProperties: false },
+    description: '保存品牌档案新版本及已确认的 Logo、品牌色和字体强规则；brand_unit_id 用于显式关联已确认的批量生产品牌单元，不会自动猜测。',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, brand_unit_id: { type: 'string' }, positioning: { type: 'string' }, audience: { type: 'string' }, tone_json: { type: 'string' }, forbidden_terms_json: { type: 'string' }, details_json: { type: 'string' }, visual_rules_json: { type: 'string' }, source: { type: 'string' }, conflict_resolutions_json: { type: 'string' } }, required: ['name'], additionalProperties: false },
   },
   'brand.tone.preview': {
     description: '品牌调性未确定时生成三段短试写，供商家选择方向。',

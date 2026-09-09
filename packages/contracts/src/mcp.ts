@@ -1063,8 +1063,8 @@ export const MCP_METHOD_CONTRACTS: readonly McpMethodContract[] = [
   },
   {
     method: 'brand.upsert',
-    description: 'Create a new version of the workspace brand profile, including confirmed visual constraints.',
-    params: params({ name: { type: 'string' }, positioning: { type: 'string' }, audience: { type: 'string' }, tone_json: { type: 'string' }, forbidden_terms_json: { type: 'string' }, details_json: { type: 'string' }, visual_rules_json: { type: 'string' }, source: { type: 'string' }, conflict_resolutions_json: { type: 'string' } }, ['name']),
+    description: 'Create a new version of the workspace brand profile, including confirmed visual constraints. brand_unit_id explicitly links a reviewed profile to an existing batch-production brand unit; it is never inferred.',
+    params: params({ name: { type: 'string' }, brand_unit_id: { type: 'string' }, positioning: { type: 'string' }, audience: { type: 'string' }, tone_json: { type: 'string' }, forbidden_terms_json: { type: 'string' }, details_json: { type: 'string' }, visual_rules_json: { type: 'string' }, source: { type: 'string' }, conflict_resolutions_json: { type: 'string' } }, ['name']),
   },
   {
     method: 'brand.tone.preview',
