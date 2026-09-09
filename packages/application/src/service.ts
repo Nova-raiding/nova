@@ -2671,6 +2671,16 @@ export class MerchantService {
     const brief = contentVersion?.body.brief
     const selectedDirection = task?.directions?.find(item => item.id === task.selectedDirectionId)
     const confirmedSellingPoints = (task?.productionPlan?.sellingPoints ?? product.sellingPoints?.filter(item => item.proofStatus === 'confirmed').map(item => item.text) ?? []).filter(Boolean).slice(0, 6)
+    const brandVisualRules = task?.inputSnapshot?.brand?.visualRules ?? contentVersion?.brandSnapshot?.visualRules ?? this.getBrandProfile(input.workspaceId)?.visualRules
+    const logoAssetIds = brandVisualRules?.logo?.assetIds?.slice(0, 4) ?? []
+    const verifiedAttributeLabels = Object.entries(product.attributes ?? {})
+      .filter(([key, value]) => /颜色|色系|材质|面料|尺码|尺寸|规格|场景|功能|款式|适用|容量|重量|color|fabric|size|material/iu.test(key) && value.trim())
+      .map(([key, value]) => `${key}:${value}`.slice(0, 60)).slice(0, 6)
+    const trafficKeywords = [...new Set([
+      product.category,
+      ...verifiedAttributeLabels.map(label => label.split(':').slice(1).join(':')),
+      ...confirmedSellingPoints,
+    ].map(value => value?.trim()).filter((value): value is string => Boolean(value)).slice(0, 8))]
     const competitorReference = task?.inputSnapshot?.knowledgeContext?.competitorReferences?.[0]
     const promotionLabels = (task?.productionPlan?.promotionSnapshot ?? []).flatMap(promotion => {
       const price = promotion.couponPriceCny ?? promotion.priceCny
@@ -2694,20 +2704,25 @@ export class MerchantService {
       'SKU与套餐边界：包含与不包含',
       '信任与行动：售后与克制 CTA',
     ]
+    const visualPlacement = task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image')
+    const bannerPlacement = /banner|横幅|广告位|活动头图/iu.test(`${input.direction} ${visualPlacement}`)
     const visualBrief = {
       ...(input.size ? { size: input.size } : {}),
       platform: task?.platform ?? product.platform,
-      placement: task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image'),
+      placement: visualPlacement,
       skuLabels: (product.skus ?? []).filter(sku => skuIds.includes(sku.id)).map(sku => `${sku.name}${sku.attributes && Object.keys(sku.attributes).length ? `（${Object.entries(sku.attributes).map(([key, value]) => `${key}:${value}`).join('，')}）` : ''}`),
       sellingPoints: confirmedSellingPoints,
+      ...(trafficKeywords.length ? { trafficKeywords } : {}),
+      ...(logoAssetIds.length ? { logoAssetIds } : {}),
       ...(marketingLabels.length ? { marketingLabels } : {}),
+      ...(promotionLabels.length ? { promotionLabels } : {}),
       ...(task?.productionPlan?.placement?.includes('详情') || brief?.placement?.includes('详情') || input.size === '1024x3072' || input.size === '1024x4096' ? { detailSections } : {}),
       platformRules: [
         '商品本体、颜色、材质、结构、Logo 与 SKU 必须保持不变',
         '所有价格、优惠、功效和认证必须来自已确认事实',
         '主图保持商品清晰完整；营销信息优先放在详情长图和副图',
       ],
-      outputVariant: input.size === '1024x3072' || input.size === '1024x4096' ? 'detail_long' as const : contentVersion ? 'secondary' as const : 'main' as const,
+      outputVariant: input.size === '1024x3072' || input.size === '1024x4096' ? 'detail_long' as const : bannerPlacement ? 'banner' as const : contentVersion ? 'secondary' as const : 'main' as const,
       ...(competitorReference ? {
         competitorStructures: competitorReference.structuralObservations,
         competitorThemes: competitorReference.expressionObservations,

@@ -2587,6 +2587,12 @@ it('freezes canvas size into the image intent and rejects size-changing idempote
   expect(() => service.enqueueImageGeneration({ ...input, idempotencyKey: 'oversize', size: '8192x8192' })).toThrow()
 })
 
+it('freezes a banner output variant from the requested activity slot', () => {
+  const service = new MerchantService({ fixtureMode: true })
+  const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', direction: '活动头图', idempotencyKey: 'activity-banner-slot', count: 1 })
+  expect(job.visualBrief).toMatchObject({ placement: 'product_image', outputVariant: 'banner' })
+})
+
 it('preserves SKU-specific source images and refuses a missing or foreign SKU source', () => {
   const service = new MerchantService({ seedFixture: false })
   const source = service.registerAsset({ workspaceId: 'sku-owner', name: 'blue.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'a'.repeat(64), storageKey: 'quarantine/sku-owner/blue.png' })
