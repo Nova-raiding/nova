@@ -14191,12 +14191,19 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         : await (async () => { const accessibleIds = await accessibleProductIds(req, workspaceId); const all = service.listProducts(workspaceId, filters).filter(product => accessibleIds === undefined || accessibleIds.has(product.id)).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id)); return { items: all.slice(pageRequest.offset, pageRequest.offset + pageRequest.limit), total: all.length, ...pageRequest } })()
       const canonicalRepository = persistence.brandUnits ?? memoryBrandUnits
       const readControl = await canonicalProductReadControl(workspaceId)
+      const includeKnowledge = params.include_knowledge === true || params.include_knowledge === 'true'
       const products = await Promise.all((page.items as unknown as Product[]).map(async product => {
         const canonicalCandidates = (await canonicalRepository.listCanonicalProducts({ workspaceId })).filter(row => row.sourceProductId === product.id)
         const canonical = canonicalCandidates.length === 1 ? canonicalCandidates[0] : undefined
         const listings = canonical ? await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}) }) : []
         const verificationStatus = canonicalCandidates.length > 1 ? 'conflict' : !canonical ? 'legacy_only' : listings.length === 1 ? 'verified' : 'blocked'
-        return { ...product, product_id: product.id, storeContext: product.accountId ? directory.get(`${product.platform}:${product.accountId}`) ?? { platform: product.platform, accountId: product.accountId } : null, canonical_scope: { verification_status: verificationStatus, read_mode: readControl.mode, canonical_product_id: canonical?.id ?? null, brand_id: canonical?.brandId ?? null, listing_id: listings.length === 1 ? listings[0]!.id : null, listing_count: listings.length, next_action: verificationStatus === 'verified' ? null : 'canonical.product.consistency' } }
+        const knowledgeContext = includeKnowledge ? buildBoundedKnowledgeGenerationContext({
+          rules: knowledgeForWorkspace(workspaceId).findApplicableRules({ platform: product.platform, ...(product.category ? { category: product.category } : {}), ...(product.storeName ? { store: product.storeName } : {}) }, new Date().toISOString(), workspaceId),
+          assets: knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId }),
+          learningSuggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId, 'confirmed'),
+          ...(knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId)?.status === 'active' ? { brandPreference: knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId) } : {}),
+        }) : undefined
+        return { ...product, product_id: product.id, storeContext: product.accountId ? directory.get(`${product.platform}:${product.accountId}`) ?? { platform: product.platform, accountId: product.accountId } : null, canonical_scope: { verification_status: verificationStatus, read_mode: readControl.mode, canonical_product_id: canonical?.id ?? null, brand_id: canonical?.brandId ?? null, listing_id: listings.length === 1 ? listings[0]!.id : null, listing_count: listings.length, next_action: verificationStatus === 'verified' ? null : 'canonical.product.consistency' }, ...(knowledgeContext ? { knowledge_context: knowledgeContext } : {}) }
       }))
       const product_actions = products.map(product => {
         const base = { product_id: product.id, title: product.title, platform: product.platform, account_id: product.accountId ?? null, facts_confirmed: product.factsConfirmed }

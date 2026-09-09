@@ -188,7 +188,7 @@ description: 大麦商家营销、电商运营与商品内容的唯一业务入�
 
 ### 知识库闭环（插件默认能力）
 
-- 每次创建正式营销任务或生成内容前，先调用 `knowledge.rule.list`、`knowledge.asset.list` 和 `knowledge.learning.list(status=pending)`；只使用当前工作区返回的、来源可追溯的知识。`knowledge.asset.list` 是品牌/客户知识资产，不替代商品素材 `asset.list`；后者仍必须单独检查扫描、事实和商用权益。
+- 每次创建正式营销任务或生成内容前，先调用 `knowledge.rule.list`、`knowledge.asset.list` 和 `knowledge.learning.list(status=pending)`；只使用当前工作区返回的、来源可追溯的知识。选定具体商品/SKU 时，优先在 `catalog.search` 传 `include_knowledge=true` 一次读取该商品事实与有界知识上下文；返回的 `knowledge_context` 只包含适用规则、已批准且权益已确认的知识资产，不能替代商品 SKU 事实。`knowledge.asset.list` 是品牌/客户知识资产，不替代商品素材 `asset.list`；后者仍必须单独检查扫描、事实和商用权益。
 - 生成上下文只允许引用已生效规则、已批准且权益已确认的知识资产、已确认学习建议和明确绑定的竞品差异化参考。待审核/权益未知内容只能作为阻断提示，不能偷偷降级为模型上下文。
 - 每次平台拒绝、人工“不喜欢”或明确纠正都应在获得用户确认后调用 `knowledge.feedback.record`；插件向用户展示“已记录为学习建议”，但不得声称系统已经自动学会。运营确认后，后续任务才会使用 `knowledge.learning.confirm` 形成的规则。
 - 用户询问“你记住了什么”时，分别展示规则、品牌/客户资产、已确认学习和竞品参考的摘要、来源、版本/更新时间与当前状态；不展示内部 ID、原始素材字节、权限角色或跨工作区数据。

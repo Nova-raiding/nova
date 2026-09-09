@@ -9,6 +9,8 @@
 - [ComfyUI E-Commerce Workflows](https://github.com/xiaoqahax-ui/comfyui-ecommerce-workflows) 提供去背、ControlNet/IP-Adapter 保真、详情页复合排版和批处理的流程，可作为未来自托管 provider 的节点参考；其模型和节点许可证仍需逐项审查。
 - [codexQIYU-image-workflow](https://github.com/QIYU-JACKMAN/codexQIYU-image-workflow) 将商品事实、提示词优化、客户确认、逐图质检和失败续跑串成生产流程，适合借鉴任务编排和审阅门禁。
 - [ComfyUI-productfix](https://github.com/MiddleKD/ComfyUI-productfix) 专注保留电商商品文字、Logo 和细节，适合作为真实性检查/局部编辑的可选 provider 能力。
+- [ecommerce-product-image-workflow](https://github.com/tytsxai/ecommerce-product-image-workflow) 提供 CSV/JSON 输入、风格包、提示词模板、QA 清单、manifest 和可替换 HTTP provider；它更适合作为本项目“生成前编排 + 生成后质检”的外部参考，而不是直接替换 MCP。
+- [gtm-skills product-photography](https://github.com/sidchaudhary/gtm-skills/tree/master/skills/brand-designer/product-photography) 用模块化摄影 brief 约束主体、造型、环境、光线和镜头，并建议按 5–8 张商品图成套规划；可借鉴其“先定拍摄方向，再生成图片”的方法。
 
 本项目不直接嵌入这些仓库，也不绕过 Merchant MCP。生产图片始终经配置的模型中转、真实用量与成本回执、对象归档、安全扫描、真实性检查和人工选择。开源工作流只能作为中转服务的实现参考；缺少中转配置时必须失败关闭。
 
@@ -51,3 +53,5 @@
 ## 后续迭代
 
 接入真实中转后，优先增加 mask-guided 商品主体锁定、OCR/Logo 检查、长图章节切片预览和平台规则版本化快照。自托管 ComfyUI 仅在 GPU、模型许可证、成本回执和生产 canary 证据齐备后启用。
+
+建议的 provider 适配优先级是：先接入现有模型中转并保留本项目的 MCP、权限、计量和归档；再按需把 `ecommerce-product-image-workflow` 的 manifest/QA 思路映射到 `visualBrief` 和 `archiveImageGenerationOutputs`；最后才评估 ComfyUI 自托管。这样可以获得开源工作流的可复核性，又不会绕过当前的租户隔离和发布门禁。
