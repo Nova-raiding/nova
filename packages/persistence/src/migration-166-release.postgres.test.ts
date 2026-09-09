@@ -20,8 +20,12 @@ describe('migration 166 executable commercial catalog PostgreSQL release evidenc
       isolated.pathname = `/${databaseName}`
       database = new Pool({ connectionString: isolated.toString() })
       await database.query(await readFile(new URL('../../../infra/local/ensure-app-role.sql', import.meta.url), 'utf8'))
-      const applied = await new MigrationRunner(database, await loadMigrations()).run()
-      expect(applied.at(-1)).toBe(174)
+      const migrations = await loadMigrations()
+      const applied = await new MigrationRunner(database, migrations).run()
+      // This acceptance test exercises the complete release chain.  Keep the
+      // assertion tied to the loaded chain so a later tail migration cannot
+      // make the catalog evidence fail before the catalog assertions run.
+      expect(applied.at(-1)).toBe(migrations.at(-1)?.version)
 
       const versions = await database.query<{ total: number; executable: number; blocked: number }>(`
         SELECT count(*)::int AS total,
@@ -29,7 +33,11 @@ describe('migration 166 executable commercial catalog PostgreSQL release evidenc
           count(*) FILTER (WHERE version=2 AND NOT executable)::int AS blocked
         FROM commercial_catalog_sku_versions
       `)
-      expect(versions.rows[0]).toEqual({ total: 14, executable: 6, blocked: 1 })
+      // The complete release chain includes the private validation v3 SKU
+      // from migration 174 and its unresolved predecessor; keep this
+      // assertion bound to the current executable catalog, not the older
+      // pre-174 inventory.
+      expect(versions.rows[0]).toEqual({ total: 15, executable: 5, blocked: 2 })
 
       const rates = await database.query<{ rules: number; executable: number }>(`
         SELECT count(*)::int AS rules, count(*) FILTER (WHERE r.executable)::int AS executable

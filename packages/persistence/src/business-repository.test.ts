@@ -67,7 +67,8 @@ describe('PostgresBusinessRepository', () => {
     })
 
     expect(page).toEqual({ items: [{ id: 'task_2', brandId: 'brand_1' }, { id: 'task_3', brandId: 'brand_1' }], total: 2, limit: 20, offset: 0 })
-    expect(client.calls[2]?.text).toContain('brand_id = ANY($3::text[])')
+    expect(client.calls[2]?.text).toContain("coalesce(brand_id, data->>'brandId') = ANY($3::text[])")
+    expect(client.calls[2]?.text).toContain("coalesce(brand_id, data->>'brandId') IS NULL OR EXISTS (SELECT 1 FROM brands")
     expect(client.calls[2]?.values).toEqual(['ws_one', 'approved', ['brand_1']])
     expect(client.calls[3]?.text).toContain('ORDER BY created_at DESC, id ASC LIMIT $4 OFFSET $5')
   })

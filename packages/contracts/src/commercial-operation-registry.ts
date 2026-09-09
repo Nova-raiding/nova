@@ -325,6 +325,7 @@ export const MCP_POINT_REQUIRED_NO_CHARGE_ENABLED_METHODS = [
   'knowledge.competitor.reference',
   'delivery.bundle.verify',
   'multimodal.video.get',
+  'support.customer.replies.list',
 ] as const satisfies readonly McpMethod[]
 
 export const MCP_POINT_REQUIRED_NO_CHARGE_DISABLED_METHODS = [

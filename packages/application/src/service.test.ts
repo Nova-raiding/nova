@@ -371,6 +371,25 @@ describe('MerchantService', () => {
     expect(() => restarted.resolveImageGenerationByVisualRef('ws_other', `dvis_${'A'.repeat(24)}`)).toThrowError(expect.objectContaining({ code: 'VISUAL_NOT_FOUND' }))
   })
 
+  it('fails closed instead of returning the uploaded original for optimize requests without an image provider', async () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const job = service.enqueueImageGeneration({
+      workspaceId: 'ws_demo',
+      productId: 'prod_fixture_1',
+      sourceAssetIds: ['asset_uploaded_product'],
+      imageMode: 'optimize',
+      idempotencyKey: 'optimize-without-provider',
+      count: 1,
+    })
+
+    await expect(service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })).rejects.toMatchObject({
+      code: 'IMAGE_GENERATION_NOT_CONFIGURED',
+    })
+    expect(job.state).toBe('failed')
+    expect(job.images).toBeUndefined()
+    expect(job.errorMessage).toContain('不能把上传原图或静态素材当作重新设计结果返回')
+  })
+
   it('rejects duplicate candidate references and cross-workspace archive assets atomically', () => {
     const service = new MerchantService({ fixtureMode: true })
     const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'archive-validation', count: 2 })

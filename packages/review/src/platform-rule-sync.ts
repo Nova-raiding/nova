@@ -52,12 +52,22 @@ export function platformRuleSyncStatus(
     const checkedAt = validDate(latest?.source.checkedAt)
     const ageHours = checkedAt ? Math.max(0, (now - Date.parse(checkedAt)) / 3_600_000) : null
     const stale = !checkedAt || ageHours === null || ageHours > intervalHours
-    const state = !configured ? 'not_configured' : stale ? 'stale' : 'ready'
+    // A configured manifest is not sufficient evidence for a platform. If
+    // this platform has no imported trusted version, keep the state explicit
+    // so every consumer can explain that the platform rule data itself is
+    // missing (rather than implying that an old version merely went stale).
+    const state = !configured || !latest ? 'not_configured' : stale ? 'stale' : 'ready'
     return {
       platform: source.platform, label: source.label, officialUrl: source.officialUrl,
       configured, machineReadable: source.machineReadable, latestVersion: latest?.version ?? null,
       sourceCheckedAt: checkedAt, ageHours, stale, state,
-      reason: !configured ? '签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则' : stale ? `规则来源已超过 ${intervalHours} 小时未检查` : '规则来源在检查窗口内',
+      reason: !configured
+        ? '签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则'
+        : !latest
+          ? `尚未导入可验证的${source.label}平台规则，商户与插件不能消费该平台规则`
+          : stale
+            ? `规则来源已超过 ${intervalHours} 小时未检查`
+            : '规则来源在检查窗口内',
     }
   })
 }

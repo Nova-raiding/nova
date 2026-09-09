@@ -73,6 +73,7 @@ export function MembersPage({ model }: MembersPageProps) {
       description="在当前租户范围内邀请成员、调整角色和停用访问；所有变更均要求原因并进入审计记录。"
       actions={<Button type="primary" disabled={!canReadMembers} loading={model.loading} title={!canReadMembers ? "当前会话没有成员读取能力或尚未选择工作区" : undefined} onClick={() => void model.load()}>刷新成员</Button>}
     >
+      <div className="ops-members-page">
       <Card title="当前账号权限" size="small" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={8} className="full-width">
           <Typography.Text>
@@ -96,6 +97,7 @@ export function MembersPage({ model }: MembersPageProps) {
         </Space>
       </Card>
       <MembersSection model={model} />
+      </div>
     </OpsPage>
   );
 }

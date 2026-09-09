@@ -16,7 +16,7 @@ function bytes(value?: number | null) {
 }
 
 export function StorageReconciliationSummary({ summary, onOpen }: StorageReconciliationSummaryProps) {
-  const unavailable = !summary || summary.status === "unavailable";
+  const unavailable = !summary || summary.status === "unavailable" || !summary.lastRunAt || summary.freshness === "unknown";
   const failed = summary?.runStatus === "failed" || summary?.status === "failed";
   const attention = summary?.status === "attention_required";
   const counts = summary?.counts;
@@ -31,7 +31,7 @@ export function StorageReconciliationSummary({ summary, onOpen }: StorageReconci
         <Col xs={12} md={6}><Statistic title="预计占用" value={bytes(summary?.quota?.projectedBytes)} /></Col>
         <Col xs={24} md={6}>
           <Tag color={unavailable ? "default" : failed ? "red" : attention ? "orange" : "green"}>
-            {unavailable ? "尚未接入" : failed ? "对账失败" : attention ? "需要处理" : "对账正常"}
+            {unavailable ? "状态不可验证" : failed ? "对账失败" : attention ? "需要处理" : "对账正常"}
           </Tag>
         </Col>
         <Col xs={24} md={6}>

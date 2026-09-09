@@ -30,10 +30,6 @@ COPY --from=build /app/dist ./dist
 # Keep the release migration inventory at the same stable path as the API
 # image so the freshness gate can inspect both images without starting them.
 COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations
-# Keep the newest migration explicit as well as covered by the directory copy.
-# This avoids stale BuildKit directory metadata omitting an untracked release
-# migration during local worker image rebuilds.
-COPY packages/persistence/src/migrations/178_reclassify_manual_rule_sources_again.sql ./dist/packages/persistence/src/migrations/178_reclassify_manual_rule_sources_again.sql
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/dist/packages/contracts/src ./packages/contracts/dist
 RUN mkdir -p node_modules/@merchant-marketing \

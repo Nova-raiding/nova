@@ -24,6 +24,6 @@ describe('platform rule sync status', () => {
       source: { ...seed.source, reference: seed.source.reference.replace('manual://', 'manifest://') },
     }))).list({ includeInactive: true })
     const result = platformRuleSyncStatus(rules, { now: '2026-08-26T12:00:00.000Z', intervalHours: 24, manifestUrl: 'https://rules.example/manifest.json', signingSecretConfigured: true })
-    expect(result.find(item => item.platform === 'taobao')).toMatchObject({ state: 'stale', latestVersion: null, sourceCheckedAt: null })
+    expect(result.find(item => item.platform === 'taobao')).toMatchObject({ state: 'not_configured', configured: true, latestVersion: null, sourceCheckedAt: null, reason: '尚未导入可验证的淘宝平台规则，商户与插件不能消费该平台规则' })
   })
 })

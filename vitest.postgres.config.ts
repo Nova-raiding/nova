@@ -25,7 +25,7 @@ export function createIsolatedPostgresConfig(environment: NodeJS.ProcessEnv) {
       && !database.search && !database.hash
       && /^[a-f0-9-]{36}$/u.test(environment.MERCHANT_ISOLATED_POSTGRES_RUN_ID ?? '')
   } catch { /* missing or malformed binding must not activate a localhost fallback */ }
-  if (!valid || ISOLATED_POSTGRES_TEST_FILES.length !== 11 || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
+  if (!valid || ISOLATED_POSTGRES_TEST_FILES.length !== 13 || ALL_POSTGRES_TEST_FILES.length < ISOLATED_POSTGRES_TEST_FILES.length) throw new Error('Use the isolated PostgreSQL launcher; generated local fixture bindings and the PostgreSQL manifest are required.')
   const files = environment.MERCHANT_ISOLATED_POSTGRES_ALL === 'true' ? ALL_POSTGRES_TEST_FILES : ISOLATED_POSTGRES_TEST_FILES
   return {
     test: {

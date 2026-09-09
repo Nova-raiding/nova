@@ -1,12 +1,35 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import { assertRelayEvidence } from './relay-evidence.mjs'
+
+// ChatGPT.app may launch the JavaScript entrypoint directly instead of the
+// POSIX wrapper. On macOS, recover only missing configuration from launchd;
+// explicit process environment always wins and production remains fail-closed.
+if (process.platform === 'darwin' && process.execPath.includes('/ChatGPT.app/')) {
+  const launchdNames = [
+    'NODE_ENV', 'DEPLOY_ENV', 'MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID',
+    'MERCHANT_MCP_TOKEN', 'MERCHANT_STRICT_AUTH', 'MERCHANT_ALLOW_FIXTURE_FALLBACK',
+    'MERCHANT_MCP_WRITE_ENABLED', 'MERCHANT_RULE_APPROVAL_TOKEN', 'MERCHANT_ARTIFACT_DIR',
+    'MERCHANT_MCP_TIMEOUT_MS', 'MERCHANT_MCP_RETRY_ATTEMPTS', 'MERCHANT_MCP_RETRY_DELAY_MS',
+    'MERCHANT_ASSET_RESOURCE_DOMAINS', 'MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES',
+  ]
+  for (const name of launchdNames) {
+    if (typeof process.env[name] === 'string' && process.env[name].trim()) continue
+    try {
+      const value = execFileSync('launchctl', ['getenv', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      if (value) process.env[name] = value
+    } catch {
+      // Missing launchd configuration is handled by the normal validation path.
+    }
+  }
+}
 
 const PROTOCOL_VERSION = '2025-06-18'
 const PLUGIN_VERSION = (() => {
@@ -61,16 +84,16 @@ const READ_ONLY_METHODS = new Set([
   'brand-unit.list', 'brand-unit.listing.list', 'canonical.product.consistency', 'campaign.batch.list', 'campaign.batch.get',
   'workspace.health', 'catalog.search', 'catalog.categories', 'catalog.image.get',
   'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get', 'workspace.data.export.get', 'commercial.access.get', 'commercial.catalog.get', 'creative-points.balance.get', 'creative-points.statement.list', 'ops.audit.list', 'ops.audit.export', 'ops.data.delete.list', 'ops.members.list', 'ops.session', 'ops.workspaces.list',
-  'ops.support.tickets.list', 'ops.support.ticket.get',
+  'ops.support.tickets.list', 'ops.support.ticket.get', 'support.customer.replies.list',
   'ops.incidents.list', 'ops.incident.get', 'ops.incident.timeline',
   'ops.feature-flags.list', 'ops.feature-flag.events', 'ops.feature-flag.evaluate',
   'ops.finance.search', 'ops.finance.detail', 'ops.finance.export',
   'ops.users.list', 'ops.users.export', 'ops.user.detail', 'ops.commercial.offers.list', 'ops.commercial.addons.list', 'ops.commercial.coupons.list', 'ops.commercial.export', 'ops.commercial.rollouts.list', 'ops.growth.funnel', 'ops.alerts.list', 'subscription.get', 'subscription.orders.list', 'billing.reconciliation', 'platform.settings.get', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify',
   'billing.status', 'billing.model-usage.statement', 'billing.recharge.get', 'billing.recharge.list', 'billing.transactions', 'billing.export', 'catalog.sync.get', 'commercial.order.payment.get',
-  'rule.list', 'rule.sync.status', 'rule.sync.now', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
+  'rule.list', 'rule.sync.status', 'rule.history', 'rule.audit', 'asset.list', 'brand.get', 'brand.extract', 'brand.tone.preview',
   'deliverable.list', 'task.history', 'task.resume', 'task.timeline', 'task.understand', 'feedback.list', 'generation.get', 'content.review',
   'content.versions', 'content.diff', 'publish.get', 'publish.batch.get',
-  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list', 'automation.scan',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get', 'knowledge.learning.list', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'automation.policy.get', 'automation.policy.list',
 ])
 // Generated from packages/contracts COMMERCIAL_MCP_FOUNDATION_POLICIES.
 // Keep this standalone snapshot exact: bridge contract tests compare every
@@ -116,6 +139,7 @@ if (process.env.MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES === 'true' && !['producti
   } catch { /* Missing connection stays closed. */ }
 }
 const MERCHANT_HIDDEN_METHODS = new Set([
+  'billing.reconciliation',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
   'billing.usage.consume',
@@ -150,6 +174,10 @@ const SAFE_WITHOUT_INTERACTIVE_WRITE = new Set([
   ...READ_ONLY_METHODS,
   'merchant.start',
   'content.export', 'catalog.image.review', 'catalog.image.select', 'workspace.bootstrap',
+  // The merchant explicitly supplied the image and requested an unpublished
+  // preview. Uploading the source and invoking candidate generation are part
+  // of that same non-publishing workflow; binding/publishing remains gated.
+  'asset.upload', 'catalog.image.generate',
   'workspace.data.export.request', 'workspace.data.delete.request',
   'workspace.interactive.confirm',
   'platform.store.list', 'platform.connect', 'catalog.sync', 'catalog.sync.start',
@@ -310,6 +338,7 @@ const METHODS = {
   'ops.support.ticket.assign': { description: '按 revision 和幂等键分配客服工单。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), assignee_id: boundedString(256), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['ticket_id', 'assignee_id', 'expected_revision', 'idempotency_key'], additionalProperties: false } },
   'ops.support.ticket.transition': { description: '按受控生命周期流转工单并记录原因。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), status: { type: 'string', enum: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'] }, reason: boundedString(1000, 3), expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['ticket_id', 'status', 'reason', 'expected_revision', 'idempotency_key'], additionalProperties: false } },
   'ops.support.ticket.comment': { description: '向工单追加内部或客户可见评论。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), body: boundedString(10000), visibility: { type: 'string', enum: ['internal', 'customer'] }, expected_revision: positiveIntegerString, idempotency_key: idempotencyKeyProperty }, required: ['ticket_id', 'body', 'visibility', 'expected_revision', 'idempotency_key'], additionalProperties: false } },
+  'support.customer.replies.list': { description: '读取当前商户工作区的客户可见回复；可按工单、任务或订单关联发现工单，内部备注、运营身份和原始事件字段永不返回。只读。', inputSchema: { type: 'object', properties: { ticket_id: boundedString(36), related_task_id: boundedString(256), related_order_id: boundedString(256), limit: pageLimit100, cursor: boundedString(1000) }, anyOf: [{ required: ['ticket_id'] }, { required: ['related_task_id'] }, { required: ['related_order_id'] }], additionalProperties: false } },
   'ops.incidents.list': { description: '查看有界事故列表。只读。', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['investigating', 'identified', 'monitoring', 'resolved'] }, severity: { type: 'string', enum: ['sev1', 'sev2', 'sev3', 'sev4'] }, limit: pageLimit100, cursor: boundedString(1000) }, additionalProperties: false } },
   'ops.incident.get': { description: '查看一个事故。只读。', inputSchema: { type: 'object', properties: { incident_id: boundedString(160) }, required: ['incident_id'], additionalProperties: false } },
   'ops.incident.timeline': { description: '查看事故的不可变时间线。只读。', inputSchema: { type: 'object', properties: { incident_id: boundedString(160), limit: pageLimit200, cursor: boundedString(1000) }, required: ['incident_id'], additionalProperties: false } },
@@ -484,12 +513,12 @@ const METHODS = {
   'automation.policy.get': { description: '查看店铺自动化运营策略。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' } }, additionalProperties: false } },
   'automation.policy.list': { description: '列出当前工作区所有已配置的店铺自动化策略及暂停状态。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'automation.policy.update': { description: '配置店铺商品同步、风险告警和人工重试策略。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' }, enabled: { type: 'string', enum: ['true', 'false'] }, sync_enabled: { type: 'string', enum: ['true', 'false'] }, frequency_minutes: { type: 'string' }, retry_limit: { type: 'string' }, window_start: { type: 'string' }, window_end: { type: 'string' }, clear_window: { type: 'string', enum: ['true', 'false'] }, reason: { type: 'string' } }, required: ['enabled', 'reason'], additionalProperties: false } },
-  'automation.scan': { description: '执行只读店铺健康扫描并返回结构化优化建议；建议动作仍需交互确认。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' } }, additionalProperties: false } },
+  'automation.scan': { description: '执行店铺健康扫描并记录风险告警，返回结构化优化建议；扫描会更新运营告警，建议动作仍需交互确认。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' } }, additionalProperties: false } },
   'automation.tick': { description: '执行已到期的店铺同步与风险扫描策略；不自动重发或发布。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   'automation.pause': { description: '暂停店铺自动化运营并记录原因。', inputSchema: { type: 'object', properties: { platform: { type: 'string' }, account_id: { type: 'string' }, reason: { type: 'string' } }, required: ['reason'], additionalProperties: false } },
   'catalog.import': {
     description: '导入或绑定商品；支持后续主图生成和发布。',
-    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { brand_id: { type: 'string', description: '已授权品牌 ID；传入后商品绑定到该品牌和店铺范围' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, remote_id: { type: 'string' }, local_product_key: { type: 'string' }, title: { type: 'string' }, category: { type: 'string' }, price: { type: 'string' }, stock: { type: 'string' }, sku_count: { type: 'string' }, skus_json: { type: 'string' }, images: { type: 'string' }, asset_ids_json: { type: 'string', description: '已上传商品素材 ID 字符串数组 JSON' }, attributes_json: { type: 'string' }, selling_points_json: { type: 'string' }, store_name: { type: 'string' }, store_differentiation: { type: 'string' } }, required: ['platform', 'title'], additionalProperties: false },
   },
   'catalog.import.batch': {
     description: '批量导入最多 50 个商品；可传商品对象数组，或传已解析并由商家确认事实的 XLSX/CSV 商品表格素材；每项明确平台和店铺，全部预校验通过后才写入。',
@@ -510,7 +539,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { product_id: { type: 'string' } }, required: ['product_id'], additionalProperties: false },
   },
   'catalog.image.generate': {
-    description: '根据已确认商品事实生成商品主图变体；用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。独立上传图片生成时不要先调用 asset.parse，也不要把自动解析出的品类当作商品事实；仅使用用户消息中的描述和图片本身；用户已要求制作时直接生成未绑定候选，不重复询问商用权或 AI 修改许可，不自动批准素材权益。',
+    description: '根据已确认商品事实生成商品主图或详情图候选；用户要求整套电商详情图时必须先完成商品识别、买家顾虑和六类图片方案，再按确认方案生成，不能把随机候选当作详情页交付。用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。独立上传图片生成时不要先调用 asset.parse，也不要把自动解析出的品类当作商品事实；仅使用用户消息中的描述和图片本身；用户已要求制作时直接生成未绑定候选，不重复询问商用权或 AI 修改许可，不自动批准素材权益。禁止编造销量、认证、测评、续航、兼容性或其他未确认商品事实。',
     inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已通过可信安全扫描的上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1024x3072', '1024x4096'], description: '单次画布尺寸；完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
   },
   'catalog.image.retry': {
@@ -829,7 +858,7 @@ const METHODS = {
   },
   'knowledge.rule.update': {
     description: '更新工作区规则并保留版本与审计记录。',
-    inputSchema: { type: 'object', properties: { rule_id: { type: 'string' }, name: { type: 'string' }, content: { type: 'string' }, version: { type: 'string' }, status: { type: 'string' }, severity: { type: 'string' }, action: { type: 'string' }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, tags_json: { type: 'string' } }, required: ['rule_id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { rule_id: { type: 'string' }, name: { type: 'string' }, content: { type: 'string' }, version: { type: 'string' }, status: { type: 'string' }, severity: { type: 'string' }, action: { type: 'string' }, source_reference: { type: 'string' }, source_checked_at: { type: 'string' }, tags_json: { type: 'string' }, expected_revision: positiveIntegerString, reason: reasonProperty }, required: ['rule_id', 'expected_revision', 'reason'], additionalProperties: false },
   },
   'knowledge.rule.list': {
     description: '查询当前可用的平台、品类、品牌、店铺和大促规则。只读。',
@@ -1144,17 +1173,78 @@ function userFacingToolText(method, result) {
     ? result.creative_points
     : undefined
   const pointsText = points
-    ? `创意点：可用 ${points.balance_state === 'known' && Number.isSafeInteger(points.available_points) ? points.available_points : '未知'}；本次预估 ${Number.isSafeInteger(points.quoted_points) ? points.quoted_points : '未知'}；已消耗 ${Number.isSafeInteger(points.consumed_points) ? points.consumed_points : '未知'}；结算 ${typeof points.settlement_status === 'string' ? points.settlement_status : '待确认'}`
+    ? `创意点：当前剩余 ${points.balance_state === 'known' && Number.isSafeInteger(points.available_points) ? points.available_points : '未知'}；本次预估 ${Number.isSafeInteger(points.quoted_points) ? points.quoted_points : '未知'}；实际扣除 ${Number.isSafeInteger(points.deducted_points) ? points.deducted_points : '未知/待结算'}；已预留 ${Number.isSafeInteger(points.point_reservation_points) ? points.point_reservation_points : '未知'}；结算 ${typeof points.point_reservation_status === 'string' ? points.point_reservation_status : (typeof points.settlement_status === 'string' ? points.settlement_status : '待确认')}`
     : ''
   const decisionSummary = detailDecisionSummary(method, result)
   if (decisionSummary) return decisionSummary
+  // knowledge.rule.list and rule.list return a bare array from the API/MCP
+  // contract. Normalize both the array form and the newer envelope-shaped
+  // form before the generic object guard, otherwise a valid rule response is
+  // reported as an uninformative generic success.
+  if (method === 'rule.list' || method === 'knowledge.rule.list') {
+    const rules = Array.isArray(result) ? result : Array.isArray(result?.items) ? result.items : Array.isArray(result?.rules) ? result.rules : []
+    if (!rules.length) return method === 'rule.list' ? '当前范围没有可执行规则；请先检查规则同步和激活状态。' : '当前工作区没有知识规则记录。'
+    const executable = rules.filter(rule => rule && ['active', 'official', 'ready'].includes(String(rule.status ?? rule.state ?? rule.source_kind ?? '').toLowerCase()))
+    return method === 'rule.list'
+      ? `已读取 ${rules.length} 条可执行规则。`
+      : `已读取 ${rules.length} 条知识规则，其中 ${executable.length} 条看起来已具备执行状态；最终是否可消费仍以服务端规则门禁为准。`
+  }
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
+  }
+  if (method === 'billing.status') {
+    const available = Number.isSafeInteger(result.available_points)
+      ? result.available_points
+      : Number.isSafeInteger(points?.available_points) ? points.available_points : undefined
+    const reserved = Number.isSafeInteger(result.reserved_points)
+      ? result.reserved_points
+      : Number.isSafeInteger(points?.reserved_points) ? points.reserved_points : undefined
+    const settled = Number.isSafeInteger(result.settled_points)
+      ? result.settled_points
+      : Number.isSafeInteger(points?.settled_points) ? points.settled_points : undefined
+    const wallet = typeof result.balance_cny === 'string' ? result.balance_cny : undefined
+    if (available !== undefined) {
+      return `创意点余额已更新：当前剩余 ${available} 点，预留 ${reserved ?? '未知'} 点，已结算 ${settled ?? '未知'} 点。模型生成将直接扣除创意点；钱包余额${wallet !== undefined ? ` ¥${wallet}` : ''}仅作兼容展示。`
+    }
   }
   if (method === 'catalog.search' && Array.isArray(result.products)) {
     if (!result.products.length) return '当前查询未找到商品，请调整商品名称或 SKU 条件。'
     const skuCount = result.products.reduce((count, product) => count + (Array.isArray(product.skus) ? product.skus.length : 0), 0)
     return `已读取 ${result.products.length} 个商品${skuCount ? `，包含 ${skuCount} 个 SKU` : ''}。`
+  }
+  if (method === 'campaign.batch.list') {
+    const campaigns = Array.isArray(result.items) ? result.items : []
+    if (!campaigns.length) return '当前工作区没有批量生产计划。'
+    const blocked = campaigns.filter(item => item && item.readiness === 'blocked')
+    return blocked.length
+      ? `已读取 ${campaigns.length} 个批量生产计划，其中 ${blocked.length} 个交付被阻断；请打开计划查看阻断码和 canonical/listing 修复路径。`
+      : `已读取 ${campaigns.length} 个批量生产计划，当前列表中的交付条件已通过。`
+  }
+  if (method === 'campaign.batch.get') {
+    if (result.readiness === 'blocked' || result.delivery_manifest?.state === 'blocked') {
+      const validation = result.delivery_manifest?.validation
+      const code = typeof validation?.code === 'string' ? validation.code : '交付清单阻断'
+      const path = typeof validation?.path === 'string' ? `（${validation.path}）` : ''
+      return `批量计划已保存，但当前不可交付：${code}${path}。请先完成 canonical 商品与 listing 关联，再继续。`
+    }
+    if (result.readiness === 'ready') return '批量计划已读取，当前交付条件已通过。'
+  }
+  if (method === 'brand.get') {
+    if (!result.id) return '当前工作区尚未建立品牌档案。'
+    if (result.brandUnitSelectionRequired === true) return `已读取品牌档案，但尚未选择批量生产品牌单元；有 ${Array.isArray(result.brandUnitCandidates) ? result.brandUnitCandidates.length : 0} 个工作区候选，请先查看 brand-unit.list。`
+    if (typeof result.brandUnitId === 'string' && result.brandUnitId) return `已读取品牌档案，已关联批量生产品牌单元 ${sanitizeMerchantText(result.brandUnitId)}。`
+  }
+  if (method === 'support.customer.replies.list') {
+    const tickets = Array.isArray(result.tickets) ? result.tickets : []
+    if (typeof result.ticket_id === 'string' || typeof result.ticket_number === 'string') {
+      const replyCount = Array.isArray(result.replies) ? result.replies.length : 0
+      const status = typeof result.status === 'string' ? result.status : '状态待确认'
+      return `已读取工单${typeof result.ticket_number === 'string' ? `（${sanitizeMerchantText(result.ticket_number)}）` : ''}，状态：${sanitizeMerchantText(status)}；本页 ${replyCount} 条客户可见回复。${result.next_cursor ? '仍有下一页，请继续使用返回的 next_cursor 读取。' : '已读取全部客户可见回复。'}`
+    }
+    if (!tickets.length) return result.next_cursor ? '当前页没有关联工单，但仍有下一页，请继续使用返回的 next_cursor 读取。' : '当前没有找到关联工单或客户可见回复。'
+    const replyCount = tickets.reduce((count, ticket) => count + (Array.isArray(ticket?.replies) ? ticket.replies.length : 0), 0)
+    const statuses = [...new Set(tickets.map(ticket => typeof ticket?.status === 'string' ? ticket.status : '状态待确认'))]
+    return `已读取 ${tickets.length} 个关联工单，状态：${statuses.map(status => sanitizeMerchantText(status)).join('、')}；本页 ${replyCount} 条客户可见回复。${result.next_cursor ? '仍有下一页，请继续使用返回的 next_cursor 读取。' : '已读取全部当前关联工单。'}`
   }
   if (method === 'multimodal.video.request' || method === 'multimodal.video.get') {
     const video = result.rendering && typeof result.rendering === 'object' ? result.rendering : result
@@ -1166,10 +1256,15 @@ function userFacingToolText(method, result) {
   const merchantStatus = result.merchant_status && typeof result.merchant_status === 'object' ? result.merchant_status : undefined
   if (merchantStatus) {
     const label = typeof merchantStatus.label === 'string' ? merchantStatus.label : '需要查看状态'
-    const next = merchantStatus.next_action && typeof merchantStatus.next_action === 'object' && typeof merchantStatus.next_action.label === 'string' ? merchantStatus.next_action.label : ''
+    const continuation = result.generation_continuation && typeof result.generation_continuation === 'object' ? result.generation_continuation : result.continuation && typeof result.continuation === 'object' ? result.continuation : result.image_generation && typeof result.image_generation === 'object' ? result.image_generation : undefined
+    const isImageGeneration = method === 'catalog.image.generate' || (method === 'asset.upload' && (continuation?.kind === 'image_generation' || typeof continuation?.job_id === 'string' || typeof result.job_id === 'string'))
+    const next = !isImageGeneration && merchantStatus.next_action && typeof merchantStatus.next_action === 'object' && typeof merchantStatus.next_action.label === 'string' ? merchantStatus.next_action.label : ''
     const progress = merchantStatus.progress && typeof merchantStatus.progress === 'object' && typeof merchantStatus.progress.label === 'string' ? `进度：${merchantStatus.progress.label}` : ''
     const caution = merchantStatus.recovery?.reconciliation_required === true ? '平台最终回执尚未确认，不要重复提交。' : ''
-    return [`${label}。`, progress, caution, next ? `下一步：${next}` : ''].filter(Boolean).join('\n')
+    const automaticProgress = isImageGeneration && !next
+      ? '系统会自动轮询并展示生成结果，无需输入“查询结果”。'
+      : ''
+    return [`${label}。`, progress, caution, pointsText, automaticProgress, next ? `下一步：${next}` : ''].filter(Boolean).join('\n')
   }
   if ((method === 'merchant.start' || method === 'workspace.health') && result.conversation_state) {
     const summary = typeof result.completed_summary === 'string' ? result.completed_summary.trim() : ''
@@ -1245,7 +1340,7 @@ function userFacingErrorText(code, details) {
     if (missing.includes('cost_cny') || missing.includes('settlement')) return '平台正在核对本次生成记录，暂时不能继续。没有生成新内容、扣费或发布；当前任务和已有产物已保留，核对完成后可继续。'
     return '平台暂时无法确认本次生成结果，已安全停止。当前任务和已有产物已保留，没有重复调用、扣费或发布；平台恢复后可继续。'
   }
-  if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次模型请求结果尚未确认，已安全停止。请先查询 Provider 状态或提交人工对账；在确认前不会重试、扣费或发布。'
+  if (code === 'MODEL_PROVIDER_OUTCOME_UNKNOWN') return '本次图片请求的 Provider 回执暂未确认，系统已转入后台自动核对；创意点仍处于预留状态，确认前不会重复调用、重复扣费或发布，商户无需输入查询指令。'
   if (code === 'MODEL_PROVIDER_REQUEST_FAILED') {
     const reason = typeof details?.provider_error_summary === 'string' ? `（${details.provider_error_summary}）` : ''
     return `图片模型请求被中转服务拒绝${reason}。未生成新图片、未重复扣费；请更换可用模型或稍后重试。`
@@ -1293,6 +1388,40 @@ function toolErrorPresentation(method, args, code, details) {
     }
   }
   return { text: userFacingErrorText(code, details) }
+}
+
+function validateToolArguments(name, args) {
+  const schema = METHODS[name]?.inputSchema
+  if (!schema || schema.type !== 'object') return undefined
+  const fail = message => ({ message: `Invalid arguments for ${name}: ${message}` })
+  const validate = (value, propertySchema, path) => {
+    if (!propertySchema || typeof propertySchema !== 'object') return undefined
+    if (Array.isArray(propertySchema.anyOf)) {
+      if (propertySchema.anyOf.some(candidate => !validate(value, candidate, path))) return undefined
+      return fail(`${path} does not match any allowed shape`)
+    }
+    if (propertySchema.type === 'string' && typeof value !== 'string') return fail(`${path} must be a string`)
+    if (propertySchema.type === 'array' && !Array.isArray(value)) return fail(`${path} must be an array`)
+    if (propertySchema.type === 'object' && (!value || typeof value !== 'object' || Array.isArray(value))) return fail(`${path} must be an object`)
+    if (typeof propertySchema.minLength === 'number' && typeof value === 'string' && value.length < propertySchema.minLength) return fail(`${path} is too short`)
+    if (typeof propertySchema.maxLength === 'number' && typeof value === 'string' && value.length > propertySchema.maxLength) return fail(`${path} is too long`)
+    if (typeof propertySchema.pattern === 'string' && typeof value === 'string' && !(new RegExp(propertySchema.pattern, 'u')).test(value)) return fail(`${path} has an invalid format`)
+    if (Array.isArray(propertySchema.enum) && !propertySchema.enum.includes(value)) return fail(`${path} has an unsupported value`)
+    return undefined
+  }
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return fail('arguments must be an object')
+  for (const required of schema.required ?? []) {
+    if (!Object.prototype.hasOwnProperty.call(args, required)) return fail(`missing required property ${required}`)
+  }
+  if (schema.additionalProperties === false) {
+    const properties = schema.properties ?? {}
+    for (const key of Object.keys(args)) if (!Object.prototype.hasOwnProperty.call(properties, key)) return fail(`unexpected property ${key}`)
+  }
+  for (const [key, value] of Object.entries(args)) {
+    const issue = validate(value, schema.properties?.[key], key)
+    if (issue) return issue
+  }
+  return undefined
 }
 
 function safeErrorDetails(details) {
@@ -1390,7 +1519,12 @@ function recoveryOnlyResult(id, name) {
 }
 
 function deploymentEnvironment() {
-  return (configuredEnv('DEPLOY_ENV') || configuredEnv('NODE_ENV')).toLowerCase()
+  const nodeEnvironment = configuredEnv('NODE_ENV').toLowerCase()
+  const deployEnvironment = configuredEnv('DEPLOY_ENV').toLowerCase()
+  if (nodeEnvironment === 'production' || deployEnvironment === 'production') return 'production'
+  if (nodeEnvironment === 'staging' || deployEnvironment === 'staging') return 'staging'
+  if (nodeEnvironment === 'preview' || deployEnvironment === 'preview') return 'preview'
+  return nodeEnvironment || deployEnvironment
 }
 
 function assertTransportConfiguration() {
@@ -1403,6 +1537,11 @@ function assertTransportConfiguration() {
   }
   const endpoint = new URL(baseUrl())
   const loopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(endpoint.hostname)
+  if (['production', 'staging', 'preview'].includes(environment) && loopback) {
+    const error = new Error('remote MCP endpoint must use HTTPS and a public origin in restricted environments')
+    error.code = 'MCP_HTTPS_REQUIRED'
+    throw error
+  }
   if (allowsLocalFixtureFallback() && loopback && !strictAuth) return
   if (!loopback && endpoint.protocol !== 'https:') {
     const error = new Error('remote MCP endpoint must use HTTPS')
@@ -1726,13 +1865,13 @@ function merchantUiMetadata(method, result, args = {}) {
       { id: 'batch-publish', label: '批量发布已批准商品', tool: 'publish.batch.prepare', enabled: false, requires_selection: true, reason: '先选择商品并完成逐项审核、批准。' },
     ]
     ui.knowledge_status = {
-      state: 'ready',
-      state_label: '知识已恢复，可继续',
-      summary: '当前工作区的规则与知识上下文已由服务端加载；生成时仍会按已选平台、店铺和商品重新校验。',
+      state: 'not_reported',
+      state_label: '知识状态待服务端核验',
+      summary: 'merchant.start 不声明知识已恢复；生成前由服务端按工作区、平台、店铺和商品重新校验规则与知识上下文。',
       scope: { workspace_id: result?.workspace?.id ?? result?.workspace_id ?? null, platform: result?.platform ?? null, account_id: result?.account_id ?? result?.accountId ?? null },
-      data_source: simulated ? '演示数据' : '服务端数据',
-      blocks_generation: false,
-      next_actions: [{ label: '选择平台和店铺商品', tool: 'catalog.search', required_inputs: ['platform', 'account_id', 'product_id'] }],
+      data_source: simulated ? '演示数据（未作为知识就绪证据）' : '服务端待核验',
+      blocks_generation: true,
+      next_actions: [{ label: '查看工作区规则与知识状态', tool: 'workspace.health', required_inputs: [] }, { label: '选择平台和店铺商品', tool: 'catalog.search', required_inputs: ['platform', 'account_id', 'product_id'] }],
     }
   }
   return { ...result, ui }
@@ -1776,6 +1915,15 @@ function toolContent(method, result) {
     const status = assetScanStatus(result)
     if (status !== 'blocked' && (result?.rights_status === 'rejected' || result?.rights_scope === 'unusable')) return [{ type: 'text', text: '这张图片的使用权益受限，请换用其他已授权图片。' }]
     if (status === 'clean' && result?.generation_continuation?.state === 'awaiting_confirmation') return [{ type: 'text', text: '图片已通过自动安全检查。请确认你有权将这张图片用于商业主图并允许 AI 编辑；确认后开始生成吗？' }]
+    if (status === 'clean' && Array.isArray(result?.images) && result.images.length) {
+      const content = [{ type: 'text', text: userFacingToolText(method, { ...result, images: result.images.map((_, index) => `[image attachment ${index + 1}]`) }) }]
+      for (const image of result.images) {
+        if (typeof image !== 'string') continue
+        const match = image.match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/iu)
+        if (match) content.push({ type: 'image', data: match[2], mimeType: match[1] })
+      }
+      return content
+    }
     if (status === 'clean') return [{ type: 'text', text: `图片检查已通过。${result?.next_step && result.next_step !== '继续当前任务' ? `下一步：${sanitizeMerchantAction(result.next_step)}` : ''}`.trim() }]
     if (status === 'blocked') return [{ type: 'text', text: '这张图片暂时不能继续使用。素材已安全保留；平台会在你重新提交图片时自动复检，无需人工处理或提交扫描结果。' }]
     return [{ type: 'text', text: '图片已收到，正在自动检查。检查通过后会等待你的确认再生成。' }]
@@ -1967,12 +2115,17 @@ function privateCandidateSelectionTickets(rawResult, result) {
 function toolResultUiMetadata(name, result, selectionTickets = []) {
   const candidateState = result?.candidate_state
   const selectionCandidates = Array.isArray(result?.selection_request?.candidates) ? result.selection_request.candidates : []
-  const readyChoice = name === 'catalog.image.get'
+  const imageCandidateTool = name === 'catalog.image.generate' || name === 'catalog.image.get' || (name === 'asset.upload' && Boolean(result?.candidate_state))
+  const pendingChoice = imageCandidateTool
+    && ['queued', 'processing'].includes(String(candidateState?.state ?? '').toLowerCase())
+    && typeof result?.poll_request?.job_id === 'string'
+    && result.poll_request.job_id.trim().length > 0
+  const readyChoice = imageCandidateTool
     && candidateState?.state === 'ready'
     && (candidateState?.presentation === 'component' || candidateState?.presentation === 'native_image')
     && candidateState?.candidate_count > 0
     && selectionCandidates.length > 0
-  if (readyChoice) return {
+  if (readyChoice || pendingChoice) return {
     ui: { resourceUri: IMAGE_CANDIDATE_CHOICE_UI_URI, prefersBorder: true },
     'openai/outputTemplate': IMAGE_CANDIDATE_CHOICE_UI_URI,
     'openai/widgetAccessible': true,
@@ -2119,6 +2272,30 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+async function resolveGeneratedImagePreview(method, initialResult) {
+  if (!['catalog.image.generate', 'asset.upload'].includes(method) || !initialResult || typeof initialResult !== 'object' || Array.isArray(initialResult)) return initialResult
+  if (Array.isArray(initialResult.images) && initialResult.images.length) return initialResult
+  const continuation = initialResult.generation_continuation && typeof initialResult.generation_continuation === 'object' ? initialResult.generation_continuation : initialResult.continuation && typeof initialResult.continuation === 'object' ? initialResult.continuation : initialResult.image_generation && typeof initialResult.image_generation === 'object' ? initialResult.image_generation : {}
+  const jobId = [initialResult.job_id, continuation.job_id, continuation.jobId].find(value => typeof value === 'string' && value.trim())?.trim() ?? ''
+  if (!jobId) return initialResult
+  const state = String(initialResult.state ?? initialResult.status ?? continuation.state ?? continuation.status ?? initialResult.execution?.state ?? '').toLowerCase()
+  if (!['queued', 'processing', 'running', 'pending', 'generating'].includes(state)) return initialResult
+  let latest = initialResult
+  // Image relays commonly take 2–3 minutes. Keep the tool invocation alive
+  // long enough to return the actual image attachment instead of making the
+  // merchant type a fake “query results” follow-up.
+  for (const delay of [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]) {
+    await wait(delay)
+    const polled = await callRemote('catalog.image.get', { job_id: jobId })
+    if (!polled || typeof polled !== 'object' || Array.isArray(polled)) continue
+    latest = { ...latest, ...polled }
+    if (Array.isArray(polled.images) && polled.images.length) return latest
+    const polledState = String(polled.state ?? polled.status ?? polled.execution_state ?? '').toLowerCase()
+    if (['failed', 'succeeded', 'completed', 'complete', 'ready'].includes(polledState)) return latest
+  }
+  return latest
+}
+
 async function callRemote(method, params) {
   // A new Codex conversation must not force a merchant to understand
   // workspace IDs or environment variables. Bootstrap is still explicit at
@@ -2129,6 +2306,13 @@ async function callRemote(method, params) {
     await callRemote('workspace.bootstrap', { display_name: '大麦商家工作区' })
   }
   const scopedWorkspaceId = method === 'workspace.bootstrap' ? '' : workspaceId()
+  const requestedWorkspaceId = typeof params?.workspace_id === 'string' ? params.workspace_id.trim() : ''
+  if (scopedWorkspaceId && requestedWorkspaceId && requestedWorkspaceId !== scopedWorkspaceId) {
+    throw Object.assign(new Error('MCP request workspace_id does not match the bound workspace'), {
+      code: 'WORKSPACE_SCOPE_MISMATCH',
+      details: { bound_workspace_id: scopedWorkspaceId, requested_workspace_id: requestedWorkspaceId },
+    })
+  }
   const headers = {
     accept: 'application/json',
     'content-type': 'application/json',
@@ -2152,7 +2336,7 @@ async function callRemote(method, params) {
   }
   const ruleApprovalToken = process.env.MERCHANT_RULE_APPROVAL_TOKEN?.trim()
   if ((method === 'rule.publish' || method === 'rule.status') && ruleApprovalToken && !/^\$\{[^}]+\}$/u.test(ruleApprovalToken)) headers['x-rule-approval-token'] = ruleApprovalToken
-  if (method === 'merchant.start' || method === 'publish.confirm' || method === 'content.generate' || method === 'content.visual.select' || method === 'catalog.image.select' || method === 'platform.media.spec.create' || method === 'platform.media.spec.update' || method === 'platform.media.spec.approve' || method === 'platform.media.spec.expire' || method === 'campaign.batch.pause' || method === 'campaign.batch.resume' || method === 'campaign.batch.retry_failed') {
+  if (method === 'merchant.start' || method === 'publish.confirm' || method === 'content.generate' || method === 'content.visual.select' || method === 'catalog.image.select' || method === 'platform.media.spec.create' || method === 'platform.media.spec.update' || method === 'platform.media.spec.approve' || method === 'platform.media.spec.expire' || method === 'campaign.batch.generate' || method === 'campaign.batch.pause' || method === 'campaign.batch.resume' || method === 'campaign.batch.retry_failed') {
     headers['idempotency-key'] = typeof params.idempotency_key === 'string' && params.idempotency_key.trim()
       ? params.idempotency_key.trim()
       : idempotencyKey(method, params)
@@ -2161,7 +2345,7 @@ async function callRemote(method, params) {
   // Content and image providers legitimately take 90-120 seconds. Keep the
   // desktop bridge alive longer than the provider boundary so it can return
   // the settled result instead of reporting a false timeout after billing.
-  const timeoutMs = Number(process.env.MERCHANT_MCP_TIMEOUT_MS ?? 180000)
+  const timeoutMs = Number(process.env.MERCHANT_MCP_TIMEOUT_MS ?? 360000)
   const maxAttempts = Math.max(1, Number(process.env.MERCHANT_MCP_RETRY_ATTEMPTS ?? 5))
   const retryDelayMs = Math.max(50, Number(process.env.MERCHANT_MCP_RETRY_DELAY_MS ?? 200))
   // A very small timeout is useful in boundary tests, but Node may need one
@@ -2393,7 +2577,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       : candidateLifecycle === 'unknown'
         ? { type: 'refresh', label: '查询结果', allowed: true }
         : { type: 'wait', label: '系统自动继续', allowed: false }
-  const recoveryPresentation = (candidateLifecycle === 'failed' || candidateLifecycle === 'unknown') && selectionJobId
+  const recoveryPresentation = candidateLifecycle === 'failed' && selectionJobId
     ? 'component_recovery'
     : (candidateLifecycle === 'queued' || candidateLifecycle === 'processing') && selectionJobId
       ? 'component_progress'
@@ -2420,8 +2604,8 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
           ? '本次主图生成未完成，可以回到对话重新生成。'
           : candidateLifecycle === 'unknown'
             ? pollBudgetExceeded
-              ? '图片任务已超过 5 分钟仍未完成，已停止自动等待。请查询任务状态或稍后手动重试，不会自动重复生成。'
-              : '图片结果尚未确认，请先查询任务状态，不会自动重复生成。'
+              ? '图片任务已超过 5 分钟仍未完成，系统已安全暂停自动等待；不会重复生成或重复扣费。'
+              : '图片结果仍在自动核对中，系统会继续获取结果，不会重复生成或重复扣费。'
             : candidateLifecycle === 'queued'
               ? '图片任务已排队，完成后会继续，无需重复提交。'
             : '主图候选仍在自动检查，通过后会继续，无需操作。',
@@ -2429,12 +2613,10 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       ? { question: multiple ? '请选择一张作为主图。' : '要使用这张作为主图吗？' }
       : candidateLifecycle === 'failed'
         ? { question: '要回到对话重新生成主图吗？' }
-        : candidateLifecycle === 'unknown'
-          ? { question: '要先查询图片结果吗？' }
           : {}),
     expected_input: images.length
       ? { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 }
-      : candidateLifecycle === 'failed' || candidateLifecycle === 'unknown'
+      : candidateLifecycle === 'failed'
         ? { kind: 'component_action', action: nextAction.type, user_action_required: true }
         : { kind: 'none', user_action_required: false },
     ...(deliverable && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
@@ -2451,7 +2633,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
         })).filter(candidate => Number.isSafeInteger(candidate.ordinal) && candidate.ordinal > 0 && candidate.visual_ref),
       },
     } : {}),
-    ...((candidateLifecycle === 'failed' || candidateLifecycle === 'unknown') && selectionJobId ? {
+    ...(candidateLifecycle === 'failed' && selectionJobId ? {
       recovery_request: { job_id: selectionJobId, action: nextAction.type },
     } : {}),
     ...((candidateLifecycle === 'queued' || candidateLifecycle === 'processing') && selectionJobId ? {
@@ -2605,7 +2787,7 @@ function merchantAssetStructuredContent(method, result) {
     },
     next_step: blocked || rightsBlocked ? summary.next_step : awaitingConfirmation ? '确认图片商用权、AI 编辑授权和开始生成' : sanitizeMerchantAction(String(result.next_step ?? (scanStatus === 'clean' ? '继续当前任务' : '平台会继续自动检查，你无需操作'))),
     ...(!rightsBlocked && (continuationState !== 'awaiting_confirmation' || awaitingConfirmation) && result.generationContinuation && typeof result.generationContinuation === 'object' && typeof result.generationContinuation.state === 'string'
-      ? { generation_continuation: { state: result.generationContinuation.state } }
+      ? { generation_continuation: { state: result.generationContinuation.state, ...(typeof result.generationContinuation.job_id === 'string' ? { job_id: result.generationContinuation.job_id } : {}), ...(typeof result.generationContinuation.jobId === 'string' ? { jobId: result.generationContinuation.jobId } : {}) } }
       : {}),
   }
 }
@@ -2789,6 +2971,13 @@ async function handle(request) {
     if (name === 'billing.recharge.get' && Object.prototype.hasOwnProperty.call(args, 'confirm_test_payment')) {
       return jsonRpcError(id, -32602, 'Unsupported tool argument: confirm_test_payment')
     }
+    // Rule creation is a user-facing MCP contract with a large required
+    // set. Validate it at the boundary so ChatGPT cannot send an incomplete
+    // tools/call that the API will reject only after forwarding.
+    if (name === 'knowledge.rule.create') {
+      const argumentError = validateToolArguments(name, args)
+      if (argumentError) return jsonRpcError(id, -32602, argumentError.message)
+    }
     if (name === 'catalog.image.select') {
       const ticketHash = /^[a-f0-9]{64}$/u
       if (!ticketHash.test(String(args.confirmation_ticket_nonce_hash ?? '')) || !ticketHash.test(String(args.confirmation_ticket_intent_hash ?? ''))) {
@@ -2815,23 +3004,44 @@ async function handle(request) {
     }
     try {
       const remoteResult = await callRemote(name, prepareToolArguments(name, args))
-      const rawResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult) : remoteResult
+      const scannedResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult) : remoteResult
+      const rawResult = await resolveGeneratedImagePreview(name, scannedResult)
       rememberCommercialAccessResult(name, rawResult)
       const assetResult = merchantAssetStructuredContent(name, rawResult)
       const workflowResult = merchantWorkflowStructuredContent(assetResult)
-      const result = merchantImageCandidateStructuredContent(name, workflowResult, args)
+      // Generation and upload are entry points; their image payload must use
+      // the same candidate contract as catalog.image.get so the widget can
+      // render it immediately instead of showing a generic placeholder.
+      const hasCandidateEnvelope = Boolean(
+        workflowResult && typeof workflowResult === 'object' && (
+          workflowResult.candidate_state
+          || typeof workflowResult.job_id === 'string'
+          || (workflowResult.job && typeof workflowResult.job === 'object')
+          || (workflowResult.generation_continuation && typeof workflowResult.generation_continuation === 'object' && (workflowResult.generation_continuation.job_id || workflowResult.generation_continuation.jobId))
+        ),
+      )
+      const candidateMethod = (name === 'catalog.image.generate' || name === 'asset.upload') && hasCandidateEnvelope ? 'catalog.image.get' : name
+      const result = merchantImageCandidateStructuredContent(candidateMethod, workflowResult, args)
       if (name === 'content.export') {
         const artifact = exportArtifactResult(result)
         return jsonRpc(id, { ...artifact, isError: false })
       }
       const normalizedResult = merchantUiMetadata(name, actionCards(name, result), args)
-      const nativeImages = name === 'catalog.image.get' && normalizedResult?.candidate_state?.presentation === 'native_image' && Array.isArray(normalizedResult.images) ? normalizedResult.images : []
+      const nativeImages = ['catalog.image.get', 'catalog.image.generate', 'asset.upload'].includes(name) && Array.isArray(normalizedResult?.images) ? normalizedResult.images : []
       const structuredContent = name === 'catalog.image.get'
         ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images' && key !== 'image_urls'))
         : normalizedResult
       const selectionTickets = name === 'catalog.image.get' ? privateCandidateSelectionTickets(rawResult, normalizedResult) : []
       const resultUi = toolResultUiMetadata(name, normalizedResult, selectionTickets)
-      return jsonRpc(id, { content: toolContent(name, normalizedResult), structuredContent, ...(resultUi ? { _meta: resultUi } : {}), isError: false })
+      const content = toolContent(name, normalizedResult)
+      if (nativeImages.length && !content.some(item => item?.type === 'image')) {
+        for (const image of nativeImages) {
+          if (typeof image !== 'string') continue
+          const match = image.match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/iu)
+          if (match) content.push({ type: 'image', data: match[2], mimeType: match[1] })
+        }
+      }
+      return jsonRpc(id, { content, structuredContent, ...(resultUi ? { _meta: resultUi } : {}), isError: false })
     } catch (error) {
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'
       const details = safeErrorDetails(error && typeof error === 'object' ? error.details : undefined)

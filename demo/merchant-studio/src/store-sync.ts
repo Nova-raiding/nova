@@ -15,7 +15,7 @@ export function resolveStoreSyncTargets(accounts: PlatformAccount[] | null): Sto
     return { ok: false, message: '店铺列表尚未读取成功，已停止同步。请先重试店铺发现。' }
   }
 
-  const readable = accounts.filter(account => account.readEnabled)
+  const readable = accounts.filter(account => account.readEnabled && account.state !== 'fixture_ready' && account.dataMode !== 'fixture' && account.authorization?.state !== 'fixture')
   if (!readable.length) {
     return { ok: false, message: '没有发现已授权且可读取的店铺，未发起任何同步。' }
   }

@@ -16,6 +16,8 @@ spec:
           env:
             - name: MERCHANT_API_TOKEN
               valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MERCHANT_UI_API_TOKEN}}
+            - name: MERCHANT_WORKSPACE_ID
+              valueFrom: {secretKeyRef: {name: merchant-runtime-secrets, key: MERCHANT_WORKSPACE_ID}}
           resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 500m, memory: 256Mi}}
           readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3}
           livenessProbe: {httpGet: {path: /, port: http}, initialDelaySeconds: 15, periodSeconds: 10, timeoutSeconds: 3}

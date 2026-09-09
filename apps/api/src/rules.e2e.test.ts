@@ -144,7 +144,7 @@ describe('durable rule-center HTTP boundary', () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
     const base = await start()
-    const headers = { 'x-workspace-id': 'ws_lifecycle', 'x-actor-id': 'rules_admin_1', 'x-role': 'rules_admin', 'content-type': 'application/json' }
+    const headers = { 'x-workspace-id': 'ws_lifecycle', 'x-actor-id': 'rules_admin_1', 'x-role': 'rules_admin', 'x-ops-workbench': 'workspace', 'content-type': 'application/json' }
     const draft = await fetch(`${base}/v1/rules/catalog/versions`, {
       method: 'POST', headers,
       body: JSON.stringify({ name: '商品规则', version: '3.0.0', scope: 'global', status: 'draft', source_kind: 'official', source_reference: 'official://rules/3', source_checked_at: '2026-08-23T01:00:00.000Z', checks: { max_title_length: 60 }, reason: '登记待审批版本' }),
@@ -203,7 +203,7 @@ describe('durable rule-center HTTP boundary', () => {
     expect((response.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule'])
     const unfiltered = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'rule.list', params: { workspace_id: workspaceId } }) }).then(json)
     expect((unfiltered.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule', 'taobao-rule'])
-    const operationsView = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'platform_ops_1', 'x-role': 'platform_ops' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'rule.list', params: { workspace_id: workspaceId } }) }).then(json)
+    const operationsView = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId, 'x-actor-id': 'platform_ops_1', 'x-role': 'platform_ops', 'x-ops-workbench': 'platform' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'rule.list', params: { workspace_id: workspaceId } }) }).then(json)
     expect(operationsView.error).toBeNull()
     expect((operationsView.data as { result: Array<{ id: string }> }).result.map(item => item.id)).toEqual(['global-rule', 'jd-rule', 'taobao-rule', 'draft-rule', 'inactive-rule'])
   })

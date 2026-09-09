@@ -105,4 +105,20 @@ describe('audit center UI contract', () => {
     expect(section).toContain('导出仅使用当前工作区和筛选条件')
     expect(section).toContain('aria-labelledby="audit-export-error-title"')
   })
+
+  it('does not call retained audit records complete or exportable after refresh failure', () => {
+    type Controller = Parameters<typeof AuditCenterSection>[0]['controller']
+    const controller = {
+      filters: {}, setFilters: () => undefined, records: [{ id: 'a1', source: 'operation', workspaceId: 'ws-a', actorId: 'actor', action: 'read', resourceType: 'task', resourceId: 't1', occurredAt: '2026-08-29T10:00:00Z', reason: '', redacted: true }], totalRecords: 1, truncated: false, nextCursor: undefined,
+      loading: false, loadingMore: false, error: '审计读取失败', empty: false,
+      selected: undefined, detail: undefined, detailLoading: false, detailError: undefined,
+      exporting: false, exportError: undefined, reload: async () => undefined,
+      loadMore: async () => undefined, openDetail: async () => undefined,
+      closeDetail: () => undefined, downloadCsv: async () => undefined,
+    } as unknown as Controller
+    const markup = renderToStaticMarkup(createElement(AuditCenterSection, { controller, canExport: true }))
+    expect(markup).toContain('读取失败，以下为上次结果')
+    expect(markup).toContain('旧审计结果不可导出')
+    expect(markup).not.toContain('已加载全部 1 条审计记录')
+  })
 })

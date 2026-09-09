@@ -1198,7 +1198,11 @@ export async function scannerOperationalMetrics(pool: SqlPool, workspaceIds: rea
     const rows = await Promise.all(workspaceIds.slice(offset, offset + 10).map(workspaceId => withWorkspaceTransaction(pool, workspaceId, async client => {
       const result = await client.query<{ backlog: number | string; dead_letter: number | string; last_callback_accepted_at: Date | string | null }>(
         `SELECT
-           count(*) FILTER (WHERE event.published_at IS NULL AND event.unknown_at IS NULL)::integer AS backlog,
+           count(*) FILTER (WHERE event.published_at IS NULL
+             AND event.unknown_at IS NULL
+             AND (event.last_error IS NULL OR (event.last_error->'retryable' = 'true'::jsonb
+               AND COALESCE(event.last_error->'unknown', 'false'::jsonb) = 'false'::jsonb))
+             AND COALESCE(event.last_error->>'terminal', 'false') <> 'true')::integer AS backlog,
            count(*) FILTER (WHERE event.last_error IS NOT NULL
              AND (event.last_error->>'terminal'='true' OR (event.published_at IS NOT NULL
                AND (event.last_error->>'retryable'='false' OR event.attempts >= $3)
@@ -1446,6 +1450,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: 'IMAGE_GENERATION_CALLBACK_UNCERTAIN', errorMessage: error instanceof Error ? error.message : 'image callback outcome unknown', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
         throw error
       }
+      // Image generation has the same commercial delivery boundary as text
+      // generation: a provider result may be archived, but the reserved
+      // creative points must not remain active after a successful delivery.
+      // The image usage sink records the provider receipt while the provider
+      // response is being parsed; settle only after the API accepted the
+      // archived result, so a failed callback cannot charge the merchant.
+      await creativePointSettlement.settleForDelivery(event, [providerRequestId], 'image_generation.execute')
       // The callback proves application acceptance; complete the execution
       // lease only after that boundary succeeds. A failed completion remains
       // replayable/reconcilable and must not be acknowledged as completed.
@@ -1527,6 +1538,8 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
       const heartbeatIntervalMs = positiveInt(process.env.SCANNER_HEARTBEAT_INTERVAL_MS, 5_000, 'SCANNER_HEARTBEAT_INTERVAL_MS')
       const heartbeatTtlSeconds = positiveInt(process.env.SCANNER_HEARTBEAT_TTL_SECONDS, 15, 'SCANNER_HEARTBEAT_TTL_SECONDS')
       const callbackMaxAgeSeconds = positiveInt(process.env.SCANNER_CALLBACK_MAX_AGE_SECONDS, 86_400, 'SCANNER_CALLBACK_MAX_AGE_SECONDS')
+      const definitionsMaxAgeSeconds = positiveInt(process.env.SCANNER_DEFINITIONS_MAX_AGE_SECONDS, 86_400, 'SCANNER_DEFINITIONS_MAX_AGE_SECONDS')
+      const eicarMaxAgeSeconds = positiveInt(process.env.SCANNER_EICAR_MAX_AGE_SECONDS, 900, 'SCANNER_EICAR_MAX_AGE_SECONDS')
       if (heartbeatTtlSeconds * 1000 <= heartbeatIntervalMs * 2) throw new Error('SCANNER_HEARTBEAT_TTL_SECONDS must exceed two heartbeat intervals')
       const currentWorkspaces = async () => config.autoDiscoverWorkspaces ? await repository.listActiveWorkspaceIds() : config.workspaces
       // Redis heartbeat state is instance-scoped and intentionally ephemeral.
@@ -1544,8 +1557,8 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         redis: redisConnection!.scannerHeartbeat,
         thresholds: {
           ttlSeconds: heartbeatTtlSeconds,
-          definitionsMaxAgeSeconds: positiveInt(process.env.SCANNER_DEFINITIONS_MAX_AGE_SECONDS, 86_400, 'SCANNER_DEFINITIONS_MAX_AGE_SECONDS'),
-          eicarMaxAgeSeconds: positiveInt(process.env.SCANNER_EICAR_MAX_AGE_SECONDS, 900, 'SCANNER_EICAR_MAX_AGE_SECONDS'),
+          definitionsMaxAgeSeconds,
+          eicarMaxAgeSeconds,
           callbackMaxAgeSeconds,
           minimumReadyInstances: positiveInt(process.env.SCANNER_MINIMUM_READY_INSTANCES, 1, 'SCANNER_MINIMUM_READY_INSTANCES'),
         },
@@ -1560,14 +1573,27 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
           return { backlog: metrics.backlog, deadLetter: metrics.deadLetter }
         },
         onHeartbeat: heartbeat => {
-          // Compose health describes process/dependency recovery capability,
-          // while API scanner readiness also gates on unresolved dead letters.
-          // Keep those signals separate: a scanner must stay healthy enough to
-          // recover its queue without making new business scans admissible.
+          // Compose health describes process/dependency recovery capability.
+          // Dead letters remain an operational warning, but must not prevent
+          // this worker from draining new scans or performing authorized
+          // recovery.
           void (heartbeat.recoveryCapable
             ? writeFile(readyFile, JSON.stringify({ readyAt: new Date().toISOString(), role: config.role, state: heartbeat.ready ? 'ready' : 'recovery', heartbeat }))
             : unlink(readyFile).catch(() => undefined))
-          log({ level: heartbeat.ready ? 'info' : 'error', message: 'scanner heartbeat published', heartbeat })
+          const notReadyReasons = [
+            ...(!heartbeat.checks.databaseReady ? ['database_not_ready'] : []),
+            ...(!heartbeat.checks.apiReady ? ['api_not_ready'] : []),
+            ...(!heartbeat.checks.redisReady ? ['redis_not_ready'] : []),
+            ...(!heartbeat.clamav.reachable ? ['clamav_unreachable'] : []),
+            ...(heartbeat.clamav.definitionsAgeSeconds === undefined || heartbeat.clamav.definitionsAgeSeconds > definitionsMaxAgeSeconds ? ['definitions_stale'] : []),
+            ...(!heartbeat.eicar.passed ? ['eicar_check_failed'] : []),
+            ...(heartbeat.eicar.ageSeconds === undefined || heartbeat.eicar.ageSeconds > eicarMaxAgeSeconds ? ['eicar_stale'] : []),
+            ...(!heartbeat.callback.capable ? ['scanner_callback_not_capable'] : []),
+            ...(heartbeat.callback.ageSeconds === undefined || heartbeat.callback.ageSeconds > callbackMaxAgeSeconds ? ['scanner_callback_stale'] : []),
+            ...(heartbeat.queue.deadLetter > 0 ? ['dead_letter_present'] : []),
+            ...(heartbeat.failure?.code ? [heartbeat.failure.code] : []),
+          ]
+          log({ level: heartbeat.ready ? 'info' : heartbeat.recoveryCapable ? 'warn' : 'error', message: 'scanner heartbeat published', heartbeat, ...(notReadyReasons.length && !heartbeat.ready ? { not_ready_reasons: [...new Set(notReadyReasons)] } : {}) })
         },
       })
       await scannerHeartbeat.start()

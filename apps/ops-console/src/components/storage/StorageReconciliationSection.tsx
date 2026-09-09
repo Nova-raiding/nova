@@ -9,6 +9,7 @@ interface StorageReconciliationSectionProps {
   summary?: StorageReconciliationSummary;
   summaries?: StorageReconciliationSummary[];
   onRetry?: () => void;
+  fixtureDataPresent?: boolean;
 }
 
 function bytes(value?: number | null) {
@@ -19,7 +20,9 @@ function bytes(value?: number | null) {
   return `${(value / 1024 ** 3).toFixed(2)} GB`;
 }
 
-export function StorageReconciliationSection({ loading = false, error, summary, summaries = [], onRetry }: StorageReconciliationSectionProps) {
+const knownStorageStatuses = ["clean", "attention_required", "failed", "unavailable"];
+
+export function StorageReconciliationSection({ loading = false, error, summary, summaries = [], onRetry, fixtureDataPresent = false }: StorageReconciliationSectionProps) {
   const errorRef = useRef<HTMLDivElement>(null);
   const errorTitleId = useId();
   const errorDescriptionId = useId();
@@ -27,23 +30,28 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
     if (error) errorRef.current?.focus({ preventScroll: true });
   }, [error]);
   const counts = summary?.counts;
-  const unavailable = !loading && !error && (!summary || summary.status === "unavailable");
+  const unknownStatus = Boolean(summary && !knownStorageStatuses.includes(String(summary.status)));
+  const freshnessUnknown = !summary?.lastRunAt || summary.freshness === "unknown";
+  const unavailable = !loading && !error && (!summary || summary.status === "unavailable" || freshnessUnknown || unknownStatus);
   const attention = summary?.status === "attention_required";
   const failed = summary?.status === "failed";
   const expired = summary?.freshness === "expired";
   const stale = summary?.freshness === "stale";
-  const freshnessLabel = !summary?.lastRunAt ? "新鲜度未知" : expired ? "已过期" : stale ? "已变旧" : "最近已更新";
-  const statusLabel = loading ? "加载中" : error ? "加载失败" : unavailable ? "未接入对账" : failed ? "对账失败" : expired ? "对账已过期" : stale ? "需要刷新" : attention ? "需要处理" : "对账正常";
-  const statusColor = loading || error || unavailable ? "default" : failed || expired || stale || attention ? "orange" : "green";
+  const freshnessLabel = freshnessUnknown ? "新鲜度未知" : expired ? "已过期" : stale ? "已变旧" : "最近已更新";
+  const statusLabel = loading ? "加载中" : error ? "加载失败" : fixtureDataPresent ? "演示数据，未验证" : unknownStatus ? "状态未知，未验证" : unavailable ? "状态不可验证" : failed ? "对账失败" : expired ? "对账已过期" : stale ? "需要刷新" : attention ? "需要处理" : "对账正常";
+  const statusColor = loading || error || unavailable || fixtureDataPresent ? "default" : failed || expired || stale || attention ? "orange" : "green";
   const workspaceRows = summaries.filter(item => item.workspaceId);
   const workspaceEmpty = !loading && !error && workspaceRows.length === 0;
   return (
     <>
     <Card title="对象存储容量与对账" extra={<Tag color={statusColor}>{statusLabel}</Tag>} aria-busy={loading}>
       {loading ? <Alert role="status" aria-live="polite" aria-atomic="true" showIcon title="正在加载对账结果" description="正在读取平台范围的脱敏容量和一致性摘要。" /> : null}
+      {fixtureDataPresent ? <Alert type="warning" showIcon title="当前含演示数据，对象存储状态不可视为真实就绪" description="请先切换到无 fixture 的真实 API/对象存储数据源；本页面保持 fail-closed。" /> : null}
+      {unknownStatus ? <Alert type="warning" showIcon title="对象存储对账状态未知，不能视为正常" description="API 返回了未识别的对账状态；请升级契约或检查服务端响应。" /> : null}
       {error ? <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby={errorTitleId} aria-describedby={errorDescriptionId} data-state="error" data-focus-target="error-summary">
         <Alert type="error" showIcon title={<span id={errorTitleId}>对账结果加载失败</span>} description={<span id={errorDescriptionId}>{error}</span>} action={onRetry ? <Button type="primary" icon={<ReloadOutlined aria-hidden />} aria-label="重试加载对账结果" style={{ minHeight: 44 }} onClick={onRetry}>重试</Button> : undefined} />
       </div> : null}
+      {error && (summary || workspaceRows.length) ? <Alert type="warning" showIcon title="以下是上次成功快照，不能视为当前对账结果" description="本次刷新失败；容量、计数和 workspace 状态可能已过期，请恢复对账读取后再据此处理。" /> : null}
       {unavailable ? <Alert type="info" showIcon title="暂无可验证的对象清单对账结果" description={summary?.message ?? "该卡片只显示脱敏容量和一致性状态，不提供客户素材、对象 key 或下载入口。"} /> : null}
       {attention ? <Alert type="warning" showIcon title="发现存储一致性问题" description="请由存储负责人查看受控对账证据；此页面不展示客户对象详情。" /> : null}
       {failed ? <Alert type="error" showIcon title="最近一次对账失败" description="对账没有产出可验证结果；请检查对象清单、数据库和定时任务后重试。" /> : null}
@@ -68,10 +76,10 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
           const itemFailed = item.status === "failed";
           const itemStale = item.freshness === "stale";
           const itemAttention = item.status === "attention_required" || itemExpired || itemStale;
-          const itemUnavailable = item.status === "unavailable";
+          const itemUnavailable = item.status === "unavailable" || !item.lastRunAt || item.freshness === "unknown";
           return <div role="listitem" key={item.workspaceId} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8, padding: "10px 0", borderBottom: "1px solid #f0f0f0" }}>
             <div style={{ minWidth: 0, overflowWrap: "anywhere" }}><Typography.Text strong>{item.workspaceId}</Typography.Text><br /><Typography.Text type="secondary">最近对账：{item.lastRunAt ?? "暂无"}</Typography.Text></div>
-            <Tag color={itemUnavailable ? "default" : itemFailed || itemAttention ? "orange" : "green"}>{itemUnavailable ? "未接入" : itemFailed ? "失败" : itemExpired ? "已过期" : itemStale ? "需刷新" : item.status === "attention_required" ? "需处理" : "正常"}</Tag>
+            <Tag color={error ? "default" : itemUnavailable ? "default" : itemFailed || itemAttention ? "orange" : "green"}>{error ? "上次快照，未复核" : itemUnavailable ? "状态不可验证" : itemFailed ? "失败" : itemExpired ? "已过期" : itemStale ? "需刷新" : item.status === "attention_required" ? "需处理" : "正常"}</Tag>
           </div>;
         })}
       </div>

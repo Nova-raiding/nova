@@ -80,7 +80,16 @@ describe("ReconciliationSection finance actions", () => {
 
     expect(html).toContain("未知状态（已阻断）");
     expect(html).toMatch(/ant-alert-error[^>]*>[\s\S]*模型用量对账状态：未知状态（已阻断）/);
-    expect(html).toMatch(/ant-alert-error[^>]*>[\s\S]*模型用量：未知状态（已阻断）/);
+    expect(html).toContain("外部中转站用量：尚未核验");
+  });
+
+  it("never presents fixture or unknown payment providers as ready", () => {
+    const fixture = renderSection({ reconciliation: { ...reconciliationFixture, provider: { mode: "fixture", ready: true, reasons: [] } } as never });
+    expect(fixture).toContain("当前为 fixture（已阻断真实支付判断）");
+    expect(fixture).not.toMatch(/ant-alert-success[^>]*>[\s\S]*当前为 fixture（已阻断真实支付判断）/);
+    const unknown = renderSection({ reconciliation: { ...reconciliationFixture, provider: { mode: "unknown", ready: true, reasons: [] } } as never });
+    expect(unknown).toContain("未就绪或状态未知");
+    expect(unknown).not.toMatch(/ant-alert-success[^>]*>[\s\S]*未就绪或状态未知/);
   });
 
   it("announces a stale-data refresh while retaining the existing snapshot", () => {

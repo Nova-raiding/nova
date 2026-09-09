@@ -345,7 +345,7 @@ export class PostgresCommercialContractRepository {
         const eligibilityId = required(input.privateEligibilityId, 'privateEligibilityId')
         const eligibility = await client.query(
           `SELECT id FROM private_trial_eligibilities_v2
-            WHERE workspace_id=$1 AND id=$2 AND status='approved' AND expires_at>$3::timestamptz
+            WHERE workspace_id=$1 AND id=$2 AND status IN ('approved_pending_validation','approved') AND expires_at>$3::timestamptz
             LIMIT 1`,
           [workspaceId, eligibilityId, at],
         )

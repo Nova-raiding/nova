@@ -321,9 +321,15 @@ export class PostgresBusinessRepository {
         const first = values.length - 1
         clauses.push(`(SELECT (publish_jobs.state = $${first} OR publish_jobs.remote_state = $${first + 1}) FROM publish_jobs WHERE publish_jobs.workspace_id = tasks.workspace_id AND publish_jobs.task_id = tasks.id ORDER BY publish_jobs.created_at DESC, publish_jobs.id ASC LIMIT 1) = true`)
       }
+      // A task may retain a historical brand_id after the brand was archived
+      // or removed from the normalized relation. Do not expose an actionable
+      // task summary that can only fail at the detail authorization boundary;
+      // unscoped legacy tasks (brand_id IS NULL) remain available to the
+      // workspace history view and are still protected by detail handlers.
+      if (table === 'tasks') clauses.push("(coalesce(brand_id, data->>'brandId') IS NULL OR EXISTS (SELECT 1 FROM brands WHERE brands.workspace_id = tasks.workspace_id AND brands.id = coalesce(tasks.brand_id, tasks.data->>'brandId')))")
       if (table === 'tasks' && Array.isArray(input.accessibleBrandIds)) {
         values.push(input.accessibleBrandIds)
-        clauses.push(`brand_id = ANY($${values.length}::text[])`)
+        clauses.push(`coalesce(brand_id, data->>'brandId') = ANY($${values.length}::text[])`)
       }
       if (input.query) {
         const searchable = table === 'products'

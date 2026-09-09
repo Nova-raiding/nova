@@ -38,6 +38,7 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
 
   return (
     <Card
+      className="ops-support-queue"
       title="客服工单队列"
       aria-busy={model.loading}
       extra={<Space wrap>

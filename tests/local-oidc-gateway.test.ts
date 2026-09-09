@@ -53,6 +53,14 @@ async function login(gateway: string, password = 'correct horse battery'): Promi
 }
 
 describe('local authenticated OIDC gateway', () => {
+  it('returns a JSON session boundary for signed-out account panels', async () => {
+    const { gateway } = await fixture()
+    const response = await fetch(`${gateway}/auth/session`)
+    expect(response.status).toBe(401)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect(await response.json()).toMatchObject({ error: { code: 'UNAUTHENTICATED' } })
+  })
+
   it('enforces the login wall and rejects invalid credentials', async () => {
     const { gateway } = await fixture()
     const wall = await fetch(`${gateway}/tasks`, { redirect: 'manual' })

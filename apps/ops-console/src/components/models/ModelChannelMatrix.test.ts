@@ -22,9 +22,14 @@ describe("model channel matrix", () => {
     } satisfies ModelStatus;
 
     expect(modelChannelRows(status).slice(0, 2)).toEqual([
-      expect.objectContaining({ key: "text", providerConfigured: true, costEvidence: true, ready: true }),
+      expect.objectContaining({ key: "text", providerConfigured: true, costEvidence: true, ready: false }),
       expect.objectContaining({ key: "image", providerConfigured: true, costEvidence: false, ready: false, reasons: ["SVIP 计费组未启用"] }),
     ]);
+  });
+
+  it("fails closed when the global model state is blocked even if a modality gate is ready", () => {
+    const status = { state: "cost_gate_blocked", capabilities: { text_generation: true }, model_readiness: { text: { ready: true, provider_configured: true } }, cost_evidence_by_modality: { text: true } } as unknown as ModelStatus;
+    expect(modelChannelRows(status).find((row) => row.key === "text")).toMatchObject({ ready: false });
   });
 
   it("never treats a missing status as ready", () => {

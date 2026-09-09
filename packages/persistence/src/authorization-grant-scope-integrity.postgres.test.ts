@@ -175,7 +175,11 @@ describe('authorization grant exact scope PostgreSQL probe', () => {
         // migration itself must never rewrite any scope/hash/audit event.
         await database.query("UPDATE ops_access_grants SET revoked_at=now(),revoked_by='scope-upgrade-operator',revocation_reason='explicit revoke before upgrade' WHERE id=$1", [id])
       }
-      expect(await new MigrationRunner(database, migrations).run()).toEqual([163])
+      // The probe starts from the pre-163 schema, so the real release runner
+      // must apply the complete forward tail, not stop at the migration under
+      // test. Keep this assertion aligned as new forward-only migrations are
+      // added to the release chain.
+      expect(await new MigrationRunner(database, migrations).run()).toEqual(migrations.filter(migration => migration.version > 162).map(migration => migration.version))
       expect(await new MigrationRunner(database, migrations).run()).toEqual([])
       expect(await evidence()).toEqual(originalEvidence)
       // Inactive legacy rows remain revocable without being translated; new

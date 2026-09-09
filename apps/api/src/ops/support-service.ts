@@ -135,6 +135,8 @@ export class SupportService {
     const cursor = pageCursor(input.cursor)
     const assigneeId = optional(input.assigneeId, 'assigneeId', 256)
     const customerId = optional(input.customerId, 'customerId', 256)
+    const relatedOrderId = optional(input.relatedOrderId, 'relatedOrderId', 256)
+    const relatedTaskId = optional(input.relatedTaskId, 'relatedTaskId', 256)
     const query = optional(input.query, 'query', 200)
     return this.repository.list({
       workspaceId: input.workspaceId,
@@ -143,6 +145,8 @@ export class SupportService {
       ...(input.slaState ? { slaState: input.slaState } : {}),
       ...(assigneeId ? { assigneeId } : {}),
       ...(customerId ? { customerId } : {}),
+      ...(relatedOrderId ? { relatedOrderId } : {}),
+      ...(relatedTaskId ? { relatedTaskId } : {}),
       ...(query ? { query } : {}),
       ...(cursor ? { cursor } : {}),
       ...(input.limit !== undefined ? { limit: input.limit } : {}),

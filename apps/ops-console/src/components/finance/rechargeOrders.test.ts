@@ -5,6 +5,8 @@ import {
   rechargeOrderListParams,
   rechargeOrderTotal,
   safePaymentUrl,
+  paymentReconciliationOutcome,
+  paymentQueryOutcome,
 } from "./rechargeOrders.js";
 
 const orders = [
@@ -14,6 +16,16 @@ const orders = [
 ] as RechargeOrder[];
 
 describe("recharge order presentation", () => {
+  it("only treats an explicit completed reconciliation as success", () => {
+    expect(paymentReconciliationOutcome({ state: "completed", settled: [] })).toEqual({ level: "success", message: "支付对账完成：入账 0" });
+    expect(paymentReconciliationOutcome({ state: "unknown", settled: [] }).level).toBe("error");
+    expect(paymentReconciliationOutcome({ skipped_fixture_orders: 1, settled: [], pending: [], failed: [] }).level).toBe("error");
+  });
+  it("does not treat fixture or unknown order query states as payment success", () => {
+    expect(paymentQueryOutcome({ state: "paid", payment_mode: "fixture" }).level).toBe("info");
+    expect(paymentQueryOutcome({ state: "unknown", payment_mode: "provider" }).level).toBe("error");
+    expect(paymentQueryOutcome({ state: "paid", payment_mode: "provider" })).toEqual({ level: "success", message: "订单已由服务端确认到账" });
+  });
   it("prefers API summary counts and falls back to visible rows", () => {
     expect(rechargeOrderCount("paid", { by_state: { paid: 12 } }, orders)).toBe(12);
     expect(rechargeOrderCount("paid", { paid: 8 }, orders)).toBe(8);

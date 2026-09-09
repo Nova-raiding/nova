@@ -65,4 +65,12 @@ describe('merchant IA contracts', () => {
     expect(result.map(item => item.task.id)).toEqual(['blocked', 'ready', 'done'])
     expect(result.map(item => item.actionLabel)).toEqual(['恢复任务', '恢复任务', '恢复任务'])
   })
+
+  it('keeps recovery grouping renderable when an older task has no createdAt', () => {
+    const result = groupTasksForRecovery([
+      task({ id: 'missing-time', state: 'direction_selected', createdAt: undefined }),
+      task({ id: 'with-time', state: 'direction_selected', createdAt: '2026-08-30T11:00:00Z' }),
+    ])
+    expect(result.map(item => item.task.id)).toEqual(['with-time', 'missing-time'])
+  })
 })

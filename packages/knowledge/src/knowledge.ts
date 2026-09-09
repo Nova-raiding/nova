@@ -10,6 +10,12 @@ export interface RuleSource {
   checkedAt: string
 }
 
+function normalizeRuleSource(source: RuleSource): RuleSource {
+  return source.reference.startsWith('manual://') && source.kind === 'official'
+    ? { ...source, kind: 'internal' }
+    : source
+}
+
 export interface RuleTarget {
   platform?: string
   category?: string
@@ -457,7 +463,11 @@ export class KnowledgeModule {
         const match = id.match(/[-_:](\d+)$/u)
         if (match) this.sequence = Math.max(this.sequence, Number(match[1]))
       }
-      if ((event.eventType === 'knowledge.rule.created' || event.eventType === 'knowledge.rule.updated') && id) this.rules.set(id, clone(payload as unknown as RuleEntry))
+      if ((event.eventType === 'knowledge.rule.created' || event.eventType === 'knowledge.rule.updated') && id) {
+        const rule = clone(payload as unknown as RuleEntry)
+        if (rule.source) rule.source = normalizeRuleSource(rule.source)
+        this.rules.set(id, rule)
+      }
       if ((event.eventType === 'knowledge.asset.created' || event.eventType === 'knowledge.asset.updated') && id) this.assets.set(id, clone(payload as unknown as AssetEntry))
       if (event.eventType === 'knowledge.brand.preference.updated' && id) this.brandPreferences.set(String((payload as Record<string, unknown>).workspaceId), clone(payload as unknown as BrandPreference))
       if (event.eventType === 'knowledge.competitor.created' && id) this.competitors.set(id, clone(payload as unknown as CompetitorAnalysis))
@@ -494,11 +504,11 @@ export class KnowledgeModule {
     const effectiveFrom = validDate(input.effectiveFrom, 'RULE_EFFECTIVE_WINDOW_INVALID')
     const effectiveTo = validDate(input.effectiveTo, 'RULE_EFFECTIVE_WINDOW_INVALID')
     this.assertRuleDates(effectiveFrom, effectiveTo)
-    const source = {
+    const source = normalizeRuleSource({
       kind: input.source.kind,
       reference: requiredText(input.source.reference, 'RULE_SOURCE_REQUIRED'),
       checkedAt: requiredText(input.source.checkedAt, 'RULE_SOURCE_REQUIRED'),
-    }
+    })
     validDate(source.checkedAt, 'RULE_SOURCE_INVALID')
     const rule: RuleEntry = {
       id: this.nextId('rule'), ...(workspaceId ? { workspaceId } : {}), name, content, scope, target, source,
@@ -535,7 +545,7 @@ export class KnowledgeModule {
       scope: nextScope, target,
       ...(scopeValue ? { scopeValue } : {}),
       ...(nextScope === 'global' ? { scopeValue: undefined } : {}),
-      ...(patch.source ? { source: { ...patch.source, reference: requiredText(patch.source.reference, 'RULE_SOURCE_REQUIRED'), checkedAt: requiredText(patch.source.checkedAt, 'RULE_SOURCE_REQUIRED') } } : {}),
+      ...(patch.source ? { source: normalizeRuleSource({ ...patch.source, reference: requiredText(patch.source.reference, 'RULE_SOURCE_REQUIRED'), checkedAt: requiredText(patch.source.checkedAt, 'RULE_SOURCE_REQUIRED') }) } : {}),
       ...(patch.version !== undefined ? { version: requiredText(patch.version, 'RULE_VERSION_REQUIRED') } : {}),
       ...(effectiveFrom ? { effectiveFrom } : { effectiveFrom: undefined }),
       ...(effectiveTo ? { effectiveTo } : { effectiveTo: undefined }),

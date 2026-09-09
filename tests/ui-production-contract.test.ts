@@ -5,6 +5,8 @@ const app = readFileSync(new URL('../demo/merchant-studio/src/App.tsx', import.m
 const api = readFileSync(new URL('../demo/merchant-studio/src/api.ts', import.meta.url), 'utf8')
 const campaign = readFileSync(new URL('../demo/merchant-studio/src/CampaignLifecyclePanel.tsx', import.meta.url), 'utf8')
 const smoke = readFileSync(new URL('./merchant-studio-smoke.ts', import.meta.url), 'utf8')
+const merchantNginx = readFileSync(new URL('../infra/nginx/merchant-studio.conf', import.meta.url), 'utf8')
+const merchantEntrypoint = readFileSync(new URL('../infra/nginx/merchant-studio-entrypoint.sh', import.meta.url), 'utf8')
 
 describe('Merchant Studio production UI contract', () => {
   it('keeps the four platform routes independent', () => {
@@ -20,6 +22,14 @@ describe('Merchant Studio production UI contract', () => {
     expect(api).toContain("VITE_API_TOKEN")
     expect(api).toContain("'x-account-id'")
     expect(api).toContain('account_id?: string')
+    expect(api).toContain("runtimeEnv.MODE === 'test' ? 'ws_demo' : ''")
+    expect(api).toContain("API_WORKSPACE_ID_MISSING")
+  })
+
+  it('requires an explicit workspace at the production UI proxy boundary', () => {
+    expect(merchantNginx).toContain('proxy_set_header X-Workspace-Id "${MERCHANT_WORKSPACE_ID}"')
+    expect(merchantNginx).not.toContain('proxy_set_header X-Workspace-Id "ws_demo"')
+    expect(merchantEntrypoint).toContain('MERCHANT_WORKSPACE_ID must be injected')
   })
 
   it('projects read-only merchant roles into disabled write controls', () => {
@@ -120,7 +130,7 @@ describe('Merchant Studio production UI contract', () => {
   })
 
   it('labels offline overview activity and connections as demonstrations', () => {
-    expect(app).toContain("status: '演示已连接'")
+    expect(app).toContain("status: '演示连接'")
     expect(app).toContain("['演示发布状态'")
     expect(app).not.toContain("['发布已生效'")
   })
@@ -197,6 +207,12 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).toContain('selectedBrandFields')
     expect(app).toContain('首次建档必须确认“品牌名称”')
     expect(api).toContain("'/v1/brand-profile/extract'")
+  })
+
+  it('shows the normalized brand-unit identity that batch production will use', () => {
+    expect(api).toContain('brandUnitId?: string')
+    expect(api).toContain('brandUnit?: { id: string')
+    expect(app).toContain('批量生产品牌单元：{brand.brandUnitId}')
   })
 
   it('provides a merchant-facing editor for generation-blocking visual rules', () => {

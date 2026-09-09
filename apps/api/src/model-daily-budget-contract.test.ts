@@ -41,8 +41,8 @@ describe('daily model budget provider boundary', () => {
   it('keeps synchronous multimodal, video plans, and image retries on their reserved run identity', () => {
     expect(source).toContain("const modelRunKey = request.value.modality === 'video' && request.value.output === 'rendering'")
     expect(source).toContain("const modelRunKey = request.value.output === 'rendering' ? `video:${walletDebitKey}` : walletDebitKey")
-    expect(source).toContain('service.completeImageGeneration({ workspaceId, jobId: retried.job.id, runKey: imageRunKey })')
-    expect(source).toContain('service.completeImageGeneration({ workspaceId, jobId: imageJob.id, runKey: modelRunKey })')
+    expect(source).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: retried\.job\.id, runKey: imageRunKey(?:,|\s*\})/u)
+    expect(source).toMatch(/service\.completeImageGeneration\(\{ workspaceId, jobId: imageJob\.id, runKey: modelRunKey(?:,|\s*\})/u)
     expect(source).toContain('usageContext: { workspaceId, actionId: walletDebitKey, runKey: modelRunKey }')
   })
 

@@ -29,6 +29,7 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
 
   return (
     <Card
+      className="ops-support-sla"
       title="SLA 月报"
       extra={<Button icon={report ? <ReloadOutlined aria-hidden="true" /> : <FileSearchOutlined aria-hidden="true" />} loading={model.reportLoading} onClick={load}>{report ? "重新生成上月报告" : "生成上月报告"}</Button>}
     >

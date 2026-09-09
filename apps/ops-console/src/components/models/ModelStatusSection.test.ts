@@ -13,6 +13,29 @@ function render(modelStatusLoading: boolean) {
 }
 
 describe("ModelStatusSection", () => {
+  it("fails closed instead of showing a previous ready snapshot after refresh failure", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ModelStatusSection, {
+        model: {
+          modelStatus: {
+            ownership: "platform", user_key_binding: false, state: "ready", provider_host: "relay.example",
+            text_model: "text", image_model: "image", vision_model: "ocr", video_model: "video",
+            relay: { configured: true, host: "relay.example" },
+            capabilities: { text_generation: true, image_generation: true, image_editing: true, image_fact_ocr: true, video_rendering: true },
+            model_readiness: {}, quotas: { rpm: 1, tpm: 1, daily_cny_limit: "1" }, next_actions: [],
+          },
+          modelStatusLoading: false,
+          dataSetError: () => "模型状态读取失败",
+          load: async () => undefined,
+        } as unknown as OpsConsoleModel,
+      }),
+    );
+    expect(markup).toContain(">不可用<");
+    expect(markup).not.toContain(">ready<");
+    expect(markup).not.toContain("平台模型配置完整");
+    expect(markup).toContain("平台模型状态读取失败");
+  });
+
   it("distinguishes unresolved loading from a failed closed unavailable state", () => {
     expect(render(true)).toContain("加载中");
     const unavailable = render(false);

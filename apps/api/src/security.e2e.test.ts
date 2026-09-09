@@ -1621,6 +1621,8 @@ describe('security and access-control acceptance gates', () => {
     expect(health.error).toBeNull()
     const billing = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'billing.status', params: {} }) }).then(response => response.json() as Promise<Envelope>)
     expect(billing.error).toBeNull()
+    const automationScan = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2.5, method: 'automation.scan', params: {} }) }).then(response => response.json() as Promise<Envelope>)
+    expect(automationScan.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
     const catalog = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'catalog.search', params: {} }) }).then(response => response.json() as Promise<Envelope>)
     expect(catalog.error?.code).toBe('STORE_ONBOARDING_REQUIRED')
   })

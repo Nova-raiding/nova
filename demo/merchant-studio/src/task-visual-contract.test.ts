@@ -93,4 +93,10 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('setQuestionAnswers')
     expect(app).toContain('不会复用其他平台商品')
   })
+
+  it('disables unsafe product and asset actions until their evidence gates pass', () => {
+    expect(app).toContain('Boolean(identityError) ||\n                            canonicalUnverified')
+    expect(app).toContain("asset.scanStatus !== 'clean' || asset.parseStatus === 'failed' || asset.parseStatus === 'processing'")
+    expect(app).toContain('安全扫描通过后才能评价素材')
+  })
 })

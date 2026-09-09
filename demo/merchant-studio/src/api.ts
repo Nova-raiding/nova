@@ -6,6 +6,7 @@ export interface ApiHealth {
   connectors: Record<string, string>
   persistence?: { mode: string; ready: boolean }
   setup?: {
+    mode?: string
     objectStorage?: { configured: boolean; mode: string }
     /** Workspace health currently exposes readiness at setup.modelReadiness. */
     modelReadiness?: Record<string, { ready?: boolean; providerConfigured?: boolean; reasons?: string[] }>
@@ -36,6 +37,13 @@ const runtimeConfig = (key: string) => {
   const injected = runtimeEnv[key]?.trim()
   if (injected) return injected
   return ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key])?.trim()
+}
+const configuredWorkspaceId = () => {
+  const configured = runtimeConfig('VITE_WORKSPACE_ID')
+  if (configured) return configured
+  // Unit fixtures are intentionally deterministic; deployed bundles must
+  // receive an explicit workspace from their build/runtime boundary.
+  return runtimeEnv.MODE === 'test' ? 'ws_demo' : ''
 }
 
 export interface ApiEnvelope<T> {
@@ -82,6 +90,8 @@ export interface PlatformAccount {
   state: 'fixture_ready' | 'connected' | 'not_configured' | string
   readEnabled: boolean
   writeEnabled: boolean
+  dataMode?: 'fixture' | 'official_api' | 'account_record_only' | string
+  authorization?: { state?: string; reauthorizationRequired?: boolean }
   authorizationUrl?: string
   accountId?: string
   label?: string
@@ -182,6 +192,117 @@ export interface BillingStatus {
   }
 }
 
+export interface CommercialCatalogBenefit {
+  code: string
+  quantity: number | null
+  raw_value: string | null
+  raw_unit: string | null
+}
+
+/** Read-only, server-owned V2 commercial catalog projection. */
+export interface CommercialCatalogItem {
+  id: string
+  sku_code: string
+  name: string
+  type: string
+  visibility: string
+  version: string | number
+  price_label: string
+  cycle_label: string | null
+  benefits_summary: string
+  benefits: CommercialCatalogBenefit[]
+  approval_state: string
+  valid_from: string | null
+  valid_to: string | null
+  unresolved: string[]
+  checksum: string
+  executable: boolean
+}
+
+type CommercialCatalogSnapshotWire = {
+  id?: unknown; code?: unknown; kind?: unknown; visibility?: unknown; version?: unknown
+  lifecycle?: unknown; executable?: unknown; priceFen?: unknown; payload?: unknown
+  checksum?: unknown; effectiveAt?: unknown; benefits?: unknown
+}
+
+const commercialOfferNames: Record<string, string> = {
+  basic: '基础版', growth: '成长版', custom: '定制版', onboarding_once: '系统接入服务',
+  points_500: '500 点包', points_2000: '2,000 点包', private_validation_7d: '私测服务',
+}
+
+function commercialPayloadSummary(kind: string, payload: Record<string, unknown>) {
+  const parts: string[] = []
+  if (typeof payload.creativePoints === 'number') parts.push(`${payload.creativePoints.toLocaleString('zh-CN')} 点`)
+  if (typeof payload.maxBrands === 'number' && typeof payload.maxStores === 'number') parts.push(`${payload.maxBrands} 个品牌 · ${payload.maxStores} 家店铺`)
+  if (typeof payload.serviceHours === 'number') parts.push(`${payload.serviceHours} 小时服务`)
+  if (typeof payload.expiryDays === 'number') parts.push(`${payload.expiryDays} 天有效`)
+  return parts.join(' · ') || commercialOfferNames[kind] || '服务端商业权益'
+}
+
+function normalizeCommercialCatalogItem(raw: CommercialCatalogSnapshotWire): CommercialCatalogItem {
+  const code = typeof raw.code === 'string' && raw.code ? raw.code : String(raw.id ?? 'unknown')
+  const payload = raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload) ? raw.payload as Record<string, unknown> : {}
+  const priceFen = typeof raw.priceFen === 'number' ? raw.priceFen : null
+  const kind = typeof raw.kind === 'string' ? raw.kind : 'unknown'
+  const blockers = Array.isArray(payload.blockers) ? payload.blockers.filter((item): item is string => typeof item === 'string') : []
+  return {
+    id: typeof raw.id === 'string' ? raw.id : code, sku_code: code, name: commercialOfferNames[code] ?? code,
+    type: kind, visibility: typeof raw.visibility === 'string' ? raw.visibility : 'unknown',
+    version: typeof raw.version === 'number' || typeof raw.version === 'string' ? raw.version : 'unknown',
+    price_label: priceFen === null ? (typeof payload.minimumMonthlyPriceCny === 'number' ? `¥${payload.minimumMonthlyPriceCny.toFixed(2)} 起` : '按合同确认') : `¥${(priceFen / 100).toFixed(2)}`,
+    cycle_label: kind === 'monthly' ? '每月' : kind === 'point_pack' ? `${typeof payload.expiryDays === 'number' ? payload.expiryDays : 30} 天有效` : null,
+    benefits_summary: commercialPayloadSummary(kind, payload),
+    benefits: Array.isArray(raw.benefits) ? raw.benefits.map(value => {
+      const benefit = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+      return { code: String(benefit.code ?? 'unknown'), quantity: typeof benefit.quantity === 'number' ? benefit.quantity : null, raw_value: typeof benefit.rawValue === 'string' ? benefit.rawValue : null, raw_unit: typeof benefit.rawUnit === 'string' ? benefit.rawUnit : null }
+    }) : [],
+    approval_state: typeof raw.lifecycle === 'string' ? raw.lifecycle : 'unknown', valid_from: typeof raw.effectiveAt === 'string' ? raw.effectiveAt : null,
+    valid_to: null, unresolved: blockers, checksum: typeof raw.checksum === 'string' ? raw.checksum : '', executable: raw.executable === true,
+  }
+}
+
+export function normalizeCommercialCatalog(value: { schema_version?: unknown; status?: unknown; catalog?: unknown }): CommercialCatalog {
+  return { schema_version: typeof value.schema_version === 'string' ? value.schema_version : 'commercial.catalog.v2', status: typeof value.status === 'string' ? value.status : 'available', catalog: Array.isArray(value.catalog) ? value.catalog.map(item => normalizeCommercialCatalogItem(item as CommercialCatalogSnapshotWire)) : [] }
+}
+
+/**
+ * The server catalog intentionally retains historical/draft versions for
+ * auditability. Merchant-facing purchase choices must not render each
+ * version as a separate offer: prefer the approved executable version and
+ * otherwise show the newest server version so its blockers remain visible.
+ */
+export function selectMerchantCatalogItems(catalog: CommercialCatalogItem[]): CommercialCatalogItem[] {
+  const groups = new Map<string, CommercialCatalogItem[]>()
+  for (const item of catalog) {
+    const key = item.sku_code || item.id
+    const existing = groups.get(key)
+    if (existing) existing.push(item)
+    else groups.set(key, [item])
+  }
+  const versionNumber = (item: CommercialCatalogItem) => {
+    const value = Number(String(item.version).replace(/^v/iu, ''))
+    return Number.isFinite(value) ? value : -1
+  }
+  const effectiveTime = (item: CommercialCatalogItem) => item.valid_from ? Date.parse(item.valid_from) : -1
+  return [...groups.values()]
+    .flatMap(items => {
+      const chosen = [...items].sort((left, right) =>
+        Number(right.executable) - Number(left.executable) ||
+        Number(right.approval_state === 'approved') - Number(left.approval_state === 'approved') ||
+        versionNumber(right) - versionNumber(left) ||
+        effectiveTime(right) - effectiveTime(left),
+      )[0]
+      return chosen ? [chosen] : []
+    })
+    .sort((left, right) => left.name.localeCompare(right.name) || left.sku_code.localeCompare(right.sku_code))
+}
+
+export interface CommercialCatalog {
+  schema_version: 'commercial.catalog.v2' | string
+  status: string
+  catalog: CommercialCatalogItem[]
+}
+
 export interface RechargeOrder {
   id: string
   state: string
@@ -195,6 +316,18 @@ export interface RechargeOrder {
 }
 
 export interface WorkspaceMetrics {
+  source?: 'durable_repository' | 'process_local' | string
+  dataCompleteness?: 'complete' | 'process_local' | 'partial' | string
+  hydration?: { status?: string; attempted?: boolean; invalidSnapshotCount?: number }
+  dataCoverage?: {
+    products?: number
+    tasks?: number
+    syncJobs?: number
+    publishJobs?: number
+    firstObservedAt?: string | null
+    lastObservedAt?: string | null
+    fixtureDataPresent?: boolean
+  }
   stores: Array<{ platform: PlatformId; accountId: string; connection?: { state: string; readable: boolean; dataMode: string }; product?: { total: number } }>
   productSummary: { total: number; lowStock: number; missingImages: number }
   riskSummary: { total: number; returned: number; truncated: boolean }
@@ -291,6 +424,14 @@ export interface ContentVersion {
   body: { title: string; detail: string; sellingPoints: string[]; modules?: Array<{ key: string; title: string; purpose: string; body: string; contentKind?: 'fact' | 'creative' | 'pending'; pendingReason?: string; imageGuidance?: string }>; brief?: { placement: string; targetDimensions: string; headline: string; subheadline: string; coreSellingPoint: string; cta: string; safeArea: string; protectedAreas: string[] } }
   factVersionIds: string[]
   ruleVersionIds: string[]
+  /** Frozen workspace knowledge actually consumed by this generated version. */
+  knowledgeContext?: {
+    rules: Array<{ id: string; version: string; sourceReference: string }>
+    assets: Array<{ id: string; kind: 'brand' | 'customer'; name: string; revision: number }>
+    confirmedLearningSuggestions: Array<{ id: string; summary: string; proposedRule: { content: string; scope: string; version: string } }>
+    brandPreference?: { id: string; version: string; revision: number }
+    competitorReferences?: Array<{ competitorAnalysisId: string }>
+  }
   state: string
   revision: number
 }
@@ -472,6 +613,13 @@ export type BrandCandidateFieldKey = 'name' | 'positioning' | 'audience' | 'tone
 export interface BrandProfile {
   id: string
   name: string
+  workspaceId?: string
+  /** Normalized aggregate used by store binding and batch production. */
+  brandUnitId?: string | null
+  brandUnit?: { id: string; workspaceId: string; name: string; revision: number; storeBindings: Array<{ platform: string; accountId: string }> } | null
+  brandUnitCandidates?: Array<{ id: string; name: string; revision: number; storeBindings: Array<{ platform: string; accountId: string }> }>
+  brandUnitSelectionRequired?: boolean
+  brandUnitNextAction?: string
   positioning?: string
   audience?: string
   tone?: string[]
@@ -542,7 +690,7 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
   return chunks.join('')
 }
 
-export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo', maxResponseBytes = MAX_API_RESPONSE_BYTES): Promise<T> {
+export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = configuredWorkspaceId(), maxResponseBytes = MAX_API_RESPONSE_BYTES): Promise<T> {
   const token = runtimeConfig('VITE_API_TOKEN')?.trim()
   const sameOriginProxy = baseUrl.trim().startsWith('/')
   if (!token && !sameOriginProxy) {
@@ -550,7 +698,7 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
     error.code = 'API_AUTH_TOKEN_MISSING'
     throw error
   }
-  if (!workspaceId?.trim()) {
+  if (!workspaceId?.trim() && !sameOriginProxy) {
     const error = new Error('商家工作区未配置，已阻止请求') as ApiError
     error.code = 'API_WORKSPACE_ID_MISSING'
     throw error
@@ -558,7 +706,7 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   const headers = new Headers(init.headers)
   headers.set('accept', 'application/json')
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-  headers.set('x-workspace-id', workspaceId)
+  if (workspaceId?.trim()) headers.set('x-workspace-id', workspaceId)
   if (token) headers.set('authorization', `Bearer ${token}`)
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS)
@@ -642,6 +790,7 @@ export async function requestMcp<T>(baseUrl: string, method: string, params: Rec
 }
 
 export const fetchBillingStatus = (baseUrl: string) => requestMcp<BillingStatus>(baseUrl, 'billing.status')
+export const fetchCommercialCatalog = async (baseUrl: string) => normalizeCommercialCatalog(await requestMcp<{ schema_version?: unknown; status?: unknown; catalog?: unknown }>(baseUrl, 'commercial.catalog.get'))
 /**
  * Merchant workspaces may read the redacted readiness projection from
  * workspace.health. The platform.model.status MCP method is platform-scoped
@@ -735,7 +884,13 @@ export const confirmAssetFacts = (baseUrl: string, assetId: string, facts: Recor
 export const parseAsset = (baseUrl: string, assetId: string) => requestApi<AssetMetadata>(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/parse`, { method: 'POST' })
 export async function fetchAssetBlob(baseUrl: string, assetId: string, signal?: AbortSignal): Promise<Blob> {
   const headers = new Headers({ accept: 'application/octet-stream' })
-  headers.set('x-workspace-id', runtimeEnv.VITE_WORKSPACE_ID ?? 'ws_demo')
+  const workspaceId = configuredWorkspaceId()
+  if (!workspaceId && !baseUrl.trim().startsWith('/')) {
+    const error = new Error('商家工作区未配置，已阻止素材请求') as ApiError
+    error.code = 'API_WORKSPACE_ID_MISSING'
+    throw error
+  }
+  if (workspaceId) headers.set('x-workspace-id', workspaceId)
   const token = runtimeConfig('VITE_API_TOKEN')
   if (token) headers.set('authorization', `Bearer ${token}`)
   const response = await fetch(apiUrl(baseUrl, `/v1/assets/${encodeURIComponent(assetId)}/download`), { headers, signal })
@@ -749,7 +904,7 @@ export async function fetchAssetBlob(baseUrl: string, assetId: string, signal?: 
 export const reviewProductImages = (baseUrl: string, productId: string) => requestApi<{ productId: string; images: string[]; findings: ReviewFinding[]; externallyUnverified: string[] }>(baseUrl, `/v1/products/${encodeURIComponent(productId)}/image-review`)
 export const generateProductImages = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string; direction: string; mode: 'create' | 'optimize'; count: string; idempotency_key: string }) => requestMcp<{ job_id: string; product_id: string; next_action?: { type: string; label: string; allowed: boolean } }>(baseUrl, 'catalog.image.generate', input)
 export const retryImageGeneration = (baseUrl: string, jobId: string, expectedRevision: number) => requestMcp<{ job_id: string; previous_job_id: string; state: string }>(baseUrl, 'catalog.image.retry', { job_id: jobId, expected_revision: String(expectedRevision), idempotency_key: `merchant-studio-image-retry-${jobId}-${expectedRevision}` })
-export const importProduct = (baseUrl: string, input: { platform: PlatformId; title: string; local_product_key?: string; remote_id?: string; category?: string; price?: number; stock?: number; sku_count?: number; store_name?: string; asset_ids?: string[] }) => requestApi<Product>(baseUrl, '/v1/products/import', { method: 'POST', body: JSON.stringify(input) })
+export const importProduct = (baseUrl: string, input: { platform: PlatformId; account_id: string; title: string; local_product_key?: string; remote_id?: string; category?: string; price?: number; stock?: number; sku_count?: number; store_name?: string; asset_ids?: string[] }) => requestApi<Product>(baseUrl, '/v1/products/import', { method: 'POST', body: JSON.stringify(input) })
 export const fetchPublishJobs = (baseUrl: string) => fetchAllPages<PublishJob>(baseUrl, '/v1/publish-jobs')
 export const createTask = (baseUrl: string, input: { product_id: string; platform: PlatformId; account_id?: string; request_text?: string; idempotency_key?: string }) => requestApi<Task>(baseUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify(input) })
 export const fetchTask = (baseUrl: string, taskId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}`)
@@ -769,9 +924,23 @@ export interface CampaignBatchResult {
   next_actions?: string[]
   items?: Array<{ id: string; productId: string; taskId?: string; state: string; error?: { message?: string; nextAction?: string } }>
   workflow?: Record<string, unknown>
+  readiness?: string
+  delivery_manifest?: { state?: string; validation?: { valid?: boolean; code?: string; path?: string | null } }
+}
+export interface CustomerSupportReply {
+  id: string
+  body: string
+  created_at: string
+}
+export interface CustomerSupportRepliesResult {
+  ticket?: { id: string; ticket_number: string; subject: string; status: string }
+  tickets?: Array<{ ticket_id: string; ticket_number: string; subject: string; status: string; related_task_id: string | null; related_order_id: string | null; replies: CustomerSupportReply[]; next_cursor: string | null }>
+  replies?: CustomerSupportReply[]
+  next_cursor?: string
 }
 export const createCampaignBatch = (baseUrl: string, input: { brand_id: string; targets: Array<{ product_id: string; platform: PlatformId; account_id: string; canonical_product_id?: string; listing_id?: string }>; request_text?: string; idempotency_key: string }) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.create', { brand_id: input.brand_id, targets_json: JSON.stringify(input.targets), ...(input.request_text ? { request_text: input.request_text } : {}), idempotency_key: input.idempotency_key })
-export const generateCampaignBatch = (baseUrl: string, campaignId: string, requestText?: string) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.generate', { campaign_id: campaignId, ...(requestText ? { request_text: requestText } : {}) })
+export const generateCampaignBatch = (baseUrl: string, campaignId: string, requestText?: string, idempotencyKey = `merchant-studio-campaign-generate-${campaignId}`) => requestMcp<CampaignBatchResult>(baseUrl, 'campaign.batch.generate', { campaign_id: campaignId, ...(requestText ? { request_text: requestText } : {}), idempotency_key: idempotencyKey })
+export const fetchCustomerSupportReplies = (baseUrl: string, input: { ticketId?: string; relatedTaskId?: string; relatedOrderId?: string }, limit = 50, cursor?: string) => requestMcp<CustomerSupportRepliesResult>(baseUrl, 'support.customer.replies.list', { ...(input.ticketId ? { ticket_id: input.ticketId } : {}), ...(input.relatedTaskId ? { related_task_id: input.relatedTaskId } : {}), ...(input.relatedOrderId ? { related_order_id: input.relatedOrderId } : {}), limit: String(limit), ...(cursor ? { cursor } : {}) })
 export const selectDirection = (baseUrl: string, taskId: string, directionId: string) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/directions`, { method: 'POST', body: JSON.stringify({ direction_id: directionId }) })
 export const selectVisualCandidates = (baseUrl: string, contentVersionId: string, visualRefs: string[], expectedRevision: number, reason: string, idempotencyKey: string) => requestMcp<{ content_version_id: string; parent_content_version_id: string; version: number; revision: number; state: string; visualSelection: { state: string; count: number; items: Array<{ visualRef: string; ordinal: number; reviewStatus: string; publishable: boolean }> }; reviewRequired: boolean; approvalRequired: boolean }>(baseUrl, 'content.visual.select', { content_version_id: contentVersionId, visual_refs_json: JSON.stringify(visualRefs), expected_revision: String(expectedRevision), idempotency_key: idempotencyKey, reason })
 export const confirmTaskPlan = (baseUrl: string, taskId: string, expectedVersion?: number) => requestApi<Task>(baseUrl, `/v1/tasks/${encodeURIComponent(taskId)}/plan/confirm`, { method: 'POST', body: JSON.stringify(expectedVersion === undefined ? {} : { expected_version: expectedVersion }) })

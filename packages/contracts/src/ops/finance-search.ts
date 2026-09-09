@@ -47,7 +47,11 @@ export interface FinanceSearchSummary {
   walletCreditCny: number
   walletDebitCny: number
   walletNetCny: number
-  providerCostCny: number
+  providerCostCny: number | null
+  missingCostEvidenceCount?: number
+  providerCostStatus?: 'verified' | 'partial' | 'unavailable'
+  /** Cost fields can be complete while the external Provider statement is not reconciled. */
+  providerStatementStatus?: 'not_checked' | 'needs_review' | 'balanced' | 'unavailable'
   customerChargeCny: number
   usageUnits: number
   byKind: Record<FinanceRecordKind, number>

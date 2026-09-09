@@ -6,3 +6,5 @@ dist
 .gstack
 coverage
 *.log
+artifacts
+dogfood

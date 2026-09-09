@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 type ComposeService = {
   image?: string
@@ -15,9 +16,14 @@ type ComposeService = {
 type ComposeConfig = { services?: Record<string, ComposeService> }
 
 const composeFile = 'infra/local/docker-compose.yml'
+const composeArgs = [
+  'compose',
+  ...(existsSync(resolve('.env')) ? ['--env-file', resolve('.env')] : []),
+  '-f', composeFile,
+]
 
 function dockerComposeConfig(): ComposeConfig {
-  const output = execFileSync('docker', ['compose', '-f', composeFile, 'config', '--format', 'json'], { encoding: 'utf8' })
+  const output = execFileSync('docker', [...composeArgs, 'config', '--format', 'json'], { encoding: 'utf8' })
   return JSON.parse(output) as ComposeConfig
 }
 
@@ -70,7 +76,7 @@ assert.ok(apiEnv.DATABASE_URL?.startsWith('postgres://'), 'API must use PostgreS
 assert.ok(apiEnv.OPS_DATABASE_URL?.startsWith('postgres://'), 'API must isolate platform control-plane tables behind a dedicated PostgreSQL role')
 assert.notEqual(apiEnv.OPS_DATABASE_URL, apiEnv.DATABASE_URL, 'Ops and tenant runtime database credentials must be distinct')
 assert.ok(apiEnv.REDIS_URL?.startsWith('redis://'), 'API must use Redis in Compose')
-assert.equal(apiEnv.DB_POOL_MAX, '20')
+assert.equal(apiEnv.DB_POOL_MAX, '8')
 assert.equal(apiEnv.MAX_ACTIVE_JOBS_PER_WORKSPACE, '3')
 assert.equal(apiEnv.REQUEST_BODY_LIMIT_BYTES, '52428800')
 assert.ok(apiEnv.WORKER_API_CREDENTIALS, 'API must expose the role-scoped worker credential map')
@@ -91,13 +97,19 @@ for (const [index, name] of workerServices.entries()) {
   }
   assert.equal(workerEnv.WORKER_API_TOKEN, credential?.token, `${name} must receive only its role token`)
   assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, credential?.signing_secret, `${name} must receive only its role signing secret`)
-  assert.equal(workerEnv.WORKER_WORKSPACES, 'auto')
-  assert.equal(workerEnv.WORKER_DB_POOL_MAX, '5')
-  assert.equal(workerEnv.WORKER_POLL_INTERVAL_MS, '500')
+  const workerWorkspaces = workerEnv.WORKER_WORKSPACES?.trim() ?? ''
+  assert.ok(workerWorkspaces, `${name} must declare a non-empty local workspace scope`)
+  if (workerWorkspaces !== 'auto') {
+    const ids = workerWorkspaces.split(',').map(value => value.trim())
+    assert.ok(ids.every(id => /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(id)), `${name} local workspace scope must contain valid workspace ids or auto`)
+    assert.equal(new Set(ids).size, ids.length, `${name} local workspace scope must not contain duplicates`)
+  }
+  assert.equal(workerEnv.WORKER_DB_POOL_MAX, '3')
+  assert.equal(workerEnv.WORKER_POLL_INTERVAL_MS, '1000')
   assert.equal(workerEnv.STORAGE_RECONCILIATION_INTERVAL_MS, '900000')
   assert.equal(workerEnv.WORKER_BATCH_SIZE, '100')
   assert.equal(workerEnv.WORKER_WORKSPACE_BATCH_SIZE, '10')
-  assert.equal(workerEnv.WORKER_LEASE_MS, '900000')
+  assert.equal(workerEnv.WORKER_LEASE_MS, '1200000')
   assert.equal(workerEnv.WORKER_API_TIMEOUT_MS, '360000')
   assert.equal(workerEnv.WORKER_DEPENDENCY_CHECK_INTERVAL_MS, '10000')
   assert.ok(workerEnv.DATABASE_URL?.startsWith('postgres://'), `Worker ${index} must use PostgreSQL`)
@@ -122,11 +134,13 @@ assert.ok(Object.entries(workerCredentials).every(([role, value]) => role === 's
 assert.equal(services['worker-scan']!.depends_on?.clamav?.condition, 'service_healthy', 'scan worker must wait for fresh and reachable ClamAV')
 assert.ok(services.clamav!.healthcheck?.test?.some(value => value.includes('clamdscan --ping')), 'ClamAV PING healthcheck is required')
 assert.ok(services.clamav!.healthcheck?.test?.some(value => value.includes('clamdscan --version')), 'ClamAV freshness must inspect the running daemon, not only files on disk')
-assert.ok(services.clamav!.healthcheck?.test?.some(value => value.includes('86400')), 'ClamAV running definitions older than 24 hours must fail closed')
+assert.ok(services.clamav!.healthcheck?.test?.some(value => value.includes('CLAMAV_DEFINITIONS_MAX_AGE_SECONDS')), 'ClamAV freshness healthcheck must use the configured age boundary')
 assert.match(services.clamav!.image ?? '', /^clamav\/clamav-debian@sha256:[0-9a-f]{64}$/u, 'ClamAV must use the official multi-arch Debian image at an immutable digest')
 assert.equal(services.clamav!.platform, undefined, 'local ClamAV must select the native host architecture instead of forcing QEMU')
 const clamavEnv = environment(services.clamav!)
 assert.equal(clamavEnv.FRESHCLAM_CHECKS, '24', 'ClamAV must check signatures hourly before the 24-hour freshness gate')
+assert.ok(Number(clamavEnv.CLAMAV_DEFINITIONS_MAX_AGE_SECONDS) >= 86_400, 'local ClamAV definitions age boundary must be at least 24 hours')
+assert.ok(Number(scannerEnv.SCANNER_DEFINITIONS_MAX_AGE_SECONDS) >= 86_400, 'local scanner definitions age boundary must be at least 24 hours')
 const clamavSupervisor = readFileSync('infra/local/clamav-supervisor.sh', 'utf8')
 assert.match(clamavSupervisor, /wait -n "\$freshclam_pid" "\$clamd_pid"/u, 'ClamAV PID 1 must observe either daemon exiting')
 assert.match(clamavSupervisor, /shutdown_children/u, 'ClamAV PID 1 must stop the sibling daemon before exiting')

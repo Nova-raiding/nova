@@ -262,6 +262,14 @@ export function createLocalOidcGateway(rawConfig: LocalOidcGatewayConfig): Serve
         }); res.end(); return
       }
       const session = readSession(req, config)
+      // Session discovery is consumed by the merchant account panel. Return a
+      // machine-readable unauthenticated result instead of redirecting a
+      // fetch() request to HTML login markup.
+      if (requestUrl.pathname === '/auth/session' && req.method === 'GET' && !session) {
+        res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: '请先登录' } }))
+        return
+      }
       if (!session) { audit('redirect_login', { path: requestUrl.pathname }); redirectToLogin(req, res); return }
       if (requestUrl.pathname === '/auth/session' && req.method === 'GET') {
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })

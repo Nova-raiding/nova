@@ -1,5 +1,6 @@
 /** Shared release-time count for the public merchant Bridge surface. */
 export const MERCHANT_HIDDEN_METHODS = new Set([
+  'billing.reconciliation',
   'billing.model-usage.reconciliation.run', 'billing.model-usage.resolve',
   'billing.usage.consume', 'billing.usage.refund', 'billing.refund',
   'billing.reconciliation.run', 'platform.settings.update', 'platform.revoke',

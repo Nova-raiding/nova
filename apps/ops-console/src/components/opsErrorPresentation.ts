@@ -16,6 +16,16 @@ export interface OpsErrorPresentation {
   retryAfterSeconds?: number;
 }
 
+export function opsLoadWarningPresentation(error: string) {
+  const match = error.match(/^部分数据集刷新失败（([^）]+)）/u);
+  if (!match) return { summary: error, detail: undefined };
+  const count = match[1].split("、").map((item) => item.trim()).filter(Boolean).length;
+  return {
+    summary: `${count || "部分"} 个数据集刷新失败，页面已保留上次成功数据。`,
+    detail: error,
+  };
+}
+
 const AUTH_CODES = new Set([
   "UNAUTHENTICATED",
   "SESSION_EXPIRED",

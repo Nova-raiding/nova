@@ -55,5 +55,15 @@ describe('merchant rule trust boundary', () => {
     expect(mcpResponse.status, JSON.stringify(mcpBody)).toBe(200)
     expect(mcpBody.error).toBeNull()
     expect(resultOf(mcpBody)).toEqual([])
+
+    const sharedOpsRoleWithoutWorkbench = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...headers, 'x-role': 'platform_ops', 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'shared-ops-role-no-workbench', method: 'rule.list', params: {} }),
+    })
+    const sharedOpsBody = await sharedOpsRoleWithoutWorkbench.json() as { data?: unknown; error?: unknown }
+    expect(sharedOpsRoleWithoutWorkbench.status, JSON.stringify(sharedOpsBody)).toBe(200)
+    expect(sharedOpsBody.error).toBeNull()
+    expect(resultOf(sharedOpsBody)).toEqual([])
   })
 })

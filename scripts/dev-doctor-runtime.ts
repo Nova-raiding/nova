@@ -200,9 +200,13 @@ export function modelRelayEvidenceAudit(payload: unknown): ModelRelayEvidenceAud
   if (!root) return undefined
   const rows = objectArray(root.results)
   const byModality = new Map<string, Record<string, unknown>>()
+  const duplicateModalities = new Set<string>()
   for (const row of rows) {
     const modality = typeof row.modality === 'string' ? row.modality : undefined
-    if (modality) byModality.set(modality, row)
+    if (modality) {
+      if (byModality.has(modality)) duplicateModalities.add(modality)
+      byModality.set(modality, row)
+    }
   }
 
   const blockedModalities: string[] = []
@@ -218,6 +222,10 @@ export function modelRelayEvidenceAudit(payload: unknown): ModelRelayEvidenceAud
       blockedModalities.push(modality)
       reasons.push(`${modality}:result_missing`)
       continue
+    }
+    if (duplicateModalities.has(modality)) {
+      blockedModalities.push(modality)
+      reasons.push(`${modality}:duplicate_result`)
     }
     const state = typeof row.state === 'string' ? row.state : undefined
     const detail = typeof row.detail === 'string' ? row.detail : ''

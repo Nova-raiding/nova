@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canViewOpsDomain, domainFromLocation, opsDomains, urlForDomain, visibleOpsDomains } from "./opsNavigation.js";
+import { canViewOpsDomain, domainFromLocation, opsDomains, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains } from "./opsNavigation.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
 
 const authorization = (capabilities: string[], managed = true) => createAuthorizationProjection(
@@ -75,5 +75,11 @@ describe("operations navigation", () => {
     expect(canViewOpsDomain("finance", authorization(["billing.workspace.read", "billing.refund.execute"]))).toBe(true);
     expect(canViewOpsDomain("finance", authorization(["billing.self.read"]))).toBe(true);
     expect(canViewOpsDomain("finance", authorization(["customer.content.read"]))).toBe(false);
+  });
+
+  it("keeps finance in the active workbench because its data surface is dual-scope", () => {
+    expect(requiredWorkbenchForDomain("finance")).toBeUndefined();
+    expect(requiredWorkbenchForDomain("audit")).toBe("platform");
+    expect(requiredWorkbenchForDomain("tasks")).toBe("workspace");
   });
 });

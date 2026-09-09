@@ -1,0 +1,709 @@
+{
+  "pages": [
+    {
+      "section": "成员与权限",
+      "headings": [
+        "平台治理",
+        "商家运营",
+        "模型与计费",
+        "风险与系统",
+        "商业与平台控制台",
+        "成员与权限"
+      ],
+      "buttons": [
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "成员与权限",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "知识库",
+          "disabled": false
+        },
+        {
+          "text": "平台连接",
+          "disabled": false
+        },
+        {
+          "text": "平台规则",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "存储与对账",
+          "disabled": false
+        },
+        {
+          "text": "审计中心",
+          "disabled": false
+        },
+        {
+          "text": "登录 / 连接",
+          "disabled": false
+        },
+        {
+          "text": "刷新成员",
+          "disabled": false
+        },
+        {
+          "text": "邀请成员",
+          "disabled": false
+        },
+        {
+          "text": "改角色",
+          "disabled": false
+        },
+        {
+          "text": "不能停用自己",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "例如 user_123",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "用户姓名或称呼",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "用于权限审计",
+          "label": null
+        }
+      ],
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n工作区范围\nws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n数据与操作仅限当前工作区\n平台治理\n总览\n成员与权限\n商家运营\n任务与内容\n知识库\n平台连接\n平台规则\n模型与计费\n账务与退款\n风险与系统\n存储与对账\n审计中心\n商业与平台控制台\n商家管理员\n授权状态：已由服务端验证\n身份 ops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3\n商家工作区\n工作区 · ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n策略 2026-09-08.v1\n商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。\n登录 / 连接\nACCESS GOVERNANCE\n当前工作区数据\n成员与权限\n在当前租户范围内邀请成员、调整角色和停用访问；所有变更均要求原因并进入审计记录。\n刷新成员\n当前账号权限\n当前账号：ops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3merchant_admin\n审计与安全\n1 项\n查看审计记录\n登录与会话\n1 项\n查看当前登录会话\n自动化任务\n2 项\n查看自动化任务\n配置自动化任务\n账务与退款\n5 项\n导出账务数据\n执行退款\n查看本人账务\n查看工作区账务\n管理工作区账务\n其他权限\n1 项\ncommercial · service_boundary · accept\n商家内容与知识库\n3 项\n查看商家内容与知识库\n维护商家内容与知识库\n执行商家发布\n营销任务\n2 项\n查看营销任务队列\n管理营销任务队列\n商家入驻\n1 项\n执行商家入驻引导\n平台规则与素材\n1 项\n查看平台素材规格\n平台规则\n1 项\n查看平台规则\n平台连接\n2 项\n查看平台连接\n管理平台授权连接\n工作区与成员\n5 项\n删除工作区\n管理成员与角色\n查看成员\n修改工作区设置\n查看工作区概览\n权限来自当前工作区服务端会话，不能在浏览器端自行添加。蓝色表示查看权限，绿色表示管理、执行或变更权限；鼠标悬停可查看技术标识。\n当前租户成员\nws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n已加载 1 位成员\n用户 ID\n显示名\n角色\n请选择角色\n邀请原因\n邀请成员\n身份标识\t显示名\t角色\t状态\t版本\t更新时间\t操作\n\n身份标识\n\t\n显示名\n\t\n角色\n\t\n状态\n\t\n版本\n\t\n更新时间\n\t\n操作\n\nops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3\tIsolated Directory Target\t商家管理员\t已激活\t1\t2026/9/9 14:11:08\t\n改角色\n不能停用自己\n共 1 位成员\n1"
+    },
+    {
+      "section": "客服",
+      "headings": [
+        "平台治理",
+        "商家运营",
+        "模型与计费",
+        "风险与系统",
+        "商业与平台控制台",
+        "无权访问“客服”"
+      ],
+      "buttons": [
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "成员与权限",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "知识库",
+          "disabled": false
+        },
+        {
+          "text": "平台连接",
+          "disabled": false
+        },
+        {
+          "text": "平台规则",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "存储与对账",
+          "disabled": false
+        },
+        {
+          "text": "审计中心",
+          "disabled": false
+        },
+        {
+          "text": "登录 / 连接",
+          "disabled": false
+        },
+        {
+          "text": "返回运营总览",
+          "disabled": false
+        },
+        {
+          "text": "查看我的权限",
+          "disabled": false
+        },
+        {
+          "text": "刷新权限",
+          "disabled": false
+        }
+      ],
+      "inputs": [],
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n工作区范围\nws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n数据与操作仅限当前工作区\n平台治理\n总览\n成员与权限\n商家运营\n任务与内容\n知识库\n平台连接\n平台规则\n模型与计费\n账务与退款\n风险与系统\n存储与对账\n审计中心\n商业与平台控制台\n商家管理员\n授权状态：已由服务端验证\n身份 ops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3\n商家工作区\n工作区 · ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n策略 2026-09-08.v1\n商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。\n登录 / 连接\n无权访问“客服”\n当前会话在workspace:ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3范围内缺少 support.ticket.read 能力；服务端仍会独立校验每个请求。\n返回运营总览\n查看我的权限\n刷新权限\n权限拒绝详情\n缺失能力：support.ticket.read\n当前范围：workspace:ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3"
+    },
+    {
+      "section": "事故中心",
+      "headings": [
+        "平台治理",
+        "商家运营",
+        "模型与计费",
+        "风险与系统",
+        "商业与平台控制台",
+        "无权访问“事故中心”"
+      ],
+      "buttons": [
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "成员与权限",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "知识库",
+          "disabled": false
+        },
+        {
+          "text": "平台连接",
+          "disabled": false
+        },
+        {
+          "text": "平台规则",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "存储与对账",
+          "disabled": false
+        },
+        {
+          "text": "审计中心",
+          "disabled": false
+        },
+        {
+          "text": "登录 / 连接",
+          "disabled": false
+        },
+        {
+          "text": "返回运营总览",
+          "disabled": false
+        },
+        {
+          "text": "查看我的权限",
+          "disabled": false
+        },
+        {
+          "text": "刷新权限",
+          "disabled": false
+        }
+      ],
+      "inputs": [],
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n工作区范围\nws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n数据与操作仅限当前工作区\n平台治理\n总览\n成员与权限\n商家运营\n任务与内容\n知识库\n平台连接\n平台规则\n模型与计费\n账务与退款\n风险与系统\n存储与对账\n审计中心\n商业与平台控制台\n商家管理员\n授权状态：已由服务端验证\n身份 ops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3\n商家工作区\n工作区 · ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n策略 2026-09-08.v1\n商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。\n登录 / 连接\n无权访问“事故中心”\n当前会话在workspace:ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3范围内缺少 incident.read 能力；服务端仍会独立校验每个请求。\n返回运营总览\n查看我的权限\n刷新权限\n权限拒绝详情\n缺失能力：incident.read\n当前范围：workspace:ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3"
+    },
+    {
+      "section": "任务与内容",
+      "headings": [
+        "平台治理",
+        "商家运营",
+        "模型与计费",
+        "风险与系统",
+        "商业与平台控制台",
+        "任务与内容",
+        "待处理队列",
+        "数据输入与治理"
+      ],
+      "buttons": [
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "成员与权限",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "知识库",
+          "disabled": false
+        },
+        {
+          "text": "平台连接",
+          "disabled": false
+        },
+        {
+          "text": "平台规则",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "存储与对账",
+          "disabled": false
+        },
+        {
+          "text": "审计中心",
+          "disabled": false
+        },
+        {
+          "text": "登录 / 连接",
+          "disabled": false
+        },
+        {
+          "text": "刷新任务",
+          "disabled": false
+        },
+        {
+          "text": "应用筛选",
+          "disabled": false
+        },
+        {
+          "text": "清除筛选",
+          "disabled": false
+        },
+        {
+          "text": "应用告警筛选",
+          "disabled": false
+        },
+        {
+          "text": "清除告警筛选",
+          "disabled": false
+        },
+        {
+          "text": "下载 Excel 模板",
+          "disabled": false
+        },
+        {
+          "text": "上传商品表格",
+          "disabled": false
+        },
+        {
+          "text": "读取真实状态",
+          "disabled": true
+        },
+        {
+          "text": "审计归档证据",
+          "disabled": false
+        },
+        {
+          "text": "审计任务计费",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": "按营销队列平台筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": "按营销队列店铺筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "商品 ID",
+          "label": "按营销队列商品 ID 筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "任务 ID",
+          "label": "按营销队列任务 ID 筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": "按营销队列状态筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": "按告警平台筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": "按告警店铺筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "告警编码",
+          "label": "按告警编码筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "对象类型",
+          "label": "按告警对象类型筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "对象 ID",
+          "label": "按告警对象 ID 筛选"
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "placeholder": null,
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "campaign_batch_…",
+          "label": "Campaign ID"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "job_id",
+          "label": "图片任务 ID"
+        }
+      ],
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n工作区范围\nws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n数据与操作仅限当前工作区\n平台治理\n总览\n成员与权限\n商家运营\n任务与内容\n知识库\n平台连接\n平台规则\n模型与计费\n账务与退款\n风险与系统\n存储与对账\n审计中心\n商业与平台控制台\n商家管理员\n授权状态：已由服务端验证\n身份 ops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3\n商家工作区\n工作区 · ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n策略 2026-09-08.v1\n商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。\n登录 / 连接\nCONTENT OPERATIONS\n当前工作区数据\n任务与内容\n导入客户商品与 SKU，管理素材、生成任务和发布异常。\n刷新任务\n当前下一步\n先查看需要处理的任务，再进入素材、规则或发布异常的对应处置。\nACTION CENTER\n待处理队列\n先筛选范围，再处理任务或告警\n营销队列筛选\n平台\n店铺\n状态\n应用筛选\n清除筛选\n平台告警筛选\n平台\n店铺\n应用告警筛选\n清除告警筛选\nDATA & GOVERNANCE\n数据输入与治理\n导入商品后，再进入素材和交付治理\n商品与 SKU · Excel 导入\n每行填写一个 SKU，相同商品货号自动合并。支持 Excel 和 CSV；先预览，再导入。图片链接和原图素材按 SKU 分别保存，原图素材必须属于当前客户。\n归属工作区：ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n下载 Excel 模板\n上传商品表格\n任务与素材治理\n任务队列（0）\n交付证据\nCampaign 生命周期控制\nrevision fail-closed\n输入真实 Campaign ID 后读取服务端状态。暂停、恢复和失败项重试均提交当前 expected revision、原因和独立幂等键。\n读取真实状态\n类型\t任务\t状态\t原因/下一步\t时间\t操作\n\n暂无数据\n图片归档与计费审计\n只读审计，不自动修复\n审计归档证据\n审计任务计费\n上传素材治理动作\n素材\t安全/解析/权益\t就绪状态\t下一步\t扫描失败证据\t操作\n\n暂无数据\n素材治理属于任务流程\n上传素材的扫描、解析、权益补录和重新排队不会写入知识库；只有经过确认的品牌/客户知识才会进入知识库。"
+    },
+    {
+      "section": "知识库",
+      "headings": [
+        "平台治理",
+        "商家运营",
+        "模型与计费",
+        "风险与系统",
+        "商业与平台控制台",
+        "知识库"
+      ],
+      "buttons": [
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "成员与权限",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "知识库",
+          "disabled": false
+        },
+        {
+          "text": "平台连接",
+          "disabled": false
+        },
+        {
+          "text": "平台规则",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "存储与对账",
+          "disabled": false
+        },
+        {
+          "text": "审计中心",
+          "disabled": false
+        },
+        {
+          "text": "登录 / 连接",
+          "disabled": false
+        },
+        {
+          "text": "刷新知识库",
+          "disabled": false
+        },
+        {
+          "text": "录入知识规则",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则名称",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则内容",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "作用域值（可选）",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "来源链接/工单",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "核验时间 ISO",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "版本",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": null,
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "标签，用逗号分隔",
+          "label": null
+        }
+      ],
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n工作区范围\nws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n数据与操作仅限当前工作区\n平台治理\n总览\n成员与权限\n商家运营\n任务与内容\n知识库\n平台连接\n平台规则\n模型与计费\n账务与退款\n风险与系统\n存储与对账\n审计中心\n商业与平台控制台\n商家管理员\n授权状态：已由服务端验证\n身份 ops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3\n商家工作区\n工作区 · ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n策略 2026-09-08.v1\n商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。\n登录 / 连接\nWORKSPACE KNOWLEDGE\n当前工作区数据\n知识库\n把已核验的品牌资产、运营规则、人工反馈和竞品观察沉淀为可追溯的工作区记忆，并安全提供给 ChatGPT 插件使用。\n刷新知识库\n当前下一步\n先处理待审核资产，再确认规则和学习建议，最后让插件在下一次任务中引用已确认知识。\n插件学习闭环已接入\n只使用当前工作区、已确认且有来源的知识；反馈会先进入学习建议，人工确认后才会影响后续生成。\n知识库内容与治理\n0 条待处理建议\n这里维护当前工作区的运营规则与经验，不是平台官方规则。平台规则按京东、淘宝、天猫、拼多多、小红书、抖音分别同步，请前往“平台规则”查看新鲜度并更新。\n工作区规则\n0\n待审核资产\n0\n竞品参考\n0\n待确认学习\n0\n工作区规则\n资产权益\n品牌偏好\n学习建议（0）\n竞品参考\n规则名称\n规则内容\n作用域\n全局\n作用域值\n来源\n核验时间\n版本\n状态\n草稿（录入后单独启用）\n严重级别\n警告\n命中动作\n提醒\n标签\n录入知识规则\n规则\t版本\t作用域\t来源\t状态\t操作\n\n规则\n\t\n版本\n\t\n作用域\n\t\n来源\n\t\n状态\n\t\n操作\n\n\n尚未录入工作区规则；平台官方规则请前往“平台规则”查看\n运营确认学习建议只记录人工判断，不会自动激活全局规则；未确认资产和权利不明竞品不得进入商家正式发布链路。"
+    },
+    {
+      "section": "平台规则",
+      "headings": [
+        "平台治理",
+        "商家运营",
+        "模型与计费",
+        "风险与系统",
+        "商业与平台控制台",
+        "平台规则"
+      ],
+      "buttons": [
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "关闭运营导航",
+          "disabled": false
+        },
+        {
+          "text": "总览",
+          "disabled": false
+        },
+        {
+          "text": "成员与权限",
+          "disabled": false
+        },
+        {
+          "text": "任务与内容",
+          "disabled": false
+        },
+        {
+          "text": "知识库",
+          "disabled": false
+        },
+        {
+          "text": "平台连接",
+          "disabled": false
+        },
+        {
+          "text": "平台规则",
+          "disabled": false
+        },
+        {
+          "text": "账务与退款",
+          "disabled": false
+        },
+        {
+          "text": "存储与对账",
+          "disabled": false
+        },
+        {
+          "text": "审计中心",
+          "disabled": false
+        },
+        {
+          "text": "登录 / 连接",
+          "disabled": false
+        },
+        {
+          "text": "刷新规则",
+          "disabled": false
+        },
+        {
+          "text": "立即更新",
+          "disabled": true
+        },
+        {
+          "text": "刷新状态",
+          "disabled": false
+        },
+        {
+          "text": "创建规则草稿",
+          "disabled": true
+        },
+        {
+          "text": "审 计",
+          "disabled": true
+        }
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则包 ID",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "规则名称",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "版本",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "来源链接/工单",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "checks JSON",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "发布原因",
+          "label": null
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "placeholder": "输入 pack_id",
+          "label": "规则包 ID"
+        }
+      ],
+      "text": "跳转到主要内容\n大麦\n大麦运营中心\n平台运营与商家服务\n平台运营控制面\n当前操作范围\n工作区\n正在操作工作区 ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n工作区范围\nws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n数据与操作仅限当前工作区\n平台治理\n总览\n成员与权限\n商家运营\n任务与内容\n知识库\n平台连接\n平台规则\n模型与计费\n账务与退款\n风险与系统\n存储与对账\n审计中心\n商业与平台控制台\n商家管理员\n授权状态：已由服务端验证\n身份 ops-fixture-target-ad3686ee-8033-4045-bb64-3bb1be2ffca3\n商家工作区\n工作区 · ws_ops_fixture_ad3686ee80334045bb643bb1be2ffca3\n策略 2026-09-08.v1\n商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。\n登录 / 连接\nPLATFORM RULES\n当前工作区数据\n平台规则\n查看六个平台规则同步新鲜度，维护规则生命周期，并保留来源与审批证据。\n刷新规则\n平台规则只接受签名清单同步\n页面中的 manual:// 记录是本地演示或人工草稿，不代表任何平台官方规则，也不会作为插件知识。请先配置签名清单地址和验签密钥，再点击“立即更新”。\n已读取 6 个平台的规则同步状态\n六平台规则同步\n立即更新\n刷新状态\n6 个平台未通过规则新鲜度门禁\n平台规则来自各平台官方签名清单，服务端 worker 默认每 7 天自动检查一次；规则管理员也可立即更新。未配置或过期时必须保持阻断或人工复核，不能把旧规则视为有效。\n平台\t同步状态\t版本\t最后核验\t规则年龄\t门禁原因\t官方来源\n\n平台\n\t\n同步状态\n\t\n版本\n\t\n最后核验\n\t\n规则年龄\n\t\n门禁原因\n\t\n官方来源\n\n京东\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n淘宝\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n天猫\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n拼多多\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n小红书\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n抖音\t未配置\t—\t—\t—\t签名规则清单地址或验签密钥未完整配置，系统不会自动导入平台规则\t查看来源\n规则中心\n0 条可信规则\n当前为规则只读视图\n平台运营可以查看规则同步状态和生命周期证据；创建、审批、激活和停用需要 rules_admin 权限。\n规则包 ID\n规则名称\n版本\n来源\n检查规则\n创建原因\n创建规则草稿\n规则包\t名称\t版本\t生命周期\t来源\t有效期\t操作\n\n规则包\n\t\n名称\n\t\n版本\n\t\n生命周期\n\t\n来源\n\t\n有效期\n\t\n操作\n\n\n暂无已验证的平台规则；请配置签名清单后点击“立即更新”\n草稿发布不代表已生效；规则激活必须由服务端规则管理员提供审批凭证，所有状态变更写入审计。\nWorkspace 规则审计\n只读，不改变规则状态\n审 计"
+    }
+  ],
+  "consoleErrors": [],
+  "requestFailures": [],
+  "badResponses": []
+}

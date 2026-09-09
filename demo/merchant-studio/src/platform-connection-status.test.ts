@@ -4,6 +4,7 @@ import { merchantConnectionPresentation } from './platform-connection-status'
 describe('merchant connection presentation', () => {
   it('does not expose fixture accounts as real readable stores', () => {
     expect(merchantConnectionPresentation({ state: 'fixture_ready', readEnabled: true })).toEqual({ status: '演示连接', tone: 'amber', sync: '仅查看演示', canSync: false, canReauthorize: false })
+    expect(merchantConnectionPresentation({ state: 'connected', readEnabled: true, dataMode: 'fixture', authorization: { state: 'fixture' } })).toEqual({ status: '演示连接', tone: 'amber', sync: '仅查看演示', canSync: false, canReauthorize: false })
   })
 
   it('distinguishes a configured account from a readable store', () => {

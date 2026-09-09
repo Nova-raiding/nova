@@ -30,7 +30,7 @@ export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) 
     { title: "状态", dataIndex: "status", width: 130, render: value => <Tag color={value === "failed" || value === "manual_attention" ? "red" : "blue"}>{value}</Tag> },
     { title: "业务引用", dataIndex: "reference", width: 180, render: value => value ?? "—" },
     { title: "金额", dataIndex: "amountCny", width: 110, align: "right", render: value => money(value) },
-    { title: "Provider 成本", dataIndex: "providerCostCny", width: 140, align: "right", render: value => money(value, 6) },
+    { title: "本地成本快照", dataIndex: "providerCostCny", width: 140, align: "right", render: value => money(value, 6) },
     { title: "客户计费", dataIndex: "customerChargeCny", width: 130, align: "right", render: value => money(value, 6) },
     { title: "发生时间", dataIndex: "occurredAt", width: 180, render: value => new Date(value).toLocaleString() },
     { title: "操作", key: "action", width: 100, fixed: "right", render: (_, record) => <Button type="link" ref={button => { if (controller.selected?.id === record.id) detailTriggerRef.current = button; }} onClick={event => { detailTriggerRef.current = event.currentTarget; void controller.openDetail(record); }} aria-label={`查看 ${record.label} ${record.id} 详情`}>详情</Button> },
@@ -73,9 +73,11 @@ export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) 
         <Col xs={12} lg={4}><Statistic title="充值订单" value={summary?.rechargeOrderCny ?? 0} precision={2} prefix="¥" /></Col>
         <Col xs={12} lg={4}><Statistic title="订阅订单" value={summary?.subscriptionOrderCny ?? 0} precision={2} prefix="¥" /></Col>
         <Col xs={12} lg={4}><Statistic title="钱包净额" value={summary?.walletNetCny ?? 0} precision={2} prefix="¥" /></Col>
-        <Col xs={12} lg={4}><Statistic title="Provider 成本" value={summary?.providerCostCny ?? 0} precision={6} prefix="¥" /></Col>
+        <Col xs={12} lg={4}><Statistic title="本地成本快照" value={summary?.providerCostCny ?? "—"} precision={6} prefix={summary?.providerCostCny == null ? undefined : "¥"} /></Col>
         <Col xs={12} lg={4}><Statistic title="客户计费" value={summary?.customerChargeCny ?? 0} precision={6} prefix="¥" /></Col>
       </Row>
+      {summary?.providerCostStatus && summary.providerCostStatus !== "verified" ? <Alert style={{ marginTop: 16 }} type="warning" showIcon title="Provider 成本证据不完整" description={summary.providerCostStatus === "unavailable" ? "部分工作区财务数据读取失败，成本汇总不可用。" : `有 ${summary.missingCostEvidenceCount ?? 0} 条模型用量缺少成本证据，当前不显示为 ¥0。`} /> : null}
+      {summary?.providerStatementStatus && summary.providerStatementStatus !== "balanced" ? <Alert style={{ marginTop: 16 }} type="warning" showIcon title={summary.providerStatementStatus === "not_checked" ? "本次检索未执行 Provider 对账" : "Provider 尚未完成对账"} description={summary.providerStatementStatus === "not_checked" ? "当前结果只证明本地成本快照；它不代表全局已与 Provider 平账。请打开模型用量对账页执行或查看外部账单核对。" : summary.providerStatementStatus === "unavailable" ? "Provider 对账状态不可用，不能将本地成本解释为已验证。" : "Provider 对账仍需人工处理，当前不显示为已平账。"} /> : null}
 
       <div aria-live="polite" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>{controller.loading ? "正在加载财务记录" : `已加载 ${controller.records.length} 条财务记录`}</div>
       <Table<FinanceSearchRecord>

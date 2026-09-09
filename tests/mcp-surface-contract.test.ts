@@ -19,6 +19,7 @@ const productionEvidenceMethods = [
 ] as const
 const campaignControlMethods = ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed'] as const
 const merchantHiddenMethods = new Set([
+  'billing.reconciliation',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
   'billing.usage.consume',

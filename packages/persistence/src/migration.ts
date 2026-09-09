@@ -466,6 +466,7 @@ export async function loadMigrations(): Promise<Migration[]> {
   const privateTrialEntitlementBenefits = await readFile(new URL('./migrations/176_private_trial_entitlement_benefits.sql', import.meta.url), 'utf8')
   const reclassifyManualRuleSources = await readFile(new URL('./migrations/177_reclassify_manual_rule_sources.sql', import.meta.url), 'utf8')
   const reclassifyManualRuleSourcesAgain = await readFile(new URL('./migrations/178_reclassify_manual_rule_sources_again.sql', import.meta.url), 'utf8')
+  const campaignItemTaskScopeIntegrity = await readFile(new URL('./migrations/179_campaign_item_task_scope_integrity.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -645,6 +646,7 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 176, name: 'private_trial_entitlement_benefits', sql: privateTrialEntitlementBenefits },
     { version: 177, name: 'reclassify_manual_rule_sources', sql: reclassifyManualRuleSources },
     { version: 178, name: 'reclassify_manual_rule_sources_again', sql: reclassifyManualRuleSourcesAgain },
+    { version: 179, name: 'campaign_item_task_scope_integrity', sql: campaignItemTaskScopeIntegrity },
   ]
 }
 

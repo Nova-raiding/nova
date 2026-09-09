@@ -39,6 +39,10 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(orderCreate?.inputSchema.properties).not.toHaveProperty('amount_fen')
     expect(orderCreate?.inputSchema.properties).not.toHaveProperty('currency')
     expect(payload.result.tools.some(tool => tool.name === 'commercial.order.payment.get')).toBe(true)
+    // V2 orders are intentionally only recoverable/readable at this stage.
+    // Do not accidentally advertise a checkout command until its provider
+    // checkout, signed callback, atomic grant and reconciliation flow exist.
+    expect(payload.result.tools.some(tool => tool.name === 'commercial.order.checkout.create')).toBe(false)
     expect(payload.result.tools.some(tool => tool.name === 'creative-points.balance.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'merchant.start')).toBe(true)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)

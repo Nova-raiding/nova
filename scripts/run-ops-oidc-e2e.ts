@@ -54,6 +54,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
   let fixture: IsolatedOpsFixture | undefined
   let fixtureSetup: Promise<IsolatedOpsFixture> | undefined
   let gateway: ReturnType<typeof createLocalOidcGateway> | undefined
+  let workspaceGateway: ReturnType<typeof createLocalOidcGateway> | undefined
   let cleanupPromise: Promise<void> | undefined
   let stopping = false
   const cleanup = () => cleanupPromise ??= (async () => {
@@ -62,7 +63,9 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     // not exit before that promise yields the exact resources we must dispose.
     if (!fixture && fixtureSetup) fixture = await fixtureSetup.catch(() => undefined)
     gateway?.closeAllConnections?.()
+    workspaceGateway?.closeAllConnections?.()
     if (gateway?.listening) await new Promise<void>(closed => gateway!.close(() => closed()))
+    if (workspaceGateway?.listening) await new Promise<void>(closed => workspaceGateway!.close(() => closed()))
     await Promise.all(children.map(async child => {
       if (child.exitCode !== null || child.signalCode !== null) return
       child.kill('SIGTERM')
@@ -103,7 +106,8 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const apiPort = await freeLoopbackPort()
     const uiPort = await freeLoopbackPort()
     const gatewayPort = await freeLoopbackPort()
-    if (new Set([apiPort, uiPort, gatewayPort]).size !== 3) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
+    const workspaceGatewayPort = await freeLoopbackPort()
+    if (new Set([apiPort, uiPort, gatewayPort, workspaceGatewayPort]).size !== 4) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
     const baseUrl = `http://127.0.0.1:${gatewayPort}`
     const signingSecret = randomBytes(32).toString('hex')
     const username = 'ops-isolated-e2e'
@@ -113,6 +117,14 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
       username, password, sessionSecret: randomBytes(32).toString('hex'), oidcSigningSecret: signingSecret,
       issuer: fixture.issuer, subject: fixture.actorSubject, workspaceId: fixture.workspaceId,
       roles: ['platform_admin', 'security_admin'], workbench: 'platform',
+    })
+    const workspacePassword = randomBytes(24).toString('hex')
+    workspaceGateway = createLocalOidcGateway({
+      uiUpstream: `http://127.0.0.1:${uiPort}`, apiUpstream: `http://127.0.0.1:${apiPort}`,
+      username: 'ops-isolated-workspace-e2e', password: workspacePassword,
+      sessionSecret: randomBytes(32).toString('hex'), oidcSigningSecret: signingSecret,
+      issuer: fixture.issuer, subject: fixture.workspaceActorSubject, workspaceId: fixture.workspaceId,
+      roles: ['merchant_admin'], workbench: 'workspace',
     })
     const apiEnvironment = opsChildEnvironment(source, {
       NODE_ENV: 'development', AUTH_ENFORCEMENT: 'strict', PERSISTENCE_MODE: 'postgres',
@@ -137,8 +149,13 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const health = await (await fetch(`http://127.0.0.1:${apiPort}/healthz`)).json() as { data?: { persistence?: { mode?: string; ready?: boolean }; redis?: { ready?: boolean } } }
     if (health.data?.persistence?.mode !== 'postgres' || !health.data.persistence.ready || !health.data.redis?.ready) throw new Error('OPS_E2E_DURABLE_RUNTIME_REQUIRED')
     await new Promise<void>((done, reject) => { gateway!.once('error', reject); gateway!.listen(gatewayPort, '127.0.0.1', done) })
+    const activeWorkspaceGateway = workspaceGateway
+    if (!activeWorkspaceGateway) throw new Error('OPS_E2E_WORKSPACE_GATEWAY_NOT_READY')
+    await new Promise<void>((done, reject) => { activeWorkspaceGateway.once('error', reject); activeWorkspaceGateway.listen(workspaceGatewayPort, '127.0.0.1', done) })
     const environment = opsChildEnvironment(source, {
       OPS_OIDC_BASE_URL: baseUrl, LOCAL_OIDC_TEST_USERNAME: username, LOCAL_OIDC_TEST_PASSWORD: password,
+      OPS_WORKSPACE_OIDC_BASE_URL: `http://127.0.0.1:${workspaceGatewayPort}`,
+      OPS_WORKSPACE_OIDC_USERNAME: 'ops-isolated-workspace-e2e', OPS_WORKSPACE_OIDC_PASSWORD: workspacePassword,
       OPS_NO_AUTH_BASE_URL: `http://127.0.0.1:${uiPort}/`,
       LOCAL_OIDC_SUBJECT: fixture.actorSubject, OPS_E2E_WORKSPACE_ID: fixture.workspaceId,
       OPS_E2E_SUBJECT_IDENTITY_ID: fixture.subjectIdentityId, OPS_E2E_APPROVER_ID: fixture.approverId,

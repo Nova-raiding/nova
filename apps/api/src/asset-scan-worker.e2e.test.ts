@@ -210,7 +210,7 @@ describe('automatic platform asset scanner boundary', () => {
     }
   })
 
-  it('persists the original image intent, waits only for rights after clean, and resumes exactly once', async () => {
+  it('persists the original image intent, waits only for rights after clean, and fails closed exactly once without an image provider', async () => {
     const product = service.importProduct({ workspaceId, platform: 'jd', localProductKey: `continuation-${Date.now()}`, title: '自动续跑测试商品', category: '家居', stock: 5, price: 99 })
     service.confirmProductFacts(workspaceId, product.id)
     const actorId = 'merchant-continuation-e2e'
@@ -259,17 +259,20 @@ describe('automatic platform asset scanner boundary', () => {
       fetch(`${base}${executePath}`, { method: 'POST', headers: workerHeaders('POST', executePath) }),
       fetch(`${base}${executePath}`, { method: 'POST', headers: workerHeaders('POST', executePath) }),
     ])
-    expect(executions.every(response => response.status === 200)).toBe(true)
+    expect(executions.map(response => response.status).sort()).toEqual([409, 503])
     const executionBodies = await Promise.all(executions.map(response => response.json())) as Array<Envelope<{ job_id: string; state: string; continuation_state: string }>>
-    expect(executionBodies.every(body => body.data.job_id === jobId && body.data.state === 'succeeded' && body.data.continuation_state === 'completed')).toBe(true)
+    expect(executionBodies.map(body => body.error?.code).sort()).toEqual(['IMAGE_CONTINUATION_NOT_READY', 'IMAGE_GENERATION_NOT_CONFIGURED'])
+    expect(service.imageGenerationJobs.get(jobId)).toMatchObject({ state: 'failed', continuation: { state: 'failed' } })
 
     const replay = await fetch(`${base}${executePath}`, { method: 'POST', headers: workerHeaders('POST', executePath) })
-    expect(replay.status).toBe(200)
-    expect((await replay.json() as Envelope<{ already_completed: boolean }>).data.already_completed).toBe(true)
+    expect(replay.status).toBe(409)
+    expect((await replay.json() as Envelope<null>).error?.code).toBe('IMAGE_CONTINUATION_NOT_READY')
     const finalJob = await mcp(5, 'catalog.image.get', { job_id: jobId })
-    expect(finalJob.data.result.job).toMatchObject({ state: 'succeeded', continuationState: 'completed', continuationUserActionRequired: false })
+    expect(finalJob.data.result.job).toMatchObject({ state: 'failed', continuationState: 'failed', continuationUserActionRequired: false })
     expect([...service.imageGenerationJobs.values()].filter(job => job.workspaceId === workspaceId && job.idempotencyKey === `continuation-${product.id}`)).toHaveLength(1)
     const afterBilling = await mcp(6, 'billing.model-usage.statement', {})
+    // The failed provider attempt leaves an auditable authorization/refund
+    // record, while the customer charge is compensated and no retry is made.
     expect(afterBilling.data.result.action_ledger.record_count - beforeBilling.data.result.action_ledger.record_count).toBe(1)
   })
 

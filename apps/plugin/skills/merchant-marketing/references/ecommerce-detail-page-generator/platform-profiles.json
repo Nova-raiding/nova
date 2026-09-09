@@ -1,0 +1,472 @@
+{
+  "schema_version": "1.0",
+  "researched_at": "2026-06-11",
+  "reverify_after_days": 90,
+  "evidence_levels": {
+    "official": "Public first-party seller or help documentation.",
+    "official_partial": "Some hard rules are public; seller backend must confirm the rest.",
+    "operational_baseline": "Conservative production default without a complete public first-party specification.",
+    "seller_backend_confirmation": "Do not present the value as guaranteed; verify in the current listing editor."
+  },
+  "profiles": [
+    {
+      "id": "taobao-tmall",
+      "display_name": "淘宝 / 天猫",
+      "aliases": ["taobao", "淘宝", "tmall", "天猫", "淘宝天猫", "天猫淘宝"],
+      "default_locale": "zh-CN",
+      "export": {
+        "mode": "long_page_slices",
+        "canvas_width": 750,
+        "default_module_height": 900,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": null,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "medium-high",
+      "module_preferences": ["hero", "benefit", "feature", "detail", "scene", "steps", "specs", "closing"],
+      "hard_rules": [
+        {
+          "rule": "Use a 750 px mobile-detail working canvas; confirm the current seller editor before upload.",
+          "evidence": "operational_baseline",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": []
+    },
+    {
+      "id": "jd",
+      "display_name": "京东",
+      "aliases": ["jd", "jd.com", "京东", "京东商城"],
+      "default_locale": "zh-CN",
+      "export": {
+        "mode": "long_page_slices",
+        "canvas_width": 750,
+        "default_module_height": 850,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": 1,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "high",
+      "module_preferences": ["hero", "feature", "detail", "specs", "steps", "scene", "trust", "closing"],
+      "hard_rules": [
+        {
+          "rule": "Jingmai detail images are at most 3 MB; Smart Shop detail images are at most 1 MB. Use 1 MB as the conservative export target.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Supported detail image formats are JPG, PNG, and JPEG; GIF upload support is being removed.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "商详图片规则更新",
+          "url": "https://mtt.m.jd.com/article/articleView/180a744d-d813-4833-918f-8f632e0b68d7",
+          "publisher": "JD.com"
+        }
+      ]
+    },
+    {
+      "id": "pinduoduo",
+      "display_name": "拼多多",
+      "aliases": ["pinduoduo", "pdd", "拼多多", "多多"],
+      "default_locale": "zh-CN",
+      "export": {
+        "mode": "long_page_slices",
+        "canvas_width": 750,
+        "default_module_height": 900,
+        "format": "jpg",
+        "quality": 90,
+        "max_file_mb": 1,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "high",
+      "module_preferences": ["hero", "benefit", "feature", "value", "detail", "scene", "specs", "closing"],
+      "hard_rules": [
+        {
+          "rule": "Use a 750 px working canvas and 1 MB slice target as a conservative baseline; confirm current detail-image limits in the merchant backend.",
+          "evidence": "seller_backend_confirmation",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": []
+    },
+    {
+      "id": "douyin",
+      "display_name": "抖音电商",
+      "aliases": ["douyin", "抖音", "抖店", "抖音商城", "jinritemai"],
+      "default_locale": "zh-CN",
+      "export": {
+        "mode": "long_page_slices",
+        "canvas_width": 750,
+        "default_module_height": 1000,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": 5,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed_in_detail",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "medium",
+      "module_preferences": ["hero", "benefit", "demo", "feature", "scene", "detail", "steps", "closing"],
+      "hard_rules": [
+        {
+          "rule": "The first main image must be a real product image; additional main images should show multiple angles and details.",
+          "evidence": "official_partial",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Confirm current detail-image canvas and file-size limits in Douyin Seller Center before upload.",
+          "evidence": "seller_backend_confirmation",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "商品主图发布规范",
+          "url": "https://school.jinritemai.com/doudian/web/article/aHean96XQDdv",
+          "publisher": "抖音电商学习中心"
+        }
+      ]
+    },
+    {
+      "id": "xiaohongshu",
+      "display_name": "小红书电商",
+      "aliases": ["xiaohongshu", "xhs", "小红书", "小红书店铺", "红薯"],
+      "default_locale": "zh-CN",
+      "export": {
+        "mode": "gallery_and_long_preview",
+        "canvas_width": 1242,
+        "default_module_height": 1242,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": 3,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "low-medium",
+      "module_preferences": ["hero", "lifestyle", "benefit", "detail", "routine", "specs", "closing"],
+      "hard_rules": [
+        {
+          "rule": "Use 1242 px as a high-resolution working width; confirm listing image dimensions and file-size limits in the current merchant backend.",
+          "evidence": "seller_backend_confirmation",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "小红书电商官网",
+          "url": "https://ec.xiaohongshu.com/ecommerce/home/",
+          "publisher": "小红书"
+        }
+      ]
+    },
+    {
+      "id": "amazon",
+      "display_name": "Amazon",
+      "aliases": ["amazon", "amazon-us", "amazon-uk", "amazon-de", "amazon-jp", "亚马逊", "amazon a+", "a+"],
+      "default_locale": "en-US",
+      "export": {
+        "mode": "a_plus_modules",
+        "canvas_width": 970,
+        "default_module_height": 600,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": 2,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed_in_a_plus",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "medium",
+      "module_preferences": ["hero", "benefit", "feature", "detail", "scene", "steps", "specs", "closing"],
+      "hard_rules": [
+        {
+          "rule": "A+ image files support JPG, BMP, and PNG, must be under 2 MB, and require at least 72 dpi.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Basic A+ commonly uses a 970 x 300 full-width module; Premium A+ commonly uses 1464 x 600. Match the selected template in A+ Content Manager.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Every standard product detail page requires at least one compliant product image; Amazon recommends six images and one video.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Product image guide",
+          "url": "https://sellercentral.amazon.com/gp/help/external/G1881",
+          "publisher": "Amazon Seller Central"
+        },
+        {
+          "title": "A+ content",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/G202102930",
+          "publisher": "Amazon Seller Central"
+        },
+        {
+          "title": "A+ content guidelines",
+          "url": "https://sellercentral.amazon.com/help/hub/reference/external/GGW8U76SSNTRTBX7",
+          "publisher": "Amazon Seller Central"
+        }
+      ]
+    },
+    {
+      "id": "aliexpress",
+      "display_name": "AliExpress",
+      "aliases": ["aliexpress", "ali express", "速卖通", "全球速卖通"],
+      "default_locale": "en-US",
+      "export": {
+        "mode": "long_page_slices",
+        "canvas_width": 960,
+        "default_module_height": 900,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": 5,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed_in_detail",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "medium-high",
+      "module_preferences": ["hero", "benefit", "feature", "detail", "scene", "steps", "specs", "package", "closing"],
+      "hard_rules": [
+        {
+          "rule": "Use a 960 px detail-page working width and verify current module and file limits in Seller Center.",
+          "evidence": "operational_baseline",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "White-background marketing images are 1:1 and at least 800 x 800; scene marketing images are 3:4 and at least 750 x 1000 in current ERP publishing guidance.",
+          "evidence": "official_partial",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "产品入门—速卖通刊登产品汇总",
+          "url": "https://help.dianxiaomi.com/article/productManagement/1435",
+          "publisher": "店小秘（引用速卖通发布规则）"
+        }
+      ]
+    },
+    {
+      "id": "temu",
+      "display_name": "Temu",
+      "aliases": ["temu", "拼多多海外版", "temu seller"],
+      "default_locale": "en-US",
+      "export": {
+        "mode": "gallery_cards",
+        "canvas_width": 1200,
+        "default_module_height": 1500,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": null,
+        "long_preview": true
+      },
+      "image_text_policy": "seller_backend_confirmation",
+      "ai_visual_policy": "seller_backend_confirmation",
+      "information_density": "high",
+      "module_preferences": ["hero", "value", "feature", "demo", "detail", "scene", "specs", "package", "closing"],
+      "hard_rules": [
+        {
+          "rule": "Public seller pages do not expose a complete current image specification. Confirm aspect ratio, text policy, AI-image policy, count, and file size in Seller Center before upload.",
+          "evidence": "seller_backend_confirmation",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Temu Seller Center",
+          "url": "https://seller.temu.com/seller/login",
+          "publisher": "Temu"
+        }
+      ]
+    },
+    {
+      "id": "tiktok-shop",
+      "display_name": "TikTok Shop",
+      "aliases": ["tiktok shop", "tiktok-shop", "tiktokshop", "tiktok小店", "tiktok 电商"],
+      "default_locale": "en-US",
+      "export": {
+        "mode": "real_photo_gallery",
+        "canvas_width": 1200,
+        "default_module_height": 1200,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": 10,
+        "long_preview": true
+      },
+      "image_text_policy": "forbidden",
+      "ai_visual_policy": "digital_renderings_forbidden",
+      "information_density": "visual-only",
+      "module_preferences": ["front", "angle", "detail", "feature_visual", "usage", "scale", "package"],
+      "hard_rules": [
+        {
+          "rule": "Up to nine square product images; each image must be at least 600 x 600 pixels.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "The main image must show the front physical view on pure white and must not contain added logos, text, borders, watermarks, or graphics.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Digital product renderings are not allowed; images must accurately show only what the customer receives.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Product Listing Policy",
+          "url": "https://seller-us.tiktok.com/university/essay?knowledge_id=3196690250417921",
+          "publisher": "TikTok Shop Seller Center"
+        }
+      ]
+    },
+    {
+      "id": "ebay",
+      "display_name": "eBay",
+      "aliases": ["ebay", "e-bay", "易贝"],
+      "default_locale": "en-US",
+      "export": {
+        "mode": "gallery_cards",
+        "canvas_width": 1600,
+        "default_module_height": 1600,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": null,
+        "long_preview": true
+      },
+      "image_text_policy": "avoid",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "low",
+      "module_preferences": ["hero", "angle", "detail", "condition", "scale", "usage", "package"],
+      "hard_rules": [
+        {
+          "rule": "Images must be at least 500 x 500 pixels; eBay recommends at least 1600 x 1600.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Use sharp, high-quality photos and provide relevant item specifics such as size, color, brand, and style.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Take great photos",
+          "url": "https://www.ebay.com/sellercenter/listings/photo-tips",
+          "publisher": "eBay Seller Center"
+        },
+        {
+          "title": "Listing best practices",
+          "url": "https://www.ebay.com/sellercenter/listings/create-listings/best-practices",
+          "publisher": "eBay Seller Center"
+        }
+      ]
+    },
+    {
+      "id": "etsy",
+      "display_name": "Etsy",
+      "aliases": ["etsy", "etsy shop"],
+      "default_locale": "en-US",
+      "export": {
+        "mode": "original_photo_gallery",
+        "canvas_width": 2000,
+        "default_module_height": 2000,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": null,
+        "long_preview": true
+      },
+      "image_text_policy": "avoid",
+      "ai_visual_policy": "original_actual_product_photos_required",
+      "information_density": "low",
+      "module_preferences": ["hero", "detail", "scale", "process", "lifestyle", "variation", "package"],
+      "hard_rules": [
+        {
+          "rule": "Etsy recommends listing images at 2000 pixels or more; the first photo needs at least 635 pixels in both dimensions to avoid search disadvantage.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Use original photos of the actual product the buyer will receive; renderings or stock photos are restricted except for Etsy's stated exceptions.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Requirements and Best Practices for Images in Your Etsy Shop",
+          "url": "https://help.etsy.com/hc/en-us/articles/115015663347-Requirements-and-Best-Practices-for-Images-in-Your-Etsy-Shop",
+          "publisher": "Etsy Help"
+        },
+        {
+          "title": "Listing Image Requirements",
+          "url": "https://www.etsy.com/legal/policy/listing-image-requirements/253962679005",
+          "publisher": "Etsy"
+        }
+      ]
+    },
+    {
+      "id": "shopify",
+      "display_name": "Shopify",
+      "aliases": ["shopify", "shopify store", "独立站", "shopify独立站", "d2c"],
+      "default_locale": "en-US",
+      "export": {
+        "mode": "brand_page_sections",
+        "canvas_width": 1536,
+        "default_module_height": 900,
+        "format": "jpg",
+        "quality": 92,
+        "max_file_mb": 20,
+        "long_preview": true
+      },
+      "image_text_policy": "allowed",
+      "ai_visual_policy": "allowed_if_accurate",
+      "information_density": "low-medium",
+      "module_preferences": ["hero", "benefit", "feature", "lifestyle", "detail", "steps", "specs", "faq", "closing"],
+      "hard_rules": [
+        {
+          "rule": "Product and collection images can be up to 5000 x 5000 pixels or 25 megapixels and must be under 20 MB.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        },
+        {
+          "rule": "Shopify recommends 2048 x 2048 for square product images; consistent aspect ratios improve gallery presentation.",
+          "evidence": "official",
+          "verified_at": "2026-06-11"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Product media types",
+          "url": "https://help.shopify.com/en/manual/products/product-media/product-media-types",
+          "publisher": "Shopify Help Center"
+        },
+        {
+          "title": "Using the media editor",
+          "url": "https://help.shopify.com/en/manual/shopify-admin/productivity-tools/media-editor",
+          "publisher": "Shopify Help Center"
+        }
+      ]
+    }
+  ]
+}

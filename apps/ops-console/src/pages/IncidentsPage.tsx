@@ -30,6 +30,7 @@ export function IncidentsPage({ client, authorization }: { client: IncidentsClie
 
   return (
     <OpsPage eyebrow="INCIDENT RESPONSE" title="事故中心" description="统一管理 SEV-1 至 SEV-4 事故、指挥官、影响范围和不可变处置时间线。" actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新事故</Button>}>
+      <div className="ops-incidents-page">
       {model.error ? <div ref={retryRef} tabIndex={-1} aria-label="事故错误摘要"><Alert role="alert" aria-live="assertive" aria-atomic="true" type="error" showIcon title="事故操作失败" description={model.error} action={<Button htmlType="button" style={{ minHeight: 44 }} onClick={() => void model.load()}>重试</Button>} /></div> : null}
       <Card title="筛选与操作" extra={canMutate ? <Button type="primary" style={{ minHeight: 44 }} onClick={() => setCreateOpen(true)}>创建事故</Button> : undefined}>
         <Space wrap>
@@ -80,6 +81,7 @@ export function IncidentsPage({ client, authorization }: { client: IncidentsClie
           <Form.Item name="affectedWorkspaceIds" label="受影响工作区（逗号分隔）"><Input placeholder="ws_123, ws_456" /></Form.Item>
         </Form>
       </Modal>
+      </div>
     </OpsPage>
   )
 }

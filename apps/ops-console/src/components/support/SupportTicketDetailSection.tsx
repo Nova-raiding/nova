@@ -29,13 +29,14 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
     if (actionError || model.error) actionErrorRef.current?.focus();
   }, [actionError, model.error]);
 
-  if (model.detailLoading) return <Card title="工单详情" aria-busy="true"><Spin description="正在加载工单详情"><div role="status" aria-live="polite" style={{ minHeight: 160 }}>正在加载工单详情</div></Spin></Card>;
-  if (!model.selected) return <Card title="工单详情"><Empty description="从工单队列中选择一项查看完整事件历史" /></Card>;
+  if (model.detailLoading) return <Card className="ops-support-detail" title="工单详情" aria-busy="true"><Spin description="正在加载工单详情"><div role="status" aria-live="polite" style={{ minHeight: 160 }}>正在加载工单详情</div></Spin></Card>;
+  if (!model.selected) return <Card className="ops-support-detail" title="工单详情"><Empty description="从工单队列中选择一项查看完整事件历史" /></Card>;
   const { ticket, events } = model.selected;
   const sla = ticket.sla;
 
   return (
     <Card
+      className="ops-support-detail"
       title={`${ticket.ticketNumber} · ${ticket.subject}`}
       extra={<Button onClick={model.clearSelection}>关闭详情</Button>}
       aria-busy={model.mutating || undefined}

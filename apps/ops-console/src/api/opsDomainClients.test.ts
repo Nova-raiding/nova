@@ -21,6 +21,8 @@ import {
   parseAuditExport,
   parseFeatureFlagPage,
   parseIncidentPage,
+  parseModelStatus,
+  parseStorageReconciliationList,
   parseFinanceDetail,
   parseFinanceExport,
   parseFinanceSearchPage,
@@ -230,12 +232,33 @@ describe("Ops domain protocol clients", () => {
     expect(() => parseAuditCenterPage({ records: null })).toThrow(/无效响应/);
     expect(() => parseAuditDetail({ ...auditRecord, evidence: { redacted: false } })).toThrow(/无效响应/);
     expect(() => parseAuditExport({ csv: "id" })).toThrow(/无效响应/);
+    expect(() => parseAuditCenterPage({ records: [{ ...auditRecord, reason: "fixture seed" }], totalRecords: 1, truncated: false })).toThrow(/无效响应/);
   });
 
   it("rejects malformed feature flag, incident, and support responses at the transport boundary", () => {
     expect(() => parseFeatureFlagPage({ items: [{ ...flag, revision: 0 }] })).toThrow(/无效响应/);
     expect(() => parseIncidentPage({ items: [{ ...incident, affectedComponents: "api" }] })).toThrow(/无效响应/);
     expect(() => parseSupportPage({ items: [{ ...ticket, status: "invented" }] })).toThrow(/无效响应/);
+  });
+
+  it("fails closed for incomplete or fixture model readiness and unknown storage states", () => {
+    const gate = { ready: true, https: true, reasons: [] };
+    const model = {
+      ownership: "platform", user_key_binding: false, state: "ready", provider_host: "relay.example",
+      text_model: "text-v1", image_model: "image-v1", vision_model: "ocr-v1", video_model: "video-v1",
+      relay: { configured: true, host: "relay.example", reasons: [] },
+      capabilities: { text_generation: true, image_generation: true, image_editing: true, image_fact_ocr: true, video_rendering: true },
+      model_readiness: { text: gate, image: gate, image_edit: gate, ocr: gate, video: gate },
+      quotas: { rpm: 1, tpm: 1, daily_cny_limit: "1.00" }, cost_control_ready: true, cost_evidence_ready: true,
+      cost_evidence_by_modality: { text: true, image: true, image_edit: true, ocr: true, video: true },
+      release_metadata_ready: true, release_metadata_missing: [], next_actions: [],
+    };
+    expect(parseModelStatus(model)).toMatchObject({ state: "ready" });
+    expect(() => parseModelStatus({ ...model, model_readiness: { ...model.model_readiness, video: undefined } })).toThrow(/无效响应/);
+    expect(() => parseModelStatus({ ...model, video_model: "fixture-video" })).toThrow(/无效响应/);
+    expect(() => parseModelStatus({ ...model, relay: { ...model.relay, configured: false } })).toThrow(/无效响应/);
+    expect(() => parseStorageReconciliationList([{ status: "unknown" }])).toThrow(/无效响应/);
+    expect(parseStorageReconciliationList([{ workspace_id: "ws-1", status: "unavailable" }])).toMatchObject([{ workspaceId: "ws-1" }]);
   });
 
   it("accepts the redacted platform support aggregate row", () => {

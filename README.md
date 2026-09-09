@@ -1,10 +1,10 @@
 # 商家营销内容助手（桌面 ChatGPT 插件）
 
-发布元数据同步基线（2026-09-08）：MCP 契约注册表为 300 个唯一方法，商家插件运行态为 144 个 MCP 工具，PostgreSQL 迁移链已进入 174。
+发布元数据同步基线（2026-09-09）：MCP 契约注册表为 301 个唯一方法，商家插件运行态为 144 个 MCP 工具，PostgreSQL 迁移链已进入 177。
 
 当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及仅供开发调试的 Merchant Studio。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
 
-当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository 0.1.1、plugin 0.1.0+codex.20260907102000、300 个 MCP 方法、144 个商家 Bridge 工具、14 个 Ops 一级域和迁移 174。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
+当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository 0.1.1、plugin 0.1.0+codex.20260907102000、301 个 MCP 方法、144 个商家 Bridge 工具、14 个 Ops 一级域和迁移 177。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
 
 2026-08-29 桌面 ChatGPT 真实宿主只读验收中，`merchant.start`、`workspace.health`、`catalog.search`、`billing.status` 四项均通过。该结果证明桌面宿主 → 插件 → MCP → 本地 API 的四个核心只读入口可工作；本次店铺、商品和余额来自本地 `ws_demo`/fixture，不能替代真实六平台 OAuth、真实商户余额或生产 release 证据。
 
@@ -79,4 +79,3 @@ UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)�
 - fixture connector 的数据和写入只用于契约测试和本地演示，不能作为平台上线证据。
 - 未设置 `DATABASE_URL` 时应用默认使用内存 service，便于本地单测；设置 `DATABASE_URL` 后启动迁移并使用 PostgreSQL Outbox。生产必须保留 RLS、Outbox 和幂等约束。
 - 生产 API 必须同时提供不同凭据的 `DATABASE_URL` 与 `OPS_DATABASE_URL`；前者是强制 workspace RLS 的租户运行角色，后者只能访问平台 feature flag 控制面，不能访问租户业务表。
-发布元数据同步基线（2026-09-01）：MCP 契约注册表为 254 个唯一方法，商家插件运行态为 150 个 MCP 工具，PostgreSQL 迁移链已进入 119。

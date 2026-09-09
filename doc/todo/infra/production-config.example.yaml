@@ -72,6 +72,7 @@ payments:
 
 runtime:
   merchant_ui_api_token_ref: "vault://merchant-ui/api-token"
+  merchant_ui_workspace_id_ref: "vault://merchant-ui/workspace-id"
   asset_scanner:
     # Identity and definition-floor values are release configuration, not
     # secrets. Authentication and receipt keys remain Secret/Vault references.

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, importProduct, type Product } from './src/api.js'
+import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, type Product } from './src/api.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
 
@@ -93,5 +93,18 @@ describe('merchant product response normalization', () => {
     await importProduct('/api', { platform: 'taobao', title: '商品', category: '服装', asset_ids: ['a1'] })
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/v1/products/p1/assets')
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({ asset_ids: ['a1'] })
+  })
+
+  it('passes a stable generation idempotency key through the merchant MCP client', async () => {
+    vi.stubGlobal('window', globalThis)
+    const fetchMock = vi.fn().mockResolvedValue(envelope({ result: { campaignId: 'campaign_1', taskIds: ['task_1'], replayed: false } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateCampaignBatch('/api', 'campaign_1', '按事实生成', 'merchant-studio-campaign-generate-campaign_1')
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      method: 'campaign.batch.generate',
+      params: { campaign_id: 'campaign_1', request_text: '按事实生成', idempotency_key: 'merchant-studio-campaign-generate-campaign_1' },
+    })
   })
 })

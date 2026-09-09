@@ -53,6 +53,8 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
   }, [settlementValidationErrors]);
   const unsettled = reconciliation?.model_usage?.unsettled ?? [];
   const settlementCounts = summarizeModelUsageSettlements(unsettled);
+  const missingCostEvidenceCount = reconciliation?.model_usage?.missing_cost_evidence_count ?? 0;
+  const externalStatementStatus = reconciliation?.model_usage?.external_provider_statement?.status;
   const disabledActionReason = (
     action: ModelUsageSettlementDecision,
     callbackAvailable: boolean,
@@ -220,6 +222,18 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
       ) : null}
       {reconciliation ? (
         <>
+      <Alert
+        type="info"
+        showIcon
+        title={`当前视图：${reconciliation.statement?.scope === "workspace" ? "工作区" : "本人"}`}
+        description={`余额范围：${reconciliation.balance_scope === "workspace" ? "工作区" : "未声明"}；钱包流水范围：${reconciliation.transaction_scope === "workspace" ? "工作区" : "本人"}；模型用量范围：${reconciliation.model_usage_scope === "workspace" ? "工作区" : "本人"}。不同范围不会被解释为同一账本。`}
+      />
+      {reconciliation.has_more_transactions ? <Alert
+        type="warning"
+        showIcon
+        title="交易流水已分页"
+        description={`摘要按当前期间的 ${reconciliation.transaction_count} 条流水统计；本页返回 ${reconciliation.returned_transaction_count ?? reconciliation.transactions.length} 条（接口上限 ${reconciliation.transaction_limit ?? "—"}），不要将列表行数当作账务总数。`}
+      /> : null}
       <Row gutter={[16, 16]} className="finance-summary">
         <Col xs={12} md={6}>
           <Statistic
@@ -251,9 +265,9 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         </Col>
       </Row>
       <Alert
-        type={reconciliation?.provider?.ready ? "success" : "warning"}
+        type={reconciliation?.provider?.mode === "provider" && reconciliation.provider.ready ? "success" : "warning"}
         showIcon
-        title={`支付 provider：${reconciliation?.provider?.ready ? "已就绪" : reconciliation?.provider?.mode === "fixture" ? "当前为 fixture" : "未就绪"}`}
+        title={`支付 provider：${reconciliation?.provider?.mode === "fixture" ? "当前为 fixture（已阻断真实支付判断）" : reconciliation?.provider?.mode === "provider" && reconciliation.provider.ready ? "已就绪" : "未就绪或状态未知"}`}
         description={
           reconciliation?.provider?.reasons?.join("、") ||
           "生产充值必须经服务端 provider 下单并等待签名回调"
@@ -261,9 +275,9 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
       />
       {reconciliation?.model_usage?.external_provider_statement && (
         <Alert
-          type={reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "success" : reconciliation.model_usage.reconciliation_status === "pending" ? "warning" : "error"}
+          type={externalStatementStatus === "balanced" ? "success" : externalStatementStatus === "externally_unverified" || externalStatementStatus === "not_applicable_personal_scope" ? "warning" : "error"}
           showIcon
-          title={`模型用量：${reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "本地账本一致" : reconciliation.model_usage.reconciliation_status === "pending" ? "待结算" : reconciliation.model_usage.reconciliation_status === "needs_review" ? "需要复核" : "未知状态（已阻断）"}`}
+          title={`外部中转站用量：${externalStatementStatus === "balanced" ? "已核对一致" : externalStatementStatus === "externally_unverified" ? "尚未核验" : externalStatementStatus === "not_applicable_personal_scope" ? "个人视图不适用" : externalStatementStatus === "needs_review" ? "存在差异（需复核）" : "状态不明确（已阻断）"}`}
           description={<Space orientation="vertical" size={4}><span>{reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验；本页面不将本地一致视为供应商已平账。"}</span>{reconciliation.model_usage.reconciliation_checks && <span>核对异常：未知用户 {reconciliation.model_usage.reconciliation_checks.unknown_actor_count}，孤立 action {reconciliation.model_usage.reconciliation_checks.orphan_action_count}，钱包金额不一致 {reconciliation.model_usage.reconciliation_checks.wallet_amount_mismatch_count}，任务键缺失 {reconciliation.model_usage.reconciliation_checks.missing_run_key_count ?? 0}，预算链路错配 {reconciliation.model_usage.reconciliation_checks.budget_link_mismatch_count ?? 0}。任务键或预算链路异常时不得重试上游，必须先修复链路。</span>}</Space>}
         />
       )}
@@ -271,8 +285,12 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         <Col xs={12} md={6}><Statistic title="模型调用" value={reconciliation?.model_usage?.record_count ?? "-"} /></Col>
         <Col xs={12} md={6}><Statistic title="模型 Tokens" value={reconciliation?.model_usage?.total_tokens ?? "-"} /></Col>
         <Col xs={12} md={6}><Statistic title="模型实际成本" value={reconciliation?.model_usage?.provider_cost_cny ?? "-"} prefix="¥" /></Col>
+        <Col xs={12} md={6}><Statistic title="缺成本证据" value={missingCostEvidenceCount} styles={missingCostEvidenceCount ? { content: { color: "#b91c1c" } } : undefined} /></Col>
         <Col xs={12} md={6}><Statistic title="待结算记录" value={reconciliation?.model_usage?.unsettled_records ?? "-"} styles={reconciliation?.model_usage?.unsettled_records ? { content: { color: "#b91c1c" } } : undefined} /></Col>
       </Row>
+      {missingCostEvidenceCount > 0 && (
+        <Alert type="error" showIcon title="Provider 成本证据不完整，成本合计已阻断" description="页面不会把缺失成本当作 ¥0，也不会按已结算口径出账；请先补齐中转站成本回执或转入人工处理。" />
+      )}
       {Boolean(reconciliation?.model_usage?.unsettled_records) && (
         <>
           <Row gutter={[16, 16]} className="finance-summary" aria-label="模型待结算状态汇总">

@@ -67,6 +67,9 @@ import {
   fetchAssetStorageQuota,
   fetchAssets,
   fetchBillingStatus,
+  fetchCommercialCatalog,
+  selectMerchantCatalogItems,
+  fetchCustomerSupportReplies,
   fetchBrandProfile,
   fetchImageGenerationJob,
   fetchImageGenerationJobs,
@@ -118,6 +121,7 @@ import {
   type BrandProfile,
   type BrandVisualRules,
   type BillingStatus,
+  type CommercialCatalog,
   type CatalogCategory,
   type FeedbackRating,
   type ImageGenerationJob,
@@ -186,9 +190,9 @@ import {
 } from './entry-points.js'
 import { DeliveryReadinessPanel } from './DeliveryReadinessPanel.js'
 import { CampaignLifecyclePanel } from './CampaignLifecyclePanel.js'
-import { batchTargetKey, toggleBatchTarget } from './batch-target.js'
-import { resolveBatchReadiness } from './batch-readiness.js'
-import { resolveRuleContext } from './rule-context.js'
+import { batchTargetKey, projectProductRowTarget, projectProductTarget, toggleBatchTarget } from './batch-target.js'
+import { resolveBatchReadiness, resolveBatchResultState } from './batch-readiness.js'
+import { resolveRuleContext, resolveRuleExecutionState } from './rule-context.js'
 import { resolveDataConsistency } from './data-consistency.js'
 import { CanonicalConsistencyPanel } from './CanonicalConsistencyPanel.js'
 import { resolveProductAssetRelation } from './product-assets.js'
@@ -298,7 +302,7 @@ const platforms: Array<{
     name: '京东',
     platformId: 'jd',
     shop: '云朵轻户外旗舰店',
-    status: '演示已连接',
+    status: '演示连接',
     tone: 'red',
     sync: '演示数据',
     canSync: false,
@@ -308,7 +312,7 @@ const platforms: Array<{
     name: '淘宝',
     platformId: 'taobao',
     shop: '云朵轻户外',
-    status: '演示已连接',
+    status: '演示连接',
     tone: 'orange',
     sync: '演示数据',
     canSync: false,
@@ -418,6 +422,33 @@ function ErrorNotice({
         </button>
       )}
     </div>
+  )
+}
+
+export function WorkspaceDataIntegrityNotice({ metrics }: { metrics: WorkspaceMetrics | null }) {
+  if (!metrics?.dataCoverage) return null
+  const invalidSnapshots = metrics.hydration?.invalidSnapshotCount ?? 0
+  const partial = metrics.dataCompleteness === 'partial' || invalidSnapshots > 0
+  if (!partial && !metrics.dataCoverage.fixtureDataPresent) return null
+  return (
+    <section className="panel data-integrity-panel" aria-labelledby="merchant-data-integrity-title">
+      <div className="panel-heading">
+        <div>
+          <span className="section-kicker">DATA INTEGRITY</span>
+          <h3 id="merchant-data-integrity-title">当前经营数据范围</h3>
+        </div>
+        <StatusChip tone={partial ? 'amber' : 'blue'}>{partial ? '部分数据' : '演示数据'}</StatusChip>
+      </div>
+      <div className="data-integrity-copy">
+        {partial ? (
+          <>
+            <strong>总览不是完整快照</strong>
+            <span>数据源：{metrics.source ?? '未知'}；无效持久化快照：{invalidSnapshots}。请先修复数据恢复问题，再依据总览做经营决策。</span>
+          </>
+        ) : null}
+        {metrics.dataCoverage.fixtureDataPresent ? <span>当前包含 fixture 数据，仅用于本地验收，不代表真实平台生产数据。</span> : null}
+      </div>
+    </section>
   )
 }
 
@@ -790,7 +821,7 @@ function reviewEvidenceLabel(finding: ReviewFinding) {
   return `依据：任务确认时冻结的品牌档案${revision ? ` · 版本 r${revision}` : ''}`
 }
 
-type UtilityPanel = 'health' | 'help' | 'settings'
+type UtilityPanel = 'health' | 'help' | 'settings' | 'support'
 
 function Topbar({
   page,
@@ -798,6 +829,7 @@ function Topbar({
   menuOpen,
   menuButtonRef,
   apiOnline,
+  apiMode,
   apiBaseUrl,
   onOpenUtility,
   searchQuery,
@@ -809,6 +841,7 @@ function Topbar({
   menuOpen: boolean
   menuButtonRef: React.RefObject<HTMLButtonElement | null>
   apiOnline: boolean | null
+  apiMode: string | null
   apiBaseUrl?: string
   onOpenUtility: (panel: UtilityPanel) => void
   searchQuery: string
@@ -841,7 +874,11 @@ function Topbar({
             ? '离线演示工作区'
             : apiOnline === false
               ? 'API 不可用'
-              : '真实 API 工作区'}
+              : apiMode === 'fixture'
+                ? '本地演示工作区'
+              : apiMode === 'local'
+                  ? '本地 API 工作区'
+                  : '工作区 API'}
         </div>
         <h1>{titles[page]}</h1>
       </div>
@@ -909,7 +946,7 @@ function EnvironmentStatusBanner({
   const title = modelStatus && modelStatus.state !== 'ready'
     ? '模型中转未就绪'
     : ready
-      ? '已连接真实 API'
+      ? '已连接工作区 API'
     : offline
       ? '当前为离线演示模式'
       : 'API 暂不可用'
@@ -924,7 +961,7 @@ function EnvironmentStatusBanner({
   const detail = modelStatus && modelStatus.state !== 'ready'
     ? modelDetail
     : ready
-    ? `商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。${modelDetail}`
+    ? `商品、店铺、任务和发布状态将以当前工作区的服务端数据为准；这不代表外部平台已授权或生产已就绪。${modelDetail}`
     : unavailable
       ? '当前不会伪造同步、生成或发布成功；请检查 API 地址和服务状态。'
       : '未配置 API 地址，不会读取或写入真实店铺数据；配置后再开始真实操作。'
@@ -1139,6 +1176,16 @@ function Sidebar({
           <button
             onClick={() =>
               closeForAction(() =>
+                onOpenUtility('support', open ? returnFocus : undefined),
+              )
+            }
+          >
+            <CircleHelp size={19} />
+            <span>客服回复</span>
+          </button>
+          <button
+            onClick={() =>
+              closeForAction(() =>
                 onOpenUtility('help', open ? returnFocus : undefined),
               )
             }
@@ -1250,6 +1297,27 @@ function UtilityPanel({
   const closeRef = useRef<HTMLButtonElement>(null)
   const closeAction = useRef(onClose)
   closeAction.current = onClose
+  const [account, setAccount] = useState<{ subject?: string; workspaceId?: string; expiresAt?: string; amr?: string[] } | null>(null)
+  const [accountState, setAccountState] = useState<'loading' | 'ready' | 'signed_out' | 'unavailable'>('loading')
+  const merchantLoginUrl = (import.meta.env.VITE_MERCHANT_LOGIN_URL as string | undefined)?.trim() || '/auth/login'
+  const merchantLogoutUrl = (import.meta.env.VITE_MERCHANT_LOGOUT_URL as string | undefined)?.trim() || '/auth/logout'
+  useEffect(() => {
+    if (panel !== 'settings' || typeof window === 'undefined') return
+    let cancelled = false
+    fetch('/auth/session', { credentials: 'include', cache: 'no-store' })
+      .then(async response => {
+        if (response.status === 401 || response.status === 403) return null
+        if (!response.ok) throw new Error('session unavailable')
+        return await response.json() as { subject?: string; workspaceId?: string; expiresAt?: string; amr?: string[] }
+      })
+      .then(value => {
+        if (cancelled) return
+        setAccount(value)
+        setAccountState(value ? 'ready' : 'signed_out')
+      })
+      .catch(() => { if (!cancelled) setAccountState('unavailable') })
+    return () => { cancelled = true }
+  }, [panel])
   const content =
     panel === 'help'
       ? {
@@ -1268,11 +1336,12 @@ function UtilityPanel({
             icon: Settings,
             kicker: 'WORKSPACE INFORMATION',
             title: '工作区信息',
-            body: '这里是只读运行信息，不会在浏览器中修改真实凭证、模型中转站或生产权限；这些配置由服务端安全管理。',
+            body: '账号、工作区、角色和业务数据由服务端会话绑定。钱包余额、扣款、任务、账单、店铺授权和审计都按当前工作区隔离，页面不会把不同商家的数据混在一起。',
             items: [
-              `工作区：${import.meta.env.VITE_WORKSPACE_ID ?? 'ws_demo'}`,
+              `工作区：${import.meta.env.VITE_WORKSPACE_ID ?? '未配置（请求将被阻止）'}`,
               `API 地址：${apiBaseUrl ?? '未配置（离线演示）'}`,
               '数据范围：当前工作区隔离；不会跨店铺复用商品事实',
+              '业务范围：钱包余额 · 扣款记录 · 任务与执行状态 · 账单与订单 · 店铺授权 · 审计记录',
             ],
           }
         : {
@@ -1354,6 +1423,26 @@ function UtilityPanel({
           </button>
         </div>
         <div className="modal-body">
+          {panel === 'settings' ? (
+            <section className="account-panel" aria-label="账号与业务归属">
+              <div className="account-panel-heading"><strong>账号与登录状态</strong><span>{accountState === 'ready' ? '已登录' : accountState === 'signed_out' ? '未登录' : accountState === 'unavailable' ? '会话服务不可用' : '读取中'}</span></div>
+              {account ? (
+                <dl className="account-facts">
+                  <div><dt>登录主体</dt><dd>{account.subject ?? '服务端会话'}</dd></div>
+                  <div><dt>当前工作区</dt><dd>{account.workspaceId || '由服务端授权决定'}</dd></div>
+                  <div><dt>会话有效期</dt><dd>{account.expiresAt ? new Date(account.expiresAt).toLocaleString('zh-CN', { hour12: false }) : '由网关管理'}</dd></div>
+                  <div><dt>认证方式</dt><dd>{account.amr?.join('、') || 'OIDC / SSO'}</dd></div>
+                </dl>
+              ) : (
+                <p className="muted">商家后台采用邀请制账号。请先登录；没有账号时联系平台管理员发出邀请，接受邀请后即可进入对应工作区。</p>
+              )}
+              <div className="account-actions">
+                <a className="primary" href={merchantLoginUrl}>登录 / 接受邀请</a>
+                {account ? <form method="post" action={merchantLogoutUrl}><button className="secondary" type="submit">退出登录</button></form> : null}
+              </div>
+              <p className="muted">钱包、扣款、任务、账单和订单均从当前工作区 API 读取；余额未知、会话过期或权限不足时，生成、扣款和发布会保持阻断。</p>
+            </section>
+          ) : null}
           <p className="utility-body">{content.body}</p>
           <div className="utility-list">
             {content.items.map((item, index) => (
@@ -1377,6 +1466,98 @@ function UtilityPanel({
           <button className="primary" onClick={onClose}>
             知道了
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CustomerSupportPanel({
+  apiBaseUrl,
+  relatedTaskId,
+  relatedOrderId,
+  onClose,
+}: {
+  apiBaseUrl?: string
+  relatedTaskId?: string
+  relatedOrderId?: string
+  onClose: () => void
+}) {
+  type SupportQuery = { ticketId?: string; relatedTaskId?: string; relatedOrderId?: string }
+  const [ticketId, setTicketId] = useState('')
+  const [orderId, setOrderId] = useState(relatedOrderId ?? '')
+  const [replies, setReplies] = useState<Array<{ id: string; body: string; created_at: string }>>([])
+  const [ticket, setTicket] = useState<{ ticket_number: string; subject: string; status: string } | null>(null)
+  const [associatedTickets, setAssociatedTickets] = useState<Array<{ ticket_id: string; ticket_number: string; subject: string; status: string; replies: Array<{ id: string; body: string; created_at: string }> }>>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [supportQuery, setSupportQuery] = useState<SupportQuery | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const loadReplies = async (association?: SupportQuery, cursor?: string) => {
+    const id = ticketId.trim()
+    const query = cursor && supportQuery
+      ? supportQuery
+      : association ?? (id ? { ticketId: id } : orderId.trim() ? { relatedOrderId: orderId.trim() } : relatedTaskId ? { relatedTaskId } : {})
+    if (!apiBaseUrl) {
+      setError('未配置 API，当前不会伪造客服回复。')
+      return
+    }
+    if (!query.ticketId && !query.relatedTaskId && !query.relatedOrderId) {
+      setError('请输入客服工单 ID、任务 ID 或订单 ID。')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      const result = await fetchCustomerSupportReplies(apiBaseUrl, query, 50, cursor)
+      setSupportQuery(query)
+      setNextCursor(result.next_cursor ?? null)
+      setAssociatedTickets(result.tickets ?? [])
+      if (result.ticket) {
+        setTicket(result.ticket)
+        setReplies(result.replies ?? [])
+      } else {
+        setTicket(null)
+        setReplies([])
+      }
+    } catch (cause) {
+      setTicket(null)
+      setReplies([])
+      setAssociatedTickets([])
+      setNextCursor(null)
+      setError(`客服回复读取失败：${describeApiError(cause)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+  return (
+    <div className="modal-layer" role="presentation">
+      <div className="modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="support-panel-title">
+        <div className="modal-head">
+          <div className="modal-icon"><CircleHelp size={20} /></div>
+          <div><span className="section-kicker">CUSTOMER SUPPORT</span><h2 id="support-panel-title">客服回复</h2></div>
+          <button className="icon-button" onClick={onClose} aria-label="关闭客服回复"><X size={19} /></button>
+        </div>
+        <div className="modal-body">
+          <p className="utility-body">这里只显示运营人员明确标记为“客户可见”的回复。内部备注、运营身份和审计字段不会返回。</p>
+          {relatedTaskId && <div className="utility-list"><div><CircleHelp size={15} /><span>当前任务已绑定客服查询入口：{relatedTaskId}</span></div></div>}
+          {relatedTaskId && <button className="secondary" onClick={() => void loadReplies({ relatedTaskId })} disabled={loading || !apiBaseUrl}>{loading ? '读取中…' : '查看当前任务关联工单'}</button>}
+          {relatedOrderId && <button className="secondary" onClick={() => void loadReplies({ relatedOrderId })} disabled={loading || !apiBaseUrl}>{loading ? '读取中…' : '查看当前订单关联工单'}</button>}
+          <label className="field-label" htmlFor="support-ticket-id">客服工单 ID</label>
+          <input id="support-ticket-id" value={ticketId} onChange={event => setTicketId(event.target.value)} placeholder="可选：已有工单才填写 UUID" onKeyDown={event => { if (event.key === 'Enter') void loadReplies() }} />
+          <label className="field-label" htmlFor="support-order-id">订单 ID（可选）</label>
+          <input id="support-order-id" value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="按订单发现关联工单" onKeyDown={event => { if (event.key === 'Enter') void loadReplies() }} />
+          {error && <p className="error-text" role="alert">{error}</p>}
+          {associatedTickets.length > 0 && <div className="utility-list">{associatedTickets.map(item => <div key={item.ticket_id}><CheckCircle2 size={15} /><span>{item.ticket_number} · {item.subject} · {item.status}{item.replies.length ? item.replies.map(reply => <small key={reply.id}>{reply.body} · {new Date(reply.created_at).toLocaleString()}</small>) : <small>当前暂无客户可见回复</small>}</span></div>)}</div>}
+          {ticket && <div className="utility-list"><div><CheckCircle2 size={15} /><span>{ticket.ticket_number} · {ticket.subject} · {ticket.status}</span></div></div>}
+          {ticket && !replies.length && <p className="muted">当前工单暂无客户可见回复。</p>}
+          {replies.length > 0 && <div className="utility-list">{replies.map(reply => <div key={reply.id}><CheckCircle2 size={15} /><span>{reply.body}<small>{new Date(reply.created_at).toLocaleString()}</small></span></div>)}</div>}
+          {nextCursor && <div className="info-notice" role="status">当前仅显示这一页客户可见回复/关联工单，服务端仍有下一页；未把当前结果误报为完整。</div>}
+          {nextCursor && <button className="secondary" onClick={() => void loadReplies(undefined, nextCursor)} disabled={loading}>{loading ? '读取中…' : '读取下一页客户回复'}</button>}
+        </div>
+        <div className="modal-actions">
+          <button className="secondary" onClick={() => void loadReplies()} disabled={loading || !apiBaseUrl}>{loading ? '读取中…' : '读取客户回复'}</button>
+          <button className="primary" onClick={onClose}>关闭</button>
         </div>
       </div>
     </div>
@@ -1431,11 +1612,14 @@ function Overview({
   const [accountsError, setAccountsError] = useState('')
   const [action, setAction] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+  const [actionRetry, setActionRetry] = useState<(() => void) | null>(null)
   const [actionMessage, setActionMessage] = useState('')
   const [syncJobs, setSyncJobs] = useState<SyncJob[] | null>(null)
   const [syncJobsError, setSyncJobsError] = useState('')
   const [billing, setBilling] = useState<BillingStatus | null>(null)
   const [billingError, setBillingError] = useState('')
+  const [commercialCatalog, setCommercialCatalog] = useState<CommercialCatalog | null>(null)
+  const [commercialCatalogError, setCommercialCatalogError] = useState('')
   const [rechargeOrder, setRechargeOrder] = useState<RechargeOrder | null>(null)
   const [rechargeQuerying, setRechargeQuerying] = useState(false)
   const [rechargeOpen, setRechargeOpen] = useState(false)
@@ -1501,6 +1685,19 @@ function Overview({
   }
   useEffect(() => {
     loadBilling()
+  }, [baseUrl])
+  const loadCommercialCatalog = () => {
+    if (!baseUrl) return
+    setCommercialCatalogError('')
+    fetchCommercialCatalog(baseUrl)
+      .then(setCommercialCatalog)
+      .catch((error) => {
+        setCommercialCatalog(null)
+        setCommercialCatalogError(`可售套餐暂时无法读取：${describeApiError(error)}。不会创建订单或改变钱包。`)
+      })
+  }
+  useEffect(() => {
+    loadCommercialCatalog()
   }, [baseUrl])
   const loadMetrics = () => {
     if (!baseUrl) return
@@ -1568,6 +1765,7 @@ function Overview({
     if (!baseUrl) return
     setAction(platform)
     setActionError('')
+    setActionRetry(null)
     setActionMessage('')
     authorizePlatform(baseUrl, platform)
       .then((result) => {
@@ -1583,8 +1781,17 @@ function Overview({
             loadAccounts()
           })
         }
-        if (result.authorizationUrl)
-          window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer')
+        if (!result.authorizationUrl) {
+          throw new Error('官方授权地址暂未生成，请检查平台 OAuth 配置后重试。')
+        }
+        const popup = window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer')
+        if (!popup) {
+          setActionError('浏览器阻止了官方授权页弹窗。请允许本网站弹窗后，再点击“连接”重试。')
+          return
+        }
+        setActionMessage(
+          `${platformNames[platform]} 官方授权页已打开。请完成授权后返回本页，系统会自动刷新连接状态；授权完成前不会读取或写入店铺数据。`,
+        )
         loadAccounts()
         let attempts = 0
         const timer = window.setInterval(() => {
@@ -1593,9 +1800,12 @@ function Overview({
           if (attempts >= 10) window.clearInterval(timer)
         }, 2000)
       })
-      .catch((error) =>
-        setActionError(`${platform}：${describeApiError(error)}`),
-      )
+      .catch((error) => {
+        setActionError(`${platformNames[platform]}：${describeApiError(error)}`)
+        // Keep recovery explicit and scoped to the failed platform. Retrying
+        // must never guess a different account or silently sync data.
+        setActionRetry(() => () => connect(platform))
+      })
       .finally(() => setAction(null))
   }
   const sync = (platform: PlatformId, accountId?: string) => {
@@ -1612,9 +1822,10 @@ function Overview({
     syncPlatform(baseUrl, platform, accountId)
       .then(() => setActionError(''))
       .catch((error) =>
-        setActionError(
-          `${platformNames[platform]}：${describeApiError(error)}`,
-        ),
+        (() => {
+          setActionError(`${platformNames[platform]}：${describeApiError(error)}`)
+          setActionRetry(() => () => sync(platform, accountId))
+        })(),
       )
       .finally(() => setAction(null))
   }
@@ -1698,7 +1909,7 @@ function Overview({
     : baseUrl
       ? '—'
       : String(
-          platforms.filter((platform) => platform.status === '演示已连接')
+          platforms.filter((platform) => platform.status === '演示连接')
             .length,
         )
   const approvedCount = metrics ? String(metrics.taskFunnel.approved ?? 0) : '—'
@@ -1711,8 +1922,9 @@ function Overview({
     : metricsError
       ? '业务数据读取失败'
       : metrics
-        ? '工作区数据已读取'
+        ? (metrics.dataCompleteness === 'partial' || (metrics.hydration?.invalidSnapshotCount ?? 0) > 0 ? '工作区数据部分可用' : '工作区数据已读取')
         : '正在读取业务数据'
+  const metricsPartial = Boolean(metrics && (metrics.dataCompleteness === 'partial' || (metrics.hydration?.invalidSnapshotCount ?? 0) > 0))
   const liveActivity =
     syncJobs
       ?.slice(0, 4)
@@ -1728,6 +1940,10 @@ function Overview({
                 : '处理中',
           ] as [string, string, string],
       ) ?? []
+  const merchantCatalogItems = useMemo(
+    () => selectMerchantCatalogItems(commercialCatalog?.catalog ?? []),
+    [commercialCatalog],
+  )
   const capabilityStateLabel = (state: string) =>
     ({
       unverified: '未验证',
@@ -1748,7 +1964,7 @@ function Overview({
         <div>
           <StatusChip
             tone={
-              !baseUrl || metricsError ? 'amber' : metrics ? 'green' : 'blue'
+              !baseUrl || metricsError || metricsPartial ? 'amber' : metrics ? 'green' : 'blue'
             }
           >
             <Zap size={13} /> {workflowStatus}
@@ -1879,6 +2095,8 @@ function Overview({
         />
       </section>
 
+      <WorkspaceDataIntegrityNotice metrics={metrics} />
+
       {metricsError && (
         <ErrorNotice
           message={`运营指标：${metricsError}`}
@@ -1986,7 +2204,43 @@ function Overview({
               <small className="wallet-note">
                 生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额未知或不足时不会调用模型。
               </small>
+              <small className="wallet-note wallet-note-blocked" role="status">
+                购买创意点请使用服务端可售套餐；当前支付服务未配置时不会显示或创建微信/支付宝订单。
+              </small>
             </Card>
+          </div>
+          <div className="wallet-catalog" aria-label="可售创意点套餐">
+            <div className="wallet-catalog-heading">
+              <div>
+                <span className="section-kicker">COMMERCIAL CATALOG</span>
+                <h4>可售创意点套餐</h4>
+              </div>
+              <button className="text-button" onClick={loadCommercialCatalog} disabled={!baseUrl}>
+                刷新套餐
+              </button>
+            </div>
+            {commercialCatalogError && <ErrorNotice message={commercialCatalogError} compact />}
+            {!commercialCatalogError && !commercialCatalog && <p className="wallet-note">正在读取服务端套餐…</p>}
+            {commercialCatalog && merchantCatalogItems.length === 0 && <p className="wallet-note">当前没有可展示的服务端套餐。</p>}
+            <div className="wallet-catalog-grid">
+              {merchantCatalogItems.map((item) => {
+                const unresolved = Array.isArray(item.unresolved) ? item.unresolved : []
+                const blockers = unresolved.length ? unresolved : (!item.executable ? ['当前套餐尚未达到可执行条件'] : [])
+                return (
+                  <Card className="wallet-catalog-card" size="small" key={`${item.id}-${item.sku_code}`} bordered>
+                    <div className="wallet-catalog-card-head">
+                      <b>{item.name}</b>
+                      <Tag color={item.executable ? 'green' : 'gold'}>{item.executable ? '可执行' : '暂不可购买'}</Tag>
+                    </div>
+                    <div className="wallet-catalog-meta"><span>SKU <code>{item.sku_code}</code></span><span>{item.version}</span></div>
+                    <div className="wallet-catalog-price">{item.price_label}{item.cycle_label ? ` · ${item.cycle_label}` : ''}</div>
+                    <p className="wallet-note">权益：{item.benefits_summary}</p>
+                    {blockers.length > 0 && <p className="recharge-mock-note">购买阻断：{blockers.join('；')}</p>}
+                    {!blockers.length && <p className="wallet-note">当前仅展示服务端批准目录；支付入口将在真实 checkout 与回调就绪后开放。</p>}
+                  </Card>
+                )
+              })}
+            </div>
           </div>
           {billing?.capability_entitlements && (
             <div className="wallet-entitlement-grid" aria-label="能力状态">
@@ -2099,6 +2353,11 @@ function Overview({
             <div>
               <span className="section-kicker">CONNECTIONS</span>
               <h3>平台连接</h3>
+              <p className="panel-hint">
+                {baseUrl
+                  ? '仅显示当前工作区的店铺身份；“演示连接”是本地 Fixture，不代表真实平台已授权。'
+                  : '离线演示不会访问真实店铺；连接 API 后可发起官方授权。'}
+              </p>
             </div>
             <button className="text-button" onClick={goProducts}>
               管理连接 <ArrowRight size={15} />
@@ -2112,7 +2371,7 @@ function Overview({
               compact
             />
           )}
-          {actionError && <ErrorNotice message={actionError} compact />}
+    {actionError && <ErrorNotice message={actionError} onRetry={actionRetry ?? undefined} retryLabel="重试当前操作" compact focusOnMount />}
           {actionMessage && (
             <div className="info-notice" role="status">
               <CheckCircle2 size={15} />
@@ -2125,7 +2384,7 @@ function Overview({
                 className="platform-row"
                 key={`${platform.platformId}-${platform.accountId ?? 'unbound'}`}
               >
-                <div className={`platform-logo ${platform.tone}`}>
+                <div className={`platform-logo ${platform.tone}`} aria-hidden="true">
                   {platform.name.slice(0, 1)}
                 </div>
                 <div className="platform-meta">
@@ -2149,6 +2408,7 @@ function Overview({
                           sync(platform.platformId, platform.accountId)
                         }
                         disabled={Boolean(action)}
+                        aria-busy={action === `sync-${platform.platformId}`}
                       >
                         {action === `sync-${platform.platformId}`
                           ? '同步中…'
@@ -2166,6 +2426,7 @@ function Overview({
                           })
                         }
                         disabled={Boolean(action)}
+                        aria-busy={action === `revoke-${platform.platformId}`}
                       >
                         {action === `revoke-${platform.platformId}`
                           ? '撤销中…'
@@ -2178,12 +2439,13 @@ function Overview({
                           className="text-button"
                           onClick={() => connect(platform.platformId)}
                           disabled={Boolean(action)}
+                          aria-busy={action === platform.platformId}
                         >
                           {action === platform.platformId
                             ? '处理中…'
                             : platform.canReauthorize
                               ? '重新授权'
-                              : '连接'}
+                          : '连接'}
                         </button>
                       )}
                   </>
@@ -2491,12 +2753,7 @@ async function resolveMerchantRouteTarget(
       },
     )
     const target = {
-      productId: product.id,
-      platform: product.platform,
-      title: product.title,
-      remoteId: product.remoteId,
-      accountId: product.accountId,
-      storeName: product.storeName,
+      ...projectProductTarget(product),
       taskId: task.id,
       resolvedTask: task,
       resolvedProduct: product,
@@ -2517,12 +2774,7 @@ async function resolveMerchantRouteTarget(
   if (routeTarget.accountId && routeTarget.accountId !== product.accountId)
     throw new Error('深链店铺账号与当前商品账号不一致，已阻止创建任务。')
   const target = {
-    productId: product.id,
-    platform: product.platform,
-    title: product.title,
-    remoteId: product.remoteId,
-    accountId: product.accountId,
-    storeName: product.storeName,
+    ...projectProductTarget(product),
     taskIntentKey: routeTarget.intentKey ?? crypto.randomUUID(),
   }
   const identityError = validateProductStoreIdentity(target, product)
@@ -3319,6 +3571,16 @@ function AssetLibrary({
           <StatusChip tone={brand ? 'green' : 'neutral'}>
             {brand ? `品牌档案 r${brand.revision}` : '品牌未建档'}
           </StatusChip>
+          {brand?.brandUnitId ? (
+            <StatusChip tone="green">
+              批量生产品牌单元：{brand.brandUnitId}
+            </StatusChip>
+          ) : brand?.brandUnitSelectionRequired ? (
+            <div className="inline-error" role="alert">
+              <AlertCircle size={16} aria-hidden="true" />
+              <span>品牌档案尚未选择批量生产品牌单元；当前工作区有 {brand.brandUnitCandidates?.length ?? 0} 个候选，请先通过 brand-unit.list 选择并关联，避免商品链路归错品牌。</span>
+            </div>
+          ) : null}
           <StatusChip tone={assets?.length ? 'green' : 'neutral'}>
             {assets?.length ?? 0} 个素材
           </StatusChip>
@@ -3913,6 +4175,8 @@ function AssetLibrary({
                       data-testid={`asset-preference-open-${asset.id}`}
                       className="text-button"
                       onClick={() => openPreferenceEditor(asset)}
+                      disabled={!baseUrl || asset.scanStatus !== 'clean' || asset.parseStatus === 'failed' || asset.parseStatus === 'processing'}
+                      title={!baseUrl ? '商家 API 未连接' : asset.scanStatus !== 'clean' ? '安全扫描通过后才能评价素材' : asset.parseStatus === 'failed' ? '内容读取失败，请先重试读取或完成人工确认' : asset.parseStatus === 'processing' ? '内容读取完成后才能评价素材' : undefined}
                     >
                       评价素材
                     </button>
@@ -4515,10 +4779,11 @@ function Products({
   const [importOpen, setImportOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
-  const [importErrorField, setImportErrorField] = useState<'title' | 'category' | 'price' | 'stock' | null>(null)
+  const [importErrorField, setImportErrorField] = useState<'title' | 'account' | 'category' | 'price' | 'stock' | null>(null)
   const [importDraft, setImportDraft] = useState({
     title: '',
     platform: 'taobao' as PlatformId,
+    accountId: '',
     category: '',
     price: '0',
     stock: '0',
@@ -4806,6 +5071,7 @@ function Products({
     setImportDraft({
       title: '',
       platform: 'taobao',
+      accountId: '',
       category: '',
       price: '0',
       stock: '0',
@@ -4827,12 +5093,18 @@ function Products({
   const importLocalProduct = async () => {
     if (!baseUrl || importing) return
     const title = importDraft.title.trim()
+    const accountId = importDraft.accountId.trim()
     const category = importDraft.category.trim()
     const price = Number(importDraft.price)
     const stock = Number(importDraft.stock)
     if (!title) {
       setImportError('请输入商品名称。')
       setImportErrorField('title')
+      return
+    }
+    if (!accountId) {
+      setImportError('请选择已连接且可读取的店铺账号；生产导入必须绑定明确店铺身份。')
+      setImportErrorField('account')
       return
     }
     if (!category) {
@@ -4856,6 +5128,7 @@ function Products({
     try {
       await importProduct(baseUrl, {
         platform: importDraft.platform,
+        account_id: accountId,
         title,
         local_product_key: `${importDraft.platform}:${title}`,
         category,
@@ -4925,7 +5198,7 @@ function Products({
       if (!campaignId) throw new Error('批量计划已返回，但缺少 campaign_id，无法进入逐项生产。')
       let generated: typeof campaign | undefined
       try {
-        generated = await generateCampaignBatch(baseUrl, campaignId, '按商品事实和品牌规则逐项生成营销内容，等待审核。')
+        generated = await generateCampaignBatch(baseUrl, campaignId, '按商品事实和品牌规则逐项生成营销内容，等待审核。', `merchant-studio-campaign-generate-${campaignId}`)
       } catch (cause) {
         // The plan is durable even when a precondition (facts, canonical
         // listing, points, or provider readiness) blocks generation. Keep the
@@ -4933,7 +5206,17 @@ function Products({
         setGroupMessage(`批量计划已创建（${campaignId}），逐项生成被门禁阻止：${describeApiError(cause)}。请处理阻断项后在营销任务中继续。`)
       }
       const taskIds = generated?.taskIds ?? []
-      if (generated && taskIds.length) {
+      const generatedState = generated ? resolveBatchResultState(generated) : 'empty'
+      if (generated && generatedState === 'blocked') {
+        const validation = generated.delivery_manifest?.validation
+        setGroupMessage(`批量计划已创建（${campaignId}），当前仍被交付门禁阻断${validation?.code ? `：${validation.code}` : ''}。请在营销任务中查看修复路径后再继续。`)
+      } else if (generated && generatedState === 'partial') {
+        setGroupMessage(`批量计划已创建，但仅部分子任务可继续（${taskIds.length} 个）。请在营销任务中逐项处理失败或阻断项。`)
+        onOpenTasks()
+      } else if (generated && generatedState === 'empty') {
+        setGroupMessage(`批量计划已创建（${campaignId}），服务端尚未返回可执行子任务；未将空结果当作生成成功。请在营销任务中刷新状态。`)
+        onOpenTasks()
+      } else if (generated && taskIds.length) {
         setGroupMessage(`批量计划已创建并进入逐项生产（${taskIds.length} 个子任务）。请在营销任务中逐项审核后发布。`)
         onOpenTasks()
       }
@@ -5304,14 +5587,7 @@ function Products({
               </thead>
               <tbody>
                 {pagedVisible.map((product) => {
-                  const target = {
-                    productId: product.id,
-                    platform: product.platformId,
-                    title: product.title,
-                    remoteId: product.remoteId,
-                    accountId: product.accountId,
-                    storeName: product.storeName,
-                  }
+                  const target = projectProductRowTarget(product)
                   const identityError = validateTargetStoreIdentity(target)
                   const canonicalStatus = product.canonicalScope?.verification_status
                   const canonicalUnverified = !canonicalProductActionAllowed({ apiConfigured: Boolean(baseUrl), status: canonicalStatus })
@@ -5438,7 +5714,8 @@ function Products({
                           disabled={
                             !baseUrl ||
                             productListUnavailable ||
-                            Boolean(identityError)
+                            Boolean(identityError) ||
+                            canonicalUnverified
                           }
                           title={
                             identityError ??
@@ -5549,6 +5826,7 @@ function Products({
                   setImportDraft((current) => ({
                     ...current,
                     platform: event.target.value as PlatformId,
+                    accountId: '',
                   }))
                 }
               >
@@ -5558,6 +5836,26 @@ function Products({
                   </option>
                 ))}
               </select>
+            </label>
+            <label htmlFor="import-product-account">
+              店铺账号
+              <select
+                id="import-product-account"
+                value={importDraft.accountId}
+                onChange={(event) => {
+                  setImportDraft((current) => ({ ...current, accountId: event.target.value }))
+                  setImportError('')
+                  setImportErrorField(null)
+                }}
+                aria-invalid={importErrorField === 'account'}
+                aria-describedby={importError ? 'import-product-error' : undefined}
+              >
+                <option value="">请选择店铺账号</option>
+                {(accounts ?? [])
+                  .filter((account) => account.platform === importDraft.platform && account.accountId && account.readEnabled)
+                  .map((account) => <option key={account.accountId} value={account.accountId}>{account.storeName ?? account.alias ?? account.label ?? account.accountId} · {account.accountId}</option>)}
+              </select>
+              <small className="muted-help">必须选择真实已连接身份；未配置或不可读取的店铺不会出现在这里。</small>
             </label>
             <label htmlFor="import-product-category">
               平台类目
@@ -5746,16 +6044,9 @@ function Products({
           baseUrl={baseUrl}
           productId={relationProductId}
           onClose={() => setRelationProductId('')}
-          onContinue={(product) => {
+            onContinue={(product) => {
             setRelationProductId('')
-            onSelectTarget({
-              productId: product.id,
-              platform: product.platform,
-              title: product.title,
-              remoteId: product.remoteId,
-              accountId: product.accountId,
-              storeName: product.storeName,
-            })
+            onSelectTarget(projectProductTarget(product))
           }}
         />
       )}
@@ -6597,6 +6888,10 @@ function TaskWorkspace({
   const taskRuleVersionIds = (content?.ruleVersionIds ?? []).map(
     (_, index) => `服务端规则版本已绑定 ${index + 1}`,
   )
+  const consumedKnowledge = content?.knowledgeContext
+  const consumedKnowledgeRuleCount = consumedKnowledge?.rules.length ?? 0
+  const consumedKnowledgeAssetCount = consumedKnowledge?.assets.length ?? 0
+  const consumedLearningCount = consumedKnowledge?.confirmedLearningSuggestions.length ?? 0
   const recentTimeline = timeline.slice().reverse().slice(0, 4)
   const generateDraft = (created: Task) => {
     if (!baseUrl) return Promise.reject(new Error('API 未配置'))
@@ -8487,6 +8782,51 @@ function TaskWorkspace({
                   </>
                 )}
               </div>
+              <div className="context-section" data-testid="task-knowledge-consumption">
+                <div className="subhead">
+                  <b>工作区知识消费</b>
+                  <span>
+                    {content
+                      ? `${consumedKnowledgeRuleCount + consumedKnowledgeAssetCount + consumedLearningCount} 条已冻结`
+                      : '生成后显示'}
+                  </span>
+                </div>
+                {!content ? (
+                  <div className="empty-inline">生成内容后，这里会显示本次实际使用的 Ops 知识和规则版本。</div>
+                ) : consumedKnowledgeRuleCount || consumedKnowledgeAssetCount || consumedLearningCount ? (
+                  <>
+                    {consumedKnowledge?.rules.map((rule) => (
+                      <div className="constraint" key={`knowledge-rule-${rule.id}`}>
+                        <BookOpen size={16} />
+                        <div>
+                          <b>工作区规则 · {rule.version}</b>
+                          <span>{rule.sourceReference} · 已用于本次生成</span>
+                        </div>
+                      </div>
+                    ))}
+                    {consumedKnowledge?.assets.map((asset) => (
+                      <div className="constraint" key={`knowledge-asset-${asset.id}`}>
+                        <FileCheck2 size={16} />
+                        <div>
+                          <b>{asset.kind === 'brand' ? '品牌知识' : '客户知识'} · {asset.name}</b>
+                          <span>修订 {asset.revision} · 已用于本次生成</span>
+                        </div>
+                      </div>
+                    ))}
+                    {consumedKnowledge?.confirmedLearningSuggestions.map((learning) => (
+                      <div className="constraint" key={`knowledge-learning-${learning.id}`}>
+                        <History size={16} />
+                        <div>
+                          <b>已确认学习建议</b>
+                          <span>{learning.summary} · 仅作为本次生成依据</span>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="empty-inline">本次生成没有返回已确认的工作区知识；未将演示数据冒充为消费记录。</div>
+                )}
+              </div>
             </aside>
 
             <section className="editor-panel" aria-label="内容编辑区">
@@ -9496,7 +9836,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
   )[categoriesData.mode]
   const ruleMetric = ['loading', 'api_error'].includes(rulesData.mode)
     ? '—'
-    : String(rows.filter((row) => row.status === 'active').length)
+    : String(rows.filter((row) => resolveRuleExecutionState(row) === 'executable').length)
   const categoryMetric = ['loading', 'api_error'].includes(categoriesData.mode)
     ? '—'
     : String(categories.length)
@@ -9530,8 +9870,8 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
                 {row.version} · 修订 {row.revision ?? 1}
               </span>
             </div>
-            <StatusChip tone="neutral">{row.scope}</StatusChip>
-            <span>{row.status === 'active' ? '生效中' : row.status}</span>
+            <StatusChip tone={resolveRuleExecutionState(row) === 'executable' ? 'neutral' : resolveRuleExecutionState(row) === 'blocked' ? 'red' : 'amber'}>{row.scope}</StatusChip>
+            <span>{resolveRuleExecutionState(row) === 'executable' ? '可作为生成依据' : resolveRuleExecutionState(row) === 'blocked' ? '已阻断，不可执行' : '来源未验证，仅供核对'}</span>
             <span className="rule-audit-meta">
               {row.source?.reference ??
                 (rulesData.mode === 'offline_demo'
@@ -10092,6 +10432,7 @@ export default function App() {
   const [publishModal, setPublishModal] = useState(false)
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
+  const [apiMode, setApiMode] = useState<string | null>(null)
   const [modelStatus, setModelStatus] = useState<PlatformModelStatus | null>(
     null,
   )
@@ -10156,8 +10497,14 @@ export default function App() {
     const baseUrl = import.meta.env.VITE_API_BASE_URL
     if (!baseUrl) return
     fetchApiHealth(baseUrl)
-      .then(() => setApiOnline(true))
-      .catch(() => setApiOnline(false))
+      .then((health) => {
+        setApiOnline(true)
+        setApiMode(health?.setup?.mode ?? null)
+      })
+      .catch(() => {
+        setApiOnline(false)
+        setApiMode(null)
+      })
     fetchPlatformModelStatus(baseUrl)
       .then(status => {
         setModelStatus(status)
@@ -10562,6 +10909,7 @@ export default function App() {
             menuOpen={mobileNav}
             menuButtonRef={mobileMenuTrigger}
             apiOnline={apiOnline}
+            apiMode={apiMode}
             apiBaseUrl={apiBaseUrl}
             onOpenUtility={openUtility}
             searchQuery={globalSearch}
@@ -10700,7 +11048,9 @@ export default function App() {
           returnFocus={publishTrigger.current}
         />
       )}
-      {utilityPanel && (
+      {utilityPanel === 'support' ? (
+        <CustomerSupportPanel apiBaseUrl={apiBaseUrl} relatedTaskId={taskContext?.task.id} onClose={closeUtility} />
+      ) : utilityPanel && (
         <UtilityPanel
           panel={utilityPanel}
           apiOnline={apiOnline}

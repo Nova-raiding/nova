@@ -22,23 +22,26 @@ export function ModelsPage({ model }: ModelsPageProps) {
       actions={<Button type="primary" loading={model.loading || model.modelStatusLoading} onClick={() => void model.load()}>刷新模型状态</Button>}
       nextStep={modelError ? "先恢复模型状态读取；在 readiness 未确认前保持所有生成能力阻断。" : "先处理阻断项，再核对成本证据与五模态 readiness。"}
     >
+      <div className="ops-models-page">
       <OpsPageError error={modelError ?? ""} onRetry={() => void model.load()} />
       <ModelStatusSection model={model} />
-      <ModelChannelMatrix status={model.modelStatus} />
+      <ModelChannelMatrix status={model.modelStatus} fixtureDataPresent={model.dataSource?.fixtureDataPresent} />
       {model.authorization.can("billing.platform.read") && model.platformModelUsageSummary ? (
         <Card title="平台模型用量汇总" size="small">
           <Row gutter={[16, 16]}>
             <Col span={6}><Statistic title="调用记录" value={model.platformModelUsageSummary.recordCount} /></Col>
             <Col span={6}><Statistic title="总 Token" value={model.platformModelUsageSummary.totalTokens} /></Col>
-            <Col span={6}><Statistic title="Provider 成本" value={model.platformModelUsageSummary.providerCostCny} precision={6} prefix="¥" /></Col>
+            <Col span={6}><Statistic title="Provider 成本" value={model.platformModelUsageSummary.providerCostCny ?? "—"} precision={6} prefix={model.platformModelUsageSummary.providerCostCny == null ? undefined : "¥"} /></Col>
             <Col span={6}><Statistic title="未结算" value={model.platformModelUsageSummary.unsettledRecordCount} /></Col>
           </Row>
           {model.platformModelUsageSummary.failedWorkspaceCount ? <Alert style={{ marginTop: 16 }} type="warning" showIcon title={`${model.platformModelUsageSummary.failedWorkspaceCount} 个工作区用量读取失败，未纳入汇总`} /> : null}
+          {model.platformModelUsageSummary.providerCostStatus && model.platformModelUsageSummary.providerCostStatus !== "verified" ? <Alert style={{ marginTop: 16 }} type="warning" showIcon title="Provider 成本证据不完整" description={model.platformModelUsageSummary.providerCostStatus === "unavailable" ? "成本汇总不可用，不能解释为 ¥0。" : `有 ${model.platformModelUsageSummary.missingCostEvidenceCount ?? 0} 条用量记录缺少成本证据。`} /> : null}
         </Card>
       ) : null}
       {visibleSections.includes("model-markup") ? (
         <ModelMarkupPanel model={model} />
       ) : null}
+      </div>
     </OpsPage>
   );
 }

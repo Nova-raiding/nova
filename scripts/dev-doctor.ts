@@ -28,6 +28,11 @@ const run = (command: string, commandArgs: string[] = []) => spawnSync(command, 
 const commandReady = (command: string, commandArgs: string[] = []) => run(command, commandArgs).status === 0
 const root = process.cwd()
 const parseJsonFile = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf8')) as unknown
+// Compose resolves its implicit .env relative to the compose project
+// directory (infra/local here), not reliably relative to the repository
+// root. Keep the doctor aligned with the startup scripts so local secrets and
+// trust configuration are not reported as missing after a healthy launch.
+const composeArgs = ['compose', ...(existsSync(resolve(root, '.env')) ? ['--env-file', resolve(root, '.env')] : []), '-f', resolve(root, 'infra/local/docker-compose.yml')]
 
 const nodeMajor = Number(process.versions.node.split('.')[0])
 add('node', nodeMajor >= 22 ? 'pass' : 'fail', `Node ${process.versions.node}`, nodeMajor >= 22 ? undefined : '安装 Node 22+；旧 Node/ICU 组合不受支持。')
@@ -60,7 +65,7 @@ let containerEnv = new Set<string>()
 const containerEnvironmentNames = (service: string) => {
   const names = new Set<string>()
   if (!dockerReady) return names
-  const container = run('docker', ['compose', '-f', 'infra/local/docker-compose.yml', 'ps', '-q', service]).stdout.trim()
+  const container = run('docker', [...composeArgs, 'ps', '-q', service]).stdout.trim()
   if (!container) return names
   const inspected = run('docker', ['inspect', container, '--format', '{{json .Config.Env}}'])
   if (inspected.status !== 0) return names
@@ -114,11 +119,21 @@ add('ops_api_base', opsApiBaseReady ? 'pass' : 'warn', opsApiBaseReady ? 'VITE_A
 
 const productionConfig = process.env.PRODUCTION_CONFIG_PATH?.trim()
 const productionConfigPath = productionConfig ? resolve(root, productionConfig) : ''
-const productionConfigReady = Boolean(productionConfigPath && existsSync(productionConfigPath) && !/example/iu.test(productionConfigPath) && !/REPLACE_ME|SET_[A-Z_]+|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8')))
+const productionConfigReady = (() => {
+  if (!productionConfigPath || !existsSync(productionConfigPath) || /example/iu.test(productionConfigPath)) return false
+  try {
+    return !/REPLACE_ME|SET_[A-Z_]+|example\.com/iu.test(readFileSync(productionConfigPath, 'utf8'))
+  } catch {
+    // A directory, unreadable path, or disappearing secret-rendered file is a
+    // production configuration failure, not a reason for the doctor itself to
+    // crash before emitting the remaining health evidence.
+    return false
+  }
+})()
 add('production_config', productionConfigReady ? 'pass' : production ? 'fail' : 'warn', productionConfigReady ? '显式生产配置路径存在' : '未提供非示例 PRODUCTION_CONFIG_PATH', '渲染真实生产配置并运行 npm run infra:launch-preflight。')
 
 if (composeReady) {
-  const compose = run('docker', ['compose', '-f', 'infra/local/docker-compose.yml', 'ps', '--format', 'json'])
+  const compose = run('docker', [...composeArgs, 'ps', '--format', 'json'])
   const rows = compose.status === 0 ? parseComposeServiceStates(compose.stdout) : []
   const requiredServices = [
     'api', 'api-replica', 'worker-sync', 'worker-generation', 'worker-publish',
@@ -183,7 +198,7 @@ if (composeReady) {
         AND relforcerowsecurity), '[]'::json),
     'app_bypass_rls',(SELECT rolbypassrls FROM pg_roles WHERE rolname='merchant_app')
   )`
-  const probe = run('docker', ['compose', '-f', 'infra/local/docker-compose.yml', 'exec', '-T', 'postgres', 'psql', '-U', 'merchant', '-d', 'merchant', '-Atqc', sql])
+  const probe = run('docker', [...composeArgs, 'exec', '-T', 'postgres', 'psql', '-U', 'merchant', '-d', 'merchant', '-Atqc', sql])
   try {
     const facts = JSON.parse(probe.stdout.trim()) as Record<string, number | boolean | null | string[]>
     const forcedRlsTables = Array.isArray(facts.forced_rls_tables)

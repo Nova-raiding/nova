@@ -36,6 +36,7 @@ export interface IsolatedOpsFixture {
   redisUrl: string
   workspaceId: string
   subjectIdentityId: string
+  workspaceActorSubject: string
   approverId: string
   issuer: string
   actorSubject: string
@@ -231,7 +232,7 @@ export async function createIsolatedOpsFixture({ evidenceDir }: { evidenceDir: s
     await writeFile(join(output, `fixture-ready-${runId}.json`), JSON.stringify({ runId, containers: evidence, serverVersion, migrationVersions: applied, workspaceId, actorIdentityId, subjectIdentityId, approverIdentityId, approverId, issuer, actorSubject, actorRoles: roles.map(role => role.role), runtimeRoles: roleFlags, commercialModelCalls: 0, fixtureOnly: true }, null, 2), { mode: 0o600, flag: 'wx' })
     await ops.end(); ops = undefined
     await admin.end(); admin = undefined
-    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), workspaceId, subjectIdentityId, approverId, issuer, actorSubject, containerEvidence: evidence, dispose }
+    return { runId, databaseUrl: appUrl.toString(), adminDatabaseUrl: adminUrl.toString(), opsDatabaseUrl: opsUrl.toString(), redisUrl: redisUrl.toString(), workspaceId, subjectIdentityId, workspaceActorSubject: `ops-fixture-target-${runId}`, approverId, issuer, actorSubject, containerEvidence: evidence, dispose }
   } catch (error) {
     await ops?.end(); ops = undefined
     await admin?.end(); admin = undefined

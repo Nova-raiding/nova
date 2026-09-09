@@ -31,6 +31,13 @@ const order = (workspaceId: string, id: string, occurredAt: string) => ({
   occurred_at: occurredAt, updated_at: occurredAt, attribute_name: '支付渠道', attribute_value: 'alipay',
 })
 
+const modelUsage = (workspaceId: string, id: string) => ({
+  record_id: id, kind: 'model_usage', sort_rank: 10, workspace_id: workspaceId, status: 'pending_cost', label: '模型用量', reference: 'action:1',
+  amount_cny: null, direction: null, provider_cost_cny: null, customer_charge_cny: '0.12', units: '1000',
+  occurred_at: '2026-08-28T09:00:00.000Z', updated_at: '2026-08-28T09:00:00.000Z', attribute_name: '模型', attribute_value: 'text / model-a',
+  safe_attributes: { action_id: 'action:1', modality: 'text', model: 'model-a', total_tokens: 1000, settlement_status: 'pending_cost', budget_run_key: 'run:1' },
+})
+
 describe('PostgresFinanceSearchRepository', () => {
   it('enforces finance authorized-workspace policy before issuing SQL', async () => {
     const pool = new RecordingPool()
@@ -50,7 +57,7 @@ describe('PostgresFinanceSearchRepository', () => {
     const result = await repository.search({ role: 'platform_ops' }, { limit: 20 })
     expect(result.records.map(record => record.workspaceId)).toEqual(['ws_a', 'ws_b'])
     expect(result.scope).toEqual({ role: 'platform_ops', workspaceCount: 2 })
-    expect(result.summary).toMatchObject({ totalRecords: 2, rechargeOrderCny: 20 })
+    expect(result.summary).toMatchObject({ totalRecords: 2, rechargeOrderCny: 20, providerStatementStatus: 'not_checked' })
     expect(pool.calls.filter(call => call.text.includes("set_config('app.platform_scope'"))).toHaveLength(1)
     expect(pool.calls.filter(call => call.text.includes("set_config('app.workspace_id'" )).map(call => call.values[0])).toEqual(['ws_a', 'ws_b'])
   })
@@ -74,6 +81,15 @@ describe('PostgresFinanceSearchRepository', () => {
     await expect(repository.search({ role: 'finance', authorizedWorkspaceIds: ['ws_a'] }, { kinds: ['model_usage'], text: 'order', cursor: page.nextCursor, limit: 1 })).rejects.toMatchObject({ code: 'FINANCE_SEARCH_CURSOR_INVALID' })
   })
 
+  it('keeps actor attribution searchable for wallet and order reconciliation', async () => {
+    const pool = new RecordingPool((text) => text.includes('SELECT record_id') ? [order('ws_a', 'order_actor', '2026-08-28T09:00:00.000Z')] : [])
+    const repository = new PostgresFinanceSearchRepository(pool, () => new Date('2026-08-29T00:00:00.000Z'))
+    await repository.search({ role: 'finance', authorizedWorkspaceIds: ['ws_a'] }, { text: 'actor_merchant', limit: 20 })
+    const sql = pool.calls.find(call => call.text.includes('SELECT record_id'))?.text ?? ''
+    expect(sql).toContain('created_by_actor_id')
+    expect(sql).toContain('actor_id)')
+  })
+
   it('validates an optimistic version without exposing mutable raw columns', async () => {
     const pool = new RecordingPool((text, values) => text.includes('SELECT record_id') ? [order(String(values[0]), 'order_1', '2026-08-28T09:00:00.000Z')] : [])
     const repository = new PostgresFinanceSearchRepository(pool, () => new Date('2026-08-29T00:00:00.000Z'))
@@ -82,6 +98,15 @@ describe('PostgresFinanceSearchRepository', () => {
     const detailSql = pool.calls.find(call => call.text.includes('WHERE kind=$3'))?.text ?? ''
     expect(detailSql).not.toContain('updated_at <= $2')
     await expect(repository.detail({ role: 'finance', authorizedWorkspaceIds: ['ws_a'] }, { workspaceId: 'ws_a', kind: 'recharge_order', id: 'order_1', expectedVersion: 'stale' })).rejects.toMatchObject({ code: 'FINANCE_RECORD_VERSION_CONFLICT' })
+  })
+
+  it('returns bounded audit attributes for model usage details without raw provider fields', async () => {
+    const pool = new RecordingPool((text) => text.includes('SELECT record_id') ? [modelUsage('ws_a', 'usage_1')] : [])
+    const repository = new PostgresFinanceSearchRepository(pool, () => new Date('2026-08-29T00:00:00.000Z'))
+    const detail = await repository.detail({ role: 'finance', authorizedWorkspaceIds: ['ws_a'] }, { workspaceId: 'ws_a', kind: 'model_usage', id: 'usage_1' })
+    expect(detail?.attributes).toEqual({ action_id: 'action:1', modality: 'text', model: 'model-a', total_tokens: 1000, settlement_status: 'pending_cost', budget_run_key: 'run:1' })
+    const detailSql = pool.calls.find(call => call.text.includes('WHERE kind=$3'))?.text ?? ''
+    expect(detailSql).not.toMatch(/provider_request_id|last_error|metadata|idempotency_key/)
   })
 
   it('bounds concurrent workspace transactions', async () => {

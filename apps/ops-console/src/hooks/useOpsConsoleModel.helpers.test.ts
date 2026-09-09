@@ -42,6 +42,14 @@ describe("Ops Console model helpers", () => {
     ]);
   });
 
+  it("does not probe the legacy commercial snapshot with summary-only access", () => {
+    const authorization = createAuthorizationProjection({
+      capabilities: ["workspace.summary.read"],
+      scope: { type: "workspace", id: "workspace-1" },
+    } as never, true);
+    expect(allowedBackgroundHydrationMethods(authorization)).not.toContain("workspace.commercial.get");
+  });
+
   it("isolates dataset failures to the operations domain that owns them", () => {
     const failures = {
       "ops.audit.list": "审计中心仓储不可用",

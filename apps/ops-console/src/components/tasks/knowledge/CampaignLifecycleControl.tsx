@@ -3,7 +3,7 @@ import { Alert, Button, Card, Checkbox, Form, Input, Modal, Space, Table, Tag, T
 import { describeOpsError, rpc } from '../../../api/opsClient.js'
 
 export type CampaignAction = 'pause' | 'resume' | 'retry_failed'
-export interface CampaignControlSnapshot { id: string; state: string; revision: number; items: Array<{ id: string; productId?: string; platform?: string; accountId?: string; state: string; error?: { code?: string; message?: string } }> }
+export interface CampaignControlSnapshot { id: string; state: string; revision: number; delivery?: { state?: string; valid?: boolean; code?: string; path?: string | null }; items: Array<{ id: string; productId?: string; platform?: string; accountId?: string; state: string; error?: { code?: string; message?: string } }> }
 
 export function parseCampaignControlSnapshot(value: unknown): CampaignControlSnapshot {
   if (!value || typeof value !== 'object') throw new Error('campaign 响应格式无效')
@@ -17,7 +17,17 @@ export function parseCampaignControlSnapshot(value: unknown): CampaignControlSna
     const rawError = item.error ?? item.blocker
     return { id, state: item.state, productId: field('productId', 'product_id'), platform: field('platform', 'platform'), accountId: field('accountId', 'account_id'), error: rawError && typeof rawError === 'object' ? { code: typeof (rawError as Record<string, unknown>).code === 'string' ? (rawError as Record<string, unknown>).code as string : undefined, message: typeof (rawError as Record<string, unknown>).message === 'string' ? (rawError as Record<string, unknown>).message as string : undefined } : undefined }
   })
-  return { id: row.id, state: row.state, revision, items }
+  const rawManifest = row.delivery_manifest
+  const manifest = rawManifest && typeof rawManifest === 'object' ? rawManifest as Record<string, unknown> : undefined
+  const rawValidation = manifest?.validation
+  const validation = rawValidation && typeof rawValidation === 'object' ? rawValidation as Record<string, unknown> : undefined
+  const delivery = manifest ? {
+    state: typeof manifest.state === 'string' ? manifest.state : undefined,
+    valid: typeof validation?.valid === 'boolean' ? validation.valid : undefined,
+    code: typeof validation?.code === 'string' ? validation.code : undefined,
+    path: typeof validation?.path === 'string' ? validation.path : null,
+  } : undefined
+  return { id: row.id, state: row.state, revision, ...(delivery ? { delivery } : {}), items }
 }
 
 export function campaignActionParams(input: { campaign: CampaignControlSnapshot; action: CampaignAction; reason: string; itemIds?: string[]; idempotencyKey: string }) {
@@ -49,7 +59,7 @@ export function CampaignLifecycleControl({ canControl }: { canControl: boolean }
     <Space.Compact block><Input aria-label="Campaign ID" value={campaignId} disabled={loading || submitting} placeholder="campaign_batch_…" onChange={event => setCampaignId(event.target.value)}/><Button type="primary" loading={loading} disabled={!campaignId.trim()} onClick={() => void load()}>读取真实状态</Button></Space.Compact>
     {!canControl && <Alert style={{ marginTop: 12 }} type="warning" showIcon title="当前会话只读" description="可读取 Campaign，但不会开放生命周期写操作。"/>}
     {error && !action && <div ref={errorRef} tabIndex={-1}><Alert style={{ marginTop: 12 }} role="alert" type="error" showIcon title="Campaign 操作失败" description={error} action={<Button onClick={() => void load()}>重试</Button>}/></div>}
-    {campaign && <div ref={regionRef} tabIndex={-1} className="ops-campaign-region"><Alert type={campaign.state === 'paused' ? 'warning' : 'info'} showIcon title={`${campaign.id} · ${campaign.state}`} description={`expected revision ${campaign.revision} · ${campaign.items.length} 个独立项`}/><Space wrap style={{ margin: '12px 0' }}>
+    {campaign && <div ref={regionRef} tabIndex={-1} className="ops-campaign-region"><Alert type={campaign.delivery?.valid === false ? 'error' : campaign.state === 'paused' ? 'warning' : 'info'} showIcon title={`${campaign.id} · ${campaign.delivery?.valid === false ? 'blocked' : campaign.state}`} description={campaign.delivery?.valid === false ? `交付清单校验失败：${campaign.delivery.code ?? 'CAMPAIGN_MANIFEST_INVALID'}${campaign.delivery.path ? ` · ${campaign.delivery.path}` : ''}。请先修复 canonical 商品与 listing 关联，再继续批量生产。` : `expected revision ${campaign.revision} · ${campaign.items.length} 个独立项`}/><Space wrap style={{ margin: '12px 0' }}>
       {campaign.state === 'paused' ? <Button disabled={!canControl} onClick={() => open('resume')}>确认恢复</Button> : <Button danger disabled={!canControl} onClick={() => open('pause')}>暂停后续操作</Button>}
       <Button disabled={!canControl || !failed.length} onClick={() => open('retry_failed')}>重试失败项（{failed.length}）</Button><Button onClick={() => void load(campaign.id)} loading={loading}>刷新 revision</Button>
     </Space><Table size="small" rowKey="id" pagination={false} scroll={{ x: 680 }} dataSource={campaign.items} columns={[{ title: '平台', dataIndex: 'platform', render: value => value ?? <Typography.Text type="danger">未返回</Typography.Text> }, { title: '店铺', dataIndex: 'accountId', render: value => value ?? <Typography.Text type="danger">未返回</Typography.Text> }, { title: '商品 / Item', render: (_, item) => <><b>{item.productId ?? '商品未返回'}</b><br/><Typography.Text type="secondary">{item.id}</Typography.Text></> }, { title: '状态', dataIndex: 'state', render: value => <Tag color={value === 'failed' ? 'red' : value === 'published' ? 'green' : 'orange'}>{value}</Tag> }, { title: '错误', render: (_, item) => item.error ? `${item.error.code ?? 'FAILED'} · ${item.error.message ?? '需人工核对'}` : '—' }]}/></div>}

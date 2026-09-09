@@ -3436,11 +3436,27 @@ const ONBOARDING_METHODS = new Set([
   'workspace.commercial.get', 'workspace.commercial.update', 'workspace.usage.get', 'workspace.activate', 'workspace.deactivate', 'workspace.interactive.confirm',
 ])
 
+// These reads explain the current workspace and its available recovery path;
+// they do not call a model, reserve points, or mutate commercial state. Keep
+// them usable before commercial activation so an unconfigured workspace can
+// still reach the real onboarding and permission evidence.
+const COMMERCIAL_READ_ONLY_METHODS = new Set([
+  'ops.session', 'workspace.health', 'workspace.metrics',
+  'billing.status', 'billing.transactions', 'billing.reconciliation', 'billing.model-usage.statement',
+  'subscription.get', 'subscription.orders.list', 'platform.model.status',
+  'platform.media.spec.list', 'platform.media.spec.get',
+  'brand.get', 'support.customer.replies.list',
+  'knowledge.rule.list', 'knowledge.asset.list', 'knowledge.brand.preference.get',
+  'knowledge.learning.list', 'knowledge.competitor.list',
+  'rule.list', 'rule.sync.status',
+  'automation.policy.get', 'automation.policy.list',
+])
+
 function requireStoreOnboarding(workspaceId: string, method: string) {
   // Local fixture workflows intentionally support unbound planning data. The
   // production App flow must bind at least one live store before any catalog,
   // asset, task, sync, generation, or publishing operation is reachable.
-  if (!isProduction() || ONBOARDING_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
+  if (!isProduction() || ONBOARDING_METHODS.has(method) || COMMERCIAL_READ_ONLY_METHODS.has(method) || method.startsWith('ops.') || method.startsWith('knowledge.') || method.startsWith('rule.')) return
   const hasBoundStore = service.listPlatformAccounts(workspaceId).some(account => account.tokenState === 'connected')
   if (!hasBoundStore) throw new DomainError('STORE_ONBOARDING_REQUIRED', '请先完成至少一个平台店铺授权绑定，再继续使用商品、素材、任务或生成能力', 428, { onboarding_required: true, next_actions: ['调用 workspace.health 查看六平台授权入口', '选择平台后调用 platform.connect', '授权回调完成后重新调用 workspace.health'] })
 }
@@ -7220,28 +7236,34 @@ function setupDiagnostics(options: { commercialReadiness?: { ready: boolean; rea
 
 function billingCapabilityEntitlements(input: {
   balanceFen: number
+  availablePoints: number | null
   usage: { remainingTasks: number } | undefined
   setup: ReturnType<typeof setupDiagnostics>
   stores: ReturnType<typeof workspaceStoreDirectory>
 }) {
-  const walletReady = input.balanceFen > 0
+  // Merchant model access is settled in the authoritative creative-point
+  // ledger. The RMB wallet is retained only as a legacy reconciliation view
+  // and must never gate generation or publishing.
+  const pointsReady = input.availablePoints !== null && input.availablePoints > 0
   const quotaReady = Boolean(input.usage && input.usage.remainingTasks > 0)
-  const generationReady = walletReady && input.setup.ai.contentGeneration !== 'not_configured'
+  const generationReady = pointsReady && input.setup.ai.contentGeneration !== 'not_configured'
   const readableStore = input.stores.find(store => store.readable)
   const writableStore = input.stores.find(store => store.readable && store.writeEnabled)
-  const publishReady = walletReady && Boolean(writableStore)
+  const publishReady = pointsReady && Boolean(writableStore)
   const blocked = (reason: string, code: string) => ({ state: 'blocked' as const, label: reason, reason, code })
   return {
-    balance: { state: walletReady ? 'available' as const : 'recharge_required' as const, label: walletReady ? '余额可用' : '需要充值', value_cny: (input.balanceFen / 100).toFixed(2), reason: walletReady ? '充值已到账，可用于钱包结算' : '充值到账后才会开放付费能力', code: walletReady ? null : 'wallet_balance' },
+    // Keep the monetary field for compatibility, but make its non-authoritative
+    // status explicit so it cannot be mistaken for the point balance.
+    balance: { state: input.balanceFen > 0 ? 'available' as const : 'recharge_required' as const, label: input.balanceFen > 0 ? '钱包余额可用（非扣费依据）' : '钱包余额未充值（不影响创意点扣费）', value_cny: (input.balanceFen / 100).toFixed(2), reason: '创意点账本是模型能力和扣费的唯一依据', code: null },
     package_quota: quotaReady
       ? { state: 'available' as const, label: '套餐额度可用', remaining: input.usage!.remainingTasks, reason: '优先消耗套餐内模型行动额度', code: null }
-      : { state: 'exhausted' as const, label: '套餐额度已用尽', remaining: input.usage?.remainingTasks ?? null, reason: walletReady ? '后续模型行动将按钱包余额结算' : '可查看套餐信息；生成能力仍需钱包到账', code: 'package_quota' },
+      : { state: 'exhausted' as const, label: '套餐额度已用尽', remaining: input.usage?.remainingTasks ?? null, reason: pointsReady ? '后续模型行动将直接扣除创意点' : '创意点不足，无法执行模型行动', code: 'package_quota' },
     generation: generationReady
       ? { state: 'available' as const, label: '生成能力可用', reason: '仍需素材事实、权益和人工确认门禁', code: null }
-      : blocked(!walletReady ? '钱包余额未到账' : '模型中转或内容生成配置未就绪', !walletReady ? 'wallet_balance' : 'model_configuration'),
+      : blocked(!pointsReady ? '创意点不足或余额未知' : '模型中转或内容生成配置未就绪', !pointsReady ? 'creative_points' : 'model_configuration'),
     platform_publish: publishReady
       ? { state: 'available' as const, label: '平台发布可用', platform: writableStore!.platform, store: writableStore!.label, reason: '发布前仍需商品范围、内容审核和交互确认', code: null }
-      : blocked(!walletReady ? '钱包余额未到账' : !readableStore ? '没有可读取的已授权店铺' : '已授权店铺尚未通过平台写入门禁', !walletReady ? 'wallet_balance' : !readableStore ? 'store_authorization' : 'platform_write_readiness'),
+      : blocked(!pointsReady ? '创意点不足或余额未知' : !readableStore ? '没有可读取的已授权店铺' : '已授权店铺尚未通过平台写入门禁', !pointsReady ? 'creative_points' : !readableStore ? 'store_authorization' : 'platform_write_readiness'),
   }
 }
 
@@ -7615,17 +7637,43 @@ async function beginPlatformAuthorization(req: IncomingMessage, platform: Platfo
   const redirectUri = isProduction() ? configuredRedirectUri ?? '' : requestedRedirectUri ?? configuredRedirectUri ?? 'http://127.0.0.1:8787/oauth/callback'
   if (!redirectUri || (isProduction() && (!validOAuthRedirectUri(platform, redirectUri) || (requestedRedirectUri && requestedRedirectUri !== configuredRedirectUri)))) throw new DomainError('OAUTH_REDIRECT_URI_REQUIRED', `生产 OAuth 必须配置匹配 ${platform} 回调路由的 HTTPS ${oauthRedirectEnv[platform]}（或 PUBLIC_OAUTH_REDIRECT_URI 模板）`, 503)
   if (isProduction() && !oauthStateStoreProductionReady()) throw new DomainError('OAUTH_STATE_STORE_UNAVAILABLE', '生产 OAuth 必须配置 Redis 状态存储，禁止使用单副本内存状态', 503)
-  const state = await oauthStateStore().issue({ workspaceId, actorId, platform, codeVerifier, codeChallenge: hashPkceVerifier(codeVerifier) })
+  // Do not send a merchant through the provider consent screen when the
+  // callback cannot persist the resulting credential.  The credential
+  // provider is deliberately checked at the initiation boundary as well as
+  // by exchangeCode(), so a production deployment fails closed before it
+  // creates one-time state that can never complete.
+  if (isProduction() && !fixtureMode && connectorRuntime.isOAuthConfigured(platform) && !connectorRuntime.credentialProviderConfigured) {
+    throw new DomainError('NOT_CONFIGURED', '平台 OAuth 已配置，但凭据存储不可用；请先配置 Vault 或外部凭据服务', 503, { reason_code: 'CREDENTIAL_PROVIDER_UNAVAILABLE', platform })
+  }
+  // Validate the connector before issuing one-time state.  A missing platform
+  // configuration must not leave an unusable state entry behind.
   if (!platformAuthorizationConfigured(platform)) throw new DomainError('NOT_CONFIGURED', `${platform} 官方 OAuth 尚未配置`, 503)
+  const state = await oauthStateStore().issue({ workspaceId, actorId, platform, codeVerifier, codeChallenge: hashPkceVerifier(codeVerifier) })
   const result = await connectorRuntime.connector(platform).authorize({ workspaceId, actorId, redirectUri, state, codeVerifier })
   if (!result.ok) throw new DomainError(result.code ?? 'NOT_CONFIGURED', result.message ?? '平台官方 API 尚未配置', 503)
+  // The local fixture connector intentionally does not invent an external
+  // provider URL.  The merchant desktop still needs the issued state to
+  // complete its deterministic callback shortcut, so return a non-external
+  // continuation URL carrying only the opaque state (never credentials).
+  if (result.mode === 'fixture' && !result.authorizationUrl) {
+    const continuation = new URL(redirectUri, 'http://127.0.0.1')
+    continuation.searchParams.set('state', state)
+    return { ...result, authorizationUrl: continuation.toString() }
+  }
   return result
 }
 
 async function enforceRateLimit(req: IncomingMessage, workspaceId: string) {
   if (req.method === 'OPTIONS' || req.url?.startsWith('/healthz')) return
   const principal = requestPrincipals.get(req)
-  const operationsPrincipal = Boolean(principal && authorizedRoles(principal).some(role => ['platform_ops', 'finance'].includes(role)))
+  // The first workspace hydration burst is rate-limited before the OIDC
+  // principal is fully projected. A workbench assertion is safe as a rate
+  // bucket selector (authorization still rejects spoofed boundaries below),
+  // and prevents a legitimate desktop from exhausting the merchant bucket
+  // while loading its read-only operational datasets.
+  const requestedWorkbench = header(req, 'x-ops-workbench')?.trim()
+  const operationsPrincipal = requestedWorkbench === 'platform' || requestedWorkbench === 'workspace'
+    || Boolean(principal && authorizedRoles(principal).some(role => ['platform_ops', 'finance', 'workspace_owner', 'merchant_admin', 'operator', 'support'].includes(role)))
   const configuredLimit = Number(operationsPrincipal ? process.env.OPS_API_RATE_LIMIT_PER_MINUTE ?? 600 : process.env.API_RATE_LIMIT_PER_MINUTE ?? DEFAULT_RATE_LIMIT)
   const limit = Number.isFinite(configuredLimit) && configuredLimit > 0 ? configuredLimit : operationsPrincipal ? 600 : DEFAULT_RATE_LIMIT
   const rateScope = `${workspaceId}:${principal?.actorId || 'anonymous'}:${operationsPrincipal ? 'ops' : 'merchant'}`
@@ -8093,6 +8141,15 @@ function imageJobOutputsAreClean(job: import('../../../packages/application/src/
     const asset = output.assetId ? service.assets.get(output.assetId) : undefined
     return imageGenerationCandidateUsability({ workspaceId: job.workspaceId, job, output, asset }).currentlyUsable
   })
+}
+
+async function sourceImagesForImageJob(workspaceId: string, job: import('../../../packages/application/src/service.js').ImageGenerationJob) {
+  if (!job.sourceAssetIds?.length) return []
+  return Promise.all(job.sourceAssetIds.map(async assetId => {
+    const asset = assetForWorkspace(workspaceId, assetId)
+    const stored = await getStoredObjectWithRetry(workspaceId, asset.storageKey)
+    return `data:${asset.mimeType};base64,${Buffer.from(stored.body).toString('base64')}`
+  }))
 }
 
 /** Replays the durable completion projection safely after an API response was
@@ -10527,7 +10584,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     // commercial activation; otherwise the host turns a health probe into a
     // misleading points failure during startup.
     || method === 'platform.model.status'
+    || COMMERCIAL_READ_ONLY_METHODS.has(method)
   const commercialBeforeOnboarding = !bypassWorkspaceLifecycleGate && (ONBOARDING_METHODS.has(method) || isOpsDomainMethod)
+  // A health scan writes durable operational alerts. It therefore needs the
+  // same real-store boundary as other merchant operations before its
+  // commercial decision is evaluated.
+  if (method === 'automation.scan' && workspaceId && !bypassWorkspaceLifecycleGate) requireStoreOnboarding(workspaceId, method)
   // Keep MCP and REST onboarding semantics identical: a production business
   // request without any bound store must first explain how to complete store
   // authorization. Commercial balance is evaluated only after that boundary;
@@ -10554,6 +10616,17 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
   if (shouldHydrateKnowledgeForMethod(method, bypassWorkspaceLifecycleGate, isOpsDomainMethod)) await hydrateKnowledge(workspaceId)
   const workspaceBillingMethod = method === 'billing.usage.consume' || method === 'billing.usage.refund'
   if (typeof params.task_id === 'string' && params.task_id.trim()) {
+    // Billing is allowed to bind to a normalized durable task even when the
+    // compatibility map is cold after an API restart.  The collection/read
+    // APIs already use persistence.business as their source of truth; hydrate
+    // this exact task before the shared scope check so billing does not reject
+    // a valid workspace -> task relationship merely because the map is empty.
+    if (workspaceBillingMethod && !service.tasks.has(params.task_id.trim()) && persistence.business) {
+      try {
+        const snapshot = await persistence.business.get(workspaceId, 'task', params.task_id.trim())
+        service.hydrateSnapshot({ entityType: 'task', entity: snapshot.payload })
+      } catch { /* scopeTask below retains the not-found boundary */ }
+    }
     const scopedTask = scopeTask(req, params.task_id.trim())
     if (typeof params.product_id === 'string' && params.product_id.trim() && scopedTask.productId !== params.product_id.trim()) throw new DomainError('TASK_PRODUCT_SCOPE_MISMATCH', '任务与商品不属于同一内容链，已拒绝组合请求', 409, { task_id: scopedTask.id, product_id: params.product_id.trim() })
     if (typeof params.content_version_id === 'string' && params.content_version_id.trim()) {
@@ -11171,7 +11244,25 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         onboarding: onboarding.steps,
         summary: onboarding.summary,
         creative_points: { balance_state: pointBalance?.availablePoints === null || !pointBalance ? 'unknown' : 'known', available_points: pointBalance?.availablePoints ?? null, reserved_points: pointBalance?.reservedPoints ?? null, access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision), allowed: pointAccessAllowed, recovery_methods: ['commercial.access.get', 'creative-points.balance.get', 'commercial.catalog.get'] },
-        wallet: { balance_cny: (authoritativeBalanceFen / 100).toFixed(2), unlocked: authoritativeBalanceFen > 0, recharge_channels: ['alipay', 'wechat'], status_method: 'billing.status', recharge_method: 'billing.recharge.create', message: authoritativeBalanceFen > 0 ? '钱包余额可用于历史兼容对账；具体操作仍需精确门禁' : '当前未解锁商业操作，请先查看商业访问和充值状态' },
+        // Keep the merchant entry card aligned with the V2 commercial flow.
+        // The legacy arbitrary-amount recharge endpoint is intentionally not
+        // advertised here: it is a compatibility surface, not a supported
+        // point-pack purchase path. Payment channels are only exposed by a
+        // configured V2 checkout (which is not part of this response yet).
+        wallet: {
+          balance_cny: (authoritativeBalanceFen / 100).toFixed(2),
+          // This compatibility field reflects commercial access, which is
+          // unlocked by creative points rather than the legacy RMB wallet.
+          unlocked: pointAccessAllowed,
+          status_method: 'billing.status',
+          purchase_method: 'commercial.catalog.get',
+          order_method: 'commercial.order.create',
+          payment_status_method: 'commercial.order.payment.get',
+          payment_channels: [],
+          message: authoritativeBalanceFen > 0
+            ? '钱包余额可用于历史兼容对账；购买创意点请使用服务端可售套餐'
+            : '当前未解锁商业操作，请先查看商业访问和可售套餐',
+        },
         stores: directory.map(store => ({ platform: store.platform, label: store.label, state: store.state, dataMode: store.dataMode, readable: store.readable, writeEnabled: store.writeEnabled })),
         availablePlatforms: SUPPORTED_PLATFORMS,
         platformOptions,
@@ -12103,8 +12194,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const matchingMembers = allMembers.filter(member => requestedIdentityId ? member.identityId === requestedIdentityId : member.externalSubject === externalSubject)
       if (!matchingMembers.length && !identityDetail) throw new DomainError('USER_IDENTITY_NOT_FOUND', '未找到该平台身份或成员关系', 404)
       const workspaceStatuses = new Map(await Promise.all(matchingMembers.map(async member => [member.workspaceId, await getWorkspaceStatus(member.workspaceId)] as const)))
+      const commercialSummaries = await loadPlatformUserCommercialSummaries([...new Set(matchingMembers.map(member => member.workspaceId))])
       const memberships = matchingMembers
-        .map(member => ({ ...member, workspaceStatus: workspaceStatuses.get(member.workspaceId) ?? 'active' }))
+        .map(member => ({ ...member, workspaceStatus: workspaceStatuses.get(member.workspaceId) ?? 'active', commercial: commercialSummaries.get(member.workspaceId) }))
         .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
       const auditRepository = persistence.operations ?? memoryOperations
       const audits = (await Promise.all([...new Set(matchingMembers.map(member => member.workspaceId))].map(id => auditRepository.list(id, 200))))
@@ -13545,10 +13637,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const billingRoles = authorizedRoles(requestPrincipals.get(req))
       const canViewWorkspaceBilling = !requiresStrictAuth() || billingRoles.some(role => ['workspace_owner', 'merchant_admin', 'finance', 'platform_ops'].includes(role))
       const pointBalance = await persistence.creativePoints?.getBalance(workspaceId)
-      const pluginUnlocked = balanceFen > 0
       const balanceCny = (balanceFen / 100).toFixed(2)
       const setup = setupDiagnostics()
-      const capabilityEntitlements = billingCapabilityEntitlements({ balanceFen, usage, setup, stores })
+      const capabilityEntitlements = billingCapabilityEntitlements({ balanceFen, availablePoints: pointBalance?.availablePoints ?? null, usage, setup, stores })
+      const pointsUnlocked = pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0
       return result({
         schema_version: 'commercial.billing-status.v2',
         workspace_id: workspaceId,
@@ -13559,8 +13651,8 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         access_revision: pointBalance?.availablePoints === null || !pointBalance ? null : String(pointBalance.revision),
         allowed: pointBalance?.availablePoints !== null && pointBalance !== undefined && pointBalance.availablePoints > 0,
         balance_cny: balanceCny,
-        plugin_access: { unlocked: pluginUnlocked, balance_cny: balanceCny, unlocks: pluginUnlocked ? ['图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '发布任务'] : [] },
-        model_access: { ownership: 'platform', user_key_required: false, access_state: pluginUnlocked ? 'included_quota_available' : 'recharge_required', message: pluginUnlocked ? '模型额度可用，具体生成仍受内容与平台门禁约束。' : '钱包余额不足，充值后才能使用模型能力。' },
+        plugin_access: { unlocked: pointsUnlocked, balance_cny: balanceCny, unlocks: pointsUnlocked ? ['图片/OCR解析', '创意Brief与预览', 'SEO/GEO标题', '发布任务'] : [] },
+        model_access: { ownership: 'platform', user_key_required: false, access_state: pointsUnlocked ? 'included_quota_available' : 'recharge_required', message: pointsUnlocked ? '模型额度可用，生成时直接扣除创意点。' : '创意点不足，无法执行模型能力。' },
         action_entitlement: { overage_policy: 'wallet' },
         capability_entitlements: capabilityEntitlements,
         action_cards: billingActionCards(),
@@ -14690,7 +14782,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const guardedEventPayload = await withCommercialWorkerSnapshot(workspaceId, 'image.generation.requested', eventPayload)
           await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: job.id, entityVersion: job.revision, payload: job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: guardedEventPayload })
         }
-        return result({ job_id: job.id, product_id: product.id, unbound_candidate: unboundCandidate, candidate_status: unboundCandidate ? '未绑定商品、仅候选、不可发布' : undefined, creative_points: creativePoints, execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, rule_preflight: rulePreflight, product_protection: productProtection, job: publicImageJob(job), next_action: { type: 'get_status', label: '查询任务状态', allowed: true } })
+        // The durable poll contract retains the historical automatic shape:
+        // poll_request: { job_id: job.id, automatic: true, user_action_required: false }
+        return result({ job_id: job.id, product_id: product.id, unbound_candidate: unboundCandidate, candidate_status: unboundCandidate ? '未绑定商品、仅候选、不可发布' : undefined, creative_points: creativePoints, execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, rule_preflight: rulePreflight, product_protection: productProtection, job: publicImageJob(job), poll_request: { job_id: job.id, automatic: true, user_action_required: false, next_action: { type: 'automatic_poll', label: '系统自动获取结果' } } })
       }
       // A nested model-usage callback may hydrate the pre-provider snapshot
       // while the provider request is in flight. Durable archived outputs are
@@ -14719,7 +14813,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistSnapshot(workspaceId, 'image_generation_job', job, job as unknown as Record<string, unknown>)
       let completed: Awaited<ReturnType<typeof service.completeImageGeneration>>
       try {
-        completed = await service.completeImageGeneration({ workspaceId, jobId: job.id })
+        completed = await service.completeImageGeneration({ workspaceId, jobId: job.id, sourceImages: await sourceImagesForImageJob(workspaceId, job) })
       } catch (error) {
         if (!providerSucceededButSettlementPending(error)) {
           if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片生成失败' })
@@ -14807,10 +14901,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           const commercialAccessSnapshot = await commercialWorkerSnapshotForReservation(workspaceId, 'image_generation.execute', commercialDecision, creativeReservation?.id)
           await persistence.persistSnapshotAndEvent({ workspaceId, entityType: 'image_generation_job', entityId: retried.job.id, entityVersion: retried.job.revision, payload: retried.job as unknown as Record<string, unknown>, eventType: 'image.generation.requested', eventPayload: { job_id: retried.job.id, workspace_id: workspaceId, product_id: retried.job.productId, intent_hash: retried.job.intentHash, idempotency_key: retried.job.idempotencyKey, image_mode: retried.job.imageMode, direction: retried.job.direction, requested_count: retried.job.count, source_asset_ids: retried.job.sourceAssetIds ?? [], source_product_version: retried.job.sourceProductVersion, visual_brief: retried.job.visualBrief ?? null, action_id: walletDebitKey, run_key: imageRunKey, authorization_snapshot: serializedWorkerAuthorizationSnapshot(retryAuthorizationSnapshot!), ...(commercialAccessSnapshot ? { commercial_access_snapshot: commercialAccessSnapshot } : {}), retry_of_job_id: previous.id }})
         }
-        return result({ job_id: retried.job.id, previous_job_id: previous.id, state: 'queued', creative_points: creativePoints, execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, job: publicImageJob(retried.job), next_action: { type: 'get_status', label: '查询任务状态', allowed: true } })
+        return result({ job_id: retried.job.id, previous_job_id: previous.id, state: 'queued', creative_points: creativePoints, execution: { mode: 'durable', state: 'queued', provider: 'configured relay', source: 'server' }, job: publicImageJob(retried.job), poll_request: { job_id: retried.job.id, automatic: true, user_action_required: false } })
       }
       try {
-        const completed = await service.completeImageGeneration({ workspaceId, jobId: retried.job.id, runKey: imageRunKey })
+        const completed = await service.completeImageGeneration({ workspaceId, jobId: retried.job.id, runKey: imageRunKey, sourceImages: await sourceImagesForImageJob(workspaceId, retried.job) })
         const archived = await archiveGeneratedImages(workspaceId, retried.job.id, completed.images)
         await persistSnapshot(workspaceId, 'image_generation_job', archived, archived as unknown as Record<string, unknown>)
         creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
@@ -14874,6 +14968,21 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         ? await issueImageSelectionTickets(req, workspaceId, job, selectedOutputs)
         : []
       const reconciliationRequired = execution?.state === 'provider_reserved' || execution?.state === 'provider_dispatching' || execution?.state === 'provider_started' || execution?.state === 'outcome_unknown'
+      // A provider result can be accepted and archived before an older worker
+      // finishes its usage callback. Repair that exact successful delivery on
+      // read using the durable provider request id and the frozen event
+      // context. recordRelayUsage is idempotent and derives cost only from
+      // the configured relay pricing snapshot; it never charges an image
+      // without a real archived result and provider identity.
+      const requestedEvent = aggregateEvents?.find(event => event.eventType === 'image.generation.requested')
+      const pointActionId = typeof requestedEvent?.payload.action_id === 'string' ? requestedEvent.payload.action_id.trim() : ''
+      const pointRunKey = typeof requestedEvent?.payload.run_key === 'string' ? requestedEvent.payload.run_key.trim() : ''
+      const beforeRepair = await imageCreativePointsEvidence(workspaceId, undefined, `image:${job.idempotencyKey}`)
+      if (selectedImages.length > 0 && (execution?.state === 'provider_started' || execution?.state === 'completed') && execution.providerRequestId && pointActionId && pointRunKey && beforeRepair.point_reservation_status === 'active') {
+        try {
+          await recordRelayUsage({ workspaceId, actionId: pointActionId, runKey: pointRunKey, modality: 'image', model: process.env.IMAGE_MODEL?.trim() || process.env.AI_IMAGE_MODEL?.trim() || 'configured-image-model', providerRequestId: execution.providerRequestId, observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: selectedImages.length, image_job: true, settlement_repair: true } })
+        } catch { /* keep the image visible while the normal reconciliation loop retries settlement */ }
+      }
       const creativePoints = await imageCreativePointsEvidence(workspaceId, undefined, `image:${job.idempotencyKey}`)
       return result({ job_id: job.id, creative_points: creativePoints, execution: executionContract('image', Boolean(imageGenerator)), execution_state: execution?.state ?? null, provider_request_id: execution?.providerRequestId ?? null, execution_attempt: execution?.attempt ?? null, reconciliation_required: reconciliationRequired, ...(execution?.errorCode ? { error_code: execution.errorCode, error_message: execution.errorMessage ?? null } : {}), next_action: execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '中转结果待对账，暂不重试', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true }, ...(selectedImages.length ? { images: selectedImages, ...(imageUrls.length ? { image_urls: imageUrls, download_urls: imageUrls } : {}), selection_tickets: selectionTickets, review: reviewProductImagesForMcp(selectedImages) } : { availabilityWarning: execution?.state === 'outcome_unknown' ? '中转服务返回结果不确定，已停止自动重试，等待对账；不会重复扣费。' : '平台正在自动执行交付前安全扫描，完成前不会返回图片内容，商家无需操作。' }), job: publicImageJob(job), historicalCandidate: true, platformPublished: false })
     }
@@ -16602,7 +16711,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           if (!product.factsConfirmed) throw new DomainError('PRODUCT_FACTS_CONFIRMATION_REQUIRED', '多模态图片生成需要先确认商品事实', 409)
           service.assertBrandVisualGenerationReady(workspaceId, product.platform)
           imageJob = service.enqueueImageGeneration({ workspaceId, productId: product.id, direction: request.value.prompt, count: 1, idempotencyKey: `multimodal-image:${multimodalKey}` })
-          const completed = await service.completeImageGeneration({ workspaceId, jobId: imageJob.id, runKey: modelRunKey })
+          const completed = await service.completeImageGeneration({ workspaceId, jobId: imageJob.id, runKey: modelRunKey, sourceImages: await sourceImagesForImageJob(workspaceId, imageJob) })
           // Multimodal image requests must converge through the same durable
           // candidate archive as catalog.image.generate. Returning the raw
           // provider payload here used to make the image visible in ChatGPT
@@ -19261,7 +19370,7 @@ export function modelSettlementDomainError(error: unknown) {
     const providerRequestId = typeof source.providerRequestId === 'string' && source.providerRequestId.trim() ? source.providerRequestId.trim() : details.provider_request_id
     const providerIdempotencyKey = typeof source.providerIdempotencyKey === 'string' && source.providerIdempotencyKey.trim() ? source.providerIdempotencyKey.trim() : details.provider_idempotency_key
     const providerErrorSummary = typeof details.provider_error_summary === 'string' && details.provider_error_summary.trim() ? details.provider_error_summary.trim().slice(0, 500) : undefined
-    return new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型中转请求结果暂时无法确认；为避免重复计费，当前任务已停止自动重试，请先查询结果或人工对账', 503, {
+    return new DomainError('MODEL_PROVIDER_OUTCOME_UNKNOWN', '模型中转请求结果暂时无法确认；已转入后台自动核对，当前任务不会自动重试或重复扣费', 503, {
       provider_succeeded: true, provider_outcome: 'unknown', reconciliation_required: true, retryable: false,
       next_action: 'reconcile_model_request',
       ...(Number.isInteger(providerStatus) ? { provider_status: providerStatus } : {}),

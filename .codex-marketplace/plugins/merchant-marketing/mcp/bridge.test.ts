@@ -46,6 +46,7 @@ describe('relay evidence contract', () => {
 })
 
 const MERCHANT_HIDDEN_METHODS = new Set([
+  'billing.reconciliation',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
   'billing.usage.consume',
@@ -144,6 +145,116 @@ describe('Codex stdio MCP bridge', () => {
       }
     } finally {
       child.kill()
+    }
+  })
+
+  it('advertises the customer-reply association requirement before the request reaches the API', async () => {
+    const listSchema = async (bridgePath: string) => {
+      const child = spawn(process.execPath, [bridgePath], { cwd: process.cwd(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] })
+      try {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+        const response = await nextLine(child.stdout)
+        return response.result.tools.find((tool: { name: string }) => tool.name === 'support.customer.replies.list').inputSchema
+      } finally {
+        child.kill()
+      }
+    }
+
+    const expected = [
+      { required: ['ticket_id'] },
+      { required: ['related_task_id'] },
+      { required: ['related_order_id'] },
+    ]
+    for (const bridgePath of [BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH]) {
+      await expect(listSchema(bridgePath)).resolves.toMatchObject({ anyOf: expected, additionalProperties: false })
+    }
+  })
+
+  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('enforces the published knowledge.rule.create schema before forwarding tools/call arguments', async (bridgePath) => {
+    let requests = 0
+    const server = createServer((_req, res) => {
+      requests += 1
+      res.writeHead(500).end()
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [bridgePath], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
+      const listed = await nextLine(child.stdout)
+      const ruleCreate = listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.create')
+      expect(ruleCreate.inputSchema.required).toEqual(['name', 'content', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'version', 'status'])
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'knowledge.rule.create', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response).toMatchObject({ id: 2, error: { code: -32602 } })
+      expect(response.error.message).toContain('missing required property name')
+      expect(requests).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('rejects a conflicting request workspace before forwarding (%s)', async (bridgePath) => {
+    let requests = 0
+    const server = createServer((_req, res) => {
+      requests += 1
+      res.writeHead(500).end()
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [bridgePath], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_bound' },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'brand.get', arguments: { workspace_id: 'ws_other' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'WORKSPACE_SCOPE_MISMATCH',
+        },
+      })
+      expect(requests).toBe(0)
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it.each(['knowledge.rule.list', 'rule.list'])('summarizes bare-array rule responses from the API for %s', async (method) => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: [
+        { id: 'rule-active', status: 'active', source: { kind: 'official' } },
+        { id: 'rule-draft', status: 'draft', source: { kind: 'internal' } },
+      ] }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    try {
+      for (const bridgePath of [BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH]) {
+        const child = spawn(process.execPath, [bridgePath], {
+          cwd: process.cwd(),
+          env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+          stdio: ['pipe', 'pipe', 'ignore'],
+        })
+        try {
+          child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: {} } })}\n`)
+          const response = await nextLine(child.stdout)
+          const text = response.result.content[0].text as string
+          expect(text).toContain(method === 'rule.list' ? '已读取 2 条可执行规则。' : '已读取 2 条知识规则，其中 1 条看起来已具备执行状态')
+          expect(text).not.toContain('服务端已返回响应，状态尚未确认')
+        } finally {
+          child.kill()
+        }
+      }
+    } finally {
+      await close(server)
     }
   })
 
@@ -1129,6 +1240,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(bindStore.inputSchema.properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.competitor.reference').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.create').inputSchema.properties.source_kind.enum).toEqual(['official', 'internal', 'merchant', 'observed', 'legal_review'])
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.update')).toBeUndefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.video.request')).toBeUndefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.activate').inputSchema.required).toEqual(['reason'])
       for (const name of ['platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify']) {
@@ -1313,7 +1425,7 @@ describe('Codex stdio MCP bridge', () => {
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_dirty' } } })}\n`)
       const dirty = await nextLine(child.stdout)
-      expect(dirty.result).not.toHaveProperty('_meta')
+      expect(dirty.result._meta).toMatchObject({ ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html', 'openai/widgetAccessible': true })
       expect(dirty.result.structuredContent).toEqual({
         candidate_state: { state: 'processing', archive_state: 'archived', scan_status: 'processing', candidate_count: 0, presentation: 'component_progress', next_action: { type: 'wait', label: '系统自动继续', allowed: false }, recovery: { retryable: false, reconciliation_required: false } },
         completed_summary: '主图候选仍在自动检查，通过后会继续，无需操作。',
@@ -1325,7 +1437,7 @@ describe('Codex stdio MCP bridge', () => {
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_unarchived' } } })}\n`)
       const unarchived = await nextLine(child.stdout)
-      expect(unarchived.result).not.toHaveProperty('_meta')
+      expect(unarchived.result._meta).toMatchObject({ ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html', 'openai/widgetAccessible': true })
       expect(unarchived.result.structuredContent).toMatchObject({
         candidate_state: { state: 'processing', archive_state: 'processing', scan_status: 'processing', candidate_count: 0, presentation: 'component_progress', next_action: { type: 'wait', label: '系统自动继续', allowed: false }, recovery: { retryable: false, reconciliation_required: false } },
         expected_input: { kind: 'none', user_action_required: false },
@@ -1333,25 +1445,32 @@ describe('Codex stdio MCP bridge', () => {
       })
       expect(JSON.stringify(unarchived.result)).not.toMatch(/data:image|管理员|运营后台|context_bar|action_cards/iu)
 
-      for (const [id, state, summary] of [['job_queued', 'queued', '图片任务已排队'], ['job_failed', 'failed', '本次主图生成未完成'], ['job_unknown', 'unknown', '图片结果尚未确认']] as const) {
+      for (const [id, state, summary] of [['job_queued', 'queued', '图片任务已排队'], ['job_failed', 'failed', '本次主图生成未完成'], ['job_unknown', 'unknown', '图片结果仍在自动核对中']] as const) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: id, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: id } } })}\n`)
         const response = await nextLine(child.stdout)
         expect(response.result.structuredContent.candidate_state.state).toBe(state)
         expect(response.result.structuredContent.completed_summary).toContain(summary)
         if (state === 'queued') {
           expect(response.result.content[0].text).toContain(summary)
-          expect(response.result).not.toHaveProperty('_meta')
+          expect(response.result._meta).toMatchObject({ ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html', 'openai/widgetAccessible': true })
           expect(response.result.structuredContent.candidate_state).toMatchObject({ presentation: 'component_progress', next_action: { type: 'wait', allowed: false } })
           expect(response.result.structuredContent.expected_input).toEqual({ kind: 'none', user_action_required: false })
           expect(response.result.structuredContent.poll_request).toEqual({ job_id: id, max_attempts: 4, initial_delay_ms: 750, max_delay_ms: 4000 })
-        } else {
-          const action = state === 'failed' ? 'regenerate_in_conversation' : 'refresh'
+        } else if (state === 'failed') {
+          const action = 'regenerate_in_conversation'
           expect(response.result).not.toHaveProperty('_meta')
           expect(response.result.structuredContent.candidate_state.presentation).toBe('component_recovery')
           expect(response.result.structuredContent.expected_input).toEqual({ kind: 'component_action', action, user_action_required: true })
           expect(response.result.structuredContent.recovery_request).toEqual({ job_id: id, action })
-          expect(response.result.structuredContent.question).toMatch(state === 'failed' ? /回到对话重新生成/u : /查询图片结果/u)
+          expect(response.result.structuredContent.question).toMatch(/回到对话重新生成/u)
           expect(response.result.content[0].text).toBe(response.result.structuredContent.question)
+        } else {
+          expect(response.result).not.toHaveProperty('_meta')
+          expect(response.result.structuredContent.candidate_state.presentation).toBe('native_status')
+          expect(response.result.structuredContent.expected_input).toEqual({ kind: 'none', user_action_required: false })
+          expect(response.result.structuredContent).not.toHaveProperty('recovery_request')
+          expect(response.result.structuredContent).not.toHaveProperty('question')
+          expect(response.result.content[0].text).not.toContain('查询结果')
         }
       }
     } finally {
@@ -2469,7 +2588,7 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.confirm', arguments: { task_id: 'task_1', confirmation_token: 'confirm_1' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { provider_request_id: 'relay-req-1', provider_idempotency_key: 'idem-1', provider_status: 503, provider_outcome: 'unknown', provider_succeeded: false, reconciliation_required: true, next_action: 'query_provider' } } })
-      expect(response.result.content[0].text).toContain('查询 Provider 状态或提交人工对账')
+      expect(response.result.content[0].text).toContain('后台自动核对')
       expect(response.result.content[0].text).not.toContain('请稍后重试')
       expect(attempts).toBe(1)
     } finally {
@@ -2499,7 +2618,7 @@ describe('Codex stdio MCP bridge', () => {
         structuredContent: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { provider_status: 503, provider_outcome: 'unknown', reconciliation_required: true, next_action: 'query_provider', provider_error_summary: 'No available channel for model gpt-5.6-sol' } },
       })
       expect(response.result.structuredContent.details.provider_error_summary).toContain('No available channel for model gpt-5.6-sol')
-      expect(response.result.content[0].text).toContain('查询 Provider 状态或提交人工对账')
+      expect(response.result.content[0].text).toContain('后台自动核对')
       expect(attempts).toBe(1)
     } finally {
       child.kill()
@@ -2535,7 +2654,7 @@ describe('Codex stdio MCP bridge', () => {
           },
         },
       })
-      expect(response.result.content[0].text).toContain('查询 Provider 状态或提交人工对账')
+      expect(response.result.content[0].text).toContain('后台自动核对')
       expect(response.result.content[0].text).not.toContain('请稍后重试')
       expect(attempts).toBe(1)
     } finally {
@@ -3061,7 +3180,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, NODE_ENV: 'staging', MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
+      env: { ...process.env, NODE_ENV: 'development', DEPLOY_ENV: 'development', MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {

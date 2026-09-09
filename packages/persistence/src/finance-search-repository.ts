@@ -70,6 +70,7 @@ type FinanceRow = {
   updated_at: string | Date
   attribute_name: string | null
   attribute_value: string | null
+  safe_attributes: unknown
 }
 
 type SummaryRow = {
@@ -86,6 +87,7 @@ type SummaryRow = {
   subscription_order_count: number | string
   usage_entry_count: number | string
   model_usage_count: number | string
+  missing_cost_evidence_count: number | string
 }
 
 type CursorPayload = {
@@ -105,32 +107,38 @@ const FINANCE_RECORDS_CTE = `WITH finance_records AS (
          NULL::numeric AS provider_cost_cny, NULL::numeric AS customer_charge_cny,
          NULL::bigint AS units, created_at AS occurred_at, updated_at,
          '支付渠道'::text AS attribute_name, channel AS attribute_value,
-         concat_ws(' ', id, workspace_id, channel, state) AS search_text
+         jsonb_strip_nulls(jsonb_build_object('channel', channel, 'payment_mode', payment_mode, 'created_by_actor_id', created_by_actor_id)) AS safe_attributes,
+         concat_ws(' ', id, workspace_id, channel, state, created_by_actor_id) AS search_text
     FROM billing_orders WHERE workspace_id = $1
   UNION ALL
   SELECT id, 'wallet_transaction', 40, workspace_id, type, '钱包流水', order_id,
          amount_fen::numeric / 100,
          CASE WHEN type = 'debit' THEN 'debit' ELSE 'credit' END,
          NULL::numeric, NULL::numeric, NULL::bigint, created_at, created_at,
-         '流水类型', type, concat_ws(' ', id, workspace_id, type, order_id)
+         '流水类型', type,
+         jsonb_strip_nulls(jsonb_build_object('transaction_type', type, 'actor_id', actor_id, 'order_id', order_id)) AS safe_attributes,
+         concat_ws(' ', id, workspace_id, type, order_id, actor_id)
     FROM billing_transactions WHERE workspace_id = $1
   UNION ALL
   SELECT id::text, 'subscription_order', 30, workspace_id, status, '订阅订单', order_no,
          payment_amount_cny, NULL::text, NULL::numeric, NULL::numeric, NULL::bigint,
          created_at, COALESCE(paid_at, created_at), '套餐', plan_code,
-         concat_ws(' ', id::text, workspace_id, order_no, plan_code, plan_name, status, payment_provider)
+         jsonb_strip_nulls(jsonb_build_object('plan_code', plan_code, 'billing_cycle', billing_cycle, 'payment_provider', payment_provider, 'created_by_actor_id', created_by_actor_id)) AS safe_attributes,
+         concat_ws(' ', id::text, workspace_id, order_no, plan_code, plan_name, status, payment_provider, created_by_actor_id)
     FROM workspace_subscription_orders WHERE workspace_id = $1
   UNION ALL
   SELECT id::text, 'usage_entry', 20, workspace_id,
          CASE WHEN refunded THEN 'refunded' ELSE 'consumed' END, '任务额度流水', task_id,
          NULL::numeric, NULL::text, NULL::numeric, NULL::numeric, units,
          created_at, COALESCE(refunded_at, created_at), '退款状态', refunded::text,
+         jsonb_strip_nulls(jsonb_build_object('task_id', task_id, 'units', units, 'refunded', refunded)) AS safe_attributes,
          concat_ws(' ', id::text, workspace_id, task_id, CASE WHEN refunded THEN 'refunded' ELSE 'consumed' END)
     FROM workspace_usage_ledger WHERE workspace_id = $1
   UNION ALL
   SELECT id, 'model_usage', 10, workspace_id, settlement_status, '模型用量', action_id,
          NULL::numeric, NULL::text, cost_cny, customer_charge_cny, total_tokens,
          observed_at, COALESCE(resolved_at, observed_at), '模型', concat_ws(' / ', modality, model),
+         jsonb_strip_nulls(jsonb_build_object('action_id', action_id, 'modality', modality, 'model', model, 'total_tokens', total_tokens, 'settlement_status', settlement_status, 'budget_run_key', budget_run_key)) AS safe_attributes,
          concat_ws(' ', id, workspace_id, action_id, modality, model, settlement_status)
     FROM model_usage_ledger WHERE workspace_id = $1
 )`
@@ -145,6 +153,8 @@ const FILTER_SQL = `occurred_at <= $2::timestamptz
 
 const asIso = (value: string | Date) => value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 const number = (value: number | string | null | undefined) => value === null || value === undefined ? 0 : Number(value)
+type SafeAttribute = string | number | boolean | null
+const isSafeAttribute = (value: unknown): value is SafeAttribute => value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
 const fingerprint = (query: FinanceSearchQuery) => createHash('sha256').update(JSON.stringify({
   workspaceIds: query.workspaceIds ? [...query.workspaceIds].sort() : [],
   kinds: query.kinds ? [...query.kinds].sort() : [],
@@ -269,7 +279,7 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
       const limitIndex = values.length
       const rows = await client.query<FinanceRow>(`${FINANCE_RECORDS_CTE}
         SELECT record_id, kind, sort_rank, workspace_id, status, label, reference, amount_cny, direction,
-               provider_cost_cny, customer_charge_cny, units, occurred_at, updated_at, attribute_name, attribute_value
+               provider_cost_cny, customer_charge_cny, units, occurred_at, updated_at, attribute_name, attribute_value, safe_attributes
           FROM finance_records WHERE ${FILTER_SQL} ${cursorClause}
          ORDER BY occurred_at DESC, sort_rank DESC, workspace_id DESC, record_id DESC LIMIT $${limitIndex}`, values)
       if (!includeSummary) return { rows: rows.rows, summary: undefined }
@@ -280,6 +290,7 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
           COALESCE(sum(amount_cny) FILTER (WHERE kind='wallet_transaction' AND direction='credit'),0) AS wallet_credit_cny,
           COALESCE(sum(amount_cny) FILTER (WHERE kind='wallet_transaction' AND direction='debit'),0) AS wallet_debit_cny,
           COALESCE(sum(provider_cost_cny),0) AS provider_cost_cny,
+          count(*) FILTER (WHERE kind='model_usage' AND provider_cost_cny IS NULL) AS missing_cost_evidence_count,
           COALESCE(sum(customer_charge_cny),0) AS customer_charge_cny,
           COALESCE(sum(units) FILTER (WHERE kind='usage_entry'),0) AS usage_units,
           count(*) FILTER (WHERE kind='recharge_order') AS recharge_order_count,
@@ -302,7 +313,8 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
       total.subscriptionOrderCny += number(row.subscription_order_cny)
       total.walletCreditCny += number(row.wallet_credit_cny)
       total.walletDebitCny += number(row.wallet_debit_cny)
-      total.providerCostCny += number(row.provider_cost_cny)
+      total.providerCostCny = (total.providerCostCny ?? 0) + number(row.provider_cost_cny)
+      total.missingCostEvidenceCount = (total.missingCostEvidenceCount ?? 0) + number(row.missing_cost_evidence_count)
       total.customerChargeCny += number(row.customer_charge_cny)
       total.usageUnits += number(row.usage_units)
       total.byKind.recharge_order += number(row.recharge_order_count)
@@ -313,6 +325,12 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
       return total
     }, emptySummary())
     totalMoney(summary)
+    summary.providerCostStatus = summary.missingCostEvidenceCount && summary.missingCostEvidenceCount > 0 ? 'partial' : 'verified'
+    // This repository only reads the tenant finance projection; it does not
+    // contain the external Provider statement. Never infer reconciliation from
+    // a populated local cost column.
+    summary.providerStatementStatus = 'not_checked'
+    if (summary.providerCostStatus !== 'verified') summary.providerCostCny = null
     return {
       records: selected.map(mapRecord), summary,
       ...(hasMore && last ? { nextCursor: encodeCursor({ v: 1, fingerprint: queryFingerprint, snapshotAt, occurredAt: asIso(last.occurred_at), sortRank: Number(last.sort_rank), workspaceId: last.workspace_id, recordId: last.record_id }) } : {}),
@@ -330,14 +348,17 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
       const result = await client.query<FinanceRow>(`${FINANCE_RECORDS_CTE}
         SELECT record_id, kind, sort_rank, workspace_id, status, label, reference, amount_cny, direction,
-               provider_cost_cny, customer_charge_cny, units, occurred_at, updated_at, attribute_name, attribute_value
+               provider_cost_cny, customer_charge_cny, units, occurred_at, updated_at, attribute_name, attribute_value, safe_attributes
           FROM finance_records
          WHERE kind=$3 AND record_id=$4 AND occurred_at <= $2::timestamptz LIMIT 1`, [input.workspaceId, snapshotAt, input.kind, input.id])
       const row = result.rows[0]
       if (!row) return undefined
       const record = mapRecord(row)
       if (input.expectedVersion && input.expectedVersion !== record.version) throw new FinanceRecordVersionConflictError()
-      return { ...record, attributes: Object.freeze(row.attribute_name ? { [row.attribute_name]: row.attribute_value } : {}) }
+      const safeAttributes: Record<string, SafeAttribute> = row.safe_attributes && typeof row.safe_attributes === 'object' && !Array.isArray(row.safe_attributes)
+        ? Object.fromEntries(Object.entries(row.safe_attributes as Record<string, unknown>).filter(([, value]) => isSafeAttribute(value))) as Record<string, SafeAttribute>
+        : {}
+      return { ...record, attributes: Object.freeze(Object.keys(safeAttributes).length > 0 ? safeAttributes : row.attribute_name ? { [row.attribute_name]: row.attribute_value } : {}) }
     })
   }
 
@@ -366,6 +387,6 @@ function totalMoney(summary: FinanceSearchSummary) {
   summary.walletCreditCny = round(summary.walletCreditCny)
   summary.walletDebitCny = round(summary.walletDebitCny)
   summary.walletNetCny = round(summary.walletCreditCny - summary.walletDebitCny)
-  summary.providerCostCny = round(summary.providerCostCny)
+  summary.providerCostCny = round(summary.providerCostCny ?? 0)
   summary.customerChargeCny = round(summary.customerChargeCny)
 }

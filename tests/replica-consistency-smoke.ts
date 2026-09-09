@@ -5,6 +5,10 @@
  * REPLICA_A_URL=http://127.0.0.1:8787 \
  * REPLICA_B_URL=http://127.0.0.1:8788 \
  * REPLICA_ACCOUNT_ID=<pre-provisioned-taobao-account-id> \
+ * REPLICA_TASK_PRODUCT_ID=<pre-provisioned-canonical-product-source-id> \
+ * REPLICA_TASK_BRAND_ID=<pre-provisioned-brand-id> \
+ * REPLICA_TASK_CANONICAL_PRODUCT_ID=<pre-provisioned-canonical-product-id> \
+ * REPLICA_TASK_LISTING_ID=<pre-provisioned-listing-id> \
  * npm run test:replica-consistency
  */
 
@@ -16,6 +20,11 @@ const bUrl = (process.env.REPLICA_B_URL ?? 'http://127.0.0.1:8788').replace(/\/$
 const workspaceId = process.env.REPLICA_WORKSPACE_ID ?? 'ws_demo'
 const token = process.env.REPLICA_API_TOKEN ?? 'pilot-local-token'
 const accountId = process.env.REPLICA_ACCOUNT_ID?.trim() ?? 'fixture-store-ws_demo-taobao'
+const taskProductId = process.env.REPLICA_TASK_PRODUCT_ID?.trim() ?? 'prod_taobao_484008b7e055_TB-FIXTURE-2001'
+const taskAccountId = process.env.REPLICA_TASK_ACCOUNT_ID?.trim() ?? 'fixture_ws_demo_taobao'
+const taskBrandId = process.env.REPLICA_TASK_BRAND_ID?.trim() ?? 'brand_release_qa'
+const taskCanonicalProductId = process.env.REPLICA_TASK_CANONICAL_PRODUCT_ID?.trim() ?? 'canonical_product_0ffeaf289d0f444bbf98ac41'
+const taskListingId = process.env.REPLICA_TASK_LISTING_ID?.trim() ?? 'listing_673b22a8effb47e1b45d8dcc'
 
 function fail(message: string): never { throw new Error(`[replica-consistency] ${message}`) }
 
@@ -47,10 +56,14 @@ async function main() {
   if (product.workspaceId !== workspaceId) fail('replica A returned the wrong workspace')
   const productsOnB = normalizeItems(await request<Array<{ id: string; workspaceId: string }> | ItemsPage<{ id: string; workspaceId: string }>>(bUrl, '/v1/products'))
   if (!productsOnB.some(item => item.id === product.id && item.workspaceId === workspaceId)) fail('replica B did not observe the product written by replica A')
-  const task = await request<{ id: string; productId: string }>(aUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify({ product_id: product.id, platform: 'taobao', account_id: accountId }) })
+  // The imported smoke product intentionally remains an unmapped legacy
+  // product. Task creation is tested against an explicitly provisioned,
+  // authorized canonical chain so this check measures replica persistence,
+  // rather than manufacturing a business relationship in the smoke test.
+  const task = await request<{ id: string; productId: string }>(aUrl, '/v1/tasks', { method: 'POST', body: JSON.stringify({ product_id: taskProductId, platform: 'taobao', account_id: taskAccountId, brand_id: taskBrandId, canonical_product_id: taskCanonicalProductId, listing_id: taskListingId }) })
   const taskOnB = await request<{ id: string; productId: string }>(bUrl, `/v1/tasks/${encodeURIComponent(task.id)}`)
-  if (taskOnB.id !== task.id || taskOnB.productId !== product.id) fail('replica B did not observe the task written by replica A')
-  console.log(JSON.stringify({ status: 'PASS', workspaceId, productId: product.id, taskId: task.id, writer: aUrl, reader: bUrl }, null, 2))
+  if (taskOnB.id !== task.id || taskOnB.productId !== taskProductId) fail('replica B did not observe the task written by replica A')
+  console.log(JSON.stringify({ status: 'PASS', workspaceId, importedProductId: product.id, taskProductId: taskOnB.productId, taskId: task.id, writer: aUrl, reader: bUrl }, null, 2))
 }
 
 main().catch(error => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1 })

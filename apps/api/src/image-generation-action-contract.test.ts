@@ -95,4 +95,17 @@ describe('image generation API action contract', () => {
       nextActionAllowed: true,
     }).retryAllowed).toBe(false)
   })
+
+  it('reserves creative points before returning balance evidence, including gifted points', () => {
+    const generateStart = source.indexOf("case 'catalog.image.generate':")
+    const retryStart = source.indexOf("case 'catalog.image.retry':", generateStart)
+    const generate = source.slice(generateStart, retryStart)
+    const reservation = generate.indexOf('const creativeReservation = await reserveCreativePointsForModel')
+    const evidence = generate.indexOf('creativePoints = await imageCreativePointsEvidence')
+    expect(reservation).toBeGreaterThanOrEqual(0)
+    expect(evidence).toBeGreaterThan(reservation)
+    expect(source).toContain('getReservationByActionKey')
+    expect(source).toContain('deducted_points: reservation?.status === \'settled\'')
+    expect(source).toContain('point_reservation_points: reservation?.points ?? null')
+  })
 })

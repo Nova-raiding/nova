@@ -650,7 +650,8 @@ describe('API application wiring', () => {
     expect(source).toContain("eventType: 'image.generation.requested'")
     expect(source).toContain('if (!existingImageJob) {')
     expect(source).toContain("entityType: 'image_generation_job'")
-    expect(source).toContain("type: 'get_status', label: '查询任务状态'")
+    expect(source).toContain("poll_request:")
+    expect(source).toContain("user_action_required: false")
     expect(source).toContain("IMAGE_GENERATION_DURABLE_NOT_CONFIGURED")
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { batchCompletionMessage, resolveBatchReadiness } from './src/batch-readiness.js'
+import { batchCompletionMessage, resolveBatchReadiness, resolveBatchResultState } from './src/batch-readiness.js'
 
 describe('batch entry readiness', () => {
   it('does not promise a real action while offline', () => {
@@ -16,5 +16,15 @@ describe('batch entry readiness', () => {
 
   it('keeps the created group reachable through the task queue', () => {
     expect(batchCompletionMessage('group-1', 3)).toContain('营销任务中逐个完成')
+  })
+
+  it('does not treat a successful blocked manifest as generation success', () => {
+    expect(resolveBatchResultState({ state: 'running', taskIds: ['task-1'], delivery_manifest: { validation: { valid: false } } })).toBe('blocked')
+    expect(resolveBatchResultState({ state: 'running' })).toBe('empty')
+  })
+
+  it('labels mixed child results as partial', () => {
+    expect(resolveBatchResultState({ state: 'running', taskIds: ['task-1'], items: [{ state: 'failed' }] })).toBe('partial')
+    expect(resolveBatchResultState({ state: 'partial', taskIds: ['task-1'] })).toBe('partial')
   })
 })

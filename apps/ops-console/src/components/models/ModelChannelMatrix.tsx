@@ -28,7 +28,7 @@ export function modelChannelRows(status: ModelStatus | undefined): ModelChannelR
       label: config.label,
       model: status?.[config.modelKey] ?? null,
       providerConfigured: readiness?.provider_configured === true,
-      ready: status?.capabilities[config.capabilityKey] === true && readiness?.ready === true,
+      ready: status.state === "ready" && status.capabilities[config.capabilityKey] === true && readiness?.ready === true,
       costEvidence: status?.cost_evidence_by_modality?.[config.key] === true,
       reasons: readiness?.reasons ?? [],
     };
@@ -37,10 +37,11 @@ export function modelChannelRows(status: ModelStatus | undefined): ModelChannelR
 
 interface ModelChannelMatrixProps {
   status: ModelStatus | undefined;
+  fixtureDataPresent?: boolean;
 }
 
-export function ModelChannelMatrix({ status }: ModelChannelMatrixProps) {
-  const rows = modelChannelRows(status);
+export function ModelChannelMatrix({ status, fixtureDataPresent = false }: ModelChannelMatrixProps) {
+  const rows = modelChannelRows(status).map(row => fixtureDataPresent ? { ...row, ready: false, reasons: ["当前数据源含演示数据，真实 readiness 未验证"] } : row);
   const groupEvidenceReady = rows.length > 0 && rows.every((row) => row.costEvidence);
 
   return (
@@ -48,7 +49,7 @@ export function ModelChannelMatrix({ status }: ModelChannelMatrixProps) {
       <Alert
         type={!status ? "info" : groupEvidenceReady ? "success" : "warning"}
         showIcon
-        title={!status ? "暂无模型状态数据" : groupEvidenceReady ? "全部模态已有实际计费组成本证据" : "部分模态缺少实际计费组成本证据"}
+        title={!status ? "暂无模型状态数据" : fixtureDataPresent ? "演示数据不可作为模型上线证据" : groupEvidenceReady ? "全部模态已有实际计费组成本证据" : "部分模态缺少实际计费组成本证据"}
         description="控制台不会显示中转站密钥。SVIP 是否可上线以服务端返回的实际计费组、价格快照和成本证据门禁为准；仅填写模型名不代表可用。"
       />
       <Table<ModelChannelRow>
@@ -86,7 +87,7 @@ export function ModelChannelMatrix({ status }: ModelChannelMatrixProps) {
           {
             title: "阻断原因",
             dataIndex: "reasons",
-            render: (value: string[], row: ModelChannelRow) => row.ready ? "—" : value.join("；") || "尚未通过模型、计费组或成本门禁",
+            render: (value: string[], row: ModelChannelRow) => row.ready ? "—" : value.join("；") || (status?.state && status.state !== "ready" ? `平台模型最终状态为 ${status.state}，尚未通过上线门禁` : "尚未通过模型、计费组或成本门禁"),
           },
         ]}
       />

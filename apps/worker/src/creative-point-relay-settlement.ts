@@ -50,8 +50,8 @@ export class CreativePointRelaySettlement {
     private readonly provider: string,
   ) {}
 
-  private async reservation(event: DurableOutboxEvent) {
-    const snapshot = parseWorkerCommercialAccessSnapshot(event, 'generation.execute')
+  private async reservation(event: DurableOutboxEvent, operation: 'generation.execute' | 'image_generation.execute' = 'generation.execute') {
+    const snapshot = parseWorkerCommercialAccessSnapshot(event, operation)
     if (!snapshot.reservationId) return undefined
     const reservation = await this.points.getReservation(event.workspaceId, snapshot.reservationId)
     if (!reservation) throw Object.assign(new Error('creative point reservation was not found'), { code: 'CREATIVE_POINT_RESERVATION_NOT_FOUND' })
@@ -71,8 +71,8 @@ export class CreativePointRelaySettlement {
     return providerRequestId
   }
 
-  async settleForDelivery(event: DurableOutboxEvent, providerRequestIds: readonly string[]): Promise<void> {
-    const reservation = await this.reservation(event)
+  async settleForDelivery(event: DurableOutboxEvent, providerRequestIds: readonly string[], operation: 'generation.execute' | 'image_generation.execute' = 'generation.execute'): Promise<void> {
+    const reservation = await this.reservation(event, operation)
     if (!reservation) return
     const identities = [...new Set(providerRequestIds.map(identity).filter((value): value is string => Boolean(value)))].sort()
     if (identities.length === 0) throw Object.assign(new Error('verified relay receipt is required before creative point settlement'), { code: 'MODEL_USAGE_EVIDENCE_MISSING', providerSucceeded: true })

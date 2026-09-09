@@ -150,6 +150,14 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // Raw quota is deliberately excluded: without a versioned unit, exchange
   // rate and pricing formula it is not currency evidence.
   const costCny = firstNumber(usage?.cost_cny, usage?.costCny, root.cost_cny, root.costCny, data?.cost_cny, data?.costCny, nestedData?.cost_cny, nestedData?.costCny, result?.cost_cny, result?.costCny)
+  const imageResultObserved = defaults.modality === 'image' && ((Array.isArray(root.data) && root.data.length > 0) || (data && Array.isArray(data.data) && data.data.length > 0))
+  // OpenAI-compatible image responses may put the provider request ID in
+  // the response body instead of a header. Accept body IDs only when this is
+  // an image response with actual artifacts; never use a generic text `id` as
+  // settlement identity.
+  const imageBodyRequestId = imageResultObserved
+    ? evidenceIdentity(root.id) || evidenceIdentity(data?.id)
+    : undefined
   const providerRequestId = evidenceIdentity(headers.get('x-oneapi-request-id'))
     || evidenceIdentity(headers.get('x-request-id'))
     || evidenceIdentity(headers.get('x-provider-request-id'))
@@ -164,6 +172,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
     || evidenceIdentity(result?.request_id)
     || evidenceIdentity(metadata?.provider_request_id)
     || evidenceIdentity(metadata?.request_id)
+    || imageBodyRequestId
   // Cost is not usage. A relay that reports only a price has not provided
   // enough metering evidence to settle a model call safely.
   // Image relays commonly meter by generated image units rather than tokens.
@@ -173,7 +182,6 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // A successful image response is itself metering evidence when the relay
   // omits token/usage metadata: each returned image is one billable unit and
   // the caller supplies the requested count as the bounded billing context.
-  const imageResultObserved = defaults.modality === 'image' && ((Array.isArray(root.data) && root.data.length > 0) || (data && Array.isArray(data.data) && data.data.length > 0))
   const videoEvidenceNode = data ?? result ?? nestedData ?? root
   // A generic response `id` is not proof that a video job was accepted: chat
   // style relays often echo an id even when no render was queued. Accept it
@@ -219,7 +227,7 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   // provider-controlled evidence for one image unit.
   if (!usage && defaults.modality === 'image' && record(payload)) {
     const items = Array.isArray(payload.data) ? payload.data : record(payload.data) && Array.isArray(payload.data.data) ? payload.data.data : []
-    if (items.length > 0) usage = { modality: 'image', model: defaults.model, ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}), ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}), ...(defaults.context?.runKey ? { runKey: defaults.context.runKey } : {}), ...(defaults.context?.providerAttemptId ? { providerAttemptId: defaults.context.providerAttemptId } : {}), providerRequestId: headers.get('x-oneapi-request-id') ?? undefined, observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: defaults.context?.billingUnits ?? items.length } }
+    if (items.length > 0) usage = { modality: 'image', model: defaults.model, ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}), ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}), ...(defaults.context?.runKey ? { runKey: defaults.context.runKey } : {}), ...(defaults.context?.providerAttemptId ? { providerAttemptId: defaults.context.providerAttemptId } : {}), providerRequestId: headers.get('x-oneapi-request-id') ?? (typeof payload.id === 'string' ? payload.id : undefined), observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: defaults.context?.billingUnits ?? items.length } }
   }
   if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
   if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity')

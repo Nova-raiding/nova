@@ -64,7 +64,7 @@ WORKLOAD_SECRET_KEYS = {
     'merchant-scanner-secrets' => %w[ASSET_SCANNER_API_TOKEN ASSET_SCANNER_WORKSPACE_SIGNING_SECRET ASSET_SCAN_RECEIPT_KEY_ID ASSET_SCAN_RECEIPT_PRIVATE_KEY_PEM],
   },
   'merchant-ui' => {
-    'merchant-runtime-secrets' => %w[MERCHANT_UI_API_TOKEN],
+    'merchant-runtime-secrets' => %w[MERCHANT_UI_API_TOKEN MERCHANT_WORKSPACE_ID],
   },
   'merchant-schema-migration' => {
     'merchant-migration-secrets' => %w[DATABASE_URL],

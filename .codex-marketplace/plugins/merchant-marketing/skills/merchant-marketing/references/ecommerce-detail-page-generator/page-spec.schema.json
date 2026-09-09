@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.skills/ecommerce-detail-page-generator/page-spec.schema.json",
+  "title": "E-commerce Detail Page Specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "platform", "product_name", "locale", "output", "style", "facts", "modules"],
+  "properties": {
+    "version": {
+      "const": "1.0"
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1
+    },
+    "product_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "locale": {
+      "type": "string",
+      "minLength": 2
+    },
+    "product_images": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "width", "format", "quality", "long_preview"],
+      "properties": {
+        "mode": {
+          "enum": ["long_page_slices", "gallery_and_long_preview", "a_plus_modules", "gallery_cards", "real_photo_gallery", "original_photo_gallery", "brand_page_sections"]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 480,
+          "maximum": 5000
+        },
+        "format": {
+          "enum": ["jpg", "jpeg", "png"]
+        },
+        "quality": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 100
+        },
+        "max_file_mb": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0
+        },
+        "long_preview": {
+          "type": "boolean"
+        }
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["palette", "content_margin", "corner_radius"],
+      "properties": {
+        "palette": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["background", "surface", "primary", "accent", "text", "muted"],
+          "properties": {
+            "background": {"$ref": "#/$defs/color"},
+            "surface": {"$ref": "#/$defs/color"},
+            "primary": {"$ref": "#/$defs/color"},
+            "accent": {"$ref": "#/$defs/color"},
+            "text": {"$ref": "#/$defs/color"},
+            "muted": {"$ref": "#/$defs/color"}
+          }
+        },
+        "font_family": {
+          "type": "string"
+        },
+        "content_margin": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 300
+        },
+        "corner_radius": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 160
+        }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "value", "source", "publish"],
+        "properties": {
+          "key": {"type": "string", "minLength": 1},
+          "value": {"type": ["string", "number", "boolean"]},
+          "source": {"enum": ["user", "visible", "unconfirmed"]},
+          "publish": {"type": "boolean"},
+          "evidence": {"type": "string"}
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "title", "layout", "height"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "type": {
+            "enum": ["hero", "benefit", "feature", "detail", "scene", "lifestyle", "demo", "steps", "specs", "package", "trust", "value", "routine", "faq", "closing", "front", "angle", "scale", "condition", "process", "variation"]
+          },
+          "title": {"type": "string"},
+          "subtitle": {"type": "string"},
+          "body": {"type": "string"},
+          "eyebrow": {"type": "string"},
+          "badge": {"type": "string"},
+          "footnote": {"type": "string"},
+          "bullets": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {"type": "string"}
+          },
+          "layout": {
+            "enum": ["image-full", "image-left", "image-right", "split", "cards", "specs", "steps", "closing", "photo-only"]
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 2500
+          },
+          "background_image": {
+            "type": ["string", "null"]
+          },
+          "overlay": {
+            "enum": ["none", "light", "dark", "gradient-light", "gradient-dark"]
+          },
+          "text_mode": {
+            "enum": ["overlay", "panel", "none"]
+          },
+          "text_align": {
+            "enum": ["left", "center", "right"]
+          },
+          "facts": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "preview_only": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    }
+  }
+}

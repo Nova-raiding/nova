@@ -1,6 +1,6 @@
 import { Alert, Button } from "antd";
 import { useEffect, useMemo, useRef } from "react";
-import { presentOpsError } from "./opsErrorPresentation.js";
+import { opsLoadWarningPresentation, presentOpsError } from "./opsErrorPresentation.js";
 
 interface OpsPageErrorProps {
   error: unknown;
@@ -50,6 +50,7 @@ export function OpsPageError({
         : <Button size="small" style={{ minHeight: 44 }} aria-label="刷新运营后台页面" onClick={() => window.location.reload()}>刷新页面</Button>;
 
   const hasDiagnostics = Boolean(presentation.code || presentation.requestId || presentation.traceId || presentation.decisionId || presentation.reasonCode || presentation.obligationsMissing?.length || presentation.findings?.length);
+  const loadWarning = typeof error === "string" ? opsLoadWarningPresentation(error) : undefined;
   return (
     <div ref={errorRef} tabIndex={-1} className="ops-page-error" data-state="error" data-recovery={presentation.recovery === "contact_support" && presentation.code && ["FORBIDDEN", "MEMBER_NOT_ACTIVE", "MEMBER_SUSPENDED", "HTTP_403"].includes(presentation.code) ? "permission" : presentation.recovery}>
       <Alert
@@ -60,7 +61,13 @@ export function OpsPageError({
         title={presentation.title}
         description={
           <div>
-            <p>{presentation.description}</p>
+            {loadWarning?.detail ? <>
+              <p>{loadWarning.summary}</p>
+              <details>
+                <summary>查看失败数据集与原因</summary>
+                <p>{loadWarning.detail}</p>
+              </details>
+            </> : <p>{presentation.description}</p>}
             {hasDiagnostics ? (
               <details>
                 <summary>查看诊断信息</summary>

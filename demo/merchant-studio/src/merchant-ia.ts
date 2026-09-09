@@ -97,5 +97,5 @@ export function groupTasksForRecovery(tasks: Task[]): TaskRecoveryItem[] {
       const group = taskRecoveryGroup(task)
       return { task, group, groupLabel: labels[group], actionLabel: actions[group] }
     })
-    .sort((left, right) => order[left.group] - order[right.group] || right.task.createdAt.localeCompare(left.task.createdAt))
+    .sort((left, right) => order[left.group] - order[right.group] || String(right.task.createdAt ?? '').localeCompare(String(left.task.createdAt ?? '')))
 }

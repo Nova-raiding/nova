@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
 import { OpsAntAppBoundary, OpsSessionRecoveryGuidance, accessDeniedEvidence, accessDeniedReasonCode, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 import { openBrandStore } from "./StoresPage.js";
 
 describe("selectStoreScope", () => {
@@ -80,6 +81,13 @@ describe("managed session gate", () => {
 });
 
 describe("desktop loading feedback", () => {
+  it("summarizes dataset failures while retaining the complete diagnostic detail", () => {
+    const warning = opsLoadWarningPresentation("部分数据集刷新失败（workspace.metrics、knowledge.rule.list）。页面保留上次成功数据，这些值可能已过期：服务不可用");
+    expect(warning.summary).toBe("2 个数据集刷新失败，页面已保留上次成功数据。");
+    expect(warning.detail).toContain("workspace.metrics");
+    expect(opsLoadWarningPresentation("规则数据加载失败，请重试")).toEqual({ summary: "规则数据加载失败，请重试", detail: undefined });
+  });
+
   it("announces the highest-priority main content transition", () => {
     expect(opsContentLoadingMessage("ready", true, true)).toContain("旧工作台数据已清除");
     expect(opsContentLoadingMessage("loading", false, true)).toBe("正在验证运营权限");

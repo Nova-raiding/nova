@@ -145,6 +145,17 @@ describe('developer doctor runtime checks', () => {
     })
   })
 
+  it('fails closed when relay evidence repeats a modality instead of allowing Map overwrite', () => {
+    const results = ['text', 'image', 'image_edit', 'ocr', 'video'].map(modality => ({
+      modality, state: 'ready', providerRequestId: `req-${modality}`, usageObserved: true, costObserved: true, costCny: 0.01,
+    }))
+    results.push({ modality: 'text', state: 'ready', providerRequestId: 'req-text-duplicate', usageObserved: true, costObserved: true, costCny: 0.01 })
+    const audit = modelRelayEvidenceAudit({ results })
+    expect(audit?.ready).toBe(false)
+    expect(audit?.blockedModalities).toContain('text')
+    expect(audit?.reasons).toContain('text:duplicate_result')
+  })
+
   it('requires Codex App host evidence to prove 503 error recovery', () => {
     expect(codexAppHostEvidenceAudit({
       scenarios: [
@@ -180,5 +191,21 @@ describe('developer doctor runtime checks', () => {
     expect(source).toContain("relkind='r'")
     expect(source).toContain('missingCreativePointForceRls')
     expect(source).not.toContain('facts.forced_rls === 6')
+  })
+
+  it('keeps local compose diagnostics bound to the repository env file', () => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    expect(source).toContain("existsSync(resolve(root, '.env'))")
+    expect(source).toContain("['--env-file', resolve(root, '.env')]")
+    expect(source).toContain('...composeArgs,')
+    expect(source).toContain("run('docker', [...composeArgs, 'exec'")
+    expect(source).not.toContain('composeArgs.slice(1)')
+  })
+
+  it('keeps an unreadable rendered production config as a structured doctor failure', () => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    expect(source).toContain('const productionConfigReady = (() => {')
+    expect(source).toContain('catch {')
+    expect(source).toContain('return false')
   })
 })

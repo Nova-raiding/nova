@@ -115,6 +115,22 @@ describe('Codex App merchant conversation flow', () => {
     })
   })
 
+  it('keeps repeated merchant.start calls available in the same ChatGPT conversation', async () => {
+    await withBridge((request, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(json(ok(request, {
+        currentStep: { id: 'connect-store', state: 'required' },
+        action_cards: [{ method: 'platform.connect', label: '连接店铺' }],
+      })))
+    }, async (child, calls) => {
+      const first = await request(child, 1, 'merchant.start', { requested_goal: '查看店铺' })
+      const second = await request(child, 2, 'merchant.start', { requested_goal: '查看店铺' })
+      expect(first.result).toMatchObject({ isError: false, structuredContent: { conversation_state: { stage: expect.any(String) } } })
+      expect(second.result).toMatchObject({ isError: false, structuredContent: { conversation_state: { stage: expect.any(String) } } })
+      expect(calls.map(call => call.method)).toEqual(['merchant.start', 'merchant.start'])
+    })
+  })
+
   it('rejects disabled content generation before older downstream blockers can be reached', async () => {
     await withBridge((request, res) => {
       res.setHeader('content-type', 'application/json')

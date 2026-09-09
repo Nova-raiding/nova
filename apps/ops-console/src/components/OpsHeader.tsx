@@ -12,6 +12,14 @@ function managedLoginUrl(): string | undefined {
   return env.VITE_OPS_LOGIN_URL?.trim() || undefined;
 }
 
+function managedLogoutUrl(): string | undefined {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
+  if (env.VITE_OPS_LOGOUT_URL?.trim()) return env.VITE_OPS_LOGOUT_URL.trim();
+  const login = managedLoginUrl();
+  if (!login) return undefined;
+  try { return `${new URL(login, typeof window === "undefined" ? "http://localhost" : window.location.origin).origin}/auth/logout`; } catch { return undefined; }
+}
+
 interface OpsHeaderProps {
   managedSession: boolean;
   roles?: string[];
@@ -271,11 +279,26 @@ export function OpsHeader({
         {managedSession ? (
           <>
             <Tag color="green" className="ops-status-tag">SSO 托管会话</Tag>
+            {session ? (
+              <div className="ops-account-summary" aria-label="当前运营账号信息">
+                <strong>当前账号</strong>
+                <span>主体：{session.actor_id}</span>
+                <span>工作台：{session.workbench === "platform" ? "平台运营" : "商家工作区"}</span>
+                <span>授权范围：{session.scope?.type === "platform" ? "全平台" : session.workspace_id ? `工作区 ${session.workspace_id}` : "服务端判定"}</span>
+                <span>角色：{roles?.join("、") || "未声明"}</span>
+                <span>有效期：{session.session_expires_at ? new Date(session.session_expires_at).toLocaleString("zh-CN", { hour12: false }) : "由网关管理"}</span>
+                <div className="ops-account-actions">
+                  {managedLogoutUrl() ? <Button htmlType="button" size="small" href={managedLogoutUrl()} target="_self">退出登录</Button> : null}
+                  {managedLoginUrl() ? <Button htmlType="button" size="small" href={managedLoginUrl()} target="_self">切换账号</Button> : null}
+                </div>
+              </div>
+            ) : null}
             {!sessionLoaded ? (
               managedLoginUrl()
                 ? <Button type="primary" href={managedLoginUrl()} target="_self" rel="noreferrer" style={{ minHeight: 44 }}>登录运营后台</Button>
-                : <Alert type="warning" showIcon title="未配置组织登录入口" description="请部署方设置 VITE_OPS_LOGIN_URL；没有入口时只能由已登录管理员邀请成员。" />
+              : <Alert type="warning" showIcon title="未配置组织登录入口" description="请部署方设置 VITE_OPS_LOGIN_URL；没有入口时只能由已登录管理员邀请成员。" />
             ) : null}
+            <Alert type="info" showIcon title="账号开通方式" description="商家账号由平台管理员邀请后接受；平台运营账号由平台预配并分配角色。当前入口不开放未经审批的公共注册。" />
           </>
         ) : (
           <>

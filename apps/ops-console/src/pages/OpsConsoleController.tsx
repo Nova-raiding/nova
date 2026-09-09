@@ -15,7 +15,7 @@ import { domainReadCapabilities } from "../authz/authorization.js";
 import type { OpsWorkbench } from "../types/ops.js";
 import { urlForWorkbench, workbenchIntentFromLocation } from "../navigation/opsWorkbenchLocation.js";
 import { UnsavedChangesProvider, useUnsavedChangesState } from "../components/authz/UnsavedChangesContext.js";
-import { normalizeDiagnosticTokens } from "../components/opsErrorPresentation.js";
+import { normalizeDiagnosticTokens, opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 
 const { Content } = Layout;
 
@@ -290,7 +290,13 @@ function Dashboard({
               type="warning"
               showIcon
               title="部分运营数据未刷新"
-              description={model.error}
+              description={(() => {
+                const warning = opsLoadWarningPresentation(model.error);
+                return <div className="ops-global-load-warning-content">
+                  <span>{warning.summary}</span>
+                  {warning.detail ? <details><summary>查看失败数据集与原因</summary><p>{warning.detail}</p></details> : null}
+                </div>;
+              })()}
             />
           ) : null}
           {sessionGate === "blocked" ? (

@@ -1,227 +1,191 @@
 # 商家 ChatGPT 插件测试架构与上线 readiness 报告（2026-09-08 更新）
 
-**版本/时间**：2026-09-08（与当前 `release-metadata.json` 与本地主分支一致）
+**版本/时间**：2026-09-08（与当前分支与 `release-metadata.json` 同步）
+**目标**：以 PM/测试架构视角给出可执行的正/反测试闭环，直到可上线。
 
-**用途**：PM + 测试架构师用于“当前功能可用性复核 + 多轮正反面测试 + 上线决策”
+> 本文以可复现证据为准；未达门禁即使页面“看起来可用”也不判定上线通过。
 
-**基本口径**：本文件是验收标准，不替代任何代码功能描述。所有上线判定以可复现证据为准，不以演示、fixture 成果或本机假阳性替代。
+## 1. 目标与边界
 
-## 0. 结论（截至 2026-09-08）
+### 1.1 三层验收边界
 
-**主链路本地复核状态：可复核绿灯**（本地链路与合同测试通过）。
+1. **商家主链路（ChatGPT 插件）**：
+   - `chatgpt` + `apps/plugin/mcp/bridge.mjs` + `/mcp`
+   - 覆盖商家会话、任务、素材、发布确认、失败恢复
+2. **业务内核（API / MCP / Worker / DB）**：
+   - 鉴权、RLS、幂等、审计、状态机、队列与回写
+3. **运营后台（ops-console）**：
+   - 商家工作区治理、平台运营治理、告警与审计、模型与付费可观察性
 
-**生产发布状态：NO-GO**（`dev:doctor:production` 仍有 13 项 fail）。
+### 1.2 不可替代边界
 
-### 当前可确认通过
+- 本地 fixture、mock、截图演示、空态回退和 UI 友好文案都不构成上线证据。
+- `dev:doctor:production` 与 `test:release-gates` 通过前不得宣称上线。
+- 任何 `published`、`服务可用`、`支付已就绪`、`平台已打通` 的状态都必须来自真实可验证回执。
+
+---
+
+## 2. 当前状态快照（执行时间点：21:40+，本地主线）
+
+### 2.1 已通过（可复核绿灯）
 
 - `npm run typecheck`
 - `npm run release:metadata:validate`
 - `npm run test:release-gates`
+  - **测试文件：123 passed / 6 skipped**（共 129）
+  - **测试条目：559 passed / 13 skipped**（共 572）
+- `npm run dev:doctor`
 - `npm run test:browser:merchant`
+  - **22 passed**
 - `npm run test:browser:ops`
-- `npm run dev:doctor`（本地环境）
+  - **8 passed / 1 skipped**
+- `node apps/plugin/scripts/verify-installed-bridge.mjs`
+  - `tools.count=144`
+  - `required`、`missing`、`forbidden` 符合预期
 
-### 当前明确阻断
+### 2.2 本轮 NO-GO（未关闭）
 
-`plugin bridge`、`production_config`、`commercial payment/oauth/model relay/object storage/scanner/alerts/production_gate`、`runtime:release`、`model_relay evidence`、`codex app error recovery evidence` 等仍未闭环。
+`npm run dev:doctor:production` 输出：
 
-## 1. 测试边界与角色链路图
+- `plugin_bridge`：`MERCHANT_MCP_BASE_URL` 与 `MERCHANT_MCP_TOKEN` 未就绪
+- `production_config`：`PRODUCTION_CONFIG_PATH` 未配置
+- `runtime:api_ready`：`production_ready=false`
+- `commercial:payment`：fixture / 证据缺失
+- `commercial:platform_oauth`：6 平台 OAuth 未配置
+- `commercial:model_relay`：五模态证据未就绪
+- `commercial:object_storage`：local 模式（非生产）
+- `commercial:scanner`：scanner 未证据化
+- `commercial:alerts`：告警 webhook 未配置
+- `commercial:production_gate`：`writes=false`、`productionGate=false`
+- `runtime:release`：`releasez` 未就绪
+- `release:model_relay_evidence`：未提供 `MODEL_RELAY_EVIDENCE_PATH`
+- `release:codex_app_error_recovery`：未提供 `CODEX_APP_HOST_EVIDENCE_PATH`
 
-三条产品线必须同时成立：
+结论：仍为 **NO-GO**。
 
-1. **商家插件入口（桌面 ChatGPT）**
-   - `chatgpt` + `apps/plugin/bridge` + `apps/api /mcp`
-2. **业务实现层（API/MCP/Worker）**
-   - 鉴权、RLS、幂等、状态机、审计、任务与发布回执
-3. **运营后台（ops-console）**
-   - 商家工作区治理、平台运营治理、模型与账务可观察性、审计归档
+---
 
-**不允许替代证据的边界**：
+## 3. 测试架构：正向/反向测试矩阵
 
-- 本地/fixture 演示、mock、截图观感、空接口返回都不构成生产可上线证据。
-- 未在真实会话重试/回读闭环的状态，不允许标记成功（尤其发布、支付、平台回执）。
+### 3.1 统一矩阵
 
-## 2. 测试层级框架（正面/反面）
-
-### E0：发布元数据与不可变性（合约红线）
-
-- 目标：确认构建身份与接口边界不可漂移。
-- 工具：
-  - `npm run release:metadata:validate`
-  - `npm run test:release-gates`
-  - `npm run typecheck`
-- 正向判定：
-  - MCP register / release metadata / plugin manifest / migration 迁移链一致且可验证
-  - `merchant-marketing` 插件版本与 release metadata 匹配
-- 反向判定：
-  - 任何版本不一致、迁移链不匹配、schema不一致直接 fail-closed
-
-### E1：插件安装与工具一致性（链路入口红线）
-
-- 目标：确保 ChatGPT/Codex 可加载正确插件快照。
-- 工具：
-  - `codex plugin add merchant-marketing@merchant-local`
-  - `node apps/plugin/scripts/verify-installed-bridge.mjs`
-- 正向：
-  - `tools.count`、`required tools` 与 `forbidden tools` 与 expected 一致
-  - source 与 installed hash 一致（manifest、bridge、skill、mcp）
-- 反向：
-  - 工具数偏差、缺失关键工具（如 `merchant.start`）、多余工具（如 `ops.*`）直接阻断
-
-### E2：商家主链路功能与失败回退（正向/反向）
-
-- 工具：`npm run test:browser:merchant`
-- 正向：
-  - 会话、任务、素材、知识、发布确认/幂等、错误恢复路径成立
-- 反向：
-  - 500/超时/empty identity/fail category 不得 fallback 到演示数据或旧状态
-  - 未经确认不得出现“发布成功”或“已恢复可操作”
-
-### E3：运营后台可用性与安全边界（正向/反向）
-
-- 工具：
-  - `npm run test:browser:ops`
-  - 页面级专项检查（下文 S1~S3）
-- 正向：
-  - 会话、用户/租户、权限、审计、账务、模型页可用且状态清晰
-- 反向：
-  - 空态误判成功、401/403 显示成功、页面交互无错误反馈、滚动/分页导致白屏
-
-### E4：生产门禁与外部可验证证据（上线红线）
-
-- 工具：
-  - `npm run dev:doctor:production`
-  - 生产端 canary（ChatGPT App、模型、六平台 OAuth、模型成本、对象存储、告警）
-- 正向：
-  - `runtime:api_ready` 返回 `productionGate=true`
-  - 关键商用能力为真实配置，非 fixture 与非本地模式
-- 反向：
-  - 缺省环境变量、fixture 模式、证据文件缺失、未生成 release evidence 直接 NO-GO
-
-## 3. 多轮测试闭环（每轮必须记录证据）
-
-- **R0 发布/合约基础**
-  - `npm run typecheck`
-  - `npm run release:metadata:validate`
-  - `npm run test:release-gates`
-  - `npm run codex:relay:validate`
-  - 结果：通过
-    - test:release-gates：**123 passed / 6 skipped**，**559 passed / 13 skipped**（572）
-
-- **R1 本地运行与依赖健康**
-  - `npm run dev:doctor`
-  - 结果：`40 pass / 13 warn / 0 fail`
-
-- **R2 插件主链路 + 主流程+失败态**
-  - `npm run test:browser:merchant`
-  - 结果：**22 passed**
-
-- **R3 运维台主链路 + 认证/权限矩阵**
-  - `npm run test:browser:ops`
-  - 结果：**7 passed, 1 skipped**
-
-- **R4 桥接一致性核验**
-  - `node apps/plugin/scripts/verify-installed-bridge.mjs --source apps/plugin --installed ...`
-  - 结果：`tools.count=144`，`required` 包含 `merchant.start` 等关键方法，`missing=[]`，`forbidden=[]`
-
-- **R5 生产门禁预检**
-  - `npm run dev:doctor:production`
-  - 结果：**39 pass / 1 warn / 13 fail**（当前仍 NO-GO）
-
-### 轮次门禁规则（必须同时满足）
-
-1. 任何一轮 fail，下一轮不得宣告 GO。
-2. 变更后对应轮次重新执行：
-   - 相关单测（unit/api/contract）
-   - 相关 E2E（merchant/ops）
-   - `test:release-gates`（涉及注册表、release、迁移、契约变化时）
-3. 生产域 fail 必须在 `dev:doctor:production` 重新清零后，才可进入上线评审。
-
-## 4. 反向用例矩阵（按模块）
-
-| 模块 | 正向用例 | 反向用例（必须失败） | 风险控制
+| 层级 | 正向测试（通过即放行该层） | 反向测试（必须失败并阻断） | 证据/入口 |
 |---|---|---|---|
-| 工具发现 | 正常 `tools/list` 显示 144 工具 | tool 注入变化、`merchant.start` 缺失、`ops.*` 出现 | 不允许会话继续，阻断入口 |
-| MCP 与 workspace | 首次创建/恢复 workspace 成功 | B workspace、token 被吊销、401/403 | 不返回租户数据，触发恢复 |
-| 任务与发布 | 发布 prepare→确认→回读闭环完整 | 发布回执 unknown、receipt 丢失、重复 confirm | unknown 必须保持未验证态，不显示成功 |
-| 商业与支付 | 点数、订阅状态真实可读 | `balance_state=unknown` 显示为 0；重复回调重放 | 不展示余额可用，回调需幂等校验 |
-| 平台能力 | OAuth 配置正确后展示可用平台 | OAuth 缺失、callback 异常、scope 不足 | 禁止进入发布/同步 |
-| 模型与中转 | 五模态可见、成本可追溯 | 503/429/usage 缺失 | 记录 error-recovery，禁止自动重试计费 |
-| 运营后台滚动 | 滚动不丢失状态 | 滚动到下方白屏（历史问题） | 列入硬性回归（见 S1） |
-| 安全/告警 | 告警与安全路径真实发出 | fixture/本地替代生产 | fail-closed |
-| 生产门禁 | releasez.ready=true 且与 manifest 绑定 | productionGate=false | NO-GO |
+| 发布与元数据 | `release:metadata:validate`、`test:release-gates` 全绿；迁移链与不可变镜像一致 | 版本不一致 / 映射断链 / schema 不匹配 | `release-metadata.json`、`VERSION`、`release-manifest` |
+| 插件入口 | `codex plugin add` + `verify-installed-bridge` `ok:true` + `tools.count` 与 runtime 一致 | 少关键工具（如 `merchant.start`）或多非法工具（`ops.*`） | `apps/plugin/README.md`、桥接脚本 |
+| 商家主链路 | merchant 浏览器全流程稳定通过；错误可恢复、重放幂等 | 将错误降级为 fixture、静默“发布成功”、无 idempotency | `dogfood/chatgpt-all-functions/merchant-*.spec.js` |
+| 运营后台 | 关键页面可见、无控制台错误、权限失败有明确诊断 | 白屏、分页/滚动崩溃、403 下伪成功、错误态与空态互相伪装 | `dogfood/chatgpt-all-functions/ops*.spec.js` |
+| 安全与隔离 | RLS、角色投影、审计链路稳定 | 越权读写、跨工作区数据串读、未审计高风险动作 | `tests/` 中的 DB/RLS/权限测试 |
+| 生产发布 | `dev:doctor:production` 无关键 fail + `releasez.ready=true` + evidence path 就绪 | 任一 `FAIL` 项存在即 NO-GO | `dev:doctor:production`、生产 evidence 文件 |
 
-## 5. 运营后台专项反向测试（包含你提到的白屏问题）
+### 3.2 重点反向用例（按问题历史）
 
-> 历史反馈：`/ops/tasks` 滚动到下方出现白屏，需当作硬性反向场景。
+1. **白屏回归（硬性）**：`/ops/tasks` 长列表滚动不能出现白屏
+2. **fixture 泄露（硬性）**：支付/平台/OAuth/对象存储为 fixture 时不得显示生产可写
+3. **发布幻觉（硬性）**：未确认/未回执不得显示 `published`
+4. **恢复失败误导（硬性）**：503、timeout、失败 API 不得自动重试扣费
+5. **空态伪装（高危）**：空态、错误态、无权限态文本必须可区分
 
-### S1 `/ops/tasks` 长列表滚动稳定性（新增必测）
+---
 
-- 场景：
-  - 登录后进入 `/ops/tasks`
-  - 注入至少 1 页以上数据
-  - 依次 `scrollTo(0%,40%,70%,95%,100%)`
-- 断言：
-  - 页面主标题、过滤区、卡片区域始终可见
-  - 无 `pageerror`
-  - 无连续空白块（每次滚动后 DOM 节点存在且可见）
-  - 底部分页/刷新控件可操作或返回明确“无更多数据”空态
-- 失败处理：任一失败回填为 `R3` 回归修复后重跑。
+## 4. 多轮测试闭环（Round Design）
 
-### S2 错误态与空态区分
+### 说明
 
-- 场景：
-  - 后端返回错误、空数据、未授权三类响应
-- 断言：错误态显示错误块，空态显示“空”，不可互相替代
+每轮都要记录：
+- 使用命令
+- 关键输出截图/日志
+- 通过门禁项
+- 不通过门禁项与下一轮修复项
 
-### S3 跨路由一致性
+### R0：合约与基线
+- `npm run typecheck`
+- `npm run release:metadata:validate`
+- `npm run test:release-gates`
+- `npm run codex:relay:validate`
 
-- 场景：
-  - 从 `/ops/tasks` 切到 `/ops/finance`、`/ops/models` 再回到任务
-- 断言：
-  - 任务状态与滚动位置按预期恢复；不会带着旧快照显示错误页
+### R1：本地运行健康
+- `npm run dev:doctor`
 
-## 6. 未闭环清单（必须逐项修复后才能 GO）
+### R2：主链路功能
+- `npm run test:browser:merchant`
 
-1. `MERCHANT_MCP_BASE_URL` 与 `MERCHANT_MCP_TOKEN` 与 production 证据链
-2. `PRODUCTION_CONFIG_PATH` 与真实 production 配置渲染
-3. 六平台 OAuth（jd/taobao/tmall/pinduoduo/xiaohongshu/douyin）生产接入
-4. 支付 provider（支付、查询、退款、对账）真实链路与 HTTPS
-5. 五模态模型中转（可用性、usage、cost、503）真实 evidence 与绑定
-6. 对象存储与 KMS（非 local）
-7. Scanner（签名回执、新鲜度、真实入库）
-8. 告警真实投递与 secret 配置
-9. `releasez` 与不可变 release metadata 绑定，`runtime:release` ready=true
-10. `CODEX_APP_HOST_EVIDENCE_PATH`（真实宿主 canary）与 `MODEL_RELAY_EVIDENCE_PATH`
-11. 白屏专项回归 S1 在 CI 中长期保留
+### R3：运营后台与权限链
+- `npm run test:browser:ops`
 
-## 7. 下一轮测试计划（到 GO 的最短闭环）
+### R4：插件一致性
+- `node apps/plugin/scripts/verify-installed-bridge.mjs --source apps/plugin --installed <installed_root>`
 
-- **第1轮（生产依赖配置）**：补齐 `production_config + plugin bridge + 生产 API secrets`
-  - 重跑：`npm run dev:doctor:production`、`npm run release:metadata:validate`
-- **第2轮（支付/OAuth/模型证据）**：补齐支付、平台 OAuth、五模态 canary evidence
-  - 重跑：`npm run dev:doctor:production`、相关模型/OAuth 端到端外部验收
-- **第3轮（对象存储/扫描/告警）**：上线前必须替换 local 配置并验证真实回执
-  - 重跑：`npm run dev:doctor:production`
-- **第4轮（release 与宿主）**：补齐 `releasez + CODEX_APP + MODEL_RELAY evidence`
-  - 重跑：`npm run test:release-gates`、`npm run dev:doctor:production`
-- **第5轮（回归）**：S1 白屏专项 + 全部 merchant/ops 主要回归
-  - 重跑：新增/现有 `ops` 滚动用例 + `test:browser:merchant` + `test:browser:ops`
+### R5：生产就绪门禁
+- `npm run dev:doctor:production`
 
-## 8. GO 判定（唯一）
+### R6：生产证据闭环（必须补齐并重跑）
+- 生产配置/环境变量、`releasez`、runtime release evidence、codex host evidence
 
-- E0~E4 全部绿
-- `npm run dev:doctor:production` 无 fail 且关键 warning 不再阻断
-- `test:release-gates` 绿色且与当前 release manifest 一致
-- 真实宿主与五模态 canary 提供可复核 evidence
-- `/ops/tasks` 滚动白屏专项通过（S1 记录通过）
+### R7：回归再验（问题专项）
+- 白屏专项 `S1 /ops/tasks`
+- 关键错误恢复、发布回执、告警、容量与成本回看
 
-达不到上述条件前，结论必须保留 **NO-GO**。
+---
 
-## 9. 快速入口
+## 5. 关键专项：S1 `/ops/tasks` 滚动白屏反向测试（硬性回归）
 
-- [release-metadata.json](../release-metadata.json)
-- [README](../README.md)
-- [商家插件安装与配置说明](../apps/plugin/README.md)
-- [插件/bridge 校验脚本](../apps/plugin/scripts/verify-installed-bridge.mjs)
-- [运维数据矩阵](../doc/todo/ops/ops-console-page-data-matrix-2026-08-29.md)
+> 历史故障要求，已作为每轮上线前必测项。
+
+### 场景定义
+- 以运营身份进入 `/ops/tasks`
+- 注入足够任务数据（或使用已有工作区真实数据）
+- 执行 `scrollTo(0, 400/800/1200/1800/2200)` 或页面滚轮下拉
+
+### 断言
+- 每段滚动后关键标题与筛选区仍在可见范围
+- 页面主体不出现 `blank/空白页面`（DOM 根可见）
+- 不出现 `pageerror` 且接口失败可被重试恢复，不可直接变成空态成功
+
+### 结果记录
+- 失败时记录截图、`response` 与 `console`，更新下一轮修复结论
+
+---
+
+## 6. 目前可视化交付清单（上次执行产物）
+
+- 最新 merchant/ops 浏览器证据目录：`artifacts/`
+- 关键 UI 清单：`screenshots/ops-console.png`、`screenshots/merchant-interactions/*`
+
+> 产物用于回放与追溯，不直接定义上线结论。
+
+---
+
+## 7. 关闭 NO-GO 的最短执行路径（按优先级）
+
+### P0（必须先行）
+1. 填充生产配置：`PRODUCTION_CONFIG_PATH`、生产 secret、`release` 可追踪证据
+2. 修复 `plugin_bridge`：设置 root origin 的 `MERCHANT_MCP_BASE_URL` 并由密钥管理器提供 `MERCHANT_MCP_TOKEN`
+3. `dev:doctor:production` 重新清零：至少 `plugin_bridge`、`production_config`、`runtime:api_ready`
+
+### P1（平台可用性）
+4. 对齐六平台 OAuth 与 API 回调
+5. 配置支付 provider（查询/下单/退款/对账）并验签
+6. 配置五模态模型中转并补齐 usage/cost/error evidence
+
+### P2（生产能力）
+7. 配置对象存储与 KMS，切换 scanner 至真实扫描与签名回执
+8. 配置告警链路并验投递
+
+### P3（上线最终）
+9. 通过 `releasez` 与 `runtime:release`，填充 `MODEL_RELAY_EVIDENCE_PATH` 与 `CODEX_APP_HOST_EVIDENCE_PATH`
+10. 执行 R0~R7 全量复测（新增白屏回归）
+
+---
+
+## 8. GO/NO-GO 判定（唯一）
+
+**仅当以下全部满足，才可宣布 GO：**
+- E0~E5 全量通过且 `test:release-gates` 与 `release-metadata` 一致
+- `dev:doctor:production` 无关键 fail（仅允许已识别且不阻断的 warn）
+- `releasez.ready=true` 且与当前 manifest/镜像 digest/迁移 sha 绑定
+- 生产能力门禁（支付/OAuth/模型/存储/告警/scanner）全部非 fixture 且已闭环
+- `runtime` 与 ChatGPT host error recovery evidence 全链路留痕
+- `/ops/tasks` 白屏专项 S1 通过
+
+任一不满足：**继续 NO-GO**。

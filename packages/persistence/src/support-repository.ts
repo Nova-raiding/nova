@@ -69,6 +69,8 @@ export interface SupportTicketListInput {
   slaState?: SupportSlaState
   assigneeId?: string
   customerId?: string
+  relatedOrderId?: string
+  relatedTaskId?: string
   query?: string
   cursor?: SupportTicketPageCursor
   limit?: number
@@ -208,6 +210,8 @@ export class MemorySupportRepository implements SupportRepository {
       .filter(ticket => !input.slaState || deriveSupportSlaState(projectTicketSla(ticket, [...this.events.values()].filter(event => event.ticketId === ticket.id)).sla) === input.slaState)
       .filter(ticket => !input.assigneeId || ticket.assignedTo === input.assigneeId)
       .filter(ticket => !input.customerId || ticket.customerId === input.customerId)
+      .filter(ticket => !input.relatedOrderId || ticket.relatedOrderId === input.relatedOrderId)
+      .filter(ticket => !input.relatedTaskId || ticket.relatedTaskId === input.relatedTaskId)
       .filter(ticket => !query || [ticket.ticketNumber, ticket.subject, ticket.customerId, ticket.customerName].some(value => value.toLocaleLowerCase().includes(query)))
       .filter(ticket => pageBefore(ticket, input.cursor))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
@@ -361,11 +365,13 @@ export class PostgresSupportRepository implements SupportRepository {
           AND ($4::text IS NULL OR (sla_snapshot_json->>'state')=$4)
           AND ($5::text IS NULL OR assigned_to=$5)
           AND ($6::text IS NULL OR customer_id=$6)
-          AND ($7::text IS NULL OR ticket_number ILIKE '%' || $7 || '%' OR subject ILIKE '%' || $7 || '%' OR customer_id ILIKE '%' || $7 || '%' OR customer_name ILIKE '%' || $7 || '%')
-          AND ($8::timestamptz IS NULL OR (created_at,id) < ($8::timestamptz,$9::uuid))
-        ORDER BY created_at DESC, id DESC LIMIT $10`, [workspaceId, input.status ?? null, input.priority ?? null,
-        input.slaState ?? null, input.assigneeId ?? null, input.customerId ?? null, input.query?.trim() || null, input.cursor?.createdAt ?? null,
-        input.cursor?.id ?? null, limit + 1])
+          AND ($7::text IS NULL OR related_order_id=$7)
+          AND ($8::text IS NULL OR related_task_id=$8)
+          AND ($9::text IS NULL OR ticket_number ILIKE '%' || $9 || '%' OR subject ILIKE '%' || $9 || '%' OR customer_id ILIKE '%' || $9 || '%' OR customer_name ILIKE '%' || $9 || '%')
+          AND ($10::timestamptz IS NULL OR (created_at,id) < ($10::timestamptz,$11::uuid))
+        ORDER BY created_at DESC, id DESC LIMIT $12`, [workspaceId, input.status ?? null, input.priority ?? null,
+        input.slaState ?? null, input.assigneeId ?? null, input.customerId ?? null, input.relatedOrderId ?? null, input.relatedTaskId ?? null,
+        input.query?.trim() || null, input.cursor?.createdAt ?? null, input.cursor?.id ?? null, limit + 1])
       const rows = await Promise.all(result.rows.map(async row => projectTicketSla(mapTicket(row), await this.listEventsInTransaction(client, workspaceId, row.id))))
       const items = rows.slice(0, limit)
       const last = items.at(-1)

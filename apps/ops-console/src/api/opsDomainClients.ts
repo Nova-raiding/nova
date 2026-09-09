@@ -9,6 +9,7 @@ import { supportTicketEventTypes, supportTicketPriorities, supportTicketStatuses
 import type { SupportSlaCorrectionApprovalProgress, SupportSlaCorrectionDecision, SupportSlaCorrectionRun, SupportSlaMonthlyReport } from "../../../../packages/contracts/src/ops/support-sla-report.js";
 import { incidentSeverities, incidentStatuses } from "../../../../packages/contracts/src/ops/incidents.js";
 import { auditSources, type AuditCenterExport, type AuditCenterPage, type AuditCenterDetail, type AuditCenterQuery } from "../../../../packages/contracts/src/ops/audit-center.js";
+import type { ModelStatus, StorageReconciliationSummary } from "../types/ops.js";
 import { MAX_OPS_EXPORT_RESPONSE_BYTES, OPS_EXPORT_TIMEOUT_MS, rpc, rpcForWorkspace } from "./opsClient.js";
 
 export class OpsDomainResponseError extends Error {
@@ -28,6 +29,78 @@ const optionalFinite = (value: unknown) => value === undefined || finite(value);
 const scalar = (value: unknown) => value === null || typeof value === "string" || finite(value) || bool(value);
 const fail = (domain: string, field: string): never => { throw new OpsDomainResponseError(domain, field); };
 const textArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(text);
+const nullableText = (value: unknown) => value === null || text(value);
+const containsFixtureMarker = (value: unknown): boolean => typeof value === "string"
+  ? /(?:fixture|demo|example\.test|localhost|local-only)/iu.test(value)
+  : Array.isArray(value) ? value.some(containsFixtureMarker)
+    : object(value) ? Object.values(value).some(containsFixtureMarker) : false;
+
+const modelKinds = ["text", "image", "image_edit", "ocr", "video"] as const;
+const modelStates = ["ready", "release_metadata_blocked", "model_relay_blocked", "cost_gate_blocked", "partial_model_readiness", "not_configured"] as const;
+const modelGate = (value: unknown): boolean => object(value)
+  && bool(value.ready) && bool(value.https) && textArray(value.reasons)
+  && optionalText(value.endpointHost);
+
+/** Validate the complete five-modality response before it can reach readiness UI. */
+export const parseModelStatus = (value: unknown): ModelStatus => {
+  if (!object(value)) fail("平台模型状态", "五模态/relay/成本/发布证据");
+  const candidate = value as Record<string, unknown>;
+  const relay = candidate.relay;
+  const capabilities = candidate.capabilities;
+  const readiness = candidate.model_readiness;
+  const quotas = candidate.quotas;
+  const costEvidence = candidate.cost_evidence_by_modality;
+  const allModalitiesReady = object(readiness) && modelKinds.every(kind => {
+    const modality = readiness[kind];
+    return object(modality) && modality.ready === true;
+  });
+  const allModalitiesHaveCostEvidence = object(costEvidence) && modelKinds.every(kind => costEvidence[kind] === true);
+  if (candidate.ownership !== "platform" || candidate.user_key_binding !== false
+    || !modelStates.includes(candidate.state as never) || !nullableText(candidate.provider_host)
+    || !nullableText(candidate.text_model) || !nullableText(candidate.image_model)
+    || !nullableText(candidate.vision_model) || !nullableText(candidate.video_model)
+    || !object(relay) || !bool(relay.configured) || !nullableText(relay.host) || !textArray(relay.reasons ?? [])
+    || !object(capabilities) || !object(readiness) || modelKinds.some(kind => !modelGate(readiness[kind]))
+    || !["text_generation", "image_generation", "image_editing", "image_fact_ocr", "video_rendering"].every(key => bool(capabilities[key]))
+    || !object(quotas) || !["rpm", "tpm"].every(key => quotas[key] === null || finite(quotas[key]))
+    || !(quotas.daily_cny_limit === null || typeof quotas.daily_cny_limit === "string")
+    || !bool(candidate.cost_control_ready) || !bool(candidate.cost_evidence_ready)
+    || !object(costEvidence) || modelKinds.some(kind => !bool(costEvidence[kind]))
+    || !bool(candidate.release_metadata_ready) || !textArray(candidate.release_metadata_missing)
+    || !textArray(candidate.next_actions)
+    || (candidate.state === "ready" && (!relay.configured
+      || !allModalitiesReady
+      || candidate.cost_control_ready !== true
+      || candidate.cost_evidence_ready !== true
+      || !allModalitiesHaveCostEvidence
+      || candidate.release_metadata_ready !== true))
+    || containsFixtureMarker(candidate)) fail("平台模型状态", "五模态/relay/成本/发布证据");
+  return value as unknown as ModelStatus;
+};
+
+const storageStatuses = ["clean", "attention_required", "failed", "unavailable"] as const;
+const storageFreshness = ["fresh", "stale", "expired", "unknown"] as const;
+const storageSummary = (value: unknown): value is StorageReconciliationSummary => {
+  if (!object(value)) return false;
+  const candidate = value;
+  const quota = candidate.quota;
+  const counts = candidate.counts;
+  if (!storageStatuses.includes(candidate.status as never) || (candidate.runStatus !== undefined && !["succeeded", "failed"].includes(String(candidate.runStatus))) || (candidate.freshness !== undefined && !storageFreshness.includes(candidate.freshness as never))) return false;
+  if (candidate.workspaceId !== undefined && !text(candidate.workspaceId)) return false;
+  if (candidate.workspace_id !== undefined && !text(candidate.workspace_id)) return false;
+  if (candidate.lastRunAt !== undefined && candidate.lastRunAt !== null && !text(candidate.lastRunAt)) return false;
+  if (quota !== undefined && (!object(quota) || ["usedBytes", "reservedBytes", "projectedBytes"].some(key => !finite(quota[key])) || (quota.limitBytes !== undefined && !finite(quota.limitBytes)))) return false;
+  if (counts !== undefined && (!object(counts) || ["references", "inventoryObjects", "matched", "missing", "metadataMismatches", "orphans", "crossWorkspace", "duplicates"].some(key => !finite(counts[key])))) return false;
+  return (candidate.message === undefined || typeof candidate.message === "string") && (candidate.errorMessage === undefined || typeof candidate.errorMessage === "string");
+};
+
+export const parseStorageReconciliationList = (value: unknown): StorageReconciliationSummary[] => {
+  if (!Array.isArray(value) || !value.every(storageSummary)) fail("存储对账", "workspace 状态");
+  return (value as unknown[]).map(item => {
+    const candidate = item as unknown as Record<string, unknown>;
+    return { ...candidate, workspaceId: candidate.workspaceId ?? candidate.workspace_id } as StorageReconciliationSummary;
+  });
+};
 
 const typedFlagValue = (value: unknown) => object(value)
   && FEATURE_FLAG_VALUE_TYPES.includes(value.type as never)
@@ -148,8 +221,8 @@ export const parseFinanceSearchPage = (value: unknown): FinanceSearchPage => {
   if (!Array.isArray(candidate.records) || !candidate.records.every(record => financeRecord(record))) fail("财务检索", "records");
   if (!object(candidate.summary)) fail("财务检索", "summary");
   const summary = candidate.summary as Record<string, unknown>;
-  const summaryNumbers = ["totalRecords", "rechargeOrderCny", "subscriptionOrderCny", "walletCreditCny", "walletDebitCny", "walletNetCny", "providerCostCny", "customerChargeCny", "usageUnits"];
-  if (summaryNumbers.some(key => !finite(summary[key])) || !object(summary.byKind)) fail("财务检索", "summary");
+  const summaryNumbers = ["totalRecords", "rechargeOrderCny", "subscriptionOrderCny", "walletCreditCny", "walletDebitCny", "walletNetCny", "customerChargeCny", "usageUnits"];
+  if (summaryNumbers.some(key => !finite(summary[key])) || (summary.providerCostCny !== null && !finite(summary.providerCostCny)) || (summary.providerCostStatus !== undefined && !["verified", "partial", "unavailable"].includes(String(summary.providerCostStatus))) || (summary.providerStatementStatus !== undefined && !["not_checked", "needs_review", "balanced", "unavailable"].includes(String(summary.providerStatementStatus))) || (summary.missingCostEvidenceCount !== undefined && !finite(summary.missingCostEvidenceCount)) || !object(summary.byKind)) fail("财务检索", "summary");
   const byKind = summary.byKind as Record<string, unknown>;
   if (financeRecordKinds.some(kind => !finite(byKind[kind]))) fail("财务检索", "summary.byKind");
   if (!text(candidate.snapshotAt) || !object(candidate.scope)) fail("财务检索", "pagination/scope");
@@ -169,6 +242,7 @@ export const parseFinanceExport = (value: unknown): FinanceExport => {
 const auditRecord = (value: unknown, detail = false): boolean => {
   if (!object(value)) return false;
   if (!["id", "workspaceId", "actorId", "action", "resourceType", "resourceId", "occurredAt"].every(key => text(value[key])) || typeof value.reason !== "string" || !auditSources.includes(value.source as never) || value.redacted !== true) return false;
+  if (containsFixtureMarker(value)) return false;
   if (!detail) return true;
   return object(value.evidence) && value.evidence.redacted === true && finite(value.evidence.omittedFields) && object(value.evidence.fields) && Object.values(value.evidence.fields).every(scalar);
 };

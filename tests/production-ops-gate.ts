@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 type Service = {
   restart?: string
@@ -21,8 +22,14 @@ const alertsFile = 'infra/observability/prometheus-alerts.example.yaml'
 const apiManifest = readFileSync('infra/kubernetes/base/api.yaml', 'utf8')
 const productionRuntime = readFileSync('infra/kubernetes/base/configmap.yaml', 'utf8')
 
+const composeArgs = [
+  'compose',
+  ...(existsSync(resolve('.env')) ? ['--env-file', resolve('.env')] : []),
+  '-f', composeFile,
+]
+
 function compose(): Compose {
-  return JSON.parse(execFileSync('docker', ['compose', '-f', composeFile, 'config', '--format', 'json'], { encoding: 'utf8' })) as Compose
+  return JSON.parse(execFileSync('docker', [...composeArgs, 'config', '--format', 'json'], { encoding: 'utf8' })) as Compose
 }
 
 function env(service: Service): Record<string, string> {
@@ -86,6 +93,7 @@ const apiEnv = env(services.api!)
 assert.equal(productionRuntimeValue('NODE_ENV'), 'production')
 assert.equal(productionRuntimeValue('CONNECTOR_FIXTURE_MODE'), 'false')
 assert.equal(productionRuntimeValue('PLUGIN_WRITE_ENABLED'), 'false')
+assert.equal(productionRuntimeValue('WORKER_WORKSPACES'), 'auto', 'production workers must discover authoritative workspace scope')
 assert.ok('OTEL_EXPORTER_OTLP_ENDPOINT' in apiEnv, 'API must expose an OTEL endpoint injection point')
 assert.ok(apiEnv.WORKER_API_CREDENTIALS, 'API must expose a role-scoped worker credential map')
 const workerCredentials = JSON.parse(apiEnv.WORKER_API_CREDENTIALS) as Record<string, { token: string; signing_secret: string }>
@@ -96,7 +104,13 @@ for (const name of workerServices) {
   assert.ok(workerEnv.WORKER_ROLE, `${name} must declare a worker role`)
   assert.equal(workerEnv.WORKER_API_TOKEN, workerCredentials[workerEnv.WORKER_ROLE!]?.token, `${name} token must match only its role`)
   assert.equal(workerEnv.WORKER_API_SIGNING_SECRET, workerCredentials[workerEnv.WORKER_ROLE!]?.signing_secret, `${name} signing secret must match only its role`)
-  assert.equal(workerEnv.WORKER_WORKSPACES, 'auto')
+  const workerWorkspaces = workerEnv.WORKER_WORKSPACES?.trim() ?? ''
+  assert.ok(workerWorkspaces, `${name} must declare a non-empty local workspace scope`)
+  if (workerWorkspaces !== 'auto') {
+    const ids = workerWorkspaces.split(',').map(value => value.trim())
+    assert.ok(ids.every(id => /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(id)), `${name} local workspace scope must contain valid workspace ids or auto`)
+    assert.equal(new Set(ids).size, ids.length, `${name} local workspace scope must not contain duplicates`)
+  }
   assert.ok('OTEL_EXPORTER_OTLP_ENDPOINT' in workerEnv, `${name} must expose an OTEL endpoint injection point`)
 }
 

@@ -14,7 +14,13 @@ describe("StorageReconciliationSummary", () => {
 
   it("explains that the status is not available yet", () => {
     const html = renderToStaticMarkup(<StorageReconciliationSummary onOpen={vi.fn()} />);
-    expect(html).toContain("尚未接入");
+    expect(html).toContain("状态不可验证");
     expect(html).toContain("仅展示 workspace 汇总");
+  });
+
+  it("does not show a clean report without verifiable freshness as normal", () => {
+    const html = renderToStaticMarkup(<StorageReconciliationSummary onOpen={vi.fn()} summary={{ status: "clean", freshness: "unknown", lastRunAt: "2026-08-29T10:00:00Z" }} />);
+    expect(html).toContain("状态不可验证");
+    expect(html).not.toContain("对账正常");
   });
 });

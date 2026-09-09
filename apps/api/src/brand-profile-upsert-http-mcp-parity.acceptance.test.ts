@@ -56,6 +56,15 @@ async function callMcp(base: string, token: string, workspaceId: string) {
   return { response, body: await response.json() as Envelope }
 }
 
+async function callMcpMethod(base: string, token: string, workspaceId: string, method: string, params: Record<string, unknown>) {
+  const response = await fetch(`${base}/mcp`, {
+    method: 'POST',
+    headers: headers(token, workspaceId),
+    body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params }),
+  })
+  return { response, body: await response.json() as Envelope }
+}
+
 function resultOf(body: Envelope) {
   return body.data && typeof body.data === 'object' && 'result' in body.data ? body.data.result : body.data
 }
@@ -139,5 +148,48 @@ describe('brand profile upsert HTTP/MCP parity', () => {
     expect(service.getBrandProfile(workspaceId)).toBeUndefined()
     const audits = await operationAudits.list(workspaceId)
     expect(audits.filter(audit => audit.action === 'brand_profile.updated')).toHaveLength(0)
+  })
+
+  it('links an HTTP-saved profile to the same tenant brand-unit consumed by batch production', async () => {
+    const workspaceId = `ws_brand_profile_batch_link_${Date.now()}`
+    const actorId = `brand-profile-batch-link-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'batch-link-acceptance' })
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `batch-link-store-${workspaceId}`, credentialRef: `vault://batch-link/${workspaceId}` })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, title: '品牌档案关联商品', stock: 1 })
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'brand-profile-batch-link-token': { workspaces: [workspaceId], actor_id: actorId, roles: ['merchant_admin'], workbenches: ['workspace'] },
+    }))
+    const base = await start()
+    const saved = await callHttp(base, 'brand-profile-batch-link-token', workspaceId)
+    expect(saved.response.status, JSON.stringify(saved.body)).toBe(200)
+    const savedProfile = saved.body.data as Record<string, unknown>
+    expect(savedProfile.brandUnitId).toBe(`brand_${workspaceId}`)
+    expect((savedProfile.brandUnit as Record<string, unknown>).id).toBe(savedProfile.brandUnitId)
+
+    const listed = await callMcpMethod(base, 'brand-profile-batch-link-token', workspaceId, 'brand-unit.list', { brand_id: savedProfile.brandUnitId })
+    expect(listed.body.error).toBeNull()
+    expect((listed.body.data as { result: { items: Array<{ id: string; workspaceId: string }> } }).result.items).toEqual([
+      expect.objectContaining({ id: `brand_${workspaceId}`, workspaceId }),
+    ])
+
+    const bound = await callMcpMethod(base, 'brand-profile-batch-link-token', workspaceId, 'brand-unit.bind-store', { brand_id: savedProfile.brandUnitId, platform: 'taobao', account_id: account.id })
+    expect(bound.body.error).toBeNull()
+    const batch = await callMcpMethod(base, 'brand-profile-batch-link-token', workspaceId, 'campaign.batch.create', {
+      brand_id: savedProfile.brandUnitId,
+      platform: 'taobao',
+      account_id: account.id,
+      product_ids_json: JSON.stringify([product.id]),
+    })
+    expect(batch.body.error).toBeNull()
+    expect((batch.body.data as { result: { brandId: string } }).result.brandId).toBe(savedProfile.brandUnitId)
+
+    const foreignWorkspaceId = `${workspaceId}_foreign`
+    await workspaceMembers.upsert({ workspaceId: foreignWorkspaceId, externalSubject: actorId, displayName: actorId, role: 'merchant_admin', status: 'active', invitedBy: 'batch-link-acceptance' })
+    const foreign = await callMcpMethod(base, 'brand-profile-batch-link-token', foreignWorkspaceId, 'brand-unit.list', { brand_id: savedProfile.brandUnitId })
+    // The authorization layer must stop the request before resource lookup;
+    // do not disclose whether the same deterministic id exists elsewhere.
+    expect(foreign.body.error?.code).toBe('FORBIDDEN')
   })
 })

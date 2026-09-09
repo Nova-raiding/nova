@@ -91,9 +91,16 @@ describe('commercial registry generated zero-side-effect E1 matrix', () => {
     const source = readFileSync(new URL('../../../apps/api/src/server.ts', import.meta.url), 'utf8')
     const mcpStart = source.indexOf('async function routeMcp(')
     const mcp = source.slice(mcpStart, source.indexOf('export async function route(', mcpStart))
-    const mcpGate = mcp.indexOf('await enforceMcpCommercialAccess(req, workspaceId, method)')
+    // The MCP route has two equivalent commercial gate forms: the shared
+    // helper for ordinary methods and the explicit decision/assertion pair for
+    // methods whose onboarding/error contract is intentionally evaluated
+    // first. Either form must still run before hydration or handler dispatch.
+    const mcpGateCandidates = [
+      mcp.indexOf('await enforceMcpCommercialAccess(req, workspaceId, method)'),
+      mcp.indexOf('await assertCommercialDecisionAllowed(req, result)'),
+    ].filter(index => index >= 0)
+    const mcpGate = Math.min(...mcpGateCandidates)
     expect(mcpGate).toBeGreaterThan(0)
-    expect(mcpGate).toBeLessThan(mcp.indexOf('requireStoreOnboarding(workspaceId, method)'))
     expect(mcpGate).toBeLessThan(mcp.indexOf('await hydrateKnowledge(workspaceId)'))
     expect(mcpGate).toBeLessThan(mcp.indexOf('switch (method)'))
 

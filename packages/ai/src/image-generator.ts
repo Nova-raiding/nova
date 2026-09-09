@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
@@ -62,6 +63,19 @@ export interface OpenAICompatibleImageGeneratorOptions {
 const MAX_IMAGE_RELAY_RESPONSE_BYTES = 32 * 1024 * 1024
 const MAX_PROVIDER_ERROR_SUMMARY = 500
 
+class ImageOutputUnchangedError extends Error {
+  readonly code = 'IMAGE_OUTPUT_UNCHANGED'
+  readonly providerOutcome = 'failed' as const
+  readonly providerSucceeded = false
+  readonly reconciliationRequired = false
+  readonly retryable = false
+
+  constructor(readonly providerIdempotencyKey: string) {
+    super('image provider returned the source image unchanged')
+    this.name = 'ImageOutputUnchangedError'
+  }
+}
+
 function providerErrorSummary(payload: unknown): { summary?: string; code?: string; requestId?: string } {
   if (!record(payload)) return {}
   const error = record(payload.error) ? payload.error : payload
@@ -76,12 +90,21 @@ function providerErrorSummary(payload: unknown): { summary?: string; code?: stri
 }
 
 const PLATFORM_VISUAL_DNA: Record<string, string> = {
-  jd: '京东风格默认：理性品质、清晰参数、克制冷中性色与品牌色点缀，使用结构化卖点区和规格对照，不做空白极简海报。',
-  taobao: '淘宝风格默认：移动端首屏转化、强卖点层级、明快色彩点缀、模块化信息图和明确行动区，保持商品主体最大且清晰。',
-  tmall: '天猫风格默认：品牌感与品质感、统一视觉系统、精致留白配合高对比卖点模块，形成高级但不寡淡的详情页首屏。',
-  pinduoduo: '拼多多风格默认：高信息密度、强对比、快速识别规格与利益点、清晰促销区域，但不编造价格或优惠。',
-  xiaohongshu: '小红书风格默认：生活方式编辑感、自然场景、柔和但有重点的色彩、竖版阅读节奏，保留可叠加短文案的安全区。',
-  douyin: '抖音电商风格默认：强视觉动势、明确焦点、短句大字安全区、适合封面和短视频转化，但不让装饰遮挡商品。',
+  jd: '京东风格默认：清晰、明亮、专业、可信；用克制冷中性色和轻量品牌色点缀，商品完整占主体，优先呈现材质、结构和可验证细节，避免拼接、杂乱背景和大段文字。',
+  taobao: '淘宝风格默认：移动端搜索首屏优先，商品轮廓一眼可识别；用明确视觉焦点、适度留白和一处可验证卖点的构图制造点击差异，不堆促销贴纸，不放未经确认的价格或承诺。',
+  tmall: '天猫风格默认：品牌橱窗感、品质感和统一视觉系统；精致留白、柔和高级光影、干净材质背景或纯色背景，画面克制但要有明确设计层次，严格如实呈现商品。',
+  pinduoduo: '拼多多风格默认：小尺寸搜索卡片也能快速识别；主体轮廓大而清晰、对比强、色彩醒目、信息层级直接，优先突出真实规格和已确认卖点；不得虚构价格、折扣、销量、优惠券或平台权益。',
+  xiaohongshu: '小红书风格默认：编辑化生活方式、自然光、真实可用场景、柔和但有重点的配色和 3:4 竖向阅读节奏；商品仍是主角，保留干净安全区，不做粗暴促销海报。',
+  douyin: '抖音电商风格默认：3:4 或竖版信息流首屏，单一强视觉焦点、明显前后层次、动态但不混乱的构图；用大面积留白承载后置短文案，不生成夸张承诺或遮挡商品。',
+}
+
+const PLATFORM_HERO_TEMPLATES: Record<string, string> = {
+  jd: '模板=专业商品棚拍；构图=完整商品、主体占画面约 75%–85%、正面或轻微三分之四、边缘完整；光线=均匀柔光加轻微轮廓光；背景=纯白或极浅灰；禁止促销文字和拼贴。',
+  taobao: '模板=搜索首屏商品 hero；构图=商品轮廓一眼可识别、主体大而完整、留白形成点击焦点、只保留一个视觉卖点区域；光线=明亮商业棚拍；背景=干净浅色或纯白；禁止虚构优惠与承诺。',
+  tmall: '模板=品牌橱窗 hero；构图=商品完整居中但有精致层次、材质细节清晰、留白均衡；光线=高级柔光和自然阴影；背景=纯白、暖白或品牌中性色；禁止廉价促销贴纸和杂乱装饰。',
+  pinduoduo: '模板=高识别搜索卡片；构图=商品占画面 80% 左右、轮廓和关键结构清楚、强明暗对比、缩小后仍能识别；光线=明亮硬朗但不丢细节；背景=简洁高对比纯色；只允许使用已确认卖点，禁止虚构价格、折扣、销量。',
+  xiaohongshu: '模板=生活方式商品 hero；构图=3:4 竖版、商品为唯一主角、真实使用语境、留出后置文字安全区；光线=自然窗光或柔和编辑光；背景=真实但简洁的生活场景；禁止把商品替换成别的款式。',
+  douyin: '模板=信息流首屏 hero；构图=3:4 或竖版、单一强焦点、前后层次明显、主体在首屏安全区域内；光线=有动势的明亮商业光；背景=简洁纯色或轻场景；预留大面积后置文案区，禁止夸张承诺和遮挡商品。',
 }
 
 function validateImageRelayPath(value: string | undefined) {
@@ -118,6 +141,12 @@ function imageReferencesFromPayload(payload: unknown): string[] {
   }).filter((value, index, values) => values.indexOf(value) === index)
 }
 
+function dataUrlDigest(value: string): string | undefined {
+  const match = /^data:image\/(?:png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/iu.exec(value)
+  if (!match) return undefined
+  return createHash('sha256').update(Buffer.from(match[1]!, 'base64')).digest('hex')
+}
+
 export class OpenAICompatibleImageGenerator implements ImageGenerator {
   private readonly fetchImpl: typeof fetch
   constructor(private readonly options: OpenAICompatibleImageGeneratorOptions) {
@@ -145,6 +174,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const isLongPage = canvasHeight! >= canvasWidth! * 3
       const platform = brief?.platform?.trim().toLowerCase()
       const platformDna = platform ? PLATFORM_VISUAL_DNA[platform] ?? `目标平台为 ${platform}，使用适合移动端商品详情页的高转化信息层级。` : '使用适合移动端商品详情页的高转化信息层级。'
+      const heroTemplate = platform ? PLATFORM_HERO_TEMPLATES[platform] ?? '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。' : '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。'
       const placement = brief?.placement?.trim() || '商品详情页运营图'
       const slotGuidance = isLongPage ? '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。' : /主图|listing|hero/iu.test(placement)
         ? '槽位为商品主图：只展示单件商品正面，商品占画面主体，白底或极浅灰背景，不做营销海报。'
@@ -158,19 +188,24 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const styleKeywords = boundedList(brief?.styleKeywords, 8, 80)
       const copy = [brief?.headline, brief?.subheadline, brief?.cta].map(value => value?.trim()).filter(Boolean).map(value => value!.slice(0, 120))
       const isMainImage = /主图|白底/iu.test(input.direction) || /主图/iu.test(brief?.placement ?? '')
+      const contentPlatformMainImage = isMainImage && (platform === 'xiaohongshu' || platform === 'douyin')
       const prompt = [
         `生成电商商品运营视觉：商品是“${input.productTitle}”，${input.category ? `类目是“${input.category}”，` : ''}模式：${input.mode ?? 'create'}。`,
         modeInstruction,
         `版位：${placement}。${platformDna}${slotGuidance}`,
+        isMainImage ? `平台模板执行：${heroTemplate}` : '',
         `风格方向：${input.direction}。${styleKeywords.length ? `品牌/风格关键词：${styleKeywords.join('、')}。` : ''}`,
         skuLabels.length ? `只展示已确认的 SKU 标签：${skuLabels.join('、')}。` : '',
         sellingPoints.length ? `围绕已确认卖点组织视觉层级：${sellingPoints.join('；')}。` : '',
         copy.length ? `已确认的短文案仅作为排版参考：${copy.join('｜')}。` : '',
-        isMainImage
-          ? '电商主图必须使用纯白无缝背景，主体完整居中，禁止任何文字、信息卡片、水印、Logo 臆造、边框、道具和复杂场景。'
+        contentPlatformMainImage
+          ? '内容电商主图必须做出明显的新视觉方案：使用真实生活方式场景或简洁有层次的环境、3:4 或竖版阅读构图、单一视觉焦点和可后置排版的安全区；禁止把商品孤零零地原样抠在白底上。'
+          : isMainImage
+          ? '电商主图必须使用纯白无缝背景，但必须做出肉眼可识别的新构图设计：使用不同于参考图的主体尺度与留白比例、轻微三分之四视觉层次或结构化裁切、精致接触阴影与轮廓光，形成明确的新主图版式；禁止任何文字、信息卡片、水印、Logo 臆造、边框、道具和复杂场景。即使参考图已经是白底，也必须重新渲染一张具有新构图的图片：不得只做像素级复制、不得原样回传参考图像素。商品颜色、款式、材质、结构、Logo 和 SKU 必须与参考图完全一致，严禁改色、换款或重绘成另一件商品。'
           : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。',
         '商品本体、Logo、包装、SKU 对应关系和已确认事实不可改变；不要编造价格、折扣、认证、功效、销量、评论或配件。',
         '参考图是商品主体的唯一视觉事实来源；如果文字描述、自动解析结果或模型上下文与参考图冲突，忽略冲突描述，严格保留参考图中的商品类别、颜色、材质、结构和配件，不得把商品替换成其他品类。',
+        '生成前自检：场景类型、平台比例、商品身份、颜色、结构、材质、Logo、SKU、主体完整性和可读性必须同时满足；任一项无法满足就不要把结果当作合格候选。',
         '中文长文案和精确事实文字不要交给模型直接绘制；为后置排版保留清晰安全区，并返回适合叠加真实文案的构图。',
         isMainImage
           ? '商品主体清晰完整，保持原图的颜色、结构、材质和比例，不得改色、换款、增加图案或生成文字。'
@@ -248,6 +283,16 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       if (!record(payload) || !Array.isArray(payload.data)) throwProviderOutcomeUnknown(providerKey, 'image provider response without data')
       const images = imageReferencesFromPayload(payload).slice(0, input.count)
       if (images.length !== input.count) throwProviderOutcomeUnknown(providerKey, 'image provider incomplete result')
+      if (input.mode === 'optimize' && sourceImages.length > 0) {
+        const sourceDigests = new Set(sourceImages.map(dataUrlDigest).filter((value): value is string => Boolean(value)))
+        const unchanged = images.some(image => {
+          const digest = dataUrlDigest(image)
+          return Boolean(digest && sourceDigests.has(digest))
+        })
+        if (unchanged) {
+          throw new ImageOutputUnchangedError(providerKey)
+        }
+      }
       // Preserve the real provider artifact even when the asynchronous usage
       // callback is temporarily unavailable; the worker/API keep it marked
       // pending settlement and block publication until reconciliation.

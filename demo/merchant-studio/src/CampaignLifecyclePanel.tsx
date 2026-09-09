@@ -16,9 +16,17 @@ export interface CampaignSnapshot {
   state: string
   revision: number
   reason?: string
+  delivery?: { state?: string; valid?: boolean; code?: string; path?: string | null }
   items: Array<{ id: string; productId?: string; platform?: string; accountId?: string; state: string; error?: { code?: string; message?: string } }>
 }
-interface CampaignOption { id: string; state: string; revision: number; platform: string; accountId: string; itemCount: number; failedCount: number; createdAt: string; updatedAt: string }
+export interface CampaignOptionTarget { productId: string; platform: string; accountId: string; brandId?: string; canonicalProductId?: string; listingId?: string; taskId?: string; state?: string }
+export interface CampaignOption { id: string; state: string; revision: number; platform: string; accountId: string; brandId?: string; productIds?: string[]; targets?: CampaignOptionTarget[]; itemCount: number; failedCount: number; readiness?: 'blocked' | 'ready' | string; delivery?: { state?: string | null; valid?: boolean | null; code?: string | null; path?: string | null }; nextAction?: string | null; createdAt: string; updatedAt: string }
+
+export function campaignOptionScopeLabel(option: Pick<CampaignOption, 'brandId' | 'targets' | 'productIds'>): string {
+  const targets: CampaignOptionTarget[] = option.targets ?? (option.productIds ?? []).map(productId => ({ productId, platform: '', accountId: '' }))
+  const targetLabel = targets.map(target => `${target.productId}${target.listingId ? ` · listing ${target.listingId}` : ''}`).join('、')
+  return `品牌 ${option.brandId ?? '待确认'} · ${targetLabel || '商品关系待返回'}`
+}
 
 export function parseCampaignSnapshot(value: unknown): CampaignSnapshot {
   if (!value || typeof value !== 'object') throw new Error('campaign 响应格式无效')
@@ -35,7 +43,17 @@ export function parseCampaignSnapshot(value: unknown): CampaignSnapshot {
     const error = rawError && typeof rawError === 'object' ? { code: typeof (rawError as Record<string, unknown>).code === 'string' ? (rawError as Record<string, unknown>).code as string : undefined, message: typeof (rawError as Record<string, unknown>).message === 'string' ? (rawError as Record<string, unknown>).message as string : undefined } : undefined
     return { id, state: item.state, productId: text('productId', 'product_id'), platform: text('platform', 'platform'), accountId: text('accountId', 'account_id'), error }
   })
-  return { id: row.id, state: row.state, revision, reason: typeof row.reason === 'string' ? row.reason : undefined, items }
+  const rawManifest = row.delivery_manifest
+  const manifest = rawManifest && typeof rawManifest === 'object' ? rawManifest as Record<string, unknown> : undefined
+  const rawValidation = manifest?.validation
+  const validation = rawValidation && typeof rawValidation === 'object' ? rawValidation as Record<string, unknown> : undefined
+  const delivery = manifest ? {
+    state: typeof manifest.state === 'string' ? manifest.state : undefined,
+    valid: typeof validation?.valid === 'boolean' ? validation.valid : undefined,
+    code: typeof validation?.code === 'string' ? validation.code : undefined,
+    path: typeof validation?.path === 'string' ? validation.path : null,
+  } : undefined
+  return { id: row.id, state: row.state, revision, ...(typeof row.reason === 'string' ? { reason: row.reason } : {}), ...(delivery ? { delivery } : {}), items }
 }
 
 export function buildCampaignLifecycleParams(input: { campaign: CampaignSnapshot; action: CampaignLifecycleAction; reason: string; selectedItemIds?: string[]; idempotencyKey: string }) {
@@ -141,13 +159,17 @@ export function CampaignLifecyclePanel({ baseUrl }: { baseUrl?: string }) {
   const failed = campaign?.items.filter(item => item.state === 'failed') ?? []
   const availability = campaign ? campaignActionAvailability(campaign.state) : { canPause: false, canResume: false, canRetryFailed: false }
    if (!showControls) return <section className="panel campaign-lifecycle campaign-lifecycle-collapsed" aria-labelledby="campaign-lifecycle-title"><div className="panel-heading"><div><span className="section-kicker">BATCH ACTIONS</span><h3 id="campaign-lifecycle-title">批量任务操作</h3><p className="panel-subtitle">暂停、恢复或重试失败项属于高级操作；所有操作都会记录原因并再次校验状态。</p></div><div className="button-row compact"><button type="button" className="secondary" onClick={openProductSelection}>选择商品开始任务</button><button type="button" className="text-button" onClick={() => { setShowControls(true); void loadCampaignOptions() }} disabled={!baseUrl}>打开高级控制</button></div></div></section>
+  const campaignOptionLabel = (option: CampaignOption) => `${campaignStateLabel(option.state)}${option.readiness === 'blocked' ? ' · 交付阻断' : ''} · ${option.itemCount} 项 · ${new Date(option.updatedAt).toLocaleString('zh-CN', { hour12: false })}`
+  const selectedOption = campaignOptions.find(option => option.id === campaignId)
   return <section className="panel campaign-lifecycle" aria-labelledby="campaign-lifecycle-title" aria-busy={loading || submitting}>
     <div className="panel-heading"><div><span className="section-kicker">BATCH ACTIONS</span><h3 id="campaign-lifecycle-title">批量任务操作</h3><p className="panel-subtitle">读取任务批次后，可暂停、恢复或重试失败项；任何状态冲突都会阻断。</p></div><button type="button" className="text-button" onClick={() => setShowControls(false)} disabled={loading || submitting}>收起操作区</button></div>
-    <div className="campaign-lookup"><label htmlFor="merchant-campaign-select">选择批量计划<select id="merchant-campaign-select" value={campaignId} onChange={event => { setCampaignId(event.target.value); setCampaign(undefined) }} disabled={loading || submitting || !campaignOptions.length}><option value="">{loading ? '正在读取批量计划…' : campaignOptions.length ? '请选择一个批量计划' : '当前没有可操作的批量计划'}</option>{campaignOptions.map(option => <option key={option.id} value={option.id}>{campaignStateLabel(option.state)} · {option.itemCount} 项 · {new Date(option.updatedAt).toLocaleString('zh-CN', { hour12: false })}</option>)}</select></label><button type="button" className="secondary" onClick={() => void load()} disabled={!baseUrl || !campaignId.trim() || loading || submitting}>{loading ? <RefreshCw className="spin" size={16} aria-hidden="true"/> : null}{loading ? '读取中…' : '读取所选计划'}</button><button type="button" className="text-button" onClick={() => void loadCampaignOptions()} disabled={!baseUrl || loading || submitting}>重新读取列表</button></div>
+    <div className="campaign-lookup"><label htmlFor="merchant-campaign-select">选择批量计划<select id="merchant-campaign-select" value={campaignId} onChange={event => { setCampaignId(event.target.value); setCampaign(undefined) }} disabled={loading || submitting || !campaignOptions.length}><option value="">{loading ? '正在读取批量计划…' : campaignOptions.length ? '请选择一个批量计划' : '当前没有可操作的批量计划'}</option>{campaignOptions.map(option => <option key={option.id} value={option.id}>{campaignOptionLabel(option)}</option>)}</select></label><button type="button" className="secondary" onClick={() => void load()} disabled={!baseUrl || !campaignId.trim() || loading || submitting}>{loading ? <RefreshCw className="spin" size={16} aria-hidden="true"/> : null}{loading ? '读取中…' : '读取所选计划'}</button><button type="button" className="text-button" onClick={() => void loadCampaignOptions()} disabled={!baseUrl || loading || submitting}>重新读取列表</button></div>
+    {selectedOption && <div className="info-notice" data-testid="campaign-scope-summary">{campaignOptionScopeLabel(selectedOption)}</div>}
+    {!loading && !error && campaignOptions.some(option => option.readiness === 'blocked') && <div className="inline-error" role="alert">列表中有批量计划尚未具备交付条件；请选择后查看阻断码与修复路径。</div>}
     {!baseUrl && <div className="info-notice">API 未配置，campaign 控制保持关闭。</div>}
     {error && !action && <div ref={errorRef} tabIndex={-1} className="inline-error" role="alert" aria-live="assertive" aria-atomic="true"><AlertCircle size={16} aria-hidden="true"/><span>{error}</span><button type="button" className="text-button" onClick={() => void (errorSource === 'list' ? loadCampaignOptions() : load())}>重新读取</button></div>}
     {!loading && !error && !campaignOptions.length && <div className="empty-state">当前工作区暂无可操作的批量计划；请先在对话中创建批量任务。</div>}
-    {campaign && <div ref={statusRef} tabIndex={-1} className="campaign-status"><div><b>已选择批量计划</b><span>{campaignStateLabel(campaign.state)} · 当前状态版本已读取 · {campaign.items.length} 项</span>{(campaign.state === 'unknown' || campaign.state === 'reconciling') && <small role="status">平台结果尚未确认，暂不允许暂停、恢复或重试；请刷新状态或进行人工核对。</small>}</div><div className="button-row compact">
+    {campaign && <div ref={statusRef} tabIndex={-1} className="campaign-status"><div><b>已选择批量计划</b><span>{campaignStateLabel(campaign.state)} · 当前状态版本已读取 · {campaign.items.length} 项</span>{campaign.delivery?.valid === false && <small role="alert">交付清单已阻断：{campaign.delivery.code ?? 'CAMPAIGN_MANIFEST_INVALID'}{campaign.delivery.path ? ` · ${campaign.delivery.path}` : ''}。请先修复 canonical 商品与 listing 关联，再继续批量生产。</small>}{(campaign.state === 'unknown' || campaign.state === 'reconciling') && <small role="status">平台结果尚未确认，暂不允许暂停、恢复或重试；请刷新状态或进行人工核对。</small>}</div><div className="button-row compact">
       {availability.canResume && <button type="button" className="secondary" onClick={event => open('resume', event.currentTarget)}><PlayCircle size={16} aria-hidden="true"/>恢复</button>}
       {availability.canPause && <button type="button" className="danger-action" onClick={event => open('pause', event.currentTarget)}><PauseCircle size={16} aria-hidden="true"/>暂停</button>}
       {availability.canRetryFailed && <button type="button" className="secondary" onClick={event => open('retry_failed', event.currentTarget)} disabled={!failed.length}><RotateCcw size={16} aria-hidden="true"/>重试失败项 ({failed.length})</button>}

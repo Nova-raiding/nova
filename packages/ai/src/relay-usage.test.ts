@@ -49,6 +49,10 @@ describe('relay usage normalization', () => {
     expect(parseRelayUsage({ data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ modality: 'image', model: 'image-v1', metadata: { usage_observed: true } })
   })
 
+  it('uses an image response body id when the relay omits request-id headers', () => {
+    expect(parseRelayUsage({ id: 'image-response-123', data: [{ url: 'https://cdn.example/image.png' }] }, new Headers(), { modality: 'image', model: 'image-v1' })).toMatchObject({ providerRequestId: 'image-response-123', metadata: { usage_observed: true } })
+  })
+
   it('does not treat a cost-only response as usage evidence', async () => {
     await expect(emitRelayUsage(
       async () => {},

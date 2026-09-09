@@ -21,11 +21,11 @@ async function start() {
   return `http://127.0.0.1:${address.port}`
 }
 
-async function callMcp(base: string, token: string, workspaceId: string) {
+async function callMcp(base: string, token: string, workspaceId: string, method = 'platform.store.list', params: Record<string, unknown> = {}) {
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-workspace-id': workspaceId },
-    body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method: 'platform.store.list', params: { workspace_id: workspaceId } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params: { workspace_id: workspaceId, ...params } }),
   })
   return { response, body: await response.json() as Envelope }
 }
@@ -109,5 +109,21 @@ describe('Ops HTTP/MCP authorization parity', () => {
 
     expect(http.body.error?.details?.reason_code).toBe(mcp.body.error?.details?.reason_code)
     expect(http.body.error?.details?.capability).toBe(mcp.body.error?.details?.capability)
+  })
+
+  it('allows finance to reach payment reconciliation under strict MCP authorization', async () => {
+    const workspaceId = `ws_finance_reconcile_${Date.now()}`
+    const actorId = `finance-reconcile-${Date.now()}`
+    await workspaceMembers.upsert({ workspaceId, externalSubject: actorId, displayName: actorId, role: 'finance', status: 'active', invitedBy: 'ops-http-mcp-parity' })
+    service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `finance-reconcile-store-${workspaceId}`, credentialRef: `vault://finance-reconcile/${workspaceId}` })
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    configureToken('finance-reconcile-token', actorId, workspaceId, 'finance', ['workspace'])
+    const base = await start()
+
+    const result = await callMcp(base, 'finance-reconcile-token', workspaceId, 'billing.reconciliation.run', { limit: '1' })
+    expect(result.response.status, JSON.stringify(result.body)).toBe(503)
+    expect(result.body.error).toMatchObject({ code: 'PAYMENT_RECONCILIATION_UNAVAILABLE' })
+    expect(result.body.error?.code).not.toBe('FORBIDDEN')
   })
 })

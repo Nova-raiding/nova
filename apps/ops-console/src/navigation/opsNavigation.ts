@@ -21,7 +21,11 @@ export type OpsDomain = (typeof opsDomains)[number];
 
 /** Domains with one authoritative workbench; deep links must use that context. */
 export function requiredWorkbenchForDomain(domain: OpsDomain): "platform" | "workspace" | undefined {
-  if (["users", "stores", "models", "feature-flags", "storage", "finance", "audit"].includes(domain)) return "platform";
+  // Finance is intentionally dual-scope: platform operators use the
+  // cross-workspace search, while workspace operators use reconciliation,
+  // recharge orders and refunds. Keep the current workbench so the sidebar
+  // does not discard the workspace ledger context.
+  if (["users", "stores", "models", "feature-flags", "storage", "audit"].includes(domain)) return "platform";
   if (["members", "tasks", "knowledge", "rules", "support", "incidents"].includes(domain)) return "workspace";
   return undefined;
 }

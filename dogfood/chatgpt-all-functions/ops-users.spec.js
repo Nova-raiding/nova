@@ -1,13 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { openPlatformConsole } from './ops-auth.js'
+import { openPlatformConsole, openWorkspaceConsole } from './ops-auth.js'
 
 test.setTimeout(120_000)
 test.use({ channel: 'chrome' })
 const baseUrl = process.env.OPS_BASE_URL ?? 'http://127.0.0.1:18082/'
-const workspaceToken = process.env.OPS_WORKSPACE_TOKEN ?? ''
-const workspaceActorId = process.env.OPS_WORKSPACE_ACTOR_ID ?? 'workspace_admin_demo'
 
 const userDirectoryTable = page => page.getByRole('table').filter({
   has: page.getByRole('columnheader', { name: '成员状态' }),
@@ -137,18 +135,12 @@ test('operates the platform user directory without destructive confirmation', as
 })
 
 test('keeps member governance in the workspace workbench', async ({ page }) => {
-  test.skip(!workspaceToken, 'requires a workspace-only merchant_admin/owner token fixture')
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.addInitScript(({ actorId, token }) => {
-    for (const key of ['ops_connection_config_v1', 'ops_api_base', 'ops_workspace_id', 'ops_actor_id', 'ops_api_token', 'ops_workbench']) localStorage.removeItem(key)
-    localStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId: 'ws_demo', actorId, token, workbench: 'workspace' }))
-    localStorage.setItem('ops_workbench', 'workspace')
-  }, { actorId: workspaceActorId, token: workspaceToken })
   // Authenticate through the signed OIDC gateway before entering the
   // workspace workbench. A bearer token in localStorage is intentionally not
   // accepted by the OIDC runner and would make this test exercise an
   // impossible mixed-auth state.
-  await openPlatformConsole(page, '/ops/members?workbench=workspace', { workbench: 'workspace' })
+  await openWorkspaceConsole(page, '/ops/members?workbench=workspace')
   await expect(page).toHaveURL(/\/ops\/members\?workbench=workspace$/u)
   await expect(page.getByRole('heading', { name: '成员与权限' })).toBeVisible()
   await expect(page.getByText('当前租户成员')).toBeVisible()

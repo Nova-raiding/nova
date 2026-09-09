@@ -133,10 +133,12 @@ export function createScannerHeartbeat(input: {
   const callbackFresh = input.callback.configured && input.callback.capable && callbackAge !== undefined && callbackAge <= input.thresholds.callbackMaxAgeSeconds
   const queueEvidenceValid = Number.isSafeInteger(input.queue.backlog) && input.queue.backlog >= 0
     && Number.isSafeInteger(input.queue.deadLetter) && input.queue.deadLetter >= 0
-  // Scanner dead letters are unresolved user uploads, not a harmless metric.
-  // Keep the worker out of readiness until they are redriven or explicitly
-  // resolved so uploads cannot remain "processing" behind a green service.
-  const queueHealthy = queueEvidenceValid && input.queue.deadLetter === 0
+  // Dead letters are unresolved work and remain visible in heartbeat evidence,
+  // but they must not disable the scanner itself. A dead-letter recovery is
+  // processed by this same worker; gating readiness on the count creates a
+  // permanent deadlock where recovery can never run. The API still keeps
+  // quarantined assets blocked until a signed clean receipt is accepted.
+  const queueHealthy = queueEvidenceValid
   const recoveryCapable = Object.values(input.checks).every(Boolean) && input.clamav.reachable && definitionsFresh && eicarFresh && callbackFresh && !input.failure
   const ready = recoveryCapable && queueHealthy
   const failure = input.failure ?? (queueEvidenceValid ? undefined : { code: 'SCANNER_QUEUE_EVIDENCE_INVALID', message: 'scanner queue metrics must be non-negative safe integers' })

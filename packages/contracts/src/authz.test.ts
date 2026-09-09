@@ -81,6 +81,7 @@ describe('authorization policy registry', () => {
     expect(capabilitiesForRoles(['ops_admin'])).not.toContain('feature_flag.administer')
     expect(resolveCanonicalRoles({ gatewayRoles: ['platform_ops'] })).not.toContain('platform_admin')
     expect(capabilitiesForRoles(['rules_admin'])).toContain('rule.publish.approve')
+    expect(capabilitiesForRoles(['finance'])).toEqual(expect.arrayContaining(['billing.workspace.read', 'billing.reconcile.execute', 'billing.refund.execute']))
     for (const role of CANONICAL_ROLES) {
       expect(capabilitiesForRoles([role]), `${role} must be able to load its own authorization session`).toContain('authorization.session.read')
     }

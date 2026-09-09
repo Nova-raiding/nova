@@ -17,7 +17,7 @@ export function AuditPage({ model }: OpsDomainPageProps) {
       description={platformScope ? "平台范围检索各授权租户的不可变审计事实；详情采用最小化、脱敏投影，跨租户导出请切换到具体工作区。" : "检索当前工作区的不可变审计事实；详情和导出均采用最小化、脱敏投影。"}
       actions={<Button type="primary" loading={controller.loading} onClick={() => void controller.reload()}>刷新审计</Button>}
     >
-      <AuditCenterSection controller={controller} canExport={canExport} platformScope={platformScope} />
+      <div className="ops-audit-page"><AuditCenterSection controller={controller} canExport={canExport} platformScope={platformScope} fixtureDataPresent={model.dataSource?.fixtureDataPresent} /></div>
     </OpsPage>
   )
 }

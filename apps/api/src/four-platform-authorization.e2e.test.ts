@@ -84,6 +84,24 @@ describe('four-platform fixture authorization lifecycle', () => {
     }
   })
 
+  it('returns a fixture continuation URL that the merchant desktop can use for callback completion', async () => {
+    const base = await start()
+    const workspace = 'ws_rest_fixture_authorize_url_e2e'
+    await grantCommercialAccess(workspace)
+    const response = await fetch(`${base}/v1/platform-accounts/taobao/authorize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspace },
+      body: JSON.stringify({ actor_id: 'merchant' }),
+    })
+    const body = await response.json() as { data?: { mode?: string; authorizationUrl?: string }; error?: unknown }
+    expect(response.status).toBe(200)
+    expect(body.error).toBeNull()
+    expect(body.data).toMatchObject({ mode: 'fixture', authorizationUrl: expect.any(String) })
+    const continuation = new URL(body.data!.authorizationUrl!)
+    expect(continuation.searchParams.get('state')).toBeTruthy()
+    expect(continuation.searchParams.get('code')).toBeNull()
+  })
+
   it('keeps two fixture stores on the same platform isolated', async () => {
     const base = await start()
     const workspace = 'ws_same_platform_multiple_stores_e2e'

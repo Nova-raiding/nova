@@ -72,7 +72,7 @@ describe('Codex plugin installation package', () => {
     expect(server.env_vars).not.toContain('MERCHANT_ACTOR_ID')
     expect(existsSync(resolve(root, 'mcp/bridge.mjs'))).toBe(true)
     expect(existsSync(resolve(root, 'mcp/bridge.sh'))).toBe(true)
-    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 180000')
+    expect(readFileSync(resolve(root, 'mcp/bridge.mjs'), 'utf8')).toContain('MERCHANT_MCP_TIMEOUT_MS ?? 360000')
   })
 
   it('recovers local merchant settings from the macOS user session without exposing them in the manifest', () => {
@@ -140,7 +140,10 @@ describe('Codex plugin installation package', () => {
     expect(result.stderr).toContain(expectedMessage)
   })
 
-  it('does not let a stale launchd deployment environment downgrade explicit production', () => {
+  it.each([
+    ['MERCHANT_ALLOW_FIXTURE_FALLBACK', 'true', 'MERCHANT_ALLOW_FIXTURE_FALLBACK=true'],
+    ['MERCHANT_MCP_WRITE_ENABLED', 'true', 'interactive confirmation'],
+  ])('does not let a stale launchd deployment environment downgrade explicit production when %s is enabled', (name, value, expectedMessage) => {
     const directory = mkdtempSync(resolve(tmpdir(), 'merchant-launchctl-production-'))
     const launchctl = resolve(directory, 'launchctl')
     const uname = resolve(directory, 'uname')
@@ -157,10 +160,10 @@ printf '%s\n' Darwin
     try {
       const result = spawnSync('sh', [resolve(root, 'mcp/bridge.sh')], {
         encoding: 'utf8',
-        env: { PATH: `${directory}:/usr/bin:/bin`, NODE_ENV: 'production', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true' },
+        env: { PATH: `${directory}:/usr/bin:/bin`, NODE_ENV: 'production', MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false', MERCHANT_MCP_WRITE_ENABLED: 'false', [name]: value },
       })
       expect(result.status).toBe(78)
-      expect(result.stderr).toContain('MERCHANT_ALLOW_FIXTURE_FALLBACK=true')
+      expect(result.stderr).toContain(expectedMessage)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

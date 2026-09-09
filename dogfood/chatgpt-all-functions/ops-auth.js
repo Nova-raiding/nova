@@ -32,3 +32,24 @@ export async function openPlatformConsole(page, path = '/', options = {}) {
     throw error
   }
 }
+
+export async function openWorkspaceConsole(page, path = '/') {
+  const base = process.env.OPS_WORKSPACE_OIDC_BASE_URL
+  const username = process.env.OPS_WORKSPACE_OIDC_USERNAME
+  const password = process.env.OPS_WORKSPACE_OIDC_PASSWORD
+  const workspaceId = process.env.OPS_E2E_WORKSPACE_ID
+  if (!base || !username || !password || !workspaceId) throw new Error('workspace-only OIDC fixture is required')
+  await page.addInitScript(({ workspaceId }) => {
+    for (const key of ['ops_api_token', 'ops_actor_id', 'ops_workspace_id']) localStorage.removeItem(key)
+    localStorage.setItem('ops_workbench', 'workspace')
+    sessionStorage.setItem('ops_connection_config_v1', JSON.stringify({ apiBase: '/api', workspaceId, workbench: 'workspace' }))
+    sessionStorage.setItem('ops_workspace_id', workspaceId)
+    sessionStorage.setItem('ops_workbench', 'workspace')
+  }, { workspaceId })
+  await page.goto(new URL(path, base).toString(), { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('textbox', { name: '运营账号', exact: true })).toBeVisible()
+  await page.getByRole('textbox', { name: '运营账号', exact: true }).fill(username)
+  await page.getByLabel('密码', { exact: true }).fill(password)
+  await page.getByRole('button', { name: '安全登录', exact: true }).click()
+  await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证', { timeout: 30_000 })
+}

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Alert, Button, Form, Input, Select, Space, Tag } from "antd";
 import type { OpsConsoleModel } from "../../../hooks/useOpsConsoleModel";
 
@@ -7,6 +8,15 @@ export function BrandPreferencePanel({ model }: { model: OpsConsoleModel }) {
   const initial = brandPreference?.preferences
     ? JSON.stringify(brandPreference.preferences, null, 2)
     : '{\n  "tone": "专业、克制、可信",\n  "preferredWords": [],\n  "forbiddenWords": []\n}';
+  useEffect(() => {
+    if (!brandPreference) return;
+    form.setFieldsValue({
+      preferencesJson: JSON.stringify(brandPreference.preferences, null, 2),
+      version: brandPreference.version,
+      status: brandPreference.status,
+      source: brandPreference.source ?? "",
+    });
+  }, [brandPreference, form]);
   return (
     <Space direction="vertical" size={12} style={{ width: "100%" }}>
       <Alert showIcon type="info" message="品牌偏好会进入后续文案、图片和视频生成上下文" description="只有 active 版本会被正式任务引用；草稿仍需运营确认。" />

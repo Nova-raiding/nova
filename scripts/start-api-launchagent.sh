@@ -16,6 +16,23 @@ if [ -f "$service_plist" ]; then
   done
 fi
 
+# LaunchAgent starts outside an interactive shell and Node does not load the
+# repository .env file by itself. Read only the model settings needed by the
+# API; never source the file because it may contain JSON-valued settings.
+project_dir="/Users/lixiaomei/Desktop/code/codexSkills"
+env_file="$project_dir/.env"
+if [ -f "$env_file" ]; then
+  for name in MODEL_RELAY_BASE_URL MODEL_RELAY_ALLOWED_HOSTS AI_MODEL IMAGE_MODEL IMAGE_EDIT_MODEL OCR_MODEL VIDEO_MODEL; do
+    eval "current_value=\${$name:-}"
+    if [ -z "$current_value" ]; then
+      configured_value=$(awk -F= -v key="$name" '$1 ~ "^[[:space:]]*" key "[[:space:]]*$" {sub(/^[^=]*=/, ""); gsub(/^"|"$/, ""); gsub(/^\047|\047$/, ""); print; exit}' "$env_file")
+      if [ -n "$configured_value" ]; then
+        export "$name=$configured_value"
+      fi
+    fi
+  done
+fi
+
 # The desktop plugin never receives provider credentials. The API retrieves the
 # relay credential from the current user's Keychain only for its own process.
 relay_key=$(/usr/bin/security find-generic-password \

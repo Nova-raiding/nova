@@ -4,6 +4,23 @@ export type BatchReadiness = {
   nextStep: string
 }
 
+export type BatchResultState = 'empty' | 'blocked' | 'partial' | 'ready'
+
+export function resolveBatchResultState(result: {
+  state?: string
+  taskIds?: string[]
+  items?: Array<{ state?: string }>
+  delivery_manifest?: { state?: string; validation?: { valid?: boolean } }
+  readiness?: string
+}): BatchResultState {
+  const taskIds = result.taskIds ?? []
+  const items = result.items ?? []
+  if (result.state === 'blocked' || result.readiness === 'blocked' || result.delivery_manifest?.state === 'blocked' || result.delivery_manifest?.validation?.valid === false) return 'blocked'
+  if (!taskIds.length && !items.length) return 'empty'
+  if (result.state === 'partial' || items.some(item => ['failed', 'blocked', 'partial'].includes(item.state ?? ''))) return 'partial'
+  return 'ready'
+}
+
 /** Describes what the UI can honestly promise at the batch entry point. */
 export function resolveBatchReadiness(apiConfigured: boolean, selectedCount: number): BatchReadiness {
   if (!apiConfigured) return { canCreateGroup: false, selectionLabel: '未连接服务', nextStep: '配置 API 后才能创建真实任务组' }

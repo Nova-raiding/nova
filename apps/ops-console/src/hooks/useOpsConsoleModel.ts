@@ -57,10 +57,10 @@ import type {
   OpsRequestError,
 } from "../types/ops.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
-import { rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
+import { paymentQueryOutcome, paymentReconciliationOutcome, rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
 import { applyLoadedValue, OpsLoadCoordinator } from "./opsLoadCoordinator.js";
 import { submitRevisionCreation, type RevisionCreationValues } from "../components/tasks/knowledge/revisionCreation.js";
-import { auditCenterClient, featureFlagsClient, financeSearchClient, incidentsClient, supportClient } from "../api/opsDomainClients.js";
+import { auditCenterClient, featureFlagsClient, financeSearchClient, incidentsClient, parseModelStatus, parseStorageReconciliationList, supportClient } from "../api/opsDomainClients.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
 
@@ -90,7 +90,11 @@ export function dataSetErrorEvidenceFor(
 
 /** Canonical capability policy for post-session background hydration. */
 export const OPS_BACKGROUND_HYDRATION_POLICY = {
-  "workspace.commercial.get": "workspace.summary.read",
+  // This legacy configuration snapshot is a commercial read, not a generic
+  // workspace summary. The API fail-closes it when commercial access is not
+  // activated; do not probe it for every workspace page and manufacture 403/
+  // COMMERCIAL_OPERATION_DISABLED errors.
+  "workspace.commercial.get": "commercial.read",
   "ops.audit.platform.list": "audit.read",
   "ops.audit.list": "audit.read",
   "ops.members.list": "workspace.member.read",
@@ -754,7 +758,7 @@ export function useOpsConsoleModel() {
         (platformOperator || allowedHydrationMethods.has("platform.model.status")) ? (async () => {
           try {
             const value = await scheduledRpc("platform.model.status");
-            setModelStatus(value as unknown as ModelStatus);
+            setModelStatus(parseModelStatus(value));
             return value;
           } catch (cause) {
             firstOptionalError ??= cause;
@@ -836,7 +840,7 @@ export function useOpsConsoleModel() {
       applyLoadedValue(rolloutResult, (value) => setRollouts((value ?? []) as unknown as Rollout[]));
       applyLoadedValue(funnelResult, (value) => setFunnel(value as unknown as GrowthFunnel));
       applyLoadedValue(metricsResult, (value) => setWorkspaceMetrics(value as unknown as WorkspaceMetrics));
-      applyLoadedValue(storageReconciliationResult, (value) => setStorageReconciliationWorkspaces(((value ?? []) as Array<Record<string, unknown>>).map(item => ({ ...item, workspaceId: item.workspaceId ?? item.workspace_id })) as unknown as NonNullable<WorkspaceMetrics["storageReconciliation"]>[]));
+      applyLoadedValue(storageReconciliationResult, (value) => setStorageReconciliationWorkspaces(parseStorageReconciliationList(value)));
       applyLoadedValue(assetResult, (value) => setKnowledgeAssets((value ?? []) as unknown as KnowledgeAsset[]));
       applyLoadedValue(brandPreferenceResult, (value) => setBrandPreference((value ?? undefined) as unknown as BrandPreference | undefined));
       applyLoadedValue(learningResult, (value) => setLearningSuggestions((value ?? []) as unknown as LearningSuggestion[]));
@@ -956,9 +960,7 @@ export function useOpsConsoleModel() {
       return next;
     });
     if (rulesResult.status === "fulfilled") setRules((rulesResult.value ?? []) as unknown as Rule[]);
-    else message.error(`规则列表加载失败：${describeOpsError(rulesResult.reason)}`);
     if (syncResult.status === "fulfilled") setRuleSyncStatuses((syncResult.value ?? []) as unknown as RuleSyncStatus[]);
-    else message.error(`规则同步状态加载失败：${describeOpsError(syncResult.reason)}`);
     if (rulesResult.status === "rejected" || syncResult.status === "rejected") setError("规则数据加载失败，请重试；空列表不代表没有平台规则。");
     else setError("");
     setRuleSyncLoading(false);
@@ -1118,7 +1120,9 @@ export function useOpsConsoleModel() {
         name: values.name,
         version: values.version,
         scope: "global",
-        source_kind: "official",
+        // Rules entered from the Ops workspace are internal evidence. Only
+        // signed platform imports may use the official source kind.
+        source_kind: "internal",
         source_reference: values.sourceReference,
         source_checked_at: new Date().toISOString(),
         checks_json: values.checksJson,
@@ -1580,7 +1584,7 @@ export function useOpsConsoleModel() {
     }
   };
   const runReconciliation = async () => {
-    if (!canModelSettlement) {
+    if (!canPaymentReconciliation) {
       message.error("当前会话为只读，缺少账务权限");
       return;
     }
@@ -1598,14 +1602,9 @@ export function useOpsConsoleModel() {
     try {
       const report = (await rpc("billing.reconciliation.run", {
         limit: "50",
-      })) as unknown as {
-        settled?: Array<unknown>;
-        pending?: Array<unknown>;
-        failed?: Array<unknown>;
-      };
-      message.success(
-        `对账完成：入账 ${report.settled?.length ?? 0}，待处理 ${report.pending?.length ?? 0}，异常 ${report.failed?.length ?? 0}`,
-      );
+      })) as Parameters<typeof paymentReconciliationOutcome>[0];
+      const outcome = paymentReconciliationOutcome(report);
+      message[outcome.level](outcome.message);
       await load();
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "支付对账失败");
@@ -1641,8 +1640,13 @@ export function useOpsConsoleModel() {
     }
     setQueryingRechargeOrderId(orderId);
     try {
-      await rpc("billing.recharge.get", { order_id: orderId });
-      message.success("订单状态已更新");
+      const response = (await rpc("billing.recharge.get", { order_id: orderId })) as unknown as {
+        state?: string;
+        payment_mode?: string;
+        providerStatus?: { state?: string };
+      };
+      const outcome = paymentQueryOutcome(response);
+      message[outcome.level](outcome.message);
       await loadRechargeOrders(rechargeOrderStateFilter);
       return true;
     } catch (cause) {
@@ -1793,7 +1797,9 @@ export function useOpsConsoleModel() {
         content: values.content,
         scope: values.scope,
         ...(values.scopeValue ? { scope_value: values.scopeValue } : {}),
-        source_kind: "official",
+        // Rules entered from the Ops workspace are internal evidence. Only
+        // signed platform imports may use the official source kind.
+        source_kind: "internal",
         source_reference: values.sourceReference,
         source_checked_at: values.sourceCheckedAt,
         version: values.version,

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { createOutboxHandler, createWorkerProjection, type WorkerHandlerOptions } from './handler.js'
-import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, workerQueueKey } from './main.js'
-import type { PostgresOutboxRepository } from '../../../packages/persistence/src/index.js'
+import { allSettledWithConcurrency, assertGenerationExecution, assertPublishExecution, assertWorkerReadinessDependencies, createApiCommercialAccessGuard, createApiExecutionAuthorizationGuard, executeImageGenerationContinuations, fetchPublishMedia, hasCompleteScanCallbackCredentials, imageReconciliationIdempotencyKey, imageReconciliationNextAttemptAt, imageReconciliationQueryTimeoutMs, isImageProviderOutcomeUnknown, pollOnce, postAutomationTick, postImageGenerationReconciliation, postImageGenerationReconciliationStatus, postImageGenerationResult, postModelUsage, postModelUsageReconciliation, postObjectOrphanCleanup, postSupportSlaScan, publishIdempotencyKey, quotaAdmissionForEvent, readWorkerConfig, reconcileImageGenerationWorkspace, requireImageGenerationActionId, requireModelRunKey, rethrowPollFailureInOnceMode, runAutomationMaintenance, scannerOperationalMetrics, workerQueueKey } from './main.js'
+import type { PostgresOutboxRepository, SqlPool } from '../../../packages/persistence/src/index.js'
 import { DurableOutboxDispatcher, InMemoryQueue, type DurableOutboxEvent } from '../../../packages/workers/src/durable.js'
 import { QuotaExceededError } from '../../../packages/quotas/src/admission.js'
 import type { WorkerExecutionAuthorizationGuard } from '../../../packages/workers/src/execution-authorization.js'
@@ -72,6 +72,21 @@ const createAuthorizedOutboxHandler = (options: WorkerHandlerOptions) => {
 }
 
 describe('worker production entry', () => {
+  it('reports terminal scan errors as dead letters, not active backlog', async () => {
+    let metricsQuery = ''
+    const client = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.startsWith('SELECT\n')) metricsQuery = sql
+        return sql.startsWith('SELECT\n') ? { rows: [{ backlog: 0, dead_letter: 9, last_callback_accepted_at: null }] } : { rows: [] }
+      }),
+      release: vi.fn(),
+    }
+    const pool = { connect: vi.fn(async () => client) }
+    await expect(scannerOperationalMetrics(pool as unknown as SqlPool, ['ws_demo'], 12)).resolves.toEqual({ backlog: 0, deadLetter: 9 })
+    expect(metricsQuery).toContain("event.last_error->'retryable' = 'true'::jsonb")
+    expect(metricsQuery).toContain("COALESCE(event.last_error->>'terminal', 'false') <> 'true'")
+  })
+
   it('propagates poll failures in once mode for a non-zero process exit', () => {
     const failure = new Error('dependency unavailable')
     expect(() => rethrowPollFailureInOnceMode(true, failure)).toThrow(failure)

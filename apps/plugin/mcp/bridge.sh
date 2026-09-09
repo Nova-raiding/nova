@@ -53,7 +53,18 @@ lower_value() {
 
 # Production never inherits development bypasses. Interactive writes remain
 # available only through the bridge's per-session confirmation contract.
-deployment_environment=$(lower_value "${DEPLOY_ENV:-${NODE_ENV:-}}")
+node_environment=$(lower_value "${NODE_ENV:-}")
+deploy_environment=$(lower_value "${DEPLOY_ENV:-}")
+if [ "$node_environment" = "production" ] || [ "$deploy_environment" = "production" ]; then
+  deployment_environment=production
+elif [ "$node_environment" = "staging" ] || [ "$deploy_environment" = "staging" ]; then
+  deployment_environment=staging
+elif [ "$node_environment" = "preview" ] || [ "$deploy_environment" = "preview" ]; then
+  deployment_environment=preview
+else
+  deployment_environment=$node_environment
+  [ -n "$deployment_environment" ] || deployment_environment=$deploy_environment
+fi
 if [ "$deployment_environment" = "production" ] || [ "$deployment_environment" = "staging" ] || [ "$deployment_environment" = "preview" ]; then
   if [ "$(lower_value "${MERCHANT_ALLOW_FIXTURE_FALLBACK:-}")" = "true" ]; then
     echo 'merchant-marketing MCP refuses MERCHANT_ALLOW_FIXTURE_FALLBACK=true in production' >&2

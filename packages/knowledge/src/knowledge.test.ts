@@ -17,6 +17,16 @@ function createModule() {
 }
 
 describe('knowledge module', () => {
+  it('classifies manual rule references as internal, including after event hydration', () => {
+    const input = { name: '人工待核规则', content: '需要人工核验', scope: 'global' as const, source: { kind: 'official' as const, reference: 'manual://pending', checkedAt: '2026-08-25T00:00:00.000Z' }, version: '1', status: 'draft' as const }
+    const knowledge = createModule()
+    const created = knowledge.createRule(input)
+    expect(created.source.kind).toBe('internal')
+    const restored = createModule()
+    restored.hydrate([{ eventType: 'knowledge.rule.created', aggregateId: created.id, sequence: 1, payload: { ...created, source: input.source } as unknown as Record<string, unknown> }])
+    expect(restored.getRule(created.id)?.source.kind).toBe('internal')
+  })
+
   it('supports scoped, versioned rules and applicable-rule queries', () => {
     const knowledge = createModule()
     const global = knowledge.createRule({ name: '全局禁用绝对化', content: '禁止绝对化表达', scope: 'global', source, version: '1.0.0', status: 'active' })

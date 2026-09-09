@@ -18,6 +18,7 @@ export function RulesPage({ model }: RulesPageProps) {
       description="查看六个平台规则同步新鲜度，维护规则生命周期，并保留来源与审批证据。"
       actions={<Button type="primary" loading={model.ruleSyncLoading} onClick={() => void model.loadRules()}>刷新规则</Button>}
     >
+      <div className="ops-rules-page">
       <OpsPageError error={model.error} onRetry={() => void model.loadRules()} />
       <Alert
         type="info"
@@ -36,6 +37,7 @@ export function RulesPage({ model }: RulesPageProps) {
       />
       <RuleCenterSection model={model} />
       <WorkspaceRuleAuditPanel />
+      </div>
     </OpsPage>
   );
 }

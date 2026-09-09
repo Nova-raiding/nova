@@ -14,7 +14,7 @@ describe('deterministic content review', () => {
     const platformSeeds = defaultRuleCenterSeeds.filter(seed => seed.scope === 'platform')
     expect(platformSeeds.map(seed => seed.packId)).toEqual(expect.arrayContaining(['jd-write', 'taobao-mapping', 'tmall-mapping', 'pinduoduo-mapping', 'xiaohongshu-content', 'douyin-content']))
     expect(platformSeeds.map(seed => seed.targetId)).toEqual(expect.arrayContaining(['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin']))
-    expect(new Set(platformSeeds.map(seed => seed.source.kind))).toEqual(new Set(['official', 'internal']))
+    expect(new Set(platformSeeds.map(seed => seed.source.kind))).toEqual(new Set(['internal']))
     expect(platformSeeds.every(seed => seed.status === 'active' && seed.source.reference && seed.source.checkedAt)).toBe(true)
   })
 

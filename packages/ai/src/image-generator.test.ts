@@ -76,6 +76,16 @@ describe('image generator', () => {
     expect([...new Uint8Array(await (body?.get('image') as Blob).arrayBuffer())]).toEqual([1, 2, 3])
   })
 
+  it('rejects an optimize result that is byte-identical to the uploaded source', async () => {
+    const source = 'data:image/png;base64,AQID'
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async () => new Response(JSON.stringify({ id: 'image-test-request', usage: { total_tokens: 2, cost_cny: 0.001 }, data: [{ b64_json: 'AQID' }] }), { status: 200 }),
+    })
+    await expect(generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, mode: 'optimize', sourceImages: [source] }))
+      .rejects.toMatchObject({ code: 'IMAGE_OUTPUT_UNCHANGED', providerOutcome: 'failed', retryable: false })
+  })
+
   it('never downgrades an edit with only internal asset IDs to text-only generation', async () => {
     let called = false
     const generator = new OpenAICompatibleImageGenerator({ baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model', fetch: async () => { called = true; throw new Error('unexpected') } })
@@ -105,6 +115,20 @@ describe('image generator', () => {
     expect(requestBody?.prompt).toEqual(expect.stringContaining('轻量；可拆帽'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('中文长文案和精确事实文字不要交给模型直接绘制'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('画面不要素白'))
+  })
+
+  it('requires a newly rendered composition for a white-background main image', async () => {
+    let requestBody: Record<string, unknown> | undefined
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      },
+    })
+    await generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, visualBrief: { platform: 'taobao', placement: '商品主图' } })
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('不得原样回传参考图像素'))
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('平台模板执行：模板=搜索首屏商品 hero'))
   })
 
   it('only enables image generation through the HTTPS platform relay', () => {

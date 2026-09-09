@@ -57,8 +57,10 @@ describe('PostgresObjectOrphanRepository', () => {
       const isolated = new URL(base)
       isolated.pathname = `/${databaseName}`
       database = new Pool({ connectionString: isolated.toString(), max: 4 })
-      const migrations = (await loadMigrations()).filter(item => item.version <= 149)
-      expect(migrations.at(-1)?.version).toBe(149)
+      // Migration 149 adds the lease columns; migration 165 grants the
+      // published runtime queue ACL used by this app-role acceptance.
+      const migrations = (await loadMigrations()).filter(item => item.version <= 165)
+      expect(migrations.at(-1)?.version).toBe(165)
       expect(await new MigrationRunner(database, migrations).run()).toEqual(migrations.map(item => item.version))
       expect(await new MigrationRunner(database, migrations).run()).toEqual([])
       await database.query('INSERT INTO workspaces (id,status) VALUES ($1,$2),($3,$2)', [workspaceA, 'active', workspaceB])

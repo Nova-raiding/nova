@@ -234,7 +234,7 @@ describe('deployment operation scripts', () => {
       'douyin_auth_enabled: true', 'douyin_read_enabled: true', 'douyin_write_enabled: true',
       'point_in_time_recovery_enabled: true', 'database_pooler_enabled: true', 'database_max_backend_connections: 300', 'database_connection_utilization_alert_percent: 80', 'secret_provider: vault', 'worker_api_credentials_ref: vault://worker-api-credentials', ...['sync', 'generation', 'publish', 'reconcile', 'automation'].flatMap(role => [`worker_${role}_api_token_ref: vault://worker-${role}-token`, `worker_${role}_api_signing_secret_ref: vault://worker-${role}-signing`]), 'payment_mode: provider', 'payment_provider_adapters: alipay,wechat', 'payment_checkout_base_url: https://payments.example.com/checkout', 'payment_provider_checkout_api_url: https://payments.example.com/v1/checkout', 'payment_provider_query_api_url: https://payments.example.com/v1/query', 'payment_provider_refund_api_url: https://payments.example.com/v1/refund', 'payment_provider_api_key_ref: vault://merchant-payment/provider-api-key', 'payment_provider_merchant_id: merchant-example', 'payment_callback_base_url: https://merchant.example.com/v1', 'payment_callback_secret_ref: vault://merchant-payment-callback', 'payment_reconciliation_enabled: true', 'payment_refund_enabled: true', 'model_relay_base_url: https://relay.example.com', 'model_relay_api_key_ref: vault://merchant-model/relay-api-key', 'text_model: merchant-text-v1', 'image_model: merchant-image-v1', 'image_edit_model: merchant-image-edit-v1', 'ocr_model: merchant-ocr-v1', 'video_model: merchant-video-v1', 'approved_requests_per_minute: "100"', 'approved_tokens_per_minute: "100000"', 'maximum_task_cost_cny: "0.50"', 'platform_rule_sync_manifest_url: https://rules.example.com/platform-rules/v1/manifest.json', 'platform_rule_sync_signing_secret_ref: vault://merchant-rules/manifest-signing-secret', 'platform_rule_sync_interval_hours: "24"',
       'asset_scanner_mode: clamav_worker', 'allow_local_asset_scan_fixture: false', 'asset_scanner_api_token_ref: vault://merchant-scanner/api-token', 'asset_scanner_workspace_signing_secret_ref: vault://merchant-scanner/workspace-signing', 'asset_scan_receipt_key_id: scanner-production-2026-08', 'asset_scan_receipt_private_key_ref: vault://merchant-scanner/receipt-private-key', 'asset_scan_trusted_public_keys_ref: vault://merchant-scanner/trusted-public-keys', 'asset_scan_policy_version: scan-policy-2026-08-30', `clamav_image_digest: ${imageDigests.clamav}`, 'clamav_signature_max_age_minutes: 1440', 'clamav_max_file_bytes: 52428800',
-      'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_kms_key: vault://kms', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_channel_secret_ref: vault://merchant-alert-channel',
+      'object_storage_bucket: merchant-assets', 'object_storage_region: cn', 'object_storage_endpoint: https://s3.example.com', 'object_storage_kms_key: vault://kms', 'asset_display_base_url: https://merchant.example.com', 'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id', 'object_storage_versioning: true', 'lifecycle_policy_ref: vault://asset-lifecycle-policy', 'asset_quarantine_retention_days: 7', 'asset_clean_retention_days: 90', 'deletion_request_grace_days: 7', 'backup_retention_days: 30', 'alert_channel_secret_ref: vault://merchant-alert-channel',
     ].join('\n'))
     writeFileSync(evidence, JSON.stringify({
       schema_version: '1', release_id: 'release-1', environment: 'production', generated_at: '2026-08-23T00:00:00Z',
@@ -465,10 +465,13 @@ describe('deployment operation scripts', () => {
     const entrypoint = readFileSync('infra/nginx/merchant-studio-entrypoint.sh', 'utf8')
     const kubernetes = readFileSync('infra/kubernetes/base/ui.yaml', 'utf8')
     expect(nginx).toContain('${MERCHANT_API_TOKEN}')
+    expect(nginx).toContain('${MERCHANT_WORKSPACE_ID}')
+    expect(kubernetes).toContain('key: MERCHANT_WORKSPACE_ID')
     expect(nginx).not.toContain('pilot-local-token')
     expect(dockerfile).toContain('/etc/nginx/merchant-studio.conf.template')
     expect(dockerfile).toContain('40-merchant-studio-token.sh')
-    expect(entrypoint).toContain("envsubst '${MERCHANT_API_TOKEN} ${MERCHANT_API_RESOLVER}'")
+    expect(entrypoint).toContain("envsubst '${MERCHANT_API_TOKEN} ${MERCHANT_WORKSPACE_ID} ${MERCHANT_API_RESOLVER}'")
+    expect(entrypoint).toContain('MERCHANT_WORKSPACE_ID must start with an alphanumeric character')
     expect(entrypoint).toContain("awk '/^nameserver[[:space:]]+/{print $2; exit}' /etc/resolv.conf")
     expect(entrypoint).toContain('/etc/nginx/merchant-studio.conf.template')
     expect(kubernetes).toContain('key: MERCHANT_UI_API_TOKEN')
@@ -545,6 +548,8 @@ describe('deployment operation scripts', () => {
       expect(runtimeDockerfile).toContain('ln -sfn "../../$package_dir" "node_modules/$package_name"')
       expect(runtimeDockerfile.indexOf('COPY --from=build /app/packages ./packages')).toBeLessThan(runtimeDockerfile.indexOf('mkdir -p node_modules/@merchant-marketing'))
     }
+    expect(workerDockerfile).toContain('COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations')
+    expect(workerDockerfile).not.toMatch(/COPY packages\/persistence\/src\/migrations\/\d{3}_/u)
   })
 
   it('rebuilds every exported package alongside the root build', () => {
@@ -635,6 +640,14 @@ describe('deployment operation scripts', () => {
     expect(runner).toContain('for service in worker-sync worker-generation worker-publish worker-reconcile worker-automation worker-scan')
     expect(runner).not.toMatch(/up -d --build/u)
     expect(runner.match(/compose up -d --no-build/g)).toHaveLength(2)
+  })
+
+  it('keeps the ECS pilot UI from silently using demo credentials or workspace', () => {
+    const pilot = readFileSync('infra/local/docker-compose.ecs-pilot.yml', 'utf8')
+    expect(pilot).toContain('MERCHANT_API_TOKEN:?MERCHANT_API_TOKEN is required for pilot preflight')
+    expect(pilot).toContain('MERCHANT_WORKSPACE_ID:?MERCHANT_WORKSPACE_ID is required for pilot preflight')
+    expect(pilot).not.toContain('workspace-local-token')
+    expect(pilot).not.toContain(':-ws_demo')
   })
 
   it('rejects rendered Kubernetes images without the release digest', () => {

@@ -32,6 +32,20 @@ describe('PostgresBrandUnitRepository', () => {
     expect(select).toContain('GROUP BY b.workspace_id, b.id, b.name, b.revision, b.created_at, b.updated_at')
   })
 
+  it('keeps profile-derived brand-unit lookup tenant scoped', async () => {
+    const client = new Client()
+    client.enqueue() // BEGIN
+    client.enqueue() // set_config
+    client.enqueue({ id: 'brand_ws_a', workspaceId: 'ws_a', name: '品牌 A', revision: 1, bindings: [], createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:00.000Z' })
+    client.enqueue() // COMMIT
+    const result = await new PostgresBrandUnitRepository({ connect: async () => client } satisfies SqlPool).listBrands({ workspaceId: 'ws_a', brandId: 'brand_ws_a' })
+    expect(result[0]?.workspaceId).toBe('ws_a')
+    const select = client.calls.find(call => call.includes('FROM brands b'))!
+    expect(select).toContain('b.workspace_id=$1')
+    expect(select).toContain('b.id=$2')
+    expect(select).not.toContain('WHERE b.id=$2')
+  })
+
   it('returns the binding from the same transaction after inserting it', async () => {
     const client = new Client()
     client.enqueue() // BEGIN

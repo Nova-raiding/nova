@@ -53,6 +53,8 @@ export interface Product {
   id: string
   workspaceId: string
   platform: Platform
+  /** Brand scope assigned during an authorized store import. */
+  brandId?: string
   accountId?: string
   storeName: string
   /** Merchant-confirmed differentiation from the parent brand for this store. */
@@ -632,6 +634,8 @@ export interface ContentVersion {
   lockedFields?: string[]
   factVersionIds: string[]
   ruleVersionIds: string[]
+  /** Workspace knowledge frozen into this content version for merchant evidence. */
+  knowledgeContext?: KnowledgeGenerationContext
   /** Brand evidence frozen with this content version so review survives process restarts. */
   brandSnapshot?: BrandProfile
   /** Immutable provenance vector required to reproduce and audit a delivery. */
@@ -1948,7 +1952,7 @@ export class MerchantService {
     }
     return changed
   }
-  importProduct(input: { workspaceId: string; platform: Platform; accountId?: string; remoteId?: string; localProductKey?: string; title: string; skuCount?: number; skus?: ProductSku[]; stock?: number; price?: number; category?: string; images?: string[]; sourceAssetIds?: string[]; attributes?: Record<string, string>; sellingPoints?: ProductSellingPoint[]; storeName?: string; storeDifferentiation?: string }) {
+  importProduct(input: { workspaceId: string; platform: Platform; brandId?: string; accountId?: string; remoteId?: string; localProductKey?: string; title: string; skuCount?: number; skus?: ProductSku[]; stock?: number; price?: number; category?: string; images?: string[]; sourceAssetIds?: string[]; attributes?: Record<string, string>; sellingPoints?: ProductSellingPoint[]; storeName?: string; storeDifferentiation?: string }) {
     const remoteId = input.remoteId?.trim()
     const title = input.title.trim()
     const localKey = input.localProductKey?.trim() || `${input.accountId ?? (input.storeName?.trim() || '导入店铺')}:${title}`
@@ -1980,7 +1984,7 @@ export class MerchantService {
     const id = this.scopedProductId(input.workspaceId, input.platform, remoteId || `local_${hash(localKey).slice(0, 20)}`, input.accountId)
     const previous = this.products.get(id)
     const product: Product = {
-      id, workspaceId: input.workspaceId, platform: input.platform, ...(input.accountId ? { accountId: input.accountId } : {}), storeName: input.storeName?.trim() || '导入店铺', ...(input.storeDifferentiation?.trim() ? { storeDifferentiation: input.storeDifferentiation.trim().slice(0, 500) } : {}), ...(remoteId ? { remoteId } : {}), title,
+      id, workspaceId: input.workspaceId, platform: input.platform, ...(input.brandId ? { brandId: input.brandId.trim() } : {}), ...(input.accountId ? { accountId: input.accountId } : {}), storeName: input.storeName?.trim() || '导入店铺', ...(input.storeDifferentiation?.trim() ? { storeDifferentiation: input.storeDifferentiation.trim().slice(0, 500) } : {}), ...(remoteId ? { remoteId } : {}), title,
       skuCount: input.skus?.length ?? Math.max(0, input.skuCount ?? 0), stock: Math.max(0, input.stock ?? 0),
       ...(input.skus?.length ? { skus: input.skus.map(normalizeProductSku) } : {}),
       ...(typeof input.price === 'number' && Number.isFinite(input.price) ? { price: input.price } : {}),
@@ -2661,7 +2665,7 @@ export class MerchantService {
     this.imageIdempotency.set(`${input.workspaceId}:${input.idempotencyKey}`, job.id)
     return job
   }
-  async completeImageGeneration(input: { workspaceId: string; jobId: string; runKey?: string }) {
+  async completeImageGeneration(input: { workspaceId: string; jobId: string; runKey?: string; sourceImages?: string[] }) {
     const job = this.getImageGenerationJob(input.workspaceId, input.jobId)
     if (job.state === 'succeeded') return { job, images: [...(job.images ?? [])], product: this.products.get(job.productId)! }
     const flightKey = `${input.workspaceId}\u0000${job.id}\u0000${job.idempotencyKey}`
@@ -2672,6 +2676,19 @@ export class MerchantService {
       if (current.state === 'succeeded') return { job: current, images: [...(current.images ?? [])], product: this.products.get(current.productId)! }
       const product = this.products.get(current.productId)
       if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
+      // An uploaded product image must never be returned as if it were an AI
+      // redesign. The local fixture can exercise the unbound/create workflow,
+      // but optimize requests require a configured image provider because they
+      // must actually transform the supplied pixels.
+      if (!this.options.imageGenerator && current.imageMode === 'optimize' && current.sourceAssetIds?.length) {
+        current.state = 'failed'
+        current.providerAttemptState = 'not_started'
+        current.errorCode = 'IMAGE_GENERATION_NOT_CONFIGURED'
+        current.errorMessage = '图片模型中转未配置，不能把上传原图或静态素材当作重新设计结果返回'
+        current.revision += 1
+        current.updatedAt = now()
+        throw new DomainError('IMAGE_GENERATION_NOT_CONFIGURED', current.errorMessage, 503, { fixture_fallback: true, requires_image_provider: true })
+      }
       current.state = 'running'; current.revision += 1; current.updatedAt = now()
       if (!this.options.imageGenerator && process.env.NODE_ENV === 'production') {
         current.state = 'failed'; current.errorCode = 'IMAGE_GENERATION_NOT_CONFIGURED'; current.errorMessage = '生产环境未配置商品主图生成服务'; current.revision += 1; current.updatedAt = now()
@@ -2684,7 +2701,7 @@ export class MerchantService {
         const actionId = `image:${current.idempotencyKey}`
         const runKey = input.runKey?.trim() || actionId
         images = this.options.imageGenerator
-          ? await this.options.imageGenerator.generate({ productTitle: product.title, ...(product.category ? { category: product.category } : {}), direction: current.direction, visualBrief: current.visualBrief, mode: current.imageMode, count: current.count, ...(current.sourceAssetIds?.length ? { sourceAssetRefs: current.sourceAssetIds } : {}), usageContext: { workspaceId: input.workspaceId, actionId, runKey } })
+          ? await this.options.imageGenerator.generate({ productTitle: product.title, ...(product.category ? { category: product.category } : {}), direction: current.direction, visualBrief: current.visualBrief, mode: current.imageMode, count: current.count, ...(current.sourceAssetIds?.length ? { sourceAssetRefs: current.sourceAssetIds } : {}), ...(input.sourceImages?.length ? { sourceImages: input.sourceImages } : {}), usageContext: { workspaceId: input.workspaceId, actionId, runKey } })
           : Array.from({ length: current.count }, (_, index) => generatedMainImage(product, current.id, index, current.direction))
       } catch (error) {
         if ((current.state as ImageGenerationJob['state']) === 'succeeded') return { job: current, images: [...(current.images ?? [])], product }
@@ -4151,8 +4168,9 @@ export class MerchantService {
       ...(product.images !== undefined ? { reviewImageReferences: [...product.images] } : {}),
       factVersionIds,
       ruleVersionIds,
+      ...(snapshot.knowledgeContext ? { knowledgeContext: clone(snapshot.knowledgeContext) } : {}),
       ...(snapshot.brand ? { brandSnapshot: clone(snapshot.brand) } : {}),
-      versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, taskInputSnapshotId: snapshot.id, createdBy: 'system', reason: 'fixture_draft' }), state: 'review_required',
+      versionVector: contentVersionVector({ task, product, factVersionIds, ruleVersionIds, knowledgeVersionIds: snapshot.knowledgeContext ? [...snapshot.knowledgeContext.rules.map(rule => `knowledge.rule:${rule.id}@${rule.version}`), ...snapshot.knowledgeContext.assets.map(asset => `knowledge.asset:${asset.id}@r${asset.revision}`), ...snapshot.knowledgeContext.confirmedLearningSuggestions.map(item => `knowledge.learning:${item.id}`), ...(snapshot.knowledgeContext.competitorReferences?.map(item => `knowledge.competitor:${item.competitorAnalysisId}`) ?? [])] : [], taskInputSnapshotId: snapshot.id, createdBy: 'system', reason: 'fixture_draft' }), state: 'review_required',
       revision: 1,
     }
     this.contentVersions.set(version.id, version)

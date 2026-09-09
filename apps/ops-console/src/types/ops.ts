@@ -245,7 +245,10 @@ export type PlatformModelUsageSummary = {
   failedWorkspaceCount: number;
   recordCount: number;
   totalTokens: number;
-  providerCostCny: number;
+  providerCostCny: number | null;
+  missingCostEvidenceCount?: number;
+  providerCostStatus?: "verified" | "partial" | "unavailable";
+  providerStatementStatus?: "not_checked" | "needs_review" | "balanced" | "unavailable";
   customerChargeCny: number;
   unsettledRecordCount: number;
   byModality: Record<string, number>;
@@ -318,6 +321,18 @@ export type CompetitorAnalysis = {
   createdAt: string;
 };
 export type WorkspaceMetrics = {
+  source?: "durable_repository" | "process_local" | string;
+  dataCompleteness?: "complete" | "process_local" | "partial" | string;
+  hydration?: { status?: string; attempted?: boolean; invalidSnapshotCount?: number };
+  dataCoverage?: {
+    products?: number;
+    tasks?: number;
+    syncJobs?: number;
+    publishJobs?: number;
+    firstObservedAt?: string | null;
+    lastObservedAt?: string | null;
+    fixtureDataPresent?: boolean;
+  };
   jobs?: {
     sync: number;
     generation: number;
@@ -715,11 +730,18 @@ export type ModelUsageSettlementRecord = {
 };
 
 export type Reconciliation = {
+  statement?: { scope?: "mine" | "workspace"; balance_scope?: "workspace" | string; transaction_scope?: "mine" | "workspace" | string; model_usage_scope?: "mine" | "workspace" | string };
+  balance_scope?: "workspace" | string;
+  transaction_scope?: "mine" | "workspace" | string;
+  model_usage_scope?: "mine" | "workspace" | string;
   balance_cny: string;
   recharge_cny: string;
   debit_cny: string;
   refund_cny: string;
   transaction_count: number;
+  returned_transaction_count?: number;
+  transaction_limit?: number;
+  has_more_transactions?: boolean;
   transactions: Array<{
     id: string;
     type: string;
@@ -731,6 +753,7 @@ export type Reconciliation = {
     record_count: number;
     total_tokens: number;
     provider_cost_cny: string | null;
+    missing_cost_evidence_count?: number;
     customer_charge_cny: string;
     unsettled_records: number;
     by_modality: Record<string, number>;
@@ -818,6 +841,12 @@ export type OpsWorkbench = "platform" | "workspace";
 export type OpsSession = {
   actor_id: string;
   workspace_id: string;
+  identity_id?: string | null;
+  session_id?: string | null;
+  identity_status?: string | null;
+  risk_decision?: string | null;
+  mfa_verified?: boolean;
+  session_expires_at?: string | null;
   roles: string[];
   canonical_roles?: string[];
   workspace_granted: boolean;

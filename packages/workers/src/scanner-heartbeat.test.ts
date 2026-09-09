@@ -26,7 +26,7 @@ describe('scanner heartbeat contract', () => {
     expect(createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: { passed: false }, callback: base.callback, queue: base.queue }).ready).toBe(false)
     expect(createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: { ...base.clamav, definitionsAgeSeconds: 90_000 }, eicar: base.eicar, callback: base.callback, queue: base.queue }).ready).toBe(false)
     expect(createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: { configured: true, capable: false }, queue: base.queue }).ready).toBe(false)
-    expect(createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: base.callback, queue: { backlog: 0, deadLetter: 1 } }).ready).toBe(false)
+    expect(createScannerHeartbeat({ instanceId: 'scan-a', now, thresholds, checks: base.checks, clamav: base.clamav, eicar: base.eicar, callback: base.callback, queue: { backlog: 0, deadLetter: 1 } }).ready).toBe(true)
   })
 
   it('fails closed and records malformed queue evidence instead of coercing it to healthy', () => {

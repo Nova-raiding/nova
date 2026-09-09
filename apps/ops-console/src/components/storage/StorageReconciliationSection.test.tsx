@@ -13,8 +13,15 @@ describe("StorageReconciliationSection accessibility states", () => {
 
   it("explains the unavailable state", () => {
     const html = renderToStaticMarkup(<StorageReconciliationSection />);
-    expect(html).toContain("未接入对账");
+    expect(html).toContain("状态不可验证");
     expect(html).toContain("不提供客户素材、对象 key 或下载入口");
+  });
+
+  it("does not show a clean report without verifiable freshness as normal", () => {
+    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "clean", freshness: "unknown", lastRunAt: "2026-08-29T10:00:00Z" }} />);
+    expect(html).toContain("状态不可验证");
+    expect(html).not.toContain("对账正常");
+    expect(html).toContain("新鲜度未知");
   });
 
   it("renders a named empty workspace state with an optional refresh action", () => {
@@ -37,6 +44,13 @@ describe("StorageReconciliationSection accessibility states", () => {
     expect(html).not.toContain("storageKey");
   });
 
+  it("does not turn an unknown runtime status into a green ready state", () => {
+    const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "future_status" as never, lastRunAt: "2026-08-29T10:00:00Z" }} />);
+    expect(html).toContain("状态未知，未验证");
+    expect(html).toContain("不能视为正常");
+    expect(html).not.toContain(">对账正常<");
+  });
+
   it("announces loading without discarding the reconciliation region", () => {
     const markup = renderToStaticMarkup(<StorageReconciliationSection loading />);
     expect(markup).toContain('aria-busy="true"');
@@ -56,5 +70,12 @@ describe("StorageReconciliationSection accessibility states", () => {
     expect(markup).toContain('aria-label="重试加载对账结果"');
     expect(markup).toContain("min-height:44px");
     expect(markup).toContain("对账服务暂时不可用");
+  });
+
+  it("labels retained snapshots as unverified after a failed refresh", () => {
+    const markup = renderToStaticMarkup(<StorageReconciliationSection error="对账服务暂时不可用" summary={{ status: "clean", lastRunAt: "2026-08-29T10:00:00Z" }} summaries={[{ workspaceId: "ws-a", status: "clean", lastRunAt: "2026-08-29T10:00:00Z" }]} />);
+    expect(markup).toContain("以下是上次成功快照，不能视为当前对账结果");
+    expect(markup).toContain("上次快照，未复核");
+    expect(markup).not.toContain(">正常<");
   });
 });

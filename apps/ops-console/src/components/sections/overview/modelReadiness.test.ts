@@ -8,6 +8,7 @@ describe("model readiness presentation", () => {
 
   it("does not treat a configured provider as final readiness", () => {
     const rows = modelReadinessRows({
+      state: "partial_model_readiness",
       model_readiness: {
         text: {
           provider_configured: true,
@@ -22,6 +23,11 @@ describe("model readiness presentation", () => {
       ready: false,
       reasons: ["SVIP 计费组未启用"],
     });
+  });
+
+  it("does not treat modality gates as final readiness when the global cost gate is blocked", () => {
+    const rows = modelReadinessRows({ state: "cost_gate_blocked", model_readiness: { text: { ready: true, provider_configured: true } } });
+    expect(rows.find((row) => row.key === "text")).toMatchObject({ ready: false });
   });
 
   it("surfaces cost and billing-group blockers", () => {

@@ -33,6 +33,7 @@ export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {
   const initialLoadFailed = Boolean(model.error && !model.loading && model.items.length === 0);
   const permissionNotice = featureFlagPermissionNotice(canWrite, canEmergency);
   return <OpsPage eyebrow="FEATURE FLAGS" title="功能开关" description="按环境管理类型化开关、定向灰度和紧急关闭；全部变更保留 revision 与不可变审计。">
+    <div className="ops-feature-flags-page">
     <OpsPageError error={model.error ?? ""} onRetry={() => void model.load()} />
     {permissionNotice ? <Alert type="info" showIcon role="status" title="当前为受限操作状态" description={permissionNotice} /> : null}
     <Space wrap aria-label="功能开关筛选">
@@ -54,5 +55,6 @@ export function FeatureFlagsPage({ client, canWrite, canEmergency }: Props) {
       <label htmlFor="feature-flag-emergency-reason" style={{ display: "block", marginTop: 16, marginBottom: 8 }}>操作原因</label>
       <Input.TextArea id="feature-flag-emergency-reason" value={emergencyReason} onChange={event => setEmergencyReason(event.target.value)} rows={3} maxLength={500} showCount placeholder="至少 3 个字符，供审计和事故复盘" />
     </Modal>
+    </div>
   </OpsPage>;
 }

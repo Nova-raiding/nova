@@ -258,6 +258,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "成员状态", dataIndex: "status", width: 110, render: (value: string) => memberStatusLabels[value] ?? value },
             { title: "租户状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => workspaceStatusLabels[value] ?? value },
           ]} /></div>
+          <div><Typography.Title level={5}>商业、钱包与任务状态</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial`} pagination={false} scroll={{ x: 920 }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无商业快照；不会把缺失账务数据解释为余额为零" }} columns={[
+            { title: "租户", dataIndex: "workspaceId", width: 180 },
+            { title: "套餐", width: 160, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未配置" },
+            { title: "订阅 / 权益", width: 150, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未确认" },
+            { title: "任务用量", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `${row.commercial.usedTasks} / ${row.commercial.includedTasks}` : "未确认" },
+            { title: "钱包余额", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `¥${row.commercial.walletBalanceCny}` : "未确认" },
+            { title: "扣款与账单", width: 200, render: (_: unknown, row: PlatformUser) => row.commercial ? <Tag color={row.commercial.subscriptionStatus === "active" ? "blue" : "gold"}>{row.commercial.subscriptionStatus === "active" ? "订阅有效，账务仍需门禁核验" : "需核对订单/账单"}</Tag> : <Tag>未取得账务快照</Tag> },
+          ]} /></div>
           <div><Typography.Title level={5}>成员操作历史</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 8 }} locale={{ emptyText: "暂无成员操作记录" }} scroll={{ x: 680 }} dataSource={model.userDetail.audits} columns={[
             { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
             { title: "操作", dataIndex: "action", width: 140 },

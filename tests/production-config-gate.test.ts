@@ -77,7 +77,7 @@ function config(overrides: Record<string, boolean> = {}) {
     'object_storage_bucket: merchant-assets',
     'object_storage_region: cn',
     'object_storage_endpoint: https://s3.example.com',
-    'object_storage_kms_key: vault://kms', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token',
+    'object_storage_kms_key: vault://kms', 'merchant_ui_api_token_ref: vault://merchant-ui/api-token', 'merchant_ui_workspace_id_ref: vault://merchant-ui/workspace-id',
     'asset_display_base_url: https://merchant.example.com',
     'asset_display_url_signing_secret_ref: vault://merchant-assets/display-url-signing-secret',
     'object_storage_versioning: true',

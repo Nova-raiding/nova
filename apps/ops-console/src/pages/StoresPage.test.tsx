@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { OpsConsoleModel } from "../hooks/useOpsConsoleModel";
-import { StoresPage } from "./StoresPage.js";
+import { canCreateBrandUnit, StoresPage } from "./StoresPage.js";
 import { createAuthorizationProjection } from "../authz/authorization.js";
 
 const workspaceAuthorization = createAuthorizationProjection({ actor_id: "owner", workspace_id: "ws_a", roles: [], workspace_granted: true, capabilities: ["store.connection.read", "store.connection.update", "automation.read", "automation.update", "customer.content.read"] }, true);
@@ -30,6 +30,23 @@ const model = (overrides: Partial<OpsConsoleModel> = {}) => ({
 }) as unknown as OpsConsoleModel;
 
 describe("StoresPage", () => {
+  it("only exposes brand creation to roles accepted by the server gate", () => {
+    expect(canCreateBrandUnit(["merchant_admin"])).toBe(true);
+    expect(canCreateBrandUnit(["workspace_owner"])).toBe(true);
+    expect(canCreateBrandUnit(["competitor_reviewer"])).toBe(false);
+    expect(canCreateBrandUnit([])).toBe(false);
+  });
+
+  it("does not show a clickable create-brand form to a content-only reviewer", () => {
+    const markup = renderToStaticMarkup(<StoresPage model={model({
+      authorization: createAuthorizationProjection({ workspace_id: "ws_a", roles: ["competitor_reviewer"], actor_id: "reviewer", workspace_granted: true, capabilities: ["customer.content.read", "customer.content.update"] }, true),
+    })} onNavigate={vi.fn()} />);
+
+    expect(markup).toContain("当前工作区还没有可访问的品牌");
+    expect(markup).not.toContain('aria-label="品牌名称"');
+    expect(markup).not.toContain("创建品牌");
+  });
+
   it("mounts the directory, policy, and scan sections with real model data", () => {
     const store = {
       platform: "jd" as const,

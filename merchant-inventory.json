@@ -6,7 +6,7 @@
   "inventory": {
     "title": "Merchant Studio · 商家营销工作台",
     "url": "http://127.0.0.1:18081/merchant/overview",
-    "bodyText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 真实 API 工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接真实 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准。模型中转已就绪。\n查看健康状态\n工作区数据已读取\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n选择商品开始任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\nNEW SESSION\n从你已有的内容开始\n\n按“知识库 → 商品 → 图片/素材”的顺序准备内容；每个入口都会保留到地址栏。\n\n1\n知识库\n品牌资料与规则依据\n进入知识库\n2\n商品\n选择平台商品开始任务\n进入商品\n3\n图片\n主图、副图与视觉检查\n进入图片\n4\n素材\n上传并确认权益与事实\n进入素材\n已连接店铺\n7\n2 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n119\n其中 50 项高风险\nACTION QUEUE\n优先处理的问题\n查看商品与问题\n1\n店铺授权需重新连接\n小红书 · 小红书未验证 Fixture · refresh_required\n在交互会话中重新发起官方授权\n查看并处理\n2\n任务 task_5898f03b-3480-45e0-a849-0ab43075d5f2 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n3\n任务 task_128bbaea-94fb-48f6-8b54-1bf9e581a5f8 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n还有 116 项问题，已按优先级排序。\nPLUGIN WALLET\n创意点与能力状态\n可用\n可用创意点\n20,500点\n\n模型额度可用，具体生成仍受内容与平台门禁约束。\n\n可用\n生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额未知或不足时不会调用模型。\n余额\n可用\n服务端尚未返回说明。\n套餐剩余次数\n可用\n服务端尚未返回说明。\n生成能力\n暂不可生成\n服务端尚未返回说明。\n平台发布能力\n暂不可发布\n服务端尚未返回说明。\nCONNECTIONS\n平台连接\n管理连接\n京\n京东\njd 店铺\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺 等 3 个店铺名\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺\n可读取\n可同步\n同步\n撤销\n淘\n淘宝\ntaobao 店铺\n可读取\n可同步\n同步\n撤销\n天\n天猫\ntmall 店铺\n可读取\n可同步\n同步\n撤销\n拼\n拼多多\npinduoduo 店铺\n可读取\n可同步\n同步\n撤销\n小\n小红书\n小红书未验证 Fixture\n连接状态待确认\n暂不可读取\n抖\n抖音\ndouyin 店铺\n可读取\n可同步\n同步\n撤销\nRECENT\n最近动态\n查看全部\n淘宝同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n拼多多同步\n1 项 · 未发现失败项\n已完成\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n平台能力证据属于平台运营工作台；商家工作台仅展示店铺授权和交付就绪状态。",
+    "bodyText": "跳到主要内容\nMerchant Studio\n商家营销助手\n工作台\n运营概览\n商品与资产\n营销任务\n发布中心\n规则与检查\n新会话\n知识库\n品牌资料与规则依据\n商品\n选择平台商品开始任务\n图片\n主图、副图与视觉检查\n素材\n上传并确认权益与事实\n当前上下文\n\n尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。\n\n客服回复\n帮助与诊断\n工作区信息\n工作区容量\n实时读取\n由当前套餐与云端配置决定，请在账务入口查看\n云朵轻户外 · 本地演示工作区\n运营概览\n全局搜索\n⌘ K\n系统健康\n在线\n林\n已连接工作区 API\n商品、店铺、任务和发布状态将以当前工作区的服务端数据为准；这不代表外部平台已授权或生产已就绪。模型中转已就绪。\n查看健康状态\n工作区数据部分可用\n把商品事实变成\n可放心发布的内容\n\n同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。\n\n选择商品开始任务\n同步全部店铺\nAI\n事实确认\n内容生成\n检查发布\nNEW SESSION\n从你已有的内容开始\n\n按“知识库 → 商品 → 图片/素材”的顺序准备内容；每个入口都会保留到地址栏。\n\n1\n知识库\n品牌资料与规则依据\n进入知识库\n2\n商品\n选择平台商品开始任务\n进入商品\n3\n图片\n主图、副图与视觉检查\n进入图片\n4\n素材\n上传并确认权益与事实\n进入素材\n已连接店铺\n7\n2 家需处理或未就绪\n已批准内容\n0\n当前工作区累计\n平均首稿耗时\n—\n当前接口暂无耗时统计\n需处理问题\n137\n其中 50 项高风险\nDATA INTEGRITY\n当前经营数据范围\n部分数据\n总览不是完整快照\n数据源：durable_repository；无效持久化快照：8。请先修复数据恢复问题，再依据总览做经营决策。\n当前包含 fixture 数据，仅用于本地验收，不代表真实平台生产数据。\nACTION QUEUE\n优先处理的问题\n查看商品与问题\n1\n店铺授权需重新连接\n小红书 · 小红书未验证 Fixture · refresh_required\n在交互会话中重新发起官方授权\n查看并处理\n2\n任务 task_5898f03b-3480-45e0-a849-0ab43075d5f2 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n3\n任务 task_128bbaea-94fb-48f6-8b54-1bf9e581a5f8 存在内容阻断\n淘宝 · taobao 店铺 等 3 个店铺名 · review_required\n在交会话中修正内容并重新审核\n查看并处理\n还有 134 项问题，已按优先级排序。\nPLUGIN WALLET\n创意点与能力状态\n钱包余额可用（非扣费依据）\n可用创意点\n20,500点\n\n模型额度可用，生成时直接扣除创意点。\n\n钱包余额可用（非扣费依据）\n生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额未知或不足时不会调用模型。\n购买创意点请使用服务端可售套餐；当前支付服务未配置时不会显示或创建微信/支付宝订单。\nCOMMERCIAL CATALOG\n可售创意点套餐\n刷新套餐\n2,000 点包\n可执行\nSKU points_2000\n2\n¥1000.00 · 30 天有效\n\n权益：2,000 点 · 30 天有效\n\n当前仅展示服务端批准目录；支付入口将在真实 checkout 与回调就绪后开放。\n\n500 点包\n可执行\nSKU points_500\n2\n¥300.00 · 30 天有效\n\n权益：500 点 · 30 天有效\n\n当前仅展示服务端批准目录；支付入口将在真实 checkout 与回调就绪后开放。\n\n基础版\n可执行\nSKU basic\n2\n¥2000.00 · 每月\n\n权益：5,000 点 · 1 个品牌 · 5 家店铺 · 5 小时服务\n\n当前仅展示服务端批准目录；支付入口将在真实 checkout 与回调就绪后开放。\n\n定制版\n暂不可购买\nSKU custom\n2\n¥10000.00 起 · 每月\n\n权益：服务端商业权益\n\n购买阻断：ORDER_TERMS_REQUIRED\n\n成长版\n可执行\nSKU growth\n2\n¥5000.00 · 每月\n\n权益：12,500 点 · 3 个品牌 · 15 家店铺 · 10 小时服务\n\n当前仅展示服务端批准目录；支付入口将在真实 checkout 与回调就绪后开放。\n\n系统接入服务\n可执行\nSKU onboarding_once\n2\n¥5000.00\n\n权益：服务端商业权益\n\n当前仅展示服务端批准目录；支付入口将在真实 checkout 与回调就绪后开放。\n\n余额\n钱包余额可用（非扣费依据）\n创意点账本是模型能力和扣费的唯一依据\n套餐剩余次数\n套餐额度可用\n优先消耗套餐内模型行动额度\n生成能力\n生成能力可用\n仍需素材事实、权益和人工确认门禁\n平台发布能力\n已授权店铺尚未通过平台写入门禁\n已授权店铺尚未通过平台写入门禁\nCONNECTIONS\n平台连接\n\n仅显示当前工作区的店铺身份；“演示连接”是本地 Fixture，不代表真实平台已授权。\n\n管理连接\n京\n京东\njd 店铺\n演示连接\n仅查看演示\n淘\n淘宝\ntaobao 店铺 等 3 个店铺名\n演示连接\n仅查看演示\n淘\n淘宝\ntaobao 店铺\n演示连接\n仅查看演示\n淘\n淘宝\ntaobao 店铺 等 2 个店铺名\n演示连接\n仅查看演示\n天\n天猫\ntmall 店铺\n演示连接\n仅查看演示\n拼\n拼多多\npinduoduo 店铺\n演示连接\n仅查看演示\n小\n小红书\n小红书未验证 Fixture\n演示连接\n仅查看演示\n抖\n抖音\ndouyin 店铺\n演示连接\n仅查看演示\nRECENT\n最近动态\n查看全部\n淘宝同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n京东同步\n1 项 · 未发现失败项\n已完成\n拼多多同步\n1 项 · 未发现失败项\n已完成\nSYNC RECOVERY\n同步任务与失败项\n刷新\n当前同步任务没有失败项\nCAPABILITY EVIDENCE\n平台能力证据\n平台能力证据属于平台运营工作台；商家工作台仅展示店铺授权和交付就绪状态。",
     "buttons": [
       {
         "index": 0,
@@ -60,72 +60,72 @@
       },
       {
         "index": 10,
-        "text": "帮助与诊断",
+        "text": "客服回复",
         "disabled": false
       },
       {
         "index": 11,
-        "text": "工作区信息",
+        "text": "帮助与诊断",
         "disabled": false
       },
       {
         "index": 12,
-        "text": "打开主菜单",
+        "text": "工作区信息",
         "disabled": false
       },
       {
         "index": 13,
-        "text": "系统健康 在线",
+        "text": "打开主菜单",
         "disabled": false
       },
       {
         "index": 14,
-        "text": "林",
+        "text": "系统健康 在线",
         "disabled": false
       },
       {
         "index": 15,
-        "text": "查看健康状态",
+        "text": "林",
         "disabled": false
       },
       {
         "index": 16,
-        "text": "选择商品开始任务",
+        "text": "查看健康状态",
         "disabled": false
       },
       {
         "index": 17,
-        "text": "同步全部店铺",
+        "text": "选择商品开始任务",
         "disabled": false
       },
       {
         "index": 18,
-        "text": "1 知识库 品牌资料与规则依据 进入知识库",
+        "text": "同步全部店铺",
         "disabled": false
       },
       {
         "index": 19,
-        "text": "2 商品 选择平台商品开始任务 进入商品",
+        "text": "1 知识库 品牌资料与规则依据 进入知识库",
         "disabled": false
       },
       {
         "index": 20,
-        "text": "3 图片 主图、副图与视觉检查 进入图片",
+        "text": "2 商品 选择平台商品开始任务 进入商品",
         "disabled": false
       },
       {
         "index": 21,
-        "text": "4 素材 上传并确认权益与事实 进入素材",
+        "text": "3 图片 主图、副图与视觉检查 进入图片",
         "disabled": false
       },
       {
         "index": 22,
-        "text": "查看商品与问题",
+        "text": "4 素材 上传并确认权益与事实 进入素材",
         "disabled": false
       },
       {
         "index": 23,
-        "text": "查看并处理",
+        "text": "查看商品与问题",
         "disabled": false
       },
       {
@@ -140,86 +140,26 @@
       },
       {
         "index": 26,
-        "text": "管理连接",
+        "text": "查看并处理",
         "disabled": false
       },
       {
         "index": 27,
-        "text": "同步",
+        "text": "刷新套餐",
         "disabled": false
       },
       {
         "index": 28,
-        "text": "撤销",
+        "text": "管理连接",
         "disabled": false
       },
       {
         "index": 29,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 30,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 31,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 32,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 33,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 34,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 35,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 36,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 37,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 38,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 39,
-        "text": "同步",
-        "disabled": false
-      },
-      {
-        "index": 40,
-        "text": "撤销",
-        "disabled": false
-      },
-      {
-        "index": 41,
         "text": "查看全部",
         "disabled": false
       },
       {
-        "index": 42,
+        "index": 30,
         "text": "刷新",
         "disabled": false
       }
@@ -250,11 +190,19 @@
       },
       {
         "level": "H3",
+        "text": "当前经营数据范围"
+      },
+      {
+        "level": "H3",
         "text": "优先处理的问题"
       },
       {
         "level": "H3",
         "text": "创意点与能力状态"
+      },
+      {
+        "level": "H4",
+        "text": "可售创意点套餐"
       },
       {
         "level": "H3",

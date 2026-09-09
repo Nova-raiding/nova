@@ -87,6 +87,12 @@ describe('Codex plugin package', () => {
       'mcp/bridge.mjs', 'mcp/bridge.sh', 'mcp/bridge.test.ts', 'package.json',
       'scheduled/daily-store-risk-scan.json', 'scheduled/weekly-six-platform-digest.json',
       'skills/merchant-marketing/SKILL.md', 'skills/merchant-marketing/references/automations.md',
+      'skills/merchant-marketing/references/ecommerce-detail-page-generator.md',
+      'skills/merchant-marketing/references/ecommerce-detail-page-generator/category-playbooks.md',
+      'skills/merchant-marketing/references/ecommerce-detail-page-generator/page-spec.schema.json',
+      'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-profiles.json',
+      'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-style-guide.md',
+      'skills/merchant-marketing/references/ecommerce-detail-page-generator/prompt-recipes.md',
       'ui/image-local-edit.html', 'ui/recharge.html',
     ]
     for (const file of mirroredFiles) expect(sha256(marketplaceRoot, file), file).toBe(sha256(pluginRoot, file))

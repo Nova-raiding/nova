@@ -11,6 +11,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Space,
 } from "antd";
 import { SaveOutlined } from "@ant-design/icons";
 import { useEffect, useRef } from "react";
@@ -28,6 +29,7 @@ export function ConfigurationCenterSection({
     settings,
     platformRows,
     setPlatformRows,
+    platformOperations,
     orders,
     loading,
     saving,
@@ -158,11 +160,28 @@ export function ConfigurationCenterSection({
             forceRender: true,
             label: "平台与店铺",
             children: (
-              <Table
-                rowKey="platform"
-                pagination={false}
-                dataSource={platformRows}
-                columns={[
+              <>
+                <Alert
+                  type="info"
+                  showIcon
+                  title="此处不是 OAuth 授权配置"
+                  description="这里仅维护平台在运营后台的展示名称、店铺别名和启用状态。平台 AppKey/Secret、OAuth 回调、Vault 凭据及真实 API 能力由部署环境配置；商家店铺授权请在“平台连接”中发起，真实状态以平台上线 readiness 和授权审计为准。未配置或未验证时系统会保持只读并阻断发布。"
+                  style={{ marginBottom: 16 }}
+                />
+                <Alert
+                  type={platformOperations.length ? "success" : "warning"}
+                  showIcon
+                  title={platformOperations.length ? "授权与能力状态已从运行态读取" : "尚未取得运行态授权状态"}
+                  description={platformOperations.length
+                    ? "下表的授权/读写状态来自 API 运行态检查；展示名称、别名和启用开关不会改变 OAuth 凭据或平台 API 能力。"
+                    : "当前无法把空数据解释为已授权。请刷新运行态数据，并检查 API、数据库和运营会话。"}
+                  style={{ marginBottom: 16 }}
+                />
+                <Table
+                  rowKey="platform"
+                  pagination={false}
+                  dataSource={platformRows}
+                  columns={[
                   {
                     title: "平台",
                     dataIndex: "platform",
@@ -215,6 +234,34 @@ export function ConfigurationCenterSection({
                         }
                       />
                     ),
+                  },
+                  {
+                    title: "授权与能力",
+                    key: "runtime-status",
+                    render: (_: unknown, row: PlatformSetting) => {
+                      const runtime = platformOperations.find((item) => item.platform === row.platform);
+                      const simulated = runtime?.simulated === true || runtime?.dataMode === "fixture";
+                      const connected = runtime?.state === "connected" || (runtime?.connectedAccountCount ?? 0) > 0;
+                      const status = simulated
+                        ? { color: "gold" as const, label: "演示连接" }
+                        : connected && runtime?.writeEnabled
+                          ? { color: "green" as const, label: "已授权·可写" }
+                          : connected && runtime?.readEnabled
+                            ? { color: "blue" as const, label: "已授权·只读" }
+                            : connected
+                              ? { color: "orange" as const, label: "已授权·能力未就绪" }
+                              : { color: "default" as const, label: "未授权/未配置" };
+                      const reason = runtime?.readiness?.reasons?.join("、") || (runtime?.readiness?.mediaUpload?.reason ?? "");
+                      return (
+                        <Space orientation="vertical" size={0}>
+                          <Tag color={status.color}>{status.label}</Tag>
+                          <span style={{ color: "#667085", fontSize: 12 }}>
+                            {runtime ? `${runtime.connectedAccountCount ?? 0}/${runtime.accountCount ?? 0} 个店铺` : "运行态不可用"}
+                          </span>
+                          {reason ? <span title={reason} style={{ color: "#98A2B3", fontSize: 11, maxWidth: 190 }}>{reason}</span> : null}
+                        </Space>
+                      );
+                    },
                   },
                   {
                     title: "变更原因",
@@ -270,8 +317,9 @@ export function ConfigurationCenterSection({
                       </Button>
                     ),
                   },
-                ]}
-              />
+                  ]}
+                />
+              </>
             ),
           },
           {
