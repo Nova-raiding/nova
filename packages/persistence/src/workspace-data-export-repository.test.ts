@@ -29,4 +29,25 @@ describe('workspace data export repository', () => {
     await expect(repository.request({ workspaceId: 'ws_export', requestedBy: 'owner-a', reason: '不同导出意图', idempotencyKey: 'export-2' })).rejects.toMatchObject({ code: 'WORKSPACE_DATA_EXPORT_IDEMPOTENCY_CONFLICT' })
     await expect(repository.complete({ workspaceId: 'ws_export', id: request.id, workerId: 'export-worker', artifactRef: 'workspace-export://a', artifactSha256: 'a'.repeat(64), artifactSizeBytes: 1, artifactExpiresAt: '2099-01-01T00:00:00.000Z', deliveryEvidenceRef: 'evidence://a' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_STATE_CONFLICT')
   })
+
+  it('fails closed on missing request identity, reason, or idempotency key', async () => {
+    const repository = new MemoryWorkspaceDataExportRepository()
+    await expect(repository.request({ workspaceId: 'ws_export', requestedBy: ' ', reason: '合规导出', idempotencyKey: 'export-3' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_ACTOR_REQUIRED')
+    await expect(repository.request({ workspaceId: 'ws_export', requestedBy: 'owner-a', reason: ' ', idempotencyKey: 'export-4' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_REASON_REQUIRED')
+    await expect(repository.request({ workspaceId: 'ws_export', requestedBy: 'owner-a', reason: '合规导出', idempotencyKey: ' ' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_IDEMPOTENCY_REQUIRED')
+  })
+
+  it('rejects invalid artifact evidence and preserves the request until an explicit failure', async () => {
+    const repository = new MemoryWorkspaceDataExportRepository(() => new Date('2026-09-02T00:00:00.000Z'))
+    const request = await repository.request({ workspaceId: 'ws_export', requestedBy: 'owner-a', reason: '合规导出', idempotencyKey: 'export-5' })
+    await repository.markProcessing({ workspaceId: 'ws_export', id: request.id, workerId: 'export-worker' })
+    const base = { workspaceId: 'ws_export', id: request.id, workerId: 'export-worker', artifactRef: 'workspace-export://ws_export/1', artifactSha256: 'a'.repeat(64), artifactSizeBytes: 1, artifactExpiresAt: '2099-01-01T00:00:00.000Z', deliveryEvidenceRef: 'evidence://workspace-export/ws_export/1' }
+    await expect(repository.complete({ ...base, artifactRef: 'https://example.test/export.zip' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_ARTIFACT_REF_INVALID')
+    await expect(repository.complete({ ...base, artifactSha256: 'bad' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_CHECKSUM_INVALID')
+    await expect(repository.complete({ ...base, artifactSizeBytes: 0 })).rejects.toThrow('WORKSPACE_DATA_EXPORT_SIZE_INVALID')
+    await expect(repository.complete({ ...base, artifactExpiresAt: 'not-a-date' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_EXPIRY_INVALID')
+    const failed = await repository.fail({ workspaceId: 'ws_export', id: request.id, workerId: 'export-worker', failureCode: 'DELIVERY_FAILED' })
+    expect(failed).toMatchObject({ status: 'failed', failureCode: 'DELIVERY_FAILED' })
+    await expect(repository.fail({ workspaceId: 'ws_export', id: request.id, workerId: 'export-worker', failureCode: 'RETRY' })).rejects.toThrow('WORKSPACE_DATA_EXPORT_STATE_CONFLICT')
+  })
 })

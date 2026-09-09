@@ -2379,6 +2379,7 @@ async function callRemote(method, params) {
       const requestTimeoutMs = Math.min(timeoutMs, remainingMs)
       const timer = setTimeout(() => controller.abort(), requestTimeoutMs)
       try {
+        if (method === 'catalog.image.generate' || method === 'catalog.image.get') imageTrace('api.request', { method, api_origin: new URL(baseUrl()).origin, workspace_id: scopedWorkspaceId || 'unbound', attempt, timeout_ms: requestTimeoutMs, has_auth: Boolean(headers.authorization), argument_keys: Object.keys(params).sort() })
         const response = await fetch(baseUrl(), {
           method: 'POST',
           redirect: 'error',
@@ -3064,7 +3065,7 @@ async function handle(request) {
           if (match) content.push({ type: 'image', data: match[2], mimeType: match[1] })
         }
       }
-      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? 'unknown', image_count: nativeImages.length, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? 'unknown' })
+      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? result?.job_id ?? result?.job?.jobId ?? result?.job?.id ?? 'unknown', image_count: nativeImages.length, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? result?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? result?.candidate_state?.archive_state ?? 'unknown' })
       return jsonRpc(id, { content, structuredContent, ...(resultUi ? { _meta: resultUi } : {}), isError: false })
     } catch (error) {
       imageTrace('error', { method: name, error: error instanceof Error ? error.message : String(error) })

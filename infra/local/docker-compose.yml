@@ -6,6 +6,7 @@ x-default-logging: &default-logging
 
 x-worker-environment: &worker-environment
   NODE_ENV: production
+  MERCHANT_IMAGE_TRACE_LOGS: ${MERCHANT_IMAGE_TRACE_LOGS:-true}
   DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant
   REDIS_URL: redis://redis:6379
   # The local database contains historical QA workspaces. Do not make every
@@ -123,6 +124,7 @@ services:
       LOCAL_COMPOSE: "true"
       MCP_AUTHZ_MODE: enforce
       REQUEST_OBSERVABILITY_LOGS: ${REQUEST_OBSERVABILITY_LOGS:-false}
+      MERCHANT_IMAGE_TRACE_LOGS: ${MERCHANT_IMAGE_TRACE_LOGS:-true}
       DEPLOYMENT_PROFILE: local_acceptance
       PORT: 8787
       DATABASE_URL: postgres://merchant_app:merchant_app_local_only@postgres:5432/merchant

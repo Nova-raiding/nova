@@ -5,6 +5,11 @@ import { readBoundedResponseText } from '../../connectors/src/bounded-response.j
 import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
+function imageTrace(event: string, fields: Record<string, unknown> = {}) {
+  if (process.env.NODE_ENV === 'production' && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
+  try { console.info(JSON.stringify({ event: `merchant.image.${event}`, ts: new Date().toISOString(), ...fields })) } catch { /* diagnostics must never affect generation */ }
+}
+
 export interface ImageGenerationInput {
   productTitle: string
   category?: string
@@ -240,6 +245,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       // OpenAI-compatible edits require multipart image files. JSON image
       // fields on /images/generations may be silently ignored by relays.
       const editing = input.mode === 'optimize' && !nativeQwen
+      imageTrace('provider.request', { model: this.options.model, operation: editing ? 'image_edit' : 'image_generate', provider_request_id: providerKey, size: imageSize, count: input.count, mode: input.mode ?? 'create', source_image_count: sourceImages.length, source_asset_ref_count: sourceAssetRefs.length, long_page: isLongPage })
       const editBody = editing ? new FormData() : undefined
       if (editBody) {
         editBody.set('model', this.options.model)
@@ -274,6 +280,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         throwProviderOutcomeUnknown(providerKey, 'image provider response parsing', error)
       }
       const providerError = providerErrorSummary(payload)
+      imageTrace('provider.response', { model: this.options.model, provider_request_id: providerKey, http_status: response.status, provider_error: providerError.summary ?? null, response_item_count: record(payload) && Array.isArray(payload.data) ? payload.data.length : 0, parsed_image_count: imageReferencesFromPayload(payload).length })
       assertProviderResponseAccepted(response, providerKey, 'image provider', providerError.summary)
       if (providerError.summary) {
         const requestId = providerError.requestId

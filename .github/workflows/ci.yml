@@ -180,6 +180,7 @@ jobs:
           packages/persistence/src/migration-165.test.ts
           packages/persistence/src/migration-166.test.ts
           packages/persistence/src/migration-166-release.postgres.test.ts
+          packages/persistence/src/migration-179-release.postgres.test.ts
           packages/persistence/src/migration-167.test.ts
           packages/persistence/src/migration-168.test.ts
           packages/persistence/src/migration-169.test.ts
