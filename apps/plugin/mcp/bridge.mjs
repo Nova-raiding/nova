@@ -1231,7 +1231,7 @@ function userFacingToolText(method, result) {
   }
   if (method === 'brand.get') {
     if (!result.id) return '当前工作区尚未建立品牌档案。'
-    if (result.brandUnitSelectionRequired === true) return `已读取品牌档案，但尚未选择批量生产品牌单元；有 ${Array.isArray(result.brandUnitCandidates) ? result.brandUnitCandidates.length : 0} 个工作区候选，请先查看 brand-unit.list。`
+    if (result.brandUnitSelectionRequired === true) return `已读取品牌档案，但尚未关联批量生产品牌单元；当前有 ${Array.isArray(result.brandUnitCandidates) ? result.brandUnitCandidates.length : 0} 个工作区候选。brand-unit.list 仅用于查看，请由有权限的运营工作台/插件确认候选 ID 后完成关联；没有匹配项时先调用 brand-unit.create，再继续绑定店铺和批量生产。`
     if (typeof result.brandUnitId === 'string' && result.brandUnitId) return `已读取品牌档案，已关联批量生产品牌单元 ${sanitizeMerchantText(result.brandUnitId)}。`
   }
   if (method === 'support.customer.replies.list') {
