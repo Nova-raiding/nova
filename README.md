@@ -55,6 +55,7 @@ UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)�
 
 ## 代码入口
 
+- 产品总文档（主链路、账号密码、知识库、账务与上线门禁）：[docs/damai-product-master-document.md](docs/damai-product-master-document.md)
 - 产品使用介绍：[docs/product-usage-guide.md](docs/product-usage-guide.md)
 - 测试架构与上线验收：[docs/test-architecture-and-release-readiness-2026-09-08.md](docs/test-architecture-and-release-readiness-2026-09-08.md)
 
