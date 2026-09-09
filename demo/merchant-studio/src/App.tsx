@@ -6708,7 +6708,12 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
   }
   const executionState = job?.executionState
   const displayState = !job ? '' : job.archiveState === 'pending' ? 'archiving' : job.archiveState === 'partial' ? 'partial_archive' : job.archiveState === 'external_unarchived' ? 'external_unarchived' : executionState && ['provider_reserved', 'provider_dispatching', 'provider_started', 'outcome_unknown', 'dispatching'].includes(executionState) ? executionState : job.state
-  const displayStateLabels: Record<string, string> = { ...labels, archiving: '归档中，等待安全扫描', partial_archive: '部分归档，等待补偿', external_unarchived: '归档未确认，等待对账' }
+  const succeededDisplayLabel = job?.preferredCandidate?.visualRef
+    ? '候选已审核并选定，等待内容版本'
+    : job?.outputs?.some(output => output.reviewStatus === 'passed')
+      ? '生成完成，等待候选选择'
+      : '生成完成，等待人工审核'
+  const displayStateLabels: Record<string, string> = { ...labels, succeeded: succeededDisplayLabel, archiving: '归档中，等待安全扫描', partial_archive: '部分归档，等待补偿', external_unarchived: '归档未确认，等待对账' }
   const displayStateTone = displayState === 'failed' || displayState === 'outcome_unknown' || displayState === 'external_unarchived' ? 'amber' : displayState === 'succeeded' && job?.archiveState === 'archived' ? 'green' : 'blue'
   const candidatePageData = getImageCandidatePage(job?.images?.map((src, index) => ({ src, index })) ?? [], candidatePage)
   const focusImageError = () => document.getElementById('image-job-error')?.focus()
