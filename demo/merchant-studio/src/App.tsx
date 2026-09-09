@@ -147,6 +147,7 @@ import {
   type TaskUnderstanding,
   type WorkspaceMetrics,
 } from './api'
+import { brandUnitSelectionMessage } from './brand-unit-selection'
 import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
 import { resolveStoreSyncTargets } from './store-sync'
 import {
@@ -1829,6 +1830,10 @@ function Overview({
       )
       .finally(() => setAction(null))
   }
+  const syncableStoreCount = (() => {
+    const resolution = resolveStoreSyncTargets(accounts)
+    return resolution.ok ? resolution.targets.length : 0
+  })()
   const syncAll = async () => {
     if (!baseUrl) return
     const resolution = resolveStoreSyncTargets(accounts)
@@ -1997,7 +2002,13 @@ function Overview({
                 accountsLoading ||
                 Boolean(accountsError) ||
                 accounts === null ||
+                syncableStoreCount === 0 ||
                 Boolean(action)
+              }
+              title={
+                syncableStoreCount === 0 && accounts && !accountsLoading && !accountsError
+                  ? '没有已授权且可读取的店铺，请先连接真实平台店铺'
+                  : undefined
               }
             >
               <RefreshCw
@@ -2012,7 +2023,9 @@ function Overview({
                 ? '同步中…'
                 : accountsLoading
                   ? '正在发现店铺…'
-                  : '同步全部店铺'}
+                  : syncableStoreCount === 0
+                    ? '等待店铺连接'
+                    : '同步全部店铺'}
             </button>
           </div>
         </div>
@@ -3578,7 +3591,7 @@ function AssetLibrary({
           ) : brand?.brandUnitSelectionRequired ? (
             <div className="inline-error" role="alert">
               <AlertCircle size={16} aria-hidden="true" />
-              <span>品牌档案尚未选择批量生产品牌单元；当前工作区有 {brand.brandUnitCandidates?.length ?? 0} 个候选，请先通过 brand-unit.list 选择并关联，避免商品链路归错品牌。</span>
+              <span>{brandUnitSelectionMessage(brand.brandUnitCandidates?.length ?? 0)}</span>
             </div>
           ) : null}
           <StatusChip tone={assets?.length ? 'green' : 'neutral'}>

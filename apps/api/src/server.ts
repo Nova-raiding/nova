@@ -3646,6 +3646,26 @@ async function persistSnapshot(workspaceId: string, entityType: 'product' | 'tas
 }
 
 /**
+ * Task answers and product facts are separate aggregates. When a merchant
+ * confirms facts from the task conversation, persist the product transition
+ * and unblock sibling draft tasks as one observable workflow. Otherwise the
+ * current task can look ready while a fresh request rehydrates the product
+ * with factsConfirmed=false and image generation remains blocked.
+ */
+async function persistTaskAnswerFactConfirmation(input: { workspaceId: string; productId: string; factsConfirmedBefore: boolean; confirmationRequested: boolean }) {
+  if (!input.confirmationRequested || input.factsConfirmedBefore) return
+  const product = service.products.get(input.productId)
+  if (!product?.factsConfirmed) return
+  await persistSnapshot(input.workspaceId, 'product', product, product as unknown as Record<string, unknown>)
+  await persistEvent(input.workspaceId, product.id, 'product.facts_confirmed', product.version ?? 1, { product_id: product.id, version: product.version ?? 1, source: 'task.answer' })
+  const resumedTasks = service.refreshTasksAfterProductFacts(input.workspaceId, product.id)
+  for (const resumedTask of resumedTasks) {
+    await persistSnapshot(input.workspaceId, 'task', resumedTask, resumedTask as unknown as Record<string, unknown>)
+    await persistEvent(input.workspaceId, resumedTask.id, 'task.facts_unblocked', resumedTask.version, { task_id: resumedTask.id, product_id: product.id, state: resumedTask.state, source: 'task.answer' })
+  }
+}
+
+/**
  * An uploaded/quarantined asset must never be committed without the event
  * that makes its durable lifecycle observable.  In Postgres this deliberately
  * uses the existing single-snapshot transaction instead of the older
@@ -15684,9 +15704,32 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('answers_json must be an object')
         answers = parsed as Record<string, string | number | boolean | string[]>
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'answers_json 必须是 JSON 对象', 400) }
+      // `answerTask` updates the in-memory product projection when the
+      // merchant confirms facts, but task answers are a separate aggregate.
+      // Capture the fact state before the call so we can durably persist the
+      // product transition below. Without this, the task looks unblocked in
+      // the current request while the next request rehydrates
+      // `factsConfirmed=false` and image generation is blocked forever.
+      const answeredProductId = typeof answers.product_id === 'string' && answers.product_id.trim() ? answers.product_id.trim() : task.productId
+      const factsConfirmedBefore = service.products.get(answeredProductId)?.factsConfirmed === true
       const answered = service.answerTask(workspaceId, task.id, answers, typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined)
       await persistSnapshot(workspaceId, 'task', answered, answered as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, task.id, 'task.answers_submitted', answered.version, { task_id: task.id, input_snapshot_id: answered.inputSnapshotId, answers: answered.answers, missing_questions: answered.missingQuestions })
+      if (answers.confirm_facts === true && !factsConfirmedBefore) {
+        const confirmedProduct = service.products.get(answered.productId)
+        if (confirmedProduct?.factsConfirmed) {
+          await persistSnapshot(workspaceId, 'product', confirmedProduct, confirmedProduct as unknown as Record<string, unknown>)
+          await persistEvent(workspaceId, confirmedProduct.id, 'product.facts_confirmed', confirmedProduct.version ?? 1, { product_id: confirmedProduct.id, version: confirmedProduct.version ?? 1, source: 'task.answer' })
+          // A product can have multiple draft tasks. Keep their blocking
+          // questions in sync with the canonical facts transition, just like
+          // the explicit catalog.facts.confirmation endpoint does.
+          const resumedTasks = service.refreshTasksAfterProductFacts(workspaceId, confirmedProduct.id)
+          for (const resumedTask of resumedTasks) {
+            await persistSnapshot(workspaceId, 'task', resumedTask, resumedTask as unknown as Record<string, unknown>)
+            await persistEvent(workspaceId, resumedTask.id, 'task.facts_unblocked', resumedTask.version, { task_id: resumedTask.id, product_id: confirmedProduct.id, state: resumedTask.state, source: 'task.answer' })
+          }
+        }
+      }
       return result(answered)
     }
     case 'task.understand': return result(await enforceTaskRequestCandidates(req, workspaceId, service.understandTaskRequest(workspaceId, required(params, 'request_text'))))
@@ -18655,11 +18698,17 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const canonicalScope = await resolveCanonicalTaskScope({ workspaceId, productId, platform: taskPlatform, ...(taskAccountId ? { accountId: taskAccountId } : {}), ...(brandId ? { brandId } : {}), requireListing: true })
     const createdTask = service.createTask({ workspaceId, productId, platform: taskPlatform, ...(taskAccountId ? { accountId: taskAccountId } : {}), ...(canonicalScope ?? (brandId ? { brandId } : {})), ...(taskId ? { taskId } : {}), ...(typeof input.region === 'string' ? { region: input.region } : {}), ...(typeof input.request_text === 'string' && input.request_text.trim() ? { requestText: input.request_text.trim() } : {}) })
     if (keyHash && intentHash) { createdTask.taskRequestKeyHash = keyHash; createdTask.taskRequestIntentHash = intentHash }
-    const task = input.answers && typeof input.answers === 'object' && !Array.isArray(input.answers)
-      ? service.answerTask(workspaceId, createdTask.id, input.answers as Record<string, string | number | boolean | string[]>, createdTask.version)
+    const taskAnswers = input.answers && typeof input.answers === 'object' && !Array.isArray(input.answers)
+      ? input.answers as Record<string, string | number | boolean | string[]>
+      : undefined
+    const answeredProductId = taskAnswers && typeof taskAnswers.product_id === 'string' && taskAnswers.product_id.trim() ? taskAnswers.product_id.trim() : createdTask.productId
+    const factsConfirmedBefore = taskAnswers ? service.products.get(answeredProductId)?.factsConfirmed === true : false
+    const task = taskAnswers
+      ? service.answerTask(workspaceId, createdTask.id, taskAnswers, createdTask.version)
       : createdTask
     await persistSnapshot(workspaceId, 'task', task, task as unknown as Record<string, unknown>)
     await persistEvent(workspaceId, task.id, 'task.created', task.version, task as unknown as Record<string, unknown>)
+    await persistTaskAnswerFactConfirmation({ workspaceId, productId: task.productId, factsConfirmedBefore, confirmationRequested: taskAnswers?.confirm_facts === true })
     return send(res, 201, workspaceId, task, null, req)
   }
   const taskAnswersMatch = path.match(/^\/v1\/tasks\/([^/]+)\/answers$/)
@@ -18667,9 +18716,13 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const task = scopeTask(req, taskAnswersMatch[1]!)
     const input = await body(req)
     if (!input.answers || typeof input.answers !== 'object' || Array.isArray(input.answers)) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'answers 必须是对象', 400)
-    const answered = service.answerTask(task.workspaceId, task.id, input.answers as Record<string, string | number | boolean | string[]>, typeof input.expected_version === 'number' ? input.expected_version : undefined)
+    const taskAnswers = input.answers as Record<string, string | number | boolean | string[]>
+    const answeredProductId = typeof taskAnswers.product_id === 'string' && taskAnswers.product_id.trim() ? taskAnswers.product_id.trim() : task.productId
+    const factsConfirmedBefore = service.products.get(answeredProductId)?.factsConfirmed === true
+    const answered = service.answerTask(task.workspaceId, task.id, taskAnswers, typeof input.expected_version === 'number' ? input.expected_version : undefined)
     await persistSnapshot(task.workspaceId, 'task', answered, answered as unknown as Record<string, unknown>)
     await persistEvent(task.workspaceId, task.id, 'task.answers_submitted', answered.version, { task_id: task.id, input_snapshot_id: answered.inputSnapshotId, answers: answered.answers, missing_questions: answered.missingQuestions })
+    await persistTaskAnswerFactConfirmation({ workspaceId: task.workspaceId, productId: answered.productId, factsConfirmedBefore, confirmationRequested: taskAnswers.confirm_facts === true })
     return send(res, 200, task.workspaceId, answered, null, req)
   }
   const taskVersionsMatch = path.match(/^\/v1\/tasks\/([^/]+)\/content-versions$/)
