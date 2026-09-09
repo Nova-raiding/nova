@@ -23,6 +23,7 @@ describe('local relay start contract', () => {
     expect(compose).toContain('IMAGE_GENERATION_EXECUTION_MODE: ${IMAGE_GENERATION_EXECUTION_MODE:-durable}')
     expect(compose).toContain('IMAGE_STATUS_PATH: ${IMAGE_STATUS_PATH:-}')
     expect(compose).toContain('IMAGE_EDIT_MODEL: ${IMAGE_EDIT_MODEL:-qwen-image-2.0}')
+    expect(compose).toContain('MODEL_MAX_TASK_COST_CNY: ${MODEL_MAX_TASK_COST_CNY:-0.50}')
     expect(script).toContain('export OCR_MODEL=${OCR_MODEL:-agnes-2.5-flash}')
     expect(compose).toContain('OCR_MODEL: ${OCR_MODEL:-agnes-2.5-flash}')
     expect(compose).toContain('VIDEO_MODEL: ${VIDEO_MODEL:-happyhorse-1.1-t2v}')
