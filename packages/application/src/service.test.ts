@@ -390,6 +390,21 @@ describe('MerchantService', () => {
     expect(job.errorMessage).toContain('不能把上传原图或静态素材当作重新设计结果返回')
   })
 
+  it('fails closed when a create request carries source assets without a provider', async () => {
+    const service = new MerchantService({ fixtureMode: true })
+    const job = service.enqueueImageGeneration({
+      workspaceId: 'ws_demo',
+      productId: 'prod_fixture_1',
+      sourceAssetIds: ['asset_uploaded_product'],
+      imageMode: 'create',
+      idempotencyKey: 'create-with-source-without-provider',
+      count: 1,
+    })
+    await expect(service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })).rejects.toMatchObject({ code: 'IMAGE_GENERATION_NOT_CONFIGURED' })
+    expect(job.images).toBeUndefined()
+    expect(job.errorMessage).toContain('请配置真实图片中转后重试')
+  })
+
   it('rejects duplicate candidate references and cross-workspace archive assets atomically', () => {
     const service = new MerchantService({ fixtureMode: true })
     const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', idempotencyKey: 'archive-validation', count: 2 })

@@ -33,6 +33,10 @@ export interface ImageGenerationInput {
     /** Frozen platform rules that shaped this candidate. */
     platformRules?: string[]
     outputVariant?: 'main' | 'secondary' | 'detail_long'
+    /** Sanitized competitor observations; reference only, never product facts. */
+    competitorStructures?: string[]
+    competitorThemes?: string[]
+    differentiationAngles?: string[]
   }
   /** Workspace-scoped uploaded asset references resolved by the model relay. */
   sourceAssetRefs?: string[]
@@ -188,7 +192,10 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const platformDna = platform ? PLATFORM_VISUAL_DNA[platform] ?? `目标平台为 ${platform}，使用适合移动端商品详情页的高转化信息层级。` : '使用适合移动端商品详情页的高转化信息层级。'
       const heroTemplate = platform ? PLATFORM_HERO_TEMPLATES[platform] ?? '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。' : '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。'
       const placement = brief?.placement?.trim() || '商品详情页运营图'
-      const slotGuidance = isLongPage ? '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。' : /主图|listing|hero/iu.test(placement)
+      const sceneRequested = /场景|户外|通勤|生活方式|lifestyle|environment|outdoor|commut/iu.test(`${input.direction} ${placement}`)
+      const slotGuidance = isLongPage ? '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。' : sceneRequested
+        ? '槽位为场景型商品主图：必须把商品置于与品类匹配的真实、简洁环境中，形成可见的前景、中景和背景层次；商品仍占画面主要视觉面积，款式、颜色、结构和材质严格跟随参考图。'
+        : /主图|listing|hero/iu.test(placement)
         ? '槽位为商品主图：只展示单件商品正面，商品占画面主体，白底或极浅灰背景，不做营销海报。'
         : /细节|detail/iu.test(placement)
           ? '槽位为商品细节图：只放大展示原图中可验证的材质、结构或接口，不新增不可见功能。'
@@ -201,15 +208,24 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const marketingLabels = boundedList(brief?.marketingLabels, 8, 120)
       const detailSections = boundedList(brief?.detailSections, 10, 120)
       const platformRules = boundedList(brief?.platformRules, 8, 160)
+      const competitorStructures = boundedList(brief?.competitorStructures, 6, 160)
+      const competitorThemes = boundedList(brief?.competitorThemes, 6, 160)
+      const differentiationAngles = boundedList(brief?.differentiationAngles, 6, 160)
       const copy = [brief?.headline, brief?.subheadline, brief?.cta].map(value => value?.trim()).filter(Boolean).map(value => value!.slice(0, 120))
       const isMainImage = /主图|白底/iu.test(input.direction) || /主图/iu.test(brief?.placement ?? '')
       const contentPlatformMainImage = isMainImage && (platform === 'xiaohongshu' || platform === 'douyin')
+      const sceneMainImage = isMainImage && sceneRequested
+      const effectiveHeroTemplate = sceneMainImage
+        ? '模板=场景型搜索首屏 hero；构图=商品为唯一主角并占主要视觉面积，使用明确景深、环境层次和干净留白；光线=符合场景的自然商业光；背景=与品类匹配的真实简洁环境；禁止白底抠图复用、促销贴纸和虚构信息。'
+        : heroTemplate
       const prompt = [
         `生成电商商品运营视觉：商品是“${input.productTitle}”，${input.category ? `类目是“${input.category}”，` : ''}模式：${input.mode ?? 'create'}。`,
         modeInstruction,
         `版位：${placement}。${platformDna}${slotGuidance}`,
-        isMainImage ? `平台模板执行：${heroTemplate}` : '',
+        isMainImage ? `平台模板执行：${effectiveHeroTemplate}` : '',
         platformRules.length ? `已冻结的平台规则：${platformRules.join('；')}。` : '',
+        competitorStructures.length || competitorThemes.length || differentiationAngles.length
+          ? `同平台同类竞品研究（仅借鉴构图与表达趋势，不复制品牌、商品事实或原文）：结构=${competitorStructures.join('、') || '无'}；表达主题=${competitorThemes.join('、') || '无'}；差异化机会=${differentiationAngles.join('、') || '无'}。` : '',
         isLongPage
           ? `长图必须按以下连续章节完成，每章解决一个购买顾虑，章节之间用同一套网格、字体、色板和光影衔接：${(detailSections.length ? detailSections : ['首屏价值主张：商品与核心收益', '痛点场景：用户为何需要', '核心卖点：最多三个已证据支持的收益', '使用流程：步骤化说明', '细节证据：材质/结构/工艺', '参数规格：尺寸/容量/适配', 'SKU与套餐边界：包含与不包含', '信任与行动：售后与克制 CTA']).join(' → ')}。每章只放一个结论，正文保持短句，严禁把多个正方形卡片简单纵向拼接。` : '',
         `风格方向：${input.direction}。${styleKeywords.length ? `品牌/风格关键词：${styleKeywords.join('、')}。` : ''}`,
@@ -219,6 +235,8 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         !isMainImage && marketingLabels.length ? `只允许排版以下已确认的销售/推广信息（原样使用，不得改写或补数字）：${marketingLabels.join('｜')}。营销信息使用一处主 CTA、一个价格/活动标签和最多三个利益点，保持留白与可读对比。` : '',
         contentPlatformMainImage
           ? '内容电商主图必须做出明显的新视觉方案：使用真实生活方式场景或简洁有层次的环境、3:4 或竖版阅读构图、单一视觉焦点和可后置排版的安全区；禁止把商品孤零零地原样抠在白底上。'
+          : sceneMainImage
+          ? '用户已明确要求重新设计场景：必须生成肉眼可识别的新环境、新景深和新光影关系，不能使用纯白/浅灰无缝背景，不能只放大、裁切、锐化或原样回传参考图。商品应自然融入场景，但不得增加参考图中不存在的 Logo、图案、配件或功能。'
           : isMainImage
           ? '电商主图必须使用纯白无缝背景，但必须做出肉眼可识别的新构图设计：使用不同于参考图的主体尺度与留白比例、轻微三分之四视觉层次或结构化裁切、精致接触阴影与轮廓光，形成明确的新主图版式；禁止任何文字、信息卡片、水印、Logo 臆造、边框、道具和复杂场景。即使参考图已经是白底，也必须重新渲染一张具有新构图的图片：不得只做像素级复制、不得原样回传参考图像素。商品颜色、款式、材质、结构、Logo 和 SKU 必须与参考图完全一致，严禁改色、换款或重绘成另一件商品。'
           : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。信息卡片只承载已确认文案，采用清晰网格、统一圆角和 8px 倍数间距，避免廉价贴纸堆叠。',

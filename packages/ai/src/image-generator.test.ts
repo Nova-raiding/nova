@@ -108,6 +108,10 @@ describe('image generator', () => {
         platform: 'taobao', placement: 'detail_page', skuLabels: ['蓝色/M', '黑色/L'],
         sellingPoints: ['轻量', '可拆帽'], headline: '轻装出行', subheadline: '通勤防护', cta: '立即了解',
         styleKeywords: ['品牌色点缀'],
+        marketingLabels: ['会员价 ¥99.00', '立即查看'],
+        competitorStructures: ['首屏商品占主体', '细节证据卡片'],
+        competitorThemes: ['轻量通勤'],
+        differentiationAngles: ['用真实参数替代泛化口号'],
       },
     })
     expect(requestBody?.prompt).toEqual(expect.stringContaining('淘宝风格默认'))
@@ -115,6 +119,25 @@ describe('image generator', () => {
     expect(requestBody?.prompt).toEqual(expect.stringContaining('轻量；可拆帽'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('中文长文案和精确事实文字不要交给模型直接绘制'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('画面不要素白'))
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('会员价 ¥99.00'))
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('同平台同类竞品研究'))
+  })
+
+  it('turns a long-page request into an ordered conversion storyboard', async () => {
+    let prompt = ''
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as { prompt: string }
+        prompt = body.prompt
+        return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      },
+    })
+    await generator.generate({ productTitle: '外套', direction: '详情长图', count: 1, visualBrief: { size: '1024x4096', outputVariant: 'detail_long', detailSections: ['首屏价值主张：商品与核心收益', '参数规格：尺寸与适配'], marketingLabels: ['活动价 ¥99.00'] } })
+    expect(prompt).toContain('长图必须按以下连续章节完成')
+    expect(prompt).toContain('首屏价值主张：商品与核心收益 → 参数规格：尺寸与适配')
+    expect(prompt).toContain('严禁把多个正方形卡片简单纵向拼接')
+    expect(prompt).toContain('活动价 ¥99.00')
   })
 
   it('requires a newly rendered composition for a white-background main image', async () => {
@@ -129,6 +152,21 @@ describe('image generator', () => {
     await generator.generate({ productTitle: '外套', direction: '白底主图', count: 1, visualBrief: { platform: 'taobao', placement: '商品主图' } })
     expect(requestBody?.prompt).toEqual(expect.stringContaining('不得原样回传参考图像素'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('平台模板执行：模板=搜索首屏商品 hero'))
+  })
+
+  it('honors an explicit scene redesign request for a Taobao main image', async () => {
+    let requestBody: Record<string, unknown> | undefined
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      },
+    })
+    await generator.generate({ productTitle: '浅蓝色防晒外套', direction: '重新设计构图和户外通勤场景', count: 1, visualBrief: { platform: 'taobao', placement: '商品主图' } })
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('模板=场景型搜索首屏 hero'))
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('不能使用纯白/浅灰无缝背景'))
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('不能只放大、裁切、锐化或原样回传参考图'))
   })
 
   it('only enables image generation through the HTTPS platform relay', () => {

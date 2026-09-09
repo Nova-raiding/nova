@@ -2635,6 +2635,10 @@ export class MerchantService {
     const otherSkuAssetIds = new Set((product.skus ?? []).filter(sku => !skuIds.includes(sku.id)).flatMap(sku => sku.sourceAssetIds ?? []).filter(assetId => !defaultSourceAssetIds?.includes(assetId)))
     if (requestedSourceAssetIds?.some(assetId => otherSkuAssetIds.has(assetId))) throw new DomainError('IMAGE_SKU_SOURCE_MISMATCH', '不能使用其他 SKU 的原图生成当前 SKU 图片', 409)
     const imageMode = input.imageMode ?? (requestedSourceAssetIds?.length || defaultSourceAssetIds?.length ? 'optimize' : 'create')
+    // Keep explicit references attached even for a create request so a local
+    // fixture can never silently discard the merchant's source pixels. The
+    // provider may use them as composition references; without a provider the
+    // guard below fails closed instead of returning a static asset.
     const sourceAssetIds = requestedSourceAssetIds ?? (imageMode === 'optimize' ? defaultSourceAssetIds : undefined)
     if (imageMode === 'optimize' && !sourceAssetIds?.length) throw new DomainError('IMAGE_OPTIMIZATION_SOURCE_REQUIRED', '素材优化模式必须提供至少一个已授权商品素材', 400)
     const count = Math.min(6, Math.max(1, Math.floor(input.count ?? 3)))
@@ -2643,12 +2647,48 @@ export class MerchantService {
     const brief = contentVersion?.body.brief
     const selectedDirection = task?.directions?.find(item => item.id === task.selectedDirectionId)
     const confirmedSellingPoints = (task?.productionPlan?.sellingPoints ?? product.sellingPoints?.filter(item => item.proofStatus === 'confirmed').map(item => item.text) ?? []).filter(Boolean).slice(0, 6)
+    const competitorReference = task?.inputSnapshot?.knowledgeContext?.competitorReferences?.[0]
+    const promotionLabels = (task?.productionPlan?.promotionSnapshot ?? []).flatMap(promotion => {
+      const price = promotion.couponPriceCny ?? promotion.priceCny
+      const priceLabel = typeof price === 'number' ? ` ¥${price.toFixed(2)}` : ''
+      return [`${promotion.label}${priceLabel}`]
+    })
+    const marketingLabels = [...new Set([
+      brief?.headline,
+      brief?.subheadline,
+      brief?.priceExpression,
+      ...promotionLabels,
+      brief?.cta,
+    ].map(value => value?.trim()).filter((value): value is string => Boolean(value)).slice(0, 8))]
+    const detailSections = [
+      '首屏价值主张：商品与核心收益',
+      '痛点场景：用户为何需要',
+      `核心卖点：${confirmedSellingPoints.slice(0, 3).join('、') || '已确认卖点'}`,
+      '使用流程：步骤化说明',
+      '细节证据：材质、结构与工艺',
+      '参数规格：尺寸、容量与适配',
+      'SKU与套餐边界：包含与不包含',
+      '信任与行动：售后与克制 CTA',
+    ]
     const visualBrief = {
       ...(input.size ? { size: input.size } : {}),
       platform: task?.platform ?? product.platform,
       placement: task?.productionPlan?.placement ?? brief?.placement ?? (contentVersion ? 'detail_page' : 'product_image'),
       skuLabels: (product.skus ?? []).filter(sku => skuIds.includes(sku.id)).map(sku => `${sku.name}${sku.attributes && Object.keys(sku.attributes).length ? `（${Object.entries(sku.attributes).map(([key, value]) => `${key}:${value}`).join('，')}）` : ''}`),
       sellingPoints: confirmedSellingPoints,
+      ...(marketingLabels.length ? { marketingLabels } : {}),
+      ...(task?.productionPlan?.placement?.includes('详情') || brief?.placement?.includes('详情') || input.size === '1024x3072' || input.size === '1024x4096' ? { detailSections } : {}),
+      platformRules: [
+        '商品本体、颜色、材质、结构、Logo 与 SKU 必须保持不变',
+        '所有价格、优惠、功效和认证必须来自已确认事实',
+        '主图保持商品清晰完整；营销信息优先放在详情长图和副图',
+      ],
+      outputVariant: input.size === '1024x3072' || input.size === '1024x4096' ? 'detail_long' as const : contentVersion ? 'secondary' as const : 'main' as const,
+      ...(competitorReference ? {
+        competitorStructures: competitorReference.structuralObservations,
+        competitorThemes: competitorReference.expressionObservations,
+        differentiationAngles: competitorReference.differentiationAngles,
+      } : {}),
       ...(brief ? { headline: brief.headline, subheadline: brief.subheadline, cta: brief.cta, styleKeywords: selectedDirection?.visualDirection ? [selectedDirection.visualDirection] : [] } : {}),
     }
     const sourceProductVersion = product.version ?? 1
@@ -2677,17 +2717,18 @@ export class MerchantService {
       const product = this.products.get(current.productId)
       if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
       // An uploaded product image must never be returned as if it were an AI
-      // redesign. The local fixture can exercise the unbound/create workflow,
-      // but optimize requests require a configured image provider because they
-      // must actually transform the supplied pixels.
-      if (!this.options.imageGenerator && current.imageMode === 'optimize' && current.sourceAssetIds?.length) {
+      // redesign. Any job carrying source pixels requires a configured relay,
+      // regardless of whether the caller accidentally selected create mode.
+      // The old fixture path loaded a static product asset here, which made a
+      // pass-through image look like a designed candidate.
+      if (!this.options.imageGenerator && current.sourceAssetIds?.length) {
         current.state = 'failed'
         current.providerAttemptState = 'not_started'
         current.errorCode = 'IMAGE_GENERATION_NOT_CONFIGURED'
-        current.errorMessage = '图片模型中转未配置，不能把上传原图或静态素材当作重新设计结果返回'
+        current.errorMessage = '图片模型中转未配置，不能把上传原图或静态素材当作重新设计结果返回；请配置真实图片中转后重试'
         current.revision += 1
         current.updatedAt = now()
-        throw new DomainError('IMAGE_GENERATION_NOT_CONFIGURED', current.errorMessage, 503, { fixture_fallback: true, requires_image_provider: true })
+        throw new DomainError('IMAGE_GENERATION_NOT_CONFIGURED', current.errorMessage, 503, { fixture_fallback: true, requires_image_provider: true, pass_through_blocked: true })
       }
       current.state = 'running'; current.revision += 1; current.updatedAt = now()
       if (!this.options.imageGenerator && process.env.NODE_ENV === 'production') {
