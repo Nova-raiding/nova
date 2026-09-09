@@ -15704,32 +15704,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('answers_json must be an object')
         answers = parsed as Record<string, string | number | boolean | string[]>
       } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'answers_json 必须是 JSON 对象', 400) }
-      // `answerTask` updates the in-memory product projection when the
-      // merchant confirms facts, but task answers are a separate aggregate.
-      // Capture the fact state before the call so we can durably persist the
-      // product transition below. Without this, the task looks unblocked in
-      // the current request while the next request rehydrates
-      // `factsConfirmed=false` and image generation is blocked forever.
       const answeredProductId = typeof answers.product_id === 'string' && answers.product_id.trim() ? answers.product_id.trim() : task.productId
       const factsConfirmedBefore = service.products.get(answeredProductId)?.factsConfirmed === true
       const answered = service.answerTask(workspaceId, task.id, answers, typeof params.expected_version === 'string' && /^\d+$/u.test(params.expected_version) ? Number(params.expected_version) : undefined)
       await persistSnapshot(workspaceId, 'task', answered, answered as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, task.id, 'task.answers_submitted', answered.version, { task_id: task.id, input_snapshot_id: answered.inputSnapshotId, answers: answered.answers, missing_questions: answered.missingQuestions })
-      if (answers.confirm_facts === true && !factsConfirmedBefore) {
-        const confirmedProduct = service.products.get(answered.productId)
-        if (confirmedProduct?.factsConfirmed) {
-          await persistSnapshot(workspaceId, 'product', confirmedProduct, confirmedProduct as unknown as Record<string, unknown>)
-          await persistEvent(workspaceId, confirmedProduct.id, 'product.facts_confirmed', confirmedProduct.version ?? 1, { product_id: confirmedProduct.id, version: confirmedProduct.version ?? 1, source: 'task.answer' })
-          // A product can have multiple draft tasks. Keep their blocking
-          // questions in sync with the canonical facts transition, just like
-          // the explicit catalog.facts.confirmation endpoint does.
-          const resumedTasks = service.refreshTasksAfterProductFacts(workspaceId, confirmedProduct.id)
-          for (const resumedTask of resumedTasks) {
-            await persistSnapshot(workspaceId, 'task', resumedTask, resumedTask as unknown as Record<string, unknown>)
-            await persistEvent(workspaceId, resumedTask.id, 'task.facts_unblocked', resumedTask.version, { task_id: resumedTask.id, product_id: confirmedProduct.id, state: resumedTask.state, source: 'task.answer' })
-          }
-        }
-      }
+      await persistTaskAnswerFactConfirmation({ workspaceId, productId: answered.productId, factsConfirmedBefore, confirmationRequested: answers.confirm_facts === true })
       return result(answered)
     }
     case 'task.understand': return result(await enforceTaskRequestCandidates(req, workspaceId, service.understandTaskRequest(workspaceId, required(params, 'request_text'))))

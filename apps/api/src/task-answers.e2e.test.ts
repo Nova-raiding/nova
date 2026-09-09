@@ -38,4 +38,37 @@ describe('task answers API', () => {
     const resumed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'task.resume', params: { task_id: created.data.id } }) }).then(response => response.json()) as { data?: { result?: { pendingQuestions?: Array<{ id: string; status: string; prompt: string }> } } }
     expect(resumed.data?.result?.pendingQuestions).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'audience', status: 'deferred', prompt: expect.any(String) })]))
   })
+
+  it('persists product fact confirmation submitted from the task flow before image generation', async () => {
+    const base = await start()
+    const workspaceId = `ws_task_image_facts_${Date.now()}`
+    const headers = { 'content-type': 'application/json', 'x-workspace-id': workspaceId }
+    await api.grantCreativePointsForTests(workspaceId)
+    api.grantContinuousFeatureEntitlementForTests(workspaceId)
+    const imported = await fetch(`${base}/v1/products/import`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ platform: 'taobao', title: '任务确认主图商品', local_product_key: 'task-image-facts', category: '服装', price: 99, stock: 5, skus: [{ id: 'sku-white', name: '白色/S', price: 99, stock: 5 }] }),
+    }).then(response => response.json()) as { data: { id: string } }
+    const created = await fetch(`${base}/v1/tasks`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ product_id: imported.data.id, platform: 'taobao' }),
+    }).then(response => response.json()) as { data: { id: string; version: number } }
+    const answered = await fetch(`${base}/v1/tasks/${encodeURIComponent(created.data.id)}/answers`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ answers: { confirm_facts: true, sku_id: 'sku-white' }, expected_version: created.data.version }),
+    }).then(response => response.json()) as { data: { state: string; answers: Record<string, unknown> } }
+    expect(answered.data).toMatchObject({ state: 'ready_for_direction', answers: { confirm_facts: true, sku_id: 'sku-white' } })
+
+    const product = await fetch(`${base}/v1/products/${encodeURIComponent(imported.data.id)}`, { headers }).then(response => response.json()) as { data: { factsConfirmed: boolean } }
+    expect(product.data.factsConfirmed).toBe(true)
+
+    // The fixture test process has no model provider configured. The important
+    // contract here is that the request gets past the product-facts gate; a
+    // missing provider is the next explicit, actionable gate.
+    const generation = await fetch(`${base}/mcp`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'catalog.image.generate', params: { product_id: imported.data.id, platform: 'taobao', direction: '保留商品本体，生成白底主图', mode: 'create', count: '1' } }),
+    }).then(response => response.json()) as { error?: { code: string } }
+    expect(generation.error?.code).not.toBe('PRODUCT_FACTS_CONFIRMATION_REQUIRED')
+  })
 })
