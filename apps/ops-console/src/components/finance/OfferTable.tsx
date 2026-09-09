@@ -27,7 +27,7 @@ export function OfferTable({ model }: OfferTableProps) {
   return (
     <Table
       rowKey="code"
-      pagination={false}
+      pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
       dataSource={offers}
       scroll={{ x: 1540 }}
       columns={[

@@ -12,7 +12,7 @@ export function CouponTable({ model }: CouponTableProps) {
   return (
     <Table
       rowKey="code"
-      pagination={false}
+      pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
       dataSource={coupons}
       columns={[
         { title: "编码", dataIndex: "code" },

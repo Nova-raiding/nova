@@ -128,7 +128,7 @@ export function CanonicalBackfillConflictSection({ enabled = false, canUpdate = 
     {scanState === "success" && <Alert type="success" showIcon role="status" title="一致性扫描已完成" description="队列已按最新服务端结果刷新；空结果不代表全量回填已完成。" style={{ marginBottom: 12 }} />}
     {scanState === "error" && <Alert type="error" showIcon role="alert" title="一致性扫描失败" description={scanError || "服务端未返回可验证结果，当前不应据此判断没有冲突。"} action={<Button size="small" onClick={() => void scan()}>重试扫描</Button>} style={{ marginBottom: 12 }} />}
     {error && <Alert role="alert" type="error" showIcon title="冲突队列操作失败" description={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} />}
-    {rows.length === 0 && !loading ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无待处理冲突；空结果不代表全量回填已完成" /> : <Table rowKey="id" loading={loading} size="small" pagination={{ pageSize: 10, showSizeChanger: false }} dataSource={rows} columns={[
+    {rows.length === 0 && !loading ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无待处理冲突；空结果不代表全量回填已完成" /> : <Table rowKey="id" loading={loading} size="small" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} dataSource={rows} columns={[
       { title: "旧商品", dataIndex: "legacyProductId", ellipsis: true },
       { title: "冲突码", dataIndex: "code", render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
       { title: "状态", dataIndex: "status", render: (value: CanonicalBackfillConflict["status"]) => <Tag color={statusMeta[value][1]}>{statusMeta[value][0]}</Tag> },

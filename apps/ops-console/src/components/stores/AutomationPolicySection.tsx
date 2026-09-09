@@ -31,7 +31,7 @@ export function AutomationPolicySection({
           row.id ??
           `${row.platform ?? "workspace"}:${row.accountId ?? "default"}`
         }
-        pagination={{ pageSize: 6 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         loading={loading}
         dataSource={loading ? [] : automationPolicies}
         locale={{ emptyText: loading ? "正在读取自动化策略…" : "暂无自动化策略；当前不会执行定时扫描或自动重试。" }}

@@ -88,7 +88,7 @@ export function CompetitorReferencesPanel({
       </Typography.Title>
       <Table
         rowKey="id"
-        pagination={{ pageSize: 10 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={competitors}
         locale={{ emptyText: "尚无合规竞品参考；只能录入可追溯的公开来源" }}
         scroll={{ x: 720 }}

@@ -246,7 +246,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "最后访问", dataIndex: "lastSeenAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
             { title: "操作", key: "action", width: 110, render: (_: unknown, row: { id: string; revision: number; status: string }) => <Button danger size="small" aria-label={`撤销认证会话 ${row.id}`} disabled={identityWritesDisabled || row.status !== "active"} onClick={() => setSessionTarget({ id: row.id, revision: row.revision })}>撤销</Button> },
           ]} /></div>
-          <div><Typography.Title level={5}>平台身份生命周期</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 8 }} locale={{ emptyText: "暂无平台身份生命周期事件" }} scroll={{ x: 780 }} dataSource={model.userDetail.lifecycleEvents} columns={[
+          <div><Typography.Title level={5}>平台身份生命周期</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无平台身份生命周期事件" }} scroll={{ x: 780 }} dataSource={model.userDetail.lifecycleEvents} columns={[
             { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
             { title: "事件", dataIndex: "eventType", width: 180, render: (value: string) => lifecycleEventLabels[value] ?? value },
             { title: "操作者", dataIndex: "actorId", width: 160, render: (value: string) => value || "系统" },
@@ -266,7 +266,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "钱包余额", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `¥${row.commercial.walletBalanceCny}` : "未确认" },
             { title: "扣款与账单", width: 200, render: (_: unknown, row: PlatformUser) => row.commercial ? <Tag color={row.commercial.subscriptionStatus === "active" ? "blue" : "gold"}>{row.commercial.subscriptionStatus === "active" ? "订阅有效，账务仍需门禁核验" : "需核对订单/账单"}</Tag> : <Tag>未取得账务快照</Tag> },
           ]} /></div>
-          <div><Typography.Title level={5}>成员操作历史</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 8 }} locale={{ emptyText: "暂无成员操作记录" }} scroll={{ x: 680 }} dataSource={model.userDetail.audits} columns={[
+          <div><Typography.Title level={5}>成员操作历史</Typography.Title><Table size="small" rowKey="id" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} locale={{ emptyText: "暂无成员操作记录" }} scroll={{ x: 680 }} dataSource={model.userDetail.audits} columns={[
             { title: "时间", dataIndex: "createdAt", width: 180, render: (value: string) => dateTimeFormatter.format(new Date(value)) },
             { title: "操作", dataIndex: "action", width: 140 },
             { title: "操作者", dataIndex: "actorId", width: 150 },

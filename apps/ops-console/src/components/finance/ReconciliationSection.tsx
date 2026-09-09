@@ -371,7 +371,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         aria-label="模型用量待结算记录"
         rowKey="id"
         size="small"
-        pagination={{ pageSize: 5 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         locale={{ emptyText: "没有模型待结算记录" }}
         dataSource={unsettled}
         scroll={{ x: 1180 }}
@@ -484,7 +484,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
       />
       <Table
         rowKey="id"
-        pagination={{ pageSize: 8 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={reconciliation?.transactions ?? []}
         locale={{ emptyText: "当前没有交易记录；这表示本次查询为空，不代表读取失败。" }}
         aria-label="财务交易对账记录"

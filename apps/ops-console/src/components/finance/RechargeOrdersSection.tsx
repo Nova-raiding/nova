@@ -124,7 +124,7 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
           rowKey="id"
           size="small"
           loading={rechargeOrdersLoading}
-          pagination={{ pageSize: 10, showSizeChanger: false }}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
           locale={{ emptyText: "当前筛选条件下没有充值订单" }}
           dataSource={orders}
           scroll={{ x: 1380 }}

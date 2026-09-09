@@ -86,7 +86,7 @@ export function FinanceSearchSection({ controller }: FinanceSearchSectionProps) 
         loading={controller.loading}
         columns={columns}
         dataSource={controller.records}
-        pagination={false}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         scroll={{ x: 1450 }}
         locale={{ emptyText: controller.loading ? "正在加载" : "当前筛选条件下没有财务记录" }}
       />

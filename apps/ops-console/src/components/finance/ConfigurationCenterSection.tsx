@@ -329,7 +329,7 @@ export function ConfigurationCenterSection({
             children: (
               <Table
                 rowKey="id"
-                pagination={{ pageSize: 8 }}
+                pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
                 dataSource={orders}
                 columns={[
                   { title: "订单号", dataIndex: "orderNo" },

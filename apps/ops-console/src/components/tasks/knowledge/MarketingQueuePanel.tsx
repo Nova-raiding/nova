@@ -484,7 +484,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       <CampaignLifecycleControl canControl={model.canQueue}/>
       <Table
       rowKey="id"
-      pagination={{ pageSize: 8 }}
+      pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
       dataSource={rows}
       columns={[
         { title: "类型", dataIndex: "kind" },

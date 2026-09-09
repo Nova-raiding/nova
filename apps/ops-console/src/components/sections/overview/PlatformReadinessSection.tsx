@@ -241,7 +241,7 @@ export function PlatformReadinessSection({ model }: OverviewSectionProps) {
       >
         <Table
           rowKey="id"
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
           dataSource={alerts}
           columns={[
             {

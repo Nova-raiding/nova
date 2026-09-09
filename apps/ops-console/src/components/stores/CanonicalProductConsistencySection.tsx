@@ -171,7 +171,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
       <Space orientation="vertical" style={{ width: "100%", marginTop: 20 }} size={12}>
         <Typography.Text strong>商品级检查结果</Typography.Text>
         <Segmented className="canonical-consistency-filter" aria-label="一致性状态筛选" value={filter} onChange={value => setFilter(value as "all" | Status)} options={[{ label: "全部", value: "all" }, ...Object.entries(statusMeta).map(([value, meta]) => ({ label: meta.label, value }))]} />
-        {findings.length ? <Table rowKey="legacyProductId" size="small" pagination={{ pageSize: 10, showSizeChanger: false }} dataSource={findings} columns={[
+        {findings.length ? <Table rowKey="legacyProductId" size="small" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} dataSource={findings} columns={[
           { title: "旧商品 ID", dataIndex: "legacyProductId", ellipsis: true },
           { title: "规范商品 ID", dataIndex: "canonicalProductId", render: (value: string | undefined) => value ?? "—" },
           { title: "关系引用", render: (_: unknown, row: CanonicalProductConsistencyReport["findings"][number]) => `${row.listingIds.length} listing / ${row.taskIds.length} task` },
@@ -190,7 +190,7 @@ export function CanonicalProductConsistencySection({ report, onRefresh, onNextAc
         {orphanFindings.length > 0 && <>
           <Typography.Text strong>未挂接关系对象</Typography.Text>
           <Typography.Text type="secondary">这些对象不属于任何可验证的商品行，必须单独处理；系统不会根据数量摘要推断其已通过。</Typography.Text>
-          <Table rowKey={(row) => `${row.entityType}:${row.entityId}`} size="small" pagination={{ pageSize: 10, showSizeChanger: false }} dataSource={orphanFindings} columns={[
+          <Table rowKey={(row) => `${row.entityType}:${row.entityId}`} size="small" pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} dataSource={orphanFindings} columns={[
             { title: "对象类型", dataIndex: "entityType", render: (value: keyof typeof orphanEntityMeta) => orphanEntityMeta[value] ?? value },
             { title: "对象 ID", dataIndex: "entityId", ellipsis: true, render: (value: string) => <Typography.Text copyable={{ text: value }}>{value}</Typography.Text> },
             { title: "状态", dataIndex: "status", render: (value: "conflict" | "blocked") => <Tag color={statusMeta[value].color} icon={<WarningOutlined />}>{statusMeta[value].label}</Tag> },

@@ -67,7 +67,7 @@ export function StoreDirectorySection({
     >
       <Table
         rowKey={(row: StoreDirectory) => `${row.platform}:${row.accountId}`}
-        pagination={{ pageSize: 8 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         loading={loading}
         dataSource={storeDirectory}
         locale={{ emptyText: loading ? "正在读取店铺目录…" : initialLoadFailed ? "尚未取得店铺目录；请先恢复连接或权限。" : "暂无已登记店铺；完成平台授权后会显示在这里。" }}

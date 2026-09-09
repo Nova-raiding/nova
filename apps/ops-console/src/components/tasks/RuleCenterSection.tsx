@@ -126,7 +126,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
       </Form>
       <Table
         rowKey="id"
-        pagination={{ pageSize: 8 }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={verifiedRules}
         locale={{ emptyText: "暂无已验证的平台规则；请配置签名清单后点击“立即更新”" }}
         scroll={{ x: 900 }}

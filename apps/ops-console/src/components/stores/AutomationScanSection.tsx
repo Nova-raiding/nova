@@ -66,7 +66,7 @@ export function AutomationScanSection({
       >
         <Table
           rowKey="id"
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
           dataSource={automationScan?.recommendations ?? []}
           locale={{ emptyText: automationScan ? "当前扫描没有优化建议。" : "尚未取得扫描结果；可在策略配置完成后手动扫描。" }}
           columns={[
@@ -231,7 +231,7 @@ export function AutomationScanSection({
             rowKey={(row) =>
               `${row.kind}:${row.product_id ?? row.publish_job_id ?? row.message}`
             }
-            pagination={{ pageSize: 6 }}
+            pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
             dataSource={automationScan.risks}
             columns={[
               { title: "风险类型", dataIndex: "kind" },

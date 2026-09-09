@@ -18,5 +18,5 @@ export function FeatureFlagsTable({ items, loading, canWrite, canEmergency, onEd
       {canEmergency && <Button aria-label={`${row.emergencyDisabled ? "恢复" : "紧急关闭"} ${row.key}`} style={{ minHeight: 44 }} danger={!row.emergencyDisabled} onClick={() => onEmergency(row)}>{row.emergencyDisabled ? "恢复" : "紧急关闭"}</Button>}
     </Space> },
   ];
-  return <Table rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} scroll={{ x: 900 }} locale={{ emptyText: <Empty description="没有符合条件的功能开关" /> }} aria-label="功能开关列表" />;
+  return <Table rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 900 }} locale={{ emptyText: <Empty description="没有符合条件的功能开关" /> }} aria-label="功能开关列表" />;
 }

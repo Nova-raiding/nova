@@ -13,7 +13,7 @@ export function IncidentsTable({ incidents, loading, onSelect }: { incidents: Op
         rowKey="id"
         loading={loading}
         dataSource={incidents}
-        pagination={false}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         scroll={{ x: 1000 }}
         locale={{ emptyText: '当前筛选条件下没有事故记录' }}
         columns={[

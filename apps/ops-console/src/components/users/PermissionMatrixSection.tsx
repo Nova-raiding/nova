@@ -102,6 +102,6 @@ export function PermissionMatrixSection() {
       <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新矩阵</Button>
     </Space>
     <Typography.Text type="secondary">策略 {matrix?.policy_version ?? "读取中"} · {items.length}/{matrix?.method_count ?? 0} 个插件方法 · 当前显示 {visibleRoles.length} 个角色</Typography.Text>
-    {loading && !matrix ? <div className="ops-data-state" data-state="loading" aria-label="正在读取权限矩阵"><Skeleton active paragraph={{ rows: 7 }} /></div> : <Table<PermissionMatrixItem> rowKey="method" size="small" loading={loading} dataSource={items} columns={columns} pagination={{ pageSize: 25, showSizeChanger: true, pageSizeOptions: [25, 50, 100], showTotal: (total) => `共 ${total} 个方法` }} scroll={{ x: 830 + visibleRoles.length * 116, y: 560 }} sticky />}
+    {loading && !matrix ? <div className="ops-data-state" data-state="loading" aria-label="正在读取权限矩阵"><Skeleton active paragraph={{ rows: 7 }} /></div> : <Table<PermissionMatrixItem> rowKey="method" size="small" loading={loading} dataSource={items} columns={columns} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 个方法` }} scroll={{ x: 830 + visibleRoles.length * 116, y: 560 }} sticky />}
   </Space>;
 }

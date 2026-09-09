@@ -19,7 +19,7 @@ export function ModelReadinessTable({ status }: ModelReadinessTableProps) {
       <Table<ModelReadinessRow>
         rowKey="key"
         size="small"
-        pagination={false}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         scroll={{ x: 720 }}
         dataSource={readinessRows}
         columns={[

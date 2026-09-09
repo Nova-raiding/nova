@@ -109,7 +109,7 @@ export function RuleSyncStatusSection({
       <Table<RuleSyncStatus>
         rowKey="platform"
         loading={loading}
-        pagination={false}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         scroll={{ x: 980 }}
         locale={{ emptyText: "没有可展示的规则同步状态，请刷新或检查规则服务连接" }}
         dataSource={statuses}

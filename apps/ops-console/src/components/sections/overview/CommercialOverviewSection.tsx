@@ -228,7 +228,7 @@ export function CommercialOverviewSection({ model }: OverviewSectionProps) {
       <Card title="工作区与财务总览">
         <Table
           rowKey="workspaceId"
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
           dataSource={workspaceRows}
           columns={[
             { title: "工作区", dataIndex: "workspaceId" },

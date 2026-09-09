@@ -55,7 +55,7 @@ export function ModelChannelMatrix({ status, fixtureDataPresent = false }: Model
       <Table<ModelChannelRow>
         rowKey="key"
         size="small"
-        pagination={false}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         scroll={{ x: 900 }}
         dataSource={rows}
         columns={[

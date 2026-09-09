@@ -12,7 +12,7 @@ export function RolloutTable({ model }: RolloutTableProps) {
   return (
     <Table
       rowKey="id"
-      pagination={false}
+      pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
       dataSource={rollouts}
       columns={[
         { title: "套餐", dataIndex: "offerCode" },

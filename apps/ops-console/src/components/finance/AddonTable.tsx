@@ -12,7 +12,7 @@ export function AddonTable({ model }: AddonTableProps) {
   return (
     <Table
       rowKey="code"
-      pagination={false}
+      pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
       dataSource={addons}
       columns={[
         { title: "编码", dataIndex: "code" },
