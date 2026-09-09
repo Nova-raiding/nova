@@ -3051,7 +3051,6 @@ async function handle(request) {
       }
       const normalizedResult = merchantUiMetadata(name, actionCards(name, result), args)
       const nativeImages = ['catalog.image.get', 'catalog.image.generate', 'asset.upload'].includes(name) && Array.isArray(normalizedResult?.images) ? normalizedResult.images : []
-      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? 'unknown', image_count: nativeImages.length, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? 'unknown' })
       const structuredContent = name === 'catalog.image.get'
         ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images' && key !== 'image_urls'))
         : normalizedResult
@@ -3065,8 +3064,10 @@ async function handle(request) {
           if (match) content.push({ type: 'image', data: match[2], mimeType: match[1] })
         }
       }
+      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? 'unknown', image_count: nativeImages.length, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? 'unknown' })
       return jsonRpc(id, { content, structuredContent, ...(resultUi ? { _meta: resultUi } : {}), isError: false })
     } catch (error) {
+      imageTrace('error', { method: name, error: error instanceof Error ? error.message : String(error) })
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'
       const details = safeErrorDetails(error && typeof error === 'object' ? error.details : undefined)
       const presentation = toolErrorPresentation(name, args, code, details)
