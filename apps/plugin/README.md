@@ -9,6 +9,10 @@
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
 
+## 商品视频策划
+
+插件内置两层视频策划技能：`ecommerce-video-marketing` 负责商品痛点、卖点、受众、平台调性和营销脚本；`storyboard-prompt-assistant` 负责逐镜头时长、景别、运镜、正/负提示词和连续性。它们只生成可审阅的脚本与分镜，真实成片仍必须经过商品事实、素材扫描、商家确认、平台模型中转、创意点、归档和发布前审核；脚本或分镜不等于已生成或已发布视频。
+
 ## 安装前验收
 
 在仓库根目录执行：
