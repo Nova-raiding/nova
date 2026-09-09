@@ -87,6 +87,8 @@ npm run codex:relay:validate
 
 微信和支付宝由 API 服务端的支付 provider 负责下单和验签，插件不接触商户密钥，也不接受客户端自定义金额、点数、价格或权益。当前本地 fixture 环境只允许演示订单状态；未配置真实 provider、HTTPS callback、签名密钥和对账证据时，充值必须显示为不可用并保持 `writes=false`。旧版 `billing.recharge.create` 任意金额充值仅保留兼容读写合同，不作为正式套餐入口。
 
+对话示例：用户说“看看我的钱包”时调用 `billing.status`；用户说“有哪些充值套餐”时调用 `commercial.catalog.get` 并只列出可执行点数包；用户选择套餐后，当前版本最多创建 `commercial.order.create` 待支付订单并展示订单号。若服务端未提供正式 checkout 入口，插件必须明确提示“支付配置尚未就绪”，不能改用旧接口、猜测支付链接或要求用户把微信/支付宝密钥发给模型。
+
 也可以在新会话中输入“查看我的商品目录和平台连接状态”。插件应先调用 `workspace.health`，再调用 `catalog.search`：查看具体店铺时必须传 `platform + account_id`，只有明确要求全部店铺只读汇总时才传 `scope=workspace`。若出现 `MERCHANT_WORKSPACE_ID is required`、`WORKSPACE_SCOPE_REQUIRED` 或 MCP 工具不可见，应先修复环境变量、网关路由或身份映射，不要继续创建任务。
 
 任务需要补充信息时，使用 `task.answer` 保存答案和输入快照；事实未明确确认前，不进入正式生成和发布。
