@@ -219,6 +219,10 @@ printf '%s\n' Darwin
     expect(skill).toContain('对象归档、病毒扫描和商品保真复核')
     expect(skill).toContain('不能用脚本、分镜或 fixture 视频冒充可发布商品视频')
     expect(skill).toContain('不调用宿主视频工具、不自行选择 provider')
+    expect(skill).toContain('开头 3 秒内应出现明确商品或问题场景')
+    expect(skill).toContain('按静音观看设计关键卖点、字幕和 CTA')
+    expect(skill).toContain('以实际音频时长校准镜头时间')
+    expect(skill).toContain('读取服务端平台媒体规格')
   })
 
   it('keeps the MCP startup contract marketplace mirror aligned', () => {
