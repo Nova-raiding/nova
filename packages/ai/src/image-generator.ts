@@ -26,6 +26,13 @@ export interface ImageGenerationInput {
     subheadline?: string
     cta?: string
     styleKeywords?: string[]
+    /** Confirmed, reviewable marketing copy. Never inferred by the provider. */
+    marketingLabels?: string[]
+    /** Ordered long-page chapters, each with one buyer question. */
+    detailSections?: string[]
+    /** Frozen platform rules that shaped this candidate. */
+    platformRules?: string[]
+    outputVariant?: 'main' | 'secondary' | 'detail_long'
   }
   /** Workspace-scoped uploaded asset references resolved by the model relay. */
   sourceAssetRefs?: string[]
@@ -191,6 +198,9 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const skuLabels = boundedList(brief?.skuLabels, 12, 80)
       const sellingPoints = boundedList(brief?.sellingPoints, 6, 120)
       const styleKeywords = boundedList(brief?.styleKeywords, 8, 80)
+      const marketingLabels = boundedList(brief?.marketingLabels, 8, 120)
+      const detailSections = boundedList(brief?.detailSections, 10, 120)
+      const platformRules = boundedList(brief?.platformRules, 8, 160)
       const copy = [brief?.headline, brief?.subheadline, brief?.cta].map(value => value?.trim()).filter(Boolean).map(value => value!.slice(0, 120))
       const isMainImage = /主图|白底/iu.test(input.direction) || /主图/iu.test(brief?.placement ?? '')
       const contentPlatformMainImage = isMainImage && (platform === 'xiaohongshu' || platform === 'douyin')
@@ -199,15 +209,19 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         modeInstruction,
         `版位：${placement}。${platformDna}${slotGuidance}`,
         isMainImage ? `平台模板执行：${heroTemplate}` : '',
+        platformRules.length ? `已冻结的平台规则：${platformRules.join('；')}。` : '',
+        isLongPage
+          ? `长图必须按以下连续章节完成，每章解决一个购买顾虑，章节之间用同一套网格、字体、色板和光影衔接：${(detailSections.length ? detailSections : ['首屏价值主张：商品与核心收益', '痛点场景：用户为何需要', '核心卖点：最多三个已证据支持的收益', '使用流程：步骤化说明', '细节证据：材质/结构/工艺', '参数规格：尺寸/容量/适配', 'SKU与套餐边界：包含与不包含', '信任与行动：售后与克制 CTA']).join(' → ')}。每章只放一个结论，正文保持短句，严禁把多个正方形卡片简单纵向拼接。` : '',
         `风格方向：${input.direction}。${styleKeywords.length ? `品牌/风格关键词：${styleKeywords.join('、')}。` : ''}`,
         skuLabels.length ? `只展示已确认的 SKU 标签：${skuLabels.join('、')}。` : '',
         sellingPoints.length ? `围绕已确认卖点组织视觉层级：${sellingPoints.join('；')}。` : '',
         copy.length ? `已确认的短文案仅作为排版参考：${copy.join('｜')}。` : '',
+        !isMainImage && marketingLabels.length ? `只允许排版以下已确认的销售/推广信息（原样使用，不得改写或补数字）：${marketingLabels.join('｜')}。营销信息使用一处主 CTA、一个价格/活动标签和最多三个利益点，保持留白与可读对比。` : '',
         contentPlatformMainImage
           ? '内容电商主图必须做出明显的新视觉方案：使用真实生活方式场景或简洁有层次的环境、3:4 或竖版阅读构图、单一视觉焦点和可后置排版的安全区；禁止把商品孤零零地原样抠在白底上。'
           : isMainImage
           ? '电商主图必须使用纯白无缝背景，但必须做出肉眼可识别的新构图设计：使用不同于参考图的主体尺度与留白比例、轻微三分之四视觉层次或结构化裁切、精致接触阴影与轮廓光，形成明确的新主图版式；禁止任何文字、信息卡片、水印、Logo 臆造、边框、道具和复杂场景。即使参考图已经是白底，也必须重新渲染一张具有新构图的图片：不得只做像素级复制、不得原样回传参考图像素。商品颜色、款式、材质、结构、Logo 和 SKU 必须与参考图完全一致，严禁改色、换款或重绘成另一件商品。'
-          : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。',
+          : '画面不要素白：加入有层级的背景、材质/场景细节、信息卡片、几何图形或纹理，但装饰必须服务于商品和卖点。信息卡片只承载已确认文案，采用清晰网格、统一圆角和 8px 倍数间距，避免廉价贴纸堆叠。',
         '商品本体、Logo、包装、SKU 对应关系和已确认事实不可改变；不要编造价格、折扣、认证、功效、销量、评论或配件。',
         '参考图是商品主体的唯一视觉事实来源；如果文字描述、自动解析结果或模型上下文与参考图冲突，忽略冲突描述，严格保留参考图中的商品类别、颜色、材质、结构和配件，不得把商品替换成其他品类。',
         '生成前自检：场景类型、平台比例、商品身份、颜色、结构、材质、Logo、SKU、主体完整性和可读性必须同时满足；任一项无法满足就不要把结果当作合格候选。',
