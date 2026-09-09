@@ -32,7 +32,7 @@ export function LearningSuggestionsPanel({
     <>
     <Table
       rowKey="id"
-      pagination={{ pageSize: 6 }}
+      pagination={{ pageSize: 10 }}
       dataSource={learningSuggestions}
       columns={[
         { title: "建议", dataIndex: "summary" },

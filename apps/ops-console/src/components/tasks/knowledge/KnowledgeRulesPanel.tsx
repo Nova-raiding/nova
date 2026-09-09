@@ -91,7 +91,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
       </Form>
       <Table
         rowKey="id"
-        pagination={{ pageSize: 6 }}
+        pagination={{ pageSize: 10 }}
         dataSource={knowledgeRules}
         locale={{ emptyText: "尚未录入工作区规则；平台官方规则请前往“平台规则”查看" }}
         scroll={{ x: 720 }}

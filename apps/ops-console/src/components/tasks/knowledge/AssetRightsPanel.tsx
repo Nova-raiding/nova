@@ -58,7 +58,7 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
       </Form>
       <Table
         rowKey="id"
-        pagination={{ pageSize: 6 }}
+        pagination={{ pageSize: 10 }}
         dataSource={knowledgeAssets}
         locale={{ emptyText: "尚无知识资产；录入后仍需完成确认与版权状态审核" }}
         scroll={{ x: 760 }}

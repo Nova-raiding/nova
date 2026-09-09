@@ -112,7 +112,7 @@ export function UploadedAssetGovernance({
     <Card title="上传素材治理动作" size="small">
       <Table
         rowKey="id"
-        pagination={{ pageSize: 6 }}
+        pagination={{ pageSize: 10 }}
         dataSource={marketingQueue.uploadedAssetRisks}
         columns={[
           { title: "素材", dataIndex: "name" },
