@@ -462,6 +462,10 @@ export async function loadMigrations(): Promise<Migration[]> {
   const privateTrialInvites = await readFile(new URL('./migrations/172_private_trial_invites.sql', import.meta.url), 'utf8')
   const privateTrialInviteEvents = await readFile(new URL('./migrations/173_private_trial_invite_events.sql', import.meta.url), 'utf8')
   const privateTrialEntitlementActivation = await readFile(new URL('./migrations/174_private_trial_entitlement_activation.sql', import.meta.url), 'utf8')
+  const repairLegacyTaskSnapshotScope = await readFile(new URL('./migrations/175_repair_legacy_task_snapshot_scope.sql', import.meta.url), 'utf8')
+  const privateTrialEntitlementBenefits = await readFile(new URL('./migrations/176_private_trial_entitlement_benefits.sql', import.meta.url), 'utf8')
+  const reclassifyManualRuleSources = await readFile(new URL('./migrations/177_reclassify_manual_rule_sources.sql', import.meta.url), 'utf8')
+  const reclassifyManualRuleSourcesAgain = await readFile(new URL('./migrations/178_reclassify_manual_rule_sources_again.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -637,6 +641,10 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 172, name: 'private_trial_invites', sql: privateTrialInvites },
     { version: 173, name: 'private_trial_invite_events', sql: privateTrialInviteEvents },
     { version: 174, name: 'private_trial_entitlement_activation', sql: privateTrialEntitlementActivation },
+    { version: 175, name: 'repair_legacy_task_snapshot_scope', sql: repairLegacyTaskSnapshotScope },
+    { version: 176, name: 'private_trial_entitlement_benefits', sql: privateTrialEntitlementBenefits },
+    { version: 177, name: 'reclassify_manual_rule_sources', sql: reclassifyManualRuleSources },
+    { version: 178, name: 'reclassify_manual_rule_sources_again', sql: reclassifyManualRuleSourcesAgain },
   ]
 }
 
