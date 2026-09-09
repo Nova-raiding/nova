@@ -109,9 +109,21 @@ function requestEvidence(payload) {
 }
 
 async function rpcThroughUi(page, methods, action, evidence) {
-  // Every waiter is installed before the click. Capturing response.request()
-  // binds evidence to that actual exchange without retaining request headers.
-  const waiting = methods.map(method => page.waitForResponse(response => mcpPayload(response.request())?.method === method, { timeout: 30_000 }).then(async response => {
+  // Every waiter is installed before the click. Bind responses to requests
+  // emitted after this action starts; the console refreshes the same RPCs in
+  // the background, and matching by method alone can select an older response
+  // whose body Chrome has already released.
+  const actionRequests = new Set()
+  let actionStarted = false
+  const onRequest = request => {
+    const payload = mcpPayload(request)
+    if (actionStarted && payload && methods.includes(payload.method)) actionRequests.add(request)
+  }
+  page.on('request', onRequest)
+  const waiting = methods.map(method => page.waitForResponse(response => {
+    const request = response.request()
+    return actionRequests.has(request) && mcpPayload(request)?.method === method
+  }, { timeout: 30_000 }).then(async response => {
     const payload = mcpPayload(response.request())
     const envelope = parseJson(await response.text())
     if (!envelope || typeof envelope !== 'object') {
@@ -135,7 +147,12 @@ async function rpcThroughUi(page, methods, action, evidence) {
     expect(result, `${method} must return a result`).toBeDefined()
     return { payload, result }
   }))
-  return (await Promise.all([...waiting, action()])).slice(0, methods.length)
+  try {
+    const actionPromise = (async () => { actionStarted = true; return action() })()
+    return (await Promise.all([...waiting, actionPromise])).slice(0, methods.length)
+  } finally {
+    page.off('request', onRequest)
+  }
 }
 
 async function login(page, evidence) {
