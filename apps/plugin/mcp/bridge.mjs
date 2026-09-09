@@ -3052,8 +3052,17 @@ async function handle(request) {
       }
       const normalizedResult = merchantUiMetadata(name, actionCards(name, result), args)
       const nativeImages = ['catalog.image.get', 'catalog.image.generate', 'asset.upload'].includes(name) && Array.isArray(normalizedResult?.images) ? normalizedResult.images : []
+      // Keep short-lived display URLs in structured content. ChatGPT Apps do
+      // not guarantee that tool-result `_meta` or native image blocks are
+      // forwarded into `window.openai.toolOutput` during the component's first
+      // render. Removing both `images` and `image_urls` therefore left the
+      // candidate component with state/candidate metadata but no renderable
+      // source, producing the grey image placeholder seen in the desktop app.
+      // Raw base64 remains excluded so it is not duplicated into model-visible
+      // structured data; the component can load the signed URL allowed by its
+      // resource-domain CSP, while native image blocks remain the fallback.
       const structuredContent = name === 'catalog.image.get'
-        ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images' && key !== 'image_urls'))
+        ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images'))
         : normalizedResult
       const selectionTickets = name === 'catalog.image.get' ? privateCandidateSelectionTickets(rawResult, normalizedResult) : []
       const resultUi = toolResultUiMetadata(name, normalizedResult, selectionTickets)
@@ -3065,7 +3074,7 @@ async function handle(request) {
           if (match) content.push({ type: 'image', data: match[2], mimeType: match[1] })
         }
       }
-      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? result?.job_id ?? result?.job?.jobId ?? result?.job?.id ?? 'unknown', image_count: nativeImages.length, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? result?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? result?.candidate_state?.archive_state ?? 'unknown' })
+      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? result?.job_id ?? result?.job?.jobId ?? result?.job?.id ?? 'unknown', image_count: nativeImages.length, structured_image_url_count: Array.isArray(structuredContent?.image_urls) ? structuredContent.image_urls.length : 0, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? result?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? result?.candidate_state?.archive_state ?? 'unknown' })
       return jsonRpc(id, { content, structuredContent, ...(resultUi ? { _meta: resultUi } : {}), isError: false })
     } catch (error) {
       imageTrace('error', { method: name, error: error instanceof Error ? error.message : String(error) })
