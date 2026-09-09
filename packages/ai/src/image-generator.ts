@@ -32,7 +32,7 @@ export interface ImageGenerationInput {
     detailSections?: string[]
     /** Frozen platform rules that shaped this candidate. */
     platformRules?: string[]
-    outputVariant?: 'main' | 'secondary' | 'detail_long'
+    outputVariant?: 'main' | 'secondary' | 'detail_long' | 'banner'
     /** Sanitized competitor observations; reference only, never product facts. */
     competitorStructures?: string[]
     competitorThemes?: string[]
@@ -192,8 +192,11 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const platformDna = platform ? PLATFORM_VISUAL_DNA[platform] ?? `目标平台为 ${platform}，使用适合移动端商品详情页的高转化信息层级。` : '使用适合移动端商品详情页的高转化信息层级。'
       const heroTemplate = platform ? PLATFORM_HERO_TEMPLATES[platform] ?? '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。' : '模板=通用商品 hero；构图=商品完整、主体突出、留白均衡；光线=均匀商业柔光；背景=简洁纯色。'
       const placement = brief?.placement?.trim() || '商品详情页运营图'
+      const bannerRequested = brief?.outputVariant === 'banner' || /banner|横幅|广告位|活动头图/iu.test(`${input.direction} ${placement}`)
       const sceneRequested = /场景|户外|通勤|生活方式|lifestyle|environment|outdoor|commut/iu.test(`${input.direction} ${placement}`)
-      const slotGuidance = isLongPage ? '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。' : sceneRequested
+      const slotGuidance = isLongPage ? '槽位为完整商品详情页长图：从上到下制作多个连续章节，统一字体和视觉系统，包含首屏、细节展示和已知规格信息，禁止只做一个模块或把内容缩成正方形。' : bannerRequested
+        ? '槽位为电商 Banner/活动头图：采用横向视觉层级，商品与核心利益点形成单一焦点，预留左右安全区和响应式裁切区；营销文案只使用已确认标签，最多一个主 CTA，不堆叠角标或长段落。'
+        : sceneRequested
         ? '槽位为场景型商品主图：必须把商品置于与品类匹配的真实、简洁环境中，形成可见的前景、中景和背景层次；商品仍占画面主要视觉面积，款式、颜色、结构和材质严格跟随参考图。'
         : /主图|listing|hero/iu.test(placement)
         ? '槽位为商品主图：只展示单件商品正面，商品占画面主体，白底或极浅灰背景，不做营销海报。'
@@ -233,6 +236,9 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         sellingPoints.length ? `围绕已确认卖点组织视觉层级：${sellingPoints.join('；')}。` : '',
         copy.length ? `已确认的短文案仅作为排版参考：${copy.join('｜')}。` : '',
         !isMainImage && marketingLabels.length ? `只允许排版以下已确认的销售/推广信息（原样使用，不得改写或补数字）：${marketingLabels.join('｜')}。营销信息使用一处主 CTA、一个价格/活动标签和最多三个利益点，保持留白与可读对比。` : '',
+        bannerRequested
+          ? 'Banner 必须让商品、核心利益点和 CTA 在缩略图中仍可识别；商品放在视觉重心一侧，另一侧保留可读文案安全区，背景使用品牌/活动氛围但不得抢过商品。不得绘制未经确认的价格、折扣、销量、倒计时、平台 Logo 或二维码。'
+          : '',
         contentPlatformMainImage
           ? '内容电商主图必须做出明显的新视觉方案：使用真实生活方式场景或简洁有层次的环境、3:4 或竖版阅读构图、单一视觉焦点和可后置排版的安全区；禁止把商品孤零零地原样抠在白底上。'
           : sceneMainImage

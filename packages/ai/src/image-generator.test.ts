@@ -140,6 +140,22 @@ describe('image generator', () => {
     expect(prompt).toContain('活动价 ¥99.00')
   })
 
+  it('uses a responsive conversion hierarchy for banners', async () => {
+    let prompt = ''
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async (_url, init) => {
+        prompt = (JSON.parse(String(init?.body)) as { prompt: string }).prompt
+        return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      },
+    })
+    await generator.generate({ productTitle: '外套', direction: '夏季活动 Banner', count: 1, visualBrief: { platform: 'taobao', placement: '活动 Banner', outputVariant: 'banner', marketingLabels: ['活动价 ¥99.00', '立即抢购'] } })
+    expect(prompt).toContain('槽位为电商 Banner/活动头图')
+    expect(prompt).toContain('Banner 必须让商品、核心利益点和 CTA 在缩略图中仍可识别')
+    expect(prompt).toContain('活动价 ¥99.00')
+    expect(prompt).toContain('不得绘制未经确认的价格、折扣、销量、倒计时、平台 Logo 或二维码')
+  })
+
   it('requires a newly rendered composition for a white-background main image', async () => {
     let requestBody: Record<string, unknown> | undefined
     const generator = new OpenAICompatibleImageGenerator({
@@ -167,6 +183,22 @@ describe('image generator', () => {
     expect(requestBody?.prompt).toEqual(expect.stringContaining('模板=场景型搜索首屏 hero'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('不能使用纯白/浅灰无缝背景'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('不能只放大、裁切、锐化或原样回传参考图'))
+  })
+
+  it('creates a responsive ecommerce banner brief without inventing promotional claims', async () => {
+    let prompt = ''
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async (_url, init) => {
+        prompt = (JSON.parse(String(init?.body)) as { prompt: string }).prompt
+        return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      },
+    })
+    await generator.generate({ productTitle: '轻云防晒外套', direction: '活动头图', count: 1, visualBrief: { outputVariant: 'banner', marketingLabels: ['轻量通勤', '立即查看'] } })
+    expect(prompt).toContain('槽位为电商 Banner/活动头图')
+    expect(prompt).toContain('预留左右安全区和响应式裁切区')
+    expect(prompt).toContain('不得绘制未经确认的价格、折扣、销量、倒计时、平台 Logo 或二维码')
+    expect(prompt).toContain('轻量通勤｜立即查看')
   })
 
   it('only enables image generation through the HTTPS platform relay', () => {
