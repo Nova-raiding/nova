@@ -2278,8 +2278,12 @@ async function resolveGeneratedImagePreview(method, initialResult) {
   const continuation = initialResult.generation_continuation && typeof initialResult.generation_continuation === 'object' ? initialResult.generation_continuation : initialResult.continuation && typeof initialResult.continuation === 'object' ? initialResult.continuation : initialResult.image_generation && typeof initialResult.image_generation === 'object' ? initialResult.image_generation : {}
   const jobId = [initialResult.job_id, continuation.job_id, continuation.jobId].find(value => typeof value === 'string' && value.trim())?.trim() ?? ''
   if (!jobId) return initialResult
-  const state = String(initialResult.state ?? initialResult.status ?? continuation.state ?? continuation.status ?? initialResult.execution?.state ?? '').toLowerCase()
-  if (!['queued', 'processing', 'running', 'pending', 'generating'].includes(state)) return initialResult
+  const state = String(initialResult.state ?? initialResult.status ?? initialResult.candidate_state?.state ?? continuation.state ?? continuation.status ?? initialResult.execution?.state ?? '').toLowerCase()
+  // Some API projections put the lifecycle under candidate_state or omit it
+  // while the durable execution is being created. If a job id exists, keep
+  // reading it unless the server explicitly reported failure; otherwise the
+  // model can mistake a text-only interim response for a generated image.
+  if (['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(state)) return initialResult
   let latest = initialResult
   // Image relays commonly take 2–3 minutes. Keep the tool invocation alive
   // long enough to return the actual image attachment instead of making the

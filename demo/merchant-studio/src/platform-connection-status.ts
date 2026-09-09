@@ -10,6 +10,16 @@ export interface MerchantConnectionPresentation {
   canReauthorize: boolean
 }
 
+/** A metrics row is only a real connected store when it is both readable and
+ * explicitly outside the fixture/demo states. Keep this predicate aligned
+ * with the account-row presentation and sync target gate. */
+export function isRealReadableStore(connection?: { readable?: boolean; state?: string; dataMode?: string }): boolean {
+  if (!connection?.readable) return false
+  const state = String(connection.state ?? '').trim().toLowerCase()
+  const dataMode = String(connection.dataMode ?? '').trim().toLowerCase()
+  return state !== 'fixture' && state !== 'fixture_ready' && dataMode !== 'fixture'
+}
+
 /**
  * Keep merchant-facing connection language separate from provider state.
  * A fixture account is never presented as a writable/readable real store.

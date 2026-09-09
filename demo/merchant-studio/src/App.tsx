@@ -5,7 +5,7 @@ import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IM
 import { getImageCandidatePage } from './image-candidate-pagination'
 import { imageCandidateLoading } from './image-candidate-loading'
 import { mergeImageGenerationJobs } from './image-job-list'
-import { merchantConnectionPresentation } from './platform-connection-status'
+import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 import { DetailDecisionContract } from './DetailDecisionContract'
 import {
   evidenceSafeTopLevelContent,
@@ -1909,7 +1909,7 @@ function Overview({
         })))
   const connectedStoreCount = metrics
     ? String(
-        metrics.stores.filter((store) => store.connection?.readable).length,
+        metrics.stores.filter((store) => isRealReadableStore(store.connection)).length,
       )
     : baseUrl
       ? '—'
@@ -2062,7 +2062,7 @@ function Overview({
       <section className="metric-grid" aria-label="关键运营指标">
         <MetricCard
           icon={Store}
-          label="已连接店铺"
+          label="可读取真实店铺"
           value={connectedStoreCount}
           detail={
             metrics

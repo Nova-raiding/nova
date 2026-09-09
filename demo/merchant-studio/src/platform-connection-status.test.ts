@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { merchantConnectionPresentation } from './platform-connection-status'
+import { isRealReadableStore, merchantConnectionPresentation } from './platform-connection-status'
 
 describe('merchant connection presentation', () => {
   it('does not expose fixture accounts as real readable stores', () => {
@@ -10,6 +10,13 @@ describe('merchant connection presentation', () => {
   it('distinguishes a configured account from a readable store', () => {
     expect(merchantConnectionPresentation({ state: 'connected', readEnabled: false })).toMatchObject({ status: '仅有账号记录', sync: '需重新授权', canSync: false, canReauthorize: true })
     expect(merchantConnectionPresentation({ state: 'connected', readEnabled: true })).toMatchObject({ status: '可读取', sync: '可同步', canSync: true, canReauthorize: false })
+  })
+
+  it('does not count readable fixture metrics as real connected stores', () => {
+    expect(isRealReadableStore({ readable: true, state: 'fixture', dataMode: 'fixture' })).toBe(false)
+    expect(isRealReadableStore({ readable: true, state: 'connected', dataMode: 'fixture' })).toBe(false)
+    expect(isRealReadableStore({ readable: true, state: 'connected', dataMode: 'official_api' })).toBe(true)
+    expect(isRealReadableStore({ readable: false, state: 'connected', dataMode: 'official_api' })).toBe(false)
   })
 
   it('uses explicit non-technical labels for unavailable states', () => {
