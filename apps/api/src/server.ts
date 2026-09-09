@@ -14192,6 +14192,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const canonicalRepository = persistence.brandUnits ?? memoryBrandUnits
       const readControl = await canonicalProductReadControl(workspaceId)
       const includeKnowledge = params.include_knowledge === true || params.include_knowledge === 'true'
+      const knowledgeModule = includeKnowledge ? knowledgeForWorkspace(workspaceId) : undefined
+      const knowledgeAssets = knowledgeModule?.queryAssets({ workspaceId })
+      const confirmedLearningSuggestions = knowledgeModule?.listLearningSuggestions(workspaceId, 'confirmed')
+      const activeBrandPreference = knowledgeModule?.getBrandPreference(workspaceId)
       const products = await Promise.all((page.items as unknown as Product[]).map(async product => {
         const requestedSkuId = typeof params.sku_id === 'string' ? params.sku_id.trim() : ''
         const selectedSkus = requestedSkuId
@@ -14201,11 +14205,11 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         const canonical = canonicalCandidates.length === 1 ? canonicalCandidates[0] : undefined
         const listings = canonical ? await canonicalRepository.listListings({ workspaceId, brandId: canonical.brandId, canonicalProductId: canonical.id, platform: product.platform, ...(product.accountId ? { accountId: product.accountId } : {}) }) : []
         const verificationStatus = canonicalCandidates.length > 1 ? 'conflict' : !canonical ? 'legacy_only' : listings.length === 1 ? 'verified' : 'blocked'
-        const knowledgeContext = includeKnowledge ? buildBoundedKnowledgeGenerationContext({
-          rules: knowledgeForWorkspace(workspaceId).findApplicableRules({ platform: product.platform, ...(product.category ? { category: product.category } : {}), ...(product.storeName ? { store: product.storeName } : {}) }, new Date().toISOString(), workspaceId),
-          assets: knowledgeForWorkspace(workspaceId).queryAssets({ workspaceId }),
-          learningSuggestions: knowledgeForWorkspace(workspaceId).listLearningSuggestions(workspaceId, 'confirmed'),
-          ...(knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId)?.status === 'active' ? { brandPreference: knowledgeForWorkspace(workspaceId).getBrandPreference(workspaceId) } : {}),
+        const knowledgeContext = knowledgeModule ? buildBoundedKnowledgeGenerationContext({
+          rules: knowledgeModule.findApplicableRules({ platform: product.platform, ...(product.category ? { category: product.category } : {}), ...(product.storeName ? { store: product.storeName } : {}) }, new Date().toISOString(), workspaceId),
+          assets: knowledgeAssets,
+          learningSuggestions: confirmedLearningSuggestions ?? [],
+          ...(activeBrandPreference?.status === 'active' ? { brandPreference: activeBrandPreference } : {}),
         }) : undefined
         return { ...product, product_id: product.id, ...(requestedSkuId ? { selected_skus: selectedSkus } : {}), storeContext: product.accountId ? directory.get(`${product.platform}:${product.accountId}`) ?? { platform: product.platform, accountId: product.accountId } : null, canonical_scope: { verification_status: verificationStatus, read_mode: readControl.mode, canonical_product_id: canonical?.id ?? null, brand_id: canonical?.brandId ?? null, listing_id: listings.length === 1 ? listings[0]!.id : null, listing_count: listings.length, next_action: verificationStatus === 'verified' ? null : 'canonical.product.consistency' }, ...(knowledgeContext ? { knowledge_context: knowledgeContext } : {}) }
       }))
