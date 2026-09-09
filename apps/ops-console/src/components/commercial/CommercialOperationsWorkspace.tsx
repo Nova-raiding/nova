@@ -43,8 +43,8 @@ const dash = (value: string | number | null | undefined) => value === null || va
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
 const point = (value: number | null | undefined) => value === null || value === undefined ? "未知" : value.toLocaleString();
 
-function StateTag({ value }: { value: string }) {
-  const normalized = value.toLowerCase();
+function StateTag({ value, semanticValue }: { value: string; semanticValue?: string }) {
+  const normalized = (semanticValue ?? value).toLowerCase();
   const color = normalized.includes("recover") || normalized.includes("allow") || normalized === "paid" || normalized.includes("approved") || normalized === "active"
     ? "success"
     : normalized.includes("unknown") || normalized.includes("unavailable") || normalized.includes("failed") || normalized.includes("exhaust") || normalized.includes("blocked")
@@ -298,17 +298,22 @@ function LedgerTable({ state, controller }: { state: CommercialOperationsControl
 }
 
 function CatalogTable({ state, controller }: { state: CommercialOperationsController["data"]["catalog"]; controller: CommercialOperationsController }) {
+  const typeLabel = (value: string) => ({ plan: "订阅套餐", trial: "试用套餐", point_pack: "点数包", onboarding_once: "一次性开通" }[value] ?? value);
+  const visibilityLabel = (value: string) => ({ public: "公开售卖", private: "私测专用" }[value] ?? value);
+  const approvalLabel = (value: string) => ({ active: "在售", approved: "已批准", draft: "草稿", archived: "已归档" }[value] ?? value);
   const visible = (items: CommercialCatalogItem[]) => controller.permissions.privateSkuReadable ? items : items.filter(item => item.visibility !== "private");
   const permittedItems = useMemo(() => visible(state.data?.items ?? []), [state.data?.items, controller.permissions.privateSkuReadable]);
   const items = useMemo(() => filteredRows(permittedItems, controller), [permittedItems, controller.query.query]);
   const selection = useDeepLinkedSelection(items, controller);
   return <DataBoundary state={state} capability={commercialViewCapability.catalog} onRetry={() => void controller.loadView("catalog")}>{() => <><MissingRecordAlert record={selection.missingRecord} controller={controller} /><TableToolbar total={items.length} controller={controller} onRefresh={() => void controller.loadView("catalog")} /><Table rowKey="id" size="small" sticky pagination={tablePagination(controller)} onChange={(pagination, filters, sorter) => updateTableState(controller, pagination, filters, sorter)} locale={{ emptyText: emptyForFilter(controller, "商业目录版本") }} dataSource={items} scroll={{ x: 1540 }} columns={[
-    { title: "SKU", dataIndex: "skuCode", fixed: "left", width: 180, sorter: (a, b) => a.skuCode.localeCompare(b.skuCode), ...controlledSort(controller, "skuCode"), render: value => <Typography.Text code>{value}</Typography.Text> },
-    { title: "名称", dataIndex: "name", width: 180 }, { title: "类型", dataIndex: "type", width: 150 },
-    { title: "可见性", dataIndex: "visibility", width: 110, render: value => <StateTag value={value} /> }, { title: "版本", dataIndex: "version", width: 130, render: value => <Typography.Text code>{value}</Typography.Text> },
-    { title: "价格 / 周期", width: 180, render: (_, row) => `${row.priceLabel}${row.cycleLabel ? ` / ${row.cycleLabel}` : ""}` }, { title: "权益摘要", dataIndex: "benefitsSummary", width: 300 },
-    { title: "审批 / 生效", dataIndex: "approvalState", width: 150, render: value => <StateTag value={value} /> }, { title: "生效时间", dataIndex: "validFrom", width: 180, render: time },
-    { title: "未决项", dataIndex: "unresolved", width: 220, render: value => value.length ? <Typography.Text type="danger">{value.join("、")}</Typography.Text> : "—" },
+    { title: "套餐", dataIndex: "name", fixed: "left", width: 250, sorter: (a, b) => a.name.localeCompare(b.name), ...controlledSort(controller, "name"), render: (value, row) => <Space orientation="vertical" size={0}><Typography.Text strong>{value}</Typography.Text><Typography.Text type="secondary" code copyable={{ text: row.skuCode }}>{row.skuCode}</Typography.Text><Typography.Text type="secondary">版本 {row.version}</Typography.Text></Space> },
+    { title: "售卖形态", dataIndex: "type", width: 130, render: value => typeLabel(value) },
+    { title: "价格方案", width: 190, render: (_, row) => <Space orientation="vertical" size={0}><Typography.Text strong>{row.priceLabel}</Typography.Text><Typography.Text type="secondary">{row.cycleLabel ?? "一次性"}</Typography.Text></Space> },
+    { title: "包含权益", dataIndex: "benefitsSummary", width: 320, render: value => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{value}</Typography.Paragraph> },
+    { title: "销售状态", dataIndex: "approvalState", width: 130, render: value => <StateTag value={approvalLabel(value)} semanticValue={value} /> },
+    { title: "可见范围", dataIndex: "visibility", width: 120, render: value => <StateTag value={visibilityLabel(value)} semanticValue={value} /> },
+    { title: "生效窗口", width: 190, render: (_, row) => <Space orientation="vertical" size={0}><Typography.Text>{row.validFrom ? time(row.validFrom) : "未开始"}</Typography.Text><Typography.Text type="secondary">{row.validTo ? `至 ${time(row.validTo)}` : "无截止"}</Typography.Text></Space> },
+    { title: "风险 / 阻断", dataIndex: "unresolved", width: 250, render: value => value.length ? <Typography.Text type="danger">{value.join("、")}</Typography.Text> : <Typography.Text type="success">可执行条件已满足</Typography.Text> },
     { title: "操作", fixed: "right", width: 100, render: (_, row) => <Button size="small" aria-label={`查看目录 SKU ${row.skuCode} 版本 ${row.version}`} onClick={event => selection.open(row, event.currentTarget)}>详情</Button> },
   ]} />
   <Drawer title="目录版本详情" open={Boolean(selection.selected)} onClose={selection.close} afterOpenChange={selection.afterOpenChange} destroyOnHidden>{selection.selected ? <Descriptions bordered size="small" column={1} items={[
