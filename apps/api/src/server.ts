@@ -5125,6 +5125,11 @@ async function binaryBody(req: IncomingMessage, limit: number): Promise<Uint8Arr
 }
 
 function isProduction() { return process.env.NODE_ENV === 'production' }
+
+function imageTrace(event: string, fields: Record<string, unknown> = {}) {
+  if (isProduction() && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
+  try { console.info(JSON.stringify({ event: `merchant.image.${event}`, ts: new Date().toISOString(), ...fields })) } catch { /* diagnostics must not affect delivery */ }
+}
 function providerSucceededButSettlementPending(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const candidate = error as { code?: unknown; providerSucceeded?: unknown; details?: Record<string, unknown> }
@@ -14721,6 +14726,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       if (!imageMode) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'mode 必须是 create 或 optimize', 400)
       const effectiveSourceAssetIds = sourceAssetIds ?? (imageMode === 'optimize' ? defaultSourceAssetIds : undefined)
       if (imageMode === 'optimize' && !effectiveSourceAssetIds?.length) throw new DomainError('IMAGE_OPTIMIZATION_SOURCE_REQUIRED', '素材优化模式必须提供至少一个已授权商品素材', 400)
+      imageTrace('generate.request', { workspace_id: workspaceId, product_id: product.id, platform: product.platform, mode: imageMode, size: typeof params.size === 'string' ? params.size : 'default', direction: typeof params.direction === 'string' ? params.direction.slice(0, 160) : 'default', source_asset_count: effectiveSourceAssetIds?.length ?? 0, requested_count: params.count ?? 'default' })
       requireApprovedAssetForImageGeneration(workspaceId, product, effectiveSourceAssetIds, unboundCandidate && !imageTask && !params.content_version_id)
       const commercialDecision = await enforceMcpCommercialAccess(req, workspaceId, method)
       requirePlatformModelCostGate('image')
@@ -14866,6 +14872,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       await persistSnapshot(workspaceId, 'image_generation_job', archived, archived as unknown as Record<string, unknown>)
       await persistEvent(workspaceId, job.id, 'product.image_candidates_generated', archived.revision, { job_id: job.id, product_id: productId, task_id: archived.taskId ?? null, content_version_id: archived.contentVersionId ?? null, candidate_count: archived.outputs?.length ?? 0, archive_receipts: (archived.outputs ?? []).map(output => ({ visual_ref: output.visualRef, asset_id: output.assetId ?? null, receipt_id: output.archiveReceiptId ?? null, receipt_digest: output.archiveReceiptDigest ?? null })), archive_state: archived.archiveState, direction: archived.direction, artifact_role: 'candidate', product_protection: productProtection })
       const deliverableImages = imageJobOutputsAreClean(archived) ? completed.images : []
+      imageTrace('generate.archive', { workspace_id: workspaceId, job_id: archived.id, state: archived.state, archive_state: archived.archiveState, candidate_count: archived.outputs?.length ?? 0, deliverable_image_count: deliverableImages.length, scan_statuses: (archived.outputs ?? []).map(output => output.assetId ? service.assets.get(output.assetId)?.scanStatus ?? 'missing' : 'missing') })
       creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       return result({ job_id: archived.id, product_id: completed.product.id, unbound_candidate: unboundCandidate, candidate_status: unboundCandidate ? '未绑定商品、仅候选、不可发布' : undefined, creative_points: creativePoints, execution: imageExecution, rule_preflight: rulePreflight, product_protection: productProtection, job: publicImageJob(archived), product: completed.product, ...(deliverableImages.length ? { images: deliverableImages, review: reviewProductImagesForMcp(deliverableImages) } : { availabilityWarning: '候选图已生成，平台正在自动执行交付前安全扫描；完成前不会返回图片内容，商家无需操作。' }) })
     }
@@ -15004,6 +15011,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         } catch { /* keep the image visible while the normal reconciliation loop retries settlement */ }
       }
       const creativePoints = await imageCreativePointsEvidence(workspaceId, undefined, `image:${job.idempotencyKey}`)
+      imageTrace('get.result', { workspace_id: workspaceId, job_id: job.id, state: job.state, archive_state: job.archiveState, execution_state: execution?.state ?? 'none', selected_image_count: selectedImages.length, candidate_count: job.outputs?.length ?? 0, reconciliation_required: reconciliationRequired })
       return result({ job_id: job.id, creative_points: creativePoints, execution: executionContract('image', Boolean(imageGenerator)), execution_state: execution?.state ?? null, provider_request_id: execution?.providerRequestId ?? null, execution_attempt: execution?.attempt ?? null, reconciliation_required: reconciliationRequired, ...(execution?.errorCode ? { error_code: execution.errorCode, error_message: execution.errorMessage ?? null } : {}), next_action: execution?.state === 'outcome_unknown' || execution?.state === 'provider_started' ? { type: 'reconcile', label: '中转结果待对账，暂不重试', allowed: true } : { type: 'refresh_status', label: '刷新任务状态', allowed: true }, ...(selectedImages.length ? { images: selectedImages, ...(imageUrls.length ? { image_urls: imageUrls, download_urls: imageUrls } : {}), selection_tickets: selectionTickets, review: reviewProductImagesForMcp(selectedImages) } : { availabilityWarning: execution?.state === 'outcome_unknown' ? '中转服务返回结果不确定，已停止自动重试，等待对账；不会重复扣费。' : '平台正在自动执行交付前安全扫描，完成前不会返回图片内容，商家无需操作。' }), job: publicImageJob(job), historicalCandidate: true, platformPublished: false })
     }
     case 'catalog.image.select': {
