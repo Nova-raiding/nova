@@ -117,10 +117,34 @@ describe('image generator', () => {
     expect(requestBody?.prompt).toEqual(expect.stringContaining('淘宝风格默认'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('蓝色/M、黑色/L'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('轻量；可拆帽'))
-    expect(requestBody?.prompt).toEqual(expect.stringContaining('中文长文案和精确事实文字不要交给模型直接绘制'))
+    expect(requestBody?.prompt).toEqual(expect.stringContaining('营销版允许绘制上述已确认的短标题、短卖点、关键词、活动标签和 CTA'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('画面不要素白'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('会员价 ¥99.00'))
     expect(requestBody?.prompt).toEqual(expect.stringContaining('同平台同类竞品研究'))
+  })
+
+  it('turns confirmed marketing inputs into a designed main-image layer', async () => {
+    let requestBody: Record<string, unknown> | undefined
+    const generator = new OpenAICompatibleImageGenerator({
+      baseUrl: 'https://relay.example', apiKey: 'secret', model: 'image-model',
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }), { status: 200 })
+      },
+    })
+    await generator.generate({
+      productTitle: '浅蓝防雨冲锋衣', direction: '淘宝商品主图', count: 1,
+      visualBrief: {
+        platform: 'taobao', placement: '商品主图', sellingPoints: ['防雨'], trafficKeywords: ['冲锋衣', '通勤'],
+        marketingLabels: ['防雨通勤'], promotionLabels: ['限时活动价 ¥99.00'], logoAssetIds: ['asset_brand_logo'], cta: '立即查看',
+      },
+    })
+    expect(requestBody?.prompt).toContain('这是营销版商品主图')
+    expect(requestBody?.prompt).toContain('品牌 Logo 已授权')
+    expect(requestBody?.prompt).toContain('限时活动价 ¥99.00')
+    expect(requestBody?.prompt).toContain('冲锋衣、通勤')
+    expect(requestBody?.negative_prompt).not.toContain('中文文字')
+    expect(requestBody?.negative_prompt).toContain('乱码')
   })
 
   it('turns a long-page request into an ordered conversion storyboard', async () => {
