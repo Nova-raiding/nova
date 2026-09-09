@@ -2272,6 +2272,11 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+function imageTrace(event, fields = {}) {
+  if (process.env.NODE_ENV === 'production' && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
+  try { console.error(JSON.stringify({ event: `merchant.image.${event}`, ts: new Date().toISOString(), ...fields })) } catch { /* diagnostics must never break MCP */ }
+}
+
 async function resolveGeneratedImagePreview(method, initialResult) {
   if (!['catalog.image.generate', 'asset.upload'].includes(method) || !initialResult || typeof initialResult !== 'object' || Array.isArray(initialResult)) return initialResult
   if (Array.isArray(initialResult.images) && initialResult.images.length) return initialResult
@@ -2279,6 +2284,7 @@ async function resolveGeneratedImagePreview(method, initialResult) {
   const jobId = [initialResult.job_id, continuation.job_id, continuation.jobId].find(value => typeof value === 'string' && value.trim())?.trim() ?? ''
   if (!jobId) return initialResult
   const state = String(initialResult.state ?? initialResult.status ?? initialResult.candidate_state?.state ?? continuation.state ?? continuation.status ?? initialResult.execution?.state ?? '').toLowerCase()
+  imageTrace('poll.start', { method, job_id: jobId, initial_state: state || 'missing', initial_image_count: Array.isArray(initialResult.images) ? initialResult.images.length : 0 })
   // Some API projections put the lifecycle under candidate_state or omit it
   // while the durable execution is being created. If a job id exists, keep
   // reading it unless the server explicitly reported failure; otherwise the
@@ -2293,6 +2299,7 @@ async function resolveGeneratedImagePreview(method, initialResult) {
     const polled = await callRemote('catalog.image.get', { job_id: jobId })
     if (!polled || typeof polled !== 'object' || Array.isArray(polled)) continue
     latest = { ...latest, ...polled }
+    imageTrace('poll.result', { method, job_id: jobId, state: String(polled.state ?? polled.status ?? polled.execution_state ?? polled.candidate_state?.state ?? 'missing').toLowerCase(), image_count: Array.isArray(polled.images) ? polled.images.length : 0, archive_state: polled.job?.archiveState ?? polled.job?.archive_state ?? polled.candidate_state?.archive_state ?? 'unknown' })
     if (Array.isArray(polled.images) && polled.images.length) return latest
     const polledState = String(polled.state ?? polled.status ?? polled.execution_state ?? '').toLowerCase()
     if (['failed', 'succeeded', 'completed', 'complete', 'ready'].includes(polledState)) return latest
@@ -3008,6 +3015,7 @@ async function handle(request) {
     }
     try {
       const remoteResult = await callRemote(name, prepareToolArguments(name, args))
+      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('api.result', { method: name, job_id: remoteResult?.job_id ?? remoteResult?.job?.jobId ?? remoteResult?.job?.id ?? 'unknown', image_count: Array.isArray(remoteResult?.images) ? remoteResult.images.length : 0, state: remoteResult?.state ?? remoteResult?.execution_state ?? remoteResult?.candidate_state?.state ?? 'missing', archive_state: remoteResult?.job?.archiveState ?? remoteResult?.job?.archive_state ?? remoteResult?.candidate_state?.archive_state ?? 'unknown' })
       const scannedResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult) : remoteResult
       const rawResult = await resolveGeneratedImagePreview(name, scannedResult)
       rememberCommercialAccessResult(name, rawResult)
@@ -3026,12 +3034,24 @@ async function handle(request) {
       )
       const candidateMethod = (name === 'catalog.image.generate' || name === 'asset.upload') && hasCandidateEnvelope ? 'catalog.image.get' : name
       const result = merchantImageCandidateStructuredContent(candidateMethod, workflowResult, args)
+      // Candidate projection is intentionally strict, but it must never erase
+      // an image that the API has already returned after its archive/scan
+      // gates. Preserve those validated data URLs so the native MCP image
+      // blocks below can render them in ChatGPT.
+      const returnedImages = Array.isArray(workflowResult?.images)
+        ? workflowResult.images.filter(image => typeof image === 'string' && /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/iu.test(image))
+        : []
+      const validatedCandidateReady = result && typeof result === 'object' && !Array.isArray(result)
+        && result.candidate_state?.state === 'ready'
+        && result.candidate_state?.archive_state === 'archived'
+      if (returnedImages.length && validatedCandidateReady && (!Array.isArray(result.images) || !result.images.length)) result.images = returnedImages
       if (name === 'content.export') {
         const artifact = exportArtifactResult(result)
         return jsonRpc(id, { ...artifact, isError: false })
       }
       const normalizedResult = merchantUiMetadata(name, actionCards(name, result), args)
       const nativeImages = ['catalog.image.get', 'catalog.image.generate', 'asset.upload'].includes(name) && Array.isArray(normalizedResult?.images) ? normalizedResult.images : []
+      if (name === 'catalog.image.generate' || name === 'catalog.image.get') imageTrace('mcp.output', { method: name, job_id: normalizedResult?.job_id ?? 'unknown', image_count: nativeImages.length, native_attachment_count: content.filter(item => item?.type === 'image').length, candidate_state: normalizedResult?.candidate_state?.state ?? 'missing', archive_state: normalizedResult?.candidate_state?.archive_state ?? 'unknown' })
       const structuredContent = name === 'catalog.image.get'
         ? Object.fromEntries(Object.entries(normalizedResult).filter(([key]) => key !== 'images' && key !== 'image_urls'))
         : normalizedResult
