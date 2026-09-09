@@ -46,6 +46,8 @@ describe('Codex plugin installation package', () => {
     expect(manifest.entry_skill).toBeUndefined()
     expect(manifest.permissions).toBeUndefined()
     expect(existsSync(resolve(root, 'skills/merchant-marketing/SKILL.md'))).toBe(true)
+    expect(existsSync(resolve(root, 'skills/ecommerce-video-marketing/SKILL.md'))).toBe(true)
+    expect(existsSync(resolve(root, 'skills/storyboard-prompt-assistant/SKILL.md'))).toBe(true)
     expect(existsSync(resolve(root, '.mcp.json'))).toBe(true)
   })
 
@@ -204,6 +206,19 @@ printf '%s\n' Darwin
     const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
     expect(skill).toContain('统一使用 `catalog.image.generate` 的服务端适配器')
     expect(skill).toContain('不得调用宿主原生 `image_gen` 绕过业务 relay')
+  })
+
+  it('routes product video planning through confirmed facts and keeps rendering fail-closed', () => {
+    const skill = readFileSync(resolve(root, 'skills/merchant-marketing/SKILL.md'), 'utf8')
+    expect(skill).toContain('ecommerce-video-marketing')
+    expect(skill).toContain('storyboard-prompt-assistant')
+    expect(skill).toContain('读取商品事实与素材扫描结果')
+    expect(skill).toContain('用 `creative.brief` 形成结构化视频 brief')
+    expect(skill).toContain('调用 `multimodal.video.request` 的 `output=rendering`')
+    expect(skill).toContain('查询同一 provider job')
+    expect(skill).toContain('对象归档、病毒扫描和商品保真复核')
+    expect(skill).toContain('不能用脚本、分镜或 fixture 视频冒充可发布商品视频')
+    expect(skill).toContain('不调用宿主视频工具、不自行选择 provider')
   })
 
   it('keeps the MCP startup contract marketplace mirror aligned', () => {

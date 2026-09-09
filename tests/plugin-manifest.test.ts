@@ -93,6 +93,12 @@ describe('Codex plugin package', () => {
       'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-profiles.json',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator/platform-style-guide.md',
       'skills/merchant-marketing/references/ecommerce-detail-page-generator/prompt-recipes.md',
+      'skills/ecommerce-video-marketing/SKILL.md',
+      'skills/ecommerce-video-marketing/references/video_templates.md',
+      'skills/ecommerce-video-marketing/references/video_guide.md',
+      'skills/ecommerce-video-marketing/references/shot_guide.md',
+      'skills/ecommerce-video-marketing/references/culture_adaptation.md',
+      'skills/storyboard-prompt-assistant/SKILL.md',
       'ui/image-local-edit.html', 'ui/recharge.html',
     ]
     for (const file of mirroredFiles) expect(sha256(marketplaceRoot, file), file).toBe(sha256(pluginRoot, file))
