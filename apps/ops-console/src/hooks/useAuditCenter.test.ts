@@ -35,7 +35,7 @@ describe('audit center hook', () => {
       text: 'refund',
       sources: ['operation'],
       cursor: 'cursor-2',
-      limit: 50,
+      limit: 20,
     })
     expect(buildAuditCenterQuery('ws_2', filters, undefined, 100)).toEqual({
       workspaceId: 'ws_2',

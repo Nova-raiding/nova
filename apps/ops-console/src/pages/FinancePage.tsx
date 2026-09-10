@@ -23,7 +23,7 @@ export function FinancePage({ model }: FinancePageProps) {
   const canRefresh = model.authorization.can("commercial.access.read") && model.authorization.can(commercialViewCapability[commercial.view]);
   const canSearchFinance = model.authorization.can("ops.finance.search");
   const isWorkspaceWorkbench = model.opsSession?.workbench === "workspace";
-  const financeSearch = useFinanceSearch(financeSearchClient, { limit: 50 }, canSearchFinance);
+  const financeSearch = useFinanceSearch(financeSearchClient, { limit: 20 }, canSearchFinance);
   useEffect(() => {
     // Platform sessions must not hydrate workspace-scoped recharge orders.
     // The API correctly rejects that request, but issuing it from the page

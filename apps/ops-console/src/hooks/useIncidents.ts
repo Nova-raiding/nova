@@ -76,7 +76,7 @@ export function useIncidents(client: IncidentsClient, initialFilters: IncidentFi
     setLoading(true)
     setError('')
     try {
-      const page = await client.list({ ...activeFilters, limit: 50, ...(platformScope ? { platformScope: true } : {}), ...(options.append && nextCursor ? { cursor: nextCursor } : {}) })
+      const page = await client.list({ ...activeFilters, limit: 20, ...(platformScope ? { platformScope: true } : {}), ...(options.append && nextCursor ? { cursor: nextCursor } : {}) })
       if (!listRequests.current.isCurrent(request)) return
       setIncidents((current) => options.append ? mergeIncidentPage(current, page.items) : page.items)
       setNextCursor(page.nextCursor)

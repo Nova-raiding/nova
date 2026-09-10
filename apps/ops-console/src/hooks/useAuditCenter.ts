@@ -30,7 +30,7 @@ export const buildAuditCenterQuery = (
   workspaceId: string,
   filters: AuditCenterFilters,
   cursor?: string,
-  limit = 50,
+  limit = 20,
 ): AuditCenterQuery => ({ workspaceId, ...filters, ...(cursor ? { cursor } : {}), limit })
 
 const message = (error: unknown, fallback: string) =>

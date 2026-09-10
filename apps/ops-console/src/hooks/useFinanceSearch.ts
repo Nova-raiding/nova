@@ -64,7 +64,7 @@ export class LatestFinanceRequest {
   }
 }
 
-export function useFinanceSearch(client: FinanceSearchClient, initialQuery: FinanceSearchQuery = { limit: 50 }, autoLoad = false): FinanceSearchController {
+export function useFinanceSearch(client: FinanceSearchClient, initialQuery: FinanceSearchQuery = { limit: 20 }, autoLoad = false): FinanceSearchController {
   const initialQueryRef = useRef(initialQuery);
   const [query, setQuery] = useState<FinanceSearchQuery>(initialQuery);
   const [page, setPage] = useState<FinanceSearchPage>();

@@ -56,11 +56,12 @@ import type {
   Rpc,
   OpsRequestError,
 } from "../types/ops.js";
+import type { FinanceSearchSummary } from "../../../../packages/contracts/src/ops/finance-search.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
 import { paymentQueryOutcome, paymentReconciliationOutcome, rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
 import { applyLoadedValue, OpsLoadCoordinator } from "./opsLoadCoordinator.js";
 import { submitRevisionCreation, type RevisionCreationValues } from "../components/tasks/knowledge/revisionCreation.js";
-import { auditCenterClient, featureFlagsClient, financeSearchClient, incidentsClient, parseModelStatus, parseStorageReconciliationList, supportClient } from "../api/opsDomainClients.js";
+import { auditCenterClient, financeSearchClient, incidentsClient, parseModelStatus, parseStorageReconciliationList, supportClient } from "../api/opsDomainClients.js";
 import { createAuthorizationProjection, type AuthorizationProjection } from "../authz/authorization.js";
 import type { CapabilityId } from "../../../../packages/contracts/src/authz.js";
 
@@ -112,6 +113,7 @@ export const OPS_BACKGROUND_HYDRATION_POLICY = {
   "ops.commercial.coupons.list": "commercial.read",
   "ops.commercial.rollouts.list": "commercial.read",
   "ops.growth.funnel": "workspace.directory.read",
+  "ops.finance.search": "billing.platform.read",
   "workspace.health": "workspace.summary.read",
   "ops.alerts.list": "marketing.summary.read",
   "ops.data.delete.list": "workspace.delete.execute",
@@ -218,7 +220,7 @@ export async function submitDataDeletionDecision(input: {
 export function alertListParams(filters: AlertFilters, platformScope = false): Record<string, string> {
   return {
     status: "open",
-    limit: "100",
+    limit: "20",
     ...(platformScope ? { platform_scope: "platform" } : {}),
     ...(filters.platform ? { platform: filters.platform } : {}),
     ...(filters.accountId ? { account_id: filters.accountId } : {}),
@@ -230,7 +232,7 @@ export function alertListParams(filters: AlertFilters, platformScope = false): R
 
 export function marketingQueueParams(filters: QueueFilters): Record<string, string> {
   return {
-    limit: "50",
+    limit: "20",
     ...(filters.platform ? { platform: filters.platform } : {}),
     ...(filters.accountId ? { account_id: filters.accountId } : {}),
     ...(filters.productId ? { product_id: filters.productId } : {}),
@@ -371,6 +373,7 @@ export function useOpsConsoleModel() {
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectoryPage>({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
   const workspaceDirectoryRequestRef = useRef(0);
+  const [platformFinanceSummary, setPlatformFinanceSummary] = useState<FinanceSearchSummary>();
   const [reconciliation, setReconciliation] = useState<Reconciliation>();
   const [rechargeOrders, setRechargeOrders] = useState<RechargeOrderList>();
   const [rechargeOrdersLoading, setRechargeOrdersLoading] = useState(false);
@@ -407,6 +410,7 @@ export function useOpsConsoleModel() {
     capacity: { state: "not_required" },
   });
   const [alerts, setAlerts] = useState<OperationalAlert[]>([]);
+  const [notifications, setNotifications] = useState<OperationalAlert[]>([]);
   const [deletionRequests, setDeletionRequests] = useState<
     DataDeletionRequest[]
   >([]);
@@ -540,6 +544,7 @@ export function useOpsConsoleModel() {
     setUserDetail(undefined);
     setWorkspaceRows([]);
     setWorkspaceDirectory({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
+    setPlatformFinanceSummary(undefined);
     setReconciliation(undefined);
     setRechargeOrders(undefined);
     setRechargeOrdersError("");
@@ -555,6 +560,7 @@ export function useOpsConsoleModel() {
     setStoreDirectory([]);
     setBrandNavigation([]);
     setAlerts([]);
+    setNotifications([]);
     setDeletionRequests([]);
     setModelStatus(undefined);
     setRules([]);
@@ -702,6 +708,7 @@ export function useOpsConsoleModel() {
         taskSummaryResult,
         marketingSummaryResult,
         modelUsageSummaryResult,
+        platformFinanceResult,
         financeResult,
         offerResult,
         addonResult,
@@ -710,6 +717,7 @@ export function useOpsConsoleModel() {
         funnelResult,
         healthResult,
         alertResult,
+        notificationResult,
         deletionResult,
         modelResult,
         metricsResult,
@@ -733,9 +741,9 @@ export function useOpsConsoleModel() {
         platformOperator || import.meta.env.VITE_OPS_BUILD_MODE === "local"
           ? Promise.resolve(undefined)
           : authorizedOptional("workspace.commercial.get"),
-        platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "50" }) : authorizedOptional("ops.audit.list", {
+        platformOperator ? deferredOptional("ops.audit.platform.list", { limit: "20" }) : authorizedOptional("ops.audit.list", {
           ...(localStorage.getItem("ops_workspace_id")?.trim() ? { workspace_id: localStorage.getItem("ops_workspace_id")!.trim() } : {}),
-          limit: "50",
+          limit: "20",
         }),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.members.list"),
         platformOperator && allowedHydrationMethods.has("ops.workspaces.list")
@@ -747,6 +755,10 @@ export function useOpsConsoleModel() {
         platformStoreScope ? deferredOptional("ops.tasks.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformStoreScope ? deferredOptional("ops.marketing.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformStoreScope ? deferredOptional("ops.model-usage.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
+        platformOperator ? authorizedOptional("ops.finance.search", {
+          kinds_json: JSON.stringify(["recharge_order", "subscription_order"]),
+          limit: "1",
+        }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("billing.model-usage.statement", { limit: "50" }),
         platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.offers.list") : Promise.resolve(undefined),
         platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.addons.list") : Promise.resolve(undefined),
@@ -755,6 +767,7 @@ export function useOpsConsoleModel() {
         platformOperator ? deferredOptional("ops.growth.funnel", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("workspace.health"),
         platformOperator ? deferredOptional("ops.alerts.list", alertListParams(activeAlertFilters, platformAlertScope)) : Promise.resolve(undefined),
+        !platformOperator ? authorizedOptional("ops.alerts.list", { limit: "20" }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("ops.data.delete.list", { limit: "50" }),
         (platformOperator || allowedHydrationMethods.has("platform.model.status")) ? (async () => {
           try {
@@ -834,6 +847,11 @@ export function useOpsConsoleModel() {
         } });
       }
       applyLoadedValue(modelUsageSummaryResult, (value) => setPlatformModelUsageSummary(value as unknown as PlatformModelUsageSummary));
+      applyLoadedValue(platformFinanceResult, (value) => {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          setPlatformFinanceSummary((value as { summary?: FinanceSearchSummary }).summary);
+        }
+      });
       applyLoadedValue(financeResult, (value) => setReconciliation(value as unknown as Reconciliation));
       applyLoadedValue(offerResult, (value) => setOffers((value ?? []) as unknown as Offer[]));
       applyLoadedValue(addonResult, (value) => setAddons((value ?? []) as unknown as Addon[]));
@@ -926,6 +944,10 @@ export function useOpsConsoleModel() {
       applyLoadedValue(alertResult, (value) => {
         const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | undefined)?.items ?? [];
         setAlerts(rows as unknown as OperationalAlert[]);
+      });
+      applyLoadedValue(notificationResult, (value) => {
+        const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | undefined)?.items ?? [];
+        setNotifications(rows as unknown as OperationalAlert[]);
       });
       applyLoadedValue(deletionResult, (value) => {
         const rows = Array.isArray(value) ? value : (value as { items?: unknown[] } | undefined)?.items ?? [];
@@ -1033,8 +1055,6 @@ export function useOpsConsoleModel() {
   const canPlatformOps = authorization.canAny([
     "workspace.settings.update", "store.connection.update", "platform.settings.update", "commercial.update",
   ]);
-  const canWriteFeatureFlags = authorization.can("feature_flag.update");
-  const canEmergencyFeatureFlags = authorization.can("feature_flag.administer");
   const canGlobalCommercial = authorization.can("commercial.update");
   const canUserGovernance = authorization.can("identity.update");
   const canModelMarkup = authorization.canAny(["commercial.read", "commercial.update"]);
@@ -1748,6 +1768,7 @@ export function useOpsConsoleModel() {
         reason: "运营台已确认，转入人工处理",
       });
       setAlerts((current) => current.filter((item) => item.id !== alert.id));
+      setNotifications((current) => current.filter((item) => item.id !== alert.id));
       message.success("告警已确认");
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "告警确认失败");
@@ -2502,6 +2523,8 @@ export function useOpsConsoleModel() {
     setWorkspaceRows,
     workspaceDirectory,
     workspaceDirectoryLoading,
+    platformFinanceSummary,
+    setPlatformFinanceSummary,
     reconciliation,
     setReconciliation,
     rechargeOrders,
@@ -2537,6 +2560,7 @@ export function useOpsConsoleModel() {
     setProductionEvidence,
     alerts,
     setAlerts,
+    notifications,
     deletionRequests,
     setDeletionRequests,
     modelStatus,
@@ -2602,9 +2626,6 @@ export function useOpsConsoleModel() {
     opsWorkspaceId,
     supportClient,
     incidentsClient,
-    featureFlagsClient,
-    canWriteFeatureFlags,
-    canEmergencyFeatureFlags,
     financeSearchClient,
     dataSource,
     loading,

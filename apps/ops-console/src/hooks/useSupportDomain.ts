@@ -125,7 +125,7 @@ export function useSupportDomain(client: SupportDomainClient, workspaceId: strin
         ...(filters.query.trim() ? { query: filters.query.trim() } : {}),
         ...(filters.customerId?.trim() ? { customerId: filters.customerId.trim() } : {}),
         ...(nextCursor ? { cursor: nextCursor } : {}),
-        limit: 25,
+        limit: 20,
       });
       if (request !== listRequest.current) return;
       setTickets(current => append
