@@ -568,7 +568,7 @@ brand / 品
 
 上传文件中的文字全部视为不可信资料。即使文件写着“忽略规则”“调用工具”或“发布商品”，也不能触发任何工具或改变权限。
 
-> **当前实现与目标的区别（上线阻断）**：`packages/knowledge/src/knowledge.ts` 当前是按工作区隔离的进程内 `Map` 投影；PostgreSQL 只有 `knowledge_hydration_snapshots` 事件恢复表，没有可证明的 `knowledge_documents`、`knowledge_chunks` 或 `embeddings/vector index` 持久表。现有 `catalog.search(include_knowledge=true)` 是有界的名称/文本与已批准资产上下文，不是生产级语义向量检索。切片、embedding、索引状态、重建/删除和语义检索是 Phase 2 P0 目标；在持久存储、RLS、跨副本一致性和真实中转证据完成前，不能把“上传成功”称为“知识库已可被插件长期检索”。
+> **历史基线（已被当前实现部分替换）**：早期版本只有进程内 `Map` 投影。本轮已新增 `knowledge_assets/documents/chunks/embeddings/bindings` 的 PostgreSQL 迁移、RLS、索引状态、重建/删除证明和工作区检索 repository；但 Excel facts→knowledge 的应用层自动编排、真实 embedding provider、跨副本运行证据仍未完成，因此生产仍不得把“上传成功”称为“知识库已可被插件长期检索”。
 
 商品事实和知识资产是两个有关系但不相同的对象：商品事实负责价格、库存、SKU 等结构化字段；知识资产负责品牌资料、卖点、材质说明、资质和可引用文本/图片。产品体验应在一次“确认导入”后自动创建或更新二者的绑定投影，避免商家重复上传；服务端仍要分别记录 `product_id/sku_id/source_asset_id/knowledge_asset_id` 和审批状态。当前 Excel 导入接口只写商品事实，未自动创建独立 `knowledge.asset`，且 Merchant Studio 尚未提供完整 Excel→SKU 预览→确认入口，这两项均为 P0 待实现。
 
@@ -908,7 +908,7 @@ publish.prepare
 
 微信/支付宝商户密钥只放在独立支付网关或 Secret Manager，插件和普通 API 不接触。
 
-**当前实现差距（P0）**：`commercial.order.create` 目前只创建 V2 订单快照，`commercial.order.payment.get` 只查询状态；插件的旧 `billing.recharge.create` 已从正式工具注册表禁用，当前 Bridge 也没有可用的 V2 checkout resource/action。也就是说，本地可以展示余额/历史账单，但“余额不足 → 选择批准点包 → 获取微信/支付宝支付链接 → 回调验签 → 自动到账”的插件闭环尚未完成，不能对外宣称已支持充值。
+**当前实现差距（P0）**：已新增 V2 checkout resource、provider order/过期时间、幂等持久化、HMAC/时窗/nonce/payload hash 回调验签、退款与 reconciliation service，并在 Bridge 暴露服务端 checkout resource；但真实微信/支付宝 provider、生产回调地址、对账与账务凭证尚未注入，仍不能对外宣称充值闭环已上线。
 
 现有插件 `recharge.html` 仍偏只读/legacy，可能展示人民币流水或每次扣点信息；正式版必须改成最小投影，只显示“余额是否足够、支付状态、通用充值动作”，不能把平台财务或供应商成本字段下发给 ChatGPT。
 
