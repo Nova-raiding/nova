@@ -114,8 +114,17 @@ add('worker_callback_auth', workerCallbackReady ? 'pass' : production ? 'fail' :
   ? '所有 Worker callback endpoint/token/signing 配置存在（值已隐藏）'
   : 'Worker callback 身份合同不完整', '为每个 Worker 注入独立 WORKER_API_BASE_URL、WORKER_API_TOKEN 和 WORKER_API_SIGNING_SECRET。')
 
-const opsApiBaseReady = process.env.VITE_API_BASE === '/api' || Boolean(process.env.VITE_API_BASE)
-add('ops_api_base', opsApiBaseReady ? 'pass' : 'warn', opsApiBaseReady ? 'VITE_API_BASE 已配置' : '当前 shell 未设置 VITE_API_BASE；npm run dev:ops-console 会自动使用 /api', '手工启动 Ops Console 时设置 VITE_API_BASE=/api。')
+// The supported Ops Console entrypoint (`dev:ops-console`) injects the
+// same-origin `/api` boundary.  An unset shell variable is therefore not a
+// misconfiguration when the doctor is run from the repository root; reporting
+// it as a warning made a healthy local stack look degraded.  Explicit values
+// are still checked because a malformed/blank value in a hand-written launch
+// command must remain visible.
+const opsApiBase = process.env.VITE_API_BASE?.trim()
+const opsApiBaseReady = Boolean(opsApiBase) || opsApiBase === undefined
+add('ops_api_base', opsApiBaseReady ? 'pass' : 'warn', opsApiBase
+  ? `VITE_API_BASE 已配置（${opsApiBase}）`
+  : 'VITE_API_BASE 未显式设置；受支持的 npm run dev:ops-console 会注入 /api', '手工启动 Ops Console 时设置 VITE_API_BASE=/api。')
 
 const productionConfig = process.env.PRODUCTION_CONFIG_PATH?.trim()
 const productionConfigPath = productionConfig ? resolve(root, productionConfig) : ''

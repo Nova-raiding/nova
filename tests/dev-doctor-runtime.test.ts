@@ -208,4 +208,10 @@ describe('developer doctor runtime checks', () => {
     expect(source).toContain('catch {')
     expect(source).toContain('return false')
   })
+
+  it('documents the supported Ops Console entrypoint default instead of treating an unset shell variable as unhealthy', () => {
+    const source = readFileSync('scripts/dev-doctor.ts', 'utf8')
+    expect(source).toContain("process.env.VITE_API_BASE?.trim()")
+    expect(source).toContain("受支持的 npm run dev:ops-console 会注入 /api")
+  })
 })
