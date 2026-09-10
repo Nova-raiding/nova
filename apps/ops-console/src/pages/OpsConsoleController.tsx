@@ -263,6 +263,8 @@ function Dashboard({
           refreshing={model.loading}
           session={model.opsSession}
           authorization={model.authorization}
+          alerts={model.alerts}
+          onAcknowledgeAlert={(alert) => void model.acknowledgeAlert(alert)}
           activeWorkbench={activeWorkbench}
           availableWorkbenches={availableWorkbenches}
           switchingWorkbench={switchingWorkbench}
@@ -343,14 +345,18 @@ export function OpsConsoleController() {
 }
 
 function OpsConsoleControllerContent() {
-  const [activeWorkbench, setActiveWorkbench] = useState<OpsWorkbench>(() =>
-    workbenchIntentFromLocation(window.location)
-      ?? requiredWorkbenchForDomain(domainFromLocation(window.location))
-      ?? readOpsConnectionConfig().workbench,
-  );
+  const [activeWorkbench, setActiveWorkbench] = useState<OpsWorkbench>(() => {
+    // The gateway workbench is part of the signed route boundary. Bootstrap
+    // from the route-scoped context before the first MCP call so a workspace
+    // gateway is never probed with the platform workbench by default.
+    const fromUrl = new URLSearchParams(window.location.search).get("workbench");
+    if (fromUrl === "workspace" || fromUrl === "platform") return fromUrl;
+    const stored = sessionStorage.getItem("ops_workbench") || localStorage.getItem("ops_workbench");
+    return stored === "workspace" ? "workspace" : "platform";
+  });
   const [contextReady, setContextReady] = useState(false);
   const [switchingWorkbench, setSwitchingWorkbench] = useState(false);
-  const [availableWorkbenches, setAvailableWorkbenches] = useState<readonly OpsWorkbench[]>([activeWorkbench]);
+  const [availableWorkbenches, setAvailableWorkbenches] = useState<readonly OpsWorkbench[]>(["platform"]);
   const [pendingWorkbench, setPendingWorkbench] = useState<{ next: OpsWorkbench; pushHistory: boolean; prepare?: () => unknown; cancel?: () => unknown }>();
   const { clearAll: clearUnsavedChanges, labels: unsavedLabels } = useUnsavedChangesState();
 
@@ -364,6 +370,7 @@ function OpsConsoleControllerContent() {
     window.requestAnimationFrame(() => setSwitchingWorkbench(false));
   };
   const activateWorkbench = (next: OpsWorkbench, pushHistory: boolean, prepare?: () => unknown, cancel?: () => unknown) => {
+    if (next !== "platform") return;
     if (shouldConfirmWorkbenchTransition(activeWorkbench, next, unsavedLabels)) {
       setPendingWorkbench({ next, pushHistory, prepare, cancel });
       return;
@@ -372,9 +379,13 @@ function OpsConsoleControllerContent() {
   };
 
   useEffect(() => {
+    // Preserve the route-scoped workbench selected during bootstrap. A
+    // workspace gateway rejects platform-scoped MCP calls, so forcing the
+    // default here races the first session request and leaves the UI in a
+    // misleading "not verified" state.
     setOpsWorkbenchContext(activeWorkbench);
     setContextReady(true);
-  }, []);
+  }, [activeWorkbench]);
   return (
     <OpsAntAppBoundary>
       {contextReady ? (

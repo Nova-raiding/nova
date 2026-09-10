@@ -145,9 +145,12 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const uiOutput = resolve(evidenceDir, 'ui-dist')
     const build = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
     if (await exited(build) !== 0) throw new Error('OPS_E2E_UI_BUILD_FAILED')
-    const ui = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts'], uiEnvironment, 'ui')
+    // Serve the already-built bundle for browser acceptance. Vite dev injects
+    // an HMR WebSocket client even when the gateway cannot upgrade sockets,
+    // which creates false console failures and does not represent production.
+    const ui = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--outDir', uiOutput], uiEnvironment, 'ui')
     const workspaceUiEnvironment = { ...uiEnvironment, VITE_API_PROXY_TARGET: `http://127.0.0.1:${workspaceGatewayPort}` }
-    const workspaceUi = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(workspaceUiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts'], workspaceUiEnvironment, 'workspace-ui')
+    const workspaceUi = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(workspaceUiPort), '--strictPort', '--outDir', uiOutput], workspaceUiEnvironment, 'workspace-ui')
     await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`, api), ready(`http://127.0.0.1:${uiPort}/`, ui), ready(`http://127.0.0.1:${workspaceUiPort}/`, workspaceUi)])
     const health = await (await fetch(`http://127.0.0.1:${apiPort}/healthz`)).json() as { data?: { persistence?: { mode?: string; ready?: boolean }; redis?: { ready?: boolean } } }
     if (health.data?.persistence?.mode !== 'postgres' || !health.data.persistence.ready || !health.data.redis?.ready) throw new Error('OPS_E2E_DURABLE_RUNTIME_REQUIRED')
