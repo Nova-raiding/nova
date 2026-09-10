@@ -43,7 +43,10 @@ test('captures every workspace Ops Console page for visual QA', async () => {
     requestFailures.push({ method: request.method(), url: request.url(), error: request.failure()?.errorText })
   })
   page.on('response', response => {
-    if (response.status() >= 500) badResponses.push({ method: response.request().method(), url: response.url(), status: response.status() })
+    if (response.status() >= 400) {
+      const body = response.request().postDataJSON?.()
+      badResponses.push({ method: response.request().method(), url: response.url(), status: response.status(), rpc_method: body?.method, params: body?.params })
+    }
   })
 
   const screenshots = resolve('screenshots', 'ops-workspace-pages')
