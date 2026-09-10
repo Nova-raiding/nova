@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { FixturePaymentProvider, HttpPaymentProvider, createPaymentProviderFromEnv } from './payment-provider.js'
+import { FixturePaymentProvider, HttpPaymentProvider, createPaymentProviderFromEnv, verifyPaymentCallbackSignature } from './payment-provider.js'
+import { createHmac } from 'node:crypto'
 
 describe('payment provider adapter', () => {
+  it('verifies a short-lived signed callback and returns a deduplication proof', () => {
+    const timestamp = '1799614800'
+    const payload = { orderId: 'order-1', providerTradeId: 'trade-1', amountFen: 200000, currency: 'CNY' as const, state: 'paid' as const }
+    const canonical = ['alipay', 'ws-1', payload.orderId, payload.providerTradeId, payload.amountFen, payload.currency, payload.state, timestamp, 'nonce-123456789012'].join('|')
+    const signature = createHmac('sha256', 'server-secret').update(canonical).digest('hex')
+    expect(verifyPaymentCallbackSignature({ secret: 'server-secret', channel: 'alipay', workspaceId: 'ws-1', payload, signature, timestamp, nonce: 'nonce-123456789012', nowMs: 1799614800_000 })).toMatchObject({ nonce: 'nonce-123456789012', payloadHash: expect.stringMatching(/^[0-9a-f]{64}$/u) })
+  })
+
+  it('rejects tampering and expired callbacks before payment evidence is accepted', () => {
+    const timestamp = '1799614800'
+    const payload = { orderId: 'order-1', providerTradeId: 'trade-1', amountFen: 200000, currency: 'CNY' as const, state: 'paid' as const }
+    const canonical = ['wechat', 'ws-1', payload.orderId, payload.providerTradeId, payload.amountFen, payload.currency, payload.state, timestamp, 'nonce-123456789012'].join('|')
+    const signature = createHmac('sha256', 'server-secret').update(canonical).digest('hex')
+    expect(() => verifyPaymentCallbackSignature({ secret: 'server-secret', channel: 'wechat', workspaceId: 'ws-1', payload: { ...payload, amountFen: 200001 }, signature, timestamp, nonce: 'nonce-123456789012', nowMs: 1799614800_000 })).toThrow('signature is invalid')
+    expect(() => verifyPaymentCallbackSignature({ secret: 'server-secret', channel: 'wechat', workspaceId: 'ws-1', payload, signature, timestamp, nonce: 'nonce-123456789012', nowMs: 1799614800_000 + 300_001 })).toThrow('expired')
+  })
+
   it('completes a deterministic local fixture checkout and refund without network access', async () => {
     const provider = new FixturePaymentProvider()
     const input = { channel: 'alipay' as const, orderId: 'fixture-order-1', idempotencyKey: 'fixture-key-1', workspaceId: 'ws-fixture', amountFen: 1000, callbackUrl: 'fixture://callback', description: 'local test' }

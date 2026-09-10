@@ -2635,7 +2635,7 @@ export class MerchantService {
     })
     return [...new Set(selected.flatMap(sku => sku.sourceAssetIds ?? []))]
   }
-  enqueueImageGeneration(input: { workspaceId: string; productId: string; taskId?: string; contentVersionId?: string; skuIds?: string[]; sourceAssetIds?: string[]; imageMode?: 'create' | 'optimize'; direction?: string; size?: string; count?: number; idempotencyKey: string; continuation?: Omit<ImageGenerationContinuation, 'requestedAt' | 'updatedAt'> }) {
+  enqueueImageGeneration(input: { workspaceId: string; productId: string; taskId?: string; contentVersionId?: string; skuIds?: string[]; sourceAssetIds?: string[]; imageMode?: 'create' | 'optimize'; direction?: string; size?: string; count?: number; idempotencyKey: string; marketingBrief?: { sellingPoints?: string[]; trafficKeywords?: string[]; promotionLabels?: string[]; marketingLabels?: string[]; headline?: string; subheadline?: string; cta?: string }; continuation?: Omit<ImageGenerationContinuation, 'requestedAt' | 'updatedAt'> }) {
     if (input.size && !['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'].includes(input.size)) throw new DomainError('IMAGE_SIZE_INVALID', '图片画布尺寸不受支持', 400)
     const product = this.products.get(input.productId)
     if (!product || product.workspaceId !== input.workspaceId) throw new DomainError('PRODUCT_NOT_FOUND', '商品不存在或不属于当前工作区', 404)
@@ -2672,25 +2672,31 @@ export class MerchantService {
     const contentVersion = input.contentVersionId ? this.contentVersions.get(input.contentVersionId) : undefined
     const brief = contentVersion?.body.brief
     const selectedDirection = task?.directions?.find(item => item.id === task.selectedDirectionId)
-    const confirmedSellingPoints = (task?.productionPlan?.sellingPoints ?? product.sellingPoints?.filter(item => item.proofStatus === 'confirmed').map(item => item.text) ?? []).filter(Boolean).slice(0, 6)
+    const requestedMarketingBrief = input.marketingBrief
+    const confirmedSellingPoints = [...new Set([
+      ...(task?.productionPlan?.sellingPoints ?? product.sellingPoints?.filter(item => item.proofStatus === 'confirmed').map(item => item.text) ?? []),
+      ...(requestedMarketingBrief?.sellingPoints ?? []),
+    ].map(value => value.trim()).filter(Boolean))].slice(0, 6)
     const brandVisualRules = task?.inputSnapshot?.brand?.visualRules ?? contentVersion?.brandSnapshot?.visualRules ?? this.getBrandProfile(input.workspaceId)?.visualRules
     const logoAssetIds = brandVisualRules?.logo?.assetIds?.slice(0, 4) ?? []
     const verifiedAttributeLabels = Object.entries(product.attributes ?? {})
       .filter(([key, value]) => /颜色|色系|材质|面料|尺码|尺寸|规格|场景|功能|款式|适用|容量|重量|color|fabric|size|material/iu.test(key) && value.trim())
       .map(([key, value]) => `${key}:${value}`.slice(0, 60)).slice(0, 6)
     const trafficKeywords = [...new Set([
+      ...(requestedMarketingBrief?.trafficKeywords ?? []),
       product.title,
       product.category,
       ...verifiedAttributeLabels.map(label => label.split(':').slice(1).join(':')),
       ...confirmedSellingPoints,
     ].map(value => value?.trim()).filter((value): value is string => Boolean(value)).slice(0, 8))]
     const competitorReference = task?.inputSnapshot?.knowledgeContext?.competitorReferences?.[0]
-    const promotionLabels = (task?.productionPlan?.promotionSnapshot ?? []).flatMap(promotion => {
+    const promotionLabels = [...new Set([...(requestedMarketingBrief?.promotionLabels ?? []), ...(task?.productionPlan?.promotionSnapshot ?? []).flatMap(promotion => {
       const price = promotion.couponPriceCny ?? promotion.priceCny
       const priceLabel = typeof price === 'number' ? ` ¥${price.toFixed(2)}` : ''
       return [`${promotion.label}${priceLabel}`]
-    })
+    })].map(value => value.trim()).filter(Boolean))].slice(0, 4)
     const marketingLabels = [...new Set([
+      ...(requestedMarketingBrief?.marketingLabels ?? []),
       product.title,
       brief?.headline,
       brief?.subheadline,
@@ -2732,7 +2738,12 @@ export class MerchantService {
         competitorThemes: competitorReference.expressionObservations,
         differentiationAngles: competitorReference.differentiationAngles,
       } : {}),
-      ...(brief ? { headline: brief.headline, subheadline: brief.subheadline, cta: brief.cta, styleKeywords: selectedDirection?.visualDirection ? [selectedDirection.visualDirection] : [] } : {}),
+      ...((brief || requestedMarketingBrief) ? {
+        headline: requestedMarketingBrief?.headline ?? brief?.headline,
+        subheadline: requestedMarketingBrief?.subheadline ?? brief?.subheadline,
+        cta: requestedMarketingBrief?.cta ?? brief?.cta,
+        styleKeywords: selectedDirection?.visualDirection ? [selectedDirection.visualDirection] : [],
+      } : {}),
     }
     const sourceProductVersion = product.version ?? 1
     const intentHash = createHash('sha256').update(JSON.stringify({ workspaceId: input.workspaceId, productId: product.id, taskId: task?.id ?? null, contentVersionId: input.contentVersionId ?? null, skuIds, sourceAssetIds: sourceAssetIds ?? [], imageMode, sourceProductVersion, direction, count, visualBrief })).digest('hex')

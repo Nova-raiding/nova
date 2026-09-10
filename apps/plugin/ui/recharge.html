@@ -413,7 +413,7 @@
         </div>
         <div class="balance-row">
           <div>
-            <div class="balance-label">可用创意点</div>
+            <div class="balance-label">创意点准入状态</div>
             <div class="balance"><span id="balance">未知</span></div>
           </div>
           <div class="settlement" id="settlement">
@@ -486,7 +486,7 @@
             <p id="overviewText">正在读取账务状态…</p>
             <div class="metrics">
               <div class="metric">
-                <strong id="reservedPoints">未知</strong><span>已预占创意点</span>
+                <strong id="reservedPoints">未知</strong><span>账务状态</span>
               </div>
               <div class="metric">
                 <strong id="accessRevision">未知</strong><span>准入修订</span>
@@ -641,16 +641,31 @@
       }
       function status(d) {
         if (!d) return;
-        const known = d.balance_state === "known" && Number.isSafeInteger(d.available_points);
-        $("balance").textContent = known ? Number(d.available_points).toLocaleString("zh-CN") : "未知";
-        $("reservedPoints").textContent = known && Number.isSafeInteger(d.reserved_points) ? Number(d.reserved_points).toLocaleString("zh-CN") : "未知";
+        const availability = d.availability ?? (d.balance_state === "known"
+          ? (d.allowed === false ? "insufficient" : "available")
+          : "unknown");
+        const availabilityLabel = {
+          available: "可用",
+          insufficient: "不足",
+          exhausted: "已用尽",
+          unavailable: "暂不可用",
+          unknown: "未知",
+        }[availability] ?? "未知";
+        $("balance").textContent = availabilityLabel;
+        $("reservedPoints").textContent = d.point_reservation_status === "settled" || d.settlement_status === "settled"
+          ? "已结算"
+          : d.point_reservation_status === "unknown" || d.settlement_status === "unknown"
+            ? "待确认"
+            : "未公开";
         $("accessRevision").textContent = d.access_revision ?? "未知";
         $("accessState").textContent = d.allowed === true ? "允许" : "阻断";
         $("overviewText").textContent = d.allowed === true
           ? "当前创意点事实允许继续业务操作；具体动作仍需执行各自权限和运行门禁。"
-          : known && d.available_points === 0
+          : availability === "exhausted"
             ? "创意点已用尽，只开放服务端授权的恢复/控制入口。"
-            : "创意点余额未知，所有商家业务已安全阻断。";
+            : availability === "insufficient"
+              ? "创意点准入不足，只开放服务端授权的恢复/控制入口。"
+              : "创意点准入状态未知，所有商家业务已安全阻断。";
         $("settlement").textContent = "创意点是业务准入的唯一余额事实；旧钱包与任务额度仅供历史对账。";
         const actions = Array.isArray(d.next_actions) ? d.next_actions : [];
         $("recoveryState").textContent = actions.length ? "以下入口由本次服务端 decision 精确授权。" : "当前没有可执行的恢复入口，请联系运营核对目录、支付或点数 grant。";

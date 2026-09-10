@@ -150,7 +150,12 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   // Raw quota is deliberately excluded: without a versioned unit, exchange
   // rate and pricing formula it is not currency evidence.
   const costCny = firstNumber(usage?.cost_cny, usage?.costCny, root.cost_cny, root.costCny, data?.cost_cny, data?.costCny, nestedData?.cost_cny, nestedData?.costCny, result?.cost_cny, result?.costCny)
-  const imageResultObserved = defaults.modality === 'image' && ((Array.isArray(root.data) && root.data.length > 0) || (data && Array.isArray(data.data) && data.data.length > 0))
+  const imageResultObserved = (defaults.modality === 'image' || defaults.modality === 'image_edit') && (
+    (Array.isArray(root.data) && root.data.length > 0)
+    || (data && Array.isArray(data.data) && data.data.length > 0)
+    || (data && Array.isArray(data.images) && data.images.length > 0)
+    || (result && Array.isArray(result.data) && result.data.length > 0)
+  )
   // OpenAI-compatible image responses may put the provider request ID in
   // the response body instead of a header. Accept body IDs only when this is
   // an image response with actual artifacts; never use a generic text `id` as
@@ -193,7 +198,7 @@ export function parseRelayUsage(payload: unknown, headers: Headers, defaults: { 
   const acceptedVideoStatuses = new Set(['queued', 'pending', 'created', 'submitted', 'processing', 'running', 'in_progress'])
   const statusBoundVideoId = typeof videoEvidenceNode?.id === 'string' && videoEvidenceNode.id.trim().length > 0 && typeof videoStatus === 'string' && acceptedVideoStatuses.has(videoStatus.toLowerCase())
   const videoRequestAccepted = defaults.modality === 'video' && Boolean(providerRequestId || defaults.context?.providerAttemptId) && (explicitVideoJobId || statusBoundVideoId)
-  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || (defaults.modality === 'image' && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved || videoRequestAccepted
+  const usageObserved = inputTokens !== undefined || outputTokens !== undefined || totalTokens !== undefined || ((defaults.modality === 'image' || defaults.modality === 'image_edit') && outputImageCount !== undefined && outputImageCount > 0) || imageResultObserved || videoRequestAccepted
   return {
     ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}),
     ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}),
@@ -225,9 +230,17 @@ export async function emitRelayUsage(sink: RelayUsageSink | undefined, payload: 
   // Some OpenAI-compatible image relays return only `{data:[...]}` and omit
   // all usage metadata. The returned artifact count is still bounded,
   // provider-controlled evidence for one image unit.
-  if (!usage && defaults.modality === 'image' && record(payload)) {
-    const items = Array.isArray(payload.data) ? payload.data : record(payload.data) && Array.isArray(payload.data.data) ? payload.data.data : []
-    if (items.length > 0) usage = { modality: 'image', model: defaults.model, ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}), ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}), ...(defaults.context?.runKey ? { runKey: defaults.context.runKey } : {}), ...(defaults.context?.providerAttemptId ? { providerAttemptId: defaults.context.providerAttemptId } : {}), providerRequestId: headers.get('x-oneapi-request-id') ?? (typeof payload.id === 'string' ? payload.id : undefined), observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: defaults.context?.billingUnits ?? items.length } }
+  if (!usage && (defaults.modality === 'image' || defaults.modality === 'image_edit') && record(payload)) {
+    const data = record(payload.data) ? payload.data : undefined
+    const result = data && record(data.result) ? data.result : undefined
+    const items = [
+      ...(Array.isArray(payload.data) ? payload.data : []),
+      ...(Array.isArray(payload.images) ? payload.images : []),
+      ...(data && Array.isArray(data.data) ? data.data : []),
+      ...(data && Array.isArray(data.images) ? data.images : []),
+      ...(result && Array.isArray(result.data) ? result.data : []),
+    ]
+    if (items.length > 0) usage = { modality: defaults.modality, model: defaults.model, ...(defaults.context?.workspaceId ? { workspaceId: defaults.context.workspaceId } : {}), ...(defaults.context?.actionId ? { actionId: defaults.context.actionId } : {}), ...(defaults.context?.runKey ? { runKey: defaults.context.runKey } : {}), ...(defaults.context?.providerAttemptId ? { providerAttemptId: defaults.context.providerAttemptId } : {}), providerRequestId: headers.get('x-oneapi-request-id') ?? (typeof payload.id === 'string' ? payload.id : undefined), observedAt: new Date().toISOString(), metadata: { usage_observed: true, billing_units: defaults.context?.billingUnits ?? items.length } }
   }
   if (!usage || usage.metadata?.usage_observed !== true) throw new ModelUsageEvidenceMissingError('usage')
   if (!usage.providerRequestId?.trim() && !usage.providerAttemptId?.trim()) throw new ModelUsageEvidenceMissingError('identity')

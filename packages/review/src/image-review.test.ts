@@ -17,4 +17,18 @@ describe('product image deterministic checks', () => {
     expect(reviewProductImages(['data:image/svg+xml;base64,PHN2Zy8+'])).toEqual([expect.objectContaining({ code: 'IMAGE_FORMAT_UNSUPPORTED', severity: 'error' })])
     expect(reviewProductImages([tinyPng])).toEqual([expect.objectContaining({ code: 'IMAGE_TOO_SMALL', severity: 'error' })])
   })
+
+  it('accepts a valid VP8X WebP produced by the marketing compositor', () => {
+    const bytes = Buffer.alloc(30)
+    bytes.write('RIFF', 0, 'ascii')
+    bytes.writeUInt32LE(22, 4)
+    bytes.write('WEBP', 8, 'ascii')
+    bytes.write('VP8X', 12, 'ascii')
+    bytes.writeUInt32LE(10, 16)
+    bytes[24] = 0xff; bytes[25] = 0x03; bytes[26] = 0x00
+    bytes[27] = 0xff; bytes[28] = 0x03; bytes[29] = 0x00
+    const findings = reviewProductImages([`data:image/webp;base64,${bytes.toString('base64')}`])
+    expect(findings).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: 'IMAGE_FORMAT_UNSUPPORTED' })]))
+    expect(findings).not.toEqual(expect.arrayContaining([expect.objectContaining({ code: 'IMAGE_TOO_SMALL' })]))
+  })
 })

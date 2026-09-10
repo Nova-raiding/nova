@@ -258,6 +258,37 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('renders the authoritative creative-point balance in merchant-visible text for %s', async (bridgePath) => {
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        schema_version: 'creative-points.balance.v1',
+        balance_state: 'known',
+        available_points: 9950,
+        reserved_points: 31,
+        settled_points: 19,
+        access_revision: '74',
+      } }, warnings: [], next_actions: [], error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [bridgePath], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.content[0].text).toContain('创意点状态：可用')
+      expect(response.result.content[0].text).not.toMatch(/9950|31|19/u)
+      expect(response.result.structuredContent).toMatchObject({ balance_state: 'known' })
+      expect(response.result.structuredContent).toMatchObject({ available_points: 9950, reserved_points: 31, settled_points: 19 })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it.each([
     ['CREATIVE_POINTS_EXHAUSTED', 'known', 0, null],
     ['CREATIVE_POINTS_INSUFFICIENT', 'known', 4, 5],
@@ -303,8 +334,6 @@ describe('Codex stdio MCP bridge', () => {
       expect(result.structuredContent).toMatchObject({
         code,
         balance_state: balanceState,
-        available_points: availablePoints,
-        quoted_points: quotedPoints,
         access_revision: balanceState === 'known' ? 'access_7' : null,
         rate_card_version: quotedPoints === null ? null : 'rate_3',
         request_id: 'req_commercial_1',
@@ -346,7 +375,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_EXHAUSTED', available_points: 0, access_revision: 'access_9' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_EXHAUSTED', access_revision: 'access_9' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'task.create', arguments: { product_id: 'prod_1', platform: 'taobao' } } })}\n`)
@@ -1337,6 +1366,49 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: false, structuredContent: { productId: 'prod_1', findings: [] } })
       expect(requests[0]).toMatchObject({ method: 'catalog.image.review', params: { product_id: 'prod_1', visual_refs_json: '["visual_1"]', workspace_id: 'ws_test' } })
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
+  it('keeps image-result point settlement visible beside the native preview', async () => {
+    const image = 'data:image/png;base64,aW1hZ2Ux'
+    const server = createServer(async (_req, res) => {
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: {
+        job_id: 'job_points',
+        images: [image],
+        job: {
+          revision: 3,
+          archiveState: 'archived',
+          candidates: [{ visualRef: 'visual_points', ordinal: 1, scanStatus: 'clean', reviewStatus: 'passed' }],
+        },
+        creative_points: {
+          available_points: 9950,
+          quoted_points: 1,
+          deducted_points: 1,
+          point_reservation_points: 1,
+          point_reservation_status: 'settled',
+          reserved_points: 31,
+          settled_points: 19,
+        },
+      } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_points' } } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result.content[0].text).toContain('创意点状态：可用')
+      expect(response.result.content[0].text).not.toMatch(/9950|实际扣除 1/u)
+      expect(response.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(1)
+      expect(response.result.structuredContent.creative_points).toMatchObject({ balance_state: 'known', point_reservation_status: 'settled' })
+      expect(response.result.structuredContent.creative_points).not.toHaveProperty('available_points')
     } finally {
       child.kill()
       await close(server)

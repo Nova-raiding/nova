@@ -30,6 +30,10 @@ export interface CommercialOrderV2 {
   requestHash: string
   createdByActorId: string
   providerOrderId: string | null
+  /** Short-lived checkout resource returned by the payment gateway. */
+  checkoutUrl: string | null
+  checkoutExpiresAt: string | null
+  checkoutIdempotencyKey: string | null
   createdAt: string
   paidAt: string | null
 }
@@ -73,6 +77,15 @@ export interface PaymentGrantResult {
   replayed: boolean
 }
 export interface CommercialOrderPaymentStatusV2 { order: CommercialOrderV2; skuCode: string; accessRevision: number | null }
+
+export interface CommercialCheckoutResource {
+  order: CommercialOrderV2
+  channel: 'alipay' | 'wechat'
+  paymentUrl: string
+  providerOrderId: string | null
+  expiresAt: string | null
+  replayed: boolean
+}
 
 export interface CommercialEntitlementSnapshotV2 {
   id: string
@@ -121,6 +134,9 @@ type OrderRow = {
   requestHash: string
   createdByActorId: string
   providerOrderId: string | null
+  checkoutUrl: string | null
+  checkoutExpiresAt: string | Date | null
+  checkoutIdempotencyKey: string | null
   createdAt: string | Date
   paidAt: string | Date | null
 }
@@ -129,12 +145,14 @@ const orderProjection = `id, workspace_id AS "workspaceId", sku_id AS "skuId", s
   amount_fen AS "amountFen", currency, payment_provider AS "paymentProvider", status,
   idempotency_key AS "idempotencyKey", request_hash AS "requestHash",
   created_by_actor_id AS "createdByActorId", provider_order_id AS "providerOrderId",
-  created_at AS "createdAt", paid_at AS "paidAt"`
+  checkout_url AS "checkoutUrl", checkout_expires_at AS "checkoutExpiresAt",
+  checkout_idempotency_key AS "checkoutIdempotencyKey", created_at AS "createdAt", paid_at AS "paidAt"`
 const aliasedOrderProjection = (alias: string) => `${alias}.id, ${alias}.workspace_id AS "workspaceId", ${alias}.sku_id AS "skuId", ${alias}.sku_version_id AS "skuVersionId",
   ${alias}.amount_fen AS "amountFen", ${alias}.currency, ${alias}.payment_provider AS "paymentProvider", ${alias}.status,
   ${alias}.idempotency_key AS "idempotencyKey", ${alias}.request_hash AS "requestHash",
   ${alias}.created_by_actor_id AS "createdByActorId", ${alias}.provider_order_id AS "providerOrderId",
-  ${alias}.created_at AS "createdAt", ${alias}.paid_at AS "paidAt"`
+  ${alias}.checkout_url AS "checkoutUrl", ${alias}.checkout_expires_at AS "checkoutExpiresAt",
+  ${alias}.checkout_idempotency_key AS "checkoutIdempotencyKey", ${alias}.created_at AS "createdAt", ${alias}.paid_at AS "paidAt"`
 
 function required(value: string | undefined, field: string): string {
   if (!value || value.trim() !== value || value.length === 0) throw new TypeError(`${field} is required`)
@@ -163,7 +181,7 @@ function canonical(value: unknown): string {
 
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex')
 const timestamp = (value: string | Date | null): string | null => value === null ? null : value instanceof Date ? value.toISOString() : String(value)
-const mapOrder = (row: OrderRow): CommercialOrderV2 => ({ ...row, amountFen: safeInteger(row.amountFen, 'amountFen'), createdAt: timestamp(row.createdAt)!, paidAt: timestamp(row.paidAt) })
+const mapOrder = (row: OrderRow): CommercialOrderV2 => ({ ...row, amountFen: safeInteger(row.amountFen, 'amountFen'), createdAt: timestamp(row.createdAt)!, paidAt: timestamp(row.paidAt), checkoutExpiresAt: timestamp(row.checkoutExpiresAt) })
 
 function validateOrderSku(sku: CommercialCatalogSkuSnapshot, now: string): void {
   if (sku.lifecycle !== 'approved' || !sku.executable || sku.effectiveAt === null || Date.parse(sku.effectiveAt) > Date.parse(now)) {
@@ -385,6 +403,69 @@ export class PostgresCommercialContractRepository {
         [`evt_${randomUUID()}`, workspaceId, id, JSON.stringify({ order_id: id, sku_code: input.sku.code, sku_version_id: input.sku.versionId, actor_id: actorId, reason })],
       )
       return mapOrder(row)
+    })
+  }
+
+  /**
+   * Persist the gateway checkout resource against the immutable order. The
+   * provider call is deliberately performed by the API before this method;
+   * this method only accepts a server-created URL and never trusts client
+   * supplied amount, currency, SKU or benefits. Replaying the same checkout
+   * idempotency key returns the original resource. A different key cannot
+   * replace an existing resource while the order is still payable.
+   */
+  async attachCheckout(input: {
+    workspaceId: string
+    orderId: string
+    channel: 'alipay' | 'wechat'
+    idempotencyKey: string
+    paymentUrl: string
+    providerOrderId?: string | null
+    expiresAt?: string | null
+  }): Promise<CommercialCheckoutResource> {
+    const workspaceId = requireWorkspaceScope(input.workspaceId)
+    required(input.orderId, 'orderId'); required(input.idempotencyKey, 'idempotencyKey')
+    if (!/^(?:https:\/\/|weixin:\/\/|alipays:\/\/)/u.test(input.paymentUrl)) throw new TypeError('paymentUrl must be a supported provider checkout URI')
+    const expiresAt = input.expiresAt == null ? null : instant(input.expiresAt, 'expiresAt')
+    const providerOrderId = input.providerOrderId == null ? null : required(input.providerOrderId, 'providerOrderId')
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const loaded = await client.query<OrderRow & { skuCode: string; accessRevision: string | number | null }>(
+        `SELECT ${aliasedOrderProjection('o')},s.code AS "skuCode",NULL::bigint AS "accessRevision"
+           FROM commercial_orders_v2 o JOIN commercial_catalog_skus s ON s.id=o.sku_id
+          WHERE o.workspace_id=$1 AND o.id=$2 FOR UPDATE`, [workspaceId, input.orderId],
+      )
+      const row = loaded.rows[0]
+      if (!row) throw new CommercialContractError('COMMERCIAL_ORDER_NOT_FOUND', 'commercial order was not found')
+      const order = mapOrder(row)
+      if (order.status !== 'pending') {
+        if (order.checkoutIdempotencyKey === input.idempotencyKey && order.checkoutUrl) {
+          return { order, channel: input.channel, paymentUrl: order.checkoutUrl, providerOrderId: order.providerOrderId, expiresAt: order.checkoutExpiresAt, replayed: true }
+        }
+        throw new CommercialContractError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'non-pending commercial order cannot create checkout')
+      }
+      if (order.checkoutIdempotencyKey) {
+        if (order.checkoutIdempotencyKey !== input.idempotencyKey) throw new CommercialContractError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'commercial checkout idempotency key was reused for another checkout')
+        if (order.checkoutUrl && order.providerOrderId === providerOrderId && order.checkoutExpiresAt === expiresAt) {
+          return { order, channel: input.channel, paymentUrl: order.checkoutUrl, providerOrderId: order.providerOrderId, expiresAt: order.checkoutExpiresAt, replayed: true }
+        }
+        throw new CommercialContractError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'commercial checkout resource conflicts with the original provider response')
+      }
+      const updated = await client.query<OrderRow>(
+        `UPDATE commercial_orders_v2
+            SET checkout_url=$3,checkout_expires_at=$4::timestamptz,checkout_idempotency_key=$5,provider_order_id=$6
+          WHERE workspace_id=$1 AND id=$2 AND status='pending' AND checkout_idempotency_key IS NULL
+          RETURNING ${orderProjection}`,
+        [workspaceId, input.orderId, input.paymentUrl, expiresAt, input.idempotencyKey, providerOrderId],
+      )
+      if (!updated.rows[0]) throw new CommercialContractError('COMMERCIAL_IDEMPOTENCY_CONFLICT', 'commercial checkout was concurrently attached')
+      const saved = mapOrder(updated.rows[0])
+      await client.query(
+        `INSERT INTO outbox_events (id,workspace_id,aggregate_id,event_type,sequence,payload)
+         VALUES ($1,$2,$3,'commercial.checkout.created',2,$4::jsonb)
+         ON CONFLICT (workspace_id,aggregate_id,event_type,sequence) DO NOTHING`,
+        [`evt_${randomUUID()}`, workspaceId, input.orderId, JSON.stringify({ order_id: input.orderId, channel: input.channel, provider_order_id: providerOrderId, checkout_expires_at: expiresAt })],
+      )
+      return { order: saved, channel: input.channel, paymentUrl: saved.checkoutUrl!, providerOrderId: saved.providerOrderId, expiresAt: saved.checkoutExpiresAt, replayed: false }
     })
   }
 

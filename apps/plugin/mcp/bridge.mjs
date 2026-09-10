@@ -540,7 +540,7 @@ const METHODS = {
   },
   'catalog.image.generate': {
     description: '根据已确认商品事实生成商品主图或详情图候选；用户要求整套电商详情图时必须先完成商品识别、买家顾虑和六类图片方案，再按确认方案真实调用图片模型生成，不能把文字方案、占位卡片或原图当作详情页交付。确认方案后生成完整详情长图必须显式传 size=1024x4096 或 1024x3072，并在同一轮自动查询，只有返回真实 images/图片附件后才能称为已生成。用户已上传图片时可省略 product_id，提供 title + asset_ids_json 生成未绑定候选（仅候选、不可发布）。独立上传图片生成时不要先调用 asset.parse，也不要把自动解析出的品类当作商品事实；仅使用用户消息中的描述和图片本身；用户已要求制作时直接生成未绑定候选，不重复询问商用权或 AI 修改许可，不自动批准素材权益。禁止编造销量、认证、测评、续航、兼容性或其他未确认商品事实。',
-    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已通过可信安全扫描的上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'], description: '单次画布尺寸；横向 Banner 使用 1536x1024，完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { product_id: { type: 'string', description: '可选；未绑定模式可省略，但必须提供 title 和 asset_ids_json。' }, title: { type: 'string', description: '未绑定上传生成时的商家确认商品名称。' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string', description: '可选店铺上下文；必须与商品绑定的平台和店铺一致。' }, task_id: { type: 'string' }, content_version_id: { type: 'string' }, mode: { type: 'string', enum: ['create', 'optimize'], description: 'create 从零设计；optimize 必须基于已授权上传素材。' }, sku_ids_json: { type: 'string', description: '要生成图片的 SKU ID 字符串数组 JSON；默认使用任务冻结 SKU 范围。' }, asset_ids_json: { type: 'string', description: '工作区内已通过可信安全扫描的上传图片 ID 数组 JSON；未绑定候选不要求预先确认商用权或 AI 修改许可，明确限制仍生效；正式绑定生成仍须通过权益检查。' }, size: { type: 'string', enum: ['1024x1024', '1024x1536', '1536x1024', '1024x3072', '1024x4096'], description: '单次画布尺寸；横向 Banner 使用 1536x1024，完整详情页长图使用 1024x4096。' }, direction: { type: 'string' }, selling_points_json: { type: 'string', description: '商家已确认、可上图的卖点字符串数组 JSON。' }, traffic_keywords_json: { type: 'string', description: '商家已确认的搜索/流量关键词字符串数组 JSON。' }, promotion_labels_json: { type: 'string', description: '已确认且仍有效的促销标签字符串数组 JSON；禁止虚构价格或折扣。' }, marketing_labels_json: { type: 'string', description: '商家已确认的营销短标签字符串数组 JSON。' }, headline: { type: 'string', description: '主图精确主标题。' }, subheadline: { type: 'string', description: '主图精确副标题。' }, cta: { type: 'string', description: '主图精确行动文案。' }, count: { type: 'string' }, idempotency_key: { type: 'string' } }, additionalProperties: false },
   },
   'catalog.image.retry': {
     description: '安全重试尚未启动 Provider 且没有候选或对账证据的图片任务。',
@@ -1009,19 +1009,27 @@ function rawImageCandidateChoiceUiHtml() {
 
 function actionLink(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined
-  const field = method === 'platform.connect' ? 'authorizationUrl' : method === 'billing.recharge.create' ? 'paymentUrl' : undefined
-  if (!field || typeof result[field] !== 'string' || !result[field].trim()) return undefined
+  const authorizationValue = method === 'merchant.start'
+    ? result.authorizationUrl ?? result.authorization_url ?? result.loginUrl ?? result.login_url ?? result.authorization?.url
+    : undefined
+  const paymentValue = method === 'commercial.order.create'
+    ? result.checkoutUrl ?? result.checkout_url ?? result.paymentUrl ?? result.payment_url ?? result.checkout?.url ?? result.payment?.url
+    : undefined
+  const field = method === 'platform.connect' ? 'authorizationUrl' : authorizationValue ? 'authorizationUrl' : paymentValue ? 'paymentUrl' : method === 'billing.recharge.create' ? 'paymentUrl' : undefined
+  const value = authorizationValue ?? paymentValue ?? (field ? result[field] : undefined)
+  if (!field || typeof value !== 'string' || !value.trim()) return undefined
   try {
-    const url = new URL(result[field])
+    const url = new URL(value)
     const localFixture = url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname)
     const paymentDeepLink = field === 'paymentUrl' && ['weixin:', 'alipays:'].includes(url.protocol)
     if (url.protocol !== 'https:' && !localFixture && !paymentDeepLink) return undefined
+    if (url.username || url.password || url.hash) return undefined
     return {
       type: 'resource_link',
-      name: field === 'authorizationUrl' ? 'platform-authorization' : 'payment-checkout',
-      title: field === 'authorizationUrl' ? '立即授权店铺' : '打开充值支付页',
+      name: field === 'authorizationUrl' ? (method === 'merchant.start' ? 'merchant-authorization' : 'platform-authorization') : 'payment-checkout',
+      title: field === 'authorizationUrl' ? (method === 'merchant.start' ? '登录并授权大麦' : '立即授权店铺') : '打开充值支付页',
       uri: url.toString(),
-      description: field === 'authorizationUrl' ? '官方平台授权入口；插件不会接触店铺密码。' : '支付完成后请回到 Codex 查询订单状态；待支付不等于已到账。',
+      description: field === 'authorizationUrl' ? (method === 'merchant.start' ? '在大麦官方授权页使用账号和密码登录；密码不会进入插件、模型或日志。' : '官方平台授权入口；插件不会接触店铺密码。') : '支付完成后请回到 Codex 查询订单状态；待支付不等于已到账。',
       annotations: { audience: ['user'] },
     }
   } catch { return undefined }
@@ -1173,7 +1181,7 @@ function userFacingToolText(method, result) {
     ? result.creative_points
     : undefined
   const pointsText = points
-    ? `创意点：当前剩余 ${points.balance_state === 'known' && Number.isSafeInteger(points.available_points) ? points.available_points : '未知'}；本次预估 ${Number.isSafeInteger(points.quoted_points) ? points.quoted_points : '未知'}；实际扣除 ${Number.isSafeInteger(points.deducted_points) ? points.deducted_points : '未知/待结算'}；已预留 ${Number.isSafeInteger(points.point_reservation_points) ? points.point_reservation_points : '未知'}；结算 ${typeof points.point_reservation_status === 'string' ? points.point_reservation_status : (typeof points.settlement_status === 'string' ? points.settlement_status : '待确认')}`
+    ? `创意点状态：${points.balance_state === 'unknown' ? '未知' : points.availability === 'insufficient' ? '不足' : points.availability === 'exhausted' ? '已用尽' : '可用'}。${points.point_reservation_status === 'unknown' || points.settlement_status === 'unknown' ? '本次账务状态待确认。' : ''}生成能力仅在服务端准入通过后开放；需要恢复时请使用服务端提供的充值入口。`
     : ''
   const decisionSummary = detailDecisionSummary(method, result)
   if (decisionSummary) return decisionSummary
@@ -1192,20 +1200,13 @@ function userFacingToolText(method, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     return method === 'content.export' ? '导出已准备好。' : '服务端已返回响应，状态尚未确认。请查看当前任务状态后再决定下一步。'
   }
-  if (method === 'billing.status') {
-    const available = Number.isSafeInteger(result.available_points)
+  if (method === 'billing.status' || method === 'creative-points.balance.get') {
+    const balanceKnown = result.balance_state === 'known' || points?.balance_state === 'known'
+    const available = balanceKnown && Number.isSafeInteger(result.available_points)
       ? result.available_points
-      : Number.isSafeInteger(points?.available_points) ? points.available_points : undefined
-    const reserved = Number.isSafeInteger(result.reserved_points)
-      ? result.reserved_points
-      : Number.isSafeInteger(points?.reserved_points) ? points.reserved_points : undefined
-    const settled = Number.isSafeInteger(result.settled_points)
-      ? result.settled_points
-      : Number.isSafeInteger(points?.settled_points) ? points.settled_points : undefined
-    const wallet = typeof result.balance_cny === 'string' ? result.balance_cny : undefined
-    if (available !== undefined) {
-      return `创意点余额已更新：当前剩余 ${available} 点，预留 ${reserved ?? '未知'} 点，已结算 ${settled ?? '未知'} 点。模型生成将直接扣除创意点；钱包余额${wallet !== undefined ? ` ¥${wallet}` : ''}仅作兼容展示。`
-    }
+      : balanceKnown && Number.isSafeInteger(points?.available_points) ? points.available_points : undefined
+    const availability = result.availability ?? (available === undefined ? 'unknown' : available === 0 ? 'exhausted' : result.allowed === false ? 'insufficient' : 'available')
+    return `创意点状态：${availability === 'unknown' ? '未知' : availability === 'exhausted' ? '已用尽' : availability === 'insufficient' ? '不足' : '可用'}。${result.allowed === false ? '当前生成能力已阻断。' : '生成能力由服务端准入决定。'}${availability !== 'available' ? '请使用服务端提供的充值恢复入口；支付待确认或未到账时不会解锁。' : ''}`
   }
   if (method === 'catalog.search' && Array.isArray(result.products)) {
     if (!result.products.length) return '当前查询未找到商品，请调整商品名称或 SKU 条件。'
@@ -1319,11 +1320,7 @@ function userFacingErrorText(code, details) {
     return '这一步需要你的明确确认。确认后可以继续，未执行任何写操作。'
   }
   if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完。当前仅可继续服务端授权的恢复操作，未执行业务写入。'
-  if (code === 'CREATIVE_POINTS_INSUFFICIENT') {
-    const available = Number.isInteger(details?.available_points) ? details.available_points : '未知'
-    const quoted = Number.isInteger(details?.quoted_points) ? details.quoted_points : '未知'
-    return `创意点不足（可用 ${available}，本次预估 ${quoted}）。未执行业务写入。`
-  }
+  if (code === 'CREATIVE_POINTS_INSUFFICIENT') return '创意点不足，当前未执行业务写入。请使用服务端授权的充值恢复入口。'
   if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认创意点余额，已安全停止。未知余额不会按 0 处理。'
   if (code === 'RATE_CARD_UNAVAILABLE') return '当前无法取得已批准的创意点费率，已安全停止，未扣点。'
   if (code === 'COMMERCIAL_ACCESS_STALE') return '创意点准入状态已变更，请先刷新服务端返回的恢复状态，不要重复提交。'
@@ -1448,7 +1445,7 @@ function safeErrorDetails(details) {
     if (value && typeof value === 'object') {
       const nested = {}
       for (const [key, item] of Object.entries(value)) {
-        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version'].includes(key)) {
+        if (['code', 'field', 'message', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'issues', 'missing', 'required', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version'].includes(key)) {
           const sanitized = sanitize(item, depth + 1)
           if (sanitized !== undefined) nested[key] = sanitized
         }
@@ -1457,7 +1454,7 @@ function safeErrorDetails(details) {
     }
     return undefined
   }
-  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'available_points', 'quoted_points', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
+  for (const key of ['issues', 'missing', 'required', 'status', 'state', 'retry_after_seconds', 'request_id', 'trace_id', 'operation_status', 'timeout', 'provider_request_id', 'provider_idempotency_key', 'provider_status', 'provider_outcome', 'provider_succeeded', 'provider_error_summary', 'reconciliation_required', 'next_action', 'next_actions', 'retryable', 'attempts', 'asset_id', 'asset_persisted', 'balance_state', 'availability', 'access_revision', 'rate_card_version', ...authorizationEvidenceKeys]) {
     const value = authorizationEvidenceKeys.includes(key) || correlationEvidenceKeys.includes(key)
       ? key === 'explicit_deny'
         ? evidenceBoolean(details[key])
@@ -1481,11 +1478,15 @@ function commercialAccessErrorProjection(code, details) {
   const nextActions = [...new Set(requestedActions.filter(value => typeof value === 'string' && COMMERCIAL_RECOVERY_METHODS.has(value)))]
   const knownPoints = pointValue(details?.available_points)
   const balanceState = details?.balance_state === 'known' && knownPoints !== null ? 'known' : 'unknown'
+  const availability = code === 'CREATIVE_POINTS_EXHAUSTED'
+    ? 'exhausted'
+    : ['CREATIVE_POINTS_INSUFFICIENT', 'RATE_CARD_UNAVAILABLE'].includes(code)
+      ? 'insufficient'
+      : balanceState === 'unknown' ? 'unknown' : 'unavailable'
   return {
     commercial_registry_version: COMMERCIAL_REGISTRY_VERSION,
     balance_state: balanceState,
-    available_points: balanceState === 'known' ? knownPoints : null,
-    quoted_points: pointValue(details?.quoted_points),
+    availability,
     access_revision: nullableString(details?.access_revision),
     rate_card_version: nullableString(details?.rate_card_version),
     request_id: nullableString(details?.request_id),
@@ -2594,6 +2595,22 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
     : (candidateLifecycle === 'queued' || candidateLifecycle === 'processing') && selectionJobId
       ? 'component_progress'
       : 'native_status'
+  const rawPoints = result.creative_points && typeof result.creative_points === 'object' && !Array.isArray(result.creative_points)
+    ? result.creative_points
+    : undefined
+  const availablePoints = Number.isSafeInteger(rawPoints?.available_points) ? rawPoints.available_points : undefined
+  const creativePoints = rawPoints
+    ? {
+        balance_state: rawPoints.balance_state === 'unknown' ? 'unknown' : availablePoints !== undefined ? 'known' : 'unknown',
+        availability: rawPoints.balance_state === 'unknown' || availablePoints === undefined
+          ? 'unknown'
+          : rawPoints.allowed === false || rawPoints.available === false
+            ? availablePoints === 0 ? 'exhausted' : 'insufficient'
+            : availablePoints === 0 ? 'exhausted' : 'available',
+        ...(typeof rawPoints.point_reservation_status === 'string' ? { point_reservation_status: rawPoints.point_reservation_status } : {}),
+        ...(typeof rawPoints.settlement_status === 'string' ? { settlement_status: rawPoints.settlement_status } : {}),
+      }
+    : undefined
   return {
     candidate_state: {
       state: candidateLifecycle,
@@ -2631,6 +2648,7 @@ function merchantImageCandidateStructuredContent(method, result, args = {}) {
       : candidateLifecycle === 'failed'
         ? { kind: 'component_action', action: nextAction.type, user_action_required: true }
         : { kind: 'none', user_action_required: false },
+    ...(creativePoints ? { creative_points: creativePoints } : {}),
     ...(deliverable && selectionJobId && Number.isSafeInteger(expectedRevision) && expectedRevision > 0 ? {
       selection_request: {
         job_id: selectionJobId,
@@ -3079,12 +3097,15 @@ async function handle(request) {
     } catch (error) {
       imageTrace('error', { method: name, error: error instanceof Error ? error.message : String(error) })
       const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code : 'MCP_GATEWAY_ERROR'
-      const details = safeErrorDetails(error && typeof error === 'object' ? error.details : undefined)
+      const rawErrorDetails = error && typeof error === 'object' && error.details && typeof error.details === 'object' && !Array.isArray(error.details)
+        ? error.details
+        : undefined
+      const details = safeErrorDetails(rawErrorDetails)
       const presentation = toolErrorPresentation(name, args, code, details)
-      const commercialAccess = commercialAccessErrorProjection(code, details)
+      const commercialAccess = commercialAccessErrorProjection(code, rawErrorDetails)
       if (commercialAccess) commercialRecoveryOnlySnapshot = { code, ...commercialAccess }
       const projectedDetails = commercialAccess && details
-        ? { ...details, balance_state: commercialAccess.balance_state, available_points: commercialAccess.available_points, quoted_points: commercialAccess.quoted_points, access_revision: commercialAccess.access_revision, rate_card_version: commercialAccess.rate_card_version, request_id: commercialAccess.request_id, trace_id: commercialAccess.trace_id, next_actions: commercialAccess.next_actions }
+        ? { ...details, balance_state: commercialAccess.balance_state, availability: commercialAccess.availability, access_revision: commercialAccess.access_revision, rate_card_version: commercialAccess.rate_card_version, request_id: commercialAccess.request_id, trace_id: commercialAccess.trace_id, next_actions: commercialAccess.next_actions }
         : details
       const parseRecovery = name === 'asset.parse'
         && ['ASSET_PARSE_TIMEOUT', 'ASSET_PARSE_FAILED', 'ASSET_PARSE_EMPTY', 'ASSET_PARSE_ATTEMPTS_EXHAUSTED'].includes(code)

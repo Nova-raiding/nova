@@ -142,7 +142,7 @@ describe('commercial Ops read model', () => {
     })).toMatchObject({ id: 'ent_1', workspace_id: 'ws_1', sku_code: 'monthly_basic', status: 'blocked', brand_limit: 1, storage_label: '50g', unresolved: ['STORAGE_UNIT_UNRESOLVED'] })
 
     expect(projectCommercialOrder({
-      id: 'order_1', workspaceId: 'ws_1', skuId: 'sku_1', skuVersionId: 'sku_v1', skuCode: 'points_500', amountFen: 30_000, currency: 'CNY', paymentProvider: 'wechat', status: 'paid', idempotencyKey: 'order-key', requestHash: 'hash', createdByActorId: 'actor_1', providerOrderId: 'provider_1', createdAt: '2026-09-01T00:00:00.000Z', paidAt: '2026-09-01T00:01:00.000Z',
+      id: 'order_1', workspaceId: 'ws_1', skuId: 'sku_1', skuVersionId: 'sku_v1', skuCode: 'points_500', amountFen: 30_000, currency: 'CNY', paymentProvider: 'wechat', status: 'paid', idempotencyKey: 'order-key', requestHash: 'hash', createdByActorId: 'actor_1', providerOrderId: 'provider_1', checkoutUrl: null, checkoutExpiresAt: null, checkoutIdempotencyKey: null, createdAt: '2026-09-01T00:00:00.000Z', paidAt: '2026-09-01T00:01:00.000Z',
     })).toMatchObject({ id: 'order_1', sku_code: 'points_500', amount_label: '¥300.00 CNY', payment_state: 'paid', grant_state: 'unknown' })
 
     expect(projectServiceFulfillment({

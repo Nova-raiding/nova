@@ -116,6 +116,7 @@ import { checkpointFromKnowledgeSnapshot, isKnowledgeEventAfterCheckpoint, isKno
 import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type PlatformFieldMappingGateResult } from '../../../packages/application/src/platform-field-mapping-gate.js'
 import { buildDeliveryBundleManifest, evaluateVideoStoryboardQuality, evaluateVisualAuthenticity, verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest, type DeliveryBundleManifestInput, type VideoStoryboardQualityInput, type VisualAuthenticityGateInput } from '../../../packages/multimodal/src/index.js'
 import { projectPlatformCapabilityEvidence } from './platform-capability-response.js'
+import { MemoryPasswordAuthRepository, PostgresPasswordAuthRepository, type PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const fixtureMode = process.env.CONNECTOR_FIXTURE_MODE === 'true'
@@ -1155,6 +1156,13 @@ memoryBrandUnits.setConsistencyProjections({
 const memoryObjectOrphans = new MemoryObjectOrphanRepository()
 const memoryContextSnapshots = new MemoryContextSnapshotRepository()
 const memoryIdentities = new MemoryIdentityLifecycleRepository()
+const memoryPasswordAuth = new MemoryPasswordAuthRepository()
+let passwordAuthRepository: PasswordAuthRepository = memoryPasswordAuth
+
+export function setPasswordAuthRepositoryForTests(repository?: PasswordAuthRepository) {
+  if (process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true') throw new Error('PASSWORD_AUTH_REPOSITORY_OVERRIDE_TEST_ONLY')
+  passwordAuthRepository = repository ?? memoryPasswordAuth
+}
 const memoryAuthorization = new MemoryAuthorizationRepository()
 let authorizationRepositoryOverride: AuthorizationRepository | undefined
 
@@ -2701,6 +2709,8 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const objectOrphans = new PostgresObjectOrphanRepository(sqlPool)
     const contextSnapshots = new PostgresContextSnapshotRepository(sqlPool)
     const identities = new PostgresIdentityLifecycleRepository(opsSqlPool)
+    const passwordAuth = new PostgresPasswordAuthRepository(opsSqlPool)
+    passwordAuthRepository = passwordAuth
     const authorization = new PostgresAuthorizationRepository(opsSqlPool)
     const workspaceBootstrap = new PostgresWorkspaceBootstrapRepository(sqlPool)
     const paymentCallbackNonces = new PostgresPaymentCallbackNonceRepository(sqlPool)
@@ -2863,7 +2873,7 @@ async function initializePersistence(): Promise<ApiPersistence> {
         throw error
       } finally { client.release() }
     }
-    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
+    return { mode: 'postgres', creativePoints, creativePointLifecycle, commercialPointAdjustmentApprovals, ...(commercialCatalog ? { commercialCatalog } : {}), commercialContracts, privateTrialConversion, commercialRefunds, serviceFulfillment, outbox, business, billing, commercial, usage, modelUsage, actionLedger, entitlements, operations, subscriptions, members, commercialExtensions, growth, alerts, dataLifecycle, workspaceDataExport, rules, brandUnits, objectOrphans, contextSnapshots, identities, authorization, workspaceBootstrap, paymentCallbackNonces, support, supportSlaReporting, incidents, featureFlags, financeSearch, auditCenter, platformAuthorizationAudit, opsData, assetParse, assetScanReceipts, assetScanRedrive, assetPromotionCleanup, imageContinuationLeases, imageGenerationExecutions, reconciliationEvidence, unifiedLinkAudit, platformMediaSpecs, mappingPreflightApprovals, knowledgeHydration, storageQuota, storageReconciliation, reconciliationStatuses, canonicalBackfillRuns, canonicalBackfillConflicts, canonicalBackfillRemediation, interactiveConfirmationTickets, executeCanonicalBackfill, persistSnapshotAndEvent, persistSnapshotsAndEvent, persistPublishTransaction, persistTrustedScanPromotion, ensureWorkspace, listWorkspaceIds, listWorkspaceSummaries: () => opsData.listWorkspaceSummaries(), listWorkspaceDirectory: query => opsData.listWorkspaceDirectory(query), getWorkspaceStatus, setWorkspaceStatus, checkHealth, close: async () => { await Promise.all([pool.end(), opsPool?.end()]) } }
   } catch (error) {
     await pool.end().catch(() => undefined)
     await opsPool?.end().catch(() => undefined)
@@ -2872,6 +2882,22 @@ async function initializePersistence(): Promise<ApiPersistence> {
 }
 
 const persistenceReady = initializePersistence().then(value => { persistence = value; return value }).catch(error => { persistenceError = error; throw error })
+
+// Platform accounts are provisioned out-of-band. Only a precomputed Argon2id
+// hash is accepted here; production never accepts a clear-text bootstrap
+// password from process configuration.
+void persistenceReady.then(async () => {
+  const login = process.env.PLATFORM_ACCOUNT_LOGIN?.trim()
+  const passwordHash = process.env.PLATFORM_ACCOUNT_PASSWORD_HASH?.trim()
+  if (!login && !passwordHash) return
+  if (!login || !passwordHash || !passwordHash.startsWith('$argon2id$')) {
+    if (isProduction()) throw new Error('PLATFORM_ACCOUNT_PASSWORD_HASH_INVALID')
+    return
+  }
+  await passwordAuthRepository.ensurePlatformAccount({ login, passwordHash, roles: ['platform_admin'] })
+}).catch(error => {
+  if (isProduction()) { persistenceError = error; console.error('platform password account bootstrap failed', error) }
+})
 
 // Local development fixture: provide a deterministic, idempotent creative-point
 // balance for ws_demo after PostgreSQL repositories are ready. Production and
@@ -5131,6 +5157,35 @@ function imageTrace(event: string, fields: Record<string, unknown> = {}) {
   if (isProduction() && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
   try { console.info(JSON.stringify({ event: `merchant.image.${event}`, ts: new Date().toISOString(), ...fields })) } catch { /* diagnostics must not affect delivery */ }
 }
+
+/**
+ * Close the point reservation attached to a durable image request when an
+ * execution is authoritatively reconciled as failed.  The reservation id is
+ * read from the immutable request outbox event rather than inferred from the
+ * UI action key, so gifted/charged requests follow the same accounting path.
+ */
+async function releaseImageReservationOnFailedReconcile(workspaceId: string, jobId: string, idempotencyKey: string) {
+  const repository = persistence.creativePoints
+  const outbox = persistence.outbox
+  if (!repository || !outbox) return { status: 'not_configured' as const, reservationId: null, points: null }
+  const requested = (await outbox.listAggregateEvents(workspaceId, jobId, 100)).find(event => event.eventType === 'image.generation.requested')
+  const snapshot = requested?.payload.commercial_access_snapshot
+  const reservationId = snapshot && typeof snapshot === 'object' && typeof (snapshot as Record<string, unknown>).reservation_id === 'string'
+    ? String((snapshot as Record<string, unknown>).reservation_id).trim()
+    : ''
+  if (!reservationId) return { status: 'not_found' as const, reservationId: null, points: null }
+  const reservation = await repository.getReservation(workspaceId, reservationId)
+  if (!reservation) return { status: 'not_found' as const, reservationId, points: null }
+  if (reservation.status !== 'active') return { status: reservation.status as 'released' | 'settled', reservationId, points: reservation.points }
+  const released = await repository.release({
+    workspaceId,
+    reservationId,
+    idempotencyKey: `image-reconcile-release:${jobId}:${idempotencyKey}`,
+    at: new Date().toISOString(),
+  })
+  imageTrace('reconcile.points_released', { workspace_id: workspaceId, job_id: jobId, reservation_id: reservationId, points: released.value.points })
+  return { status: 'released' as const, reservationId, points: released.value.points }
+}
 function providerSucceededButSettlementPending(error: unknown) {
   if (!error || typeof error !== 'object') return false
   const candidate = error as { code?: unknown; providerSucceeded?: unknown; details?: Record<string, unknown> }
@@ -6022,6 +6077,20 @@ async function authenticate(req: IncomingMessage) {
   const merchantBearerHostname = process.env.MERCHANT_BEARER_HOSTNAME?.trim().toLowerCase()
   const requestHostname = (header(req, 'host')?.trim().toLowerCase().split(':')[0] ?? '')
   const merchantBearerRequest = Boolean(merchantBearerHostname && requestHostname === merchantBearerHostname)
+  const passwordCookie = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
+  if (passwordCookie) {
+    let rawToken = ''
+    try { rawToken = decodeURIComponent(passwordCookie) } catch { rawToken = '' }
+    if (rawToken) {
+      const session = await passwordAuthRepository.authenticate(rawToken)
+      if (session) {
+        const platform = session.account.accountType === 'platform'
+        const principal: RequestPrincipal = { actorId: session.account.login, identityId: session.account.id, sessionId: session.sessionId, sessionSubject: session.sessionId, sessionKind: 'api_token', sessionIssuedAt: session.issuedAt, sessionExpiresAt: session.expiresAt, roles: session.account.roles, workspaces: session.account.workspaceIds, workbench: platform ? 'platform' : 'workspace', availableWorkbenches: platform ? ['platform', 'workspace'] : ['workspace'], identityStatus: 'active', mfaVerified: false }
+        requestPrincipals.set(req, principal)
+        return
+      }
+    }
+  }
   if (process.env.OPS_AUTH_MODE === 'oidc' && !merchantBearerRequest) {
     const principal = await authenticateOidcGateway(req)
     requestPrincipals.set(req, principal)
@@ -6267,17 +6336,27 @@ function isPlatformOperations(req: IncomingMessage) {
   const roles = authorizedRoles(principal)
   // rules_admin is a platform read role, not an operator role: it may see
   // active evidence but must not receive draft/expired customer-control data.
-  return principal?.workbench === 'platform' && roles.some(role => role === 'platform_ops' || (role !== 'rules_admin' && platformCanonicalRoles.has(role as CanonicalRole)))
+  // Normalize gateway aliases here as well.  authorizedRoles intentionally
+  // preserves the raw role for audit/display, so comparing only the raw
+  // string would make a signed `platform-ops`/`ops-admin` assertion lose its
+  // platform-operator boundary while other capability checks still accept it.
+  return principal?.workbench === 'platform' && roles.some(role => {
+    const canonical = canonicalizeRole(role, 'gateway')
+    return canonical !== undefined && canonical !== 'rules_admin' && platformCanonicalRoles.has(canonical)
+  })
 }
 
 function canViewRuleLifecycle(req: IncomingMessage) {
   const roles = authorizedRoles(requestPrincipals.get(req))
   // The MCP bridge and merchant UI share the API, including local bearer
-  // credentials that may carry an Ops role.  Lifecycle rows are an Ops-only
-  // view; without an explicit Ops workbench assertion, rule.list must remain
-  // the merchant/plugin trusted-knowledge projection.
+  // credentials that may carry an Ops role. Lifecycle rows are an Ops-only
+  // view; use the authenticated principal's workbench, never the client
+  // supplied x-ops-workbench header. In OIDC mode that header is not signed
+  // and must not be able to widen a workspace session into an Ops view.
+  const authenticatedWorkbench = requestPrincipals.get(req)?.workbench
   const requestedWorkbench = header(req, 'x-ops-workbench')?.trim()
-  return (requestedWorkbench === 'platform' || requestedWorkbench === 'workspace')
+  return requestedWorkbench === authenticatedWorkbench
+    && (authenticatedWorkbench === 'platform' || authenticatedWorkbench === 'workspace')
     && (roles.includes('rules_admin') || roles.includes('platform_ops'))
 }
 
@@ -12952,8 +13031,24 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       const currentStatus = await statusRepository.getLatest({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId })
       if (currentStatus?.lastIdempotencyKey === idempotencyKey) return result(currentStatus)
       const execution = await repository.get({ workspaceId, jobId })
-      if (execution?.state === 'failed' && resolution === 'failed' && job.state === 'failed' && job.errorCode === 'IMAGE_GENERATION_MANUAL_FAILED' && job.errorMessage === reason) {
-        const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: execution.state, settledState: execution.state, recoveredProjection: true }, observedAt: new Date().toISOString() })
+      const aggregateEvents = persistence.outbox ? await persistence.outbox.listAggregateEvents(workspaceId, jobId, 100) : []
+      const terminalDispatchFailure = aggregateEvents.find(event => event.eventType === 'image.generation.requested' && event.lastError?.terminal === true && event.lastError?.unknown !== true)
+      // A worker can reject an event before creating an execution row (for
+      // example, a stale authorization snapshot). That is still a durable,
+      // pre-provider failure: it must be closeable and release its point
+      // reservation, but it can never be treated as a successful execution.
+      if (!execution && resolution === 'failed' && job.state === 'queued' && terminalDispatchFailure) {
+        if (expectedRevision !== undefined && job.revision !== expectedRevision) throw new DomainError('IMAGE_GENERATION_REVISION_CONFLICT', '图片任务已变化，请刷新后重试', 409)
+        const failed = service.markImageGenerationFailed({ workspaceId, jobId, errorCode: 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: reason, ...(expectedRevision !== undefined ? { expectedRevision } : {}) })
+        await persistence.persistSnapshotAndEvent?.({ workspaceId, entityType: 'image_generation_job', entityId: failed.id, entityVersion: failed.revision, payload: failed as unknown as Record<string, unknown>, eventType: 'image.generation.failed', eventPayload: { job_id: failed.id, error_code: failed.errorCode, error_message: failed.errorMessage, manual: true, evidence_ref: evidenceRef, source_event_id: terminalDispatchFailure.id, source_error_code: terminalDispatchFailure.lastError?.code ?? null } })
+        const points = await releaseImageReservationOnFailedReconcile(workspaceId, jobId, idempotencyKey)
+        const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: 'not_started', settledState: 'failed', recoveredProjection: true, terminalDispatchFailure: { eventId: terminalDispatchFailure.id, code: terminalDispatchFailure.lastError?.code ?? null }, creativePointsReleased: points.status === 'released', creativePointsReleaseStatus: points.status, creativePointsReleasedAmount: points.points }, observedAt: new Date().toISOString() })
+        await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.image.reconcile.recover', resourceType: 'image_generation_execution', resourceId: jobId, before: { executionState: null, jobState: job.state, terminalDispatchFailure: terminalDispatchFailure.id }, after: { resolution, reconciliationRevision: status.revision, recoveredProjection: true, creativePointsReleaseStatus: points.status }, reason })
+        return result({ jobId, resolution, execution: null, reconciliation: status, recoveredProjection: true, creativePoints: points })
+      }
+      if (execution?.state === 'failed' && resolution === 'failed' && job.state === 'failed' && job.errorCode === 'IMAGE_GENERATION_MANUAL_FAILED') {
+        const points = await releaseImageReservationOnFailedReconcile(workspaceId, jobId, idempotencyKey)
+        const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: execution.state, settledState: execution.state, recoveredProjection: true, creativePointsReleased: (points as { status: string }).status === 'released', creativePointsReleaseStatus: points.status, creativePointsReleasedAmount: points.points }, observedAt: new Date().toISOString() })
         await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.image.reconcile.recover', resourceType: 'image_generation_execution', resourceId: jobId, before: { executionState: execution.state, reconciliationProjection: 'missing' }, after: { resolution, reconciliationRevision: status.revision, recoveredProjection: true }, reason })
         return result({ jobId, resolution, execution, reconciliation: status, recoveredProjection: true })
       }
@@ -12972,7 +13067,10 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         await persistence.persistSnapshotAndEvent?.({ workspaceId, entityType: 'image_generation_job', entityId: failed.id, entityVersion: failed.revision, payload: failed as unknown as Record<string, unknown>, eventType: 'image.generation.failed', eventPayload: { job_id: failed.id, error_code: failed.errorCode, error_message: failed.errorMessage, manual: true, evidence_ref: evidenceRef } })
         settled = await repository.reconcileFailed({ workspaceId, jobId, errorCode: failed.errorCode ?? 'IMAGE_GENERATION_MANUAL_FAILED', errorMessage: failed.errorMessage ?? reason })
       }
-      const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: resolution === 'completed' ? 'succeeded' : 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: execution.state, settledState: settled.state }, observedAt: new Date().toISOString() })
+      const points = resolution === 'failed'
+        ? await releaseImageReservationOnFailedReconcile(workspaceId, jobId, idempotencyKey)
+        : { status: 'not_applicable' as const, reservationId: null, points: null }
+      const status = await statusRepository.upsert({ workspaceId, resourceType: 'image_generation_execution', resourceId: jobId, status: resolution === 'completed' ? 'succeeded' : 'failed', idempotencyKey, details: { resolution, evidenceRef, reason, executionState: execution.state, settledState: settled.state, creativePointsReleased: points.status === 'released', creativePointsReleaseStatus: points.status, creativePointsReleasedAmount: points.points }, observedAt: new Date().toISOString() })
       await recordOperationAudit({ workspaceId, actorId, action: 'ops.marketing.image.reconcile', resourceType: 'image_generation_execution', resourceId: jobId, before: { executionState: execution.state, jobRevision: job.revision }, after: { resolution, status: settled.state, reconciliationRevision: status.revision }, reason })
       return result({ jobId, resolution, execution: settled, reconciliation: status })
     }
@@ -14735,6 +14833,33 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
           skuIds = [...new Set(parsed.map(value => value.trim()))]
         } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'sku_ids_json 必须是 SKU ID 字符串数组 JSON', 400) }
       }
+      const parseImageMarketingList = (field: string, maxItems: number, maxLength: number): string[] | undefined => {
+        const raw = params[field]
+        if (typeof raw !== 'string' || !raw.trim()) return undefined
+        try {
+          const parsed = JSON.parse(raw)
+          if (!Array.isArray(parsed) || parsed.some(value => typeof value !== 'string' || !value.trim())) throw new Error(field)
+          return [...new Set(parsed.map(value => value.trim().slice(0, maxLength)))].slice(0, maxItems)
+        } catch { throw new DomainError(ERROR_CODES.INVALID_REQUEST, `${field} 必须是非空字符串数组 JSON`, 400) }
+      }
+      const requestedSellingPoints = parseImageMarketingList('selling_points_json', 6, 120)
+      const requestedTrafficKeywords = parseImageMarketingList('traffic_keywords_json', 8, 60)
+      const requestedPromotionLabels = parseImageMarketingList('promotion_labels_json', 4, 120)
+      const requestedMarketingLabels = parseImageMarketingList('marketing_labels_json', 8, 120)
+      const requestedHeadline = typeof params.headline === 'string' && params.headline.trim() ? params.headline.trim().slice(0, 120) : undefined
+      const requestedSubheadline = typeof params.subheadline === 'string' && params.subheadline.trim() ? params.subheadline.trim().slice(0, 120) : undefined
+      const requestedCta = typeof params.cta === 'string' && params.cta.trim() ? params.cta.trim().slice(0, 40) : undefined
+      const marketingBrief = requestedSellingPoints || requestedTrafficKeywords || requestedPromotionLabels || requestedMarketingLabels || requestedHeadline || requestedSubheadline || requestedCta
+        ? {
+            ...(requestedSellingPoints ? { sellingPoints: requestedSellingPoints } : {}),
+            ...(requestedTrafficKeywords ? { trafficKeywords: requestedTrafficKeywords } : {}),
+            ...(requestedPromotionLabels ? { promotionLabels: requestedPromotionLabels } : {}),
+            ...(requestedMarketingLabels ? { marketingLabels: requestedMarketingLabels } : {}),
+            ...(requestedHeadline ? { headline: requestedHeadline } : {}),
+            ...(requestedSubheadline ? { subheadline: requestedSubheadline } : {}),
+            ...(requestedCta ? { cta: requestedCta } : {}),
+          }
+        : undefined
       const defaultSourceAssetIds = params.mode === 'create' ? undefined : service.productImageSourceAssetIds(product, skuIds ?? imageTask?.inputSnapshot?.skuIds ?? imageTask?.productionPlan?.skuIds)
       const imageMode = params.mode === undefined
         ? (sourceAssetIds?.length || defaultSourceAssetIds?.length ? 'optimize' : 'create')
@@ -14778,7 +14903,7 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       creativePoints = await imageCreativePointsEvidence(workspaceId, commercialDecision, walletDebitKey)
       let job: ReturnType<typeof service.enqueueImageGeneration>
       try {
-        job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(typeof params.task_id === 'string' && params.task_id.trim() ? { taskId: params.task_id.trim() } : {}), ...(typeof params.content_version_id === 'string' && params.content_version_id.trim() ? { contentVersionId: params.content_version_id.trim() } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}) })
+        job = service.enqueueImageGeneration({ workspaceId, productId, idempotencyKey, imageMode, ...(typeof params.size === 'string' ? { size: params.size } : {}), ...(skuIds ? { skuIds } : {}), ...(effectiveSourceAssetIds ? { sourceAssetIds: effectiveSourceAssetIds } : {}), ...(typeof params.task_id === 'string' && params.task_id.trim() ? { taskId: params.task_id.trim() } : {}), ...(typeof params.content_version_id === 'string' && params.content_version_id.trim() ? { contentVersionId: params.content_version_id.trim() } : {}), ...(typeof params.direction === 'string' ? { direction: params.direction } : {}), ...(typeof params.count === 'string' && /^\d+$/u.test(params.count) ? { count: Number(params.count) } : {}), ...(marketingBrief ? { marketingBrief } : {}) })
       } catch (error) {
         await releaseReservedModelPoints(workspaceId, walletDebitKey, '图片任务创建失败')
         if (entitlementConsumed) await refundModelEntitlement({ workspaceId, actionKey: walletDebitKey, reason: '图片任务创建失败' })
@@ -16921,6 +17046,68 @@ export function imageGenerationReconciliationIdempotencyKey(input: {
 export async function route(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
   const path = url.pathname
+  const isPasswordAuthRoute = path === '/v1/auth/register' || path === '/v1/auth/login' || path === '/v1/auth/session' || path === '/v1/auth/logout' || path === '/v1/auth/refresh' || path === '/v1/auth/password/reset-request' || path === '/v1/auth/password/reset-confirm'
+  const passwordSessionToken = () => {
+    const encoded = (header(req, 'cookie') ?? '').split(';').map(value => value.trim()).find(value => value.startsWith('damai_session='))?.slice('damai_session='.length)
+    if (!encoded) return ''
+    try { return decodeURIComponent(encoded) } catch { return '' }
+  }
+  const passwordCookie = (token: string, maxAge = 8 * 60 * 60) => `damai_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`
+  if (isPasswordAuthRoute) {
+    res.setHeader('cache-control', 'no-store')
+    if (req.method === 'POST' && path === '/v1/auth/register') {
+      const input = await body(req, 64 * 1024)
+      try {
+        const registered = await passwordAuthRepository.register({ login: String(input.login ?? input.account ?? ''), password: String(input.password ?? ''), enterpriseName: String(input.enterprise_name ?? input.enterpriseName ?? ''), contactName: String(input.contact_name ?? input.contactName ?? ''), termsAgreed: input.terms_agreed === true || input.termsAgreed === true })
+        return send(res, 201, 'unknown', { application_id: registered.applicationId, login: registered.account.login.replace(/^(.{1,2}).*(@.*)?$/u, '$1***$2'), status: registered.account.status }, null, req)
+      } catch (error) {
+        const code = (error as { code?: string }).code
+        const status = code === 'AUTH_LOGIN_ALREADY_EXISTS' ? 409 : code === 'AUTH_PASSWORD_POLICY_INVALID' || code === 'AUTH_REGISTRATION_INVALID' || code === 'AUTH_LOGIN_INVALID' ? 400 : 500
+        throw new DomainError(code ?? 'AUTH_REGISTRATION_FAILED', status === 500 ? '注册暂时不可用' : code === 'AUTH_LOGIN_ALREADY_EXISTS' ? '账号已存在' : code === 'AUTH_PASSWORD_POLICY_INVALID' ? '密码至少 12 位并同时包含字母和数字' : '注册信息无效', status)
+      }
+    }
+    if (req.method === 'POST' && path === '/v1/auth/login') {
+      const input = await body(req, 32 * 1024)
+      try {
+        const logged = await passwordAuthRepository.login({ login: String(input.login ?? input.account ?? ''), password: String(input.password ?? ''), ip: header(req, 'x-forwarded-for')?.split(',')[0]?.trim() ?? req.socket.remoteAddress, userAgent: header(req, 'user-agent') })
+        if (logged.principal.account.status !== 'active') throw Object.assign(new Error('AUTH_ACCOUNT_NOT_ACTIVE'), { code: 'AUTH_ACCOUNT_NOT_ACTIVE' })
+        res.setHeader('set-cookie', passwordCookie(logged.token))
+        return send(res, 200, 'unknown', { account: logged.principal.account, session_id: logged.principal.sessionId, expires_at: logged.principal.expiresAt }, null, req)
+      } catch (error) {
+        const code = (error as { code?: string }).code
+        const status = code === 'AUTH_ACCOUNT_LOCKED' ? 423 : code === 'AUTH_ACCOUNT_NOT_ACTIVE' ? 403 : code === 'AUTH_LOGIN_INVALID' ? 400 : 401
+        throw new DomainError(code ?? 'AUTH_INVALID_CREDENTIALS', status === 423 ? '尝试过多，请稍后重试或联系管理员' : status === 403 ? '账号尚未开通，请等待平台运营审核' : status === 400 ? '账号格式无效' : '账号或密码错误', status, status === 423 ? { retry_after_seconds: 900 } : undefined)
+      }
+    }
+    if (req.method === 'GET' && path === '/v1/auth/session') {
+      const current = await passwordAuthRepository.authenticate(passwordSessionToken())
+      if (!current) throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录', 401)
+      return send(res, 200, 'unknown', { account: current.account, session_id: current.sessionId, issued_at: current.issuedAt, expires_at: current.expiresAt, workspaces: current.account.workspaceIds, roles: current.account.roles }, null, req)
+    }
+    if (req.method === 'POST' && path === '/v1/auth/logout') {
+      await passwordAuthRepository.logout(passwordSessionToken())
+      res.setHeader('set-cookie', passwordCookie('', 0))
+      return send(res, 200, 'unknown', { logged_out: true }, null, req)
+    }
+    if (req.method === 'POST' && path === '/v1/auth/refresh') {
+      try {
+        const refreshed = await passwordAuthRepository.refresh(passwordSessionToken())
+        res.setHeader('set-cookie', passwordCookie(refreshed.token))
+        return send(res, 200, 'unknown', { session_id: refreshed.principal.sessionId, expires_at: refreshed.principal.expiresAt }, null, req)
+      } catch { throw new DomainError('AUTH_SESSION_INVALID', '会话已过期，请重新登录', 401) }
+    }
+    if (req.method === 'POST' && path === '/v1/auth/password/reset-request') {
+      const input = await body(req, 16 * 1024)
+      const reset = await passwordAuthRepository.requestPasswordReset(String(input.login ?? input.account ?? ''))
+      return send(res, 202, 'unknown', { accepted: reset.accepted, ...(reset.token ? { reset_token: reset.token } : {}) }, null, req)
+    }
+    if (req.method === 'POST' && path === '/v1/auth/password/reset-confirm') {
+      const input = await body(req, 32 * 1024)
+      try { await passwordAuthRepository.confirmPasswordReset(String(input.token ?? input.reset_token ?? ''), String(input.password ?? '')); res.setHeader('set-cookie', passwordCookie('', 0)); return send(res, 200, 'unknown', { reset: true }, null, req) }
+      catch (error) { const code = (error as { code?: string }).code; throw new DomainError(code ?? 'AUTH_RESET_TOKEN_INVALID', code === 'AUTH_PASSWORD_POLICY_INVALID' ? '密码至少 12 位并同时包含字母和数字' : '重置链接无效或已过期', 400) }
+    }
+    if (req.method !== 'GET' && req.method !== 'POST') throw new DomainError('METHOD_NOT_ALLOWED', '不支持的认证请求方法', 405)
+  }
   // Local Ops Console bootstrap: the bearer stays in the API/container
   // environment and is exchanged for an HttpOnly cookie. This route is
   // deliberately unavailable in production and only enabled by the local
@@ -17008,7 +17195,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
   // verifier are the callback's authentication boundary.
   if (assetScannerRoute) await requireAssetScannerAuthorization(req)
   else if (workerRoute) await requireWorkerAuthorization(req)
-  else if (!infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch) await authenticate(req)
+  else if (!infrastructureProbe && !isOAuthCallback && !paymentCallbackMatch && !isPasswordAuthRoute) await authenticate(req)
   const mcpInputForHydration = req.method === 'POST' && path === '/mcp' ? await body(req, MCP_BODY_LIMIT) : undefined
   const mcpMethodForHydration = typeof mcpInputForHydration?.method === 'string' ? mcpInputForHydration.method : undefined
   const hydrateRequestWorkspace = header(req, 'x-workspace-id')?.trim() || (!requiresStrictAuth() ? 'ws_demo' : undefined)

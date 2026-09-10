@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { createConfiguredConnector, createFakeConnector, profiles, runPlatformCanary, type AccessCredential, type CredentialProvider, type HttpConnectorConfig } from './index.js'
 
@@ -29,6 +30,7 @@ function sandboxConfig(): HttpConnectorConfig {
       queryPath: '/products/status',
     },
     mediaUploadPath: '/media',
+    mediaUploadEvidence: { version: 'sandbox.media.v1', evidenceRef: 'artifact://sandbox/media', verifiedBy: 'local-contract-test', verifiedAt: '2026-08-22T00:00:00Z' },
     allowedHosts: ['sandbox.local.test'],
     mapMediaUpload: payload => ({ mediaId: String((payload as { mediaId: string }).mediaId) }),
   }
@@ -69,7 +71,7 @@ describe('platform canary runner', () => {
       expectedRemoteId: profiles.taobao.fixture.remoteId,
       allowWrite: true,
       allowRevoke: true,
-      mediaFile: { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png', sha256: 'a'.repeat(64) },
+      mediaFile: (() => { const bytes = new Uint8Array([1, 2, 3]); return { bytes, mimeType: 'image/png', sha256: createHash('sha256').update(bytes).digest('hex') } })(),
     })
 
     expect(result.passed, JSON.stringify(result)).toBe(true)
@@ -118,7 +120,23 @@ describe('platform canary runner', () => {
 
     expect(result.passed).toBe(false)
     expect(result.checks).toHaveLength(9)
-    expect(result.checks.every(item => item.detail?.includes('invalid evidence or scope attribution'))).toBe(true)
+    expect(result.checks.every(item => item.detail?.includes('invalid evidence, scope, or media attribution'))).toBe(true)
+    expect(authorize).not.toHaveBeenCalled()
+  })
+
+  it('rejects a media canary whose declared hash does not match the bytes', async () => {
+    const { connector } = localSandboxConnector()
+    const authorize = vi.spyOn(connector, 'authorize')
+    const result = await runPlatformCanary({
+      connector,
+      context: { workspaceId: 'ws_local_sandbox', accountId: 'acct_local_sandbox' },
+      evidenceRef: 'artifact://sandbox/local-taobao', verifiedBy: 'local-contract-test', apiVersion: 'sandbox-contract-v1', scope: 'sandbox.product.read',
+      expectedRemoteId: profiles.taobao.fixture.remoteId, allowWrite: false, allowRevoke: false,
+      mediaFile: { bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png', sha256: 'a'.repeat(64) },
+    })
+    expect(result.passed).toBe(false)
+    expect(result.checks).toHaveLength(9)
+    expect(result.checks.every(item => item.detail?.includes('invalid evidence, scope, or media attribution'))).toBe(true)
     expect(authorize).not.toHaveBeenCalled()
   })
 

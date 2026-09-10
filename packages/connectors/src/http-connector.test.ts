@@ -46,6 +46,18 @@ describe('HttpPlatformConnector', () => {
     expect(store.saved).toHaveLength(0)
   })
 
+  it('fails closed before remote revoke when the credential provider cannot revoke locally', async () => {
+    const provider: CredentialProvider = {
+      kind: 'test',
+      async resolve() { return { accessToken: 'access-token' } },
+      async store({ accountId }) { return { accountId, credentialRef: `vault://${accountId}` } },
+    }
+    const fetchMock = vi.fn(async () => response({ revoked: true }))
+    const connector = createConfiguredConnector('jd', { config, credentials: provider, fetch: fetchMock, allowTestCredentials: true })
+    await expect(connector.revoke({ accountId: 'acct-1', credentialRef: 'vault://acct-1' })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED' } })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('rejects unsafe OAuth callback URLs before building the authorization request', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     try {
@@ -105,6 +117,21 @@ describe('HttpPlatformConnector', () => {
     expect(calls[0]?.body).toContain('code_verifier=pkce-verifier')
     expect(calls[1]?.body).toContain('refresh_token')
     expect(calls[0]?.body).not.toContain('access-token')
+  })
+
+  it('drops control characters from OAuth token metadata before constructing headers', async () => {
+    const store = credentials()
+    const authorizations: string[] = []
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const target = String(url)
+      if (target.endsWith('/oauth/token')) return response({ access_token: 'token-safe', token_type: 'Bearer\r\nX-Forged: yes', account_id: 'remote-shop-safe' })
+      authorizations.push(String((init?.headers as Record<string, string> | undefined)?.authorization ?? ''))
+      return response({ items: [] })
+    })
+    const connector = createConfiguredConnector('jd', { config: readyConfig, credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true })
+    const ref = await connector.exchangeCode({ code: 'code-safe', state: 'state-safe' })
+    await connector.syncProducts({ workspaceId: 'ws', accountId: ref.accountId, credentialRef: ref.credentialRef })
+    expect(authorizations).toEqual(['Bearer token-safe'])
   })
 
   it('reads nested OAuth credentials and provider account identity without inventing local identity', async () => {

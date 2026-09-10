@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { CapabilityEvidence, CapabilityName } from './capability-evidence.js'
 import type { ConnectorContext, MediaUploadInput, Platform, PlatformConnector } from './types.js'
 
@@ -70,6 +71,12 @@ function canaryInputErrors(input: PlatformCanaryInput): string[] {
   if (!validScopeId(input.context.workspaceId)) errors.push('workspaceId is invalid')
   if (!validScopeId(input.context.accountId)) errors.push('accountId is invalid')
   if (!validCanaryText(input.expectedRemoteId, 256)) errors.push('expectedRemoteId is invalid')
+  if (input.mediaFile) {
+    if (!validCanaryText(input.mediaFile.mimeType, 128)) errors.push('media mimeType is invalid')
+    if (input.mediaFile.bytes.byteLength > 5 * 1024 * 1024) errors.push('media file exceeds 5 MiB')
+    if (!/^[a-f0-9]{64}$/iu.test(input.mediaFile.sha256)) errors.push('media sha256 is invalid')
+    else if (createHash('sha256').update(input.mediaFile.bytes).digest('hex') !== input.mediaFile.sha256.toLowerCase()) errors.push('media sha256 does not match bytes')
+  }
   return errors
 }
 
@@ -94,7 +101,7 @@ export async function runPlatformCanary(input: PlatformCanaryInput): Promise<Pla
     // Evidence is an authorization input. Reject malformed attribution before
     // touching the connector so a bad canary cannot create provider side effects.
     for (const capability of ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const) {
-      add(capability, false, false, 'canary input rejected: invalid evidence or scope attribution')
+      add(capability, false, false, 'canary input rejected: invalid evidence, scope, or media attribution')
     }
     return { platform: input.connector.platform, passed: false, checks, evidence: evidenceItems }
   }

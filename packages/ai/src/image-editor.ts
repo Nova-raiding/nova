@@ -32,6 +32,29 @@ function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function imageReferencesFromPayload(payload: unknown): string[] {
+  if (!record(payload)) return []
+  // Support both OpenAI's `data: []` and the relay's nested
+  // `data: { data: [] }` envelope. Only inspect documented image fields.
+  const data = record(payload.data) ? payload.data : undefined
+  const result = data && record(data.result) ? data.result : undefined
+  const items = [
+    ...(Array.isArray(payload.data) ? payload.data : []),
+    ...(Array.isArray(payload.images) ? payload.images : []),
+    ...(data && Array.isArray(data.data) ? data.data : []),
+    ...(data && Array.isArray(data.images) ? data.images : []),
+    ...(result && Array.isArray(result.data) ? result.data : []),
+  ]
+  return items.flatMap(item => {
+    if (typeof item === 'string') return /^https:\/\//u.test(item) || /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item) ? [item] : []
+    if (!record(item)) return []
+    if (typeof item.url === 'string' && /^https:\/\//u.test(item.url)) return [item.url]
+    if (typeof item.image === 'string' && /^https:\/\//u.test(item.image)) return [item.image]
+    if (typeof item.b64_json === 'string' && item.b64_json.trim()) return [`data:image/png;base64,${item.b64_json}`]
+    return []
+  }).filter((value, index, values) => values.indexOf(value) === index)
+}
+
 function validateImageEditRelayPath(value: string | undefined) {
   if (!value) return undefined
   if (!value.startsWith('/') || value.includes('\\') || /^https?:\/\//iu.test(value) || /[\u0000-\u001f\u007f]/u.test(value)) throw new Error('image edit path must be a safe relative path')
@@ -77,13 +100,7 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
       try { payload = JSON.parse(responseText) as unknown }
       catch (error) { throwProviderOutcomeUnknown(providerKey, 'image edit provider response parsing', error) }
       await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image_edit', model: this.options.model, context: { ...input.usageContext, billingUnits: 1, providerAttemptId: providerKey } })
-      if (!record(payload) || !Array.isArray(payload.data)) throwProviderOutcomeUnknown(providerKey, 'image edit provider response without data')
-      const images = payload.data.flatMap(item => {
-        if (!record(item)) return []
-        if (typeof item.url === 'string' && /^https:\/\//u.test(item.url)) return [item.url]
-        if (typeof item.b64_json === 'string' && item.b64_json.trim()) return [`data:image/png;base64,${item.b64_json}`]
-        return []
-      }).slice(0, 1)
+      const images = imageReferencesFromPayload(payload).slice(0, 1)
       if (images.length !== 1) throwProviderOutcomeUnknown(providerKey, 'image edit provider incomplete result')
       return images
     } finally { clearTimeout(timeout) }

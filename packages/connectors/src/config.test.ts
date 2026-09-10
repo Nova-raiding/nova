@@ -60,6 +60,18 @@ describe('platform HTTP configuration', () => {
     expect(result.allConfigs.xiaohongshu?.mapMediaUpload?.({ data: { media_id: 'media-1', url: 'https://cdn.example/media-1.jpg' } }, { visualRef: 'visual-1', role: 'main', mimeType: 'image/jpeg', sha256: 'hash', bytes: new Uint8Array(), idempotencyKey: 'media-key' }, 'xiaohongshu')).toEqual({ mediaId: 'media-1', url: 'https://cdn.example/media-1.jpg' })
   })
 
+  it('keeps generic social adapters closed until an explicit response mapping is supplied', () => {
+    const result = buildHttpConnectorConfigs({
+      ...base,
+      XHS_CLIENT_ID: 'xhs-app', XHS_OAUTH_AUTHORIZE_URL: 'https://xhs.test/authorize', XHS_OAUTH_TOKEN_URL: 'https://xhs.test/token', XHS_API_BASE_URL: 'https://xhs.test/api',
+      DOUYIN_CLIENT_ID: 'douyin-app', DOUYIN_OAUTH_AUTHORIZE_URL: 'https://douyin.test/authorize', DOUYIN_OAUTH_TOKEN_URL: 'https://douyin.test/token', DOUYIN_API_BASE_URL: 'https://douyin.test/api',
+    })
+    expect(result.readiness.xiaohongshu.reasons).toContain('RESPONSE_MAPPING_MISSING')
+    expect(result.readiness.douyin.reasons).toContain('RESPONSE_MAPPING_MISSING')
+    expect(result.configs.xiaohongshu).toBeUndefined()
+    expect(result.configs.douyin).toBeUndefined()
+  })
+
   it('does not manufacture provider request evidence from a local idempotency key', () => {
     const result = buildHttpConnectorConfigs({
       ...base,

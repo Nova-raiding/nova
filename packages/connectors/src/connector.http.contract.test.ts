@@ -177,4 +177,15 @@ describe.each(platforms)('%s HTTP connector FR-15 contract', (platform) => {
     expect((connector as { mediaUploadReadiness?: () => { ready: boolean } }).mediaUploadReadiness?.().ready).toBe(false)
     await expect(connector.uploadMedia?.({ workspaceId: 'ws', accountId: `${platform}-shop` }, { visualRef: 'dvis_1', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: Buffer.from('image'), idempotencyKey: `publish:${platform}:media-missing` })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED', platform } })
   })
+
+  it('fails closed for media when mapping or end-to-end evidence is missing', async () => {
+    const store = makeStore()
+    const fetchMock = vi.fn(async () => json({ mediaId: 'must-not-be-used' }))
+    const connector = createConfiguredConnector(platform, {
+      config: { ...makeConfig(platform), mediaUploadPath: '/media/upload' },
+      credentials: store, fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true,
+    })
+    await expect(connector.uploadMedia?.({ workspaceId: 'ws', accountId: `${platform}-shop` }, { visualRef: 'dvis_1', role: 'main', mimeType: 'image/png', sha256: 'a'.repeat(64), bytes: Buffer.from('image'), idempotencyKey: `publish:${platform}:media-unmapped` })).rejects.toMatchObject({ normalized: { code: 'NOT_CONFIGURED', platform } })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })

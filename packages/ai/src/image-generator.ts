@@ -4,6 +4,7 @@ import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySec
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
+import { composeMarketingImages } from './image-marketing-compositor.js'
 
 function imageTrace(event: string, fields: Record<string, unknown> = {}) {
   if (process.env.NODE_ENV === 'production' && process.env.MERCHANT_IMAGE_TRACE_LOGS !== 'true') return
@@ -145,7 +146,19 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function imageReferencesFromPayload(payload: unknown): string[] {
   if (!record(payload)) return []
-  const rootItems = Array.isArray(payload.data) ? payload.data : []
+  // Relays use both the OpenAI envelope (`data: []`) and the New API
+  // envelope (`data: { data: [] }`). Keep the accepted shapes explicit so a
+  // provider response is not mistaken for a successful artifact merely
+  // because it contains an unrelated nested URL.
+  const dataNode = record(payload.data) ? payload.data : undefined
+  const resultNode = dataNode && record(dataNode.result) ? dataNode.result : undefined
+  const rootItems = [
+    ...(Array.isArray(payload.data) ? payload.data : []),
+    ...(Array.isArray(payload.images) ? payload.images : []),
+    ...(dataNode && Array.isArray(dataNode.data) ? dataNode.data : []),
+    ...(dataNode && Array.isArray(dataNode.images) ? dataNode.images : []),
+    ...(resultNode && Array.isArray(resultNode.data) ? resultNode.data : []),
+  ]
   const metadata = record(payload.metadata) ? payload.metadata : undefined
   const output = metadata && record(metadata.output) ? metadata.output : undefined
   const choices = output && Array.isArray(output.choices) ? output.choices : []
@@ -155,6 +168,10 @@ function imageReferencesFromPayload(payload: unknown): string[] {
   })
   const items = [...choiceItems, ...rootItems]
   return items.flatMap(item => {
+    if (typeof item === 'string') {
+      if (/^https:\/\//u.test(item) || /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/iu.test(item)) return [item]
+      return []
+    }
     if (!record(item)) return []
     if (typeof item.url === 'string' && /^https:\/\//u.test(item.url)) return [item.url]
     if (typeof item.image === 'string' && /^https:\/\//u.test(item.image)) return [item.image]
@@ -265,7 +282,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         '商品本体、Logo、包装、SKU 对应关系和已确认事实不可改变；不要编造价格、折扣、认证、功效、销量、评论或配件。',
         '参考图是商品主体的唯一视觉事实来源；如果文字描述、自动解析结果或模型上下文与参考图冲突，忽略冲突描述，严格保留参考图中的商品类别、颜色、材质、结构和配件，不得把商品替换成其他品类。',
         '生成前自检：场景类型、平台比例、商品身份、颜色、结构、材质、Logo、SKU、主体完整性和可读性必须同时满足；任一项无法满足就不要把结果当作合格候选。',
-        hasMarketingLayer ? '营销版允许绘制上述已确认的短标题、短卖点、关键词、活动标签和 CTA；只能原样使用这些输入，禁止生成随机英文、乱码或未经确认的数字。' : '中文长文案和精确事实文字不要交给模型直接绘制；为后置排版保留清晰安全区，并返回适合叠加真实文案的构图。',
+        hasMarketingLayer ? '这是后置排版流程：模型只负责生成商品、场景、光影和构图，严禁在图片中绘制任何文字、中文、英文、数字、Logo、促销标签或水印；请在画面左侧或上方预留干净、连续、无纹理的文案安全区，准确文案将由程序后置排版。' : '中文长文案和精确事实文字不要交给模型直接绘制；为后置排版保留清晰安全区，并返回适合叠加真实文案的构图。',
         isMainImage
           ? '商品主体清晰完整，保持原图的颜色、结构、材质和比例，不得改色、换款、增加图案或生成文字。'
           : '商品主体清晰完整，避免无信息的极简海报、随机英文、乱码和不可读的小字。',
@@ -281,7 +298,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const requestBody = JSON.stringify({
         model: this.options.model,
         prompt,
-        ...(isMainImage ? { negative_prompt: hasMarketingLayer ? '乱码，随机英文，未经确认的价格，折扣，销量，认证，功效，水印，臆造Logo，伪造品牌标识，过多文字，遮挡商品，廉价促销海报，边框，道具，人物，复杂场景，阴影过重，裁切，缺失袖子，变形衣物，改色，换款' : '文字，中文文字，英文文字，乱码，信息卡片，标签，水印，臆造Logo，品牌标识，边框，道具，人物，复杂场景，渐变背景，阴影过重，裁切，缺失袖子，变形衣物，改色，换款' } : {}),
+        ...(isMainImage ? { negative_prompt: '文字，中文文字，英文文字，数字，乱码，信息卡片，标签，水印，臆造Logo，品牌标识，边框，道具，人物，复杂场景，廉价促销海报，阴影过重，裁切，缺失袖子，变形衣物，改色，换款' } : {}),
         n: input.count,
         size: imageSize,
         ...(this.options.quality ? { quality: this.options.quality } : {}),
@@ -357,7 +374,6 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         if (requestId) throw new ProviderOutcomeUnknownError(providerKey, `image provider returned ${providerError.summary}; outcome requires reconciliation`, undefined, response.status, requestId, providerError.summary)
         throw new ProviderRequestFailedError(providerKey, response.status || 502, `image provider returned ${providerError.summary}`, undefined, providerError.summary)
       }
-      if (!record(payload) || !Array.isArray(payload.data)) throwProviderOutcomeUnknown(providerKey, 'image provider response without data')
       const images = imageReferencesFromPayload(payload).slice(0, input.count)
       if (images.length !== input.count) throwProviderOutcomeUnknown(providerKey, 'image provider incomplete result')
       if (input.mode === 'optimize' && sourceImages.length > 0) {
@@ -370,15 +386,16 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
           throw new ImageOutputUnchangedError(providerKey)
         }
       }
-      // Preserve the real provider artifact even when the asynchronous usage
-      // callback is temporarily unavailable; the worker/API keep it marked
-      // pending settlement and block publication until reconciliation.
-      try {
-        await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, billingUnits: input.count, providerAttemptId: providerKey } })
-      } catch (error) {
-        if (!['MODEL_USAGE_SETTLEMENT_PENDING', 'MODEL_USAGE_COST_MISSING', 'MODEL_USAGE_EVIDENCE_MISSING'].includes(String((error as { code?: unknown })?.code ?? ''))) throw error
-      }
-      return images
+      // Artifact delivery is downstream of durable usage/cost settlement. A
+      // provider response must never reach the worker callback when its
+      // receipt cannot be recorded; this is the image equivalent of the text,
+      // OCR, edit and video adapters' fail-closed boundary.
+      await emitRelayUsage(this.options.usageSink, payload, response.headers, { modality: 'image', model: this.options.model, context: { ...input.usageContext, billingUnits: input.count, providerAttemptId: providerKey } })
+      const finalImages = hasMarketingLayer
+        ? await composeMarketingImages(images, { productTitle: input.productTitle, ...brief }, this.fetchImpl)
+        : images
+      imageTrace('compositor.completed', { provider_request_id: providerKey, input_count: images.length, output_count: finalImages.length, marketing_layer: hasMarketingLayer })
+      return finalImages
     } finally {
       clearTimeout(timeout)
       options.signal?.removeEventListener('abort', abort)

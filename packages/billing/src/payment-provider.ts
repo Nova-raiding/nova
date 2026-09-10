@@ -1,3 +1,4 @@
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
 
@@ -44,6 +45,60 @@ export interface PaymentStatusResult {
   state: 'pending' | 'paid' | 'closed' | 'failed'
   providerTradeId?: string
   amountFen?: number
+}
+
+export interface PaymentCallbackPayload {
+  orderId: string
+  providerTradeId: string
+  amountFen: number
+  currency: 'CNY'
+  state: 'pending' | 'paid' | 'closed' | 'failed'
+}
+
+export interface PaymentCallbackProof {
+  nonce: string
+  signedAt: string
+  payloadHash: string
+}
+
+/**
+ * Verify the gateway-to-API callback envelope. Provider-specific adapters
+ * terminate their native WeChat/Alipay signature and send this canonical
+ * server-to-server envelope; no callback is payment evidence until this
+ * function succeeds. Timestamp and nonce are part of the signed message and
+ * must subsequently be consumed transactionally by the persistence layer.
+ */
+export function verifyPaymentCallbackSignature(input: {
+  secret: string
+  channel: PaymentChannel
+  workspaceId: string
+  payload: PaymentCallbackPayload
+  signature: string
+  timestamp: string
+  nonce: string
+  nowMs?: number
+  maxAgeMs?: number
+}): PaymentCallbackProof {
+  validChannel(input.channel)
+  requiredText(input.secret, 'callback secret')
+  requiredText(input.workspaceId, 'workspace id')
+  requiredText(input.signature, 'callback signature')
+  if (!/^\d{10,13}$/u.test(input.timestamp)) throw new Error('payment callback timestamp is invalid')
+  if (!/^[A-Za-z0-9_-]{16,128}$/u.test(input.nonce)) throw new Error('payment callback nonce is invalid')
+  requiredText(input.payload.orderId, 'callback order id')
+  requiredText(input.payload.providerTradeId, 'callback provider trade id')
+  validAmount(input.payload.amountFen)
+  if (input.payload.currency !== 'CNY') throw new Error('payment callback currency is unsupported')
+  if (!['pending', 'paid', 'closed', 'failed'].includes(input.payload.state)) throw new Error('payment callback state is invalid')
+  const timestampMs = input.timestamp.length === 10 ? Number(input.timestamp) * 1000 : Number(input.timestamp)
+  const nowMs = input.nowMs ?? Date.now()
+  const maxAgeMs = input.maxAgeMs ?? 5 * 60_000
+  if (!Number.isSafeInteger(timestampMs) || !Number.isFinite(nowMs) || Math.abs(nowMs - timestampMs) > maxAgeMs) throw new Error('payment callback is expired')
+  const canonical = [input.channel, input.workspaceId, input.payload.orderId, input.payload.providerTradeId, input.payload.amountFen, input.payload.currency, input.payload.state, input.timestamp, input.nonce].join('|')
+  const expected = createHmac('sha256', input.secret).update(canonical).digest('hex')
+  const provided = input.signature.trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/u.test(provided) || !timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(expected, 'utf8'))) throw new Error('payment callback signature is invalid')
+  return { nonce: input.nonce, signedAt: new Date(timestampMs).toISOString(), payloadHash: createHash('sha256').update(canonical).digest('hex') }
 }
 
 export interface PaymentProvider {

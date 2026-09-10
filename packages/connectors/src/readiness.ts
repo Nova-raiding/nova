@@ -19,6 +19,7 @@ export type ConnectorReadinessReason =
   | 'INVALID_OUTBOUND_URL'
   | 'SIGNER_MISSING'
   | 'SIGNER_NOT_ATTESTED'
+  | 'RESPONSE_MAPPING_MISSING'
   | 'PRODUCT_MAPPING_MISSING'
   | 'WRITE_RECEIPT_MAPPING_MISSING'
   | 'WRITE_STATUS_MAPPING_MISSING'
@@ -134,6 +135,10 @@ export function validateConnectorReadiness(
   if (allowTestAdapters) return { platform, ready: reasons.length === 0, reasons, verifiedCapabilities: [] }
   if (!config.signer) reasons.push('SIGNER_MISSING')
   else if (config.signer.kind !== 'platform') reasons.push('SIGNER_NOT_ATTESTED')
+  // Social platforms are intentionally backed by a generic bearer transport
+  // until their official payload contract is configured. Generic fallback
+  // fields must never be mistaken for an approved platform mapping.
+  if ((platform === 'xiaohongshu' || platform === 'douyin') && !config.responseMapping && !config.mappingEvidence) reasons.push('RESPONSE_MAPPING_MISSING')
   if (!config.mapProducts) reasons.push('PRODUCT_MAPPING_MISSING')
   if (!config.mapWriteReceipt) reasons.push('WRITE_RECEIPT_MAPPING_MISSING')
   if (!config.mapWriteStatus) reasons.push('WRITE_STATUS_MAPPING_MISSING')

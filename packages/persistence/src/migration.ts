@@ -467,6 +467,10 @@ export async function loadMigrations(): Promise<Migration[]> {
   const reclassifyManualRuleSources = await readFile(new URL('./migrations/177_reclassify_manual_rule_sources.sql', import.meta.url), 'utf8')
   const reclassifyManualRuleSourcesAgain = await readFile(new URL('./migrations/178_reclassify_manual_rule_sources_again.sql', import.meta.url), 'utf8')
   const campaignItemTaskScopeIntegrity = await readFile(new URL('./migrations/179_campaign_item_task_scope_integrity.sql', import.meta.url), 'utf8')
+  const removeCreativePointAllocationGranularityConstraint = await readFile(new URL('./migrations/180_remove_creative_point_allocation_granularity_constraint.sql', import.meta.url), 'utf8')
+  const commercialCheckoutResource = await readFile(new URL('./migrations/181_commercial_checkout_resource.sql', import.meta.url), 'utf8')
+  const passwordAuth = await readFile(new URL('./migrations/182_password_auth.sql', import.meta.url), 'utf8')
+  const knowledgePersistence = await readFile(new URL('./migrations/183_knowledge_persistence.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -647,6 +651,10 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 177, name: 'reclassify_manual_rule_sources', sql: reclassifyManualRuleSources },
     { version: 178, name: 'reclassify_manual_rule_sources_again', sql: reclassifyManualRuleSourcesAgain },
     { version: 179, name: 'campaign_item_task_scope_integrity', sql: campaignItemTaskScopeIntegrity },
+    { version: 180, name: 'remove_creative_point_allocation_granularity_constraint', sql: removeCreativePointAllocationGranularityConstraint },
+    { version: 181, name: 'commercial_checkout_resource', sql: commercialCheckoutResource },
+    { version: 182, name: 'password_auth', sql: passwordAuth },
+    { version: 183, name: 'knowledge_persistence', sql: knowledgePersistence },
   ]
 }
 

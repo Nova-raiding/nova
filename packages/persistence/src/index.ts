@@ -1,4 +1,5 @@
 export * from './repository.js'
+export * from './password-auth-repository.js'
 export * from './migration.js'
 export * from './business-repository.js'
 export * from './rule-repository.js'

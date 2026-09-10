@@ -59,6 +59,54 @@ describe('PostgresCommercialContractRepository', () => {
       .rejects.toMatchObject({ code: 'PRIVATE_SKU_NOT_FOUND' })
   })
 
+  it('attaches a provider checkout resource idempotently without accepting customer money facts', async () => {
+    const sku = approvedSku()
+    const row = {
+      id: 'order-checkout', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId,
+      amountFen: 200000, currency: 'CNY' as const, paymentProvider: 'gateway', status: 'pending' as const,
+      idempotencyKey: 'order-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: null,
+      checkoutUrl: null, checkoutExpiresAt: null, checkoutIdempotencyKey: null,
+      createdAt: '2026-09-02T00:00:00.000Z', paidAt: null,
+    }
+    const client = new ScriptedClient((sql, values) => {
+      if (sql.includes('FROM commercial_orders_v2 o')) return { rows: [{ ...row, skuCode: sku.code, accessRevision: null }] }
+      if (sql.includes('UPDATE commercial_orders_v2')) return { rows: [{ ...row, providerOrderId: 'provider-order-1', checkoutUrl: values[2], checkoutExpiresAt: values[3], checkoutIdempotencyKey: values[4] }] }
+      return { rows: [] }
+    })
+    const repository = new PostgresCommercialContractRepository(pool(client))
+    const checkout = await repository.attachCheckout({ workspaceId: 'ws-1', orderId: row.id, channel: 'alipay', idempotencyKey: 'checkout-1', paymentUrl: 'https://pay.example/orders/1', providerOrderId: 'provider-order-1', expiresAt: '2026-09-02T01:00:00Z' })
+    expect(checkout).toMatchObject({ channel: 'alipay', paymentUrl: 'https://pay.example/orders/1', providerOrderId: 'provider-order-1', replayed: false })
+    const update = client.calls.find(call => call.sql.includes('UPDATE commercial_orders_v2'))
+    expect(update?.values).not.toContain(200001)
+    expect(update?.values).not.toContain('USD')
+    expect(update?.sql).toContain("status='pending'")
+    expect(client.calls.some(call => call.sql.includes("'commercial.checkout.created'"))).toBe(true)
+  })
+
+  it('rejects unsupported checkout URI before opening a transaction', async () => {
+    const client = new ScriptedClient(() => ({ rows: [] }))
+    const repository = new PostgresCommercialContractRepository(pool(client))
+    await expect(repository.attachCheckout({ workspaceId: 'ws-1', orderId: 'order-1', channel: 'wechat', idempotencyKey: 'checkout-1', paymentUrl: 'javascript:alert(1)' })).rejects.toThrow('supported provider checkout URI')
+    expect(client.calls).toHaveLength(0)
+  })
+
+  it('replays an attached checkout only for the same key and immutable resource', async () => {
+    const sku = approvedSku()
+    const existing = {
+      id: 'order-checkout', workspaceId: 'ws-1', skuId: sku.id, skuVersionId: sku.versionId,
+      amountFen: 200000, currency: 'CNY' as const, paymentProvider: 'gateway', status: 'pending' as const,
+      idempotencyKey: 'order-1', requestHash: 'b'.repeat(64), createdByActorId: 'actor-1', providerOrderId: 'provider-order-1',
+      checkoutUrl: 'https://pay.example/orders/1', checkoutExpiresAt: '2026-09-02T01:00:00.000Z', checkoutIdempotencyKey: 'checkout-1',
+      createdAt: '2026-09-02T00:00:00.000Z', paidAt: null,
+    }
+    const replayClient = new ScriptedClient((sql) => sql.includes('FROM commercial_orders_v2 o') ? { rows: [{ ...existing, skuCode: sku.code, accessRevision: null }] } : { rows: [] })
+    const repository = new PostgresCommercialContractRepository(pool(replayClient))
+    await expect(repository.attachCheckout({ workspaceId: 'ws-1', orderId: existing.id, channel: 'wechat', idempotencyKey: 'checkout-1', paymentUrl: existing.checkoutUrl, providerOrderId: existing.providerOrderId, expiresAt: existing.checkoutExpiresAt })).resolves.toMatchObject({ replayed: true, paymentUrl: existing.checkoutUrl })
+    expect(replayClient.calls.some(call => call.sql.includes('UPDATE commercial_orders_v2'))).toBe(false)
+    const conflictClient = new ScriptedClient((sql) => sql.includes('FROM commercial_orders_v2 o') ? { rows: [{ ...existing, skuCode: sku.code, accessRevision: null }] } : { rows: [] })
+    await expect(new PostgresCommercialContractRepository(pool(conflictClient)).attachCheckout({ workspaceId: 'ws-1', orderId: existing.id, channel: 'wechat', idempotencyKey: 'other-key', paymentUrl: existing.checkoutUrl })).rejects.toMatchObject({ code: 'COMMERCIAL_IDEMPOTENCY_CONFLICT' })
+  })
+
   it('rejects a payment fact mismatch before writing payment, grant, revision or outbox', async () => {
     const sku = approvedSku()
     const client = new ScriptedClient(sql => {

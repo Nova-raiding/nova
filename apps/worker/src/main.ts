@@ -14,6 +14,7 @@ import type { PublishHandlerResult } from '../../../packages/workers/src/publish
 import { buildPublishObservationRequest, PublishObservationReportError } from '../../../packages/workers/src/publish-observation.js'
 import { createContentGeneratorFromEnv, type ContentGenerationInput, type GeneratedContent } from '../../../packages/ai/src/generator.js'
 import { createImageGeneratorFromEnv, type ImageGenerationInput, type ImageGenerationStatus } from '../../../packages/ai/src/image-generator.js'
+import { createRelayPricingClientFromEnv } from '../../../packages/ai/src/relay-pricing.js'
 import type { RelayUsageRecord } from '../../../packages/ai/src/relay-usage.js'
 import { FixedWindowQuotaAdmission, type QuotaAdmissionInput } from '../../../packages/quotas/src/admission.js'
 import { DistributedLockBusyError } from '../../../packages/quotas/src/lock.js'
@@ -64,6 +65,45 @@ export interface WorkerConfig {
 }
 
 export type WorkerRole = 'all' | 'sync' | 'generation' | 'publish' | 'reconcile' | 'automation' | 'scan'
+
+function imageWorkerTrace(event: string, fields: Record<string, unknown> = {}): void {
+  try {
+    console.info(JSON.stringify({
+      event: `merchant.image.worker.${event}`,
+      timestamp: new Date().toISOString(),
+      ...fields,
+    }))
+  } catch {
+    // Observability must never change the commercial execution outcome.
+  }
+}
+
+function imageWorkerErrorFields(error: unknown): Record<string, unknown> {
+  if (!error || typeof error !== 'object') return { error_message: String(error) }
+  const candidate = error as {
+    name?: unknown
+    code?: unknown
+    message?: unknown
+    cause?: unknown
+    providerOutcome?: unknown
+    providerRequestId?: unknown
+    providerIdempotencyKey?: unknown
+  }
+  const cause = candidate.cause && typeof candidate.cause === 'object'
+    ? candidate.cause as { name?: unknown; code?: unknown; message?: unknown }
+    : undefined
+  return {
+    ...(typeof candidate.name === 'string' ? { error_name: candidate.name } : {}),
+    ...(typeof candidate.code === 'string' ? { error_code: candidate.code } : {}),
+    ...(typeof candidate.message === 'string' ? { error_message: candidate.message.slice(0, 1_000) } : {}),
+    ...(typeof candidate.providerOutcome === 'string' ? { provider_outcome: candidate.providerOutcome } : {}),
+    ...(typeof candidate.providerRequestId === 'string' ? { provider_request_id: candidate.providerRequestId } : {}),
+    ...(typeof candidate.providerIdempotencyKey === 'string' ? { provider_idempotency_key: candidate.providerIdempotencyKey } : {}),
+    ...(cause && typeof cause.name === 'string' ? { cause_name: cause.name } : {}),
+    ...(cause && typeof cause.code === 'string' ? { cause_code: cause.code } : {}),
+    ...(cause && typeof cause.message === 'string' ? { cause_message: cause.message.slice(0, 1_000) } : {}),
+  }
+}
 
 export function workerQueueKey(role: WorkerRole, workspaceId: string): string {
   return `merchant:outbox:${role}:${workspaceId}`
@@ -1248,6 +1288,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
   const onboardingGrantDispatch = new PostgresOnboardingGrantDispatchRepository(sqlPool)
   const scanAttempts = new PostgresAssetScanAttemptRepository(sqlPool)
   const creativePointSettlement = new CreativePointRelaySettlement(new PostgresCreativePointRepository(sqlPool), new PostgresCreativePointLifecycleRepository(sqlPool), relayProviderIdentity(process.env))
+  const relayPricing = createRelayPricingClientFromEnv(process.env)
   const runtime = new ConnectorRuntime({
     configSource: process.env,
     credentialProvider: createVaultCredentialProviderFromEnv(),
@@ -1269,7 +1310,21 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
     if (!config.apiBaseUrl || !config.apiToken) throw new Error('WORKER_API_BASE_URL and WORKER_API_TOKEN are required for image model usage settlement')
     const execution = usage.actionId ? imageUsageContexts.get(usage.actionId) : undefined
     if (execution && usage.providerRequestId) execution.providerRequestId = usage.providerRequestId
-    const enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, metadata: { ...(usage.metadata ?? {}), image_job: true } } : usage
+    let enriched = execution ? { ...usage, runKey: execution.runKey, contextHash: execution.contextHash, metadata: { ...(usage.metadata ?? {}), image_job: true } } : usage
+    if (enriched.costCny === undefined && relayPricing) {
+      const quote = await relayPricing.quote(enriched)
+      enriched = { ...enriched, costCny: quote.costCny, metadata: { ...(enriched.metadata ?? {}), ...quote.metadata } }
+      imageWorkerTrace('usage.cost_derived', {
+        action_id: enriched.actionId ?? null,
+        provider_request_id: enriched.providerRequestId ?? enriched.providerAttemptId ?? null,
+        model: enriched.model,
+        cost_cny: quote.costCny,
+        cost_source: quote.metadata.cost_source,
+        pricing_version: quote.metadata.pricing_version,
+        pricing_group: quote.metadata.pricing_group,
+        formula_version: quote.metadata.formula_version,
+      })
+    }
     return postModelUsage({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, usage: enriched, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal: execution?.signal })
   })
   const requireImageProviderRequestId = (actionId: string) => {
@@ -1419,6 +1474,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
       ? payload.source_asset_data_urls.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
       : []
     const input: ImageGenerationInput = { productTitle, direction, count, ...(typeof payload.category === 'string' && payload.category ? { category: payload.category } : {}), ...(payload.image_mode === 'create' || payload.image_mode === 'optimize' ? { mode: payload.image_mode } : {}), ...(sourceAssetRefs.length ? { sourceAssetRefs } : {}), ...(sourceImages.length ? { sourceImages } : {}), ...(payload.visual_brief && isObject(payload.visual_brief) ? { visualBrief: payload.visual_brief as ImageGenerationInput['visualBrief'] } : {}), usageContext: { workspaceId: event.workspaceId, actionId, runKey } }
+    imageWorkerTrace('dispatch', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, mode: input.mode ?? 'create', requested_count: count, source_asset_count: sourceAssetRefs.length, source_image_count: sourceImages.length })
     try {
       let images: string[]
       try {
@@ -1429,6 +1485,7 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         const candidate = error as { code?: unknown }
         const failure = { code: typeof candidate.code === 'string' ? candidate.code : 'IMAGE_GENERATION_FAILED', message: error instanceof Error ? error.message : 'image generation failed' }
         const providerRequestId = imageUsageContexts.get(actionId)?.providerRequestId?.trim()
+        imageWorkerTrace('provider_error', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, ...(providerRequestId ? { provider_request_id: providerRequestId } : {}), ...imageWorkerErrorFields(error) })
         if (!providerRequestId) {
           await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: failure.code, errorMessage: failure.message, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
           throw Object.assign(error instanceof Error ? error : new Error(failure.message), { code: failure.code, retryable: false, unknown: true })
@@ -1443,10 +1500,13 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
         throw error
       }
       const providerRequestId = requireImageProviderRequestId(actionId)
+      imageWorkerTrace('provider_result', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, image_count: images.length })
       await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'provider_started', ownerToken, providerRequestId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
       try {
         await postImageGenerationResult({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, result: { intent_hash: intentHash, owner_token: ownerToken, provider_request_id: providerRequestId, images }, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+        imageWorkerTrace('callback_accepted', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, image_count: images.length })
       } catch (error) {
+        imageWorkerTrace('callback_error', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, ...imageWorkerErrorFields(error) })
         await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'outcome_unknown', ownerToken, errorCode: 'IMAGE_GENERATION_CALLBACK_UNCERTAIN', errorMessage: error instanceof Error ? error.message : 'image callback outcome unknown', ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal }).catch(() => undefined)
         throw error
       }
@@ -1457,10 +1517,12 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
       // response is being parsed; settle only after the API accepted the
       // archived result, so a failed callback cannot charge the merchant.
       await creativePointSettlement.settleForDelivery(event, [providerRequestId], 'image_generation.execute')
+      imageWorkerTrace('creative_points_settled', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId })
       // The callback proves application acceptance; complete the execution
       // lease only after that boundary succeeds. A failed completion remains
       // replayable/reconcilable and must not be acknowledged as completed.
       await updateImageGenerationExecution({ apiBaseUrl: config.apiBaseUrl, apiToken: config.apiToken, event, operation: 'completed', ownerToken, providerRequestId, ...(config.apiSigningSecret ? { signingSecret: config.apiSigningSecret } : {}), signal })
+      imageWorkerTrace('completed', { workspace_id: event.workspaceId, job_id: event.aggregateId, event_id: event.id, action_id: actionId, provider_operation_key: providerOperationKey, provider_request_id: providerRequestId, image_count: images.length })
       return { images, intent_hash: intentHash }
     } catch (error) {
       throw error

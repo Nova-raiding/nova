@@ -203,6 +203,11 @@ export class HttpPlatformConnector implements PlatformConnector {
     if (!provider || !provider.store || !provider.kind || (provider.kind !== 'vault' && provider.kind !== 'external' && !(provider.kind === 'test' && this.options.allowTestCredentials))) this.notConfigured()
     return provider as VaultCredentialProvider
   }
+  private requireRevocableProvider(): VaultCredentialProvider {
+    const provider = this.requireProvider()
+    if (!provider.revoke) this.notConfigured()
+    return provider
+  }
 
   async authorize(input: AuthorizeInput): Promise<AuthorizeResult> {
     const config = this.config
@@ -277,12 +282,12 @@ export class HttpPlatformConnector implements PlatformConnector {
     // is stale: local access is disabled first and remote credential invalidation
     // is then attempted with the minimally required connector configuration.
     const config = this.requireRevokeConfig()
-    const provider = this.requireProvider()
+    const provider = this.requireRevocableProvider()
     const credential = await provider.resolve(ref)
     if (!credential) throw new ConnectorFailure(this.normalizeError({ code: 'UNAUTHORIZED', message: 'credential is unavailable' }))
     // Disable the local credential first. A remote revoke outage must never
     // leave the account usable through this connector instance.
-    try { await provider.revoke?.(ref) } catch {
+    try { await provider.revoke(ref) } catch {
       throw new ConnectorFailure(this.normalizeError({ code: 'NOT_CONFIGURED', message: 'credential vault is unavailable' }))
     }
     if (config.oauth.revokeUrl) await this.request('POST', config.oauth.revokeUrl, credential, { token: credential.accessToken, client_id: config.clientId }, config.oauth.tokenBodyEncoding ?? 'form', true)
@@ -339,11 +344,11 @@ export class HttpPlatformConnector implements PlatformConnector {
 
   async uploadMedia(ctx: ConnectorContext, input: MediaUploadInput): Promise<MediaUploadReceipt> {
     const config = this.requireConfig()
-    if (!config.mediaUploadPath) throw new ConnectorFailure(this.normalizeError({ code: 'NOT_CONFIGURED', message: 'media upload adapter is not configured' }))
+    if (!config.mediaUploadPath || !config.mapMediaUpload || !config.mediaUploadEvidence) throw new ConnectorFailure(this.normalizeError({ code: 'NOT_CONFIGURED', message: 'media upload adapter is not configured' }))
     const payload = await this.request('POST', joinUrl(config.api.baseUrl, config.mediaUploadPath), await this.resolveCredential(ctx), {
       visualRef: input.visualRef, role: input.role, mimeType: input.mimeType, sha256: input.sha256, idempotencyKey: input.idempotencyKey, contentBase64: Buffer.from(input.bytes).toString('base64'),
     }, 'json', false, ctx.signal)
-    const mapped = config.mapMediaUpload?.(payload, input, this.platform)
+    const mapped = config.mapMediaUpload(payload, input, this.platform)
     const record = isRecord(payload) ? payload : {}
     const mediaId = mapped?.mediaId ?? readString(record.mediaId) ?? readString(record.id)
     if (!mediaId) throw new ConnectorFailure(this.normalizeError({ code: 'VALIDATION_FAILED', message: 'media upload response did not identify a media object' }))
@@ -430,7 +435,7 @@ export class HttpPlatformConnector implements PlatformConnector {
     const accessToken = readCredentialToken(tokenPayload.access_token) ?? readCredentialToken(tokenPayload.accessToken)
     if (!accessToken) throw new ConnectorFailure(this.normalizeError({ code: 'REMOTE_ERROR', message: 'token response did not contain an access token' }))
     const expiresIn = typeof tokenPayload.expires_in === 'number' ? tokenPayload.expires_in : undefined
-    return { accessToken, tokenType: readString(tokenPayload.token_type) ?? previous?.tokenType, refreshToken: readString(tokenPayload.refresh_token) ?? previous?.refreshToken, scope: readString(tokenPayload.scope) ?? previous?.scope, expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : previous?.expiresAt }
+    return { accessToken, tokenType: readCredentialToken(tokenPayload.token_type) ?? readCredentialToken(previous?.tokenType), refreshToken: readCredentialToken(tokenPayload.refresh_token) ?? readCredentialToken(previous?.refreshToken), scope: readCredentialToken(tokenPayload.scope) ?? readCredentialToken(previous?.scope), expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : previous?.expiresAt }
   }
 
   private async request(method: string, url: string, credential?: AccessCredential, body?: unknown, encoding: HttpRequestBodyEncoding = 'json', revokeOnly = false, signal?: AbortSignal): Promise<unknown> {

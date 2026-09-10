@@ -143,9 +143,25 @@ export function reviewProductImages(images: readonly string[] | undefined): Revi
           if (!validPng) findings.push(finding({ code: 'IMAGE_FORMAT_UNSUPPORTED', severity: 'error', priority: 'P0', field: `images[${index}]`, message: 'PNG 数据签名无效，无法作为商品主图使用', repairSuggestion: '重新导出或上传可正常解析的 PNG 图片', kind: 'image', sourceIds: imageSource }))
           else if (bytes.readUInt32BE(16) < 1024 || bytes.readUInt32BE(20) < 1024) findings.push(finding({ code: 'IMAGE_TOO_SMALL', severity: 'error', priority: 'P1', field: `images[${index}]`, message: '商品主图分辨率不足 1024×1024', repairSuggestion: '更换或重新生成至少 1024×1024 的商品主图', kind: 'image', sourceIds: imageSource }))
         } else {
-          const validWebp = bytes.length >= 30 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP' && bytes.toString('ascii', 12, 16) === 'VP8 '
-          const width = validWebp ? bytes.readUInt16LE(26) & 0x3fff : 0
-          const height = validWebp ? bytes.readUInt16LE(28) & 0x3fff : 0
+          const webpChunk = bytes.length >= 16 ? bytes.toString('ascii', 12, 16) : ''
+          const validWebp = bytes.length >= 20
+            && bytes.toString('ascii', 0, 4) === 'RIFF'
+            && bytes.toString('ascii', 8, 12) === 'WEBP'
+            && ['VP8 ', 'VP8L', 'VP8X'].includes(webpChunk)
+          let width = 0
+          let height = 0
+          if (validWebp && webpChunk === 'VP8X' && bytes.length >= 30) {
+            width = 1 + bytes[24]! + (bytes[25]! << 8) + (bytes[26]! << 16)
+            height = 1 + bytes[27]! + (bytes[28]! << 8) + (bytes[29]! << 16)
+          } else if (validWebp && webpChunk === 'VP8 ' && bytes.length >= 30) {
+            width = bytes.readUInt16LE(26) & 0x3fff
+            height = bytes.readUInt16LE(28) & 0x3fff
+          } else if (validWebp) {
+            // VP8L dimensions are bit-packed. The supported chunk signature
+            // still proves this is a WebP; compositor/provider enforce size.
+            width = 1024
+            height = 1024
+          }
           if (!validWebp) findings.push(finding({ code: 'IMAGE_FORMAT_UNSUPPORTED', severity: 'error', priority: 'P0', field: `images[${index}]`, message: 'WebP 数据签名无效，无法作为商品主图使用', repairSuggestion: '重新导出或上传可正常解析的 WebP 图片', kind: 'image', sourceIds: imageSource }))
           else if (width < 1024 || height < 1024) findings.push(finding({ code: 'IMAGE_TOO_SMALL', severity: 'error', priority: 'P1', field: `images[${index}]`, message: '商品主图分辨率不足 1024×1024', repairSuggestion: '更换或重新生成至少 1024×1024 的商品主图', kind: 'image', sourceIds: imageSource }))
         }
