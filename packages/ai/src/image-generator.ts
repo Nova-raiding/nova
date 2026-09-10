@@ -39,6 +39,10 @@ export interface ImageGenerationInput {
     detailSections?: string[]
     /** Frozen platform rules that shaped this candidate. */
     platformRules?: string[]
+    /** Approved workspace knowledge facts/rules used to ground this image.
+     * These are copied into the relay prompt; they are never inferred by the
+     * provider and are bounded by the application before reaching here. */
+    knowledgeFacts?: string[]
     outputVariant?: 'main' | 'secondary' | 'detail_long' | 'banner'
     /** Sanitized competitor observations; reference only, never product facts. */
     competitorStructures?: string[]
@@ -237,6 +241,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       const promotionLabels = boundedList(brief?.promotionLabels, 4, 120)
       const detailSections = boundedList(brief?.detailSections, 10, 120)
       const platformRules = boundedList(brief?.platformRules, 8, 160)
+      const knowledgeFacts = boundedList(brief?.knowledgeFacts, 16, 240)
       const competitorStructures = boundedList(brief?.competitorStructures, 6, 160)
       const competitorThemes = boundedList(brief?.competitorThemes, 6, 160)
       const differentiationAngles = boundedList(brief?.differentiationAngles, 6, 160)
@@ -254,6 +259,7 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
         `版位：${placement}。${platformDna}${slotGuidance}`,
         isMainImage ? `平台模板执行：${effectiveHeroTemplate}` : '',
         platformRules.length ? `已冻结的平台规则：${platformRules.join('；')}。` : '',
+        knowledgeFacts.length ? `工作区已审核知识（仅可作为事实约束，不得扩写或臆造）：${knowledgeFacts.join('；')}。` : '',
         competitorStructures.length || competitorThemes.length || differentiationAngles.length
           ? `同平台同类竞品研究（仅借鉴构图与表达趋势，不复制品牌、商品事实或原文）：结构=${competitorStructures.join('、') || '无'}；表达主题=${competitorThemes.join('、') || '无'}；差异化机会=${differentiationAngles.join('、') || '无'}。` : '',
         isLongPage

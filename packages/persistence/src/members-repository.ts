@@ -5,9 +5,10 @@ import type { OperationAudit } from './operations-repository.js'
 export type MemberRole = 'workspace_owner' | 'merchant_admin' | 'operator' | 'support' | 'finance' | 'platform_ops'
 export type MemberStatus = 'invited' | 'active' | 'suspended'
 export interface WorkspaceMember { id: string; workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; invitedBy: string; identityId?: string; revision: number; createdAt: string; updatedAt: string }
+export interface WorkspaceMemberPage { items: WorkspaceMember[]; total: number; offset: number; limit: number; hasMore: boolean; activeOwnerCount: number }
 export interface MemberStatusAuditInput { workspaceId: string; externalSubject: string; targetStatus: MemberStatus; expectedRevision: number; actorId: string; action: string; reason: string }
 export interface MemberUpsertAuditInput { workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; expectedRevision?: number; actorId: string; action: string; reason: string }
-export interface MembersRepository { list(workspaceId: string): Promise<WorkspaceMember[]>; listMany?(workspaceIds: readonly string[]): Promise<WorkspaceMember[]>; bindIdentity(input: { workspaceId: string; externalSubject: string; identityId: string }): Promise<WorkspaceMember>; upsert(input: { workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; invitedBy: string }): Promise<WorkspaceMember>; suspend(input: { workspaceId: string; externalSubject: string; actorId: string; reason: string }): Promise<WorkspaceMember>; upsertWithAudit(input: MemberUpsertAuditInput): Promise<{ member: WorkspaceMember; audit: OperationAudit }>; changeStatusWithAudit(input: MemberStatusAuditInput): Promise<{ member: WorkspaceMember; audit: OperationAudit }> }
+export interface MembersRepository { list(workspaceId: string): Promise<WorkspaceMember[]>; listPage?(workspaceId: string, input: { offset: number; limit: number }): Promise<WorkspaceMemberPage>; listMany?(workspaceIds: readonly string[]): Promise<WorkspaceMember[]>; bindIdentity(input: { workspaceId: string; externalSubject: string; identityId: string }): Promise<WorkspaceMember>; upsert(input: { workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; invitedBy: string }): Promise<WorkspaceMember>; suspend(input: { workspaceId: string; externalSubject: string; actorId: string; reason: string }): Promise<WorkspaceMember>; upsertWithAudit(input: MemberUpsertAuditInput): Promise<{ member: WorkspaceMember; audit: OperationAudit }>; changeStatusWithAudit(input: MemberStatusAuditInput): Promise<{ member: WorkspaceMember; audit: OperationAudit }> }
 
 type WorkspaceMemberRow = Omit<WorkspaceMember, 'identityId' | 'createdAt' | 'updatedAt'> & { identityId?: string | null; createdAt: string | Date; updatedAt: string | Date }
 const memberFromRow = (row: WorkspaceMemberRow): WorkspaceMember => {
@@ -23,6 +24,11 @@ const memberFromRow = (row: WorkspaceMemberRow): WorkspaceMember => {
 export class MemoryMembersRepository implements MembersRepository {
   private readonly rows = new Map<string, WorkspaceMember>()
   async list(workspaceId: string) { return [...this.rows.values()].filter(row => row.workspaceId === workspaceId) }
+  async listPage(workspaceId: string, input: { offset: number; limit: number }): Promise<WorkspaceMemberPage> {
+    const all = await this.list(workspaceId)
+    const offset = Math.max(0, input.offset); const limit = Math.min(100, Math.max(1, input.limit))
+    return { items: all.slice(offset, offset + limit), total: all.length, offset, limit, hasMore: offset + limit < all.length, activeOwnerCount: all.filter(row => row.role === 'workspace_owner' && row.status === 'active').length }
+  }
   async listMany(workspaceIds: readonly string[]) { const allowed = new Set(workspaceIds); return [...this.rows.values()].filter(row => allowed.has(row.workspaceId)) }
   async bindIdentity(input: { workspaceId: string; externalSubject: string; identityId: string }) { const key = `${input.workspaceId}:${input.externalSubject}`; const current = this.rows.get(key); if (!current) throw new Error('MEMBER_NOT_FOUND'); if (current.identityId && current.identityId !== input.identityId) throw new Error('MEMBER_IDENTITY_CONFLICT'); if (current.identityId) return current; const row = { ...current, identityId: input.identityId }; this.rows.set(key, row); return row }
   async upsert(input: { workspaceId: string; externalSubject: string; displayName: string; role: MemberRole; status: MemberStatus; invitedBy: string }) { const key = `${input.workspaceId}:${input.externalSubject}`; const current = this.rows.get(key); const now = new Date().toISOString(); const row = { id: current?.id ?? `member_${randomUUID()}`, ...input, revision: (current?.revision ?? 0) + 1, createdAt: current?.createdAt ?? now, updatedAt: now }; this.rows.set(key, row); return row }
@@ -64,6 +70,19 @@ export class PostgresMembersRepository implements MembersRepository {
     })
   }
   async list(workspaceId: string) { requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, workspaceId, async client => { const result = await client.query<WorkspaceMemberRow>(`SELECT id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", identity_id AS "identityId", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_members WHERE workspace_id=$1 ORDER BY created_at ASC`, [workspaceId]); return result.rows.map(memberFromRow) }) }
+  async listPage(workspaceId: string, input: { offset: number; limit: number }): Promise<WorkspaceMemberPage> {
+    requireWorkspaceScope(workspaceId)
+    const offset = Math.max(0, Math.floor(input.offset)); const limit = Math.min(100, Math.max(1, Math.floor(input.limit)))
+    return withWorkspaceTransaction(this.pool, workspaceId, async client => {
+      const [rows, count, owners] = await Promise.all([
+        client.query<WorkspaceMemberRow>(`SELECT id, workspace_id AS "workspaceId", external_subject AS "externalSubject", display_name AS "displayName", role, status, invited_by AS "invitedBy", identity_id AS "identityId", revision, created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_members WHERE workspace_id=$1 ORDER BY created_at ASC, id ASC LIMIT $2 OFFSET $3`, [workspaceId, limit, offset]),
+        client.query<{ count: string }>(`SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id=$1`, [workspaceId]),
+        client.query<{ count: string }>(`SELECT count(*)::text AS count FROM workspace_members WHERE workspace_id=$1 AND role='workspace_owner' AND status='active'`, [workspaceId]),
+      ])
+      const total = Number(count.rows[0]?.count ?? 0)
+      return { items: rows.rows.map(memberFromRow), total, offset, limit, hasMore: offset + limit < total, activeOwnerCount: Number(owners.rows[0]?.count ?? 0) }
+    })
+  }
   async listMany(workspaceIds: readonly string[]) {
     const uniqueIds = [...new Set(workspaceIds.map(id => requireWorkspaceScope(id)))]
     if (!uniqueIds.length) return []

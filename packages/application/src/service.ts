@@ -57,6 +57,15 @@ export interface ProductSellingPoint {
   sourceIds: string[]
 }
 
+/** Deterministic compliance result captured at product import/update time. */
+export interface ProductRuleScan {
+  status: 'passed' | 'warning' | 'blocked' | 'unavailable'
+  scannedAt: string
+  ruleVersionIds: string[]
+  findings: Array<{ code: string; severity: 'error' | 'warning'; field: string; message: string; matchedValue?: string }>
+  evidenceBoundary: string
+}
+
 export interface Product {
   id: string
   workspaceId: string
@@ -81,6 +90,8 @@ export interface Product {
   sourceAssetIds?: string[]
   attributes?: Record<string, string>
   sellingPoints?: ProductSellingPoint[]
+  /** Latest import/update rule scan. Generation and publishing must not treat this as approval. */
+  ruleScan?: ProductRuleScan
   listingStatus?: 'on_sale' | 'off_sale' | 'draft' | 'unknown'
   disabledAt?: string
   disabledReason?: string
@@ -2673,6 +2684,24 @@ export class MerchantService {
     const brief = contentVersion?.body.brief
     const selectedDirection = task?.directions?.find(item => item.id === task.selectedDirectionId)
     const requestedMarketingBrief = input.marketingBrief
+    // Resolve the same approved, workspace-scoped knowledge snapshot used by
+    // content generation. Image generation previously consumed product facts
+    // and platform rules but silently dropped approved merchant knowledge,
+    // making “search product → use knowledge to make image” incomplete.
+    const knowledgeContext = this.options.knowledgeContextProvider?.({
+      workspaceId: input.workspaceId,
+      platform: product.platform,
+      ...(product.category ? { category: product.category } : {}),
+      ...(product.storeName ? { store: product.storeName } : {}),
+      asOf: now(),
+    })
+    const knowledgeFacts = knowledgeContext
+      ? [
+          ...knowledgeContext.rules.map(rule => `规则[${rule.version}] ${rule.content}`),
+          ...knowledgeContext.assets.map(asset => `资产[${asset.name}] ${typeof asset.content === 'string' ? asset.content : JSON.stringify(asset.content)}`),
+          ...knowledgeContext.confirmedLearningSuggestions.map(item => `学习建议 ${item.summary}；拟规则：${item.proposedRule.content}`),
+        ].map(value => value.trim()).filter(Boolean).slice(0, 16)
+      : []
     const confirmedSellingPoints = [...new Set([
       ...(task?.productionPlan?.sellingPoints ?? product.sellingPoints?.filter(item => item.proofStatus === 'confirmed').map(item => item.text) ?? []),
       ...(requestedMarketingBrief?.sellingPoints ?? []),
@@ -2732,6 +2761,7 @@ export class MerchantService {
         '所有价格、优惠、功效和认证必须来自已确认事实',
         '主图保持商品清晰完整；营销信息优先放在详情长图和副图',
       ],
+      ...(knowledgeFacts.length ? { knowledgeFacts } : {}),
       outputVariant: input.size === '1024x3072' || input.size === '1024x4096' ? 'detail_long' as const : bannerPlacement ? 'banner' as const : contentVersion ? 'secondary' as const : 'main' as const,
       ...(competitorReference ? {
         competitorStructures: competitorReference.structuralObservations,

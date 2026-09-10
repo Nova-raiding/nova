@@ -451,26 +451,6 @@
           data-tab="orders"
         >
           订单</button
-        ><button
-          class="tab"
-          id="tab-transactions"
-          role="tab"
-          aria-selected="false"
-          aria-controls="panel-transactions"
-          tabindex="-1"
-          data-tab="transactions"
-        >
-          流水</button
-        ><button
-          class="tab"
-          id="tab-usage"
-          role="tab"
-          aria-selected="false"
-          aria-controls="panel-usage"
-          tabindex="-1"
-          data-tab="usage"
-        >
-          账单
         </button>
       </nav>
       <div class="error" id="error" role="alert"></div>
@@ -522,38 +502,6 @@
           <p>套餐、点包和旧充值订单只作为真实账务证据；历史未归属订单不会被猜测为本人订单。</p>
         </div>
         <div class="list" id="ordersList"></div>
-      </section>
-      <section
-        class="panel"
-        id="panel-transactions"
-        role="tabpanel"
-        aria-labelledby="tab-transactions"
-        hidden
-      >
-        <div class="section-head">
-          <h2 id="transactionsTitle">我的流水</h2>
-          <p>显示可归属到当前成员的收款、消费和退款证据；这些人民币记录不参与创意点准入。</p>
-        </div>
-        <div class="list" id="transactionsList"></div>
-      </section>
-      <section
-        class="panel"
-        id="panel-usage"
-        role="tabpanel"
-        aria-labelledby="tab-usage"
-        hidden
-      >
-        <div class="section-head">
-          <h2 id="usageTitle">我的账单</h2>
-          <p>按所选账期汇总真实模型回执；个人视图不展示平台内部成本。</p>
-          <div class="bill-controls">
-            <label class="field-label" for="billingPeriod"
-              >账期<input class="field" id="billingPeriod" type="month"
-            /></label>
-            <button class="btn" id="exportBilling">导出账单 CSV</button>
-          </div>
-        </div>
-        <div class="list" id="usageList"></div>
       </section>
       <div class="sr" id="live" role="status" aria-live="polite"></div>
     </main>
@@ -691,7 +639,6 @@
           ...(r?.orders ?? []).map((o) => ({
             kind: "旧钱包充值证据",
             id: o.id,
-            amount: o.amount_cny,
             state: o.state,
             time: o.created_at,
             detail: o.channel === "wechat" ? "微信支付" : "支付宝",
@@ -700,7 +647,6 @@
           ...(Array.isArray(s) ? s : (s?.orders ?? [])).map((o) => ({
             kind: "套餐订单",
             id: o.orderNo ?? o.id,
-            amount: o.paymentAmountCny ?? o.priceCny,
             state: o.status,
             time: o.createdAt,
             detail: `${o.planName ?? "套餐"} · ${o.billingCycle === "annual" ? "按年" : "按月"}`,
@@ -711,7 +657,7 @@
           ? a
               .map(
                 (o) =>
-                  `<article class="item"><div class="item-head"><div><div class="item-title">${esc(o.kind)} · ${esc(short(o.id))}</div><div class="item-meta">${esc(when(o.time))}</div></div>${badge(o.state)}</div><div class="item-detail">¥${money(o.amount)} · ${esc(o.detail)}${S.scope === "workspace" && !o.attributed ? " · 历史未归属" : ""}</div></article>`,
+                  `<article class="item"><div class="item-head"><div><div class="item-title">${esc(o.kind)}</div><div class="item-meta">${esc(when(o.time))}</div></div>${badge(o.state)}</div><div class="item-detail">${esc(o.detail)}${S.scope === "workspace" && !o.attributed ? " · 历史未归属" : ""}</div></article>`,
               )
               .join("")
           : empty(
@@ -737,67 +683,11 @@
           $("live").textContent = "订单读取失败";
         }
       }
-      async function txs() {
-        let el = $("transactionsList");
-        el.innerHTML = '<div class="loading">正在读取流水…</div>';
-        try {
-          let d = await call("billing.transactions", {
-              scope: S.scope,
-              limit: "100",
-            }),
-            a = d.transactions ?? [];
-          el.innerHTML = a.length
-            ? a
-                .map((t) => {
-                  let p = t.type !== "debit";
-                  return `<article class="item"><div class="item-head"><div><div class="item-title">${esc(L[t.type] ?? t.type)}</div><div class="item-meta">${esc(when(t.createdAt ?? t.created_at))}</div></div><div class="${p ? "amount-positive" : "amount-negative"}">${p ? "+" : "−"}¥${money(t.amount_cny)}</div></div><div class="item-detail">${esc(t.description ?? "")}${S.scope === "workspace" && !t.actorId ? " · 历史未归属" : ""}</div></article>`;
-                })
-                .join("")
-            : empty(
-                S.scope === "mine"
-                  ? "还没有可归属到你的流水"
-                  : "当前工作区还没有流水",
-              );
-          fail();
-          $("live").textContent = "流水已更新";
-        } catch (e) {
-          el.innerHTML = empty("流水暂时无法读取");
-          fail(e.message || "流水暂时无法读取");
-          $("live").textContent = "流水读取失败";
-        }
-      }
-      async function usage() {
-        let el = $("usageList");
-        el.innerHTML = '<div class="loading">正在读取模型用量…</div>';
-        try {
-          let d = await call("billing.model-usage.statement", {
-              scope: S.scope,
-              limit: "100",
-              ...periodRange(),
-            }),
-            u = d.model_usage ?? {},
-            m = Object.entries(u.by_modality ?? {});
-          const legacyNotice =
-            S.scope === "workspace" &&
-            Number(u.reconciliation_checks?.unknown_actor_count ?? 0) > 0
-              ? `<div class="notice">有 ${Number(u.reconciliation_checks.unknown_actor_count).toLocaleString()} 条历史模型用量未归属到成员。</div>`
-              : "";
-          el.innerHTML = `<article class="card"><div class="metrics"><div class="metric"><strong>${Number(u.record_count ?? 0).toLocaleString()}</strong><span>模型请求</span></div><div class="metric"><strong>${Number(u.total_tokens ?? 0).toLocaleString()}</strong><span>Token</span></div><div class="metric"><strong>¥${money(u.customer_charge_cny)}</strong><span>本期计费</span></div></div>${legacyNotice}</article>${m.length ? m.map(([k, v]) => `<article class="item"><div class="item-head"><b>${esc(L[k] ?? k)}</b><strong>${Number(v).toLocaleString()} 次</strong></div></article>`).join("") : empty("所选账期还没有可归属的模型用量")}`;
-          fail();
-          $("live").textContent = "账单已更新";
-        } catch (e) {
-          el.innerHTML = empty("账单暂时无法读取");
-          fail(e.message || "账单暂时无法读取");
-          $("live").textContent = "账单读取失败";
-        }
-      }
       async function load() {
         busy(true, "正在读取账务数据");
         try {
           if (S.tab === "overview") await loadStatus();
           if (S.tab === "orders") await orders();
-          if (S.tab === "transactions") await txs();
-          if (S.tab === "usage") await usage();
         } finally {
           busy(false);
         }
@@ -840,45 +730,9 @@
               ? "显示当前工作区全部可见记录"
               : "仅显示可归属到你的记录";
             $("ordersTitle").textContent = w ? "工作区订单" : "我的订单";
-            $("transactionsTitle").textContent = w ? "工作区流水" : "我的流水";
-            $("usageTitle").textContent = w ? "工作区账单" : "我的账单";
             load();
           }),
       );
-      $("billingPeriod").value = S.period;
-      $("billingPeriod").onchange = (e) => {
-        if (!/^\d{4}-\d{2}$/u.test(e.target.value)) return;
-        S.period = e.target.value;
-        if (S.tab === "usage") usage();
-      };
-      $("exportBilling").onclick = async () => {
-        const button = $("exportBilling");
-        button.disabled = true;
-        try {
-          const d = await call("billing.export", {
-            scope: S.scope,
-            format: "csv",
-            limit: "1000",
-            ...periodRange(),
-          });
-          const url = URL.createObjectURL(
-            new Blob([d.content ?? ""], {
-              type: d.contentType ?? "text/csv;charset=utf-8",
-            }),
-          );
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = d.filename ?? "my-billing.csv";
-          link.click();
-          URL.revokeObjectURL(url);
-          $("live").textContent = "账单导出已开始";
-          fail();
-        } catch (e) {
-          fail(e.message || "账单暂时无法导出");
-        } finally {
-          button.disabled = false;
-        }
-      };
       $("refreshStatus").onclick = loadStatus;
       status(window.openai?.toolOutput);
       loadStatus();

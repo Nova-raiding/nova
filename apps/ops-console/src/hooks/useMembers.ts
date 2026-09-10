@@ -23,9 +23,10 @@ export interface WorkspaceMember {
     reasonCode?: string;
   };
 }
+export interface WorkspaceMemberPage { items: WorkspaceMember[]; total: number; offset: number; limit: number; hasMore: boolean }
 
 export interface MembersClient {
-  list(workspaceId: string): Promise<WorkspaceMember[]>;
+  list(workspaceId: string, input?: { offset?: number; limit?: number }): Promise<WorkspaceMemberPage>;
   invite(workspaceId: string, input: { externalSubject: string; displayName: string; role: MemberRole; reason: string }): Promise<WorkspaceMember>;
   changeRole(workspaceId: string, member: WorkspaceMember, role: MemberRole, reason: string): Promise<WorkspaceMember>;
   deactivate(workspaceId: string, member: WorkspaceMember, reason: string): Promise<WorkspaceMember>;
@@ -36,9 +37,16 @@ type RpcCall = (workspaceId: string, method: string, params?: Record<string, str
 
 export function createMembersClient(call: RpcCall = rpcForWorkspace): MembersClient {
   const failure = (code: string, message: string) => Object.assign(new Error(message), { code });
-  const list = (workspaceId: string) => call(workspaceId, "ops.members.list") as Promise<WorkspaceMember[]>;
+  const list = async (workspaceId: string, input: { offset?: number; limit?: number } = {}): Promise<WorkspaceMemberPage> => {
+    const limit = input.limit ?? 20; const offset = input.offset ?? 0;
+    const raw = await call(workspaceId, "ops.members.list", { limit: String(limit), offset: String(offset) });
+    if (Array.isArray(raw)) return { items: raw as WorkspaceMember[], total: raw.length, offset: 0, limit: raw.length || limit, hasMore: false };
+    const page = raw as Partial<WorkspaceMemberPage>;
+    if (!Array.isArray(page.items) || typeof page.total !== "number") throw failure("MEMBERS_PAGE_INVALID", "成员列表分页响应无效");
+    return { items: page.items, total: page.total, offset: page.offset ?? offset, limit: page.limit ?? limit, hasMore: page.hasMore ?? ((page.offset ?? offset) + (page.limit ?? limit) < page.total) };
+  };
   const assertFresh = async (workspaceId: string, member: WorkspaceMember) => {
-    const current = (await list(workspaceId)).find((item) => item.externalSubject === member.externalSubject);
+    const current = (await list(workspaceId, { limit: 100 })).items.find((item) => item.externalSubject === member.externalSubject);
     if (!current || current.revision !== member.revision) throw failure("MEMBER_REVISION_CONFLICT", "成员信息已变化，请刷新后重试");
   };
   const upsert = (
@@ -57,7 +65,7 @@ export function createMembersClient(call: RpcCall = rpcForWorkspace): MembersCli
   return {
     list,
     invite: async (workspaceId, input) => {
-      if ((await list(workspaceId)).some((item) => item.externalSubject === input.externalSubject)) throw failure("MEMBER_ALREADY_EXISTS", "该用户已经是当前工作区成员，请使用角色调整操作");
+      if ((await list(workspaceId, { limit: 100 })).items.some((item) => item.externalSubject === input.externalSubject)) throw failure("MEMBER_ALREADY_EXISTS", "该用户已经是当前工作区成员，请使用角色调整操作");
       return upsert(workspaceId, { ...input, status: "invited" }, input.reason);
     },
     changeRole: async (workspaceId, member, role, reason) => {
@@ -119,6 +127,7 @@ function membersError(cause: unknown) {
 
 export function useMembers(workspaceId: string | undefined, client: MembersClient = createMembersClient()) {
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [page, setPage] = useState<WorkspaceMemberPage>({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
   const [loading, setLoading] = useState(false);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
@@ -126,7 +135,7 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
   const workspaceRef = useRef(workspaceId);
   workspaceRef.current = workspaceId;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (requestedPage = 1, requestedLimit = page.limit) => {
     if (!workspaceId) {
       gate.current.invalidate();
       setMembers([]);
@@ -137,14 +146,14 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     setLoading(true);
     setError("");
     try {
-      const result = await client.list(workspaceId);
-      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setMembers(result);
+      const result = await client.list(workspaceId, { offset: (requestedPage - 1) * requestedLimit, limit: requestedLimit });
+      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) { setMembers(result.items); setPage(result); }
     } catch (cause) {
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setError(membersError(cause));
     } finally {
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setLoading(false);
     }
-  }, [client, workspaceId]);
+  }, [client, page.limit, workspaceId]);
 
   useEffect(() => {
     setMembers([]);
@@ -160,7 +169,10 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     setError("");
     try {
       const member = await operation(workspaceId);
-      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setMembers(await client.list(workspaceId));
+      if (gate.current.isCurrent(token, workspaceRef.current ?? "")) {
+        const refreshed = await client.list(workspaceId, { offset: page.offset, limit: page.limit });
+        setMembers(refreshed.items); setPage(refreshed);
+      }
       return member;
     } catch (cause) {
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setError(membersError(cause));
@@ -168,10 +180,11 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     } finally {
       if (gate.current.isCurrent(token, workspaceRef.current ?? "")) setMutating(false);
     }
-  }, [workspaceId]);
+  }, [page.limit, page.offset, workspaceId]);
 
   return useMemo(() => ({
     members,
+    page,
     loading,
     mutating,
     error,
@@ -181,5 +194,5 @@ export function useMembers(workspaceId: string | undefined, client: MembersClien
     changeRole: (member: WorkspaceMember, role: MemberRole, reason: string) => mutate((id) => client.changeRole(id, member, role, reason)),
     deactivate: (member: WorkspaceMember, reason: string) => mutate((id) => client.deactivate(id, member, reason)),
     reactivate: (member: WorkspaceMember, reason: string) => mutate((id) => client.reactivate(id, member, reason)),
-  }), [client, error, load, loading, members, mutate, mutating]);
+  }), [client, error, load, loading, members, mutate, mutating, page]);
 }

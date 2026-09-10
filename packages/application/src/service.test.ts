@@ -462,6 +462,30 @@ describe('MerchantService', () => {
     expect(generate).toHaveBeenCalledTimes(1)
   })
 
+  it('carries approved workspace knowledge into the image relay brief', async () => {
+    const generate = vi.fn(async (input: { visualBrief?: { knowledgeFacts?: string[] } }) => {
+      expect(input.visualBrief?.knowledgeFacts).toEqual(expect.arrayContaining([
+        '规则[v3] 主图不得宣称防水',
+        '资产[材质说明] 面料：再生涤纶',
+      ]))
+      return ['data:image/png;base64,aW1hZ2U=']
+    })
+    const service = new MerchantService({
+      fixtureMode: true,
+      imageGenerator: { generate },
+      knowledgeContextProvider: () => ({
+        rules: [{ id: 'rule-1', content: '主图不得宣称防水', version: 'v3', sourceReference: 'ops://rule' }],
+        assets: [{ id: 'asset-1', kind: 'brand', name: '材质说明', content: '面料：再生涤纶', revision: 2, confirmed: false }],
+        confirmedLearningSuggestions: [],
+      }),
+    })
+    const product = service.products.get('prod_fixture_1')!
+    const job = service.enqueueImageGeneration({ workspaceId: 'ws_demo', productId: product.id, idempotencyKey: 'knowledge-image-brief', count: 1 })
+    await service.completeImageGeneration({ workspaceId: 'ws_demo', jobId: job.id })
+    expect(generate).toHaveBeenCalledOnce()
+    expect(job.visualBrief?.knowledgeFacts).toEqual(expect.arrayContaining(['规则[v3] 主图不得宣称防水', '资产[材质说明] 面料：再生涤纶']))
+  })
+
   it('keeps the image provider action stable while allowing an explicit shared budget run', async () => {
     const generate = vi.fn(async () => ['data:image/png;base64,aW1hZ2U='])
     const service = new MerchantService({ fixtureMode: true, imageGenerator: { generate } })

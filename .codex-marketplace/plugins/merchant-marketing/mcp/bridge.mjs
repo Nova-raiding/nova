@@ -1311,6 +1311,41 @@ function userFacingToolText(method, result) {
   return [pendingSummary, attachmentHint, pointsText, uniqueActions.length ? `下一步：${uniqueActions.join('；')}` : ''].filter(Boolean).join('\n')
 }
 
+// The ChatGPT surface is a capability/recovery surface, not the merchant's
+// financial statement.  Keep only the server-authored state needed to decide
+// whether an action may continue.  Amounts, point quantities, token counts,
+// provider costs and exports remain available through the authenticated
+// desktop merchant console only.
+function merchantBillingProjection(method, result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return result
+  if (method === 'billing.status' || method === 'creative-points.balance.get') {
+    const allowedKeys = ['schema_version', 'balance_state', 'availability', 'allowed', 'access_revision', 'updated_at', 'next_actions', 'point_reservation_status', 'settlement_status', 'viewer']
+    const available = Number.isSafeInteger(result.available_points) ? result.available_points : undefined
+    const availability = result.availability ?? (result.balance_state !== 'known' || available === undefined
+      ? 'unknown'
+      : available === 0 ? 'exhausted' : result.allowed === false ? 'insufficient' : 'available')
+    return Object.fromEntries(allowedKeys.filter(key => Object.prototype.hasOwnProperty.call(result, key) || key === 'availability').map(key => [key, key === 'availability' ? availability : result[key]]))
+  }
+  if (method === 'billing.model-usage.statement' || method === 'billing.transactions') {
+    return {
+      schema_version: 'merchant-billing-status.v1',
+      available: true,
+      message: '账单详情请在商家运营后台查看；ChatGPT 插件不展示消耗明细。',
+      next_action: 'open_merchant_console',
+    }
+  }
+  if (method === 'billing.export') {
+    return {
+      schema_version: 'merchant-billing-status.v1',
+      available: false,
+      code: 'MERCHANT_BILLING_EXPORT_CONSOLE_ONLY',
+      message: '账单导出请在商家运营后台完成；ChatGPT 插件不导出财务明细。',
+      next_action: 'open_merchant_console',
+    }
+  }
+  return result
+}
+
 function userFacingErrorText(code, details) {
   if (code === 'MCP_CONFIGURATION_REQUIRED') return '插件连接配置尚未加载，本次未向后端发送请求。请先完成连接配置；若配置刚更新，请重新加载插件连接。已有图片和视频无需重新上传。'
   if (code === 'STORE_SELECTION_REQUIRED') return '还没有选定店铺。先调用 workspace.health 查看可用店铺，或明确提供 platform + account_id；已导入的商品和 SKU 不会丢失。'
@@ -3038,7 +3073,8 @@ async function handle(request) {
       const scannedResult = name === 'asset.upload' ? await waitForAssetScan(remoteResult) : remoteResult
       const rawResult = await resolveGeneratedImagePreview(name, scannedResult)
       rememberCommercialAccessResult(name, rawResult)
-      const assetResult = merchantAssetStructuredContent(name, rawResult)
+      const exposedResult = merchantBillingProjection(name, rawResult)
+      const assetResult = merchantAssetStructuredContent(name, exposedResult)
       const workflowResult = merchantWorkflowStructuredContent(assetResult)
       // Generation and upload are entry points; their image payload must use
       // the same candidate contract as catalog.image.get so the widget can

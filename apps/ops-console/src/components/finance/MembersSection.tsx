@@ -159,7 +159,8 @@ export function MembersSection({ model, client }: MembersSectionProps) {
             aria-busy={state.loading}
             rowKey="id"
             loading={state.loading}
-            pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 位成员` }}
+            pagination={{ current: Math.floor(state.page.offset / state.page.limit) + 1, pageSize: state.page.limit, total: state.page.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 位成员` }}
+            onChange={(pagination) => void state.load(pagination.current ?? 1, state.page.limit)}
             dataSource={state.members}
             locale={{ emptyText: "当前租户还没有成员" }}
             scroll={{ x: 960 }}

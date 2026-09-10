@@ -8,6 +8,8 @@ describe('password authentication', () => {
     expect(registered.account.status).toBe('merchant_pending')
     expect(JSON.stringify(registered)).not.toContain('passwordHash')
     await expect(auth.login({ login: 'merchant@example.com', password: 'bad' })).rejects.toMatchObject({ code: 'AUTH_INVALID_CREDENTIALS' })
+    await expect(auth.login({ login: 'merchant@example.com', password: 'CorrectHorse123' })).rejects.toMatchObject({ code: 'AUTH_ACCOUNT_NOT_ACTIVE' })
+    await auth.activateMerchantAccount({ login: 'merchant@example.com', workspaceIds: ['ws_demo'] })
     const logged = await auth.login({ login: 'merchant@example.com', password: 'CorrectHorse123', ip: '127.0.0.1' })
     expect(logged.token).toEqual(expect.any(String))
     expect(logged.principal.account).not.toHaveProperty('passwordHash')
@@ -20,6 +22,7 @@ describe('password authentication', () => {
   it('locks after five failures and uses one-time reset to revoke sessions', async () => {
     const auth = new MemoryPasswordAuthRepository()
     await auth.register({ login: 'lock@example.com', password: 'CorrectHorse123', enterpriseName: '企业', contactName: '李四', termsAgreed: true })
+    await auth.activateMerchantAccount({ login: 'lock@example.com', workspaceIds: ['ws_demo'] })
     for (let i = 0; i < 5; i += 1) await expect(auth.login({ login: 'lock@example.com', password: 'wrong-password' })).rejects.toBeDefined()
     await expect(auth.login({ login: 'lock@example.com', password: 'CorrectHorse123' })).rejects.toMatchObject({ code: 'AUTH_ACCOUNT_LOCKED' })
     const reset = await auth.requestPasswordReset('lock@example.com')
@@ -27,7 +30,7 @@ describe('password authentication', () => {
     await auth.confirmPasswordReset(reset.token!, 'NewCorrectHorse123')
     await expect(auth.confirmPasswordReset(reset.token!, 'AnotherCorrect123')).rejects.toMatchObject({ code: 'AUTH_RESET_TOKEN_INVALID' })
     const logged = await auth.login({ login: 'lock@example.com', password: 'NewCorrectHorse123' })
-    expect(logged.principal.account.status).toBe('merchant_pending')
+    expect(logged.principal.account.status).toBe('active')
     expect(auth.events.map(event => event.eventType)).toEqual(expect.arrayContaining(['auth.registered', 'auth.login_failed', 'auth.locked', 'auth.password_reset_requested', 'auth.password_reset_confirmed']))
   })
 

@@ -117,6 +117,8 @@ import { evaluatePlatformFieldMapping, type PlatformFieldMappingGateInput, type 
 import { buildDeliveryBundleManifest, evaluateVideoStoryboardQuality, evaluateVisualAuthenticity, verifyDeliveryBundle, type DeliveryBundleFile, type DeliveryBundleManifest, type DeliveryBundleManifestInput, type VideoStoryboardQualityInput, type VisualAuthenticityGateInput } from '../../../packages/multimodal/src/index.js'
 import { projectPlatformCapabilityEvidence } from './platform-capability-response.js'
 import { MemoryPasswordAuthRepository, PostgresPasswordAuthRepository, type PasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
+import { MemoryKnowledgeRepository, PostgresKnowledgeRepository, type KnowledgeRepository } from '../../../packages/persistence/src/knowledge.js'
+import { projectImportedProductsToKnowledge } from '../../../packages/application/src/knowledge-import.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const fixtureMode = process.env.CONNECTOR_FIXTURE_MODE === 'true'
@@ -1077,6 +1079,7 @@ export interface ApiPersistence {
   platformMediaSpecs?: PlatformMediaSpecRepository
   mappingPreflightApprovals?: MappingPreflightApprovalRepository
   knowledgeHydration?: KnowledgeHydrationRepository
+  knowledge?: KnowledgeRepository
   storageQuota?: StorageQuotaRepository
   /** Read-only, redacted reconciliation snapshots; object inventory remains outside the API response. */
   storageReconciliation?: ReconciliationStatusStore
@@ -1183,6 +1186,8 @@ const memoryImageContinuationLeases = new MemoryImageContinuationLeaseRepository
 const memoryPlatformMediaSpecs = new MemoryPlatformMediaSpecRepository()
 const memoryMappingPreflightApprovals = new MemoryMappingPreflightApprovalRepository()
 const memoryKnowledgeHydration = new MemoryKnowledgeHydrationRepository()
+const memoryKnowledge = new MemoryKnowledgeRepository()
+let durableKnowledgeRepository: KnowledgeRepository | undefined
 const memoryStorageQuota = new MemoryStorageQuotaRepository()
 const memoryStorageReconciliation = new MemoryReconciliationStatusStore()
 const memoryReconciliationStatuses = new MemoryReconciliationStatusRepository()
@@ -1405,7 +1410,7 @@ export function grantContinuousFeatureEntitlementForTests(workspaceId: string) {
   return snapshot
 }
 
-const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
+const memoryPersistence: ApiPersistence = { mode: 'memory', creativePoints: memoryCreativePoints, commercialCatalog: memoryCommercialCatalog, commercial: memoryCommercial, usage: memoryUsage, modelUsage: memoryModelUsage, actionLedger: memoryActionLedger, entitlements: memoryEntitlements, operations: memoryOperations, subscriptions: memorySubscriptions, members: memoryMembers, commercialExtensions: memoryCommercialExtensions, growth: memoryGrowth, alerts: memoryAlerts, dataLifecycle: memoryDataLifecycle, workspaceDataExport: memoryWorkspaceDataExport, brandUnits: memoryBrandUnits, objectOrphans: memoryObjectOrphans, contextSnapshots: memoryContextSnapshots, identities: memoryIdentities, authorization: memoryAuthorization, paymentCallbackNonces: memoryPaymentCallbackNonces, support: memorySupport, supportSlaReporting: memorySupportSlaReporting, incidents: memoryIncidents, featureFlags: memoryFeatureFlags, auditCenter: memoryAuditCenter, workspaceBootstrap: memoryWorkspaceBootstrap, assetParse: memoryAssetParse, assetScanReceipts: memoryAssetScanReceipts, assetPromotionCleanup: memoryAssetPromotionCleanup, imageContinuationLeases: memoryImageContinuationLeases, imageGenerationExecutions: new MemoryImageGenerationExecutionRepository(), reconciliationEvidence: new MemoryReconciliationEvidenceRepository(), unifiedLinkAudit: new MemoryUnifiedLinkAuditRepository(), platformAuthorizationAudit: memoryPlatformAuthorizationAudit, platformMediaSpecs: memoryPlatformMediaSpecs, mappingPreflightApprovals: memoryMappingPreflightApprovals, knowledgeHydration: memoryKnowledgeHydration, knowledge: memoryKnowledge, storageQuota: memoryStorageQuota, storageReconciliation: memoryStorageReconciliation, reconciliationStatuses: memoryReconciliationStatuses, canonicalBackfillRuns: memoryCanonicalBackfillRuns, canonicalBackfillConflicts: memoryCanonicalBackfillConflicts, interactiveConfirmationTickets: memoryInteractiveConfirmationTickets }
 let persistence: ApiPersistence = memoryPersistence
 let persistenceError: unknown
 const workspaceEventSequences = new Map<string, number>()
@@ -2222,6 +2227,51 @@ async function requireGenerationRulePreflight(workspaceId: string, productId: st
   return rulePreflight
 }
 
+/**
+ * Scan imported product facts immediately. This is a status-producing
+ * preflight, not an approval: an import remains available for correction, but
+ * generation/publish gates continue to require a fresh full review. Keeping
+ * this result on the product makes the merchant UI and MCP able to explain
+ * why a SKU is blocked without silently treating an import as compliant.
+ */
+async function scanImportedProductRules(workspaceId: string, product: ReturnType<typeof service.importProduct>) {
+  const scannedAt = new Date().toISOString()
+  const evidenceBoundary = '仅完成本地确定性规则扫描；不代表外部平台最终审核通过'
+  const base = { scannedAt, evidenceBoundary }
+  try {
+    const context: RuleEvaluationScope = { platform: product.platform, ...(product.category ? { category: product.category } : {}), ...(product.storeName ? { store: product.storeName } : {}) }
+    const inMemory = service.ruleCenter.evaluate(context, scannedAt)
+    const durable = await persistedRuleEvaluation(workspaceId, product)
+    const current = await evaluationRules(workspaceId, context)
+    const ruleVersionIds = [...new Set([...inMemory.hits.map(hit => hit.version), ...durable.hits.map(hit => hit.version)])]
+    const findings: Array<{ code: string; severity: 'error' | 'warning'; field: string; message: string; matchedValue?: string }> = []
+    for (const finding of [...inMemory.findings, ...durable.findings]) findings.push({ code: finding.code, severity: finding.severity, field: finding.field, message: finding.message })
+    const terms = [...new Set([...(inMemory.checks.forbiddenTerms ?? []), ...(current?.forbiddenTerms ?? [])])].filter(Boolean)
+    const values: Array<[string, string | undefined]> = [
+      ['title', product.title] as [string, string], ['category', product.category] as [string, string | undefined],
+      ...Object.entries(product.attributes ?? {}).map(([key, value]) => [`attributes.${key}`, value] as [string, string]),
+      ...((product.sellingPoints ?? []).map((point, index) => [`sellingPoints.${index}`, point.text] as [string, string])),
+      ...((product.skus ?? []).map((sku, index) => [`skus.${index}.name`, sku.name] as [string, string])),
+    ]
+    for (const term of terms) {
+      const hit = values.find(([, value]) => value?.normalize('NFKC').includes(term.normalize('NFKC')))
+      if (hit) findings.push({ code: 'FORBIDDEN_TERM', severity: 'error', field: hit[0], message: `商品资料包含平台/广告禁用表达：“${term}”`, matchedValue: term })
+    }
+    // Required fields are machine-checkable category/platform constraints.
+    const required = [...new Set([...(inMemory.checks.requiredFields ?? [])])]
+    const fieldValues: Record<string, unknown> = { title: product.title, category: product.category, price: product.price, stock: product.stock, sku: product.skus?.length ? product.skus : product.skuCount, images: product.images }
+    for (const field of required) if (field && (fieldValues[field] === undefined || fieldValues[field] === null || fieldValues[field] === '')) findings.push({ code: 'REQUIRED_FIELD_MISSING', severity: 'error', field, message: `规则要求的商品字段“${field}”尚未提供` })
+    const platformStatus = isProduction() ? (await trustedPlatformRuleSyncStatuses(workspaceId)).find(item => item.platform === product.platform) : undefined
+    if (platformStatus && platformStatus.state !== 'ready') findings.push({ code: 'PLATFORM_RULE_DATA_UNAVAILABLE', severity: 'error', field: 'platform', message: platformStatus.reason })
+    const status = findings.some(finding => finding.severity === 'error') ? (platformStatus && platformStatus.state !== 'ready' ? 'unavailable' : 'blocked') : findings.length ? 'warning' : 'passed'
+    product.ruleScan = { ...base, status, ruleVersionIds, findings }
+    return product.ruleScan
+  } catch (error) {
+    product.ruleScan = { ...base, status: 'unavailable', ruleVersionIds: [], findings: [{ code: 'RULE_SCAN_UNAVAILABLE', severity: 'error', field: 'rules', message: error instanceof Error ? `规则扫描暂不可用：${error.message}` : '规则扫描暂不可用，请稍后重试' }] }
+    return product.ruleScan
+  }
+}
+
 function requireRuleSafeGenerationText(rulePreflight: Awaited<ReturnType<typeof generationRulePreflight>>, values: unknown[], message = '生成请求包含当前平台规则禁用表达') {
   const text = values.filter(value => value !== undefined && value !== null).map(value => typeof value === 'string' ? value : JSON.stringify(value)).join('\n')
   const matchedTerms = rulePreflight.forbidden_terms.filter(term => term && text.includes(term))
@@ -2738,6 +2788,8 @@ async function initializePersistence(): Promise<ApiPersistence> {
     const platformMediaSpecs = new PostgresPlatformMediaSpecRepository(opsSqlPool)
     const mappingPreflightApprovals = new PostgresMappingPreflightApprovalRepository(sqlPool)
     const knowledgeHydration = new PostgresKnowledgeHydrationRepository(sqlPool)
+    const knowledge = new PostgresKnowledgeRepository(sqlPool)
+    durableKnowledgeRepository = knowledge
     const storageQuota = new PostgresStorageQuotaRepository(sqlPool)
     const storageReconciliation = new DurableReconciliationStatusStore(new PostgresReconciliationStatusRepository(sqlPool))
     const reconciliationStatuses = new PostgresReconciliationStatusRepository(sqlPool)
@@ -12015,19 +12067,29 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.members.list': {
       requireOperationsRole(req, ['workspace_owner', 'merchant_admin', 'operator', 'support', 'platform_ops'])
-      const members = await (persistence.members ?? memoryMembers).list(workspaceId)
+      const hasPageParams = Object.prototype.hasOwnProperty.call(params, 'offset') || Object.prototype.hasOwnProperty.call(params, 'limit')
+      const requestedLimit = typeof params.limit === 'string' && /^\d+$/u.test(params.limit) ? Number(params.limit) : 20
+      const requestedOffset = typeof params.offset === 'string' && /^\d+$/u.test(params.offset) ? Number(params.offset) : 0
+      if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'limit 必须是 1 到 100 的整数', 400)
+      if (!Number.isSafeInteger(requestedOffset) || requestedOffset < 0 || requestedOffset > 1_000_000) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'offset 必须是 0 到 1000000 的整数', 400)
+      const memberRepository = persistence.members ?? memoryMembers
+      const memberPage = hasPageParams && memberRepository.listPage
+        ? await memberRepository.listPage(workspaceId, { offset: requestedOffset, limit: requestedLimit })
+        : undefined
+      const members = memberPage?.items ?? await memberRepository.list(workspaceId)
       const platformOperator = isPlatformOperations(req)
       const authorization = effectiveAuthorizationProjection(requestPrincipals.get(req), workspaceId)
       const canManage = authorization.capabilities.includes('workspace.member.manage')
       const canAssignOwner = authorization.capabilities.includes('workspace.status.update')
       const actorId = requestActor(req)
-      const activeOwnerCount = members.filter(item => item.role === 'workspace_owner' && item.status === 'active').length
-      return result(members.map(member => {
+      const activeOwnerCount = memberPage?.activeOwnerCount ?? members.filter(item => item.role === 'workspace_owner' && item.status === 'active').length
+      const projected = members.map(member => {
         const protectedTarget = !platformOperator && (member.role === 'platform_ops' || (member.role === 'workspace_owner' && !canAssignOwner))
         const canChangeTarget = canManage && !protectedTarget
         const canDeactivateTarget = canChangeTarget && member.externalSubject !== actorId && !(member.role === 'workspace_owner' && member.status === 'active' && activeOwnerCount <= 1)
         return { ...member, governance: { protectedTarget, canChangeTarget, canDeactivateTarget, ...(protectedTarget ? { reasonCode: member.role === 'platform_ops' ? 'PLATFORM_ROLE_CHANGE_REQUIRES_PLATFORM_WORKBENCH' : 'WORKSPACE_OWNER_CHANGE_REQUIRES_OWNER_OR_PLATFORM' } : canDeactivateTarget ? {} : { reasonCode: member.externalSubject === actorId ? 'SELF_SUSPENSION_DENIED' : member.role === 'workspace_owner' && member.status === 'active' && activeOwnerCount <= 1 ? 'LAST_WORKSPACE_OWNER_REQUIRED' : undefined }) } }
-      }))
+      })
+      return result(hasPageParams && memberPage ? { ...memberPage, items: projected } : projected)
     }
     case 'ops.session': {
       const principal = requestPrincipals.get(req)
@@ -14484,8 +14546,9 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         ...(typeof params.store_name === 'string' ? { storeName: params.store_name } : {}),
         ...(typeof params.store_differentiation === 'string' ? { storeDifferentiation: params.store_differentiation } : {}),
       })
+      await scanImportedProductRules(workspaceId, product)
       await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
-      return result({ ...product, product_id: product.id })
+      return result({ ...product, product_id: product.id, rule_scan: product.ruleScan })
     }
     case 'catalog.import.batch': {
       let rawItems: unknown
@@ -14553,19 +14616,22 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
       for (const assetId of new Set(items.flatMap(item => [...(item.sourceAssetIds ?? []), ...(item.skus ?? []).flatMap(sku => sku.sourceAssetIds ?? [])]))) await enforceAssetAccess(req, workspaceId, assetId, 'viewer')
       const created: ReturnType<typeof service.importProduct>[] = []
       const writes: BatchProductWrite[] = []
+      const importedKnowledge = persistence.knowledge ?? durableKnowledgeRepository ?? memoryKnowledge
       const beforeProducts = new Map([...service.products.entries()]
         .filter(([, product]) => product.workspaceId === workspaceId)
         .map(([id, product]) => [id, structuredClone(product)] as const))
       try {
         for (const item of items) {
           const product = service.importProduct({ workspaceId, ...item })
+          await scanImportedProductRules(workspaceId, product)
           created.push(product)
           writes.push({ product, version: product.version ?? 0 })
         }
+        const knowledgeProjection = await projectImportedProductsToKnowledge({ repository: importedKnowledge, workspaceId, products: created, ...(typeof params.source_asset_id === 'string' && params.source_asset_id.trim() ? { sourceAssetId: params.source_asset_id.trim() } : {}), sourceMetadata: { importMode: typeof params.products_json === 'string' ? 'products_json' : 'spreadsheet' } })
         const batchId = `catalog_import_batch_${randomUUID()}`
         await persistSnapshotsAndEvent({ workspaceId, snapshots: created.map(product => ({ entityType: 'product' as const, entityId: product.id, entityVersion: product.version ?? 1, payload: product as unknown as Record<string, unknown> })), aggregateId: batchId, eventType: 'catalog.import.batch.completed', sequence: 1, eventPayload: { batch_id: batchId, count: created.length, product_ids: created.map(product => product.id) } })
         await recordOperationAudit({ workspaceId, actorId: requestActor(req), action: 'catalog.import.batch', resourceType: 'product_import_batch', resourceId: batchId, before: {}, after: { count: created.length, product_ids: created.map(product => product.id), atomic: true }, reason: '批量导入商品并建立持久化快照' })
-        return result({ batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id })), atomic: true, factsConfirmationRequired: true })
+        return result({ batchId, count: created.length, products: created.map(product => ({ ...product, product_id: product.id, rule_scan: product.ruleScan })), atomic: true, factsConfirmationRequired: true, knowledge: { assetCount: knowledgeProjection.assets.length, documentCount: knowledgeProjection.documents.length, chunkCount: knowledgeProjection.chunks.length, bindingCount: knowledgeProjection.bindings.length, indexState: 'queued', approvalStatus: 'pending', nextAction: 'knowledge.asset.update' } })
       } catch (error) {
         rollbackBatchProducts(service.products, workspaceId, writes, beforeProducts)
         throw error
@@ -18492,6 +18558,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     try {
       for (const item of items) {
         const product = service.importProduct(item)
+        await scanImportedProductRules(workspaceId, product)
         created.push(product)
         writes.push({ product, version: product.version ?? 0 })
       }
@@ -18523,6 +18590,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     if (isProduction() && !accountId) throw new DomainError('PLATFORM_ACCOUNT_REQUIRED', '生产商品导入必须绑定已授权平台账号', 400)
     if (accountId) service.getActivePlatformAccount(workspaceId, accountId, platform)
     const product = service.importProduct({ workspaceId, platform, ...(accountId ? { accountId } : {}), ...(typeof input.remote_id === 'string' && input.remote_id.trim() ? { remoteId: input.remote_id } : {}), ...(typeof input.local_product_key === 'string' ? { localProductKey: input.local_product_key } : {}), title: required(input, 'title'), skuCount: typeof input.sku_count === 'number' ? input.sku_count : undefined, ...(skus ? { skus } : {}), stock: typeof input.stock === 'number' ? input.stock : undefined, price: typeof input.price === 'number' ? input.price : undefined, category: typeof input.category === 'string' ? input.category : undefined, images: Array.isArray(input.images) ? input.images.filter((item): item is string => typeof item === 'string') : undefined, ...(sourceAssetIds ? { sourceAssetIds } : {}), attributes: input.attributes && typeof input.attributes === 'object' && !Array.isArray(input.attributes) ? Object.fromEntries(Object.entries(input.attributes).filter(([, value]) => typeof value === 'string').map(([key, value]) => [key, value as string])) : undefined, ...(sellingPoints ? { sellingPoints } : {}), storeName: typeof input.store_name === 'string' ? input.store_name : undefined, storeDifferentiation: typeof input.store_differentiation === 'string' ? input.store_differentiation : undefined })
+    await scanImportedProductRules(workspaceId, product)
     await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
     return send(res, 201, workspaceId, product, null, req)
   }
@@ -18561,7 +18629,10 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const result = await connectorRuntime.sync(platform, { workspaceId, accountId, ...(platformAccount ? { credentialRef: platformAccount.credentialRef } : {}), traceId: requestId(req) }, typeof input.cursor === 'string' ? input.cursor : undefined)
     const products = service.upsertSyncedProducts({ workspaceId, platform, accountId, items: result.items })
     await invalidateCanonicalFactsAfterSync(workspaceId, products)
-    for (const product of products) await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
+    for (const product of products) {
+      await scanImportedProductRules(workspaceId, product)
+      await persistSnapshot(workspaceId, 'product', product, product as unknown as Record<string, unknown>)
+    }
     const automation = await scanAutomationAfterOperationalCompletion(workspaceId, platform, accountId, 'platform-account.sync.completed')
     return send(res, 200, workspaceId, { ...result, products, automation }, null, req)
   }
@@ -18722,6 +18793,7 @@ export async function route(req: IncomingMessage, res: ServerResponse) {
     const failures = invalidItems.map(item => ({ id: `sync-failure-${job.id}-${pageNumber}-${item.remoteId || 'unknown'}`, ...(item.remoteId ? { remoteId: item.remoteId } : {}), ...(typeof input.cursor === 'string' && input.cursor ? { cursor: input.cursor } : {}), pageNumber, code: 'PRODUCT_REQUIRED_FIELD_MISSING', message: !item.remoteId ? '平台商品缺少 remote_id' : '平台商品缺少 title', raw: item.raw, retryable: true, createdAt: new Date().toISOString() }))
     const products = service.upsertSyncedProducts({ workspaceId, platform: job.platform, accountId: job.accountId, items })
     await invalidateCanonicalFactsAfterSync(workspaceId, products)
+    for (const product of products) await scanImportedProductRules(workspaceId, product)
     const updated = service.updateSyncJob(workspaceId, job.id, { state: 'running', pages: pageNumber, itemsUpserted: job.itemsUpserted + products.length, itemsFailed: job.itemsFailed + failures.length, failedItems: [...job.failedItems, ...failures], ...(typeof input.next_cursor === 'string' && input.next_cursor ? { nextCursor: input.next_cursor, resumeCursor: input.next_cursor } : {}) })
     await persistSnapshotsAndEvent({
       workspaceId,

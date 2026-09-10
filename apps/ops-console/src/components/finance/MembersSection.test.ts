@@ -10,7 +10,7 @@ import { createAuthorizationProjection } from "../../authz/authorization.js";
 const authorization = (capabilities: string[]) => createAuthorizationProjection({ actor_id: "actor", workspace_id: "ws_a", roles: [], workspace_granted: true, capabilities }, true);
 
 const client: MembersClient = {
-  list: async () => [],
+  list: async () => ({ items: [], total: 0, offset: 0, limit: 20, hasMore: false }),
   invite: async () => { throw new Error("unused"); },
   changeRole: async () => { throw new Error("unused"); },
   deactivate: async () => { throw new Error("unused"); },

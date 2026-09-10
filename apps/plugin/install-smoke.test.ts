@@ -178,7 +178,11 @@ printf '%s\n' Darwin
     expect(recharge).not.toMatch(/data-amount|customAmount|createOrder/u)
     expect(recharge).toContain('服务端授权的恢复入口')
     expect(recharge).toContain('call("billing.recharge.list"')
-    expect(recharge).toContain('call("billing.export"')
+    // Detailed orders, transactions, usage and exports belong in the merchant
+    // desktop workspace. The ChatGPT surface only exposes payment state and
+    // a server-authorized recovery action.
+    expect(recharge).not.toMatch(/call\("billing\.(?:transactions|model-usage\.statement|export)"/u)
+    expect(recharge).not.toMatch(/amount_cny|customer_charge_cny|deducted_points|quoted_points|total_tokens/u)
     expect(recharge.toLowerCase()).not.toContain('mock')
     expect(recharge).not.toMatch(/Codex/iu)
     expect(recharge).toContain('aria-pressed="true"')

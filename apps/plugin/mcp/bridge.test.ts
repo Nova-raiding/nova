@@ -282,7 +282,10 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content[0].text).toContain('创意点状态：可用')
       expect(response.result.content[0].text).not.toMatch(/9950|31|19/u)
       expect(response.result.structuredContent).toMatchObject({ balance_state: 'known' })
-      expect(response.result.structuredContent).toMatchObject({ available_points: 9950, reserved_points: 31, settled_points: 19 })
+      expect(response.result.structuredContent).toMatchObject({ balance_state: 'known', access_revision: '74' })
+      expect(response.result.structuredContent).not.toHaveProperty('available_points')
+      expect(response.result.structuredContent).not.toHaveProperty('reserved_points')
+      expect(response.result.structuredContent).not.toHaveProperty('settled_points')
     } finally {
       child.kill()
       await close(server)
@@ -728,8 +731,8 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.status', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result.structuredContent).toMatchObject({ status: 'needs_input', next_actions: ['请使用 catalog.search 读取 product_id=prod_123456'] })
-      expect(response.result.structuredContent.action_cards).toEqual([])
+      expect(response.result.structuredContent).toMatchObject({ availability: 'unknown', next_actions: ['请使用 catalog.search 读取 product_id=prod_123456'] })
+      expect(response.result.structuredContent.action_cards).toBeUndefined()
       expect(response.result.content[0].text).not.toContain('调整店铺额度')
       expect(response.result.content[0].text).not.toContain('subscription.change')
       expect(response.result.content[0].text).not.toContain('catalog.search')
@@ -1031,8 +1034,8 @@ describe('Codex stdio MCP bridge', () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.status', arguments: {} } })}\n`)
-      const nested = (await nextLine(child.stdout)).result.structuredContent.store_capacity.action_cards
-      expect(nested).toEqual([])
+      const nested = (await nextLine(child.stdout)).result.structuredContent.store_capacity
+      expect(nested).toBeUndefined()
     } finally {
       child.kill()
       await close(server)
@@ -1103,7 +1106,8 @@ describe('Codex stdio MCP bridge', () => {
       expect(rechargeUi.result.contents[0].text).toContain('服务端授权的恢复入口')
       expect(rechargeUi.result.contents[0].text).not.toContain('立即充值')
       expect(rechargeUi.result.contents[0].text).toContain('call("billing.status")')
-      expect(rechargeUi.result.contents[0].text).toContain('call("billing.export"')
+      expect(rechargeUi.result.contents[0].text).not.toMatch(/call\("billing\.(?:transactions|model-usage\.statement|export)"/u)
+      expect(rechargeUi.result.contents[0].text).not.toMatch(/amount_cny|customer_charge_cny|deducted_points|quoted_points|total_tokens/u)
       expect(rechargeUi.result.contents[0].text).not.toMatch(/mock/iu)
       expect(rechargeUi.result.contents[0].text).not.toMatch(/Codex/iu)
       expect(rechargeUi.result.contents[0].text).toContain('role="status"')
