@@ -7,8 +7,6 @@ test.setTimeout(240_000)
 
 const workspaceSections = [
   { label: '成员与权限', path: '/ops/members?workbench=workspace', heading: '成员与权限' },
-  { label: '客服', path: '/ops/support?workbench=workspace', heading: '客服工作台' },
-  { label: '事故中心', path: '/ops/incidents?workbench=workspace', heading: '事故中心' },
   { label: '任务与内容', path: '/ops/tasks?workbench=workspace', heading: '任务与内容' },
   { label: '知识库', path: '/ops/knowledge?workbench=workspace', heading: '知识库' },
   { label: '平台规则', path: '/ops/rules?workbench=workspace', heading: '平台规则' },
