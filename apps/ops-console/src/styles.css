@@ -159,6 +159,25 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-content .ant-table-tbody > tr > td { color: #334155; border-bottom-color: #eef2f7; }
 .ops-content .ant-empty { margin-block: 32px; }
 .ops-content .ant-alert { border-radius: 10px; }
+/* Ant Design renders pagination focus on the inner anchor/button. Keep it
+   visible against the table footer without changing the dense desktop layout. */
+.ops-content .ant-pagination-item a:focus-visible,
+.ops-content .ant-pagination-prev button:focus-visible,
+.ops-content .ant-pagination-next button:focus-visible,
+.ops-content .ant-pagination-jump-prev button:focus-visible,
+.ops-content .ant-pagination-jump-next button:focus-visible,
+.ops-content .ant-pagination-options .ant-select-selector:focus-visible {
+  outline: var(--ops-focus-width) solid var(--ops-focus-color);
+  outline-offset: var(--ops-focus-offset);
+}
+.ops-notification-panel { width: min(380px, calc(100vw - 32px)); max-height: 440px; overflow: auto; padding: 12px 14px; background: #fff; border: 1px solid var(--ops-border); border-radius: 10px; box-shadow: 0 12px 28px rgb(15 23 42 / 16%); }
+.ops-notification-heading { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--ops-border); }
+.ops-notification-panel .ant-empty { margin: 18px 0 10px; }
+.ops-notification-panel .ant-list-item { align-items: flex-start; gap: 8px; }
+.ops-notification-panel .ant-list-item-meta-title { margin-bottom: 2px !important; font-size: 13px; }
+.ops-notification-severity.high { color: #b42318; }
+.ops-notification-severity.medium { color: #9a6700; }
+.ops-notification-more { display: block; padding-top: 8px; }
 .ops-session-error { width: min(100%, 760px); margin: 20px auto; padding: 20px; border: 1px solid #dbe3ef; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgb(15 23 42 / 6%); }
 .ops-session-error .ant-result { padding: 16px 12px 8px; }
 .ops-session-error .ant-result-image { margin-bottom: 10px; }
@@ -209,21 +228,17 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 .ops-support-detail .ant-timeline { margin-top: 8px; }
 .ops-support-sla .ant-descriptions { background: #f8fafc; }
 .ops-knowledge-page, .ops-stores-page, .ops-models-page, .ops-finance-page { display: grid; gap: 16px; }
-.ops-overview-page, .ops-users-page, .ops-audit-page, .ops-rules-page, .ops-storage-page, .ops-incidents-page, .ops-feature-flags-page, .ops-members-page { display: grid; gap: 16px; }
+.ops-overview-page, .ops-users-page, .ops-audit-page, .ops-rules-page, .ops-storage-page, .ops-members-page { display: grid; gap: 16px; }
 .ops-knowledge-page > .ant-alert, .ops-stores-page > .ant-alert, .ops-models-page > .ant-alert, .ops-finance-page > .ant-alert { margin: 0; }
 .ops-knowledge-page > .ant-card, .ops-stores-page > .ant-card, .ops-models-page > .ant-card, .ops-finance-page > .ant-card { width: 100%; }
-.ops-overview-page > .ant-card, .ops-users-page > .ant-card, .ops-audit-page > .ant-card, .ops-rules-page > .ant-card, .ops-storage-page > .ant-card, .ops-incidents-page > .ant-card, .ops-feature-flags-page > .ant-card, .ops-members-page > .ant-card { width: 100%; }
+.ops-overview-page > .ant-card, .ops-users-page > .ant-card, .ops-audit-page > .ant-card, .ops-rules-page > .ant-card, .ops-storage-page > .ant-card, .ops-members-page > .ant-card { width: 100%; }
 .ops-models-page .ant-statistic-content, .ops-finance-page .ant-statistic-content { font-variant-numeric: tabular-nums; }
 .ops-models-page .ant-card-head, .ops-stores-page .ant-card-head, .ops-finance-page .ant-card-head, .ops-knowledge-page .ant-card-head { min-height: 52px; }
 .ops-models-page .ant-table-wrapper, .ops-stores-page .ant-table-wrapper, .ops-finance-page .ant-table-wrapper, .ops-knowledge-page .ant-table-wrapper { border-radius: 8px; }
 .ops-finance-page .finance-summary { margin: 0 !important; }
 .ops-finance-page .finance-summary .ant-card { height: 100%; }
-.ops-overview-page .ant-card, .ops-users-page .ant-card, .ops-audit-page .ant-card, .ops-rules-page .ant-card, .ops-storage-page .ant-card, .ops-incidents-page .ant-card, .ops-feature-flags-page .ant-card, .ops-members-page .ant-card { border-color: #dbe3ef; }
+.ops-overview-page .ant-card, .ops-users-page .ant-card, .ops-audit-page .ant-card, .ops-rules-page .ant-card, .ops-storage-page .ant-card, .ops-members-page .ant-card { border-color: #dbe3ef; }
 .ops-incidents-page > .ant-alert { margin: 0; }
-.ops-feature-flags-page > .ant-space { width: 100%; padding: 14px 16px; border: 1px solid #dbe3ef; border-radius: 10px; background: #fff; box-shadow: 0 3px 14px rgb(15 23 42 / 4%); }
-.ops-feature-flags-page > .ant-space .ant-space-item { min-width: 0; }
-.ops-feature-flags-page > .ant-alert { margin: 0; }
-.ops-feature-flags-page > .ant-space .ant-input, .ops-feature-flags-page > .ant-space .ant-select { max-width: 100%; }
 .ops-members-page > .ant-card:first-child { margin-bottom: 0 !important; }
 .ops-members-page > .ant-card:first-child .ant-card-head { min-height: 48px; }
 .ops-members-page > .ant-card:first-child .ant-card-body { padding: 16px; }
