@@ -72,6 +72,24 @@ describe('PostgresBillingRepository PostgreSQL bigint decoding', () => {
     await expect(repository.balanceFen('ws_wallet')).resolves.toBe(-100)
   })
 
+  it.each([
+    [-10, 1],
+    [0, 1],
+    [20, 20],
+    [101, 100],
+    [Number.MAX_SAFE_INTEGER, 100],
+    [Number.NaN, 20],
+  ])('bounds transaction list limit %s to %s before querying SQL', async (limit, expectedLimit) => {
+    const client = new RecordingClient()
+    client.enqueue()
+    client.enqueue()
+    client.enqueue({ ...debit })
+    client.enqueue()
+    await expect(new PostgresBillingRepository(new RecordingPool(client)).listTransactions('ws_wallet', limit)).resolves.toHaveLength(1)
+    const listCall = client.calls.find(call => call.text.includes('FROM billing_transactions') && call.text.includes('LIMIT $2'))
+    expect(listCall?.values?.[1]).toBe(expectedLimit)
+  })
+
   it.each(['9007199254740993', '-9007199254740993', '1.5', 'invalid', ''])('rejects a database amount that cannot be represented safely: %s', async amount => {
     const client = new RecordingClient()
     client.enqueue(); client.enqueue(); client.enqueue({ ...debit, amount_fen: amount })

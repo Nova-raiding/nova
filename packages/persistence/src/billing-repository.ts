@@ -117,7 +117,8 @@ export class PostgresBillingRepository {
 
   async listTransactions(workspaceId: string, limit = 20, actorId?: string) {
     return withWorkspaceTransaction(this.pool, requireWorkspaceScope(workspaceId), async client => {
-      const result = await client.query<TransactionRow>('SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND ($3::text IS NULL OR actor_id=$3) ORDER BY created_at DESC,id DESC LIMIT $2', [workspaceId, limit, actorId ?? null])
+      const safeLimit = Math.min(100, Math.max(1, Number.isSafeInteger(limit) ? limit : 20))
+      const result = await client.query<TransactionRow>('SELECT id,workspace_id,type,amount_fen,order_id,actor_id,description,created_at FROM billing_transactions WHERE workspace_id=$1 AND ($3::text IS NULL OR actor_id=$3) ORDER BY created_at DESC,id DESC LIMIT $2', [workspaceId, safeLimit, actorId ?? null])
       return result.rows.map(transaction)
     })
   }
