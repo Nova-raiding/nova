@@ -31,7 +31,7 @@ COPY apps/ops-console apps/ops-console
 RUN if [ "$OPS_CONSOLE_BUILD_MODE" = production ]; then auth_mode=oidc; else auth_mode=local; fi; \
     VITE_API_BASE="$VITE_API_BASE" VITE_BASE="$VITE_BASE" VITE_OPS_AUTH_MODE="$auth_mode" VITE_OPS_BUILD_MODE="$OPS_CONSOLE_BUILD_MODE" VITE_OPS_LOCAL_SESSION="$VITE_OPS_LOCAL_SESSION" npm run build --workspace apps/ops-console
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:e7623c006de0ea4716e763083668edd9b732371d5479653c2e709fd0696b0348
+FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
 ENV OPS_API_UPSTREAM=http://127.0.0.1:8787
 ENV OPS_API_RESOLVER=127.0.0.11
 COPY infra/nginx/ops-console.conf /etc/nginx/templates/default.conf.template
