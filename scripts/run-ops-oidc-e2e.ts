@@ -105,9 +105,10 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     if (stopping) throw new Error('OPS_E2E_INTERRUPTED_DURING_SETUP')
     const apiPort = await freeLoopbackPort()
     const uiPort = await freeLoopbackPort()
+    const workspaceUiPort = await freeLoopbackPort()
     const gatewayPort = await freeLoopbackPort()
     const workspaceGatewayPort = await freeLoopbackPort()
-    if (new Set([apiPort, uiPort, gatewayPort, workspaceGatewayPort]).size !== 4) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
+    if (new Set([apiPort, uiPort, workspaceUiPort, gatewayPort, workspaceGatewayPort]).size !== 5) throw new Error('OPS_E2E_LISTENER_PORT_COLLISION')
     const baseUrl = `http://127.0.0.1:${gatewayPort}`
     const signingSecret = randomBytes(32).toString('hex')
     const username = 'ops-isolated-e2e'
@@ -120,7 +121,7 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     })
     const workspacePassword = randomBytes(24).toString('hex')
     workspaceGateway = createLocalOidcGateway({
-      uiUpstream: `http://127.0.0.1:${uiPort}`, apiUpstream: `http://127.0.0.1:${apiPort}`,
+      uiUpstream: `http://127.0.0.1:${workspaceUiPort}`, apiUpstream: `http://127.0.0.1:${apiPort}`,
       username: 'ops-isolated-workspace-e2e', password: workspacePassword,
       sessionSecret: randomBytes(32).toString('hex'), oidcSigningSecret: signingSecret,
       issuer: fixture.issuer, subject: fixture.workspaceActorSubject, workspaceId: fixture.workspaceId,
@@ -144,8 +145,10 @@ export async function runOpsE2e(requested: readonly string[], source: NodeJS.Pro
     const uiOutput = resolve(evidenceDir, 'ui-dist')
     const build = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'build', 'apps/ops-console', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui-build')
     if (await exited(build) !== 0) throw new Error('OPS_E2E_UI_BUILD_FAILED')
-    const ui = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts', '--outDir', uiOutput], uiEnvironment, 'ui')
-    await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`, api), ready(`http://127.0.0.1:${uiPort}/`, ui)])
+    const ui = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts'], uiEnvironment, 'ui')
+    const workspaceUiEnvironment = { ...uiEnvironment, VITE_API_PROXY_TARGET: `http://127.0.0.1:${workspaceGatewayPort}` }
+    const workspaceUi = launch(process.execPath, ['node_modules/vite/bin/vite.js', 'apps/ops-console', '--host', '127.0.0.1', '--port', String(workspaceUiPort), '--strictPort', '--config', 'apps/ops-console/vite.config.ts'], workspaceUiEnvironment, 'workspace-ui')
+    await Promise.all([ready(`http://127.0.0.1:${apiPort}/healthz`, api), ready(`http://127.0.0.1:${uiPort}/`, ui), ready(`http://127.0.0.1:${workspaceUiPort}/`, workspaceUi)])
     const health = await (await fetch(`http://127.0.0.1:${apiPort}/healthz`)).json() as { data?: { persistence?: { mode?: string; ready?: boolean }; redis?: { ready?: boolean } } }
     if (health.data?.persistence?.mode !== 'postgres' || !health.data.persistence.ready || !health.data.redis?.ready) throw new Error('OPS_E2E_DURABLE_RUNTIME_REQUIRED')
     await new Promise<void>((done, reject) => { gateway!.once('error', reject); gateway!.listen(gatewayPort, '127.0.0.1', done) })

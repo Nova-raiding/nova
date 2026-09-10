@@ -649,6 +649,7 @@ export function useOpsConsoleModel() {
         const value = await optional("ops.session");
         sessionAttempted = true;
         if (value && typeof value === "object" && !Array.isArray(value)) {
+          recordOpsBootstrapTrace("session_received", { hasActor: typeof (value as Record<string, unknown>).actor_id === "string", hasCapabilities: Array.isArray((value as Record<string, unknown>).capabilities), workbench: (value as Record<string, unknown>).workbench });
           resolvedSession = value as unknown as OpsSession;
           loadCoordinatorRef.current.commit(loadRequest, () => { acceptLoadedSession(resolvedSession!); });
         }
