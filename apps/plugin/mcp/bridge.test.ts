@@ -227,6 +227,46 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it('forwards the configured merchant bearer token with the workspace scope and keeps credentials out of MCP params', async () => {
+    let observedHeaders: Record<string, string | string[] | undefined> = {}
+    let observedBody: Record<string, any> | undefined
+    const server = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      observedHeaders = req.headers
+      observedBody = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ data: { result: { status: 'ok' } }, error: null }))
+    })
+    const address = await listen(server)
+    const child = spawn(process.execPath, [BRIDGE_PATH], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
+        MERCHANT_WORKSPACE_ID: 'ws_auth_scope',
+        MERCHANT_MCP_TOKEN: 'merchant-secret-token',
+      },
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
+      const response = await nextLine(child.stdout)
+      expect(response.result).toMatchObject({ isError: false })
+      expect(observedHeaders.authorization).toBe('Bearer merchant-secret-token')
+      expect(observedHeaders['x-workspace-id']).toBe('ws_auth_scope')
+      expect(observedHeaders['x-ops-workbench']).toBe('workspace')
+      expect(observedBody).toMatchObject({
+        method: 'workspace.health',
+        params: { workspace_id: 'ws_auth_scope' },
+      })
+      expect(JSON.stringify(observedBody)).not.toContain('merchant-secret-token')
+    } finally {
+      child.kill()
+      await close(server)
+    }
+  })
+
   it.each(['knowledge.rule.list', 'rule.list'])('summarizes bare-array rule responses from the API for %s', async (method) => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
