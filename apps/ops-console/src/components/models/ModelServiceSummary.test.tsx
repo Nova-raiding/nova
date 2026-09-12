@@ -37,7 +37,8 @@ describe("ModelServiceSummary", () => {
 
     expect(html).toContain("进入模型服务");
     expect(html).toContain("已就绪能力");
-    expect(html).toContain("cost_gate_blocked");
+    expect(html).toContain("状态待确认");
+    expect(html).not.toContain("cost_gate_blocked");
     expect(html).not.toContain("计费倍率");
   });
 });

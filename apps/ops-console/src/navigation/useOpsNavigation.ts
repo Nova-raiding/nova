@@ -5,6 +5,15 @@ import {
   urlForDomain,
 } from "./opsNavigation.js";
 
+function canonicalizeOpsLocation(location: Pick<Location, "pathname" | "search" | "hash">): OpsDomain {
+  const domain = domainFromLocation(location);
+  const canonical = urlForDomain(location, domain);
+  const next = `${canonical}${location.hash}`;
+  const current = `${location.pathname}${location.search}${location.hash}`;
+  if (current !== next) window.history.replaceState(null, "", next);
+  return domain;
+}
+
 export function useOpsNavigation(options: {
   onPopstate?: (domain: OpsDomain, commit: () => void) => boolean;
 } = {}): {
@@ -12,12 +21,12 @@ export function useOpsNavigation(options: {
   navigate: (domain: OpsDomain) => void;
 } {
   const [activeDomain, setActiveDomain] = useState<OpsDomain>(() =>
-    domainFromLocation(window.location),
+    canonicalizeOpsLocation(window.location),
   );
 
   useEffect(() => {
     const restore = () => {
-      const domain = domainFromLocation(window.location);
+      const domain = canonicalizeOpsLocation(window.location);
       const commit = () => setActiveDomain(domain);
       if (!options.onPopstate?.(domain, commit)) commit();
     };

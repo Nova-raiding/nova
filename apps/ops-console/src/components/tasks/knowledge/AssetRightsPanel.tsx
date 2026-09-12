@@ -6,6 +6,17 @@ interface AssetRightsPanelProps {
   model: OpsConsoleModel;
 }
 
+function knowledgeStatusLabel(value: string | undefined): string {
+  return ({
+    approved: "已确认",
+    pending: "待确认",
+    rejected: "已拒绝",
+    cleared: "已核验",
+    restricted: "受限",
+    unknown: "状态待确认",
+  } as Record<string, string>)[value ?? ""] ?? "状态待确认";
+}
+
 export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
   const {
     canKnowledge,
@@ -71,7 +82,7 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
               <Tag
                 color={row.approvalStatus === "approved" ? "green" : "orange"}
               >
-                {row.approvalStatus}
+                {knowledgeStatusLabel(row.approvalStatus)}
               </Tag>
             ),
           },
@@ -87,7 +98,7 @@ export function AssetRightsPanel({ model }: AssetRightsPanelProps) {
                       : "orange"
                 }
               >
-                {row.rightsStatus}
+                {knowledgeStatusLabel(row.rightsStatus)}
               </Tag>
             ),
           },

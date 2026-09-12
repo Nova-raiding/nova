@@ -14,7 +14,7 @@ export function describeOpsError(error: unknown): string {
   const candidate = error as Partial<OpsRequestError> | undefined;
   const rawMessage = error instanceof Error ? error.message : "";
   if (candidate?.code === "API_REQUEST_TIMEOUT")
-    return "运营 API 请求超时。请检查 API、数据库和 SSO 网关状态后重试。";
+    return "运营 API 请求超时。请检查 API 和数据库状态后重试。";
   if (candidate?.code === "API_NETWORK_ERROR")
     return "无法连接运营 API，可能是 API 地址、CORS 或网关暂时不可用。请检查部署配置后重试。";
   if (
@@ -27,14 +27,14 @@ export function describeOpsError(error: unknown): string {
   switch (candidate?.code) {
     case "UNAUTHENTICATED":
     case "SESSION_EXPIRED":
-      return "运营登录已失效或尚未登录。请先完成 SSO 登录，再点击“刷新数据”。";
+      return "运营登录已失效或尚未登录。请使用平台运营账号和密码重新登录。";
     case "MEMBER_NOT_ACTIVE":
     case "MEMBER_SUSPENDED":
       return "当前运营成员已被停用或尚未激活，请联系工作区管理员恢复权限。";
     case "FORBIDDEN":
       return "当前账号没有访问部分运营数据的权限；请切换具备对应角色的运营账号。";
     case "INTERNAL_ERROR":
-      return "运营服务暂时不可用。请先重试；若持续失败，请检查 API、数据库和 SSO 网关状态。";
+      return "运营服务暂时不可用。请先重试；若持续失败，请检查 API 和数据库状态。";
     case "API_NOT_CONFIGURED":
       return "运营 API 未配置。请设置 VITE_API_BASE 后重新启动运营台；当前页面不会把演示页面误当作 API。";
     case "OPS_WORKSPACE_REQUIRED":
@@ -49,8 +49,6 @@ export function describeOpsError(error: unknown): string {
       return "客服工单仓储未配置。请检查 API 的 PostgreSQL 运营仓储配置后重试。";
     case "INCIDENT_REPOSITORY_UNAVAILABLE":
       return "事故仓储未配置。请检查 API 的 PostgreSQL 运营仓储配置后重试。";
-    case "FEATURE_FLAG_REPOSITORY_UNAVAILABLE":
-      return "功能开关仓储未配置。请检查 API 的 PostgreSQL 运营仓储配置后重试。";
     case "CANONICAL_BACKFILL_CONFLICT_RECHECK_FAILED":
       return "当前商品关系仍有冲突，服务端未允许关闭；请先完成明确修复后重新检查。";
     case "CANONICAL_BACKFILL_CONFLICT_REVISION_CONFLICT":
@@ -104,10 +102,35 @@ export function resolveManagedOpsSession(environment: OpsAuthEnvironment): boole
 
 export const managedOpsSession = resolveManagedOpsSession(viteEnv);
 export const localOpsSessionEnabled = viteEnv.VITE_OPS_LOCAL_SESSION === "true" && !managedOpsSession;
+const LOCAL_SESSION_DISABLED_KEY = "ops_local_session_disabled";
+const PASSWORD_SESSION_ACTIVE_KEY = "ops_password_session_active";
 let localOpsSessionPromise: Promise<void> | undefined;
 
+export function suppressLocalOpsSession(): void {
+  if (typeof localStorage !== "undefined") localStorage.setItem(LOCAL_SESSION_DISABLED_KEY, "true");
+  localOpsSessionPromise = undefined;
+}
+
+function passwordSessionActive(): boolean {
+  return typeof localStorage !== "undefined" && localStorage.getItem(PASSWORD_SESSION_ACTIVE_KEY) === "true";
+}
+
+function markPasswordSessionActive(active: boolean): void {
+  if (typeof localStorage === "undefined") return;
+  if (active) localStorage.setItem(PASSWORD_SESSION_ACTIVE_KEY, "true");
+  else localStorage.removeItem(PASSWORD_SESSION_ACTIVE_KEY);
+}
+
+function shouldUseCookieCredentials(): boolean {
+  return managedOpsSession || localOpsSessionEnabled || passwordSessionActive();
+}
+
+export function localOpsSessionSuppressed(): boolean {
+  return typeof localStorage !== "undefined" && localStorage.getItem(LOCAL_SESSION_DISABLED_KEY) === "true";
+}
+
 async function ensureLocalOpsSession(): Promise<void> {
-  if (!localOpsSessionEnabled || localOpsSessionPromise) return localOpsSessionPromise;
+  if (!localOpsSessionEnabled || localOpsSessionSuppressed() || localOpsSessionPromise) return localOpsSessionPromise;
   localOpsSessionPromise = fetch(`${opsApiBase() || "/api"}/v1/ops/local-session`, { credentials: "include", cache: "no-store" }).then(async response => {
     if (!response.ok) throw new Error("本机安全连接未就绪，请确认本地 API 已启动");
     const body = await response.json().catch(() => null) as { workspace_id?: unknown } | null;
@@ -363,9 +386,66 @@ export function hasOpsConnection(): boolean {
   const config = readOpsConnectionConfig();
   // The signed OIDC session supplies workbench and tenant scope server-side;
   // stale local UI workbench state must not disable managed API hydration.
-  const connected = managedOpsSession || Boolean(config.apiBase && (config.workbench === "platform" || config.workspaceId) && (localOpsSessionEnabled || config.token));
+  const connected = managedOpsSession || passwordSessionActive() || Boolean(config.apiBase && (config.workbench === "platform" || config.workspaceId) && ((localOpsSessionEnabled && !localOpsSessionSuppressed()) || config.token));
   recordOpsBootstrapTrace("connection", { connected, managed: managedOpsSession, hasApiBase: Boolean(config.apiBase), workbench: config.workbench, hasWorkspace: Boolean(config.workspaceId) });
   return connected;
+}
+
+export async function loginPlatformOps(input: { login: string; password: string }): Promise<{
+  id: string;
+  login: string;
+  roles: string[];
+}> {
+  const apiBase = opsApiBase() || "/api";
+  const response = await fetch(`${apiBase}/v1/auth/login`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ login: input.login.trim(), password: input.password, account_type: "platform" }),
+  });
+  const raw = await readBoundedResponseText(response, 256 * 1024);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw invalidResponse(`非 JSON 对象（HTTP ${response.status}）`, response.status);
+  }
+  if (!isObject(parsed)) throw invalidResponse(`非 JSON 对象（HTTP ${response.status}）`, response.status);
+  const envelope = parsed as Record<string, unknown>;
+  const payload = isObject(envelope.data) && Object.prototype.hasOwnProperty.call(envelope.data, "result")
+    ? envelope.data.result
+    : envelope.data;
+  if (!response.ok || !isObject(payload) || !isObject(payload.account)) {
+    const errorPayload = isObject(envelope.error) ? envelope.error as RpcErrorPayload : undefined;
+    throw requestError(errorPayload, response, responseMeta(envelope as Rpc<unknown>));
+  }
+  const account = payload.account;
+  if (account.accountType !== "platform" || typeof account.id !== "string" || typeof account.login !== "string" || !Array.isArray(account.roles) || account.roles.some(role => typeof role !== "string")) {
+    const error = new Error("该账号不是平台运营账号") as OpsRequestError;
+    error.code = "AUTH_PLATFORM_ACCOUNT_REQUIRED";
+    error.httpStatus = 403;
+    throw error;
+  }
+  suppressLocalOpsSession();
+  markPasswordSessionActive(true);
+  setOpsWorkbenchContext("platform");
+  return { id: account.id, login: account.login, roles: account.roles };
+}
+
+export async function logoutPlatformOps(): Promise<void> {
+  const apiBase = opsApiBase() || "/api";
+  const response = await fetch(`${apiBase}/v1/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) {
+    throw new Error(`退出登录失败（HTTP ${response.status}）`);
+  }
+  suppressLocalOpsSession();
+  markPasswordSessionActive(false);
+  setOpsWorkbenchContext("platform");
 }
 
 async function readBoundedResponseText(
@@ -456,7 +536,7 @@ async function rpcAtWorkspace<T>(
     recordOpsBootstrapTrace("rpc_fetch", { method, url: `${apiBase}/mcp` });
     const response = await fetch(`${apiBase}/mcp`, {
       method: "POST",
-    credentials: managedOpsSession || localOpsSessionEnabled ? "include" : "same-origin",
+      credentials: shouldUseCookieCredentials() ? "include" : "same-origin",
       headers,
       body: JSON.stringify({
         jsonrpc: "2.0",
@@ -591,7 +671,7 @@ export async function opsRestGetWithMeta<T>(
   try {
     const response = await fetch(`${apiBase}${path}`, {
       method: "GET",
-      credentials: managedOpsSession || localOpsSessionEnabled ? "include" : "same-origin",
+      credentials: shouldUseCookieCredentials() ? "include" : "same-origin",
       headers,
       signal: controller.signal,
     });
@@ -661,7 +741,13 @@ export async function opsRestPost<T>(path: string, body: Record<string, unknown>
   if (options.signal?.aborted) abortFromCaller(); else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   let timedOut = false; const timeout = globalThis.setTimeout(() => { timedOut = true; controller.abort(); }, options.timeoutMs ?? OPS_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${apiBase}${path}`, { method: "POST", credentials: managedOpsSession || localOpsSessionEnabled ? "include" : "same-origin", headers, body: JSON.stringify(body), signal: controller.signal });
+    const response = await fetch(`${apiBase}${path}`, {
+      method: "POST",
+      credentials: shouldUseCookieCredentials() ? "include" : "same-origin",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
     const raw = await readBoundedResponseText(response, options.maxResponseBytes ?? MAX_OPS_RESPONSE_BYTES);
     if (requestEpoch !== opsRequestEpoch) throw new DOMException("请求上下文已失效", "AbortError");
     let parsed: unknown; try { parsed = JSON.parse(raw); } catch { throw invalidResponse(`非 JSON 对象（HTTP ${response.status}）`, response.status); }

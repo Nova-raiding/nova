@@ -31,7 +31,7 @@ export interface HttpPlatformConnectorOptions {
 const DEFAULT_TIMEOUT_MS = 10_000
 const MAX_PLATFORM_RESPONSE_BYTES = 4 * 1024 * 1024
 const CREDENTIAL_EXPIRY_SKEW_MS = 30_000
-const ERROR_CODES = new Set(['NOT_CONFIGURED', 'UNAUTHORIZED', 'RATE_LIMITED', 'TIMEOUT', 'CONFLICT', 'VALIDATION_FAILED', 'NOT_FOUND', 'REMOTE_ERROR'])
+const ERROR_CODES = new Set(['NOT_CONFIGURED', 'UNAUTHORIZED', 'RATE_LIMITED', 'TIMEOUT', 'CONFLICT', 'VALIDATION_FAILED', 'NOT_FOUND', 'HTTPS_REQUIRED', 'HOST_NOT_ALLOWLISTED', 'PRIVATE_ADDRESS_BLOCKED', 'INVALID_OUTBOUND_URL', 'REMOTE_ERROR'])
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined }
@@ -361,7 +361,10 @@ export class HttpPlatformConnector implements PlatformConnector {
     const candidate = isRecord(error) ? error : {}
     const status = typeof candidate.status === 'number' ? candidate.status : undefined
     const codeValue = readString(candidate.code)
-    let code: NormalizedPlatformError['code'] = ERROR_CODES.has(codeValue ?? '') ? codeValue as NormalizedPlatformError['code'] : 'REMOTE_ERROR'
+    const outboundCode = /^unsafe outbound URL: (HTTPS_REQUIRED|HOST_NOT_ALLOWLISTED|PRIVATE_ADDRESS_BLOCKED|INVALID_OUTBOUND_URL)$/u.exec(readString(candidate.message) ?? '')?.[1]
+    let code: NormalizedPlatformError['code'] = ERROR_CODES.has(codeValue ?? '')
+      ? codeValue as NormalizedPlatformError['code']
+      : outboundCode as NormalizedPlatformError['code'] | undefined ?? 'REMOTE_ERROR'
     if (status === 401 || status === 403) code = 'UNAUTHORIZED'
     else if (status === 400 || status === 422) code = 'VALIDATION_FAILED'
     else if (status === 404) code = 'NOT_FOUND'
@@ -373,6 +376,8 @@ export class HttpPlatformConnector implements PlatformConnector {
     const safeMessage = readString(candidate.message)
     const message = code === 'TIMEOUT'
       ? `HTTP connector ${this.platform} request timed out`
+      : ['HTTPS_REQUIRED', 'HOST_NOT_ALLOWLISTED', 'PRIVATE_ADDRESS_BLOCKED', 'INVALID_OUTBOUND_URL'].includes(code)
+        ? safeMessage ?? `HTTP connector ${this.platform} outbound URL rejected`
       : code === 'VALIDATION_FAILED'
         ? safeMessage ?? 'Connector validation failed'
       : (code === 'UNAUTHORIZED' && safeMessage === 'access credential is unavailable')

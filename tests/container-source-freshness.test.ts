@@ -419,6 +419,9 @@ describe("container source freshness gate", () => {
     expect(apiDockerfile).toContain(
       "COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations",
     );
+    expect(apiDockerfile).toContain(
+      "find /app -name '*.tsbuildinfo' -type f -delete",
+    );
     expect(workerDockerfile).toContain(
       "COPY packages/persistence/src/migrations ./dist/packages/persistence/src/migrations",
     );

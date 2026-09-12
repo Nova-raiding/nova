@@ -49,25 +49,25 @@ describe("UsersPage capability state", () => {
     });
   });
 
-  it("announces read-only capability state and keeps the page recovery path keyboard reachable", () => {
+  it("keeps the page recovery path keyboard reachable without adding a capability banner", () => {
     const markup = renderToStaticMarkup(<UsersPage model={model(["identity.read"], { error: "运营 API 暂时不可用" })} />);
 
-    expect(markup).toContain('data-capability-source="server"');
-    expect(markup).toContain("当前为只读用户治理视图");
+    expect(markup).not.toContain('data-capability-source="server"');
+    expect(markup).not.toContain("当前为只读用户治理视图");
     expect(markup).toContain("运营 API 暂时不可用");
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('aria-label="重试加载运营数据"');
   });
 
-  it("fails closed with an assertive explanation when no server read capability is projected", () => {
+  it("fails closed through the user workspace when no server read capability is projected", () => {
     const markup = renderToStaticMarkup(<UsersPage model={model([], { error: "" })} />);
 
-    expect(markup).toContain("当前会话没有用户治理读取能力");
+    expect(markup).toContain("当前角色没有用户治理视图");
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain('role="alert"');
-    expect(markup).toContain("不加载用户治理数据");
+    expect(markup).toContain("不会把未授权结果显示为空数据");
     expect(markup).not.toContain("角色 platform_admin");
-    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("刷新目录");
     expect(markup).toContain("当前会话没有用户治理读取能力");
   });
 });

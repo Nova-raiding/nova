@@ -196,7 +196,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { policy_version: boundedString(128), policy_checksum: boundedString(128), acceptance_ref: boundedString(256), accepted_at: boundedString(64), idempotency_key: idempotencyKeyProperty }, required: ['policy_version', 'policy_checksum', 'acceptance_ref', 'accepted_at', 'idempotency_key'], additionalProperties: false },
   },
   'merchant.start': {
-    description: '开始使用大麦；服务端先完成商业准入判定，通过后才会幂等记当前意图并返回下一步。零点或状态未知时仅返回服务端授权的恢复操作。',
+    description: '开始使用大麦；服务端先完成商业准入判定，通过后才会幂等记当前意图并返回下一步。零点或状态待确认时仅返回服务端授权的恢复操作。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -276,6 +276,14 @@ const METHODS = {
     description: '查看当前工作区、规则和平台连接状态。只读。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
+  'workspace.invitations.list': {
+    description: '查看当前登录账号收到的工作区邀请；只展示发给本人的邀请。',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  'workspace.invitation.accept': {
+    description: '接受当前登录账号收到的工作区邀请，接受后即可进入该工作区。',
+    inputSchema: { type: 'object', properties: { expected_revision: { type: 'string' }, reason: { type: 'string' } }, required: ['expected_revision'], additionalProperties: false },
+  },
   'workspace.bootstrap': {
     description: '首次运行创建商家工作区并返回绑定信息；不会使用演示工作区。',
     inputSchema: { type: 'object', properties: { display_name: { type: 'string' }, external_subject: { type: 'string' } }, required: ['display_name'], additionalProperties: false },
@@ -317,7 +325,7 @@ const METHODS = {
     inputSchema: { type: 'object', properties: { order_id: boundedString(256) }, required: ['order_id'], additionalProperties: false },
   },
   'creative-points.balance.get': {
-    description: '查看当前工作区创意点余额和 access revision；未知余额是 null，不是 0。只读恢复入口。',
+    description: '查看当前工作区创意点余额和 access revision；待确认余额是 null，不是 0。只读恢复入口。',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   'creative-points.statement.list': {
@@ -487,7 +495,7 @@ const METHODS = {
   },
   'catalog.search': {
     description: '搜索商品；指定店铺必须同时提供平台和 account_id，全部店铺汇总必须明确 scope=workspace。结果包含逐商品店铺绑定或事实确认下一步。只读。需要把已审核的工作区知识上下文一起带回时传 include_knowledge=true。',
-    inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: ['store', 'workspace'], description: '默认选择具体店铺；只有明确 scope=workspace 才查询全部店铺。' }, query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, store_name: { type: 'string' }, brand_name: { type: 'string' }, sku_id: { type: 'string' }, remote_product_id: { type: 'string' }, listing_status: { type: 'string', enum: ['on_sale', 'off_sale', 'draft', 'unknown'] }, product_state: { type: 'string', enum: ['active', 'disabled'] }, sync_status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'partial', 'failed'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, include_knowledge: { type: 'string', enum: ['true', 'false'], description: '附加当前工作区适用且已批准/已确认权益的知识上下文。' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { scope: { type: 'string', enum: ['store', 'workspace'], description: '默认选择具体店铺；只有明确 scope=workspace 才查询全部店铺。' }, query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, account_id: { type: 'string' }, store_name: { type: 'string' }, brand_name: { type: 'string' }, sku_id: { type: 'string' }, remote_product_id: { type: 'string' }, listing_status: { type: 'string', enum: ['on_sale', 'off_sale', 'draft', 'unknown'] }, product_state: { type: 'string', enum: ['active', 'disabled'] }, sync_status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'partial', 'failed'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, include_knowledge: { type: 'string', enum: ['true', 'false'], description: '附加当前工作区适用且已批准/已确认权益的知识上下文。' }, limit: { type: 'string' }, offset: { type: 'string' } }, additionalProperties: false },
   },
   'catalog.categories': {
     description: '查询品类库，返回品类名称、平台范围和必填属性模板。只读。',
@@ -670,7 +678,7 @@ const METHODS = {
   },
   'task.history': {
     description: '搜索当前工作区的历史营销任务。只读。',
-    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, state: { type: 'string' }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' } }, additionalProperties: false },
+    inputSchema: { type: 'object', properties: { query: { type: 'string' }, platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] }, state: { type: 'string' }, product_id: { type: 'string' }, account_id: { type: 'string' }, brand_name: { type: 'string' }, store_name: { type: 'string' }, remote_product_id: { type: 'string' }, publish_status: { type: 'string', enum: ['prepared', 'confirmed', 'queued', 'submitting', 'submitted', 'reviewing', 'published', 'rejected', 'unknown', 'reconciling', 'manual_attention'] }, date_from: { type: 'string' }, date_to: { type: 'string' }, limit: { type: 'string' }, offset: { type: 'string' } }, additionalProperties: false },
   },
   'task.resume': {
     description: '恢复任务并展示持久化的待回答/暂缓问题卡；只读，不会自动回答或生成。',
@@ -1027,7 +1035,7 @@ function actionLink(method, result) {
     return {
       type: 'resource_link',
       name: field === 'authorizationUrl' ? (method === 'merchant.start' ? 'merchant-authorization' : 'platform-authorization') : 'payment-checkout',
-      title: field === 'authorizationUrl' ? (method === 'merchant.start' ? '登录并授权大麦' : '立即授权店铺') : '打开充值支付页',
+      title: field === 'authorizationUrl' ? (method === 'merchant.start' ? '登录并授权大麦' : '立即授权店铺') : '打开支付页',
       uri: url.toString(),
       description: field === 'authorizationUrl' ? (method === 'merchant.start' ? '在大麦官方授权页使用账号和密码登录；密码不会进入插件、模型或日志。' : '官方平台授权入口；插件不会接触店铺密码。') : '支付完成后请回到 Codex 查询订单状态；待支付不等于已到账。',
       annotations: { audience: ['user'] },
@@ -1181,7 +1189,7 @@ function userFacingToolText(method, result) {
     ? result.creative_points
     : undefined
   const pointsText = points
-    ? `创意点状态：${points.balance_state === 'unknown' ? '未知' : points.availability === 'insufficient' ? '不足' : points.availability === 'exhausted' ? '已用尽' : '可用'}。${points.point_reservation_status === 'unknown' || points.settlement_status === 'unknown' ? '本次账务状态待确认。' : ''}生成能力仅在服务端准入通过后开放；需要恢复时请使用服务端提供的充值入口。`
+    ? `创意点状态：${points.balance_state === 'unknown' ? '待确认' : points.availability === 'insufficient' ? '不足' : points.availability === 'exhausted' ? '已用尽' : '可用'}。${points.point_reservation_status === 'unknown' || points.settlement_status === 'unknown' ? '本次账务状态待确认。' : ''}生成能力仅在服务端准入通过后开放；需要恢复时请使用服务端提供的充值入口。`
     : ''
   const decisionSummary = detailDecisionSummary(method, result)
   if (decisionSummary) return decisionSummary
@@ -1206,7 +1214,7 @@ function userFacingToolText(method, result) {
       ? result.available_points
       : balanceKnown && Number.isSafeInteger(points?.available_points) ? points.available_points : undefined
     const availability = result.availability ?? (available === undefined ? 'unknown' : available === 0 ? 'exhausted' : result.allowed === false ? 'insufficient' : 'available')
-    return `创意点状态：${availability === 'unknown' ? '未知' : availability === 'exhausted' ? '已用尽' : availability === 'insufficient' ? '不足' : '可用'}。${result.allowed === false ? '当前生成能力已阻断。' : '生成能力由服务端准入决定。'}${availability !== 'available' ? '请使用服务端提供的充值恢复入口；支付待确认或未到账时不会解锁。' : ''}`
+    return `创意点状态：${availability === 'unknown' ? '待确认' : availability === 'exhausted' ? '已用尽' : availability === 'insufficient' ? '不足' : '可用'}。${result.allowed === false ? '当前生成能力已阻断。' : '生成能力由服务端准入决定。'}${availability !== 'available' ? '请使用服务端提供的充值恢复入口；支付待确认或未到账时不会解锁。' : ''}`
   }
   if (method === 'catalog.search' && Array.isArray(result.products)) {
     if (!result.products.length) return '当前查询未找到商品，请调整商品名称或 SKU 条件。'
@@ -1356,7 +1364,7 @@ function userFacingErrorText(code, details) {
   }
   if (code === 'CREATIVE_POINTS_EXHAUSTED') return '创意点已用完。当前仅可继续服务端授权的恢复操作，未执行业务写入。'
   if (code === 'CREATIVE_POINTS_INSUFFICIENT') return '创意点不足，当前未执行业务写入。请使用服务端授权的充值恢复入口。'
-  if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认创意点余额，已安全停止。未知余额不会按 0 处理。'
+  if (code === 'CREATIVE_POINTS_UNAVAILABLE') return '暂时无法确认创意点余额，已安全停止。待确认余额不会按 0 处理。'
   if (code === 'RATE_CARD_UNAVAILABLE') return '当前无法取得已批准的创意点费率，已安全停止，未扣点。'
   if (code === 'COMMERCIAL_ACCESS_STALE') return '创意点准入状态已变更，请先刷新服务端返回的恢复状态，不要重复提交。'
   if (code === 'RECHARGE_REQUIRED' || code === 'BILLING_INSUFFICIENT_BALANCE') return '旧版钱包充值已停用；请仅使用服务端返回的创意点包 SKU 恢复入口。'
@@ -2363,6 +2371,10 @@ async function callRemote(method, params) {
   const headers = {
     accept: 'application/json',
     'content-type': 'application/json',
+    // MCP HTTP requests after initialize must carry the negotiated protocol
+    // version so a host/API pair cannot silently interpret a newer envelope
+    // using an older contract.
+    'MCP-Protocol-Version': PROTOCOL_VERSION,
     // Merchant MCP calls are always scoped to the merchant workbench. Without
     // this explicit boundary the API's platform-console default can reject a
     // valid merchant token before dispatching the business method.
@@ -2879,7 +2891,7 @@ function merchantWorkflowStructuredContent(result) {
         known: progress.known === true,
         ...(Number.isSafeInteger(progress.completed) ? { completed: progress.completed } : {}),
         ...(Number.isSafeInteger(progress.total) ? { total: progress.total } : {}),
-        label: typeof progress.label === 'string' ? progress.label : progress.known === true ? '进度已知' : '总量未知',
+        label: typeof progress.label === 'string' ? progress.label : progress.known === true ? '进度已知' : '总量待确认',
       },
       next_action: {
         label: typeof next.label === 'string' ? sanitizeMerchantAction(next.label) : '查看状态',
@@ -3062,7 +3074,7 @@ async function handle(request) {
     if ((!SAFE_WITHOUT_INTERACTIVE_WRITE.has(name) && !allowsWriteTools()) || (ALWAYS_INTERACTIVE_WRITE_METHODS.has(name) && interactiveWriteUntil <= Date.now())) {
       const structuredContent = {
         code: 'INTERACTIVE_WRITE_DISABLED',
-        message: '当前操作需要商家明确确认。请先确认后继续；如果创意点余额为零、未知或不足，系统只会返回服务端授权的恢复入口。',
+        message: '当前操作需要商家明确确认。请先确认后继续；如果创意点余额为零、待确认或不足，系统只会返回服务端授权的恢复入口。',
         technical_hint: 'interactive_write_session_required',
       }
       return jsonRpc(id, { content: [{ type: 'text', text: userFacingErrorText(structuredContent.code) }], structuredContent, ...(toolResultUiMetadata(name) ? { _meta: toolResultUiMetadata(name) } : {}), isError: true })

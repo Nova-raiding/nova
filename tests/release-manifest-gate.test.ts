@@ -43,6 +43,21 @@ describe('release manifest production gate', () => {
     expect(validateReleaseManifest(manifest, { root: process.cwd(), expectedReleaseId: 'release-1' })).toEqual(expect.arrayContaining(['artifact SHA-256 does not match current source: apps/api/openapi.yaml', 'productionEvidence.capability must be an immutable production artifact']))
     expect(readFileSync('apps/api/openapi.yaml', 'utf8').length).toBeGreaterThan(0)
   })
+  it('binds every payment-gateway source and build artifact to the release', () => {
+    const gatewayArtifacts = [
+      'services/payment-gateway/index.mjs',
+      'services/payment-gateway/alipay.mjs',
+      'services/payment-gateway/alipay.d.mts',
+      'services/payment-gateway/Dockerfile',
+    ]
+    const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+    expect(manifest.artifacts.map(item => item.path)).toEqual(expect.arrayContaining(gatewayArtifacts))
+    for (const path of gatewayArtifacts) {
+      const tampered = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1' })
+      tampered.artifacts.find(item => item.path === path)!.sha256 = 'f'.repeat(64)
+      expect(validateReleaseManifest(tampered, { root: process.cwd(), expectedReleaseId: 'release-1' })).toContain(`artifact SHA-256 does not match current source: ${path}`)
+    }
+  })
   it('rejects a stale bridge digest or missing marketplace mirror', () => {
     const manifest = buildReleaseManifest({ root: process.cwd(), releaseId: 'release-1', capabilityEvidenceRef: 'artifact://production/evidence/capability#' + 'a'.repeat(64), capacityEvidenceRef: 'artifact://production/evidence/capacity#' + 'a'.repeat(64), modelRelayEvidenceRef: 'artifact://production/evidence/relay#' + 'a'.repeat(64), paymentEvidenceRef: 'artifact://production/evidence/payment#' + 'a'.repeat(64), restoreEvidenceRef: 'artifact://production/evidence/restore#' + 'a'.repeat(64), objectStorageEvidenceRef: 'artifact://production/evidence/storage#' + 'a'.repeat(64), codexAppHostEvidenceRef: 'artifact://production/evidence/codex-host#' + 'a'.repeat(64), canonicalCutoverEvidenceRef: 'artifact://production/evidence/canonical-cutover#' + 'a'.repeat(64) })
     manifest.mcp!.bridgeSha256 = 'f'.repeat(64)

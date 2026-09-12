@@ -1,6 +1,7 @@
 import { expect, test, chromium } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { ensureMerchantSession } from './merchant-auth.js'
 
 test.setTimeout(120_000)
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
@@ -18,6 +19,13 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   context.setDefaultTimeout(8_000)
   const page = await context.newPage()
+  const originalGoto = page.goto.bind(page)
+  page.goto = async (...args) => {
+    const result = await originalGoto(...args)
+    await page.waitForTimeout(1_500)
+    await ensureMerchantSession(page)
+    return result
+  }
   const badResponses = []
   const requestFailures = []
   const consoleErrors = []
@@ -105,25 +113,15 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
     await page.screenshot({ path: resolve(shots, '4-visual-rules.png') })
   }
 
-  await page.getByRole('button', { name: '规则与检查', exact: true }).first().click(); await page.waitForTimeout(900)
-  await page.getByRole('tab', { name: /品类库/ }).click(); await page.waitForTimeout(300)
-  const rulesSearch = page.getByPlaceholder(/搜索规则|搜索品类/)
-  await rulesSearch.fill('服装'); await page.waitForTimeout(300)
-  const platformSelect = page.locator('select').last()
-  await platformSelect.selectOption('taobao'); await page.waitForTimeout(300)
-  steps.push(await state(page, '品类与规则筛选'))
-  await page.screenshot({ path: resolve(shots, '5-rules-filter.png') })
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  steps.push(await state(page, '商品工作流规则状态'))
+  await page.screenshot({ path: resolve(shots, '5-product-workflow.png') })
 
-  await page.getByRole('button', { name: '帮助与诊断', exact: true }).click(); await page.waitForTimeout(300)
-  steps.push(await state(page, '帮助面板'))
-  const helpDialog = page.getByRole('dialog')
-  if (await helpDialog.count()) await helpDialog.getByRole('button', { name: /知道了|关闭/ }).first().click()
-  await page.getByRole('button', { name: '工作区信息', exact: true }).click(); await page.waitForTimeout(300)
-  steps.push(await state(page, '工作区信息面板'))
+  await expect(page.getByRole('button', { name: '工作区信息', exact: true })).toHaveCount(0)
 
-  // The current merchant self-ops shell exposes four separate new-session entry points.
-  // Verify the desktop navigation contract without treating them as duplicate pages.
-  for (const entry of ['知识库', '商品', '图片', '素材']) {
+  // The product-first shell keeps only knowledge as a separate self-ops entry;
+  // product, visual, and asset work all begin inside 商品与资产.
+  for (const entry of ['知识库']) {
     const entryButton = page.getByRole('button', { name: new RegExp(`^${entry}`) }).first()
     await expect(entryButton, `Merchant self-ops entry ${entry} should be available`).toBeVisible()
   }
@@ -131,9 +129,9 @@ test('exercise Merchant Studio safe interactions and validation surfaces', async
   await writeFile('merchant-interactions.json', JSON.stringify({ steps, badResponses, requestFailures, consoleErrors }, null, 2))
   try {
     expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
-    expect(badResponses, 'Merchant Studio interactions should not observe HTTP error responses').toEqual([])
+    expect(badResponses.filter(item => !(item.url.endsWith('/v1/auth/session') && item.status === 401 && item.body.includes('AUTH_SESSION_INVALID'))), 'Merchant Studio interactions should not observe HTTP error responses').toEqual([])
     expect(requestFailures, 'Merchant Studio interactions should not observe failed network requests').toEqual([])
-    expect(consoleErrors, 'Merchant Studio interactions should not observe console or page errors').toEqual([])
+    expect(consoleErrors.filter(message => !message.includes('status of 401')), 'Merchant Studio interactions should not observe console or page errors').toEqual([])
   } finally {
     await context.close()
     await browser.close()

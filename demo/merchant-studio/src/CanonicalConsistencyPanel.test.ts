@@ -32,7 +32,14 @@ describe('CanonicalConsistencyPanel', () => {
   it('keeps the panel busy while refreshing and preserves trusted content', () => {
     const markup = renderToStaticMarkup(createElement(CanonicalConsistencyPanel, { items, refreshing: true, onRefresh: vi.fn() }))
     expect(markup).toContain('aria-busy="true"')
-    expect(markup).toContain('当前工作区待处理：1 项')
+    expect(markup).toContain('当前工作区需关注：1 项')
     expect(markup).toContain('检查中…')
+  })
+
+  it('uses refresh as the recovery action when canonical status is unknown', () => {
+    const unknownItems: ConsistencyItem[] = [{ id: 'products', label: '商品', status: 'neutral', statusLabel: '标准链待返回', detail: '服务端尚未返回标准链状态', nextStep: '重新检查标准链状态' }]
+    const markup = renderToStaticMarkup(createElement(CanonicalConsistencyPanel, { items: unknownItems, onRefresh: vi.fn(), onResolveCanonical: vi.fn() }))
+    expect(markup).toContain('重新检查状态')
+    expect(markup).not.toContain('打开商品关系并核验')
   })
 })

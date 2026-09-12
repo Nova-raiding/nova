@@ -41,11 +41,15 @@ test('operates the platform user directory without destructive confirmation', as
   page.on('request', request => { if (/UsersPage|UserDirectory/u.test(request.url())) routeRequests.push({ event: 'request', url: request.url() }) })
   page.on('requestfinished', request => { if (/UsersPage|UserDirectory/u.test(request.url())) routeRequests.push({ event: 'finished', url: request.url() }) })
   await openPlatformConsole(page)
-  await page.locator('#ops-primary-navigation').getByRole('button', { name: '用户与租户', exact: true }).click()
+  await page.locator('#ops-primary-navigation').getByRole('button', { name: '用户中心', exact: true }).click()
   await expect(page).toHaveURL(/\/ops\/users(?:\?.*)?$/u)
-  await expect(page.getByRole('heading', { name: '用户与租户' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: '用户中心' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('当前租户成员')).toHaveCount(0)
   await expect(page.getByRole('form', { name: '用户目录筛选' })).toBeVisible({ timeout: 20_000 })
+  // Registration applications are loaded through the platform-only REST
+  // boundary and remain visible alongside the identity directory.
+  await expect(page.getByText('注册申请', { exact: true })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('button', { name: '刷新申请' })).toBeVisible()
 
   const supportRow = await filterUserDirectory(page)
   // The platform directory aggregates members across every workspace; on a

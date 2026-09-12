@@ -12,6 +12,15 @@ interface StoreDirectorySectionProps {
   onRevoke: (store: StoreDirectory) => Promise<void>;
 }
 
+export function storeAuthorizationStateLabel(state: string): string {
+  return ({
+    connected: "真实授权",
+    revoked: "已撤销",
+    pending: "待授权",
+    unknown: "状态待确认",
+  } as Record<string, string>)[state] ?? "状态待确认";
+}
+
 export function StoreDirectorySection({
   storeDirectory,
   canPlatformOps,
@@ -107,9 +116,9 @@ export function StoreDirectorySection({
                   ? "需重新授权"
                   : row.dataMode === "fixture"
                     ? "演示授权"
-                    : row.state === "connected"
+                  : row.state === "connected"
                       ? "真实授权"
-                  : row.state}
+                  : storeAuthorizationStateLabel(row.state)}
               </Tag>
             ),
           },

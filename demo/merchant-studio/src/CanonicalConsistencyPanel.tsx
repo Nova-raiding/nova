@@ -18,13 +18,16 @@ const freshnessCopy: Record<Freshness, { label: string; detail: string; tone: 'g
   fresh: { label: '报告新鲜', detail: '当前结果可以作为只读工作区依据。', tone: 'green' },
   stale: { label: '报告已变旧', detail: '结果可能未覆盖最新关系；处理前请重新检查。', tone: 'amber' },
   expired: { label: '报告已过期', detail: '过期结果不能作为发布依据，请重新检查。', tone: 'amber' },
-  unknown: { label: '新鲜度未知', detail: '服务端没有提供报告新鲜度，不能据此判断已通过。', tone: 'amber' },
+  unknown: { label: '新鲜度待确认', detail: '服务端没有提供报告新鲜度，不能据此判断已通过。', tone: 'amber' },
 }
 
 export function CanonicalConsistencyPanel({ items, freshness = 'unknown', generatedAt, errorMessage, onRefresh, onResolveCanonical, refreshing = false }: CanonicalConsistencyPanelProps) {
   const errorRef = useRef<HTMLDivElement>(null)
   const canonical = items.find((item) => item.id === 'products')
-  const pendingCount = items.filter((item) => item.status !== 'green').length
+  // Neutral means “not evaluated yet”, not an error. Only amber items need
+  // operator attention; counting rules/publish as pending made a healthy
+  // pre-task workspace look like a panel full of failures.
+  const pendingCount = items.filter((item) => item.status === 'amber').length
   const freshnessState = freshnessCopy[freshness]
 
   useEffect(() => {
@@ -47,9 +50,9 @@ export function CanonicalConsistencyPanel({ items, freshness = 'unknown', genera
         {freshness === 'fresh' ? <CheckCircle2 size={16} aria-hidden="true" /> : <Clock3 size={16} aria-hidden="true" />}
         <div><b>{freshnessState.label}</b><span>{freshnessState.detail}{generatedAt ? ` 生成于 ${generatedAt}。` : ''}</span></div>
       </div>
-      {canonical && canonical.status !== 'green' && <div className="canonical-status-summary warning" role="status"><AlertTriangle size={16} aria-hidden="true" /><div><b>{canonical.statusLabel ?? '标准链待核验'}</b><span>{canonical.detail}</span><small>下一步：{canonical.nextStep}</small>{onResolveCanonical && <button type="button" className="text-button canonical-resolve" onClick={onResolveCanonical}>打开商品关系并核验</button>}</div></div>}
+      {canonical && canonical.status !== 'green' && <div className={`canonical-status-summary ${canonical.status === 'amber' ? 'warning' : 'neutral'}`} role="status">{canonical.status === 'amber' ? <AlertTriangle size={16} aria-hidden="true" /> : <Clock3 size={16} aria-hidden="true" />}<div><b>{canonical.statusLabel ?? (canonical.status === 'amber' ? '标准链待核验' : '标准链待返回')}</b><span>{canonical.detail}</span><small>下一步：{canonical.nextStep}</small>{canonical.status === 'amber' && onResolveCanonical && <button type="button" className="text-button canonical-resolve" onClick={onResolveCanonical}>打开商品关系并核验</button>}{canonical.status === 'neutral' && onRefresh && <button type="button" className="text-button canonical-resolve" onClick={onRefresh} disabled={refreshing}>重新检查状态</button>}</div></div>}
       <div className="data-consistency-head canonical-summary-row">
-        <b>当前工作区待处理：{pendingCount} 项</b>
+        <b>{pendingCount ? `当前工作区需关注：${pendingCount} 项` : '当前工作区状态正常'}</b>
         <span>{canonical?.statusLabel ?? '标准链状态尚未确认'}</span>
       </div>
       <div className="data-consistency-grid">

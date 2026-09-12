@@ -86,19 +86,27 @@ data:
   VIDEO_ARTIFACT_ALLOWED_HOSTS: video-cdn.example.com
   IMAGE_ARTIFACT_ALLOWED_HOSTS: image-cdn.example.com
   MODEL_RELAY_PRICING_DERIVATION_ENABLED: "true"
-  MODEL_RELAY_PRICING_GROUP: SVIP
+  MODEL_RELAY_PRICING_GROUP: VIP
   MODEL_RELAY_TEXT_PRICING_GROUP: VIP
   MODEL_RELAY_OCR_PRICING_GROUP: VIP
   MODEL_RELAY_IMAGE_PRICING_GROUP: VIP
   MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP: VIP
-  MODEL_RELAY_VIDEO_PRICING_GROUP: SVIP
+  # wan3.0-video / wan3.0-video-prime are published for VIP/default/private
+  # on the configured relay; SVIP returns model_not_found and blocks video
+  # readiness. Keep video pricing on the same approved VIP snapshot as the
+  # local relay configuration.
+  MODEL_RELAY_VIDEO_PRICING_GROUP: VIP
   MODEL_RELAY_VIDEO_PRICING_OVERRIDES: '{"happyhorse-1.1-t2v":0.4508,"happyhorse-1.1-i2v":0.4508,"happyhorse-1.1-r2v":0.4508,"wan3.0-video":0.25}'
-  MODEL_RELAY_COST_EVIDENCE: "false"
-  MODEL_RELAY_TEXT_COST_EVIDENCE: "false"
-  MODEL_RELAY_OCR_COST_EVIDENCE: "false"
-  MODEL_RELAY_IMAGE_COST_EVIDENCE: "false"
-  MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: "false"
-  MODEL_RELAY_VIDEO_COST_EVIDENCE: "false"
+  # Cost evidence is a runtime requirement for every production modality.
+  # The flag only enables acceptance of a real provider receipt or pricing
+  # snapshot; deploy-preflight still requires fresh, release-bound canary
+  # evidence and fails closed when it is absent or expired.
+  MODEL_RELAY_COST_EVIDENCE: "true"
+  MODEL_RELAY_TEXT_COST_EVIDENCE: "true"
+  MODEL_RELAY_OCR_COST_EVIDENCE: "true"
+  MODEL_RELAY_IMAGE_COST_EVIDENCE: "true"
+  MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: "true"
+  MODEL_RELAY_VIDEO_COST_EVIDENCE: "true"
   IMAGE_MODEL: merchant-main-image
   IMAGE_GENERATION_EXECUTION_MODE: durable
   IMAGE_GENERATION_PATH: /images/generations

@@ -162,6 +162,7 @@ describe('four-platform fixture authorization lifecycle', () => {
       assets: expect.any(Array),
       confirmedLearningSuggestions: expect.any(Array),
     })
+    expect(withContext.data?.result?.products?.[0]?.knowledge_documents).toEqual(expect.any(Array))
     // Product facts remain authoritative and are returned alongside (never
     // replaced by) the bounded knowledge context.
     expect(withContext.data?.result?.products?.[0]).toMatchObject({ factsConfirmed: expect.any(Boolean), skus: expect.any(Array), selected_skus: [{ id: skuId }] })

@@ -11,6 +11,7 @@ export interface WorkspaceDirectoryQuery {
 
 export interface WorkspaceDirectoryItem {
   workspaceId: string
+  enterpriseName: string
   status: WorkspaceDirectoryStatus
   planName: string
   monthlyPriceCny: number

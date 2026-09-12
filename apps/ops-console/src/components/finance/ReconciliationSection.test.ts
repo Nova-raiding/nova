@@ -78,8 +78,8 @@ describe("ReconciliationSection finance actions", () => {
   it("renders unknown reconciliation states as blocked errors, never success", () => {
     const html = renderSection({ reconciliation: reconciliationFixture as never });
 
-    expect(html).toContain("未知状态（已阻断）");
-    expect(html).toMatch(/ant-alert-error[^>]*>[\s\S]*模型用量对账状态：未知状态（已阻断）/);
+    expect(html).toContain("待确认状态（已阻断）");
+    expect(html).toMatch(/ant-alert-error[^>]*>[\s\S]*模型用量对账状态：待确认状态（已阻断）/);
     expect(html).toContain("外部中转站用量：尚未核验");
   });
 
@@ -88,7 +88,7 @@ describe("ReconciliationSection finance actions", () => {
     expect(fixture).toContain("当前为 fixture（已阻断真实支付判断）");
     expect(fixture).not.toMatch(/ant-alert-success[^>]*>[\s\S]*当前为 fixture（已阻断真实支付判断）/);
     const unknown = renderSection({ reconciliation: { ...reconciliationFixture, provider: { mode: "unknown", ready: true, reasons: [] } } as never });
-    expect(unknown).toContain("未就绪或状态未知");
+    expect(unknown).toContain("未就绪或待确认");
     expect(unknown).not.toMatch(/ant-alert-success[^>]*>[\s\S]*未就绪或状态未知/);
   });
 

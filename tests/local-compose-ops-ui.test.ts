@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 type ComposeService = {
@@ -47,6 +48,11 @@ describe('local Compose Ops UI', () => {
     // on a LAN-facing interface by default.
     expect(api?.ports).toContainEqual(expect.objectContaining({ host_ip: '127.0.0.1', published: '8787', target: 8787 }))
     expect(apiReplica?.ports).toContainEqual(expect.objectContaining({ host_ip: '127.0.0.1', published: '8788', target: 8787 }))
+
+    const apiHealthcheck = api?.healthcheck?.test?.join(' ') ?? ''
+    expect(apiHealthcheck).toContain('127.0.0.1:8787/readyz')
+    expect(apiHealthcheck).toContain('Authorization: Bearer')
+    expect(apiHealthcheck).not.toContain('ASSET_SCAN_TRUSTED_PUBLIC_KEYS')
   })
 
   it('keeps all host-published local services on loopback', () => {
@@ -65,5 +71,13 @@ describe('local Compose Ops UI', () => {
     expect(healthcheck).toContain('test -s /tmp/merchant-worker-$${WORKER_ROLE}-ready')
     expect(healthcheck).toContain('process.kill(1, 0)')
     expect(healthcheck).not.toMatch(/process\.kill\(1, 0\).*\|\| exit 1$/)
+  })
+
+  it('keeps the removed feature-flags page unavailable at the served nginx boundary', () => {
+    const nginxConfig = readFileSync('infra/nginx/ops-console.conf', 'utf8')
+
+    expect(nginxConfig).toContain('^/(?:.*?/)?ops/feature-flags/?$')
+    expect(nginxConfig).toContain('add_header Cache-Control "no-store" always;')
+    expect(nginxConfig).toContain('return 404 "feature-flags page has been removed";')
   })
 })

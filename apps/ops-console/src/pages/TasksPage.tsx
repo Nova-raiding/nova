@@ -49,18 +49,18 @@ export function TasksPage({ model }: TasksPageProps) {
                 <span className="ops-tasks-section-kicker">WORK QUEUE</span>
                 <h2 id="ops-tasks-overview-title">今天先处理什么</h2>
               </div>
-              <span className="ops-tasks-scope-note">汇总范围：当前授权工作区</span>
+              <span className="ops-tasks-scope-note">汇总范围：当前授权企业主体</span>
             </div>
             <div className="ops-tasks-summary-grid">
               {canReadPlatformTasks && model.platformTaskSummary ? (
                 <Card className="ops-tasks-summary-card" title="任务处理量" size="small">
                   <Row gutter={[12, 12]}>
-                    <Col span={6}><Statistic title="工作区" value={model.platformTaskSummary.workspaceCount} /></Col>
+                    <Col span={6}><Statistic title="企业主体" value={model.platformTaskSummary.workspaceCount} /></Col>
                     <Col span={6}><Statistic title="全部任务" value={model.platformTaskSummary.taskCount} /></Col>
                     <Col span={6}><Statistic title="生成中" value={model.platformTaskSummary.generationQueueCount} /></Col>
                     <Col span={6}><Statistic title="待发布" value={model.platformTaskSummary.publishQueueCount} /></Col>
                   </Row>
-                  {model.platformTaskSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${model.platformTaskSummary.failedWorkspaceCount} 个工作区任务数据暂未纳入汇总`} /> : null}
+                  {model.platformTaskSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${model.platformTaskSummary.failedWorkspaceCount} 个企业主体任务数据暂未纳入汇总`} /> : null}
                 </Card>
               ) : null}
               {canReadPlatformMarketing && model.platformMarketingSummary ? (
@@ -71,7 +71,7 @@ export function TasksPage({ model }: TasksPageProps) {
                     <Col span={6}><Statistic title="学习建议" value={model.platformMarketingSummary.learningSuggestionCount} /></Col>
                     <Col span={6}><Statistic title="生成失败" value={model.platformMarketingSummary.generationByState.failed ?? 0} /></Col>
                   </Row>
-                  {model.platformMarketingSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${model.platformMarketingSummary.failedWorkspaceCount} 个工作区营销数据暂未纳入汇总`} /> : null}
+                  {model.platformMarketingSummary.failedWorkspaceCount ? <Alert className="ops-tasks-inline-alert" type="warning" showIcon title={`${model.platformMarketingSummary.failedWorkspaceCount} 个企业主体营销数据暂未纳入汇总`} /> : null}
                 </Card>
               ) : null}
             </div>
@@ -83,7 +83,7 @@ export function TasksPage({ model }: TasksPageProps) {
             showIcon
             type="info"
             title="客户内容队列受控"
-            description="平台运营可以处理平台级告警与治理任务；客户商品、素材、生成和发布内容需要对应工作区成员权限或临时授权。空列表不代表没有客户任务。"
+            description="平台运营可以处理平台级告警与治理任务；客户商品、素材、生成和发布内容需要对应企业主体成员权限或临时授权。空列表不代表没有客户任务。"
           />
         ) : null}
         <section className="ops-tasks-work" aria-labelledby="ops-tasks-work-title">
@@ -110,7 +110,7 @@ export function TasksPage({ model }: TasksPageProps) {
           </div>
           <ProductSpreadsheetImport key={model.opsSession?.workspace_id ?? "platform"} workspaceId={model.opsSession?.workspace_id} platformScope={model.authorization.scope.kind === "platform"} canWrite={model.authorization.can("customer.content.update")} />
           {!canReadCustomerContent && canReadPlatformMarketing ? (
-            <Alert className="ops-tasks-access-note" showIcon type="info" title="平台运营使用聚合治理数据" description="客户商品、素材、知识和内容队列属于工作区范围；平台运营台只展示跨工作区的任务、视觉审核、素材风险和学习建议汇总。需要处理具体内容时，请进入对应工作区的授权运营会话。" />
+            <Alert className="ops-tasks-access-note" showIcon type="info" title="平台运营使用聚合治理数据" description="客户商品、素材、知识和内容队列属于企业主体范围；平台运营台只展示跨企业主体的任务、视觉审核、素材风险和学习建议汇总。需要处理具体内容时，请进入对应企业主体的授权运营会话。" />
           ) : canReadCustomerContent ? <OperationalGovernanceSection model={model} /> : null}
         </section></div>
     </OpsPage>

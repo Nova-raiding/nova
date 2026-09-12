@@ -174,7 +174,7 @@ async function login(page, evidence) {
   expect(session.workbench).toBe('platform')
   expect(session.capabilities).toEqual(expect.arrayContaining(['authorization.grant.read', 'authorization.grant.manage']))
   await expect(page.getByRole('region', { name: '当前身份与权限范围' })).toContainText('已由服务端验证', { timeout: 30_000 })
-  await expect(page.getByRole('heading', { name: '用户与租户', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '用户中心', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: '权限与角色', exact: true }).click()
   await page.getByRole('tab', { name: 'JIT 授权', exact: true }).click()
 }

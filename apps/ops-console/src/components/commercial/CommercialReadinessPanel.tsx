@@ -30,15 +30,21 @@ const displayName: Record<string, string> = { image: "标准图片", image_edit:
 const isRecord = (value: unknown): value is ReadinessEvidence => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 function findEvidence(report: CommercialReadinessReport, aliases: readonly string[]): ReadinessEvidence | null {
-  const sources: ReadinessEvidence[] = [report.catalog, report.policies, report.capabilities, report.provider, report.creativePoints];
-  for (const source of sources) for (const alias of aliases) if (isRecord(source[alias])) return source[alias];
+  const sources = [report.catalog, report.policies, report.capabilities, report.provider, report.creativePoints].filter(isRecord);
+  for (const source of sources) for (const alias of aliases) {
+    const value = source[alias];
+    if (isRecord(value)) return value;
+  }
   return null;
 }
 
 function reasonOf(evidence: ReadinessEvidence | null, fallback: string): string {
   if (!evidence) return fallback;
   for (const key of ["blocking_reason", "blockingReason", "reason", "detail", "message"]) if (typeof evidence[key] === "string" && evidence[key]) return evidence[key] as string;
-  for (const key of ["reasons", "errors", "unresolved"]) if (Array.isArray(evidence[key]) && evidence[key].some(item => typeof item === "string")) return (evidence[key] as unknown[]).filter((item): item is string => typeof item === "string").join("、");
+  for (const key of ["reasons", "errors", "unresolved"]) {
+    const value = evidence[key];
+    if (Array.isArray(value) && value.some((item: unknown) => typeof item === "string")) return value.filter((item): item is string => typeof item === "string").join("、");
+  }
   return fallback;
 }
 
@@ -96,12 +102,12 @@ export function CommercialReadinessPanel({ authorization, client = commercialOpe
   return <Card size="small" title="商业化开通准备" extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => void load()} loading={state.status === "loading"}>刷新</Button>}>
     {state.status === "error" ? <Alert type="warning" showIcon title="以下为上次成功报告" description={state.error} style={{ marginBottom: 16 }} /> : null}
     <Alert type={report.ready ? "success" : "warning"} showIcon title={report.ready ? "READY · 可进入生产门禁" : "BLOCKED · 商业化开通仍被阻断"} description={report.message} />
-    <Descriptions size="small" column={3} style={{ marginTop: 16 }} items={[{ key: "environment", label: "环境", children: <Tag>{report.environment || "未知"}</Tag> }, { key: "blockers", label: "全局阻断项", children: report.blockers.length || "未知" }, { key: "generated", label: "报告时间", children: report.generatedAt ? new Date(report.generatedAt).toLocaleString() : <Typography.Text type="danger">未知 · 阻断</Typography.Text> }]} />
+    <Descriptions size="small" column={3} style={{ marginTop: 16 }} items={[{ key: "environment", label: "环境", children: <Tag>{report.environment || "未提供"}</Tag> }, { key: "blockers", label: "全局阻断项", children: report.blockers.length || "待确认" }, { key: "generated", label: "报告时间", children: report.generatedAt ? new Date(report.generatedAt).toLocaleString() : <Typography.Text type="danger">待确认 · 阻断</Typography.Text> }]} />
     <Row gutter={[12, 12]} style={{ marginTop: 16 }}><Col xs={24} xl={12}><CheckList title="可执行 SKU" items={skuChecks} /></Col><Col xs={24} xl={12}><CheckList title="方案规则" items={[...policyChecks, { label: "计费操作注册表", check: registryCheck }]} /></Col></Row>
     <Card size="small" type="inner" title="已返回的创意点能力费率" style={{ marginTop: 12 }}>
-      {capabilityEntries.length ? <Row gutter={[8, 8]}>{capabilityEntries.map(([name, raw]) => { const evidence = isRecord(raw) ? raw : null; const check: Check = evidence?.executable === true && evidence.blocking_reason == null && evidence.blockingReason == null ? { ready: true, reason: "已返回可执行费率" } : { ready: false, reason: reasonOf(evidence, "费率未返回可执行证据") }; return <Col key={name} xs={24} sm={12} md={6}><Card size="small" title={displayName[name] ?? name}><StatusTag check={check} /><Typography.Text type={check.ready ? "secondary" : "danger"} style={{ display: "block", marginTop: 6 }}>{check.reason}</Typography.Text></Card></Col>; })}</Row> : <Alert type="error" showIcon title="未知 · 阻断" description="就绪报告未返回任何商业能力费率。" />}
+      {capabilityEntries.length ? <Row gutter={[8, 8]}>{capabilityEntries.map(([name, raw]) => { const evidence = isRecord(raw) ? raw : null; const check: Check = evidence?.executable === true && evidence.blocking_reason == null && evidence.blockingReason == null ? { ready: true, reason: "已返回可执行费率" } : { ready: false, reason: reasonOf(evidence, "费率未返回可执行证据") }; return <Col key={name} xs={24} sm={12} md={6}><Card size="small" title={displayName[name] ?? name}><StatusTag check={check} /><Typography.Text type={check.ready ? "secondary" : "danger"} style={{ display: "block", marginTop: 6 }}>{check.reason}</Typography.Text></Card></Col>; })}</Row> : <Alert type="error" showIcon title="待确认 · 阻断" description="就绪报告未返回任何商业能力费率。" />}
     </Card>
-    <Card size="small" type="inner" title="底层结算证据" style={{ marginTop: 12 }}><Descriptions size="small" column={3} items={[{ key: "balance", label: "点数账本", children: report.creativePoints.point_balance_repository === true ? <Tag color="success">已配置</Tag> : <Tag color="error">未知 / 阻断</Tag> }, { key: "settlement", label: "预占与结算", children: report.creativePoints.reservation_and_settlement_repository === true ? <Tag color="success">已配置</Tag> : <Tag color="error">未知 / 阻断</Tag> }, { key: "audit", label: "可审计结算", children: report.creativePoints.auditable === true ? <Tag color="success">已配置</Tag> : <Tag color="error">未知 / 阻断</Tag> }]} /></Card>
+    <Card size="small" type="inner" title="底层结算证据" style={{ marginTop: 12 }}><Descriptions size="small" column={3} items={[{ key: "balance", label: "点数账本", children: report.creativePoints.point_balance_repository === true ? <Tag color="success">已配置</Tag> : <Tag color="error">待确认 / 阻断</Tag> }, { key: "settlement", label: "预占与结算", children: report.creativePoints.reservation_and_settlement_repository === true ? <Tag color="success">已配置</Tag> : <Tag color="error">待确认 / 阻断</Tag> }, { key: "audit", label: "可审计结算", children: report.creativePoints.auditable === true ? <Tag color="success">已配置</Tag> : <Tag color="error">待确认 / 阻断</Tag> }]} /></Card>
     {report.blockers.length ? <List size="small" header={<Typography.Text strong>需要处理的全局阻断项</Typography.Text>} dataSource={report.blockers} renderItem={(blocker) => <List.Item><List.Item.Meta title={<><Tag color="error">{blocker.scope}</Tag><Typography.Text code>{blocker.code}</Typography.Text></>} description={<><div>{blocker.detail}</div><Typography.Text type="secondary">下一步：{blocker.nextAction}</Typography.Text></>} /></List.Item>} style={{ marginTop: 16 }} /> : null}
   </Card>;
 }

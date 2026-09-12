@@ -81,7 +81,7 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
         }}
       >
         <Typography.Paragraph>服务端会用当前事件重建同一报告周期。只有事实变化时才会生成待审批 correction。</Typography.Paragraph>
-        {correctionError && <Alert role="alert" aria-live="assertive" type="error" showIcon message={correctionError} description="请修正后再次提交；原窗口仍保持打开，已填写的理由不会清空。" action={<Button
+        {correctionError && <Alert role="alert" aria-live="assertive" type="error" showIcon title={correctionError} description="请修正后再次提交；原窗口仍保持打开，已填写的理由不会清空。" action={<Button
           size="small"
           style={{ minHeight: 44 }}
           loading={model.correctionLoading ?? false}
@@ -109,7 +109,7 @@ export function SupportSlaReportSection({ model }: { model: SupportDomainModel }
         }}
       >
         <Typography.Paragraph>该决策将作为不可变审计证据保存，每个 correction 只能决策一次。</Typography.Paragraph>
-        {decisionError && <Alert role="alert" aria-live="assertive" type="error" showIcon message={decisionError} description="请确认理由和权限后再次提交；当前决策窗口仍保持打开，已填写的理由不会清空。" action={<Button
+        {decisionError && <Alert role="alert" aria-live="assertive" type="error" showIcon title={decisionError} description="请确认理由和权限后再次提交；当前决策窗口仍保持打开，已填写的理由不会清空。" action={<Button
           size="small"
           style={{ minHeight: 44 }}
           loading={model.correctionLoading ?? false}

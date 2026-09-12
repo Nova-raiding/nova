@@ -5,7 +5,7 @@ const checkoutCommit = '11d5960a326750d5838078e36cf38b85af677262'
 const setupNodeCommit = '49933ea5288caeca8642d1e84afbd3f7d6820020'
 const setupRubyCommit = '95ef2b042f9d7a56d8268cba8559e2842e2ad01b'
 const nodeDigest = 'sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32'
-const nginxDigest = 'sha256:e7623c006de0ea4716e763083668edd9b732371d5479653c2e709fd0696b0348'
+const nginxDigest = 'sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0'
 
 function externalBaseImages(source: string, dockerfile = 'Dockerfile') {
   const stageAliases = new Set<string>()

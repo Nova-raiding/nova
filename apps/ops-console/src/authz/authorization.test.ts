@@ -91,7 +91,7 @@ describe("authorization projection", () => {
   it("fails closed while a managed session has not loaded", () => {
     const authorization = createAuthorizationProjection(undefined, true);
     expect(authorization.capabilities.size).toBe(0);
-    expect(canViewDomain(authorization, "overview")).toBe(false);
+    expect(canViewDomain(authorization, "users")).toBe(false);
   });
 
   it("uses the server permission projection for local Bearer sessions too", () => {
@@ -109,7 +109,7 @@ describe("authorization projection", () => {
     expect(authorization.source).toBe("deny-all");
     expect(authorization.capabilities.size).toBe(0);
     expect(authorization.can("platform.summary.read")).toBe(false);
-    expect(canViewDomain(authorization, "overview")).toBe(false);
+    expect(canViewDomain(authorization, "users")).toBe(false);
   });
 
   it("maps a real canonical server projection across all 13 domains", () => {
@@ -140,14 +140,13 @@ describe("authorization projection", () => {
     }
   });
 
-  it("does not infer unrelated domains from a canonical summary capability", () => {
+  it("does not infer users from a legacy summary capability", () => {
     const authorization = createAuthorizationProjection(session(["platform_ops"], {
       capabilities: ["platform.summary.read"],
     }), true);
-    expect(canViewDomain(authorization, "overview")).toBe(true);
     expect(canViewDomain(authorization, "users")).toBe(false);
     expect(canViewDomain(authorization, "tasks")).toBe(false);
-    expect(canViewDomain(authorization, "feature-flags")).toBe(false);
+    expect(authorization.can("feature_flag.read")).toBe(false);
   });
 
   it("filters workspace-scoped capabilities out of the platform workbench", () => {
@@ -172,7 +171,7 @@ describe("authorization projection", () => {
     }), true);
     expect(authorization.capabilities.size).toBe(0);
     expect(canViewDomain(authorization, "users")).toBe(false);
-    expect(canViewDomain(authorization, "overview")).toBe(false);
+    expect(canViewDomain(authorization, "users")).toBe(false);
   });
 
   it("filters platform capabilities out of the workspace workbench", () => {

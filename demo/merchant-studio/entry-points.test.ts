@@ -19,10 +19,10 @@ describe('merchant new-session entry points', () => {
     expect(merchantRouteFromLocation({ pathname: '/merchant/products', search: '?section=assets', hash: '' }).entry).toBe('assets')
   })
 
-  it('preserves the current product platform and store scope when opening rules', () => {
+  it('redirects the legacy rules entry to the product-first workflow', () => {
     const url = urlForMerchantRoute({ pathname: '/', search: '' }, { page: 'rules', target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' } })
     expect(url).toBe('/merchant/rules?product_id=product-a&platform=taobao&account_id=store-a')
-    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '?product_id=product-a&platform=taobao&account_id=store-a', hash: '' })).toMatchObject({ page: 'rules', target: { kind: 'product', productId: 'product-a', platform: 'taobao', accountId: 'store-a' } })
+    expect(merchantRouteFromLocation({ pathname: '/merchant/rules', search: '?product_id=product-a&platform=taobao&account_id=store-a', hash: '' })).toEqual({ page: 'products', searchQuery: '' })
   })
 
   it('preserves unrelated query parameters while replacing route-owned parameters', () => {

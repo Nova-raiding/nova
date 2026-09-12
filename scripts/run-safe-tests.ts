@@ -68,15 +68,26 @@ const defaultRuntime: SafeTestRuntime = {
   runVitest(args, environment) {
     return new Promise((resolveExit, reject) => {
       const child = spawn(process.execPath, [join(projectRoot, 'node_modules/vitest/vitest.mjs'), ...args], {
-        cwd: projectRoot, env: environment, stdio: 'inherit',
+        cwd: projectRoot, env: environment, stdio: 'inherit', detached: true,
       })
-      const interrupt = () => { child.kill('SIGINT') }
-      const terminate = () => { child.kill('SIGTERM') }
+      const signalGroup = (signal: NodeJS.Signals) => {
+        if (child.pid) { try { process.kill(-child.pid, signal); return } catch { /* fall through */ } }
+        child.kill(signal)
+      }
+      const interrupt = () => { signalGroup('SIGINT') }
+      const terminate = () => { signalGroup('SIGTERM') }
+      const timeoutMs = Math.max(10_000, Number(environment.SAFE_TEST_TIMEOUT_MS ?? 300_000))
+      const timeout = setTimeout(() => {
+        console.error(`Safe test run exceeded ${timeoutMs}ms; terminating Vitest for diagnosability.`)
+        signalGroup('SIGTERM')
+        setTimeout(() => signalGroup('SIGKILL'), 2_000).unref()
+      }, timeoutMs)
       const detach = () => { process.off('SIGINT', interrupt); process.off('SIGTERM', terminate) }
       process.once('SIGINT', interrupt)
       process.once('SIGTERM', terminate)
       child.once('error', error => { detach(); reject(error) })
       child.once('close', (code, signal) => {
+        clearTimeout(timeout)
         detach()
         resolveExit(code ?? (signal === 'SIGINT' ? 130 : signal === 'SIGTERM' ? 143 : 1))
       })

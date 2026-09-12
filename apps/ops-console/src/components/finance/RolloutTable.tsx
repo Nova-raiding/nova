@@ -17,9 +17,9 @@ export function RolloutTable({ model }: RolloutTableProps) {
       columns={[
         { title: "套餐", dataIndex: "offerCode" },
         {
-          title: "工作区",
+          title: "企业主体",
           dataIndex: "workspaceId",
-          render: (value: string | undefined) => value || "全局",
+          render: (value: string | undefined) => value ? `Workspace ID：${value}` : "全局",
         },
         {
           title: "比例（%）",

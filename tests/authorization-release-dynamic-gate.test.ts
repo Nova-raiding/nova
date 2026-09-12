@@ -13,7 +13,7 @@ const validObligations = new Set(['reason', 'revision', 'idempotency', 'confirma
 function authorizationReleaseReport() {
   const methods = [...MCP_METHODS]
   const policies = Object.values(MCP_METHOD_POLICIES)
-  const identityRoutes = HTTP_OPERATION_POLICIES.filter(policy => policy.authentication === 'identity')
+  const identityRoutes = HTTP_OPERATION_POLICIES.filter(policy => policy.authentication === 'identity' && !policy.identityOnly)
   const methodsWithPolicy = methods.filter(method => Object.prototype.hasOwnProperty.call(MCP_METHOD_POLICIES, method))
   const identityRoutesWithPolicy = identityRoutes.filter(policy => policy.mcpMethod !== undefined && Object.prototype.hasOwnProperty.call(MCP_METHOD_POLICIES, policy.mcpMethod))
   const scopedPolicies = policies.filter(policy => validScopes.has(policy.scope))
@@ -39,7 +39,7 @@ describe('authorization release dynamic gate', () => {
   it('computes live registry denominators and requires complete local coverage', () => {
     const report = authorizationReleaseReport()
 
-    expect(assertHttpOperationPolicyCoverage()).toMatchObject({ registered: report.http_identity_total + HTTP_OPERATION_POLICIES.filter(policy => policy.authentication !== 'identity').length })
+    expect(assertHttpOperationPolicyCoverage()).toMatchObject({ registered: HTTP_OPERATION_POLICIES.length })
     expect(report.mcp_total).toBeGreaterThan(0)
     expect(report.policy_total).toBe(report.mcp_total)
     expect(report.mcp_policy_coverage).toBe(1)

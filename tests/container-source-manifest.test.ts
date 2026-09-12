@@ -154,7 +154,10 @@ describe('deterministic container source manifest', () => {
 
   it('builds and embeds the gateway source manifest in the runtime image', () => {
     const dockerfile = readFileSync('services/payment-gateway/Dockerfile', 'utf8')
-    expect(dockerfile).toContain('COPY services/payment-gateway ./services/payment-gateway')
+    for (const file of ['Dockerfile', 'index.mjs', 'alipay.mjs', 'alipay.d.mts']) {
+      expect(dockerfile).toContain(`COPY services/payment-gateway/${file} ./services/payment-gateway/${file}`)
+    }
+    expect(dockerfile).not.toContain('COPY services/payment-gateway ./services/payment-gateway')
     expect(dockerfile).toContain('COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs')
     expect(dockerfile).toContain('generate-container-source-manifest.mjs generate gateway /source')
     expect(dockerfile).toContain('/source/.release-source/gateway.manifest /source/.release-source/gateway.manifest.sha256')

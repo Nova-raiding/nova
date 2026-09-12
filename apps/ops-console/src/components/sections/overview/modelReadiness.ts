@@ -16,6 +16,16 @@ export type ModelReadinessRow = {
   reasons: string[];
 };
 
+export function modelStateLabel(state: string | undefined): string {
+  return ({
+    ready: "已就绪",
+    blocked: "已阻断",
+    unavailable: "不可用",
+    unknown: "状态待确认",
+    degraded: "服务降级",
+  } as Record<string, string>)[state ?? ""] ?? "状态待确认";
+}
+
 export function modelReadinessRows(
   status: Pick<ModelStatus, "model_readiness" | "state"> | undefined,
 ): ModelReadinessRow[] {
@@ -33,7 +43,7 @@ export function modelReadinessRows(
         ? readiness?.reasons ?? []
         : readiness?.reasons?.length
           ? readiness.reasons
-          : [`平台模型最终状态为 ${status.state}，尚未通过上线门禁`],
+          : [`平台模型最终状态为 ${modelStateLabel(status.state)}，尚未通过上线门禁`],
     };
   });
 }

@@ -84,7 +84,7 @@ export function ModelStatusSection({ model }: ModelStatusSectionProps) {
           <Alert
             type="error"
             showIcon
-            title="平台模型状态读取失败"
+            title="平台模型状态读取失败：状态不可用"
             description="当前状态不能视为配置完成。请重试读取平台模型状态；中转站未确认前，生成能力保持阻断。"
             action={(
               <Button type="primary" size="small" style={{ minHeight: 44 }} aria-label="重试加载平台模型状态" onClick={() => void model.load()}>

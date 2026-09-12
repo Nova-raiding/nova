@@ -548,7 +548,7 @@ export function MarketingQueuePanel({ model }: MarketingQueuePanelProps) {
       />
       <Modal open={Boolean(imageReconcileTarget)} title="人工收口图片执行" okText="提交收口" cancelText="取消" confirmLoading={imageReconcileSubmitting} okButtonProps={{ danger: imageResolution === "failed", disabled: imageReason.trim().length < 4 || !imageEvidenceRef.trim() }} onCancel={closeImageReconcile} onOk={() => void submitImageReconcile()} destroyOnHidden>
         <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-          <Alert type="warning" showIcon role="alert" title="未知状态不能直接视为成功或重试" description="完成收口仅在服务端确认任务成功、产物已归档且安全扫描通过时允许；失败收口必须留下可追溯证据。收口期间 Merchant 与 Ops 都不会创建第二个 Provider 请求。" />
+          <Alert type="warning" showIcon role="alert" title="待确认状态不能直接视为成功或重试" description="完成收口仅在服务端确认任务成功、产物已归档且安全扫描通过时允许；失败收口必须留下可追溯证据。收口期间 Merchant 与 Ops 都不会创建第二个 Provider 请求。" />
           <Typography.Text type="secondary">{imageReconcileTarget ? `${imageReconcileTarget.jobId} · revision ${imageReconcileTarget.revision}` : ""}</Typography.Text>
           <Select aria-label="图片收口结果" value={imageResolution} onChange={setImageResolution} options={[{ value: "failed", label: "确认失败" }, { value: "completed", label: "确认完成（需产物门禁通过）" }]} style={{ width: "100%" }} />
           <Input aria-label="图片收口证据引用" value={imageEvidenceRef} onChange={(event) => setImageEvidenceRef(event.target.value)} placeholder="证据引用：工单、Provider 查询记录或审计附件 ID" maxLength={500} />

@@ -195,7 +195,7 @@ describe('production readiness fail-closed', () => {
 
   it.each([
     ['payment', 'PAYMENT_MODE', 'fixture'],
-    ['payment', 'PAYMENT_PROVIDER_ADAPTERS', 'alipay'],
+    ['payment', 'PAYMENT_PROVIDER_ADAPTERS', ''],
     ['payment', 'PAYMENT_PROVIDER_QUERY_API_URL', 'http://payments.example.test/query'],
     ['payment', 'PAYMENT_REFUND_ENABLED', 'false'],
     ['rule_sync', 'PLATFORM_RULE_SYNC_MANIFEST_URL', 'https://127.0.0.1/manifest.json'],

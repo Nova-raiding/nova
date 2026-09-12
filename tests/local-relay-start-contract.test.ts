@@ -29,5 +29,19 @@ describe('local relay start contract', () => {
     expect(compose).toContain('VIDEO_MODEL: ${VIDEO_MODEL:-happyhorse-1.1-t2v}')
     expect(script).toContain('export VIDEO_DURATION_SECONDS=${VIDEO_DURATION_SECONDS:-5}')
     expect(compose).toContain('VIDEO_DURATION_SECONDS: ${VIDEO_DURATION_SECONDS:-5}')
+    // The configured relay publishes image/video models to VIP/default/private.
+    // A SVIP fallback makes pricing quote or video canary fail with
+    // MODEL_PRICING_GROUP_UNAVAILABLE / model_not_found.
+    expect(compose).toContain('MODEL_RELAY_VIDEO_PRICING_GROUP: ${MODEL_RELAY_VIDEO_PRICING_GROUP:-VIP}')
+    expect(compose).toContain('MODEL_RELAY_IMAGE_PRICING_GROUP: ${MODEL_RELAY_IMAGE_PRICING_GROUP:-VIP}')
+    expect(compose).toContain('MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP: ${MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP:-VIP}')
+    for (const modality of ['TEXT', 'OCR', 'IMAGE', 'IMAGE_EDIT', 'VIDEO']) {
+      expect(compose).toContain(
+        'MODEL_RELAY_' + modality + '_COST_EVIDENCE: ${MODEL_RELAY_' + modality + '_COST_EVIDENCE:-true}',
+      )
+    }
+    expect(script).toContain('export MERCHANT_MCP_BASE_URL=${MERCHANT_MCP_BASE_URL:-http://127.0.0.1:8787}')
+    expect(script).toContain('export MERCHANT_WORKSPACE_ID=${MERCHANT_WORKSPACE_ID:-ws_demo}')
+    expect(script).toContain('export MERCHANT_MCP_TOKEN=${MERCHANT_MCP_TOKEN:-workspace-local-token}')
   })
 })

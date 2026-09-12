@@ -34,6 +34,12 @@ const LEGACY_MIGRATION_CHECKSUMS = new Map<number, ReadonlySet<string>>([
   // expiration-fact hardening. Keep that applied identity accepted; 169 is
   // the forward-only repair for the missing expiration table.
   [168, new Set(['37f633fb25a7d1536f65a644a1adee3611c36ed416ac9a1bf3a10a1e92ab1ef1'])],
+  // Migration 191 was applied by the local release image before the
+  // category DDL was consolidated into its current idempotent form.  The
+  // database already contains the category column and index; preserve that
+  // immutable applied identity while allowing the release runner to continue
+  // validating and applying later migrations.
+  [191, new Set(['36f8c9669ba99a392a874a76fa8d28b658211376a0e7e3131281247926202ba2'])],
 ])
 
 export type MigrationIntegrityErrorCode = 'MIGRATION_NAME_MISMATCH' | 'MIGRATION_CHECKSUM_MISMATCH' | 'MIGRATION_VERSION_UNKNOWN' | 'MIGRATION_DUPLICATE_VERSION' | 'MIGRATION_VERSION_INVALID'
@@ -471,6 +477,15 @@ export async function loadMigrations(): Promise<Migration[]> {
   const commercialCheckoutResource = await readFile(new URL('./migrations/181_commercial_checkout_resource.sql', import.meta.url), 'utf8')
   const passwordAuth = await readFile(new URL('./migrations/182_password_auth.sql', import.meta.url), 'utf8')
   const knowledgePersistence = await readFile(new URL('./migrations/183_knowledge_persistence.sql', import.meta.url), 'utf8')
+  const hardenKnowledgeAuditFacts = await readFile(new URL('./migrations/184_harden_knowledge_audit_facts.sql', import.meta.url), 'utf8')
+  const hardenRuntimeRoleAcl = await readFile(new URL('./migrations/185_harden_runtime_role_acl.sql', import.meta.url), 'utf8')
+  const hardenRuntimeAuthAcl = await readFile(new URL('./migrations/186_harden_runtime_auth_acl.sql', import.meta.url), 'utf8')
+  const enterpriseTenantRoot = await readFile(new URL('./migrations/187_enterprise_tenant_root.sql', import.meta.url), 'utf8')
+  const enterpriseWorkspaceBootstrap = await readFile(new URL('./migrations/188_enterprise_workspace_bootstrap.sql', import.meta.url), 'utf8')
+  const enterpriseDisplayProjection = await readFile(new URL('./migrations/189_enterprise_display_projection.sql', import.meta.url), 'utf8')
+  const registrationRejected = await readFile(new URL('./migrations/190_registration_rejected.sql', import.meta.url), 'utf8')
+  const rulePackCategory = await readFile(new URL('./migrations/191_rule_pack_category.sql', import.meta.url), 'utf8')
+  const allowCentTestOrders = await readFile(new URL('./migrations/192_allow_cent_test_orders.sql', import.meta.url), 'utf8')
   return [
     initial,
     { version: 2, name: 'force_rls', sql: forceRls },
@@ -655,6 +670,15 @@ export async function loadMigrations(): Promise<Migration[]> {
     { version: 181, name: 'commercial_checkout_resource', sql: commercialCheckoutResource },
     { version: 182, name: 'password_auth', sql: passwordAuth },
     { version: 183, name: 'knowledge_persistence', sql: knowledgePersistence },
+    { version: 184, name: 'harden_knowledge_audit_facts', sql: hardenKnowledgeAuditFacts },
+    { version: 185, name: 'harden_runtime_role_acl', sql: hardenRuntimeRoleAcl },
+    { version: 186, name: 'harden_runtime_auth_acl', sql: hardenRuntimeAuthAcl },
+    { version: 187, name: 'enterprise_tenant_root', sql: enterpriseTenantRoot },
+    { version: 188, name: 'enterprise_workspace_bootstrap', sql: enterpriseWorkspaceBootstrap },
+    { version: 189, name: 'enterprise_display_projection', sql: enterpriseDisplayProjection },
+    { version: 190, name: 'registration_rejected', sql: registrationRejected },
+    { version: 191, name: 'rule_pack_category', sql: rulePackCategory },
+    { version: 192, name: 'allow_cent_test_orders', sql: allowCentTestOrders },
   ]
 }
 

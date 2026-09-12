@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Col, Descriptions, Drawer, Empty, Form, Input, Modal, Row, Select, Space, Spin, Statistic, Table, Tag, Typography } from "antd";
 import type { TableProps } from "antd";
-import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
+import type { MerchantAccountAuthorizationResult, OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { PlatformUser } from "../../types/ops";
+import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 
 type UserFilters = { query?: string; status?: string; workspaceId?: string };
 export type UserDirectorySort = { field: "displayName" | "status" | "createdAt"; order: "ascend" | "descend" };
 type DirectoryUser = PlatformUser & { createdAt?: string };
-const roleLabels: Record<string, string> = { workspace_owner: "工作区所有者", merchant_admin: "商家管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
+const roleLabels: Record<string, string> = { workspace_owner: "企业所有者", merchant_admin: "企业管理员", operator: "运营", support: "支持", finance: "财务", platform_ops: "平台运营" };
 const memberStatusLabels: Record<string, string> = { active: "已激活", invited: "待激活", suspended: "已停用" };
 const memberStatusOrder: Record<string, number> = { active: 0, invited: 1, suspended: 2 };
 const workspaceStatusLabels: Record<string, string> = { active: "正常", disabled: "已停用" };
@@ -62,6 +63,10 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
   const [bulkSuspendOpen, setBulkSuspendOpen] = useState(false);
   const [bulkSuspendReason, setBulkSuspendReason] = useState("");
   const [bulkSuspending, setBulkSuspending] = useState(false);
+  const [provisionOpen, setProvisionOpen] = useState(false);
+  const [provisionSubmitting, setProvisionSubmitting] = useState(false);
+  const [provisionResult, setProvisionResult] = useState<{ login: string; onboardingFeeFen: number; authorization?: MerchantAccountAuthorizationResult }>();
+  const [provisionForm] = Form.useForm<{ login: string; password: string; enterpriseName: string; contactName: string; workspaceIds: string; reason: string; skuCode: string; amountFen: number; paymentStatus: "pending" | "verified"; paymentReference?: string; paidAt?: string }>();
   const [actionError, setActionError] = useState("");
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const directoryErrorRef = useRef<HTMLDivElement>(null);
@@ -124,7 +129,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     restoreUserDetailFocus();
   }, [detailSubject]);
   const selectedUsers = model.userDirectory.items
-    .filter((row) => selectedUserKeys.includes(`${row.workspaceId}:${row.externalSubject}`))
+    .filter((row) => selectedUserKeys.includes(`${row.accountType ?? "merchant"}:${row.workspaceId}:${row.externalSubject}`))
     .map((row) => ({ workspaceId: row.workspaceId, externalSubject: row.externalSubject, revision: row.revision }));
   const submitBulkSuspend = async () => {
     if (bulkSuspendReason.trim().length < 4 || !selectedUsers.length) {
@@ -162,17 +167,23 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
     <Row gutter={[16, 16]}>
       <Col xs={24} md={8}><Card><Statistic title="用户身份" value={model.userDirectory.identityCount} /></Card></Col>
       <Col xs={24} md={8}><Card><Statistic title="成员关系" value={model.userDirectory.total} /></Card></Col>
-      <Col xs={24} md={8}><Card><Statistic title="涉及租户" value={model.userDirectory.workspaceCount} /></Card></Col>
+      <Col xs={24} md={8}><Card><Statistic title="涉及企业主体" value={model.userDirectory.workspaceCount} /></Card></Col>
     </Row>
+          <Alert
+      showIcon
+      type="info"
+      title="用户、成员关系与企业主体的关系"
+      description="用户是一个可认证的平台身份；身份标识是认证系统返回的登录主体，不等于姓名。成员关系表示该用户在某个企业主体中的角色和状态。企业名称是主要识别信息，Workspace ID 仅作为技术范围标识保留。同一个用户可以属于多个企业主体，因此目录中的一行代表一条“用户 × 企业主体”成员关系。品牌信息在企业详情或品牌列中单独展示。"
+    />
     <Card title="用户目录" aria-busy={model.userDirectoryLoading}>
       <Form<UserFilters> form={form} layout="inline" onFinish={(values) => void model.loadUsers({ ...values, page: 1 })} aria-label="用户目录筛选">
-        <Form.Item name="query" label="关键词"><Input allowClear aria-label="按关键词筛选用户目录" placeholder="身份、姓名、角色或工作区" /></Form.Item>
+        <Form.Item name="query" label="关键词"><Input allowClear aria-label="按关键词筛选用户目录" placeholder="身份、姓名、角色、企业名称或 Workspace ID" /></Form.Item>
         <Form.Item name="status" label="状态">
           <Select allowClear aria-label="按成员状态筛选用户目录" placeholder="全部状态" style={{ width: 140 }} options={[
             { value: "active", label: "已激活" }, { value: "invited", label: "待激活" }, { value: "suspended", label: "已停用" },
           ]} />
         </Form.Item>
-        <Form.Item name="workspaceId" label="租户"><Input allowClear aria-label="按工作区筛选用户目录" placeholder="工作区 ID" /></Form.Item>
+        <Form.Item name="workspaceId" label="企业主体"><Input allowClear aria-label="按企业主体筛选用户目录" placeholder="企业名称或 Workspace ID" /></Form.Item>
         <Form.Item><Space>
           <Button type="primary" htmlType="submit" loading={model.userDirectoryLoading}>查询</Button>
           <Button onClick={() => { form.resetFields(); void model.loadUsers({ page: 1 }); }}>清空</Button>
@@ -182,7 +193,16 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             loading={model.userExporting}
             aria-busy={model.userExporting}
           >{model.userExporting ? "正在导出" : "导出当前筛选"}</Button>
-          <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!model.canUserGovernance || !selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
+          <Button
+            onClick={() => {
+              setActionError("");
+              setProvisionResult(undefined);
+              provisionForm.resetFields();
+              setProvisionOpen(true);
+            }}
+            disabled={!model.canPlatformOps}
+          >开通商家账号</Button>
+          <Button danger onClick={() => { setActionError(""); setBulkSuspendOpen(true); }} disabled={!selectedUsers.length}>批量停用（{selectedUsers.length}）</Button>
         </Space></Form.Item>
       </Form>
       <div aria-live="polite" className="ops-visually-hidden">
@@ -201,35 +221,126 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       {model.userDirectory.truncated && <Alert className="ops-inline-alert" showIcon type="info" title="结果超过 500 条，请增加筛选条件。" />}
       <Table<PlatformUser>
         aria-label="用户目录数据表"
-        rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`}
+        rowKey={(row) => `${row.accountType ?? "merchant"}:${row.workspaceId}:${row.externalSubject}`}
         loading={model.userDirectoryLoading}
         dataSource={sortedUsers}
         locale={{ emptyText: "没有符合条件的用户成员关系" }}
-        rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
+        rowSelection={{ selectedRowKeys: selectedUserKeys, onChange: (keys) => setSelectedUserKeys(keys.map((key) => String(key))), getCheckboxProps: (row) => ({ disabled: row.accountType === "platform" || row.externalSubject === model.opsSession?.actor_id || row.status === "suspended" }) }}
         pagination={{ current: Math.floor(model.userDirectory.offset / model.userDirectory.limit) + 1, pageSize: model.userDirectory.limit, total: model.userDirectory.total, showSizeChanger: true, showTotal: (total) => `共 ${total} 条成员关系` }}
         onChange={handleDirectoryChange}
         scroll={{ x: "max-content" }}
         columns={[
-          { title: "身份标识", dataIndex: "externalSubject", width: 190 },
-          { title: "显示名", dataIndex: "displayName", width: 140, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "—" },
-          { title: "租户", dataIndex: "workspaceId", width: 180 },
+          { title: "登录身份", dataIndex: "externalSubject", width: 220, render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text> },
+          { title: "用户显示名", dataIndex: "displayName", width: 150, sorter: true, sortOrder: userSort?.field === "displayName" ? userSort.order : null, render: (value: string) => value || "未设置" },
+          { title: "企业主体", key: "scope", width: 240, render: (_: unknown, row: PlatformUser) => row.scope === "platform" ? <Tag color="purple">平台级</Tag> : <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
           { title: "角色", dataIndex: "role", width: 140, render: (value: string) => <Tag color="blue">{roleLabels[value] ?? value}</Tag> },
-          { title: "数据来源", key: "dataOrigin", width: 140, render: (_: unknown, row: PlatformUser) => row.invitedBy === "local_compose_seed" ? <Tag color="gold">本地种子</Tag> : <Tag color="green">业务成员记录</Tag> },
+          { title: "账号类型", key: "accountType", width: 140, render: (_: unknown, row: PlatformUser) => row.accountType === "platform" ? <Tag color="purple">平台运营账号</Tag> : row.invitedBy === "local_compose_seed" ? <Tag color="gold">商家演示成员</Tag> : <Tag color="green">商家成员</Tag> },
           { title: "套餐 / 消耗", key: "commercial", width: 180, render: (_: unknown, row: PlatformUser) => row.commercial ? <Space orientation="vertical" size={0}><Typography.Text>{row.commercial.planName} · {row.commercial.subscriptionStatus}</Typography.Text><Typography.Text type="secondary">任务 {row.commercial.usedTasks}/{row.commercial.includedTasks} · 余额 ¥{row.commercial.walletBalanceCny}</Typography.Text></Space> : <Typography.Text type="secondary">暂无账务快照</Typography.Text> },
           { title: "成员状态", dataIndex: "status", width: 110, sorter: true, sortOrder: userSort?.field === "status" ? userSort.order : null, render: (value: string) => <Tag color={value === "active" ? "green" : value === "suspended" ? "red" : "gold"}>{memberStatusLabels[value] ?? value}</Tag> },
-          { title: "租户状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{workspaceStatusLabels[value] ?? value}</Tag> },
+          { title: "企业状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => <Tag color={value === "active" ? "green" : "default"}>{workspaceStatusLabels[value] ?? value}</Tag> },
           { title: "创建时间", dataIndex: "createdAt", width: 180, sorter: true, sortOrder: userSort?.field === "createdAt" ? userSort.order : null, render: (value?: string) => value ? dateTimeFormatter.format(new Date(value)) : "—" },
-          { title: "操作", key: "actions", width: 170, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button><Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button></Space> },
+          { title: "操作", key: "actions", width: 170, render: (_: unknown, row: PlatformUser) => <Space size="small"><Button ref={(node) => { if (node) detailButtonRefs.current.set(row.externalSubject, node); else detailButtonRefs.current.delete(row.externalSubject); }} size="small" aria-label={`查看 ${row.displayName || row.externalSubject} 的用户详情`} onClick={() => { detailTriggerSubjectRef.current = row.externalSubject; setDetailSubject(row.externalSubject); void model.loadUserDetail(row.externalSubject, row.identityId); }}>详情</Button>{row.accountType === "platform" ? <Tag color="purple">由平台身份治理</Tag> : <Button danger={row.status !== "suspended"} size="small" aria-label={`${row.status === "suspended" ? "恢复" : "停用"} ${row.displayName || row.externalSubject} 的访问`} title={row.externalSubject === model.opsSession?.actor_id ? "不能停用当前登录账号" : undefined} disabled={!model.canUserGovernance || (row.status !== "suspended" && row.externalSubject === model.opsSession?.actor_id)} onClick={() => { setActionError(""); setAccessTarget(row); }}>{row.status === "suspended" ? "恢复" : "停用"}</Button>}</Space> },
         ]}
       />
     </Card>
+    <Modal
+      title="平台开通商家账号"
+      open={provisionOpen}
+      okText="开通账号"
+      cancelText="取消"
+      confirmLoading={provisionSubmitting}
+      okButtonProps={{ disabled: Boolean(provisionResult) }}
+      destroyOnHidden
+      onCancel={() => {
+        if (!provisionSubmitting) setProvisionOpen(false);
+      }}
+      onOk={() => void provisionForm.submit()}
+    >
+      <Alert
+        className="ops-inline-alert"
+        showIcon
+        type="warning"
+        title="开通账号不会自动确认收款"
+        description="系统会记录 ¥5,000 正式接入费为待核验状态；支付、合同、权益授予和收入确认仍需要独立审计事件。"
+      />
+      {provisionResult ? (
+        <Alert
+          className="ops-inline-alert"
+          showIcon
+          type="success"
+          title="账号已开通"
+            description={<Space orientation="vertical" size={4}><span>商家账号 {provisionResult.login} 已创建；接入费 ¥{(provisionResult.onboardingFeeFen / 100).toLocaleString("zh-CN")}。</span>{provisionResult.authorization ? <span>授权状态：{provisionResult.authorization.entitlement_status === "granted" ? "已开通商家全量权限" : "待收款核验"}；权限数量：{provisionResult.authorization.capabilities.length}；支付状态：{provisionResult.authorization.payment_status === "verified" ? "已核验" : "待核验"}。</span> : null}<span>请把临时密码通过安全渠道交付给客户，系统不会再次展示。</span></Space>}
+        />
+      ) : null}
+      <Form
+        form={provisionForm}
+        layout="vertical"
+        requiredMark={false}
+        onFinish={async (values) => {
+          setProvisionSubmitting(true);
+          setProvisionResult(undefined);
+          const result = await model.provisionMerchantAccount({
+            login: values.login,
+            password: values.password,
+            enterpriseName: values.enterpriseName,
+            contactName: values.contactName,
+            workspaceIds: values.workspaceIds.split(/[\s,，]+/u),
+            reason: values.reason,
+          });
+          if (result) {
+            const workspaceId = values.workspaceIds.split(/[\s,，]+/u).map((value: string) => value.trim()).filter(Boolean)[0] ?? "";
+            const authorization = await model.authorizeMerchantAccount({
+              login: result.account.login,
+              workspaceId,
+              memberRole: "merchant_admin",
+              skuCode: values.skuCode,
+              amountFen: Number(values.amountFen),
+              paymentStatus: values.paymentStatus,
+              paymentReference: values.paymentReference,
+              paidAt: values.paidAt,
+              reason: values.reason,
+              idempotencyKey: `merchant-authorize-${result.account.id}`,
+            });
+            setProvisionResult({ login: result.account.login, onboardingFeeFen: result.onboarding_fee_fen, authorization: authorization ?? undefined });
+            provisionForm.resetFields(["password"]);
+          }
+          setProvisionSubmitting(false);
+        }}
+      >
+        <Form.Item label="商家登录账号" name="login" rules={[{ required: true, type: "email", message: "请输入邮箱格式的商家账号" }]}>
+          <Input autoComplete="username" placeholder="merchant@example.com" />
+        </Form.Item>
+        <Form.Item label="临时密码" name="password" rules={[{ required: true, message: "请输入临时密码" }, { min: 12, message: "临时密码至少 12 位" }]}>
+          <Input.Password autoComplete="new-password" placeholder="只在本次开通时录入，不会再次回显" />
+        </Form.Item>
+        <Form.Item label="企业名称" name="enterpriseName" rules={[{ required: true, whitespace: true, message: "请输入企业名称" }]}>
+          <Input placeholder="客户企业名称" />
+        </Form.Item>
+        <Form.Item label="联系人" name="contactName" rules={[{ required: true, whitespace: true, message: "请输入联系人" }]}>
+          <Input placeholder="客户联系人" />
+        </Form.Item>
+        <Form.Item label="绑定工作区 ID" name="workspaceIds" rules={[{ required: true, whitespace: true, message: "至少填写一个工作区 ID" }]}>
+          <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="多个工作区用逗号或换行分隔" />
+        </Form.Item>
+        <Form.Item label="开通原因" name="reason" rules={[{ required: true, min: 4, message: "请填写不少于 4 个字符的开通原因" }]}>
+          <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="例如：合同已签，等待财务核验首期接入费" />
+        </Form.Item>
+        <Row gutter={12}>
+          <Col span={12}><Form.Item label="套餐 SKU" name="skuCode" initialValue="sku-onboarding-5000" rules={[{ required: true, message: "请输入套餐 SKU" }]}><Input placeholder="sku-onboarding-5000" /></Form.Item></Col>
+          <Col span={12}><Form.Item label="实收金额（分）" name="amountFen" initialValue={500000} rules={[{ required: true, message: "请输入实收金额" }]}><Input type="number" min={0} /></Form.Item></Col>
+          <Col span={12}><Form.Item label="收款状态" name="paymentStatus" initialValue="pending" rules={[{ required: true }]}><Select options={[{ value: "pending", label: "待核验（不开放权限）" }, { value: "verified", label: "已核验（立即开通）" }]} /></Form.Item></Col>
+          <Col span={12}><Form.Item label="支付凭证号" name="paymentReference"><Input placeholder="微信/支付宝交易号" /></Form.Item></Col>
+          <Col span={24}><Form.Item label="支付时间（ISO UTC）" name="paidAt"><Input placeholder="已核验时必填，例如 2026-09-10T12:00:00.000Z" /></Form.Item></Col>
+        </Row>
+      </Form>
+    </Modal>
     <Drawer title={`用户详情 · ${detailSubject ?? ""}`} aria-label="用户目录详情抽屉" size="large" open={Boolean(detailSubject)} onClose={closeUserDetail} afterOpenChange={(open) => { if (!open) restoreUserDetailFocus(); }} destroyOnHidden>
       <Spin spinning={model.userDetailLoading} tip="正在加载用户详情…" aria-label="正在加载用户详情">
         {!model.userDetailLoading && !model.userDetail ? <Empty description="用户详情尚未取得，请重试或关闭后重新打开" /> : null}
         {model.userDetail && <Space orientation="vertical" size="large" className="full-width">
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} items={[
-            { key: "subject", label: "身份标识", children: <Typography.Text className="ops-token" copyable>{model.userDetail.identity.externalSubject}</Typography.Text> },
-            { key: "name", label: "显示名", children: model.userDetail.identity.displayName || "—" },
+            { key: "subject", label: "登录身份", children: <Typography.Text className="ops-token" copyable>{model.userDetail.identity.externalSubject}</Typography.Text> },
+            { key: "name", label: "用户显示名", children: model.userDetail.identity.displayName || "未设置" },
             { key: "members", label: "成员关系", children: `${model.userDetail.identity.activeMembershipCount} 个有效 / ${model.userDetail.identity.membershipCount} 个总计` },
             { key: "first", label: "首次出现", children: dateTimeFormatter.format(new Date(model.userDetail.identity.firstSeenAt)) },
             { key: "updated", label: "最近更新", children: dateTimeFormatter.format(new Date(model.userDetail.identity.lastUpdatedAt)) },
@@ -252,14 +363,14 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
             { title: "操作者", dataIndex: "actorId", width: 160, render: (value: string) => value || "系统" },
             { title: "原因与证据", dataIndex: "reason", width: 260, render: (value: string) => value || "系统观测" },
           ]} /></div>
-          <div><Typography.Title level={5}>所属租户与角色</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
-            { title: "租户", dataIndex: "workspaceId", width: 180 },
+          <div><Typography.Title level={5}>所属租户与角色（企业主体）</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 620 }} dataSource={model.userDetail.memberships} columns={[
+            { title: "企业主体", key: "enterprise", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
             { title: "角色", dataIndex: "role", width: 140, render: (value: string) => roleLabels[value] ?? value },
             { title: "成员状态", dataIndex: "status", width: 110, render: (value: string) => memberStatusLabels[value] ?? value },
-            { title: "租户状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => workspaceStatusLabels[value] ?? value },
+            { title: "企业状态", dataIndex: "workspaceStatus", width: 110, render: (value: string) => workspaceStatusLabels[value] ?? value },
           ]} /></div>
           <div><Typography.Title level={5}>商业、钱包与任务状态</Typography.Title><Table size="small" rowKey={(row) => `${row.workspaceId}:${row.externalSubject}:commercial`} pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }} scroll={{ x: 920 }} dataSource={model.userDetail.memberships} locale={{ emptyText: "暂无商业快照；不会把缺失账务数据解释为余额为零" }} columns={[
-            { title: "租户", dataIndex: "workspaceId", width: 180 },
+            { title: "企业主体", key: "enterprise", width: 220, render: (_: unknown, row: PlatformUser) => <EnterpriseIdentity name={row.enterpriseName} workspaceId={row.workspaceId} /> },
             { title: "套餐", width: 160, render: (_: unknown, row: PlatformUser) => row.commercial?.planName ?? "未配置" },
             { title: "订阅 / 权益", width: 150, render: (_: unknown, row: PlatformUser) => row.commercial?.subscriptionStatus ?? "未确认" },
             { title: "任务用量", width: 130, render: (_: unknown, row: PlatformUser) => row.commercial ? `${row.commercial.usedTasks} / ${row.commercial.includedTasks}` : "未确认" },
@@ -282,7 +393,7 @@ export function UserDirectorySection({ model }: { model: OpsConsoleModel }) {
       onCancel={() => { if (!suspending) { setAccessTarget(undefined); setSuspendReason(""); } }}
     >
       {actionError && <div ref={actionErrorRef} className="ops-form-error-summary" role="alert" tabIndex={-1} aria-labelledby="user-access-error-title" aria-describedby="user-access-error-description"><Typography.Text strong id="user-access-error-title">操作未完成</Typography.Text><Typography.Paragraph id="user-access-error-description">{actionError}</Typography.Paragraph></div>}
-      <Typography.Paragraph>{accessTarget?.status === "suspended" ? "恢复" : "仅停用"} <Typography.Text code>{accessTarget?.externalSubject}</Typography.Text> 在工作区 <Typography.Text code>{accessTarget?.workspaceId}</Typography.Text> 的访问，不会删除业务数据。</Typography.Paragraph>
+      <Typography.Paragraph>{accessTarget?.status === "suspended" ? "恢复" : "仅停用"} <Typography.Text code>{accessTarget?.externalSubject}</Typography.Text> 在企业主体 <Typography.Text code>{accessTarget?.workspaceId}</Typography.Text> 的访问，不会删除业务数据。</Typography.Paragraph>
       <label htmlFor="suspend-reason">操作原因（至少 4 个字符）</label>
       <Input.TextArea id="suspend-reason" aria-describedby={actionError ? "user-access-error-title" : undefined} autoFocus rows={4} maxLength={500} showCount value={suspendReason} onChange={(event) => { setSuspendReason(event.target.value); if (actionError) setActionError(""); }} placeholder="例如：按工单 OPS-123 撤销或恢复访问" />
     </Modal>

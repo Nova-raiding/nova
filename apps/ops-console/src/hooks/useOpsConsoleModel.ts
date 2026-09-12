@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Form } from "antd";
-import { describeOpsError, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, recordOpsBootstrapTrace, rpc, rpcForWorkspace } from "../api/opsClient.js";
+import { describeOpsError, hasOpsConnection, managedOpsSession, opsRestPost, readOpsConnectionConfig, recordOpsBootstrapTrace, rpc, rpcForWorkspace } from "../api/opsClient.js";
 import type {
   Platform,
   Settings,
@@ -57,6 +57,7 @@ import type {
   OpsRequestError,
 } from "../types/ops.js";
 import type { FinanceSearchSummary } from "../../../../packages/contracts/src/ops/finance-search.js";
+import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { financePermissions, runAuthorizedFinanceAction } from "../components/finance/financePermissions.js";
 import { paymentQueryOutcome, paymentReconciliationOutcome, rechargeOrderListParams } from "../components/finance/rechargeOrders.js";
 import { applyLoadedValue, OpsLoadCoordinator } from "./opsLoadCoordinator.js";
@@ -81,6 +82,61 @@ export interface OpsLoadFilterOverrides {
 
 export type OpsDataSetErrors = Readonly<Record<string, string>>;
 export type OpsDataSetErrorEvidence = Readonly<Record<string, Pick<OpsRequestError, "requestId" | "traceId" | "code" | "details">>>;
+export type MerchantAccountProvisioningInput = {
+  login: string;
+  password: string;
+  enterpriseName: string;
+  contactName: string;
+  workspaceIds: string[];
+  reason: string;
+};
+export type MerchantAccountProvisioningResult = {
+  account: {
+    id: string;
+    login: string;
+    accountType: "merchant";
+    status: string;
+    enterpriseName?: string;
+    contactName?: string;
+    workspaceIds: string[];
+  };
+  onboarding_fee_fen: number;
+  vip_access: "pending_billing_verification" | string;
+};
+export type MerchantAccountAuthorizationInput = {
+  login: string;
+  workspaceId: string;
+  memberRole?: "workspace_owner" | "merchant_admin" | "operator" | "support" | "finance";
+  skuCode: string;
+  amountFen: number;
+  paymentStatus: "pending" | "verified";
+  paymentReference?: string;
+  paidAt?: string;
+  reason: string;
+  idempotencyKey: string;
+};
+export type MerchantAccountAuthorizationResult = {
+  schema_version: "merchant-account-authorization.v1";
+  login: string;
+  identity_id: string;
+  workspace_id: string;
+  enterprise_name: string | null;
+  sku_code: string;
+  amount_fen: number;
+  currency: "CNY";
+  payment_status: "pending" | "verified";
+  payment_reference: string | null;
+  paid_at: string | null;
+  entitlement_status: "granted" | "pending_payment_verification";
+  member_role: string;
+  member_status: string;
+  capabilities: string[];
+  effective_at: string | null;
+  authorized_by: string;
+  reason: string;
+  idempotency_key: string;
+  replayed?: boolean;
+};
 
 export function dataSetErrorEvidenceFor(
   errors: OpsDataSetErrorEvidence,
@@ -114,6 +170,7 @@ export const OPS_BACKGROUND_HYDRATION_POLICY = {
   "ops.commercial.rollouts.list": "commercial.read",
   "ops.growth.funnel": "workspace.directory.read",
   "ops.finance.search": "billing.platform.read",
+  "ops.commercial.catalog-v2.list": "commercial.catalog.read",
   "workspace.health": "workspace.summary.read",
   "ops.alerts.list": "marketing.summary.read",
   "ops.data.delete.list": "workspace.delete.execute",
@@ -374,6 +431,7 @@ export function useOpsConsoleModel() {
   const [workspaceDirectoryLoading, setWorkspaceDirectoryLoading] = useState(false);
   const workspaceDirectoryRequestRef = useRef(0);
   const [platformFinanceSummary, setPlatformFinanceSummary] = useState<FinanceSearchSummary>();
+  const [platformCommercialCatalog, setPlatformCommercialCatalog] = useState<CommercialCatalogItem[]>([]);
   const [reconciliation, setReconciliation] = useState<Reconciliation>();
   const [rechargeOrders, setRechargeOrders] = useState<RechargeOrderList>();
   const [rechargeOrdersLoading, setRechargeOrdersLoading] = useState(false);
@@ -386,6 +444,8 @@ export function useOpsConsoleModel() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [rollouts, setRollouts] = useState<Rollout[]>([]);
   const [modelMarkup, setModelMarkup] = useState<ModelMarkupPolicy>();
+  const [modelMarkupLoading, setModelMarkupLoading] = useState(false);
+  const [modelMarkupError, setModelMarkupError] = useState("");
   const [modelMarkupReason, setModelMarkupReason] = useState("");
   const [funnel, setFunnel] = useState<GrowthFunnel>({
     counts: {},
@@ -461,8 +521,7 @@ export function useOpsConsoleModel() {
   // short deny-all window while a fresh server session is loaded, but are
   // cleared when a different verified actor/workbench is observed.
   const [jitRevocationReceipt, setJitRevocationReceipt] = useState<JitRevocationReceipt>();
-  const [usersGovernanceSection, setUsersGovernanceSection] = useState("directory");
-  const [authorizationGovernanceTab, setAuthorizationGovernanceTab] = useState("matrix");
+  const [authorizationTargetWorkspaceId, setAuthorizationTargetWorkspaceId] = useState("");
 
   const acceptLoadedSession = (nextSession: OpsSession) => {
     const previousReceipt = jitRevocationReceipt;
@@ -545,10 +604,14 @@ export function useOpsConsoleModel() {
     setWorkspaceRows([]);
     setWorkspaceDirectory({ items: [], total: 0, offset: 0, limit: 20, hasMore: false });
     setPlatformFinanceSummary(undefined);
+    setPlatformCommercialCatalog([]);
     setReconciliation(undefined);
     setRechargeOrders(undefined);
     setRechargeOrdersError("");
     setRechargeOrdersLoading(false);
+    setModelMarkup(undefined);
+    setModelMarkupError("");
+    setModelMarkupLoading(false);
     setOffers([]);
     setAddons([]);
     setCoupons([]);
@@ -709,6 +772,7 @@ export function useOpsConsoleModel() {
         marketingSummaryResult,
         modelUsageSummaryResult,
         platformFinanceResult,
+        platformCommercialCatalogResult,
         financeResult,
         offerResult,
         addonResult,
@@ -757,7 +821,12 @@ export function useOpsConsoleModel() {
         platformStoreScope ? deferredOptional("ops.model-usage.summary", { platform_scope: "platform" }) : Promise.resolve(undefined),
         platformOperator ? authorizedOptional("ops.finance.search", {
           kinds_json: JSON.stringify(["recharge_order", "subscription_order"]),
+          statuses_json: JSON.stringify(["paid"]),
           limit: "1",
+        }) : Promise.resolve(undefined),
+        platformOperator ? authorizedOptional("ops.commercial.catalog-v2.list", {
+          include_private: "false",
+          limit: "100",
         }) : Promise.resolve(undefined),
         platformOperator ? Promise.resolve(undefined) : authorizedOptional("billing.model-usage.statement", { limit: "50" }),
         platformOperator && commercialOperationAvailable ? authorizedOptional("ops.commercial.offers.list") : Promise.resolve(undefined),
@@ -851,6 +920,26 @@ export function useOpsConsoleModel() {
         if (value && typeof value === "object" && !Array.isArray(value)) {
           setPlatformFinanceSummary((value as { summary?: FinanceSearchSummary }).summary);
         }
+      });
+      applyLoadedValue(platformCommercialCatalogResult, (value) => {
+        const items = value && typeof value === "object" && !Array.isArray(value)
+          ? (value as { items?: Array<Record<string, unknown>> }).items ?? []
+          : [];
+        setPlatformCommercialCatalog(items.map((item) => ({
+          id: String(item.id ?? ""),
+          skuCode: String(item.sku_code ?? ""),
+          name: String(item.name ?? item.sku_code ?? ""),
+          type: String(item.type ?? ""),
+          visibility: String(item.visibility ?? ""),
+          version: String(item.version ?? ""),
+          priceLabel: String(item.price_label ?? ""),
+          cycleLabel: typeof item.cycle_label === "string" ? item.cycle_label : null,
+          benefitsSummary: String(item.benefits_summary ?? ""),
+          approvalState: String(item.approval_state ?? ""),
+          validFrom: typeof item.valid_from === "string" ? item.valid_from : null,
+          validTo: typeof item.valid_to === "string" ? item.valid_to : null,
+          unresolved: Array.isArray(item.unresolved) ? item.unresolved.filter((entry): entry is string => typeof entry === "string") : [],
+        })));
       });
       applyLoadedValue(financeResult, (value) => setReconciliation(value as unknown as Reconciliation));
       applyLoadedValue(offerResult, (value) => setOffers((value ?? []) as unknown as Offer[]));
@@ -1058,6 +1147,7 @@ export function useOpsConsoleModel() {
   const canGlobalCommercial = authorization.can("commercial.update");
   const canUserGovernance = authorization.can("identity.update");
   const canModelMarkup = authorization.canAny(["commercial.read", "commercial.update"]);
+  const canModelMarkupUpdate = authorization.can("commercial.update");
   const canKnowledge = authorization.can("customer.content.update");
   const canCompetitor = authorization.can("customer.content.update");
   // Rule creation and lifecycle changes require the dedicated rule-governance
@@ -1070,6 +1160,7 @@ export function useOpsConsoleModel() {
   useEffect(() => {
     if (canModelMarkup) return;
     setModelMarkup(undefined);
+    setModelMarkupError("");
     setModelMarkupReason("");
   }, [canModelMarkup]);
   const selectedAutomationStore = storeDirectory.find(
@@ -1124,15 +1215,16 @@ export function useOpsConsoleModel() {
     packId: string;
     name: string;
     version: string;
+    category: "platform" | "category" | "advertising_publish" | "big_promotion";
     sourceReference: string;
     checksJson: string;
     reason: string;
-  }) => {
+  }): Promise<boolean> => {
     if (!canRules) {
       message.error("当前会话为只读，缺少规则管理员权限");
-      return;
+      return false;
     }
-    if (ruleMutationInFlight.current) return;
+    if (ruleMutationInFlight.current) return false;
     ruleMutationInFlight.current = true;
     setRuleMutationKey("draft");
     try {
@@ -1140,7 +1232,8 @@ export function useOpsConsoleModel() {
         pack_id: values.packId,
         name: values.name,
         version: values.version,
-        scope: "global",
+        category: values.category,
+        scope: values.category === "platform" ? "platform" : values.category === "category" ? "category" : "global",
         // Rules entered from the Ops workspace are internal evidence. Only
         // signed platform imports may use the official source kind.
         source_kind: "internal",
@@ -1153,8 +1246,10 @@ export function useOpsConsoleModel() {
       message.success("规则草稿已创建，激活需要规则管理员审批");
       ruleForm.resetFields();
       await loadRules();
+      return true;
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "规则发布失败");
+      return false;
     } finally {
       ruleMutationInFlight.current = false;
       setRuleMutationKey(undefined);
@@ -2191,32 +2286,28 @@ export function useOpsConsoleModel() {
   };
   const loadModelMarkup = async () => {
     const request = modelMarkupLoadCoordinatorRef.current.begin();
+    setModelMarkupLoading(true);
+    setModelMarkupError("");
     try {
-      if (import.meta.env.VITE_OPS_BUILD_MODE === "local") {
-        if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(undefined);
-        return;
-      }
-      if (!opsWorkspaceId) {
-        if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(undefined);
-        return;
-      }
-      const access = await rpc("ops.commercial.access.summary", { target_workspace_id: opsWorkspaceId }) as { allowed?: boolean; error_code?: string };
-      if (!modelMarkupLoadCoordinatorRef.current.isCurrent(request)) return;
-      if (access.allowed !== true || access.error_code === "COMMERCIAL_OPERATION_DISABLED") {
-        setModelMarkup(undefined);
-        return;
-      }
       const value = await rpc("ops.commercial.model-markup.get");
-      if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) setModelMarkup(value as unknown as ModelMarkupPolicy);
+      if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) {
+        setModelMarkup(value as unknown as ModelMarkupPolicy);
+      }
     } catch (cause) {
       if (!modelMarkupLoadCoordinatorRef.current.isCurrent(request)) return;
+      setModelMarkup(undefined);
+      setModelMarkupError(cause instanceof Error ? cause.message : "计费倍率加载失败");
       message.error(
         cause instanceof Error ? cause.message : "计费倍率加载失败",
       );
+    } finally {
+      if (modelMarkupLoadCoordinatorRef.current.isCurrent(request)) {
+        setModelMarkupLoading(false);
+      }
     }
   };
   const saveModelMarkup = async () => {
-    if (!canModelMarkup || !modelMarkup) {
+    if (!canModelMarkupUpdate || !modelMarkup) {
       message.error("当前会话缺少计费配置权限");
       return;
     }
@@ -2240,6 +2331,20 @@ export function useOpsConsoleModel() {
       await loadModelMarkup();
     }
   };
+  useEffect(() => {
+    if (!canModelMarkup) return;
+    // Keep the overview and user workbenches free of speculative commercial
+    // reads. Model markup is only relevant on the model-services route; the
+    // server may correctly return 503 while commercial readiness is blocked,
+    // and that expected fail-closed response must not pollute unrelated page
+    // browser health checks.
+    if (typeof window !== "undefined" && !window.location.pathname.endsWith("/models")) return;
+    // Do not probe the write/configuration surface when the platform model
+    // readiness snapshot itself is unavailable. In that state the server's
+    // 503 is an intentional fail-closed signal, not actionable page data.
+    if (!modelStatus || modelStatus.state !== "ready" || modelStatus.relay?.configured !== true) return;
+    void loadModelMarkup();
+  }, [canModelMarkup, modelStatus, opsSession?.actor_id]);
   const loadAutomationScope = async (scope: string) => {
     const requestId = ++automationScopeRequestRef.current;
     const params = prepareAutomationScopeLoad(scope, storeDirectory, {
@@ -2496,6 +2601,65 @@ export function useOpsConsoleModel() {
       );
     }
   };
+  const provisionMerchantAccount = async (
+    input: MerchantAccountProvisioningInput,
+  ): Promise<MerchantAccountProvisioningResult | null> => {
+    if (!canPlatformOps) {
+      message.error("当前账号缺少平台运营权限，不能开通商家账号");
+      return null;
+    }
+    const workspaceIds = [...new Set(input.workspaceIds.map((value) => value.trim()).filter(Boolean))];
+    if (!workspaceIds.length || input.reason.trim().length < 4) {
+      message.error("请至少绑定一个工作区，并填写不少于 4 个字符的开通原因");
+      return null;
+    }
+    try {
+      const result = await opsRestPost<MerchantAccountProvisioningResult>("/v1/ops/merchant-accounts", {
+        login: input.login.trim(),
+        password: input.password,
+        enterprise_name: input.enterpriseName.trim(),
+        contact_name: input.contactName.trim(),
+        workspace_ids: workspaceIds,
+        reason: input.reason.trim(),
+      });
+      if (!result) throw new Error("平台开通商家账号没有返回结果");
+      message.success("商家账号已开通，¥5,000 接入费处于待核验状态");
+      await loadUsers({ page: 1 });
+      return result;
+    } catch (cause) {
+      message.error(describeOpsError(cause));
+      return null;
+    }
+  };
+  const authorizeMerchantAccount = async (
+    input: MerchantAccountAuthorizationInput,
+  ): Promise<MerchantAccountAuthorizationResult | null> => {
+    if (!canPlatformOps) {
+      message.error("当前账号缺少平台运营权限，不能授权商家权限");
+      return null;
+    }
+    try {
+      const result = await opsRestPost<MerchantAccountAuthorizationResult>("/v1/ops/merchant-accounts/authorize", {
+        login: input.login.trim(),
+        workspace_id: input.workspaceId.trim(),
+        member_role: input.memberRole ?? "merchant_admin",
+        sku_code: input.skuCode.trim(),
+        amount_fen: input.amountFen,
+        payment_status: input.paymentStatus,
+        ...(input.paymentReference?.trim() ? { payment_reference: input.paymentReference.trim() } : {}),
+        ...(input.paidAt?.trim() ? { paid_at: input.paidAt.trim() } : {}),
+        reason: input.reason.trim(),
+        idempotency_key: input.idempotencyKey.trim(),
+      });
+      if (!result) throw new Error("商家权限授权没有返回结果");
+      message.success(result.entitlement_status === "granted" ? "商家权限已开通" : "授权记录已保存，等待收款核验");
+      await loadUsers({ page: 1 });
+      return result;
+    } catch (cause) {
+      message.error(describeOpsError(cause));
+      return null;
+    }
+  };
 
   return {
     settings,
@@ -2525,6 +2689,8 @@ export function useOpsConsoleModel() {
     workspaceDirectoryLoading,
     platformFinanceSummary,
     setPlatformFinanceSummary,
+    platformCommercialCatalog,
+    setPlatformCommercialCatalog,
     reconciliation,
     setReconciliation,
     rechargeOrders,
@@ -2542,6 +2708,8 @@ export function useOpsConsoleModel() {
     setRollouts,
     modelMarkup,
     setModelMarkup,
+    modelMarkupLoading,
+    modelMarkupError,
     modelMarkupReason,
     setModelMarkupReason,
     funnel,
@@ -2617,10 +2785,8 @@ export function useOpsConsoleModel() {
     jitRevocationReceipt,
     recordJitRevocation,
     clearJitRevocationReceipt,
-    usersGovernanceSection,
-    setUsersGovernanceSection,
-    authorizationGovernanceTab,
-    setAuthorizationGovernanceTab,
+    authorizationTargetWorkspaceId,
+    setAuthorizationTargetWorkspaceId,
     clearAuthorizationScopedData,
     authorization,
     opsWorkspaceId,
@@ -2659,6 +2825,7 @@ export function useOpsConsoleModel() {
     canGlobalCommercial,
     canUserGovernance,
     canModelMarkup,
+    canModelMarkupUpdate,
     canKnowledge,
     canCompetitor,
     canRules,
@@ -2725,6 +2892,8 @@ export function useOpsConsoleModel() {
     acknowledgePublish,
     createRevision,
     reviewVisual,
+    provisionMerchantAccount,
+    authorizeMerchantAccount,
   };
 }
 

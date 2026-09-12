@@ -108,7 +108,7 @@ describe('Codex plugin package', () => {
   it('executes discovery from both source and marketplace bridge roots', async () => {
     const sourceTools = await discoveredToolNames(pluginRoot)
     const marketplaceTools = await discoveredToolNames(marketplaceRoot)
-    expect(sourceTools).toHaveLength(144)
+    expect(sourceTools).toHaveLength(146)
     expect(marketplaceTools).toEqual(sourceTools)
     expect(sourceTools.some(name => name.startsWith('ops.'))).toBe(false)
   })

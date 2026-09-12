@@ -143,6 +143,13 @@ describe('Merchant Studio production UI contract', () => {
     expect(app).not.toContain('搜索商品、任务或版本')
   })
 
+  it('keeps the merchant catalog pagination contract at twenty rows per page', () => {
+    expect(app).toContain('const productPageSize = 20')
+    expect(app).toContain('limit: productPageSize')
+    expect(app).toContain('offset: productPage * productPageSize')
+    expect(app).toContain('清除筛选')
+  })
+
   it('shows a persistent mock recharge order card and supports status queries', () => {
     expect(app).toContain('充值订单')
     expect(app).toContain('不会产生真实扣款')
@@ -228,11 +235,11 @@ describe('Merchant Studio production UI contract', () => {
     expect(api).toContain('visual_rules?: BrandVisualRules')
   })
 
-  it('lets merchants explicitly rate historical assets with reasons', () => {
-    expect(app).toContain('评价素材')
-    expect(app).toContain('优秀，后续作为参考')
-    expect(app).toContain('不喜欢，后续排除')
-    expect(app).toContain('评价历史素材必须填写至少一条具体原因')
-    expect(api).toContain('/preference`')
+  it('keeps the knowledge library as a read-only paginated table', () => {
+    expect(app).toContain('knowledge-table-wrap')
+    expect(app).toContain('<Table')
+    expect(app).toContain('pageSizeOptions: [10, 20, 50]')
+    expect(app).not.toContain('asset-preference-editor')
+    expect(app).not.toContain('查看使用商品')
   })
 })

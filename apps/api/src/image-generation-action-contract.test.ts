@@ -21,8 +21,13 @@ describe('image generation API action contract', () => {
       expect(route).toContain("IMAGE_GENERATION_DURABLE_NOT_CONFIGURED")
     }
 
-    const admission = generate.slice(generate.indexOf("if (process.env.IMAGE_GENERATION_EXECUTION_MODE"))
+    const admission = generate.slice(generate.indexOf('const durableImageGeneration'))
     expect(admission.indexOf('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED')).toBeLessThan(admission.indexOf("return result({ job_id"))
+    // Configuration failure must happen before any creative-point reservation;
+    // otherwise a failed enqueue can strand an active reservation.
+    expect(generate.indexOf('const durableImageGeneration')).toBeGreaterThanOrEqual(0)
+    expect(generate.indexOf('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED')).toBeGreaterThanOrEqual(0)
+    expect(generate.indexOf('IMAGE_GENERATION_DURABLE_NOT_CONFIGURED')).toBeLessThan(generate.indexOf('const creativeReservation = await reserveCreativePointsForModel'))
   })
 
   it('keeps unknown and provider-started outcomes non-retryable and non-publishable', () => {

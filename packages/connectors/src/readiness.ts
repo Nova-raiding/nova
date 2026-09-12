@@ -23,6 +23,9 @@ export type ConnectorReadinessReason =
   | 'PRODUCT_MAPPING_MISSING'
   | 'WRITE_RECEIPT_MAPPING_MISSING'
   | 'WRITE_STATUS_MAPPING_MISSING'
+  | 'MEDIA_UPLOAD_PATH_MISSING'
+  | 'MEDIA_UPLOAD_MAPPING_MISSING'
+  | 'MEDIA_UPLOAD_EVIDENCE_MISSING'
   | 'MAPPING_EVIDENCE_MISSING'
   | 'CAPABILITY_EVIDENCE_MISSING'
   | 'CAPABILITY_EVIDENCE_NOT_E2E'
@@ -142,6 +145,14 @@ export function validateConnectorReadiness(
   if (!config.mapProducts) reasons.push('PRODUCT_MAPPING_MISSING')
   if (!config.mapWriteReceipt) reasons.push('WRITE_RECEIPT_MAPPING_MISSING')
   if (!config.mapWriteStatus) reasons.push('WRITE_STATUS_MAPPING_MISSING')
+  if (!config.mediaUploadPath?.trim()) reasons.push('MEDIA_UPLOAD_PATH_MISSING')
+  if (!config.mapMediaUpload) reasons.push('MEDIA_UPLOAD_MAPPING_MISSING')
+  const mediaEvidence = config.mediaUploadEvidence
+  if (!mediaEvidence
+    || !validEvidenceText(mediaEvidence.version, 128)
+    || !validEvidenceText(mediaEvidence.evidenceRef, 512)
+    || !validEvidenceText(mediaEvidence.verifiedBy, 128)
+    || !validEvidenceTimestamp(mediaEvidence.verifiedAt)) reasons.push('MEDIA_UPLOAD_EVIDENCE_MISSING')
   const mapping = config.mappingEvidence
   if (!mapping
     || !validEvidenceText(mapping.version, 128)

@@ -212,4 +212,25 @@ describe('production model relay contract', () => {
       expect(body.relay_response.error.code).toBe('model_not_found')
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
+
+  it('never overwrites an existing release artifact with a different response', () => {
+    const root = mkdtempSync(join(tmpdir(), 'relay-immutable-artifacts-'))
+    try {
+      const first = writeRelayResponseArtifact(root, 'release-1', 'text', {
+        status: 200,
+        headers: new Headers({ 'x-request-id': 'req-first' }),
+        payload: { choices: [{ message: { content: 'OK' } }], usage: { total_tokens: 2 } },
+        result: { ...completeProbe('text'), state: 'ready' },
+      })
+      const second = writeRelayResponseArtifact(root, 'release-1', 'text', {
+        status: 200,
+        headers: new Headers({ 'x-request-id': 'req-second' }),
+        payload: { choices: [{ message: { content: 'DIFFERENT' } }], usage: { total_tokens: 3 } },
+        result: { ...completeProbe('text'), providerRequestId: 'req-second', state: 'ready' },
+      })
+      expect(second).not.toBe(first)
+      expect(readFileSync(join(root, 'relay/release-1/text.json'), 'utf8')).toContain('req-first')
+      expect(second).toMatch(/^artifact:\/\/production\/relay\/release-1\/text-[a-f0-9]{16}\.json#[a-f0-9]{64}$/u)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
 })

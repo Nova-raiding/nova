@@ -1,7 +1,5 @@
-import { FEATURE_FLAG_TARGET_TYPES, FEATURE_FLAG_VALUE_TYPES, type FeatureFlag, type FeatureFlagEmergencyRequest, type FeatureFlagEvent, type FeatureFlagListRequest, type FeatureFlagMutationRequest, type FeatureFlagPage } from "../../../../packages/contracts/src/ops/feature-flags.js";
 import { financeRecordKinds, type FinanceExport, type FinanceRecordDetail, type FinanceSearchPage, type FinanceSearchQuery } from "../../../../packages/contracts/src/ops/finance-search.js";
 import type { SupportDomainClient } from "../hooks/useSupportDomain.js";
-import type { FeatureFlagsClient } from "../hooks/useFeatureFlags.js";
 import type { FinanceSearchClient } from "../hooks/useFinanceSearch.js";
 import type { IncidentsClient } from "../hooks/useIncidents.js";
 import type { AuditCenterClient, AuditCenterFilters } from "../hooks/useAuditCenter.js";
@@ -102,35 +100,6 @@ export const parseStorageReconciliationList = (value: unknown): StorageReconcili
   });
 };
 
-const typedFlagValue = (value: unknown) => object(value)
-  && FEATURE_FLAG_VALUE_TYPES.includes(value.type as never)
-  && Object.prototype.hasOwnProperty.call(value, "value");
-const featureFlagTarget = (value: unknown) => object(value)
-  && FEATURE_FLAG_TARGET_TYPES.includes(value.type as never)
-  && text(value.value) && bool(value.enabled)
-  && (value.override === undefined || typedFlagValue(value.override));
-const featureFlag = (value: unknown): value is FeatureFlag => object(value)
-  && ["id", "key", "environment", "description", "createdBy", "updatedBy", "createdAt", "updatedAt"].every(key => text(value[key]))
-  && typedFlagValue(value.defaultValue) && bool(value.enabled) && bool(value.emergencyDisabled)
-  && Array.isArray(value.targets) && value.targets.every(featureFlagTarget)
-  && Number.isSafeInteger(value.revision) && Number(value.revision) >= 1
-  && optionalText(value.validFrom) && optionalText(value.validTo);
-const featureFlagEvent = (value: unknown): value is FeatureFlagEvent => object(value)
-  && ["id", "flagId", "actorId", "reason", "idempotencyKey", "createdAt"].every(key => text(value[key]))
-  && ["created", "updated", "emergency_disabled", "emergency_restored"].includes(String(value.eventType))
-  && featureFlag(value.after) && (value.before === undefined || featureFlag(value.before));
-
-export const parseFeatureFlagPage = (value: unknown): FeatureFlagPage => {
-  if (!object(value) || !Array.isArray(value.items) || !value.items.every(featureFlag) || !optionalText(value.nextCursor)) fail("功能开关列表", "items/pagination");
-  return value as unknown as FeatureFlagPage;
-};
-export const parseFeatureFlagMutation = (value: unknown): { flag: FeatureFlag; replayed: boolean } => {
-  if (!object(value) || !featureFlag(value.flag) || !bool(value.replayed)) fail("功能开关变更", "flag/replayed");
-  return value as unknown as { flag: FeatureFlag; replayed: boolean };
-};
-export const parseFeatureFlagEvents = (value: unknown): FeatureFlagEvent[] =>
-  Array.isArray(value) && value.every(featureFlagEvent) ? value : fail("功能开关审计", "events");
-
 const incident = (value: unknown): value is import("../hooks/useIncidents.js").OpsIncident => object(value)
   && ["id", "workspaceId", "title", "summary", "createdBy", "createdAt", "updatedAt"].every(key => text(value[key]))
   && incidentSeverities.includes(value.severity as never) && incidentStatuses.includes(value.status as never)
@@ -210,6 +179,7 @@ const financeRecord = (value: unknown, detail = false): boolean => {
   const requiredText = ["id", "workspaceId", "status", "label", "occurredAt", "updatedAt", "version"];
   if (requiredText.some(key => !text(value[key]))) return false;
   if (!financeRecordKinds.includes(value.kind as never) || value.redacted !== true) return false;
+  if (!optionalText(value.enterpriseName)) return false;
   if (!optionalText(value.reference) || !optionalFinite(value.amountCny) || !optionalFinite(value.providerCostCny) || !optionalFinite(value.customerChargeCny) || !optionalFinite(value.units)) return false;
   if (value.direction !== undefined && value.direction !== "credit" && value.direction !== "debit") return false;
   return !detail || (object(value.attributes) && Object.values(value.attributes).every(scalar));
@@ -222,9 +192,13 @@ export const parseFinanceSearchPage = (value: unknown): FinanceSearchPage => {
   if (!object(candidate.summary)) fail("财务检索", "summary");
   const summary = candidate.summary as Record<string, unknown>;
   const summaryNumbers = ["totalRecords", "rechargeOrderCny", "subscriptionOrderCny", "walletCreditCny", "walletDebitCny", "walletNetCny", "customerChargeCny", "usageUnits"];
-  if (summaryNumbers.some(key => !finite(summary[key])) || (summary.providerCostCny !== null && !finite(summary.providerCostCny)) || (summary.providerCostStatus !== undefined && !["verified", "partial", "unavailable"].includes(String(summary.providerCostStatus))) || (summary.providerStatementStatus !== undefined && !["not_checked", "needs_review", "balanced", "unavailable"].includes(String(summary.providerStatementStatus))) || (summary.missingCostEvidenceCount !== undefined && !finite(summary.missingCostEvidenceCount)) || !object(summary.byKind)) fail("财务检索", "summary");
+  const optionalSummaryNumbers = ["fixtureRechargeOrderCny", "verifiedRechargeOrderCny", "pointPackOrderCny", "pointPackOrderCount", "pointPackOrderWorkspaceCount", "onboardingOrderCny", "onboardingOrderCount", "onboardingOrderWorkspaceCount"];
+  if (summaryNumbers.some(key => !finite(summary[key])) || optionalSummaryNumbers.some(key => summary[key] !== undefined && !finite(summary[key])) || (summary.providerCostCny !== null && !finite(summary.providerCostCny)) || (summary.providerCostStatus !== undefined && !["verified", "partial", "unavailable"].includes(String(summary.providerCostStatus))) || (summary.providerStatementStatus !== undefined && !["not_checked", "needs_review", "balanced", "unavailable"].includes(String(summary.providerStatementStatus))) || (summary.missingCostEvidenceCount !== undefined && !finite(summary.missingCostEvidenceCount)) || !object(summary.byKind)) fail("财务检索", "summary");
+  if (summary.subscriptionOrderWorkspaceCount !== undefined && !finite(summary.subscriptionOrderWorkspaceCount)) fail("财务检索", "summary.subscriptionOrderWorkspaceCount");
   const byKind = summary.byKind as Record<string, unknown>;
   if (financeRecordKinds.some(kind => !finite(byKind[kind]))) fail("财务检索", "summary.byKind");
+  if (summary.subscriptionOrderBySku !== undefined && (!object(summary.subscriptionOrderBySku) || Object.values(summary.subscriptionOrderBySku).some(value => !object(value) || !finite(value.orderCount) || !finite(value.workspaceCount)))) fail("财务检索", "summary.subscriptionOrderBySku");
+  if (summary.commercialOrderBySku !== undefined && (!object(summary.commercialOrderBySku) || Object.values(summary.commercialOrderBySku).some(value => !object(value) || !finite(value.orderCount) || !finite(value.workspaceCount)))) fail("财务检索", "summary.commercialOrderBySku");
   if (!text(candidate.snapshotAt) || !object(candidate.scope)) fail("财务检索", "pagination/scope");
   const scope = candidate.scope as Record<string, unknown>;
   if (!["platform_ops", "finance"].includes(String(scope.role)) || !finite(scope.workspaceCount) || !optionalText(candidate.nextCursor)) fail("财务检索", "pagination/scope");
@@ -260,42 +234,6 @@ export const parseAuditDetail = (value: unknown): AuditCenterDetail =>
 export const parseAuditExport = (value: unknown): AuditCenterExport => {
   if (!object(value) || !text(value.exportId) || !text(value.fileName) || value.contentType !== "text/csv; charset=utf-8" || typeof value.csv !== "string" || !finite(value.rowCount) || !bool(value.truncated)) fail("审计导出", "file");
   return value as unknown as AuditCenterExport;
-};
-
-export const featureFlagsClient: FeatureFlagsClient = {
-  list: async (input: FeatureFlagListRequest) => parseFeatureFlagPage(await rpc("ops.feature-flags.list", {
-    ...(input.environment ? { environment: input.environment } : {}),
-    ...(input.query ? { query: input.query } : {}),
-    ...(input.cursor ? { cursor: input.cursor } : {}),
-    ...(input.limit ? { limit: String(input.limit) } : {}),
-  })),
-  save: async (input: FeatureFlagMutationRequest) => parseFeatureFlagMutation(await rpc("ops.feature-flag.upsert", {
-    ...(input.id ? { id: input.id } : {}),
-    key: input.key,
-    environment: input.environment,
-    description: input.description,
-    default_value_json: JSON.stringify(input.defaultValue),
-    enabled: String(input.enabled ?? false),
-    targets_json: JSON.stringify(input.targets ?? []),
-    ...(input.validFrom ? { valid_from: input.validFrom } : {}),
-    ...(input.validTo ? { valid_to: input.validTo } : {}),
-    ...(input.expectedRevision !== undefined ? { expected_revision: String(input.expectedRevision) } : {}),
-    idempotency_key: input.idempotencyKey,
-    reason: input.reason,
-  })),
-  setEmergency: async (input: FeatureFlagEmergencyRequest) => parseFeatureFlagMutation(await rpc("ops.feature-flag.emergency.set", {
-    id: input.id,
-    disabled: String(input.disabled),
-    expected_revision: String(input.expectedRevision),
-    idempotency_key: input.idempotencyKey,
-    reason: input.reason,
-  })),
-  events: async (flagId: string) => parseFeatureFlagEvents(await rpc("ops.feature-flag.events", { flag_id: flagId, limit: "100" })),
-  evaluate: async input => {
-    const value = await rpc("ops.feature-flag.evaluate", { flag_key: input.flagKey, environment: input.environment, ...(input.targetWorkspaceId ? { target_workspace_id: input.targetWorkspaceId } : {}), ...(input.identityId ? { identity_id: input.identityId } : {}) });
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("功能开关评估返回无效");
-    return value as Record<string, unknown>;
-  },
 };
 
 export const incidentsClient: IncidentsClient = {

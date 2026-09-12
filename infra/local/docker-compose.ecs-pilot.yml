@@ -1,4 +1,30 @@
 services:
+  payment-gateway:
+    restart: unless-stopped
+    build:
+      context: ../..
+      dockerfile: services/payment-gateway/Dockerfile
+    environment:
+      PORT: 8790
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://yxsona.com}
+      PAYMENT_GATEWAY_API_KEY: ${PAYMENT_GATEWAY_API_KEY:?PAYMENT_GATEWAY_API_KEY is required}
+      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:?PAYMENT_CALLBACK_SECRET is required}
+      PAYMENT_API_BASE_URL: ${PAYMENT_API_BASE_URL:-http://api:8787}
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:?ALIPAY_APP_ID is required}
+      ALIPAY_REQUEST_TIMEOUT_MS: ${ALIPAY_REQUEST_TIMEOUT_MS:-10000}
+      ALIPAY_APP_PRIVATE_KEY_PATH: /run/secrets/alipay_app_private_key
+      ALIPAY_PUBLIC_KEY_PATH: /run/secrets/alipay_public_key
+    volumes:
+      - /opt/merchant-deploy/deploy/secrets/alipay_app_private_key:/run/secrets/alipay_app_private_key:ro
+      - /opt/merchant-deploy/deploy/secrets/alipay_public_key:/run/secrets/alipay_public_key:ro
+    expose: ["8790"]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8790/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
   ui:
     ports: !override []
     environment:
@@ -16,8 +42,30 @@ services:
   api:
     ports: !override ["127.0.0.1:8787:8787"]
     environment:
-      PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-http://47.114.34.122}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://47.114.34.122}
+      PUBLIC_APP_BASE_URL: ${PUBLIC_APP_BASE_URL:-https://yxsona.com}
+      MCP_OAUTH_ISSUER: ${MCP_OAUTH_ISSUER:-}
+      MCP_OAUTH_AUTHORIZATION_ENDPOINT: ${MCP_OAUTH_AUTHORIZATION_ENDPOINT:-}
+      MCP_OAUTH_TOKEN_ENDPOINT: ${MCP_OAUTH_TOKEN_ENDPOINT:-}
+      OPENAI_APPS_CHALLENGE_TOKEN: ${OPENAI_APPS_CHALLENGE_TOKEN:-}
+      PUBLIC_ASSET_BASE_URL: ${PUBLIC_ASSET_BASE_URL:-https://yxsona.com}
+      PUBLIC_OAUTH_REDIRECT_URI: ${PUBLIC_OAUTH_REDIRECT_URI:-https://yxsona.com/v1/oauth/callback/{platform}}
+      MERCHANT_BEARER_HOSTNAME: ${MERCHANT_BEARER_HOSTNAME:-yxsona.com}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://yxsona.com,https://admin.yxsona.com,https://ops.yxsona.com}
+      PAYMENT_MODE: ${PAYMENT_MODE:-fixture}
+      PAYMENT_PROVIDER_ADAPTERS: ${PAYMENT_PROVIDER_ADAPTERS:-}
+      PAYMENT_CHECKOUT_BASE_URL: ${PAYMENT_CHECKOUT_BASE_URL:-}
+      PAYMENT_PROVIDER_CHECKOUT_API_URL: ${PAYMENT_PROVIDER_CHECKOUT_API_URL:-}
+      PAYMENT_PROVIDER_QUERY_API_URL: ${PAYMENT_PROVIDER_QUERY_API_URL:-}
+      PAYMENT_PROVIDER_REFUND_API_URL: ${PAYMENT_PROVIDER_REFUND_API_URL:-}
+      PAYMENT_PROVIDER_API_KEY: ${PAYMENT_PROVIDER_API_KEY:-}
+      PAYMENT_PROVIDER_MERCHANT_ID: ${PAYMENT_PROVIDER_MERCHANT_ID:-}
+      PAYMENT_CALLBACK_BASE_URL: ${PAYMENT_CALLBACK_BASE_URL:-}
+      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:-}
+      PAYMENT_RECONCILIATION_ENABLED: ${PAYMENT_RECONCILIATION_ENABLED:-false}
+      PAYMENT_REFUND_ENABLED: ${PAYMENT_REFUND_ENABLED:-false}
+      PAYMENT_ONE_FEN_TEST_ENABLED: ${PAYMENT_ONE_FEN_TEST_ENABLED:-false}
+      PAYMENT_ONE_FEN_TEST_WORKSPACE_ID: ${PAYMENT_ONE_FEN_TEST_WORKSPACE_ID:-}
+      COMMERCIAL_PAYMENT_PROVIDER: ${COMMERCIAL_PAYMENT_PROVIDER:-manual_transfer}
 
   api-replica:
     ports: !override []

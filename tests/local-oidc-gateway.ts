@@ -40,7 +40,7 @@ function validatedConfig(input: LocalOidcGatewayConfig): Required<LocalOidcGatew
   const uiUpstream = loopbackUrl(input.uiUpstream, 'uiUpstream')
   const apiUpstream = loopbackUrl(input.apiUpstream, 'apiUpstream')
   if (!input.username.trim()) fail('LOCAL_OIDC_TEST_USERNAME is required')
-  if (input.password.length < 12) fail('LOCAL_OIDC_TEST_PASSWORD must contain at least 12 characters')
+  if (input.password.length < 8) fail('LOCAL_OIDC_TEST_PASSWORD must contain at least 8 characters')
   if (input.sessionSecret.length < 24) fail('LOCAL_OIDC_SESSION_SECRET must contain at least 24 characters')
   // Match the API's established test fixture while still rejecting trivial
   // local secrets. Production entropy requirements remain deployment policy.

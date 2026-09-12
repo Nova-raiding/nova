@@ -104,7 +104,7 @@ export function SupportQueueSection({ model }: { model: SupportDomainModel }) {
           <Alert
             type="error"
             showIcon
-            message={<span id="support-queue-error-title">工单队列读取失败</span>}
+            title={<span id="support-queue-error-title">工单队列读取失败</span>}
             description={initialLoadFailed
               ? "当前空列表不代表没有工单；请修复连接或权限后重新加载。"
               : "已保留上一次成功读取的工单，修复连接或权限后可重新加载。"}

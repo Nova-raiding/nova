@@ -4,6 +4,42 @@
 BEGIN;
 SELECT pg_advisory_xact_lock(731942853);
 SELECT set_config('app.workspace_id', 'ws_demo', true);
+SELECT set_config('app.platform_scope', 'platform_ops', true);
+
+-- Local browser acceptance account. This is a deterministic, active merchant
+-- fixture for the desktop E2E suite only; production never runs seed-demo.sql.
+INSERT INTO platform_identities (id, issuer, external_subject, display_name)
+VALUES (
+  '00000000-0000-4000-8000-000000000101',
+  'damai-password',
+  'merchant-demo@example.com',
+  '本地演示商家'
+)
+ON CONFLICT (issuer, external_subject) DO NOTHING;
+
+INSERT INTO platform_password_accounts (
+  id, identity_id, login_identifier, account_type, enterprise_name,
+  contact_name, password_hash, terms_agreed_at, status, roles, workspace_ids
+)
+SELECT
+  '00000000-0000-4000-8000-000000000102',
+  id,
+  'merchant-demo@example.com',
+  'merchant',
+  '本地演示企业',
+  '本地演示商家',
+  '$argon2id$v=19$m=65536,p=4,t=3$Dgo4KmMlBT7loOwydmGOjg$ggTUqwLxYNu+GhsU3uH8HY/9I0LW5JsnE5CMnNSrRaM',
+  now(),
+  'active',
+  ARRAY['merchant']::text[],
+  ARRAY['ws_demo']::text[]
+FROM platform_identities
+WHERE issuer = 'damai-password'
+  AND external_subject = 'merchant-demo@example.com'
+ON CONFLICT (login_identifier) DO UPDATE SET
+  status = 'active',
+  workspace_ids = ARRAY['ws_demo']::text[],
+  updated_at = now();
 
 INSERT INTO workspaces (id, status, capacity_tier)
 VALUES ('ws_demo', 'active', 'pilot_50')
@@ -29,6 +65,46 @@ ON CONFLICT (workspace_id, external_subject) DO UPDATE SET
   revision = workspace_members.revision + 1
 WHERE (workspace_members.display_name, workspace_members.role, workspace_members.status)
   IS DISTINCT FROM (EXCLUDED.display_name, EXCLUDED.role, EXCLUDED.status);
+
+-- Password-authenticated API requests use the stable platform identity UUID as
+-- the actor principal. Keep the local browser account bound to that same
+-- subject so strict workspace membership checks exercise the production
+-- boundary instead of falling back to a fixture bearer.
+UPDATE workspace_members
+SET
+  external_subject = '00000000-0000-4000-8000-000000000101',
+  identity_id = '00000000-0000-4000-8000-000000000101',
+  updated_at = now(),
+  revision = workspace_members.revision + 1
+WHERE workspace_id = 'ws_demo'
+  AND external_subject = 'merchant-demo@example.com'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM workspace_members existing
+    WHERE existing.workspace_id = 'ws_demo'
+      AND existing.external_subject = '00000000-0000-4000-8000-000000000101'
+  );
+
+INSERT INTO workspace_members (
+  id, workspace_id, external_subject, display_name, role, status, invited_by, identity_id
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000103',
+  'ws_demo',
+  '00000000-0000-4000-8000-000000000101',
+  '本地演示商家',
+  'merchant_admin',
+  'active',
+  'local_compose_seed',
+  '00000000-0000-4000-8000-000000000101'
+)
+ON CONFLICT (workspace_id, external_subject) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  role = EXCLUDED.role,
+  status = EXCLUDED.status,
+  identity_id = EXCLUDED.identity_id,
+  updated_at = now(),
+  revision = workspace_members.revision + 1;
 
 INSERT INTO workspace_members (
   id, workspace_id, external_subject, display_name, role, status, invited_by

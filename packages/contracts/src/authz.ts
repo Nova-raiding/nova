@@ -364,7 +364,7 @@ const commercialFinanceRead: readonly CapabilityId[] = [
 ]
 
 export const ROLE_CAPABILITIES: Readonly<Record<CanonicalRole, readonly CapabilityId[]>> = {
-  platform_admin: [...platformRead, ...commercialOpsRead, 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.export'],
+  platform_admin: [...platformRead, ...commercialOpsRead, 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.point.adjust.approve', 'authorization.role.read', 'authorization.role.manage', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.status.update', 'workspace.delete.execute', 'feature_flag.update', 'feature_flag.administer', 'audit.export', 'billing.platform.read', 'billing.export'],
   // P0 compatibility: legacy platform_ops resolves here, so existing identity/member/delete
   // enforcement remains intact until durable platform-role assignments replace that alias.
   ops_admin: [...platformRead, ...commercialOpsRead, 'commercial.private_trial.workflow', 'commercial.private_sku.grant', 'commercial.payment.reconcile', 'commercial.point.adjust', 'commercial.service_fulfillment.write', 'authorization.role.read', 'authorization.grant.read', 'authorization.grant.manage', 'identity.read', 'identity.update', 'identity.session.revoke', 'workspace.delete.execute', 'workspace.member.read', 'workspace.member.manage', 'support.ticket.update', 'support.sla.update', 'support.sla.approve', 'incident.update', 'incident.administer', 'feature_flag.update', 'commercial.update', 'commercial.export', 'platform.settings.update', 'platform.media_spec.update', 'platform.media_spec.approve', 'billing.platform.read', 'billing.reconcile.execute', 'billing.export', 'canonical.backfill.read', 'canonical.backfill.update', 'marketing.alert.update', 'store.connection.update'],
@@ -401,7 +401,7 @@ const write = (capability: CapabilityId, scope: AuthorizationScopeType, dataClas
 // Every current method is named in exactly one group. Prefix or wildcard fallbacks are intentionally forbidden.
 const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('merchant.onboarding.execute', 'workspace', 'customer_metadata', ['merchant.start', 'merchant.first_value', 'workspace.bootstrap', 'workspace.interactive.confirm']),
-  read('workspace.summary.read', 'workspace', 'customer_metadata', ['workspace.health', 'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get']),
+  read('workspace.summary.read', 'workspace', 'customer_metadata', ['workspace.health', 'workspace.invitations.list', 'workspace.metrics', 'workspace.commercial.get', 'workspace.usage.get']),
   write('workspace.settings.update', 'workspace', 'customer_metadata', ['workspace.commercial.update']),
   write('workspace.status.update', 'workspace', 'customer_metadata', ['workspace.deactivate', 'workspace.activate']),
   read('workspace.delete.execute', 'workspace', 'customer_metadata', ['ops.data.delete.list']),
@@ -418,7 +418,7 @@ const POLICY_GROUPS: readonly PolicyGroup[] = [
   write('authorization.grant.manage', 'platform', 'secret_metadata', ['ops.authorization.grant.issue'], 'allow_and_deny', ['reason', 'revision', 'approval']),
   write('authorization.grant.manage', 'platform', 'secret_metadata', ['ops.authorization.grant.revoke'], 'allow_and_deny', ['reason', 'revision']),
   read('workspace.member.read', 'workspace', 'customer_metadata', ['ops.members.list']),
-  write('workspace.member.manage', 'workspace', 'customer_metadata', ['ops.member.upsert', 'ops.member.suspend'], 'mutation', ['reason']),
+  write('workspace.member.manage', 'workspace', 'customer_metadata', ['ops.member.upsert', 'ops.member.suspend', 'workspace.invitation.accept'], 'mutation', ['reason']),
   read('identity.read', 'platform', 'secret_metadata', ['ops.users.list', 'ops.user.detail']),
   write('identity.update', 'platform', 'secret_metadata', ['ops.user.suspend', 'ops.user.activate', 'ops.user.risk.transition']),
   write('identity.session.revoke', 'platform', 'secret_metadata', ['ops.user.session.revoke']),

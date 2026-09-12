@@ -146,7 +146,7 @@ export function RechargeOrdersSection({ model }: RechargeOrdersSectionProps) {
               render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text>,
             },
             {
-              title: "工作区",
+              title: "企业主体（Workspace ID）",
               dataIndex: "workspace_id",
               width: 180,
               render: (value: string) => <Typography.Text className="ops-token" copyable>{value}</Typography.Text>,

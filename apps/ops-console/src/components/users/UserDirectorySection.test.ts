@@ -89,7 +89,7 @@ describe("UserDirectorySection sorting", () => {
     expect(source).toContain('aria-label={`撤销认证会话 ${row.id}`}');
     expect(source).toContain('aria-label="按关键词筛选用户目录"');
     expect(source).toContain('aria-label="按成员状态筛选用户目录"');
-    expect(source).toContain('aria-label="按工作区筛选用户目录"');
+    expect(source).toContain('aria-label="按企业主体筛选用户目录"');
   });
 
   it("keeps directory refresh errors distinguishable and recoverable without stealing focus during background refresh", () => {

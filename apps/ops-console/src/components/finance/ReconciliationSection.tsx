@@ -216,7 +216,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           type={reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "success" : reconciliation.model_usage.reconciliation_status === "pending" ? "warning" : "error"}
           showIcon
           role="status"
-          title={`模型用量对账状态：${reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "本地一致" : reconciliation.model_usage.reconciliation_status === "pending" ? "待结算" : reconciliation.model_usage.reconciliation_status === "needs_review" ? "需要复核" : "未知状态（已阻断）"}`}
+          title={`模型用量对账状态：${reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "本地一致" : reconciliation.model_usage.reconciliation_status === "pending" ? "待结算" : reconciliation.model_usage.reconciliation_status === "needs_review" ? "需要复核" : "待确认状态（已阻断）"}`}
           description={reconciliation.model_usage.reconciliation_status && !["locally_consistent", "pending", "needs_review"].includes(reconciliation.model_usage.reconciliation_status) ? "服务端返回了未识别状态，运营台不会将其视为已完成。" : "状态来自服务端对账结果；供应商账户级核验仍以外部 statement 为准。"}
         />
       ) : null}
@@ -267,7 +267,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
       <Alert
         type={reconciliation?.provider?.mode === "provider" && reconciliation.provider.ready ? "success" : "warning"}
         showIcon
-        title={`支付 provider：${reconciliation?.provider?.mode === "fixture" ? "当前为 fixture（已阻断真实支付判断）" : reconciliation?.provider?.mode === "provider" && reconciliation.provider.ready ? "已就绪" : "未就绪或状态未知"}`}
+          title={`支付 provider：${reconciliation?.provider?.mode === "fixture" ? "当前为 fixture（已阻断真实支付判断）" : reconciliation?.provider?.mode === "provider" && reconciliation.provider.ready ? "已就绪" : "未就绪或待确认"}`}
         description={
           reconciliation?.provider?.reasons?.join("、") ||
           "生产充值必须经服务端 provider 下单并等待签名回调"
@@ -278,7 +278,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           type={externalStatementStatus === "balanced" ? "success" : externalStatementStatus === "externally_unverified" || externalStatementStatus === "not_applicable_personal_scope" ? "warning" : "error"}
           showIcon
           title={`外部中转站用量：${externalStatementStatus === "balanced" ? "已核对一致" : externalStatementStatus === "externally_unverified" ? "尚未核验" : externalStatementStatus === "not_applicable_personal_scope" ? "个人视图不适用" : externalStatementStatus === "needs_review" ? "存在差异（需复核）" : "状态不明确（已阻断）"}`}
-          description={<Space orientation="vertical" size={4}><span>{reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验；本页面不将本地一致视为供应商已平账。"}</span>{reconciliation.model_usage.reconciliation_checks && <span>核对异常：未知用户 {reconciliation.model_usage.reconciliation_checks.unknown_actor_count}，孤立 action {reconciliation.model_usage.reconciliation_checks.orphan_action_count}，钱包金额不一致 {reconciliation.model_usage.reconciliation_checks.wallet_amount_mismatch_count}，任务键缺失 {reconciliation.model_usage.reconciliation_checks.missing_run_key_count ?? 0}，预算链路错配 {reconciliation.model_usage.reconciliation_checks.budget_link_mismatch_count ?? 0}。任务键或预算链路异常时不得重试上游，必须先修复链路。</span>}</Space>}
+          description={<Space orientation="vertical" size={4}><span>{reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验；本页面不将本地一致视为供应商已平账。"}</span>{reconciliation.model_usage.reconciliation_checks && <span>核对异常：未识别用户 {reconciliation.model_usage.reconciliation_checks.unknown_actor_count}，孤立 action {reconciliation.model_usage.reconciliation_checks.orphan_action_count}，钱包金额不一致 {reconciliation.model_usage.reconciliation_checks.wallet_amount_mismatch_count}，任务键缺失 {reconciliation.model_usage.reconciliation_checks.missing_run_key_count ?? 0}，预算链路错配 {reconciliation.model_usage.reconciliation_checks.budget_link_mismatch_count ?? 0}。任务键或预算链路异常时不得重试上游，必须先修复链路。</span>}</Space>}
         />
       )}
       <Row gutter={[16, 16]} className="finance-summary">

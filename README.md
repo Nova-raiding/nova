@@ -1,16 +1,16 @@
 # 商家营销内容助手（桌面 ChatGPT 插件）
 
-发布元数据同步基线（2026-09-09）：MCP 契约以共享注册表和运行态校验为准，商家插件当前实测为 144 个 MCP 工具，PostgreSQL 迁移链已进入 179。
+发布元数据同步基线（2026-09-13）：MCP 契约以共享注册表和运行态校验为准，商家插件当前实测为 146 个 MCP 工具，PostgreSQL 迁移链已进入 192。
 
 当前仓库包含一个可运行的工程 RC：桌面 ChatGPT 插件 manifest/入口 Skill、MCP/API、统一契约、任务/内容/发布领域状态机、六平台 fixture profile 与可配置 HTTP connector、同步/生成/发布/对账 Worker、租户隔离 Outbox、OAuth state 安全组件，以及仅供开发调试的 Merchant Studio。小红书和抖音在官方 OAuth/API、字段映射与 canary 未完成前保持 fixture/API 或只读，不宣称生产可写。
 
-当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository 0.1.1、plugin 0.1.0+codex.20260907102000、144 个商家 Bridge 工具、14 个 Ops 一级域和迁移 179。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
+当前发布验收基线以 `release-metadata.json` 和运行时门禁为唯一权威：Repository 0.1.2、plugin 0.1.0+codex.20260912184110、146 个商家 Bridge 工具、11 个 Ops 一级域和迁移 192。正式发布仍须由 metadata、真实宿主证据和生产发布门禁共同通过。
 
 2026-08-29 桌面 ChatGPT 真实宿主只读验收中，`merchant.start`、`workspace.health`、`catalog.search`、`billing.status` 四项均通过。该结果证明桌面宿主 → 插件 → MCP → 本地 API 的四个核心只读入口可工作；本次店铺、商品和余额来自本地 `ws_demo`/fixture，不能替代真实六平台 OAuth、真实商户余额或生产 release 证据。
 
 **发布结论仍为 NO-GO。** capability 正式签名 preflight、固定 trust/nonce 路径、部署后 `/releasez` 与认证业务路径 canary、签名 known-good rollback bundle、回滚资源 kind 限制和生产备份签名 attestation 均已进入 fail-closed 代码路径。尚缺的是同一正式 release 的外部真实证明：六平台真实 OAuth/读写/媒体 canary、真实支付、托管对象存储/KMS/PITR、容量与长稳、告警值守，以及由发布安全控制面实际配置并演练过的信任锚、原子 nonce consumer、capability attester 和签名 artifacts。
 
-2026-08-29 发布审计复核：仓库版本、插件镜像、MCP 注册表和迁移链已有 fail-closed metadata gate，release manifest 同时绑定 `VERSION`、`CHANGELOG`、metadata、Git SHA、插件、OpenAPI 与 MCP 源码。正式 trust anchor 检查因 `/run/release-security/evidence-trust` 未配置而拒绝，容量示例也因 `cloud_gate=false`、非生产环境、非 HTTPS 且包含 mock 流量而被真实云门禁拒绝。因此仓库门禁可验收，但生产发布继续 **NO-GO**。当前检查项和外部缺口见 [0.1.1 发布 checklist](doc/todo/release/release-checklist-0.1.1.md)。
+2026-08-29 发布审计复核：仓库版本、插件镜像、MCP 注册表和迁移链已有 fail-closed metadata gate，release manifest 同时绑定 `VERSION`、`CHANGELOG`、metadata、Git SHA、插件、OpenAPI 与 MCP 源码。正式 trust anchor 检查因 `/run/release-security/evidence-trust` 未配置而拒绝，容量示例也因 `cloud_gate=false`、非生产环境、非 HTTPS 且包含 mock 流量而被真实云门禁拒绝。因此仓库门禁可验收，但生产发布继续 **NO-GO**。当前检查项和外部缺口见 [0.1.2 发布 checklist](doc/todo/release/release-checklist-0.1.2.md)。
 
 ## 快速开始
 
@@ -67,7 +67,7 @@ UI Demo：见 [demo/merchant-studio/README.md](demo/merchant-studio/README.md)�
 - Worker：[packages/workers/src/runner.ts](packages/workers/src/runner.ts)
 - 持久化与 RLS：[packages/persistence/src/schema.sql](packages/persistence/src/schema.sql)
 - 技术方案：[doc/todo/architecture/technical-solution-design.md](doc/todo/architecture/technical-solution-design.md)
-- 发布检查清单：[doc/todo/release/release-checklist-0.1.1.md](doc/todo/release/release-checklist-0.1.1.md)
+- 发布检查清单：[doc/todo/release/release-checklist-0.1.2.md](doc/todo/release/release-checklist-0.1.2.md)
 - 云资源与部署：[doc/todo/infra/cloud-resources-and-deployment.md](doc/todo/infra/cloud-resources-and-deployment.md)
 - Kubernetes 部署基线：[infra/kubernetes/README.md](infra/kubernetes/README.md)
 - 能力/容量证据校验：`npm run evidence:validate`、`npm run capacity:evidence:validate`

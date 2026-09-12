@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { assertProviderResponseAccepted, ProviderOutcomeUnknownError, ProviderRequestFailedError, rethrowProviderTransportFailure } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderOutcomeUnknownError, ProviderRequestFailedError, rethrowProviderTransportFailure, withProviderRequestRetry } from './provider-request.js'
 
 describe('provider request outcome evidence', () => {
+  it('retries bounded 429 failures with Retry-After plus jitter, then returns success', async () => {
+    let attempts = 0
+    const waits: number[] = []
+    await expect(withProviderRequestRetry(async () => {
+      attempts += 1
+      if (attempts < 3) assertProviderResponseAccepted(new Response('', { status: 429, headers: { 'retry-after': '2' } }), 'model_provider_test', 'relay')
+      return 'ok'
+    }, { wait: async ms => { waits.push(ms) }, random: () => 0, maxAttempts: 3 })).resolves.toBe('ok')
+    expect(attempts).toBe(3)
+    expect(waits).toEqual([2_000, 2_000])
+  })
+
+  it('never retries an ambiguous provider outcome', async () => {
+    let attempts = 0
+    await expect(withProviderRequestRetry(async () => {
+      attempts += 1
+      assertProviderResponseAccepted(new Response('', { status: 503 }), 'model_provider_test', 'relay')
+      return 'unreachable'
+    }, { wait: async () => undefined })).rejects.toBeInstanceOf(ProviderOutcomeUnknownError)
+    expect(attempts).toBe(1)
+  })
+
   it('preserves a 503 relay response status while failing closed', () => {
     expect(() => assertProviderResponseAccepted(new Response(JSON.stringify({ error: { message: 'No available channel' } }), { status: 503 }), 'model_provider_test', 'model relay'))
       .toThrowError(ProviderOutcomeUnknownError)

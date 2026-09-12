@@ -21,8 +21,6 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('<>\n          <section')
     expect(app).toContain('onBackToProducts={() =>')
     expect(app).toContain("navigateTo('products', { clearContext: true })")
-    expect(app).toContain('onConnectStores={() =>')
-    expect(app).toContain("navigateTo('overview', { clearContext: true })")
     expect(app).toContain("const showAssetLibrary = initialEntry !== 'products'")
     expect(app).toContain('{showAssetLibrary && (')
     expect(app).toContain('<AssetLibrary')
@@ -33,7 +31,7 @@ describe('merchant task conversation visual contract', () => {
     expect(app).toContain('先连接一个可读取的店铺，再回来同步商品。')
     expect(app).toContain('{task && (')
     expect(app).toContain('data-testid="route-recovery-error"')
-    expect(app).toContain('回到商品与素材')
+    expect(app).toContain('回到知识库')
     expect(app).toContain('商品事实已读取')
     expect(app).not.toContain('下方工作区；请只在那里处理当前问题')
     expect(app).not.toContain('· 账号 ${product.accountId}')
@@ -96,7 +94,7 @@ describe('merchant task conversation visual contract', () => {
 
   it('disables unsafe product and asset actions until their evidence gates pass', () => {
     expect(app).toContain('Boolean(identityError) ||\n                            canonicalUnverified')
-    expect(app).toContain("asset.scanStatus !== 'clean' || asset.parseStatus === 'failed' || asset.parseStatus === 'processing'")
-    expect(app).toContain('安全扫描通过后才能评价素材')
+    expect(app).toContain('素材必须先由安全扫描服务标记为 clean')
+    expect(app).toContain("if (asset.scanStatus !== 'clean')")
   })
 })

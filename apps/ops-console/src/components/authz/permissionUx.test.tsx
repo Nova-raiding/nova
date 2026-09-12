@@ -25,7 +25,7 @@ describe("desktop permission UX", () => {
     expect(focusActiveWorkbenchControl(null)).toBe(false);
   });
   it("states the platform and merchant workbench boundary explicitly", () => {
-    expect(workbenchBoundaryMessage("platform")).toContain("商家操作需切换到商家工作区");
+    expect(workbenchBoundaryMessage("platform")).toContain("企业主体操作需切换到对应企业主体");
     expect(workbenchBoundaryMessage("workspace")).toContain("不包含平台运营能力");
   });
   it("formats a live JIT countdown without exposing a token", () => {
@@ -75,12 +75,32 @@ describe("desktop permission UX", () => {
   it("keeps identity, workbench, scope and policy visible", () => {
     const html = renderToStaticMarkup(<RoleScopeBar session={session} authorization={createAuthorizationProjection(session, true)} />);
     expect(html).toContain("平台运营");
-    expect(html).toContain("actor_1");
-    expect(html).toContain("平台控制台");
+    expect(html).not.toContain("打开账号菜单");
+    expect(html).not.toContain("平台控制台");
     expect(html).toContain("平台全局");
     expect(html).toContain("2026-08-31.v1");
-    expect(html).toContain("商家工作区");
     expect(html).toContain("平台运营视图");
+  });
+
+  it("keeps platform operations free of merchant notifications", () => {
+    const html = renderToStaticMarkup(<RoleScopeBar
+      session={session}
+      authorization={createAuthorizationProjection(session, true)}
+      alerts={[{ id: "alert_1", code: "SYNC_FAILED", severity: "high", entityType: "sync_job", entityId: "sync_1", title: "商品同步失败", status: "open", observedAt: "2026-09-10T00:00:00.000Z", evidence: {}, nextAction: "人工处理" }]}
+      onAcknowledgeAlert={() => undefined}
+    />);
+    expect(html).not.toContain('aria-label="通知消息，1 条未读"');
+  });
+
+  it("shows unread notifications separately from the account menu", () => {
+    const merchantSession = { ...session, workbench: "workspace" as const, scopes: [{ type: "workspace" as const, ids: ["ws_1"] }] };
+    const html = renderToStaticMarkup(<RoleScopeBar
+      session={merchantSession}
+      authorization={createAuthorizationProjection(merchantSession, true)}
+      notifications={[{ id: "alert_1", code: "SYNC_FAILED", severity: "high", entityType: "sync_job", entityId: "sync_1", title: "商品同步失败", status: "open", observedAt: "2026-09-10T00:00:00.000Z", evidence: {}, nextAction: "人工处理" }, { id: "alert_2", code: "POLICY_UPDATE", severity: "medium", entityType: "policy", entityId: "policy_1", title: "平台政策更新", status: "acknowledged", observedAt: "2026-09-09T00:00:00.000Z", evidence: {}, nextAction: "查看详情" }]}
+    />);
+    expect(html).toContain('aria-label="通知消息，1 条未读"');
+    expect(html).not.toContain('aria-label="打开账号菜单"');
   });
 
   it("provides a keyboard-operable disclosure for every server-projected role", () => {
@@ -104,43 +124,39 @@ describe("desktop permission UX", () => {
     expect(pending).toContain('aria-describedby="role-scope-verification role-scope-boundary"');
   });
 
-  it("keeps a single server-projected workbench static", () => {
+  it("keeps the platform operations console platform-only even for a dual-scope session", () => {
     const workspaceSession = { ...session, workbench: "workspace" as const, available_workbenches: ["workspace" as const], scopes: [{ type: "workspace" as const, ids: ["ws_1"] }] };
     const html = renderToStaticMarkup(<RoleScopeBar session={workspaceSession} authorization={createAuthorizationProjection(workspaceSession, true)} />);
-    expect(html).toContain("商家工作区");
     expect(html).not.toContain("平台控制台");
-    expect(html).not.toContain("当前运营工作台");
-    expect(html).toContain("商家自运营视图");
+    expect(html).not.toContain('aria-label="当前运营工作台，请主动选择"');
   });
 
-  it("keeps server candidates switchable when the active projection is deny-all", () => {
+  it("does not expose merchant workbench when the platform projection is deny-all", () => {
     const deniedSession = { ...session, capabilities: [] };
     const authorization = createAuthorizationProjection(deniedSession, true);
     const html = renderToStaticMarkup(<RoleScopeBar session={deniedSession} authorization={authorization} activeWorkbench="platform" onWorkbenchChange={() => undefined} />);
     expect(authorization.can("platform.summary.read")).toBe(false);
-    expect(html).toContain("平台控制台");
-    expect(html).toContain("商家工作区");
-    expect(html).toContain("当前运营工作台");
+    expect(html).not.toContain("平台控制台");
+    expect(html).not.toContain('aria-label="当前运营工作台，请主动选择"');
+    expect(html).not.toContain("当前运营工作台");
   });
 
-  it("retains the last server-projected switch targets while the next workbench session is unavailable", () => {
+  it("does not resurrect merchant workbench targets before a session is available", () => {
     const html = renderToStaticMarkup(<RoleScopeBar authorization={createAuthorizationProjection(undefined, true)} activeWorkbench="workspace" availableWorkbenches={["platform", "workspace"]} onWorkbenchChange={() => undefined} />);
-    expect(html).toContain("平台控制台");
-    expect(html).toContain("商家工作区");
-    expect(html).toContain("当前运营工作台");
+    expect(html).not.toContain("平台控制台");
+    expect(html).not.toContain("商家工作区");
+    expect(html).not.toContain("当前运营工作台");
   });
 
-  it("announces workbench switching while controls are disabled", () => {
+  it("keeps the platform workbench label static", () => {
     const html = renderToStaticMarkup(<OpsWorkbenchSwitcher
       value="platform"
       available={["platform", "workspace"]}
       switching
       onChange={() => undefined}
     />);
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('role="status"');
-    expect(html).toContain('aria-live="polite"');
-    expect(html).toContain("正在切换运营工作台，请稍候");
+    expect(html).toContain("平台控制台");
+    expect(html).not.toContain("商家工作区");
   });
 
   it("hides denied content and explains read-only state", () => {

@@ -160,6 +160,18 @@ describe('deterministic content review', () => {
     expect(result.findings).toEqual([])
   })
 
+  it('blocks malformed promotion validity timestamps', () => {
+    const findings = reviewDeterministic({
+      ...base,
+      promotions: [{ platform: 'taobao', productId: 'product-1', skuIds: [], validFrom: 'not-a-date', validTo: 'also-not-a-date' }],
+      promotionContext: { platform: 'taobao', productId: 'product-1', skuIds: [] },
+    })
+    expect(findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'PROMOTION_EXPIRED', field: 'promotion[0].validFrom', severity: 'error' }),
+      expect.objectContaining({ code: 'PROMOTION_EXPIRED', field: 'promotion[0].validTo', severity: 'error' }),
+    ]))
+  })
+
   it('returns an explainable blocking finding for a matched expired rule', () => {
     const center = new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
       packId: 'expired-platform', name: '过期平台规则', version: '1', scope: 'platform', targetId: 'taobao', status: 'active',
@@ -169,6 +181,18 @@ describe('deterministic content review', () => {
     expect(result.findings).toContainEqual(expect.objectContaining({ code: 'RULE_EXPIRED', severity: 'error', action: 'block', ruleVersionId: 'expired-platform@1' }))
     expect(result.findings[0]?.message).toContain('已于 2026-08-24T11:00:00.000Z 过期')
     expect(isReviewBlocking(reviewDeterministic({ ...base, ruleCenter: center, ruleContext: { platform: 'taobao' }, reviewAt: '2026-08-24T12:00:00.000Z' }))).toBe(true)
+  })
+
+  it('rejects malformed rule evidence before it can be activated', () => {
+    expect(() => new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+      packId: 'malformed-source', name: '格式错误的规则来源', version: '1', scope: 'global', status: 'draft',
+      source: { kind: 'internal', reference: 'manual://malformed-source', checkedAt: 'not-a-date' },
+    }])).toThrow('RULE_SOURCE_CHECK_INVALID')
+    expect(() => new RuleCenter(() => '2026-08-24T12:00:00.000Z', [{
+      packId: 'malformed-range', name: '格式错误的规则窗口', version: '1', scope: 'global', status: 'draft',
+      source: { kind: 'internal', reference: 'manual://malformed-range', checkedAt: '2026-08-20T00:00:00.000Z' },
+      effectiveFrom: '2026-08-25T00:00:00.000Z', effectiveTo: '2026-08-24T00:00:00.000Z',
+    }])).toThrow('RULE_EFFECTIVE_RANGE_INVALID')
   })
 
   it('uses advisory expiry configuration outside platform scope without blocking review', () => {

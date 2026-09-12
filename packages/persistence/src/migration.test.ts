@@ -25,10 +25,15 @@ describe('MigrationRunner', () => {
   it('loads the ordered production migration set', async () => {
     const migrations = await loadMigrations()
     const latestVersion = migrations.at(-1)?.version ?? 0
-    expect(latestVersion).toBe(183)
+    expect(latestVersion).toBe(192)
     expect(migrations.map(migration => migration.version)).toEqual(Array.from({ length: latestVersion }, (_, index) => index + 1))
     expect(migrations[1]?.sql).toContain('FORCE ROW LEVEL SECURITY')
     const byVersion = new Map(migrations.map(migration => [migration.version, migration]))
+    expect(byVersion.get(189)).toMatchObject({ name: 'enterprise_display_projection' })
+    expect(byVersion.get(189)?.sql).toContain('enterprises_workspace_scope')
+    expect(byVersion.get(189)?.sql).toContain('enterprise_name')
+    expect(byVersion.get(190)).toMatchObject({ name: 'registration_rejected' })
+    expect(byVersion.get(190)?.sql).toContain("'rejected'")
     expect(byVersion.get(100)).toMatchObject({ name: 'operation_alert_notifications' })
     expect(byVersion.get(101)).toMatchObject({ name: 'canonical_backfill_runs' })
     expect(byVersion.get(102)).toMatchObject({ name: 'canonical_backfill_conflicts' })

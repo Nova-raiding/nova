@@ -55,7 +55,7 @@ test('inventory Ops Console through the real browser UI', async () => {
   }
 })
 
-test('fails closed with no local connection credentials and exposes diagnostics on demand', async () => {
+test('fails closed with no local connection credentials and exposes platform login', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   const requests = []
@@ -71,11 +71,14 @@ test('fails closed with no local connection credentials and exposes diagnostics 
   })
   const page = await context.newPage()
   await page.goto(noAuthBaseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '无法验证运营权限' })).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByRole('button', { name: '连接诊断' })).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.getByRole('form', { name: '运营 API 连接配置' })).toHaveCount(0)
-  await page.getByRole('button', { name: '连接诊断' }).click()
-  await expect(page.getByRole('form', { name: '运营 API 连接配置' })).toBeVisible()
+  // With no local credential, the production-shaped console intentionally
+  // lands on the dedicated platform login page rather than the post-session
+  // recovery result. Both paths fail closed; this one must expose login.
+  await expect(page.getByRole('heading', { name: '登录平台运营后台' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByPlaceholder('例如 ops@example.com')).toBeVisible()
+  await expect(page.getByPlaceholder('请输入平台运营密码')).toBeVisible()
+  await expect(page.getByRole('button', { name: '登录平台运营后台', exact: true })).toBeVisible()
+  await expect(page.getByText('运营 API 连接配置')).toHaveCount(0)
   // Managed OIDC builds may still issue the unauthenticated ops.session RPC;
   // the contract is that no local bearer credential is attached to it.
   expect(requests.filter(request => request.url.includes('/api/mcp')).every(request => !request.authorization)).toBe(true)
@@ -83,7 +86,7 @@ test('fails closed with no local connection credentials and exposes diagnostics 
   await browser.close()
 })
 
-test('turns an authenticated-session 401 into a reauthentication gate', async () => {
+test('turns an authenticated-session 401 into a reauthentication form', async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
   await context.addInitScript(() => {
@@ -106,10 +109,9 @@ test('turns an authenticated-session 401 into a reauthentication gate', async ()
   })
   const page = await context.newPage()
   await page.goto(noAuthBaseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByText('无法验证运营权限', { exact: true })).toBeVisible({ timeout: 20_000 })
-  await page.getByText('查看失败详情（供管理员排查）', { exact: true }).click()
-  await expect(page.locator('details p').first()).not.toBeEmpty()
-  await expect(page.getByRole('button', { name: '重试权限验证' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '登录平台运营后台' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('当前尚未登录', { exact: true })).not.toBeVisible()
+  await expect(page.getByPlaceholder('请输入平台运营密码', { exact: true })).toBeVisible()
   expect(sessionRequests).toBe(1)
   await context.close()
   await browser.close()

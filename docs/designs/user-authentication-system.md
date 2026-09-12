@@ -224,6 +224,7 @@ OIDC/session gateway
 - 新增账号密码 credential、注册、登录、重置、刷新、退出和当前会话端点。
 - 新增 ChatGPT authorization code/PKCE 网关，并与同一大麦 identity 绑定。
 - 新增商家自助注册后待审核、可选邀请接受和多工作区选择流程。
+- 注册申请由平台运营在运营台“用户中心 → 注册申请”处理：`GET /v1/ops/merchant-registration-applications` 查询申请，`POST /v1/ops/merchant-registration-applications/review` 以审核原因执行 `approved` / `rejected` 状态流转；通过时必须绑定至少一个已启用工作区，拒绝后账号保持不可登录。
 - 将 `admin`、`ops`、`mcp` 三个入口绑定到明确客户端和回调地址。
 - 更新运营台未登录、无权限、过期和退出体验。
 - 更新 ChatGPT App OAuth 元数据与安装说明。

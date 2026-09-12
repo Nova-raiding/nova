@@ -11,10 +11,9 @@ test.use({ channel: 'chrome', trace: 'off', video: 'off', screenshot: 'off' })
 
 const platformSections = [
   ['总览', '/ops/overview?workbench=platform'],
-  ['用户与租户', '/ops/users?workbench=platform'],
+  ['用户中心', '/ops/users?workbench=platform'],
   ['平台连接', '/ops/stores?workbench=platform'],
   ['模型服务', '/ops/models?workbench=platform'],
-  ['功能开关', '/ops/feature-flags?workbench=platform'],
   ['存储与对账', '/ops/storage?workbench=platform'],
   ['账务与退款', '/ops/finance?workbench=platform'],
   ['审计中心', '/ops/audit?workbench=platform'],
@@ -22,8 +21,6 @@ const platformSections = [
 const workspaceSections = [
   ['总览', '/ops/overview?workbench=workspace'],
   ['成员与权限', '/ops/members?workbench=workspace'],
-  ['客服', '/ops/support?workbench=workspace'],
-  ['事故中心', '/ops/incidents?workbench=workspace'],
   ['任务与内容', '/ops/tasks?workbench=workspace'],
   ['知识库', '/ops/knowledge?workbench=workspace'],
   ['平台规则', '/ops/rules?workbench=workspace'],
@@ -51,8 +48,8 @@ const workspaceForbidden = new Set([
   'ops.finance.export',
 ])
 const headingByLabel = {
-  '总览': '运营总览',
-  '用户与租户': '用户与租户',
+  '总览': '平台运营实时概况',
+  '用户中心': '用户中心',
   '成员与权限': '成员与权限',
   '客服': '客服工作台',
   '事故中心': '事故中心',
@@ -61,10 +58,14 @@ const headingByLabel = {
   '平台连接': '平台连接汇总',
   '平台规则': '平台规则',
   '模型服务': '模型服务',
-  '功能开关': '功能开关',
   '存储与对账': '存储与对账',
-  '账务与退款': '账务与商业配置',
+  '账务与退款': '平台财务中心',
   '审计中心': '审计中心',
+}
+
+function expectedHeading(label, workbench) {
+  if (label === '账务与退款' && workbench === 'workspace') return '账务与商业配置'
+  return headingByLabel[label]
 }
 
 const json = value => {
@@ -123,9 +124,12 @@ async function walk(page, sections) {
     // A workspace member can legitimately lack a domain capability. Verify
     // that the route renders the explicit access-denied state instead of
     // treating the absence of a domain page as a browser failure.
-    const pageHeading = page.getByRole('heading', { name: headingByLabel[label], exact: true }).first()
+    const heading = expectedHeading(label, sections === workspaceSections ? 'workspace' : 'platform')
+    const pageHeading = page
+      .getByRole('heading', { name: heading, exact: true })
+      .or(page.getByRole('region', { name: heading, exact: true }))
     const deniedHeading = page.getByRole('heading', { name: /无权访问/u }).first()
-    await expect(pageHeading.or(deniedHeading)).toBeVisible({ timeout: 30_000 })
+    await expect(pageHeading.or(deniedHeading).first()).toBeVisible({ timeout: 30_000 })
     await page.waitForTimeout(2_000)
   }
 }
@@ -139,7 +143,9 @@ async function writeEvidence(kind, outputDir, captureState, expectedWorkbench) {
     if (expectedWorkbench === 'workspace' && entry.method !== 'ops.session' && !entry.hasWorkspaceHeader) errors.push('workspace header missing')
     if (expectedWorkbench === 'platform' && entry.hasWorkspaceHeader) errors.push('platform request carries workspace header')
     if ((expectedWorkbench === 'platform' ? platformForbidden : workspaceForbidden).has(entry.method)) errors.push('opposite-boundary method')
-    if (entry.status >= 400 || entry.errorCode) errors.push(`error=${entry.errorCode ?? entry.status}`)
+    const controlledCommercialBlock = entry.method === 'ops.commercial.model-markup.get'
+      && entry.errorCode === 'COMMERCIAL_OPERATION_DISABLED'
+    if ((entry.status >= 400 || entry.errorCode) && !controlledCommercialBlock) errors.push(`error=${entry.errorCode ?? entry.status}`)
     if (entry.responseShape === 'missing-result' && !entry.responseReadError) errors.push('successful response missing result')
     return errors.length ? [{ method: entry.method, errors }] : []
   })

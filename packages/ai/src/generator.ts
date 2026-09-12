@@ -3,7 +3,7 @@ import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './r
 import { inspectOutboundUrl } from '../../connectors/src/outbound-security.js'
 import { assertRelayBaseUrl, assertRelayUrl, relaySecurityFromEnv, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ContentGenerationInput {
@@ -426,16 +426,19 @@ export class OpenAICompatibleContentGenerator implements ContentGenerator {
           : providerIdempotencyKey({ operation: 'text_generate', model: this.options.model, workspaceId: input.usageContext?.workspaceId, requestBody })
         let response: Response
         try {
-          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-          response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': logicalAttemptKey },
-            body: requestBody,
-            signal: controller.signal,
-            redirect: 'error',
-          })
+          response = await withProviderRequestRetry(async () => {
+            if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+            const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+              method: 'POST',
+              headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': logicalAttemptKey },
+              body: requestBody,
+              signal: controller.signal,
+              redirect: 'error',
+            })
+            assertProviderResponseAccepted(candidate, logicalAttemptKey, 'text provider')
+            return candidate
+          }, { signal: controller.signal })
         } catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider request') }
-        assertProviderResponseAccepted(response, logicalAttemptKey, 'text provider')
         let responseText: string
         try { responseText = await readBoundedResponseText(response, MAX_TEXT_RELAY_RESPONSE_BYTES, 'model response') }
         catch (error) { rethrowProviderTransportFailure(error, logicalAttemptKey, 'text provider response') }

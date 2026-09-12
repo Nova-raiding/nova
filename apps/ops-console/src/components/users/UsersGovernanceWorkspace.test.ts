@@ -24,6 +24,10 @@ describe("visibleUsersGovernanceSections", () => {
     expect(visibleUsersGovernanceSections(authorization([]))).toEqual([]);
   });
 
+  it("places member invitations inside the user center", () => {
+    expect(visibleUsersGovernanceSections(authorization(["workspace.member.read"]))).toEqual(["members"]);
+  });
+
   it("makes the unavailable page state discoverable and recoverable", () => {
     const markup = renderToStaticMarkup(createElement(UsersGovernanceWorkspace, {
       model: { authorization: authorization([]) } as never,

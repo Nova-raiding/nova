@@ -17,7 +17,7 @@ export function CompetitorReferencesPanel({
       <Alert
         type="info"
         showIcon
-        message="只录入公开、可追溯的竞品观察"
+        title="只录入公开、可追溯的竞品观察"
         description="分析结果只能用于结构、主题和趋势参考。请勿粘贴竞品原文、未验证商品事实或受保护素材；提交后仍会经过发布前合规审核。"
         style={{ marginBottom: 16 }}
       />

@@ -40,6 +40,23 @@ describe('content generator', () => {
     expect(String(calls[0]?.body)).toContain('referencedSkuIds 必须存在并逐个包含相同的 SKU ID')
   })
 
+  it('retries a rate-limited text request with the same idempotency key', async () => {
+    let attempts = 0
+    const keys: string[] = []
+    const generator = new OpenAICompatibleContentGenerator({
+      baseUrl: 'https://model.example', apiKey: 'secret', model: 'pinned-model', usageSink: () => ({ recorded: true, costEvidence: true }),
+      fetch: async (_url, init = {}) => {
+        attempts += 1
+        keys.push(String((init.headers as Record<string, string>)['idempotency-key']))
+        if (attempts === 1) return new Response('', { status: 429, headers: { 'retry-after': '0' } })
+        return new Response(JSON.stringify({ id: 'retry-request', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost_cny: 0.001 }, choices: [{ message: { content: JSON.stringify(validGeneratedContent()) } }] }), { status: 200 })
+      },
+    })
+    await expect(generator.generate({ platform: 'taobao', directionId: 'A', product: { title: '商品', stock: 1, skuCount: 1 }, usageContext: { workspaceId: 'ws_retry', actionId: 'action_retry' } })).resolves.toMatchObject({ title: '标题' })
+    expect(attempts).toBe(2)
+    expect(keys[0]).toBe(keys[1])
+  })
+
   it('accepts a single full-response JSON fence but does not extract JSON from prose', async () => {
     const content = validGeneratedContent({ title: '围栏 JSON 标题' })
     const fenced = new OpenAICompatibleContentGenerator({

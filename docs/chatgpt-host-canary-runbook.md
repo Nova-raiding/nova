@@ -26,3 +26,40 @@
 
 使用 `tests/codex-app-host-evidence-gate.ts` 校验最终 evidence JSON；只有校验通过且与当前 release、MCP origin、bridge SHA 一致，才能移除“真实 ChatGPT 宿主验收”上线阻断。
 
+## 采集文件
+
+在真实 ChatGPT.app 中完成上述场景后，将每个场景的截图/宿主日志/MCP 摘要保存到同一生产 evidence root，并准备一个 capture JSON：
+
+```json
+{
+  "release_id": "当前发布 ID",
+  "environment": "production",
+  "host": "chatgpt",
+  "app_version": "真实 ChatGPT.app 版本",
+  "plugin_version": "已安装插件版本",
+  "mcp_base_url": "https://正式商家域名",
+  "bridge_sha256": "已安装 bridge.mjs 的 SHA-256",
+  "simulated": false,
+  "scenarios": [
+    { "id": "plugin_discovery", "state": "passed", "console_errors": 0, "network_errors": 0, "artifact_path": "codex-host/plugin-discovery.json" }
+  ]
+}
+```
+
+其余场景按同样格式补齐；`error_recovery` 还必须包含 `trigger_http_status=503`、`trigger_error_code=MODEL_PROVIDER_OUTCOME_UNKNOWN`、`retry_allowed=false`，以及真实对账结果文件路径 `outcome_artifact_path`。使用：
+
+```bash
+npm run codex:host:evidence -- \
+  --capture /secure/capture.json \
+  --output artifacts/codex-host/evidence.json \
+  --artifact-root artifacts
+npx tsx tests/codex-app-host-evidence-gate.ts \
+  --file artifacts/codex-host/evidence.json \
+  --release-id "$RELEASE_ID" \
+  --expected-mcp-base-url "$MCP_BASE_URL" \
+  --expected-bridge-sha256 "$BRIDGE_SHA256" \
+  --artifact-root artifacts \
+  --require-artifacts
+```
+
+采集器会拒绝 localhost、fixture、mock、模拟标记和缺失场景；它不能从本地浏览器或 Bridge 自行生成宿主证据。

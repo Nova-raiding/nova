@@ -1,14 +1,16 @@
 {
   "name": "@merchant-marketing/plugin",
   "private": true,
-  "version": "0.1.0+codex.20260907102000",
+  "version": "0.1.0+codex.20260912184110",
   "type": "module",
   "engines": {
     "node": ">=18"
   },
   "merchantRuntime": {
     "desktopHost": "ChatGPT.app",
-    "supportedDesktopPlatforms": ["darwin"],
+    "supportedDesktopPlatforms": [
+      "darwin"
+    ],
     "environmentRecovery": "macOS launchctl user session",
     "otherPlatforms": "require explicit host environment injection and are outside the current desktop support boundary"
   }

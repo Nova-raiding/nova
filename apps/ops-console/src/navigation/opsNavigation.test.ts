@@ -28,12 +28,14 @@ describe("operations navigation", () => {
     expect(domainFromLocation({ pathname: "/ops/users", hash: "#finance" })).toBe("users");
   });
 
-  it("keeps legacy governance links mapped to overview", () => {
+  it("keeps overview routes as the operations landing page", () => {
     expect(domainFromLocation({ pathname: "/ops/governance", hash: "" })).toBe("overview");
+    expect(domainFromLocation({ pathname: "/ops/overview", hash: "" })).toBe("overview");
   });
 
   it("falls back to overview for unknown paths and hashes", () => {
     expect(domainFromLocation({ pathname: "/ops/unknown", hash: "#unknown" })).toBe("overview");
+    expect(domainFromLocation({ pathname: "/ops/feature-flags", hash: "" })).toBe("overview");
   });
 
   it("replaces an existing Ops route instead of nesting it", () => {
@@ -51,13 +53,13 @@ describe("operations navigation", () => {
   });
 
   it("keeps support role navigation bounded while preserving incident response", () => {
-    const support = authorization(["platform.summary.read", "support.ticket.read", "incident.read", "feature_flag.read", "audit.read"]);
-    expect(visibleOpsDomains(support)).toEqual(["overview", "support", "incidents", "feature-flags", "audit"]);
+    const support = authorization(["platform.summary.read", "support.ticket.read", "incident.read", "audit.read"]);
+    expect(visibleOpsDomains(support)).toEqual(["overview", "audit"]);
     expect(canViewOpsDomain("finance", support)).toBe(false);
   });
 
   it("lets platform operations reach every domain and local owner mode stay compatible", () => {
-    const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "support.ticket.read", "incident.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read", "model.status.read", "feature_flag.read", "storage.reconciliation.read", "billing.platform.read", "audit.read"]);
+    const all = authorization(["platform.summary.read", "identity.read", "workspace.member.read", "marketing.summary.read", "customer.content.read", "platform.settings.read", "rule.read", "model.status.read", "storage.reconciliation.read", "billing.platform.read", "audit.read"]);
     expect(visibleOpsDomains(all)).toEqual(opsDomains);
     expect(visibleOpsDomains(authorization([], false))).toEqual([]);
   });
@@ -65,7 +67,7 @@ describe("operations navigation", () => {
   it("does not expose platform-only domains to a workspace owner", () => {
     const visible = visibleOpsDomains(authorization(["workspace.summary.read", "workspace.member.read", "support.ticket.read", "incident.read", "customer.content.read", "store.connection.read", "rule.read", "model.status.read", "billing.workspace.read", "audit.read"]));
     expect(visible).toEqual([
-      "overview", "members", "support", "incidents", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "audit",
+      "overview", "members", "tasks", "knowledge", "stores", "rules", "models", "storage", "finance", "audit",
     ]);
     expect(visible).not.toContain("users");
     expect(visible).not.toContain("feature-flags");
@@ -77,9 +79,10 @@ describe("operations navigation", () => {
     expect(canViewOpsDomain("finance", authorization(["customer.content.read"]))).toBe(false);
   });
 
-  it("keeps finance in the active workbench because its data surface is dual-scope", () => {
+  it("keeps finance dual-scope while all other Ops Console routes stay platform-scoped", () => {
     expect(requiredWorkbenchForDomain("finance")).toBeUndefined();
     expect(requiredWorkbenchForDomain("audit")).toBe("platform");
     expect(requiredWorkbenchForDomain("tasks")).toBe("workspace");
+    expect(requiredWorkbenchForDomain("knowledge")).toBe("workspace");
   });
 });

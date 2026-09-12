@@ -147,10 +147,48 @@ GRANT USAGE ON SCHEMA public TO merchant_ops;
 -- not fail merely because those relations have not been created yet.
 DO $$
 BEGIN
+  IF to_regclass('public.platform_identities') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON platform_identities, platform_identity_events, platform_auth_sessions, platform_password_accounts, platform_password_sessions, platform_password_reset_tokens FROM merchant_app';
+  END IF;
+  IF to_regclass('public.enterprises') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON enterprises FROM merchant_app';
+    EXECUTE 'GRANT SELECT ON enterprises TO merchant_ops';
+  END IF;
   IF to_regclass('public.platform_feature_flags') IS NOT NULL THEN
     EXECUTE 'REVOKE ALL ON platform_feature_flags, platform_feature_flag_targets, platform_feature_flag_events FROM merchant_app';
     EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON platform_feature_flags, platform_feature_flag_targets TO merchant_ops';
     EXECUTE 'GRANT SELECT, INSERT ON platform_feature_flag_events TO merchant_ops';
+  END IF;
+END
+$$;
+
+-- Global control-plane and commercial configuration are not tenant-runtime
+-- write surfaces. This block must remain after the broad compatibility grant
+-- above and is intentionally idempotent for every local migrate run.
+DO $$
+BEGIN
+  IF to_regclass('public.platform_feature_flags') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON platform_feature_flags, platform_feature_flag_targets, platform_feature_flag_events FROM merchant_app';
+  END IF;
+  IF to_regclass('public.enterprises') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON enterprises FROM merchant_app';
+    EXECUTE 'GRANT SELECT ON enterprises TO merchant_ops';
+  END IF;
+  IF to_regclass('public.model_markup_policy') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON model_markup_policy FROM merchant_app';
+  END IF;
+  IF to_regclass('public.platform_media_specs') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON platform_media_specs, platform_media_spec_audit, active_platform_media_specs FROM merchant_app';
+    EXECUTE 'GRANT SELECT ON active_platform_media_specs TO merchant_app';
+  END IF;
+  IF to_regclass('public.commercial_catalog_skus') IS NOT NULL THEN
+    EXECUTE 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON commercial_catalog_skus, commercial_catalog_sku_versions, commercial_catalog_sku_benefits, creative_point_rate_card_versions_v2, creative_point_rate_rules_v2, commercial_catalog_events_v2, commercial_offers, commercial_addons, commercial_coupons, commercial_rollouts FROM merchant_app';
+  END IF;
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    EXECUTE 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON schema_migrations FROM merchant_app';
+  END IF;
+  IF to_regclass('public.knowledge_index_events') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON knowledge_index_events, knowledge_deletion_proofs FROM merchant_app';
   END IF;
 END
 $$;

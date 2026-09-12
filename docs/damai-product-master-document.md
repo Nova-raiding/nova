@@ -417,6 +417,8 @@ brand / 品
 
 套餐 SKU 是平台售卖的商业对象，例如基础版、成长版、点数包和增值服务；它不等于商品的颜色/尺码 SKU。
 
+竞品模式和本项目的账号、VIP、月包、创意包拆分见[商业目录与竞品定价评审](/Users/lixiaomei/Desktop/code/codexSkills/docs/competitive-pricing-and-packaging-review-2026-09.md)。该文档是产品层设计依据；价格、点数和有效期仍以持久化目录快照为准。
+
 套餐 SKU 至少包含：
 
 - `sku_code` 和版本；

@@ -66,6 +66,7 @@ export interface KnowledgeDocument extends Omit<KnowledgeDocumentInput, 'id' | '
   approvalStatus: KnowledgeApprovalStatus
   rightsStatus: KnowledgeRightsStatus
   indexState: KnowledgeIndexState
+  indexError?: string
   revision: number
   createdAt: string
   updatedAt: string
@@ -130,6 +131,12 @@ export interface KnowledgeAssetBinding extends KnowledgeAssetBindingInput {
 export interface KnowledgeSearchInput {
   workspaceId: string
   query?: string
+  /** Optional catalog scope. Product/SKU identifiers are authoritative; the
+   * platform/account/store predicates are checked against the durable product
+   * row so a document cannot leak across stores in one workspace. */
+  platform?: string
+  accountId?: string
+  storeName?: string
   productId?: string
   skuId?: string
   knowledgeTypes?: readonly KnowledgeType[]
@@ -155,6 +162,8 @@ export interface KnowledgeDeletionProof {
 
 export interface KnowledgeRepository {
   createAsset(input: KnowledgeAssetInput): Promise<KnowledgeAsset>
+  getAsset(workspaceId: string, assetId: string): Promise<KnowledgeAsset | undefined>
+  updateAsset(workspaceId: string, assetId: string, patch: { name?: string; content?: unknown; approvalStatus?: KnowledgeApprovalStatus; rightsStatus?: KnowledgeRightsStatus; indexState?: KnowledgeIndexState; indexError?: string }): Promise<KnowledgeAsset>
   bindAsset(input: KnowledgeAssetBindingInput): Promise<KnowledgeAssetBinding>
   createDocument(input: KnowledgeDocumentInput): Promise<KnowledgeDocument>
   listDocuments(workspaceId: string, filters?: { productId?: string; skuId?: string; indexState?: KnowledgeIndexState; knowledgeType?: KnowledgeType }): Promise<KnowledgeDocument[]>
@@ -203,6 +212,34 @@ export class MemoryKnowledgeRepository implements KnowledgeRepository {
     if (this.assets.has(asset.id)) return clone(this.assets.get(asset.id)!)
     this.assets.set(asset.id, asset); return clone(asset)
   }
+  async getAsset(workspaceId: string, assetId: string): Promise<KnowledgeAsset | undefined> {
+    const scope = requireWorkspaceScope(workspaceId)
+    const asset = this.assets.get(assetId)
+    return asset && asset.workspaceId === scope ? clone(asset) : undefined
+  }
+  async updateAsset(workspaceId: string, assetId: string, patch: { name?: string; content?: unknown; approvalStatus?: KnowledgeApprovalStatus; rightsStatus?: KnowledgeRightsStatus; indexState?: KnowledgeIndexState; indexError?: string }): Promise<KnowledgeAsset> {
+    const scope = requireWorkspaceScope(workspaceId)
+    const current = this.assets.get(assetId)
+    if (!current || current.workspaceId !== scope) throw new Error('KNOWLEDGE_ASSET_NOT_FOUND')
+    if (patch.name !== undefined) current.name = text(patch.name, 'KNOWLEDGE_ASSET_NAME')
+    if (patch.content !== undefined) current.content = clone(patch.content)
+    if (patch.approvalStatus !== undefined) current.approvalStatus = patch.approvalStatus
+    if (patch.rightsStatus !== undefined) current.rightsStatus = patch.rightsStatus
+    if (patch.indexState !== undefined) { assertState(patch.indexState); current.indexState = patch.indexState }
+    if (patch.indexError !== undefined) current.indexError = patch.indexError
+    current.revision += 1
+    current.updatedAt = now()
+    for (const document of this.documents.values()) {
+      if (document.workspaceId !== scope || document.knowledgeAssetId !== assetId) continue
+      if (patch.approvalStatus !== undefined) document.approvalStatus = patch.approvalStatus
+      if (patch.rightsStatus !== undefined) document.rightsStatus = patch.rightsStatus
+      if (patch.indexState !== undefined) document.indexState = patch.indexState
+      if (patch.indexError !== undefined) document.indexError = patch.indexError
+      document.revision += 1
+      document.updatedAt = current.updatedAt
+    }
+    return clone(current)
+  }
   async bindAsset(input: KnowledgeAssetBindingInput): Promise<KnowledgeAssetBinding> {
     const workspaceId = requireWorkspaceScope(input.workspaceId); const knowledgeAssetId = text(input.knowledgeAssetId, 'KNOWLEDGE_ASSET_ID')
     const asset = this.assets.get(knowledgeAssetId)
@@ -245,6 +282,38 @@ const documentProjection = `id, workspace_id, knowledge_asset_id, source_asset_i
 export class PostgresKnowledgeRepository implements KnowledgeRepository {
   constructor(private readonly pool: SqlPool) {}
   async createAsset(input: KnowledgeAssetInput): Promise<KnowledgeAsset> { const scope = requireWorkspaceScope(input.workspaceId); const id = input.id ?? `knowledge_asset_${randomUUID()}`; return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>(`INSERT INTO knowledge_assets (id,workspace_id,kind,name,content,source_asset_id,product_id,sku_id,source_version,approval_status,rights_status,index_state) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (workspace_id,id) DO UPDATE SET updated_at=knowledge_assets.updated_at RETURNING *`, [id, scope, input.kind, text(input.name, 'KNOWLEDGE_ASSET_NAME'), JSON.stringify(input.content), input.sourceAssetId ?? null, input.productId ?? null, input.skuId ?? null, positive(input.sourceVersion, 'KNOWLEDGE_SOURCE_VERSION'), input.approvalStatus ?? 'pending', input.rightsStatus ?? 'unknown', input.indexState ?? 'queued']); return mapAsset(result.rows[0]!) }) }
+  async getAsset(workspaceId: string, assetId: string): Promise<KnowledgeAsset | undefined> { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>('SELECT * FROM knowledge_assets WHERE workspace_id=$1 AND id=$2', [scope, assetId]); return result.rows[0] ? mapAsset(result.rows[0]) : undefined }) }
+  async updateAsset(workspaceId: string, assetId: string, patch: { name?: string; content?: unknown; approvalStatus?: KnowledgeApprovalStatus; rightsStatus?: KnowledgeRightsStatus; indexState?: KnowledgeIndexState; indexError?: string }): Promise<KnowledgeAsset> {
+    const scope = requireWorkspaceScope(workspaceId)
+    if (patch.indexState !== undefined) assertState(patch.indexState)
+    return withWorkspaceTransaction(this.pool, scope, async client => {
+      const current = await client.query<Row>('SELECT * FROM knowledge_assets WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [scope, assetId])
+      if (!current.rows[0]) throw new Error('KNOWLEDGE_ASSET_NOT_FOUND')
+      const values: unknown[] = [scope, assetId]
+      const assignments: string[] = []
+      const add = (column: string, value: unknown, cast?: string) => { values.push(value); assignments.push(`${column}=$${values.length}${cast ?? ''}`) }
+      if (patch.name !== undefined) add('name', text(patch.name, 'KNOWLEDGE_ASSET_NAME'))
+      if (patch.content !== undefined) add('content', JSON.stringify(patch.content), '::jsonb')
+      if (patch.approvalStatus !== undefined) add('approval_status', patch.approvalStatus)
+      if (patch.rightsStatus !== undefined) add('rights_status', patch.rightsStatus)
+      if (patch.indexState !== undefined) add('index_state', patch.indexState)
+      if (assignments.length) {
+        const result = await client.query<Row>(`UPDATE knowledge_assets SET ${assignments.join(',')},revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING *`, values)
+        if (patch.approvalStatus !== undefined || patch.rightsStatus !== undefined || patch.indexState !== undefined || patch.indexError !== undefined) {
+          const documentAssignments: string[] = []
+          const documentValues: unknown[] = [scope, assetId]
+          const addDocument = (column: string, value: unknown) => { documentValues.push(value); documentAssignments.push(`${column}=$${documentValues.length}`) }
+          if (patch.approvalStatus !== undefined) addDocument('approval_status', patch.approvalStatus)
+          if (patch.rightsStatus !== undefined) addDocument('rights_status', patch.rightsStatus)
+          if (patch.indexState !== undefined) addDocument('index_state', patch.indexState)
+          if (patch.indexError !== undefined) addDocument('index_error', patch.indexError)
+          if (documentAssignments.length) await client.query(`UPDATE knowledge_documents SET ${documentAssignments.join(',')},revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND knowledge_asset_id=$2`, documentValues)
+        }
+        return mapAsset(result.rows[0]!)
+      }
+      return mapAsset(current.rows[0]!)
+    })
+  }
   async bindAsset(input: KnowledgeAssetBindingInput): Promise<KnowledgeAssetBinding> { const scope = requireWorkspaceScope(input.workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>(`INSERT INTO knowledge_asset_bindings (binding_id,workspace_id,knowledge_asset_id,source_asset_id,product_id,sku_id,source_version,binding_type,approval_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (workspace_id,knowledge_asset_id,COALESCE(source_asset_id,''),COALESCE(product_id,''),COALESCE(sku_id,'')) DO UPDATE SET source_version=EXCLUDED.source_version,approval_status=EXCLUDED.approval_status,updated_at=now() RETURNING *`, [`knowledge_binding_${randomUUID()}`, scope, input.knowledgeAssetId, input.sourceAssetId ?? null, input.productId ?? null, input.skuId ?? null, positive(input.sourceVersion, 'KNOWLEDGE_SOURCE_VERSION'), input.bindingType ?? 'spreadsheet_facts', input.approvalStatus ?? 'pending']); const row = result.rows[0]!; return { bindingId: row.binding_id, workspaceId: row.workspace_id, knowledgeAssetId: row.knowledge_asset_id, ...(row.source_asset_id ? { sourceAssetId: row.source_asset_id } : {}), ...(row.product_id ? { productId: row.product_id } : {}), ...(row.sku_id ? { skuId: row.sku_id } : {}), sourceVersion: Number(row.source_version), bindingType: row.binding_type, approvalStatus: row.approval_status, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) } }) }
   async createDocument(input: KnowledgeDocumentInput): Promise<KnowledgeDocument> { const scope = requireWorkspaceScope(input.workspaceId); const id = input.id ?? `knowledge_document_${randomUUID()}`; return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>(`INSERT INTO knowledge_documents (id,workspace_id,knowledge_asset_id,source_asset_id,source_version,brand_id,product_id,sku_id,knowledge_type,title,content_type,content_hash,extracted_text,source_metadata,approval_status,rights_status,rule_snapshot_version,embedding_model,embedding_version,index_state,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19,$20,$21::timestamptz) ON CONFLICT (workspace_id,id) DO UPDATE SET extracted_text=EXCLUDED.extracted_text,content_hash=EXCLUDED.content_hash,source_metadata=EXCLUDED.source_metadata,updated_at=now(),revision=knowledge_documents.revision+1 RETURNING ${documentProjection}`, [id, scope, input.knowledgeAssetId ?? null, input.sourceAssetId ?? null, positive(input.sourceVersion, 'KNOWLEDGE_SOURCE_VERSION'), input.brandId ?? null, input.productId ?? null, input.skuId ?? null, input.knowledgeType, input.title?.trim() ?? '', input.contentType?.trim() || 'text/plain', text(input.contentHash, 'KNOWLEDGE_CONTENT_HASH'), input.extractedText, JSON.stringify(input.sourceMetadata ?? {}), input.approvalStatus ?? 'pending', input.rightsStatus ?? 'unknown', input.ruleSnapshotVersion ?? null, input.embeddingModel ?? null, input.embeddingVersion ?? null, input.indexState ?? 'queued', input.expiresAt ?? null]); return mapDocument(result.rows[0]!) }) }
   async listDocuments(workspaceId: string, filters: { productId?: string; skuId?: string; indexState?: KnowledgeIndexState; knowledgeType?: KnowledgeType } = {}): Promise<KnowledgeDocument[]> { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const values: unknown[] = [scope]; const where = ['workspace_id=$1']; for (const [column, value] of [['product_id', filters.productId], ['sku_id', filters.skuId], ['index_state', filters.indexState], ['knowledge_type', filters.knowledgeType] ] as const) if (value) { values.push(value); where.push(`${column}=$${values.length}`) } const result = await client.query<Row>(`SELECT ${documentProjection} FROM knowledge_documents WHERE ${where.join(' AND ')} ORDER BY updated_at DESC,id`, values); return result.rows.map(mapDocument) }) }
@@ -253,5 +322,28 @@ export class PostgresKnowledgeRepository implements KnowledgeRepository {
   async transitionIndexState(workspaceId: string, documentId: string, state: KnowledgeIndexState, reason = ''): Promise<KnowledgeDocument> { const scope = requireWorkspaceScope(workspaceId); assertState(state); return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>(`UPDATE knowledge_documents SET index_state=$3,index_error=$4,revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING ${documentProjection}`, [scope, documentId, state, state === 'failed' ? reason : null]); if (!result.rows[0]) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); await client.query(`INSERT INTO knowledge_index_events (id,workspace_id,document_id,operation,previous_state,next_state,reason) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [`knowledge_index_event_${randomUUID()}`, scope, documentId, state, null, state, reason]); return mapDocument(result.rows[0]!) }) }
   async rebuildIndex(workspaceId: string, documentId?: string, reason = 'rebuild requested'): Promise<number> { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const result = await client.query<Row>(`UPDATE knowledge_documents SET index_state='queued',index_error=NULL,revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND index_state <> 'deleted' AND ($2::text IS NULL OR id=$2) RETURNING id`, [scope, documentId ?? null]); for (const row of result.rows) await client.query(`INSERT INTO knowledge_index_events (id,workspace_id,document_id,operation,previous_state,next_state,reason) VALUES ($1,$2,$3,'rebuild','stale','queued',$4)`, [`knowledge_index_event_${randomUUID()}`, scope, row.id, reason]); return result.rows.length }) }
   async deleteDocument(workspaceId: string, documentId: string, reason = 'document deleted'): Promise<KnowledgeDeletionProof> { const scope = requireWorkspaceScope(workspaceId); return withWorkspaceTransaction(this.pool, scope, async client => { const document = await client.query<Row>(`SELECT id,index_state FROM knowledge_documents WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [scope, documentId]); if (!document.rows[0]) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); const counts = await client.query<{ chunks: number; embeddings: number }>(`SELECT (SELECT count(*)::int FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2) AS chunks,(SELECT count(*)::int FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id=$2) AS embeddings`, [scope, documentId]); const chunksDeleted = Number(counts.rows[0]?.chunks ?? 0); const embeddingsDeleted = Number(counts.rows[0]?.embeddings ?? 0); const chunkIds = await client.query<{ id: string }>(`SELECT id FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2 ORDER BY id`, [scope, documentId]); const embeddingIds = await client.query<{ id: string }>(`SELECT id FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id=$2 ORDER BY id`, [scope, documentId]); const deletionDigest = digest({ scope, documentId, chunks: chunkIds.rows.map(item => item.id), embeddings: embeddingIds.rows.map(item => item.id) }); await client.query(`DELETE FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2`, [scope, documentId]); await client.query(`UPDATE knowledge_documents SET index_state='deleted',index_error=$3,revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND id=$2`, [scope, documentId, reason]); const result = await client.query<Row>(`INSERT INTO knowledge_deletion_proofs (id,workspace_id,document_id,chunks_deleted,embeddings_deleted,deletion_digest) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [`knowledge_deletion_${randomUUID()}`, scope, documentId, chunksDeleted, embeddingsDeleted, deletionDigest]); await client.query(`INSERT INTO knowledge_index_events (id,workspace_id,document_id,operation,previous_state,next_state,reason) VALUES ($1,$2,$3,'deleted',$4,'deleted',$5)`, [`knowledge_index_event_${randomUUID()}`, scope, documentId, document.rows[0].index_state, reason]); return { id: result.rows[0]!.id, workspaceId: result.rows[0]!.workspace_id, documentId: result.rows[0]!.document_id, deletedAt: iso(result.rows[0]!.deleted_at), chunksDeleted: Number(result.rows[0]!.chunks_deleted), embeddingsDeleted: Number(result.rows[0]!.embeddings_deleted), deletionDigest: result.rows[0]!.deletion_digest } }) }
-  async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> { const scope = requireWorkspaceScope(input.workspaceId); const limit = Math.min(Math.max(input.limit ?? 20, 1), 100); return withWorkspaceTransaction(this.pool, scope, async client => { const values: unknown[] = [scope]; const where = [`d.workspace_id=$1`, `d.index_state='ready'`, `d.approval_status='approved'`, `d.rights_status='cleared'`]; if (input.productId) { values.push(input.productId); where.push(`d.product_id=$${values.length}`) } if (input.skuId) { values.push(input.skuId); where.push(`d.sku_id=$${values.length}`) } if (input.knowledgeTypes?.length) { values.push(input.knowledgeTypes); where.push(`d.knowledge_type = ANY($${values.length}::text[])`) } if (input.query?.trim()) { values.push(`%${input.query.trim()}%`); where.push(`(d.extracted_text ILIKE $${values.length} OR EXISTS (SELECT 1 FROM knowledge_chunks c WHERE c.workspace_id=d.workspace_id AND c.document_id=d.id AND c.content ILIKE $${values.length}))`) } values.push(limit); const result = await client.query<Row>(`SELECT ${documentProjection.split(',').map(column => `d.${column.trim()}`).join(',')} FROM knowledge_documents d WHERE ${where.join(' AND ')} ORDER BY d.updated_at DESC,d.id LIMIT $${values.length}`, values); const output: KnowledgeSearchResult[] = []; for (const row of result.rows) { const chunks = await client.query<Row>(`SELECT * FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2 ORDER BY ordinal`, [scope, row.id]); output.push({ document: mapDocument(row), chunks: chunks.rows.map(mapChunk), score: input.query ? 1 : 0 }) } return output }) }
+  async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> { const scope = requireWorkspaceScope(input.workspaceId); const limit = Math.min(Math.max(input.limit ?? 20, 1), 100); return withWorkspaceTransaction(this.pool, scope, async client => { const values: unknown[] = [scope]; const where = [`d.workspace_id=$1`, `d.index_state='ready'`, `d.approval_status='approved'`, `d.rights_status='cleared'`]; if (input.productId) { values.push(input.productId); where.push(`d.product_id=$${values.length}`) } if (input.skuId) { values.push(input.skuId); where.push(`d.sku_id=$${values.length}`) } if (input.knowledgeTypes?.length) { values.push(input.knowledgeTypes); where.push(`d.knowledge_type = ANY($${values.length}::text[])`) } const terms = input.query?.trim().toLocaleLowerCase() ?? ''; // With an embedding, lexical matching is only a ranking signal. Applying ILIKE here would discard semantically relevant documents before the JSONB vectors are scored. Keep the SQL pre-filter only for lexical-only searches.
+      if (input.platform?.trim()) { values.push(input.platform.trim()); where.push(`EXISTS (SELECT 1 FROM products p WHERE p.workspace_id=d.workspace_id AND p.id=d.product_id AND p.platform=$${values.length})`) }
+      if (input.accountId?.trim()) { values.push(input.accountId.trim()); where.push(`EXISTS (SELECT 1 FROM products p WHERE p.workspace_id=d.workspace_id AND p.id=d.product_id AND p.platform_account_id=$${values.length})`) }
+      if (input.storeName?.trim()) { values.push(input.storeName.trim()); where.push(`EXISTS (SELECT 1 FROM products p WHERE p.workspace_id=d.workspace_id AND p.id=d.product_id AND lower(p.store_name)=lower($${values.length}))`) }
+      if (terms && !input.queryEmbedding) { values.push(`%${input.query!.trim()}%`); where.push(`(d.extracted_text ILIKE $${values.length} OR EXISTS (SELECT 1 FROM knowledge_chunks c WHERE c.workspace_id=d.workspace_id AND c.document_id=d.id AND c.content ILIKE $${values.length}))`) } // Vector ranking happens in application code because embeddings are stored as JSONB. Fetch the bounded candidate set before ranking so semantic matches are not lost to updated_at ordering.
+      const candidateLimit = input.queryEmbedding ? 100 : limit
+      values.push(candidateLimit)
+      const result = await client.query<Row>(`SELECT ${documentProjection.split(',').map(column => `d.${column.trim()}`).join(',')} FROM knowledge_documents d WHERE ${where.join(' AND ')} ORDER BY d.updated_at DESC,d.id LIMIT $${values.length}`, values)
+      const output: KnowledgeSearchResult[] = []
+      for (const row of result.rows) {
+        const chunks = await client.query<Row>(`SELECT * FROM knowledge_chunks WHERE workspace_id=$1 AND document_id=$2 ORDER BY ordinal`, [scope, row.id])
+        const embeddings = input.queryEmbedding
+          ? await client.query<Row>(`SELECT * FROM knowledge_embeddings WHERE workspace_id=$1 AND document_id=$2 AND index_state='ready'`, [scope, row.id])
+          : { rows: [] as Row[] }
+        const lexical = terms
+          ? (String(row.extracted_text ?? '').toLocaleLowerCase().includes(terms) ? 1 : chunks.rows.some(chunk => String(chunk.content ?? '').toLocaleLowerCase().includes(terms)) ? .5 : 0)
+          : 0
+        const vector = input.queryEmbedding
+          ? Math.max(...embeddings.rows.map(embedding => vectorScore(input.queryEmbedding!, json(embedding.embedding, []))), 0)
+          : 0
+        output.push({ document: mapDocument(row), chunks: chunks.rows.map(mapChunk), score: Math.max(lexical, vector) })
+      }
+      return output.sort((left, right) => right.score - left.score || left.document.id.localeCompare(right.document.id)).slice(0, limit)
+    }) }
 }

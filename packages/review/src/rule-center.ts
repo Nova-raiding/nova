@@ -5,6 +5,7 @@ export type RulePackStatus = 'draft' | 'active' | 'inactive' | 'expired'
 export type RuleAuditAction = 'created' | 'activated' | 'deactivated' | 'expired'
 export type RuleSeverity = 'error' | 'warning'
 export type RuleAction = 'block' | 'warn' | 'review' | 'allow'
+export type RulePackCategory = 'platform' | 'category' | 'advertising_publish' | 'big_promotion'
 
 export interface RuleEvaluationContext {
   platform?: string
@@ -34,6 +35,8 @@ export interface RulePackVersion {
   name: string
   version: string
   scope: RulePackScope
+  /** Explicit governance category carried through immutable rule versions. */
+  category?: RulePackCategory
   status: RulePackStatus
   source: RuleSource
   checksum: string
@@ -59,6 +62,8 @@ export interface RulePack {
   name: string
   version: string
   scope: RulePackScope
+  /** Explicit governance category. Missing legacy values are unclassified and must not execute. */
+  category?: RulePackCategory
   status: RulePackStatus
   updatedAt: string
   source: RuleSource
@@ -90,6 +95,7 @@ export interface RuleCenterSeed {
   name: string
   version: string
   scope: RulePackScope
+  category?: RulePackCategory
   status?: RulePackStatus
   source: RuleSource
   checks?: RuleChecks
@@ -104,7 +110,7 @@ export interface RuleCenterSeed {
 }
 
 export interface RuleEvaluationFinding {
-  code: 'RULE_EXPIRED' | 'RULE_NOT_YET_EFFECTIVE' | 'RULE_PRIORITY_CONFLICT'
+  code: 'RULE_EXPIRED' | 'RULE_NOT_YET_EFFECTIVE' | 'RULE_PRIORITY_CONFLICT' | 'RULE_SOURCE_INVALID'
   severity: RuleSeverity
   action: RuleAction
   field: 'rules'
@@ -187,6 +193,12 @@ export class RuleCenter {
   private validate(seed: RuleCenterSeed) {
     if (!seed.packId.trim() || !seed.name.trim() || !seed.version.trim() || !seed.source.reference.trim()) throw new Error('RULE_VERSION_INVALID')
     if (!seed.source.checkedAt) throw new Error('RULE_SOURCE_CHECK_REQUIRED')
+    if (Number.isNaN(Date.parse(seed.source.checkedAt))) throw new Error('RULE_SOURCE_CHECK_INVALID')
+    const effectiveFrom = seed.effectiveFrom ? Date.parse(seed.effectiveFrom) : undefined
+    const effectiveTo = seed.effectiveTo ? Date.parse(seed.effectiveTo) : undefined
+    if (seed.effectiveFrom && Number.isNaN(effectiveFrom)) throw new Error('RULE_EFFECTIVE_FROM_INVALID')
+    if (seed.effectiveTo && Number.isNaN(effectiveTo)) throw new Error('RULE_EFFECTIVE_TO_INVALID')
+    if (effectiveFrom !== undefined && effectiveTo !== undefined && effectiveFrom >= effectiveTo) throw new Error('RULE_EFFECTIVE_RANGE_INVALID')
     for (const term of seed.checks?.forbiddenTerms ?? []) if (!term.trim()) throw new Error('RULE_CHECK_INVALID')
     for (const field of seed.checks?.requiredFields ?? []) if (!field.trim()) throw new Error('RULE_CHECK_INVALID')
     for (const key of seed.checks?.conflictKeys ?? []) if (!key.trim()) throw new Error('RULE_CHECK_INVALID')
@@ -197,7 +209,7 @@ export class RuleCenter {
     const at = seed.createdAt ?? this.clock()
     const version: RulePackVersion = {
       id: this.versionId(seed.packId, seed.version), packId: seed.packId, name: seed.name, version: seed.version,
-      scope: seed.scope, status: seed.status ?? 'draft', source: clone(seed.source), checksum: this.checksum(seed),
+      scope: seed.scope, ...(seed.category ? { category: seed.category } : {}), status: seed.status ?? 'draft', source: clone(seed.source), checksum: this.checksum(seed),
       checks: clone(seed.checks ?? {}), createdAt: at, updatedAt: at, createdBy: seed.createdBy ?? 'system', revision: 1,
       ...(seed.effectiveFrom ? { effectiveFrom: seed.effectiveFrom } : {}),
       ...(seed.effectiveTo ? { effectiveTo: seed.effectiveTo } : {}),
@@ -224,8 +236,9 @@ export class RuleCenter {
   }
 
   private projection(version: RulePackVersion): RulePack {
-    const { id, name, version: versionName, scope, status, updatedAt, source, checksum, revision, effectiveFrom, effectiveTo, severity, action, targetId, scopeValue, activatedAt, deactivatedAt } = version
+    const { id, name, version: versionName, scope, category, status, updatedAt, source, checksum, revision, effectiveFrom, effectiveTo, severity, action, targetId, scopeValue, activatedAt, deactivatedAt } = version
     return { id, name, version: versionName, scope, status, updatedAt, source: clone(source), checksum, revision,
+      ...(category ? { category } : {}),
       ...(effectiveFrom ? { effectiveFrom } : {}), ...(effectiveTo ? { effectiveTo } : {}), ...(severity ? { severity } : {}), ...(action ? { action } : {}),
       ...(targetId ? { targetId } : {}), ...(scopeValue ? { scopeValue } : {}), ...(activatedAt ? { activatedAt } : {}), ...(deactivatedAt ? { deactivatedAt } : {}) }
   }
@@ -286,7 +299,14 @@ export class RuleCenter {
           }
           const from = item.effectiveFrom ? Date.parse(item.effectiveFrom) : Number.NEGATIVE_INFINITY
           const to = item.effectiveTo ? Date.parse(item.effectiveTo) : Number.POSITIVE_INFINITY
-          if ((item.effectiveFrom && Number.isNaN(from)) || (item.effectiveTo && Number.isNaN(to))) continue
+          if (item.effectiveFrom && Number.isNaN(from)) {
+            findings.push({ code: 'RULE_SOURCE_INVALID', severity: 'error', action: 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 的生效时间无效，不能用于本次审核` })
+            continue
+          }
+          if (item.effectiveTo && Number.isNaN(to)) {
+            findings.push({ code: 'RULE_SOURCE_INVALID', severity: 'error', action: 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 的失效时间无效，不能用于本次审核` })
+            continue
+          }
           if (now < from) {
             findings.push({ code: 'RULE_NOT_YET_EFFECTIVE', severity: item.severity ?? 'error', action: item.action ?? 'block', field: 'rules', ruleVersionId: item.id, message: `规则 ${item.version} 尚未到生效时间 ${item.effectiveFrom}` })
             continue
@@ -327,7 +347,7 @@ export class RuleCenter {
     const at = this.clock()
     const version: RulePackVersion = {
       id: this.versionId(input.packId, input.version), packId: input.packId, name: input.name, version: input.version,
-      scope: input.scope, status: 'draft', source: clone(input.source), checksum: this.checksum(input), checks: clone(input.checks ?? {}),
+      scope: input.scope, ...(input.category ? { category: input.category } : {}), status: 'draft', source: clone(input.source), checksum: this.checksum(input), checks: clone(input.checks ?? {}),
       createdAt: at, updatedAt: at, createdBy: input.actorId, revision: 1,
       ...(input.effectiveFrom ? { effectiveFrom: input.effectiveFrom } : {}),
       ...(input.effectiveTo ? { effectiveTo: input.effectiveTo } : {}),

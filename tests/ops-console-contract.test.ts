@@ -133,7 +133,7 @@ describe("Ops console marketing governance contract", () => {
     expect(app).not.toContain("access_token");
     expect(app).toContain("VITE_OPS_AUTH_MODE === 'oidc'");
     expect(app).toContain(
-      "credentials: managedOpsSession || localOpsSessionEnabled ? 'include' : 'same-origin'",
+      "credentials: shouldUseCookieCredentials() ? 'include' : 'same-origin'",
     );
   });
 
@@ -152,16 +152,15 @@ describe("Ops console marketing governance contract", () => {
       "querySelectorAll<HTMLElement>('.content-stack > .ant-card')",
     );
     expect(controller).toContain("const ActivePage = opsPageRegistry[activeDomain]");
-    expect(registry).toContain("overview: lazy(() => import('../pages/OverviewPage.js')");
     expect(registry).toContain("tasks: lazy(() => import('../pages/TasksPage.js')");
     expect(registry).toContain("stores: lazy(() => import('../pages/StoresPage.js')");
     expect(registry).toContain("finance: lazy(() => import('../pages/FinancePage.js')");
     expect(registry).toContain("models: lazy(() => import('../pages/ModelsPage.js')");
     expect(registry).toContain("users: lazy(async () => ({ default: UsersPage }))");
     expect(controller).toContain("const visibleDomains = visibleOpsDomains(model.authorization)");
-    expect(registry).toContain("import('./routes/SupportRoute.js')");
-    expect(registry).toContain("import('./routes/IncidentsRoute.js')");
-    expect(registry).toContain("import('./routes/FeatureFlagsRoute.js')");
+    expect(registry).not.toContain("SupportRoute");
+    expect(registry).not.toContain("IncidentsRoute");
+    expect(registry).not.toContain("FeatureFlagsRoute");
     expect(controller).toContain("const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization)");
     expect(controller).toContain("aria-label='正在验证运营权限'");
     expect(controller).toContain("id='ops-main-content'");

@@ -19,7 +19,7 @@ export function BrandPreferencePanel({ model }: { model: OpsConsoleModel }) {
   }, [brandPreference, form]);
   return (
     <Space direction="vertical" size={12} style={{ width: "100%" }}>
-      <Alert showIcon type="info" message="品牌偏好会进入后续文案、图片和视频生成上下文" description="只有 active 版本会被正式任务引用；草稿仍需运营确认。" />
+      <Alert showIcon type="info" title="品牌偏好会进入后续文案、图片和视频生成上下文" description="只有 active 版本会被正式任务引用；草稿仍需运营确认。" />
       {brandPreference && <Tag color={brandPreference.status === "active" ? "green" : "orange"}>当前版本 {brandPreference.version} · {brandPreference.status} · 修订 {brandPreference.revision}</Tag>}
       <Form
         form={form}

@@ -12,6 +12,16 @@ function run(script: string, args: string[] = [], env: Record<string, string> = 
 }
 
 describe('deployment operation scripts', () => {
+  it('requires an explicit pilot release identity before compose can start', () => {
+    const preflight = readFileSync('infra/scripts/pilot-compose-preflight.sh', 'utf8')
+    expect(preflight).toContain(': "${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}"')
+    expect(preflight).toContain("PILOT_RELEASE_ID contains unsafe characters")
+    expect(preflight).toContain("PILOT_RELEASE_GIT_SHA must be a full lowercase Git SHA")
+    expect(preflight).toContain("PILOT_RELEASE_MANIFEST_SHA256 must be lowercase SHA-256")
+    expect(preflight).toContain("PILOT_RELEASE_IMAGE_SET_DIGEST must be sha256 plus 64 lowercase hex characters")
+    expect(readFileSync('infra/local/docker-compose.ecs-pilot-release.yml', 'utf8')).toContain('${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}')
+  })
+
   it('keeps read-only worker containers writable only through the readiness volume', () => {
     const manifest = readFileSync('infra/kubernetes/base/workers.yaml', 'utf8')
     expect(manifest.match(/automountServiceAccountToken: false/g)).toHaveLength(6)
@@ -459,22 +469,22 @@ describe('deployment operation scripts', () => {
     expect(rendered.services['api-replica']?.build).toBeUndefined()
   })
 
-  it('injects the Merchant Studio bearer token only at container startup', () => {
+  it('keeps Merchant Studio browser auth on the HttpOnly session boundary', () => {
     const nginx = readFileSync('infra/nginx/merchant-studio.conf', 'utf8')
     const dockerfile = readFileSync('infra/docker/ui.Dockerfile', 'utf8')
     const entrypoint = readFileSync('infra/nginx/merchant-studio-entrypoint.sh', 'utf8')
     const kubernetes = readFileSync('infra/kubernetes/base/ui.yaml', 'utf8')
-    expect(nginx).toContain('${MERCHANT_API_TOKEN}')
     expect(nginx).toContain('${MERCHANT_WORKSPACE_ID}')
+    expect(nginx).toContain('HttpOnly damai_session')
+    expect(nginx).not.toContain('Authorization "Bearer ${MERCHANT_API_TOKEN}"')
     expect(kubernetes).toContain('key: MERCHANT_WORKSPACE_ID')
     expect(nginx).not.toContain('pilot-local-token')
     expect(dockerfile).toContain('/etc/nginx/merchant-studio.conf.template')
     expect(dockerfile).toContain('40-merchant-studio-token.sh')
-    expect(entrypoint).toContain("envsubst '${MERCHANT_API_TOKEN} ${MERCHANT_WORKSPACE_ID} ${MERCHANT_API_RESOLVER}'")
+    expect(entrypoint).toContain("envsubst '${MERCHANT_WORKSPACE_ID} ${MERCHANT_API_RESOLVER}'")
     expect(entrypoint).toContain('MERCHANT_WORKSPACE_ID must start with an alphanumeric character')
     expect(entrypoint).toContain("awk '/^nameserver[[:space:]]+/{print $2; exit}' /etc/resolv.conf")
     expect(entrypoint).toContain('/etc/nginx/merchant-studio.conf.template')
-    expect(kubernetes).toContain('key: MERCHANT_UI_API_TOKEN')
     expect(kubernetes).toContain('mountPath: /tmp')
     expect(kubernetes).toContain('name: tmp, emptyDir: {sizeLimit: 16Mi}')
     expect(kubernetes).toContain('mountPath: /etc/nginx/conf.d')
@@ -533,6 +543,14 @@ describe('deployment operation scripts', () => {
     expect(apiLocation).toContain('proxy_set_header Authorization $http_authorization')
     expect(apiLocation).toContain('proxy_set_header X-Ops-Workbench $http_x_ops_workbench')
     expect(apiLocation).not.toContain('MERCHANT_API_TOKEN')
+    const challengeLocation = gateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
+    expect(challengeLocation).toContain('proxy_pass http://api:8787')
+    expect(challengeLocation).toContain('proxy_set_header X-Forwarded-Proto $scheme')
+
+    const httpsGateway = readFileSync('infra/nginx/pilot-gateway-https.conf', 'utf8')
+    const httpsChallengeLocation = httpsGateway.split('location = /.well-known/openai-apps-challenge {')[1]?.split('}')[0] ?? ''
+    expect(httpsChallengeLocation).toContain('proxy_pass http://api:8787')
+    expect(httpsChallengeLocation).toContain('proxy_set_header X-Forwarded-Proto https')
   })
 
   it('keeps the API image build context complete for the TypeScript project references', () => {

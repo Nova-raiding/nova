@@ -41,8 +41,8 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
   const failed = summary?.status === "failed";
   const expired = summary?.freshness === "expired";
   const stale = summary?.freshness === "stale";
-  const freshnessLabel = freshnessUnknown ? "新鲜度未知" : expired ? "已过期" : stale ? "已变旧" : "最近已更新";
-  const statusLabel = loading ? "加载中" : error ? "加载失败" : fixtureDataPresent ? "演示数据，未验证" : unknownStatus ? "状态未知，未验证" : unavailable ? "状态不可验证" : failed ? "对账失败" : expired ? "对账已过期" : stale ? "需要刷新" : attention ? "需要处理" : "对账正常";
+  const freshnessLabel = freshnessUnknown ? "新鲜度待确认" : expired ? "已过期" : stale ? "已变旧" : "最近已更新";
+  const statusLabel = loading ? "加载中" : error ? "加载失败" : fixtureDataPresent ? "演示数据，未验证" : unknownStatus ? "状态待确认，未验证" : unavailable ? "状态不可验证" : failed ? "对账失败" : expired ? "对账已过期" : stale ? "需要刷新" : attention ? "需要处理" : "对账正常";
   const statusColor = loading || error || unavailable || fixtureDataPresent ? "default" : failed || expired || stale || attention ? "orange" : "green";
   const workspaceRows = summaries.filter(item => item.workspaceId);
   const workspacePageRows = workspaceRows.slice((workspacePage - 1) * 20, workspacePage * 20);
@@ -52,7 +52,7 @@ export function StorageReconciliationSection({ loading = false, error, summary, 
     <Card title="对象存储容量与对账" extra={<Tag color={statusColor}>{statusLabel}</Tag>} aria-busy={loading}>
       {loading ? <Alert role="status" aria-live="polite" aria-atomic="true" showIcon title="正在加载对账结果" description="正在读取平台范围的脱敏容量和一致性摘要。" /> : null}
       {fixtureDataPresent ? <Alert type="warning" showIcon title="当前含演示数据，对象存储状态不可视为真实就绪" description="请先切换到无 fixture 的真实 API/对象存储数据源；本页面保持 fail-closed。" /> : null}
-      {unknownStatus ? <Alert type="warning" showIcon title="对象存储对账状态未知，不能视为正常" description="API 返回了未识别的对账状态；请升级契约或检查服务端响应。" /> : null}
+      {unknownStatus ? <Alert type="warning" showIcon title="对象存储对账状态待确认，不能视为正常" description="API 返回了未识别的对账状态；请升级契约或检查服务端响应。" /> : null}
       {error ? <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby={errorTitleId} aria-describedby={errorDescriptionId} data-state="error" data-focus-target="error-summary">
         <Alert type="error" showIcon title={<span id={errorTitleId}>对账结果加载失败</span>} description={<span id={errorDescriptionId}>{error}</span>} action={onRetry ? <Button type="primary" icon={<ReloadOutlined aria-hidden />} aria-label="重试加载对账结果" style={{ minHeight: 44 }} onClick={onRetry}>重试</Button> : undefined} />
       </div> : null}

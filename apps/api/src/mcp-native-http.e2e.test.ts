@@ -27,7 +27,7 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(await initialize.json()).toMatchObject({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing' } } })
 
     const listed = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) })
-    const payload = await listed.json() as { result: { tools: Array<{ name: string; inputSchema: { type: string; properties?: Record<string, unknown> } }> } }
+    const payload = await listed.json() as { result: { tools: Array<{ name: string; inputSchema: { type: string; properties?: Record<string, unknown> }; annotations?: Record<string, unknown> }> } }
     expect(listed.status).toBe(200)
     expect(payload.result.tools.length).toBeGreaterThan(0)
     expect(payload.result.tools.every(tool => !tool.name.startsWith('ops.'))).toBe(true)
@@ -46,6 +46,10 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(payload.result.tools.some(tool => tool.name === 'creative-points.balance.get')).toBe(true)
     expect(payload.result.tools.some(tool => tool.name === 'merchant.start')).toBe(true)
     expect(payload.result.tools.every(tool => tool.inputSchema.type === 'object')).toBe(true)
+    expect(payload.result.tools.find(tool => tool.name === 'workspace.health')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
+    expect(payload.result.tools.find(tool => tool.name === 'merchant.first_value')?.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
+    expect(payload.result.tools.find(tool => tool.name === 'content.generate')?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false })
+    expect(payload.result.tools.find(tool => tool.name === 'publish.confirm')?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true })
   })
 
   it('exposes V2 order recovery and fails closed when no approved executable SKU exists', async () => {
@@ -147,5 +151,67 @@ describe('native ChatGPT MCP HTTP transport', () => {
     expect(response.status).toBe(401)
     expect(response.headers.get('www-authenticate')).toMatch(/^Bearer(?:\s|$)/)
     expect((await response.json()).error.code).toBe('UNAUTHENTICATED')
+  })
+
+  it('advertises the public HTTPS OAuth resource behind the production gateway', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    const base = await start()
+    const response = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { ...headers, host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'initialize', params: {} }),
+    })
+    expect(response.status).toBe(401)
+    expect(response.headers.get('www-authenticate')).toBe('Bearer resource_metadata="https://yxsona.com/.well-known/oauth-protected-resource"')
+  })
+
+  it('fails closed instead of advertising dead OAuth endpoints in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
+    const base = await start()
+    for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server']) {
+      const response = await fetch(`${base}${path}`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+      expect(response.status, path).toBe(503)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      await expect(response.json()).resolves.toEqual({ error: 'MCP_OAUTH_NOT_CONFIGURED' })
+    }
+  })
+
+  it('publishes configured HTTPS OAuth metadata without leaking local fixture routes', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
+    vi.stubEnv('MCP_OAUTH_ISSUER', 'https://accounts.example.com')
+    vi.stubEnv('MCP_OAUTH_AUTHORIZATION_ENDPOINT', 'https://accounts.example.com/oauth/authorize')
+    vi.stubEnv('MCP_OAUTH_TOKEN_ENDPOINT', 'https://accounts.example.com/oauth/token')
+    const base = await start()
+    const protectedResource = await fetch(`${base}/.well-known/oauth-protected-resource`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+    expect(protectedResource.status).toBe(200)
+    await expect(protectedResource.json()).resolves.toEqual({ resource: 'https://yxsona.com/mcp', authorization_servers: ['https://accounts.example.com'], scopes_supported: ['openid', 'profile', 'merchant'] })
+
+    const authorizationServer = await fetch(`${base}/.well-known/oauth-authorization-server`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+    expect(authorizationServer.status).toBe(200)
+    await expect(authorizationServer.json()).resolves.toMatchObject({ issuer: 'https://accounts.example.com', authorization_endpoint: 'https://accounts.example.com/oauth/authorize', token_endpoint: 'https://accounts.example.com/oauth/token', code_challenge_methods_supported: ['S256'] })
+  })
+
+  it('fails closed when the OpenAI Apps domain challenge token is not configured', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
+    const base = await start()
+    const response = await fetch(`${base}/.well-known/openai-apps-challenge`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+    expect(response.status).toBe(503)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    await expect(response.json()).resolves.toEqual({ error: 'OPENAI_APPS_CHALLENGE_NOT_CONFIGURED' })
+  })
+
+  it('returns only the configured OpenAI Apps domain challenge token', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('PUBLIC_APP_BASE_URL', 'https://yxsona.com')
+    vi.stubEnv('OPENAI_APPS_CHALLENGE_TOKEN', 'challenge-token-from-openai')
+    const base = await start()
+    const response = await fetch(`${base}/.well-known/openai-apps-challenge`, { headers: { host: 'yxsona.com', 'x-forwarded-host': 'yxsona.com', 'x-forwarded-proto': 'https' } })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toMatch(/^text\/plain/u)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(await response.text()).toBe('challenge-token-from-openai')
   })
 })

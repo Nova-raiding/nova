@@ -1,5 +1,6 @@
 import { Alert, Card, Table, Tag, Typography } from "antd";
 import type { ModelStatus } from "../../types/ops";
+import { modelStateLabel } from "../sections/overview/modelReadiness";
 
 const modalityConfig = [
   { key: "text", label: "文本", modelKey: "text_model", capabilityKey: "text_generation" },
@@ -87,7 +88,7 @@ export function ModelChannelMatrix({ status, fixtureDataPresent = false }: Model
           {
             title: "阻断原因",
             dataIndex: "reasons",
-            render: (value: string[], row: ModelChannelRow) => row.ready ? "—" : value.join("；") || (status?.state && status.state !== "ready" ? `平台模型最终状态为 ${status.state}，尚未通过上线门禁` : "尚未通过模型、计费组或成本门禁"),
+            render: (value: string[], row: ModelChannelRow) => row.ready ? "—" : value.join("；") || (status?.state && status.state !== "ready" ? `平台模型最终状态为 ${modelStateLabel(status.state)}，尚未通过上线门禁` : "尚未通过模型、计费组或成本门禁"),
           },
         ]}
       />

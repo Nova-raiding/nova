@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { StoreDirectorySection } from "./StoreDirectorySection.js";
+import { StoreDirectorySection, storeAuthorizationStateLabel } from "./StoreDirectorySection.js";
 
 const store = {
   platform: "taobao" as const,
@@ -25,6 +25,12 @@ const render = (overrides: Partial<React.ComponentProps<typeof StoreDirectorySec
 );
 
 describe("StoreDirectorySection", () => {
+  it("keeps internal authorization enums out of the operator-facing label", () => {
+    expect(storeAuthorizationStateLabel("unknown")).toBe("状态待确认");
+    expect(storeAuthorizationStateLabel("connected")).toBe("真实授权");
+    expect(storeAuthorizationStateLabel("unexpected_state")).toBe("状态待确认");
+  });
+
   it("keeps the last successful rows visible while a refresh is loading", () => {
     const markup = render({ loading: true });
 

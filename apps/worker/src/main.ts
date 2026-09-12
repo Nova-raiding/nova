@@ -1652,7 +1652,11 @@ export async function runWorker(config: WorkerConfig, pool: Pool): Promise<void>
             ...(heartbeat.eicar.ageSeconds === undefined || heartbeat.eicar.ageSeconds > eicarMaxAgeSeconds ? ['eicar_stale'] : []),
             ...(!heartbeat.callback.capable ? ['scanner_callback_not_capable'] : []),
             ...(heartbeat.callback.ageSeconds === undefined || heartbeat.callback.ageSeconds > callbackMaxAgeSeconds ? ['scanner_callback_stale'] : []),
-            ...(heartbeat.queue.deadLetter > 0 ? ['dead_letter_present'] : []),
+            // Dead letters remain visible in queue evidence and are handled
+            // through the audited recovery/redrive path. They must not be
+            // reported as a scanner readiness failure: doing so would
+            // deadlock recovery because the worker cannot process redrives
+            // while its own health check is red.
             ...(heartbeat.failure?.code ? [heartbeat.failure.code] : []),
           ]
           log({ level: heartbeat.ready ? 'info' : heartbeat.recoveryCapable ? 'warn' : 'error', message: 'scanner heartbeat published', heartbeat, ...(notReadyReasons.length && !heartbeat.ready ? { not_ready_reasons: [...new Set(notReadyReasons)] } : {}) })

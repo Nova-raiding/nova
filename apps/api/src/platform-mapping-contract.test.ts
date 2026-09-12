@@ -164,6 +164,7 @@ describe('platform mapping preflight API contract', () => {
   it('keeps a timed-out publish unknown and accepts only an explicit reconcile observation', async () => {
     const suffix = randomUUID().slice(0, 8)
     const workspaceId = `ws_mapping_reconcile_${suffix}`
+    await api.grantCreativePointsForTests(workspaceId)
     const account = api.service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `reconcile-account-${suffix}`, credentialRef: `fixture://${suffix}` })
     const product = api.service.importProduct({ workspaceId, platform: 'taobao', accountId: account.id, remoteId: `reconcile-remote-${suffix}`, title: 'reconcile 商品', stock: 1, price: 1 })
     api.service.confirmProductFacts(workspaceId, product.id)

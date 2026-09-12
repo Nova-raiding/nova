@@ -42,7 +42,7 @@ export class ProviderRequestFailedError extends Error {
   readonly providerOutcome = 'failed' satisfies ProviderRequestOutcome
   readonly providerSucceeded = false
   readonly reconciliationRequired = false
-  readonly retryable = false
+  readonly retryable: boolean
   readonly details: Readonly<Record<string, unknown>>
 
   constructor(
@@ -51,19 +51,69 @@ export class ProviderRequestFailedError extends Error {
     message: string,
     readonly providerRequestId?: string,
     readonly providerErrorSummary?: string,
+    retryable = false,
+    readonly retryAfterMs?: number,
   ) {
     super(message)
     this.name = 'ProviderRequestFailedError'
+    this.retryable = retryable
     this.details = Object.freeze({
       provider_succeeded: false,
       provider_outcome: 'failed',
       reconciliation_required: false,
       provider_idempotency_key: providerIdempotencyKey,
       provider_status: status,
+      retryable,
+      ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
       ...(providerRequestId ? { provider_request_id: providerRequestId } : {}),
       ...(providerErrorSummary ? { provider_error_summary: providerErrorSummary } : {}),
     })
   }
+}
+
+const MAX_RETRY_AFTER_MS = 60_000
+
+export interface ProviderRetryOptions {
+  /** Total attempts, including the initial request. Never allow unbounded retries. */
+  maxAttempts?: number
+  /** Injectable for deterministic tests and graceful worker shutdown. */
+  wait?: (milliseconds: number, signal?: AbortSignal) => Promise<void>
+  random?: () => number
+  signal?: AbortSignal
+}
+
+const defaultProviderRetryWait = (milliseconds: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  if (signal?.aborted) { reject(signal.reason ?? new DOMException('provider retry aborted', 'AbortError')); return }
+  const timer = setTimeout(resolve, milliseconds)
+  signal?.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason ?? new DOMException('provider retry aborted', 'AbortError')) }, { once: true })
+})
+
+/** Retry only explicit failed requests; ambiguous provider outcomes are never replayed. */
+export async function withProviderRequestRetry<T>(operation: () => Promise<T>, options: ProviderRetryOptions = {}): Promise<T> {
+  const maxAttempts = Math.max(1, Math.min(5, Math.trunc(options.maxAttempts ?? 3)))
+  const wait = options.wait ?? defaultProviderRetryWait
+  const random = options.random ?? Math.random
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      if (!(error instanceof ProviderRequestFailedError) || !error.retryable || attempt >= maxAttempts) throw error
+      const exponentialMs = Math.min(10_000, 250 * (2 ** (attempt - 1)))
+      const hintedMs = error.retryAfterMs ?? 0
+      const jitterMs = Math.floor(Math.max(exponentialMs, hintedMs) * Math.min(1, Math.max(0, random())))
+      await wait(Math.min(MAX_RETRY_AFTER_MS, Math.max(exponentialMs, hintedMs) + jitterMs), options.signal)
+    }
+  }
+}
+
+/** Parse provider backoff hints without allowing an unbounded worker delay. */
+export function retryAfterMilliseconds(value: string | null, now = Date.now()): number | undefined {
+  if (!value?.trim()) return undefined
+  const seconds = Number(value.trim())
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(MAX_RETRY_AFTER_MS, Math.ceil(seconds * 1000))
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return undefined
+  return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, timestamp - now))
 }
 
 export function providerIdempotencyKey(input: {
@@ -130,5 +180,6 @@ export function assertProviderResponseAccepted(response: Response, providerKey: 
   if (response.status === 408 || response.status >= 500) {
     throw new ProviderOutcomeUnknownError(providerKey, `${label} returned ambiguous HTTP ${response.status}${providerErrorSummary ? `: ${providerErrorSummary}` : ''}; outcome requires reconciliation`, undefined, response.status, providerRequestId, providerErrorSummary)
   }
-  throw new ProviderRequestFailedError(providerKey, response.status, `${label} returned HTTP ${response.status}${providerErrorSummary ? `: ${providerErrorSummary}` : ''}`, providerRequestId, providerErrorSummary)
+  const retryAfterMs = response.status === 429 ? retryAfterMilliseconds(response.headers.get('retry-after')) : undefined
+  throw new ProviderRequestFailedError(providerKey, response.status, `${label} returned HTTP ${response.status}${providerErrorSummary ? `: ${providerErrorSummary}` : ''}`, providerRequestId, providerErrorSummary, response.status === 429, retryAfterMs)
 }

@@ -1,4 +1,4 @@
-import { CustomerServiceOutlined, GlobalOutlined } from "@ant-design/icons";
+import { GlobalOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Empty, Space, Statistic, Tag, Typography } from "antd";
 import { useEffect, useRef } from "react";
 import type { StoreDirectory } from "../../types/ops";
@@ -27,11 +27,10 @@ interface PlatformSummarySectionProps {
   loading?: boolean;
   error?: string;
   onRetry?: () => void;
-  onOpenSupport: () => void;
   platformLabels: Record<string, string>;
 }
 
-export function PlatformSummarySection({ stores, loading = false, error, onRetry, onOpenSupport, platformLabels }: PlatformSummarySectionProps) {
+export function PlatformSummarySection({ stores, loading = false, error, onRetry, platformLabels }: PlatformSummarySectionProps) {
   const summaries = summarizePlatforms(stores);
   const errorRef = useRef<HTMLDivElement>(null);
   const previousError = useRef<string | undefined>(undefined);
@@ -44,7 +43,6 @@ export function PlatformSummarySection({ stores, loading = false, error, onRetry
   return (
     <Card
       title={<Space><GlobalOutlined aria-hidden="true" />平台连接汇总</Space>}
-      extra={<Button htmlType="button" type="primary" icon={<CustomerServiceOutlined aria-hidden="true" />} onClick={onOpenSupport} style={{ minHeight: 44 }}>受控支持入口</Button>}
     >
       <Typography.Paragraph type="secondary">
         平台运营只查看连接健康与汇总指标；客户店铺、商品和素材详情仅通过客服工单按授权范围受控处理。

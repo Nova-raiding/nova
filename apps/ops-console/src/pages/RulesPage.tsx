@@ -23,7 +23,7 @@ export function RulesPage({ model }: RulesPageProps) {
       <Alert
         type="info"
         showIcon
-        message="平台规则只接受签名清单同步"
+        title="平台规则只接受签名清单同步"
         description="页面中的 manual:// 记录是本地演示或人工草稿，不代表任何平台官方规则，也不会作为插件知识。请先配置签名清单地址和验签密钥，再点击“立即更新”。"
         style={{ marginBottom: 16 }}
       />

@@ -1,14 +1,15 @@
 import { expect, test, chromium } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { ensureMerchantSession } from './merchant-auth.js'
 
 test.setTimeout(180_000)
 const root = resolve('.')
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
 const screenshots = resolve(root, 'screenshots', 'merchant-pages')
-const sections = ['运营概览', '商品与资产', '营销任务', '发布中心', '规则与检查']
-const utilitySections = ['帮助与诊断', '工作区信息']
-const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${['overview', 'catalog', 'tasks', 'publish', 'rules'][index]}`]))
+const sections = ['运营概览', '商品与资产']
+const utilitySections = ['查看系统健康']
+const slug = new Map(sections.map((name, index) => [name, `${index + 1}-${['overview', 'catalog'][index]}`]))
 
 const snapshot = async page => page.evaluate(() => ({
   url: location.href,
@@ -46,6 +47,8 @@ test('walk every Merchant Studio section through the real browser UI', async () 
 
   const response = await page.goto(studioUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2_500)
+  await ensureMerchantSession(page)
+  await expect(page.getByRole('button', { name: '工作区信息', exact: true })).toHaveCount(0)
   const pages = []
   for (const section of sections) {
     activeSection = section
@@ -86,9 +89,10 @@ test('walk every Merchant Studio section through the real browser UI', async () 
   const result = { generatedAt: new Date().toISOString(), pages, consoleMessages, requestFailures, badResponses }
   await writeFile(resolve(root, 'merchant-all-inventory.json'), JSON.stringify(result, null, 2))
   try {
-    const consoleErrors = consoleMessages.filter(message => message.type === 'error' || message.type === 'pageerror')
+    const consoleErrors = consoleMessages.filter(message => (message.type === 'error' || message.type === 'pageerror') && !message.text.includes('status of 401'))
+    const filteredBadResponses = badResponses.filter(item => !(item.url.endsWith('/v1/auth/session') && item.status === 401 && item.body.includes('AUTH_SESSION_INVALID')))
     expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
-    expect(badResponses, 'Merchant Studio page walk should not observe HTTP error responses').toEqual([])
+    expect(filteredBadResponses, 'Merchant Studio page walk should not observe HTTP error responses').toEqual([])
     expect(requestFailures, 'Merchant Studio page walk should not observe failed network requests').toEqual([])
     expect(consoleErrors, 'Merchant Studio page walk should not observe console or page errors').toEqual([])
   } finally {

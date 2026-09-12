@@ -38,7 +38,7 @@ const runtimeConfig = (key: string) => {
   if (injected) return injected
   return ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key])?.trim()
 }
-const configuredWorkspaceId = () => {
+export const configuredWorkspaceId = () => {
   const configured = runtimeConfig('VITE_WORKSPACE_ID')
   if (configured) return configured
   // Unit fixtures are intentionally deterministic; deployed bundles must
@@ -151,6 +151,7 @@ export interface RulePack {
   name: string
   version: string
   scope: string
+  category?: 'platform' | 'category' | 'advertising_publish'
   status: string
   updatedAt: string
   source?: { kind: string; reference: string; checkedAt: string }
@@ -174,6 +175,14 @@ export interface CatalogCategory {
 export interface ApiError extends Error {
   code?: string
   status?: number
+}
+
+let authExpired = false
+
+function isSessionAuthFailure(status: number, code?: string, message?: string) {
+  if (status === 401) return true
+  const normalized = `${code ?? ''} ${message ?? ''}`.toLowerCase()
+  return status === 403 && /(session|token|登录|会话|credential|身份|auth).*(expired|invalid|required|失效|无效|缺失|过期)/i.test(normalized)
 }
 
 export interface BillingStatus {
@@ -661,6 +670,19 @@ const MAX_API_RESPONSE_BYTES = 4 * 1024 * 1024
 // explicitly image-bearing read a bounded 8 MiB budget.
 const MAX_IMAGE_JOB_RESPONSE_BYTES = 8 * 1024 * 1024
 
+export type MerchantAuthAccount = {
+  id: string
+  identityId?: string
+  login: string
+  accountType: 'merchant' | 'platform'
+  enterpriseName?: string
+  contactName?: string
+  status: 'merchant_pending' | 'active' | 'suspended' | 'revoked'
+  roles: string[]
+  workspaceIds: string[]
+  expiresAt?: string
+}
+
 async function readBoundedResponseText(response: Response, maxBytes: number): Promise<string> {
   const declaredLength = Number(response.headers.get('content-length') ?? '')
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw new Error('API response exceeded safety limit')
@@ -692,6 +714,12 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
 }
 
 export async function requestApi<T>(baseUrl: string, path: string, init: RequestInit = {}, workspaceId = configuredWorkspaceId(), maxResponseBytes = MAX_API_RESPONSE_BYTES): Promise<T> {
+  if (authExpired && !path.startsWith('/v1/auth/')) {
+    const error = new Error('登录会话已失效') as ApiError
+    error.code = 'AUTH_SESSION_EXPIRED'
+    error.status = 401
+    throw error
+  }
   const token = runtimeConfig('VITE_API_TOKEN')?.trim()
   const sameOriginProxy = baseUrl.trim().startsWith('/')
   if (!token && !sameOriginProxy) {
@@ -707,7 +735,10 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
   const headers = new Headers(init.headers)
   headers.set('accept', 'application/json')
   if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-  if (workspaceId?.trim()) headers.set('x-workspace-id', workspaceId)
+  // Same-origin merchant sessions carry their authoritative workspace in the
+  // HttpOnly session cookie. Sending the local demo workspace here can
+  // override that scope and turn an otherwise valid login into a 403.
+  if (workspaceId?.trim() && !sameOriginProxy) headers.set('x-workspace-id', workspaceId)
   if (token) headers.set('authorization', `Bearer ${token}`)
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS)
@@ -717,7 +748,7 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
     else init.signal.addEventListener('abort', forwardAbort, { once: true })
   }
   try {
-    const response = await fetch(apiUrl(baseUrl, path), { ...init, headers, signal: controller.signal })
+    const response = await fetch(apiUrl(baseUrl, path), { ...init, credentials: 'include', headers, signal: controller.signal })
     const raw = await readBoundedResponseText(response, maxResponseBytes)
     let envelope: ApiEnvelope<T> | null = null
     try { envelope = raw ? JSON.parse(raw) as ApiEnvelope<T> : null } catch {
@@ -731,8 +762,16 @@ export async function requestApi<T>(baseUrl: string, path: string, init: Request
       throw error
     }
     if (!response.ok || envelope.error) {
+      const errorCode = envelope.error?.code
+      const errorMessage = envelope.error?.message
+      if (isSessionAuthFailure(response.status, errorCode, errorMessage)) {
+        authExpired = true
+        window.dispatchEvent(new CustomEvent('merchant-auth-expired'))
+      } else if (response.status === 403) {
+        window.dispatchEvent(new CustomEvent('merchant-capability-denied', { detail: { code: errorCode, message: errorMessage, requestId: response.headers.get('x-request-id') ?? response.headers.get('x-correlation-id') ?? undefined } }))
+      }
       const error = new Error(envelope.error?.message ?? `API request failed: ${response.status}`) as Error & { code?: string; status?: number }
-      error.code = envelope.error?.code
+      error.code = errorCode
       error.status = response.status
       throw error
     }
@@ -759,6 +798,7 @@ export function describeApiError(error: unknown) {
   const apiError = error as ApiError | undefined
   const code = apiError?.code?.trim().toUpperCase() ?? ''
   const message = error instanceof Error ? error.message : ''
+  if (code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED') return '该账号尚未绑定可用商家工作区，请联系平台管理员完成审核和工作区授权。'
   if (code === 'GENERATION_JOB_NOT_FOUND' || code === 'IMAGE_GENERATION_JOB_NOT_FOUND') return '找不到这条图片任务，可能已过期或链接无效；请返回任务列表重新选择。'
   if (code === 'API_REQUEST_TIMEOUT') return 'API 请求超时。请检查 API、数据库和网关状态后重试。'
   if (code === 'MCP_TRANSPORT_CLOSED' || /\btransport closed\b|\beconnreset\b/iu.test(message)) return '大麦连接已中断。已有任务和商品数据已保留；请重新连接后先确认任务状态，避免重复提交。'
@@ -778,6 +818,61 @@ export function describeApiError(error: unknown) {
   if (apiError?.status === 503) return '服务暂不可用。当前操作未确认完成；请先检查 API、模型中转和插件连接状态。'
   if (message) return message
   return '请求失败，请稍后重试。'
+}
+
+export async function loginMerchantAccount(baseUrl: string, input: { login: string; password: string }): Promise<MerchantAuthAccount> {
+  authExpired = false
+  const result = await requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ login: input.login.trim(), password: input.password, account_type: 'merchant' }),
+  })
+  if (!result.account || result.account.accountType !== 'merchant') {
+    const error = new Error('平台账号不能登录商家后台') as ApiError
+    error.code = 'AUTH_MERCHANT_ACCOUNT_REQUIRED'
+    throw error
+  }
+  return result.account
+}
+
+export async function registerMerchantAccount(baseUrl: string, input: { login: string; password: string; enterpriseName: string; contactName: string }): Promise<{ applicationId: string; status: string; login: string }> {
+  const result = await requestApi<{ application_id?: string; applicationId?: string; status: string; login: string }>(baseUrl, '/v1/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: input.login, password: input.password, enterprise_name: input.enterpriseName, contact_name: input.contactName, terms_agreed: true }) }, '')
+  const applicationId = result.applicationId ?? result.application_id
+  if (!applicationId) throw new Error('注册申请接口未返回申请编号')
+  return { applicationId, status: result.status, login: result.login }
+}
+
+export async function fetchMerchantSession(baseUrl: string): Promise<MerchantAuthAccount> {
+  const result = await requestApi<{ account: MerchantAuthAccount }>(baseUrl, '/v1/auth/session')
+  if (!result.account || result.account.accountType !== 'merchant' || !result.account.workspaceIds?.length) {
+    const error = new Error('当前会话不是商家账号') as ApiError
+    error.code = 'AUTH_MERCHANT_ACCOUNT_REQUIRED'
+    throw error
+  }
+  return result.account
+}
+
+export async function logoutMerchantAccount(baseUrl: string): Promise<void> {
+  await requestApi<{ logged_out: boolean }>(baseUrl, '/v1/auth/logout', {
+    method: 'POST',
+    body: '{}',
+  })
+}
+
+export async function changeMerchantPassword(
+  baseUrl: string,
+  input: { currentPassword: string; newPassword: string },
+): Promise<void> {
+  await requestApi<{ changed: boolean; login_required: boolean }>(
+    baseUrl,
+    '/v1/auth/password/change',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        current_password: input.currentPassword,
+        new_password: input.newPassword,
+      }),
+    },
+  )
 }
 
 export async function fetchApiHealth(baseUrl = runtimeEnv.VITE_API_BASE_URL): Promise<ApiHealth | null> {

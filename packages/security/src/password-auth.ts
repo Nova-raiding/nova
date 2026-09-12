@@ -11,7 +11,7 @@ export const ARGON2ID_OPTIONS = {
 } as const
 
 export function validatePassword(password: string) {
-  if (typeof password !== 'string' || password.length < 12 || password.length > 256 || !/[A-Za-z]/u.test(password) || !/[0-9]/u.test(password)) {
+  if (typeof password !== 'string' || password.length < 8 || password.length > 256 || !/[A-Za-z]/u.test(password) || !/[0-9]/u.test(password)) {
     throw new Error('PASSWORD_POLICY_INVALID')
   }
 }

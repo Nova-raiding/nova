@@ -134,8 +134,9 @@ function diagnostics(error: unknown, code: string | undefined) {
   const decisionId = typeof details?.decision_id === "string" && details.decision_id.trim() ? details.decision_id.trim() : undefined;
   const reasonCode = typeof details?.reason_code === "string" && details.reason_code.trim() ? details.reason_code.trim() : undefined;
   const obligationsMissing = normalizeDiagnosticTokens(details?.obligations_missing);
-  const findings = Array.isArray(details?.findings)
-    ? details.findings.flatMap((item) => {
+  const rawFindings = details?.findings;
+  const findings = Array.isArray(rawFindings)
+    ? rawFindings.flatMap((item) => {
       if (!item || typeof item !== "object") return [];
       const value = item as Record<string, unknown>;
       const findingCode = typeof value.code === "string" ? value.code.trim() : "";

@@ -1,14 +1,22 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Card, Form, Input, Modal, Space, Table, Tag, Typography } from "antd";
 import type { OpsConsoleModel } from "../../hooks/useOpsConsoleModel";
 import type { Rule } from "../../types/ops";
-import { useUnsavedChanges } from "../authz/UnsavedChangesContext.js";
 
 interface RuleCenterSectionProps {
   model: OpsConsoleModel;
 }
 
 const initialChecksJson = '{"forbiddenTerms":[]}';
+
+export function isOfficialPlatformRule(rule: Pick<Rule, "source">) {
+  return rule.source.kind === "official" && rule.source.trust === "verified"
+    && !rule.source.reference.startsWith("manual://");
+}
+
+function ruleStatusLabel(value: string | undefined): string {
+  return ({ published: "已发布", draft: "草稿", active: "已启用", inactive: "已停用", expired: "已过期", unknown: "状态待确认" } as Record<string, string>)[value ?? ""] ?? "状态待确认";
+}
 
 export function validateRuleChecksJson(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "请输入检查规则 JSON";
@@ -27,19 +35,12 @@ export function hasRuleDraftChanges(values: Readonly<Record<string, unknown>>) {
 }
 
 export function RuleCenterSection({ model }: RuleCenterSectionProps) {
-  const { canRules, publishRuleDraft, ruleForm, ruleMutationKey, rules, updateRuleStatus } =
+  const { canRules, ruleMutationKey, rules, updateRuleStatus } =
     model;
   const [activationTarget, setActivationTarget] = useState<Rule>();
   const [activationForm] = Form.useForm<{ approvalRef: string; approvedBy: string; approvedAt: string; reason: string }>();
-  const [draftDirty, setDraftDirty] = useState(false);
-  const unverifiedRules = rules.filter((rule) => rule.source.trust !== "verified" || rule.source.reference.startsWith("manual://"));
+  const unverifiedRules = rules.filter((rule) => !isOfficialPlatformRule(rule));
   const verifiedRules = rules.filter((rule) => !unverifiedRules.includes(rule));
-  useEffect(() => {
-    // The form instance belongs to the page model and can survive a transient
-    // authorization remount even when AntD resets its touched metadata.
-    setDraftDirty(hasRuleDraftChanges(ruleForm.getFieldsValue(true)));
-  }, [ruleForm]);
-  useUnsavedChanges(draftDirty, "规则草稿表单");
 
   const activateRule = async () => {
     if (!activationTarget) return;
@@ -63,7 +64,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         <Alert
           type="warning"
           showIcon
-          message="当前列表含本地演示/人工录入规则，不是平台官方规则"
+          title="当前列表含本地演示/人工录入规则，不是平台官方规则"
           description="manual:// 来源只用于本地测试或人工草稿；不会作为插件的可信知识，也不会证明平台同步成功。只有通过签名规则清单导入的版本才会标记为“已验证”。"
           style={{ marginBottom: 16 }}
         />
@@ -72,63 +73,17 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
         <Alert
           type="info"
           showIcon
-          message="当前为规则只读视图"
+          title="当前为规则只读视图"
           description="平台运营可以查看规则同步状态和生命周期证据；创建、审批、激活和停用需要 rules_admin 权限。"
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      <Form
-        name="rule-draft-create"
-        form={ruleForm}
-        layout="inline"
-        onValuesChange={() => setDraftDirty(true)}
-        onFinish={async (values) => {
-          await publishRuleDraft(values);
-          setDraftDirty(false);
-        }}
-        onFinishFailed={({ errorFields }) => {
-          const first = errorFields[0]?.name;
-          if (first) ruleForm.scrollToField(first, { block: "center", focus: true });
-        }}
-        style={{ marginBottom: 16 }}
-        disabled={!canRules || Boolean(ruleMutationKey)}
-        aria-label="创建规则草稿"
-      >
-        <Form.Item name="packId" label="规则包 ID" rules={[{ required: true, message: "请输入规则包 ID" }]}> 
-          <Input placeholder="规则包 ID" />
-        </Form.Item>
-        <Form.Item name="name" label="规则名称" rules={[{ required: true, message: "请输入规则名称" }]}> 
-          <Input placeholder="规则名称" />
-        </Form.Item>
-        <Form.Item name="version" label="版本" rules={[{ required: true, message: "请输入规则版本" }]}> 
-          <Input placeholder="版本" />
-        </Form.Item>
-        <Form.Item name="sourceReference" label="来源" rules={[{ required: true, message: "请输入来源链接或工单号" }]}> 
-          <Input placeholder="来源链接/工单" />
-        </Form.Item>
-        <Form.Item
-          name="checksJson"
-          label="检查规则"
-          initialValue={initialChecksJson}
-          rules={[{ validator: async (_, value) => {
-            const error = validateRuleChecksJson(value);
-            if (error) throw new Error(error);
-          } }]}
-        >
-          <Input placeholder="checks JSON" />
-        </Form.Item>
-        <Form.Item name="reason" label="创建原因" rules={[{ required: true, message: "请输入创建原因" }]}> 
-          <Input placeholder="发布原因" />
-        </Form.Item>
-        <Button disabled={!canRules || Boolean(ruleMutationKey)} loading={ruleMutationKey === "draft"} type="primary" htmlType="submit">
-          创建规则草稿
-        </Button>
-      </Form>
+      <Alert type="info" showIcon title="平台官方限制规则" description="平台、品类、广告发布及大促规则须来自可验证的官方来源；本页不创建商家自定义规则。商家运营约束请在工作区知识库维护，不能替代平台限制。" style={{ marginBottom: 16 }} />
       <Table
         rowKey="id"
         pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
         dataSource={verifiedRules}
-        locale={{ emptyText: "暂无已验证的平台规则；请配置签名清单后点击“立即更新”" }}
+        locale={{ emptyText: "暂无已验证的平台限制规则；请配置官方签名清单后点击“立即更新”" }}
         scroll={{ x: 900 }}
         columns={[
           { title: "规则包", dataIndex: "packId" },
@@ -138,7 +93,7 @@ export function RuleCenterSection({ model }: RuleCenterSectionProps) {
             title: "生命周期",
             render: (_: unknown, row: Rule) => (
               <Space size={4}>
-                <Tag color={row.lifecycleStatus === "published" ? "green" : "orange"}>{row.lifecycleStatus ?? row.status}</Tag>
+                <Tag color={row.lifecycleStatus === "published" ? "green" : "orange"}>{ruleStatusLabel(row.lifecycleStatus ?? row.status)}</Tag>
                 {row.source.trust !== "verified" || row.source.reference.startsWith("manual://") ? <Tag color="orange">未验证</Tag> : <Tag color="green">已验证</Tag>}
               </Space>
             ),

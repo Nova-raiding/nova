@@ -192,6 +192,33 @@ describe('MerchantService', () => {
     ]))
   })
 
+  it('freezes durable product knowledge documents into generation context', () => {
+    const service = new MerchantService({
+      fixtureMode: true,
+      knowledgeContextProvider: () => ({ rules: [], assets: [], confirmedLearningSuggestions: [] }),
+    })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.setDurableKnowledgeDocuments(task.id, [{ id: 'doc_1', title: '羽绒服材质说明', content: '面料为聚酯纤维，填充物为白鸭绒。', revision: 3 }])
+    service.selectDirection(task.id, 'A', task.version)
+    const confirmed = service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
+    expect(confirmed.inputSnapshot?.knowledgeContext?.documents).toEqual([
+      { id: 'doc_1', title: '羽绒服材质说明', content: '面料为聚酯纤维，填充物为白鸭绒。', revision: 3 },
+    ])
+    expect(Object.isFrozen(confirmed.inputSnapshot?.knowledgeContext?.documents)).toBe(true)
+  })
+
+  it('enriches an already-confirmed snapshot before queued generation', async () => {
+    const service = new MerchantService({ fixtureMode: true, knowledgeContextProvider: () => ({ rules: [], assets: [], confirmedLearningSuggestions: [] }) })
+    const task = service.createTask({ workspaceId: 'ws_demo', productId: 'prod_fixture_1', platform: 'taobao' })
+    service.selectDirection(task.id, 'A', task.version)
+    const confirmed = service.confirmProductionPlan('ws_demo', task.id, 'merchant', task.version)
+    const originalSnapshotId = confirmed.inputSnapshot?.id
+    service.setDurableKnowledgeDocuments(task.id, [{ id: 'doc_after_confirm', title: 'SKU材质', content: '白鸭绒填充。', revision: 1 }])
+    const prepared = await service.prepareGenerationContext(task.id)
+    expect(prepared.snapshot.knowledgeContext?.documents?.[0]).toEqual({ id: 'doc_after_confirm', title: 'SKU材质', content: '白鸭绒填充。', revision: 1 })
+    expect(prepared.snapshot.id).toBe(`${originalSnapshotId}:knowledge`)
+  })
+
   it('validates policy-v1 competitor provenance and freezes only bounded review evidence', () => {
     const service = new MerchantService({ fixtureMode: true })
     const brand = service.upsertBrandProfile({ workspaceId: 'ws_demo', name: '云朵' })
@@ -2637,4 +2664,17 @@ it('preserves SKU-specific source images and refuses a missing or foreign SKU so
   const red = service.registerAsset({ workspaceId: 'sku-owner', name: 'red.png', mimeType: 'image/png', sizeBytes: 9, sha256: 'b'.repeat(64), storageKey: 'quarantine/sku-owner/red.png' })
   const mapped = service.importProduct({ workspaceId: 'sku-owner', platform: 'jd', title: '双色映射', skus: [sku, { id: 'red-l', name: '红色 L', price: 209, stock: 3, sourceAssetIds: [red.id] }] })
   expect(() => service.enqueueImageGeneration({ workspaceId: 'sku-owner', productId: mapped.id, skuIds: ['blue-m'], sourceAssetIds: [red.id], idempotencyKey: 'wrong-red' })).toThrowError(expect.objectContaining({ code: 'IMAGE_SKU_SOURCE_MISMATCH' }))
+})
+
+it('rejects duplicate SKU IDs at the shared product import boundary', () => {
+  const service = new MerchantService({ seedFixture: false })
+  expect(() => service.importProduct({
+    workspaceId: 'ws_duplicate_sku',
+    platform: 'jd',
+    title: '重复 SKU 商品',
+    skus: [
+      { id: 'blue-m', name: '蓝色 M', price: 199, stock: 2 },
+      { id: ' blue-m ', name: '蓝色 M 复本', price: 199, stock: 1 },
+    ],
+  })).toThrowError(expect.objectContaining({ code: 'PRODUCT_IMPORT_DUPLICATE_SKU' }))
 })

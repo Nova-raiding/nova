@@ -1,10 +1,10 @@
 # 大麦 Codex 插件
 
-当前 `tools/list` 实测为 144 个 MCP 工具（即当前 `tools/list` 为 144 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
+当前 `tools/list` 实测为 146 个 MCP 工具（即当前 `tools/list` 为 146 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
-- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260907102000`。
+- `.codex-plugin/plugin.json`：正式 manifest，版本 `0.1.0+codex.20260912184110`。
 - `skills/merchant-marketing/SKILL.md`：唯一入口 Skill。
 - `.mcp.json`：Codex 标准 stdio MCP 配置；`mcp/bridge.mjs` 将标准 `tools/list`、`tools/call` 转发到现有 API 的 `/mcp` 业务方法。
 - `mcp/bridge.mjs`：插件侧传输适配器，固定注入 `X-Workspace-Id`，并将 API 的统一 envelope 解包为 Codex MCP 响应。
@@ -42,6 +42,12 @@ export MERCHANT_MCP_TOKEN=<mcp-token>
 # 生产激活规则时由审批系统注入，不要写入仓库
 export MERCHANT_RULE_APPROVAL_TOKEN=<rule-approval-token>
 ```
+
+OpenAI Apps 域名验证由 API 的 `/.well-known/openai-apps-challenge` 路由承载。
+生产发布前，必须在服务端密钥管理器注入 OpenAI 发放的
+`OPENAI_APPS_CHALLENGE_TOKEN`；未注入时该路由返回 `503`
+`OPENAI_APPS_CHALLENGE_NOT_CONFIGURED`，不会把未验证的域名状态冒充为已上线。
+挑战 token 不写入插件包、仓库、日志或 ChatGPT 对话。
 
 商家身份与角色由服务端 Bearer/OIDC 授权映射决定。安装包不会静态声明 `MERCHANT_ACTOR_ID` 或 `MERCHANT_MCP_ROLE`，也不会用客户端角色覆盖服务端成员权限；本地非严格鉴权测试需要模拟身份时，应在独立测试进程中显式注入，不能写进正式插件清单。
 
@@ -83,15 +89,15 @@ npm run codex:relay:validate
 
 在 ChatGPT 会话中输入“查看我的订单和账单”，插件调用 `billing.status`、`subscription.orders.list` 或其他 exact recovery 查询，展示创意点的 `balance_state`、`available_points`、`quoted_points`、`access_revision`、`rate_card_version`、`request_id`、`trace_id` 和服务端授权的 `next_actions`。`balance_state=unknown` 时 `available_points` 必须保持 `null`，禁止显示为 0。旧钱包、任务额度和 add-on 只可作为历史证据，不贡献创意点也不解除门禁。
 
-### 充值、钱包与支付渠道
+### 套餐、订阅、点数包与支付渠道
 
 用户侧钱包读取只走服务端事实：`billing.status`（汇总）、`creative-points.balance.get`（余额）和 `creative-points.statement.list`（流水）。插件不得根据本地缓存、模型订阅或旧人民币钱包推导可用能力。
 
-正式充值必须先调用 `commercial.catalog.get`，仅展示服务端返回的 `point_pack` 且 `lifecycle=approved`、`executable=true` 的 SKU；随后调用 `commercial.order.create` 创建订单，再调用服务端提供的 checkout 入口。用户完成支付后，插件只能通过 `commercial.order.payment.get` 查询状态，并等待支付服务商签名回调、grant 到账和新的 `access_revision`，不能把“待支付”或“支付成功”直接说成“已到账”。
+正式购买必须先调用 `commercial.catalog.get`，只展示服务端返回的公开、已批准、已生效且 `executable=true` 的 SKU。目录中的 `onboarding` 是一次性 ¥5000 开通，`monthly` 是月度订阅，`point_pack` 是创意点包；价格、周期、权益和版本都以服务端目录为准。随后调用 `commercial.order.create` 创建订单，再调用服务端提供的 checkout 入口。用户完成支付后，插件只能通过 `commercial.order.payment.get` 查询状态，并等待支付服务商签名回调、grant 到账和新的 `access_revision`，不能把“待支付”或“支付成功”直接说成“已到账”。
 
 微信和支付宝由 API 服务端的支付 provider 负责下单和验签，插件不接触商户密钥，也不接受客户端自定义金额、点数、价格或权益。当前本地 fixture 环境只允许演示订单状态；未配置真实 provider、HTTPS callback、签名密钥和对账证据时，充值必须显示为不可用并保持 `writes=false`。旧版 `billing.recharge.create` 任意金额充值仅保留兼容读写合同，不作为正式套餐入口。
 
-对话示例：用户说“看看我的钱包”时调用 `billing.status`；用户说“有哪些充值套餐”时调用 `commercial.catalog.get` 并只列出可执行点数包；用户选择套餐后，当前版本最多创建 `commercial.order.create` 待支付订单并展示订单号。若服务端未提供正式 checkout 入口，插件必须明确提示“支付配置尚未就绪”，不能改用旧接口、猜测支付链接或要求用户把微信/支付宝密钥发给模型。
+对话示例：用户说“看看我的钱包”时调用 `billing.status`；用户说“有哪些套餐和点数包”时调用 `commercial.catalog.get` 并列出可执行的公开 SKU；用户选择套餐后调用 `commercial.order.create` 创建待支付订单并展示订单号，再通过 `commercial.order.payment.get` 查询支付状态。若服务端未提供正式 checkout 入口，插件必须明确提示“支付配置尚未就绪”，不能改用旧接口、猜测支付链接或要求用户把微信/支付宝密钥发给模型。
 
 也可以在新会话中输入“查看我的商品目录和平台连接状态”。插件应先调用 `workspace.health`，再调用 `catalog.search`：查看具体店铺时必须传 `platform + account_id`，只有明确要求全部店铺只读汇总时才传 `scope=workspace`。若出现 `MERCHANT_WORKSPACE_ID is required`、`WORKSPACE_SCOPE_REQUIRED` 或 MCP 工具不可见，应先修复环境变量、网关路由或身份映射，不要继续创建任务。
 

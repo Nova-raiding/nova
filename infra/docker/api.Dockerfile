@@ -8,6 +8,10 @@ COPY demo ./demo
 COPY scripts ./scripts
 COPY tsconfig.json vitest*.config.ts ./
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
+# Host-side incremental state must never control which checked-in source is
+# emitted into the runtime image. A stale tsbuildinfo can otherwise make the
+# API container run an older compiled module after a source change.
+RUN find /app -name '*.tsbuildinfo' -type f -delete
 RUN node infra/scripts/generate-container-source-manifest.mjs generate api /app \
   /app/.release-source/api.manifest /app/.release-source/api.manifest.sha256 \
   && node infra/scripts/generate-container-source-manifest.mjs generate worker /app \

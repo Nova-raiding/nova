@@ -1,7 +1,7 @@
 import { ArrowRightOutlined } from "@ant-design/icons";
 import { Button, Card, Col, Row, Statistic, Tag, Typography } from "antd";
 import type { ModelStatus } from "../../types/ops";
-import { modelReadinessRows } from "../sections/overview/modelReadiness";
+import { modelReadinessRows, modelStateLabel } from "../sections/overview/modelReadiness";
 
 interface ModelServiceSummaryProps {
   status: ModelStatus | undefined;
@@ -32,7 +32,7 @@ export function ModelServiceSummary({ status, loading, onOpen }: ModelServiceSum
         </Col>
         <Col xs={24} md={12}>
           <Tag color={!status ? "default" : status.state === "ready" ? "green" : "red"}>
-            {loading && !status ? "加载中" : status?.state ?? "状态不可用"}
+            {loading && !status ? "加载中" : status ? modelStateLabel(status.state) : "状态不可用"}
           </Tag>
           <Typography.Text type="secondary">
             运行时状态与发布证据分别核验；Provider 配置不代表生产可用。当前 release metadata{" "}

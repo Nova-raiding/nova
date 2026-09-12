@@ -65,6 +65,8 @@ export const MCP_OPS_CONTROL_METHODS = [
   'ops.data.delete.cancel',
   'ops.data.delete.approve',
   'ops.members.list',
+  'workspace.invitations.list',
+  'workspace.invitation.accept',
   'ops.session',
   'ops.authorization.matrix.get',
   'ops.authorization.roles.list',
@@ -413,6 +415,15 @@ export const HTTP_IDENTITY_LINKED_OPERATIONS = [
   'http:POST:/v1/canonical-backfill/conflicts/scan',
 ] as const satisfies readonly string[]
 
+// Platform-operator identity routes that intentionally have no merchant MCP
+// equivalent. They still require an authenticated operations session and must
+// be classified so the HTTP surface remains total.
+export const HTTP_OPS_IDENTITY_OPERATIONS = [
+  'http:GET:/v1/ops/merchant-registration-applications',
+  'http:POST:/v1/ops/merchant-registration-applications/review',
+  'http:POST:/v1/ops/merchant-accounts/authorize',
+] as const satisfies readonly string[]
+
 export const HTTP_RECOVERY_CALLBACK_OPERATIONS = [
   'http:POST:/v1/billing/callback/{channel}',
   'http:POST:/v1/subscriptions/callback/{channel}',
@@ -534,6 +545,15 @@ function linkedHttpPolicies(): CommercialOperationPolicy[] {
 
 const httpRegistry = defineCommercialOperationRegistry([
   ...linkedHttpPolicies(),
+  ...HTTP_OPS_IDENTITY_OPERATIONS.map(operation => ({
+    surface: 'HTTP' as const,
+    operation,
+    domain: 'OPS_CONTROL' as const,
+    enabled: true,
+    classification: null,
+    rate_action: null,
+    authorization_policy_ref: null,
+  })),
   ...HTTP_RECOVERY_CALLBACK_OPERATIONS.map(operation => ({
     surface: 'HTTP' as const,
     operation,

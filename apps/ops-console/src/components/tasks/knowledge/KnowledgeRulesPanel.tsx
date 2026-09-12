@@ -6,6 +6,10 @@ interface KnowledgeRulesPanelProps {
   model: OpsConsoleModel;
 }
 
+function knowledgeRuleStatusLabel(value: string | undefined): string {
+  return ({ active: "已启用", inactive: "已停用", draft: "草稿", expired: "已过期", unknown: "状态待确认" } as Record<string, string>)[value ?? ""] ?? "状态待确认";
+}
+
 export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
   const { canRules, createKnowledgeRule, updateKnowledgeRule, knowledgeRuleForm, knowledgeRules } =
     model;
@@ -111,7 +115,7 @@ export function KnowledgeRulesPanel({ model }: KnowledgeRulesPanelProps) {
             title: "状态",
             render: (_: unknown, row: Rule) => (
               <Tag color={row.status === "active" ? "green" : "orange"}>
-                {row.status}
+                {knowledgeRuleStatusLabel(row.status)}
               </Tag>
             ),
           },

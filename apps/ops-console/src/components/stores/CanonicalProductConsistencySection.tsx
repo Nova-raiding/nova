@@ -64,7 +64,7 @@ const freshnessMeta = {
   fresh: { label: "报告新鲜", color: "success" },
   stale: { label: "报告已变旧", color: "warning" },
   expired: { label: "报告已过期", color: "error" },
-  unknown: { label: "新鲜度未知", color: "default" },
+  unknown: { label: "新鲜度待确认", color: "default" },
 } as const;
 const orphanEntityMeta = {
   canonical_product: "规范商品",

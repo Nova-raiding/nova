@@ -3,7 +3,7 @@ import { recoveryCopy } from './ContextRecoveryCard'
 
 describe('context recovery copy', () => {
   it('sends identity failures back to product scope', () => {
-    expect(recoveryCopy('店铺身份校验失败').primary).toBe('返回商品与素材范围')
+    expect(recoveryCopy('店铺身份校验失败').primary).toBe('返回知识库范围')
   })
 
   it('sends uncertain generation back to the task list', () => {
@@ -20,7 +20,7 @@ describe('context recovery copy', () => {
   it('explains authorization failures without falling back to demo data', () => {
     expect(recoveryCopy('FORBIDDEN: 当前身份授权决策拒绝 customer.content.read')).toMatchObject({
       title: '当前会话无权读取这项任务',
-      primary: '返回商品与素材范围',
+      primary: '返回知识库范围',
     })
   })
 

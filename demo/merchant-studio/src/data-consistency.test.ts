@@ -7,10 +7,11 @@ const input = (overrides: Partial<Parameters<typeof resolveDataConsistency>[0]> 
 })
 
 describe('resolveDataConsistency', () => {
-  it('does not call loaded products verified when canonical status is missing', () => {
+  it('keeps missing canonical status neutral instead of reporting an error', () => {
     const item = resolveDataConsistency(input()).find(candidate => candidate.id === 'products')!
-    expect(item.status).toBe('amber')
-    expect(item.detail).toContain('标准链结果尚未取得')
+    expect(item.status).toBe('neutral')
+    expect(item.statusLabel).toBe('标准链待返回')
+    expect(item.detail).toContain('服务端尚未返回标准链状态')
   })
 
   it('uses verified language only when every product has a verified canonical status', () => {

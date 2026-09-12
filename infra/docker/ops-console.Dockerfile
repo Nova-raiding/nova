@@ -19,6 +19,13 @@ RUN set -eu; \
     esac
 
 FROM validate AS build
+# Build arguments are scoped per stage.  Re-declare the runtime-facing values
+# here so Vite receives the same `/ops/` base and API endpoint that passed the
+# validation stage instead of silently falling back to `/`.
+ARG OPS_CONSOLE_BUILD_MODE
+ARG VITE_API_BASE
+ARG VITE_BASE
+ARG VITE_OPS_LOCAL_SESSION
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ENV NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY
 COPY package.json package-lock.json ./

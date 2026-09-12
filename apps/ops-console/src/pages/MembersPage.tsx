@@ -15,8 +15,8 @@ const capabilityLabels: Record<string, string> = {
   "billing.export": "导出账务数据",
   "billing.refund.execute": "执行退款",
   "billing.self.read": "查看本人账务",
-  "billing.workspace.read": "查看工作区账务",
-  "billing.workspace.update": "管理工作区账务",
+  "billing.workspace.read": "查看企业主体账务",
+  "billing.workspace.update": "管理企业主体账务",
   "customer.content.read": "查看商家内容与知识库",
   "customer.content.update": "维护商家内容与知识库",
   "customer.publish.execute": "执行商家发布",
@@ -28,12 +28,12 @@ const capabilityLabels: Record<string, string> = {
   "rule.read": "查看平台规则",
   "store.connection.read": "查看平台连接",
   "store.connection.update": "管理平台授权连接",
-  "workspace.delete.execute": "删除工作区",
+  "workspace.delete.execute": "删除企业主体",
   "workspace.member.manage": "管理成员与角色",
   "workspace.member.read": "查看成员",
-  "workspace.settings.update": "修改工作区设置",
-  "workspace.status.update": "修改工作区状态",
-  "workspace.summary.read": "查看工作区概览",
+  "workspace.settings.update": "修改企业主体设置",
+  "workspace.status.update": "修改企业主体状态",
+  "workspace.summary.read": "查看企业主体概览",
 };
 
 const capabilityGroupLabels: Record<string, string> = {
@@ -48,7 +48,7 @@ const capabilityGroupLabels: Record<string, string> = {
   platform: "平台规则与素材",
   rule: "平台规则",
   store: "平台连接",
-  workspace: "工作区与成员",
+  workspace: "企业主体与成员",
 };
 
 export function capabilityLabel(capability: string) {
@@ -70,8 +70,8 @@ export function MembersPage({ model }: MembersPageProps) {
     <OpsPage
       eyebrow="ACCESS GOVERNANCE"
       title="成员与权限"
-      description="在当前租户范围内邀请成员、调整角色和停用访问；所有变更均要求原因并进入审计记录。"
-      actions={<Button type="primary" disabled={!canReadMembers} loading={model.loading} title={!canReadMembers ? "当前会话没有成员读取能力或尚未选择工作区" : undefined} onClick={() => void model.load()}>刷新成员</Button>}
+      description="在当前企业主体范围内邀请成员、调整角色和停用访问；所有变更均要求原因并进入审计记录。"
+      actions={<Button type="primary" disabled={!canReadMembers} loading={model.loading} title={!canReadMembers ? "当前会话没有成员读取能力或尚未选择企业主体" : undefined} onClick={() => void model.load()}>刷新成员</Button>}
     >
       <div className="ops-members-page">
       <Card title="当前账号权限" size="small" style={{ marginBottom: 16 }}>
@@ -93,7 +93,7 @@ export function MembersPage({ model }: MembersPageProps) {
           ) : (
             <Alert showIcon type="warning" title="服务端尚未返回权限投影" description="当前页面会按 fail-closed 处理，不能仅凭角色名称推断权限；请刷新会话或检查运营 API。" />
           )}
-          <Typography.Text type="secondary">权限来自当前工作区服务端会话，不能在浏览器端自行添加。蓝色表示查看权限，绿色表示管理、执行或变更权限；鼠标悬停可查看技术标识。</Typography.Text>
+          <Typography.Text type="secondary">权限来自当前企业主体服务端会话，不能在浏览器端自行添加。蓝色表示查看权限，绿色表示管理、执行或变更权限；鼠标悬停可查看技术标识。</Typography.Text>
         </Space>
       </Card>
       <MembersSection model={model} />

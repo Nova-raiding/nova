@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readBoundedResponseText } from '../packages/connectors/src/bounded-response.js'
@@ -74,7 +74,6 @@ function nonEmptyText(value: unknown): string | undefined {
 /** Persist only the real relay response and probe metadata; never credentials. */
 export function writeRelayResponseArtifact(root: string, release: string, modality: ProbeResult['modality'], response: { status: number; headers: Headers; payload: unknown; result: ProbeResult }): string {
   if (!/^[A-Za-z0-9._-]+$/u.test(release)) throw new Error('RELEASE_ID must be a safe artifact path component')
-  const target = resolve(root, 'relay', release, `${modality}.json`)
   const body = JSON.stringify({
     schema_version: '1', release_id: release, modality,
     observed_at: new Date().toISOString(), http_status: response.status,
@@ -82,9 +81,19 @@ export function writeRelayResponseArtifact(root: string, release: string, modali
     result: response.result,
     relay_response: response.payload,
   }, null, 2) + '\n'
-  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-  writeFileSync(target, body, { mode: 0o600 })
   const digest = createHash('sha256').update(body).digest('hex')
+  const directory = resolve(root, 'relay', release)
+  const canonicalTarget = resolve(directory, `${modality}.json`)
+  // Evidence artifacts are immutable. Reusing a release/modality slot with a
+  // different response must never silently overwrite the prior receipt.
+  let target = canonicalTarget
+  if (existsSync(canonicalTarget)) {
+    const existing = readFileSync(canonicalTarget, 'utf8')
+    const existingDigest = createHash('sha256').update(existing).digest('hex')
+    if (existingDigest !== digest) target = resolve(directory, `${modality}-${digest.slice(0, 16)}.json`)
+  }
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+  if (!existsSync(target)) writeFileSync(target, body, { mode: 0o600 })
   const relativePath = relative(resolve(root), target).split('\\').join('/')
   return `artifact://production/${relativePath}#${digest}`
 }

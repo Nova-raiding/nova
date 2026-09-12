@@ -51,7 +51,6 @@
 | 客服支持 | `ops.support.tickets.list/get/create/assign/transition/comment`, `ops.support.sla.*` | 页面覆盖工单、SLA 修正和评论审计；任务/订单关联已接入，仍需真实工作区数据验收 |
 | 事故中心 | `ops.incidents.*` | 页面存在基础事故域，需核对 commander、scope update 与时间线是否全部可操作 |
 | 商业运营 | `ops.commercial.timeline.list`, access-blocks, entitlements, points-ledger, orders, rate-cards, fulfillment | 商业工作台存在，但方法族多于页面显式入口，容易只显示摘要不显示证据 |
-| 功能开关 | `ops.feature-flags.*` | 页面有入口，但 evaluate/events/emergency 需验证是否可回溯 |
 | 营销队列 | `ops.marketing.queue.*`, image audit/reconcile | 有任务/内容域，图像归档、计费审计、重试和发布确认需独立状态闭环 |
 | 用户治理 | `ops.user.detail/suspend/activate/risk.transition/session.revoke` | 已接入；需保证冷启动和并发加载稳定，当前已发现并修复加载超时问题 |
 

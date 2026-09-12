@@ -53,12 +53,12 @@ export function StoresPage({ model, onNavigate }: StoresPageProps & { onNavigate
     <OpsPage
       eyebrow="STORE OPERATIONS"
       title="平台连接汇总"
-      description="平台运营查看平台级连接健康，并通过受控支持入口处理客户问题。"
+      description="平台运营查看平台级连接健康。"
       actions={<Button type="primary" loading={model.loading} onClick={() => void model.load()}>刷新连接</Button>}
     >
       <div className="ops-stores-page">
       <OpsPageError error={storeLoadError || automationLoadError || ""} onRetry={() => void model.load()} />
-      <PlatformSummarySection stores={model.storeDirectory} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} onOpenSupport={() => onNavigate("support")} platformLabels={platformLabels} />
+      <PlatformSummarySection stores={model.storeDirectory} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} platformLabels={platformLabels} />
       {!platformScope && <BrandTreeSection brands={model.brandNavigation} canRead={canCanonicalRead} canCreate={canCreateBrand} stores={model.storeDirectory} canBind={model.authorization.can("customer.content.update")} loading={model.loading} error={storeLoadError} onRetry={() => void model.load()} onOpenStore={(platform, accountId) => void openBrandStore(model, onNavigate, platform, accountId)} onCreateBrand={model.createBrand} onBindStore={async ({ brandId, platform, accountId, expectedRevision }) => {
         await rpc("brand-unit.bind-store", { brand_id: brandId, platform, account_id: accountId, ...(expectedRevision !== undefined ? { expected_revision: String(expectedRevision) } : {}), reason: "运营台绑定品牌与已授权平台店铺" });
         await model.load();

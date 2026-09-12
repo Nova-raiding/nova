@@ -58,6 +58,27 @@ afterEach(async () => {
 })
 
 describe('Ops HTTP/MCP authorization parity', () => {
+  it('returns the same stable unauthenticated reason code over HTTP and MCP', async () => {
+    const workspaceId = `ws_http_mcp_unauth_${Date.now()}`
+    const base = await start()
+    const httpResponse = await fetch(`${base}/v1/platform-accounts`, { headers: { 'x-workspace-id': workspaceId } })
+    const httpBody = await httpResponse.json() as Envelope
+    const mcpResponse = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method: 'platform.store.list', params: { workspace_id: workspaceId } }),
+    })
+    const mcpBody = await mcpResponse.json() as Envelope
+    for (const result of [{ response: httpResponse, body: httpBody }, { response: mcpResponse, body: mcpBody }]) {
+      expect(result.response.status, JSON.stringify(result.body)).toBe(401)
+      expect(result.body.data).toBeNull()
+      expect(result.body.error).toMatchObject({ code: 'UNAUTHENTICATED' })
+      expect(result.body.request_id).toMatch(/^req_/)
+      expect(result.body.trace_id).toBe(result.body.request_id)
+    }
+    expect(httpBody.error?.code).toBe(mcpBody.error?.code)
+  })
+
   it('allows the same workspace-scoped capability over HTTP and MCP for a merchant workbench', async () => {
     const workspaceId = `ws_http_mcp_allow_${Date.now()}`
     const actorId = `merchant-allow-${Date.now()}`

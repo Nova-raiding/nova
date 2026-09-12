@@ -10,6 +10,19 @@
 4. 先用与部署完全相同的参数生成渲染清单：`kubectl kustomize infra/kubernetes/overlays/pilot-50 > /secure/release/rendered.yaml`。先运行 `ruby infra/kubernetes/validate-scanner-contract.rb /secure/release/rendered.yaml`，确认 scanner 身份白名单、病毒库最低版本、双副本 quorum 与仅内部 Service 的未就绪地址发布契约完整；再通过 `infra/scripts/deploy-verified-manifest.sh` 原子执行其余门禁并 `kubectl apply -f "$RENDERED_MANIFEST_PATH"`。禁止门禁后再次 `apply -k` 或重新渲染；部署必须使用被签名证据和 SHA-256 绑定的同一份字节。
 5. 以 `/healthz`、迁移版本、队列队龄、平台 capability evidence 和容量报告完成 Go/No-Go；Kubernetes manifest 本身不等价于真实云验收。
 
+## 支付拓扑
+
+Kubernetes 基线使用托管的 HTTPS 支付 provider：`merchant-runtime` 中的
+`PAYMENT_*` 地址必须指向已经验收的生产 provider，API 通过
+`merchant-runtime-secrets` 读取 provider key 和回调密钥。基线不会把
+`services/payment-gateway`（支付宝签名网关）隐式注入集群；该网关目前只在
+ECS pilot Compose overlay 中声明，并挂载受管密钥文件。不要把
+`payments.example.com` 或其他占位地址当作生产配置，也不要在没有独立镜像
+digest、Secret 合同和回调网络策略的情况下手工追加一个 payment Deployment。
+如果选择在 Kubernetes 集群内运行该网关，必须先为它建立独立的发布镜像、
+密钥合同、Service/NetworkPolicy、健康检查和 release evidence，并把这些
+绑定纳入同一份渲染清单后再放量。
+
 ## 扩容
 
 首发 `pilot-50` profile 使用 API 3 副本、sync/generation 各 2、publish 3、reconcile 2、automation 1，满足无状态入口的最小冗余要求。按 `infra/scripts/scale-workloads.sh` 的 `wave_100`、`wave_250`、`target_500` 调整副本，并在每一波复测数据库连接、队龄、平台/模型配额和租户公平性。

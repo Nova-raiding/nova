@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { resolveAssetPrimaryAction, resolveAssetPrimaryStatus, resolveAssetSecondaryStatus } from './asset-status.js'
 import type { AssetMetadata } from './api'
 
@@ -10,6 +11,12 @@ const asset = (overrides: Partial<AssetMetadata> = {}): AssetMetadata => ({
 })
 
 describe('asset primary status projection', () => {
+  it('keeps processing presentation scoped to the active asset card', () => {
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    expect(app).toContain('busy: Boolean(assetAction)')
+    expect(app).toContain('resolveAssetPrimaryAction(asset, {')
+  })
+
   it('prioritizes safety and fails closed for unknown scan states', () => {
     expect(resolveAssetPrimaryStatus(asset({ scanStatus: 'quarantined' })).label).toBe('安全检查中')
     expect(resolveAssetPrimaryStatus(asset({ scanStatus: 'rejected' })).key).toBe('blocked')

@@ -9,7 +9,7 @@ const record = {
 
 function repository(): FinanceSearchRepository {
   return {
-    search: vi.fn(async (access, query) => ({ records: [record], summary: { totalRecords: 1, rechargeOrderCny: 10, subscriptionOrderCny: 0, walletCreditCny: 0, walletDebitCny: 0, walletNetCny: 0, providerCostCny: 0, customerChargeCny: 0, usageUnits: 0, byKind: { recharge_order: 1, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } }, snapshotAt: '2026-08-29T00:00:00.000Z', scope: { role: access.role, workspaceCount: query.workspaceIds?.length ?? 1 } })),
+    search: vi.fn(async (access, query) => ({ records: [record], summary: { totalRecords: 1, rechargeOrderCny: 10, subscriptionOrderCny: 0, subscriptionOrderWorkspaceCount: 0, subscriptionOrderBySku: {}, walletCreditCny: 0, walletDebitCny: 0, walletNetCny: 0, providerCostCny: 0, customerChargeCny: 0, usageUnits: 0, byKind: { recharge_order: 1, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } }, snapshotAt: '2026-08-29T00:00:00.000Z', scope: { role: access.role, workspaceCount: query.workspaceIds?.length ?? 1 } })),
     detail: vi.fn(async () => ({ ...record, attributes: Object.freeze({ 支付渠道: 'alipay' }) })),
     exportRows: vi.fn(async (_access, query) => ({ records: [record], snapshotAt: query.snapshotAt!, truncated: false })),
   }

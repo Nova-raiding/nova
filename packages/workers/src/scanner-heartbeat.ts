@@ -139,8 +139,14 @@ export function createScannerHeartbeat(input: {
   // permanent deadlock where recovery can never run. The API still keeps
   // quarantined assets blocked until a signed clean receipt is accepted.
   const queueHealthy = queueEvidenceValid
-  const recoveryCapable = Object.values(input.checks).every(Boolean) && input.clamav.reachable && definitionsFresh && eicarFresh && callbackFresh && !input.failure
-  const ready = recoveryCapable && queueHealthy
+  // Recovery must remain possible when the last callback is outside the
+  // freshness window: processing an authorized redrive is the only legitimate
+  // way to produce a new callback timestamp. Normal service readiness remains
+  // strict (`ready` below still requires callbackFresh), while recovery only
+  // requires configured callback wiring and a previously accepted callback.
+  const callbackWiringUsable = input.callback.configured && input.callback.capable
+  const recoveryCapable = Object.values(input.checks).every(Boolean) && input.clamav.reachable && definitionsFresh && eicarFresh && callbackWiringUsable && !input.failure
+  const ready = recoveryCapable && callbackFresh && queueHealthy
   const failure = input.failure ?? (queueEvidenceValid ? undefined : { code: 'SCANNER_QUEUE_EVIDENCE_INVALID', message: 'scanner queue metrics must be non-negative safe integers' })
   return {
     schemaVersion: SCANNER_HEARTBEAT_SCHEMA,

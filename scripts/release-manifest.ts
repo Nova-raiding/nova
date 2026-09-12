@@ -73,7 +73,26 @@ export function buildReleaseManifest(input: {
     || process.env.RELEASE_GIT_SHA?.trim()
     || execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
   if (!/^[a-f0-9]{40}$/u.test(releaseGitSha)) throw new Error('release git SHA must be a full 40-character commit SHA')
-  const artifactPaths = [resolve(root, 'VERSION'), resolve(root, 'CHANGELOG.md'), releaseMetadataPath, pluginManifestPath, packagePath, skillPath, bridgePath, resolve(root, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'), resolve(root, 'apps/api/openapi.yaml'), resolve(root, 'packages/contracts/src/mcp.ts')]
+  // The payment gateway is an independently built/runtime-deployed service in
+  // the ECS pilot path. Keep its complete checked-in source and build recipe in
+  // the same release manifest as the API/MCP artifacts so a gateway-only change
+  // cannot be deployed under an otherwise unchanged release identity.
+  const artifactPaths = [
+    resolve(root, 'VERSION'),
+    resolve(root, 'CHANGELOG.md'),
+    releaseMetadataPath,
+    pluginManifestPath,
+    packagePath,
+    skillPath,
+    bridgePath,
+    resolve(root, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs'),
+    resolve(root, 'apps/api/openapi.yaml'),
+    resolve(root, 'packages/contracts/src/mcp.ts'),
+    resolve(root, 'services/payment-gateway/index.mjs'),
+    resolve(root, 'services/payment-gateway/alipay.mjs'),
+    resolve(root, 'services/payment-gateway/alipay.d.mts'),
+    resolve(root, 'services/payment-gateway/Dockerfile'),
+  ]
   const artifacts = artifactPaths.map(path => {
     const bytes = readFileSync(path)
     return { path: relative(root, path), sha256: sha256(bytes), bytes: bytes.byteLength }

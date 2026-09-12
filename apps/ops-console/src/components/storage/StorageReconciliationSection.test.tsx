@@ -28,7 +28,7 @@ describe("StorageReconciliationSection accessibility states", () => {
     const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "clean", freshness: "unknown", lastRunAt: "2026-08-29T10:00:00Z" }} />);
     expect(html).toContain("状态不可验证");
     expect(html).not.toContain("对账正常");
-    expect(html).toContain("新鲜度未知");
+    expect(html).toContain("新鲜度待确认");
   });
 
   it("renders a named empty workspace state with an optional refresh action", () => {
@@ -53,7 +53,7 @@ describe("StorageReconciliationSection accessibility states", () => {
 
   it("does not turn an unknown runtime status into a green ready state", () => {
     const html = renderToStaticMarkup(<StorageReconciliationSection summary={{ status: "future_status" as never, lastRunAt: "2026-08-29T10:00:00Z" }} />);
-    expect(html).toContain("状态未知，未验证");
+    expect(html).toContain("状态待确认，未验证");
     expect(html).toContain("不能视为正常");
     expect(html).not.toContain(">对账正常<");
   });

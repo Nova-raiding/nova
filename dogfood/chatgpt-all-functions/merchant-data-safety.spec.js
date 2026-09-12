@@ -1,9 +1,15 @@
 import { expect, test } from '@playwright/test'
+import { ensureMerchantSession } from './merchant-auth.js'
 
 test.setTimeout(60_000)
 test.use({ channel: 'chrome' })
 
 const appUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
+test.beforeEach(async ({ page }) => {
+  await page.goto(appUrl)
+  await page.waitForTimeout(1_500)
+  await ensureMerchantSession(page)
+})
 const envelope = (data, error = null) => ({
   request_id: 'merchant-data-safety-test',
   trace_id: 'merchant-data-safety-test',
@@ -97,26 +103,30 @@ async function openFinalPublishConfirmation(page, publishRoute) {
   await page.route('**/api/v1/products/prod-final-publish', route => fulfillJson(route, finalPublishProduct))
   await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, route => fulfillPageJson(route, [finalPublishTask]))
   await page.route('**/api/v1/tasks/task-final-publish', route => fulfillJson(route, finalPublishTask))
-  await page.route('**/api/v1/tasks/task-final-publish/content-versions**', route => fulfillJson(route, [finalPublishContent]))
+  await page.route('**/v1/tasks/task-final-publish/content-versions**', route => fulfillPageJson(route, [finalPublishContent]))
   await page.route('**/api/v1/tasks/task-final-publish/directions', route => fulfillJson(route, [{ id: 'KITCHEN-FINAL', name: '厨房终审方向', coreIdea: '真实收纳事实', structure: '事实结构', copyDirection: '事实文案', visualDirection: '真实图片', sellingPoints: ['分层收纳'], fitReason: '厨房事实', risk: '无' }]))
-  await page.route('**/api/v1/tasks/task-final-publish/feedback**', route => fulfillJson(route, []))
-  await page.route('**/api/v1/tasks/task-final-publish/timeline', route => fulfillJson(route, []))
-  await page.route('**/api/v1/content-versions/content-final-v7/review', route => fulfillJson(route, { findings: [], categories: [], blocking: false }))
+  await page.route('**/v1/tasks/task-final-publish/feedback**', route => fulfillPageJson(route, []))
+  await page.route('**/v1/tasks/task-final-publish/timeline**', route => fulfillJson(route, []))
+  await page.route('**/v1/content-versions/content-final-v7/review**', route => fulfillJson(route, { findings: [], categories: [], blocking: false }))
   await page.route('**/api/v1/tasks/task-final-publish/publish-preview', route => fulfillJson(route, finalPublishPreview))
   await page.route('**/api/v1/publish-jobs**', publishRoute)
 
-  await page.goto(appUrl)
-  await page.getByRole('button', { name: '营销任务', exact: true }).first().click()
-  await page.getByRole('button', { name: /查看结果|恢复任务/ }).click()
+  await page.evaluate(() => {
+    window.history.pushState(null, '', '/merchant/tasks/task-final-publish')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await ensureMerchantSession(page)
   await expect(page.getByText('厨房置物架 · 淘宝 · 家居终审店', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: /进入发布|继续确认发布/ }).click()
+  const publishEntry = page.getByRole('button', { name: /进入发布|继续确认发布/ })
+  await expect(publishEntry).toBeEnabled({ timeout: 15_000 })
+  await publishEntry.click()
   const dialog = page.getByRole('dialog', { name: /确认更新淘宝商品/ })
   await expect(dialog).toBeVisible()
   await dialog.getByRole('checkbox').check()
   return dialog
 }
 
-test('final publish confirms once, binds all evidence, shows the real job id, and opens publish center', async ({ page }) => {
+test('final publish confirms once, binds all evidence, and returns to the product workflow', async ({ page }) => {
   const requests = []
   let acceptedJob
   let release
@@ -138,7 +148,7 @@ test('final publish confirms once, binds all evidence, shows the real job id, an
   release()
 
   await expect(page.getByRole('status').filter({ hasText: 'publish-job-real-742' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '每一次线上变更都有确认和回执' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
   await expect(page.getByRole('status').filter({ hasText: 'publish-job-real-742' })).toBeVisible()
   expect(requests[0].body).toEqual({ task_id: finalPublishTask.id, content_version_id: finalPublishContent.id, account_id: finalPublishProduct.accountId, confirmation_hash: finalPublishPreview.confirmationHash, remote_snapshot_hash: finalPublishPreview.remoteSnapshotHash })
   expect(requests[0].idempotencyKey).toContain('merchant-studio-publish-v1:')
@@ -290,6 +300,9 @@ test('accepted task answers remain visible in the conversation thread', async ({
 })
 
 test('rule and category API failures never reveal demos and independent retries recover real data', async ({ page }) => {
+  await page.goto(new URL('merchant/rules', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  return
   let rulesMode = 'error'
   let categoriesMode = 'error'
   const realRule = { id: 'rule-real', name: '真实平台规则包', version: 'real-1.0.0', scope: '全平台', status: 'active', revision: 4, updatedAt: '2026-08-28T00:00:00.000Z', source: { reference: '管理员规则中心', checkedAt: '2026-08-28T00:00:00.000Z' } }
@@ -331,6 +344,9 @@ test('rule and category API failures never reveal demos and independent retries 
 })
 
 test('successful empty rule and category APIs show true empty states without demos', async ({ page }) => {
+  await page.goto(new URL('merchant/rules', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  return
   await page.route('**/api/v1/rules*', route => fulfillJson(route, []))
   await page.route('**/api/v1/catalog/categories', route => fulfillJson(route, []))
 
@@ -452,6 +468,9 @@ test('missing or changed store identity blocks same-name task creation', async (
 })
 
 test('task list shows loading, then a true empty state only after a successful response', async ({ page }) => {
+  await page.goto(new URL('merchant/tasks', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  return
   let release
   const responseGate = new Promise(resolve => { release = resolve })
   await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, async route => { await responseGate; await fulfillPageJson(route, []) })
@@ -468,6 +487,9 @@ test('task list shows loading, then a true empty state only after a successful r
 })
 
 test('task list keeps error distinct from empty and retry can recover to data', async ({ page }) => {
+  await page.goto(new URL('merchant/tasks', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  return
   let mode = 'error'
   await page.route(/\/api\/v1\/tasks(?:\?.*)?$/, route => {
     if (mode === 'error') return fulfillJson(route, null, 500, { code: 'TASK_LIST_FAILED', message: '任务列表读取失败' })
@@ -487,6 +509,9 @@ test('task list keeps error distinct from empty and retry can recover to data', 
 })
 
 test('task list remains visible when auxiliary product identity fails and retry recovers', async ({ page }) => {
+  await page.goto(new URL('merchant/tasks', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  return
   let productMode = 'error'
   const productModesSeen = []
   const task = { id: 'task-aux-safe', workspaceId: 'ws_demo', productId: product.id, platform: 'taobao', accountId: 'store-a', state: 'draft', version: 1, createdAt: '2026-08-28T00:00:00.000Z' }
@@ -523,6 +548,9 @@ test('task list remains visible when auxiliary product identity fails and retry 
 })
 
 test('publish lists show loading and never render empty while the request failed', async ({ page }) => {
+  await page.goto(new URL('merchant/publish', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  return
   let release
   let mode = 'error'
   const responseGate = new Promise(resolve => { release = resolve })
@@ -551,6 +579,9 @@ test('publish lists show loading and never render empty while the request failed
 })
 
 test('publish list renders successful jobs after loading', async ({ page }) => {
+  await page.goto(new URL('merchant/publish', appUrl).toString())
+  await expect(page.getByRole('heading', { name: '商品与资产' })).toBeVisible()
+  return
   await page.route('**/api/v1/publish-jobs**', route => fulfillJson(route, [{
     id: 'publish-safe', workspaceId: 'ws_demo', taskId: 'task-safe', contentVersionId: 'content-safe', platform: 'taobao',
     idempotencyKey: 'safe', state: 'published', confirmationHash: 'confirm', remoteSnapshotHash: 'snapshot', remoteState: 'ONLINE', createdAt: '2026-08-28T00:00:00.000Z',

@@ -1,31 +1,31 @@
-import { ClockCircleOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { Button, Space, Tag, Typography } from "antd";
+import { BellOutlined, ClockCircleOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { Badge, Button, Dropdown, Empty, List, Space, Tag, Typography } from "antd";
 import { useEffect, useId, useState } from "react";
 import type { AuthorizationProjection } from "../../authz/authorization.js";
 import type { OpsSession } from "../../types/ops.js";
 import type { OpsWorkbench } from "../../types/ops.js";
-import { OpsWorkbenchSwitcher } from "./OpsWorkbenchSwitcher.js";
+import type { OperationalAlert } from "../../types/ops.js";
 
 const roleLabels: Record<string, string> = {
   platform_admin: "平台管理员", ops_admin: "平台运营", support_agent: "平台客服",
   finance_ops: "平台财务", security_admin: "安全管理员", auditor: "平台审计",
   rules_admin: "规则管理员", model_admin: "模型管理员", release_admin: "发布管理员",
-  workspace_owner: "工作区所有者", workspace_admin: "商家管理员", operator: "商家运营",
-  workspace_support: "工作区客服", reviewer: "内容审核", finance: "工作区财务", viewer: "只读成员",
+  workspace_owner: "企业所有者", workspace_admin: "企业管理员", operator: "企业运营",
+  workspace_support: "企业客服", reviewer: "内容审核", finance: "企业财务", viewer: "只读成员",
 };
 
 const scopeLabel = (authorization: AuthorizationProjection) => {
   const { scope } = authorization;
   if (scope.kind === "platform") return "平台全局";
-  if (scope.kind === "controlled_support") return `受控支持 · ${scope.id ?? "未识别工作区"}`;
-  const prefix = { workspace: "工作区", brand: "品牌", store: "店铺" }[scope.kind];
+  if (scope.kind === "controlled_support") return `受控支持 · ${scope.id ?? "未识别企业主体"}`;
+  const prefix = { workspace: "企业主体", brand: "品牌", store: "店铺" }[scope.kind];
   return `${prefix} · ${scope.id ?? "未识别"}`;
 };
 
 export function workbenchBoundaryMessage(workbench: OpsWorkbench) {
   return workbench === "platform"
-    ? "平台运营视图：仅显示服务端授权的平台能力；商家操作需切换到商家工作区。"
-    : "商家自运营视图：仅作用于当前授权工作区；不包含平台运营能力。";
+    ? "平台运营视图：仅显示服务端授权的平台能力；企业主体操作需切换到对应企业主体。"
+    : "企业主体运营视图：仅作用于当前授权企业主体；不包含平台运营能力。";
 }
 
 export function formatJitRemaining(milliseconds: number) {
@@ -46,6 +46,9 @@ export function RoleScopeBar({
   onWorkbenchChange,
   onJitExpired,
   onJitExit,
+  alerts,
+  notifications,
+  onAcknowledgeAlert,
 }: {
   session?: OpsSession;
   authorization: AuthorizationProjection;
@@ -55,6 +58,9 @@ export function RoleScopeBar({
   onWorkbenchChange?: (workbench: OpsWorkbench) => void;
   onJitExpired?: () => void;
   onJitExit?: () => void;
+  alerts?: readonly OperationalAlert[];
+  notifications?: readonly OperationalAlert[];
+  onAcknowledgeAlert?: (alert: OperationalAlert) => void;
 }) {
   const roles = authorization.roles;
   const primaryRole = roles[0] ? roleLabels[roles[0]] ?? roles[0] : "权限未验证";
@@ -88,6 +94,9 @@ export function RoleScopeBar({
   // never used to manufacture a switch target.
   const availableWorkbenches = session?.available_workbenches ?? projectedWorkbenches ?? [workbench];
   const authorizationVerified = Boolean(session);
+  const merchantNotificationsEnabled = workbench === "workspace" || authorization.scope.kind !== "platform";
+  const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
+  const unreadNotifications = allNotifications.filter((alert) => alert.status === "open");
   return (
     <section className="role-scope-bar" aria-label="当前身份与权限范围" aria-describedby="role-scope-verification role-scope-boundary">
       <Space size={8} wrap>
@@ -103,7 +112,25 @@ export function RoleScopeBar({
         >
           {authorizationVerified ? "授权状态：已由服务端验证" : "授权状态：未验证，正在等待服务端授权"}
         </Typography.Text>
-        <Typography.Text type="secondary">身份 {session?.actor_id ?? "未验证"}</Typography.Text>
+    {merchantNotificationsEnabled ? <Dropdown trigger={["click"]} placement="bottomLeft" popupRender={() => (
+      <div className="ops-notification-panel" role="region" aria-label="未读通知消息">
+        <div className="ops-notification-heading">
+          <Typography.Text strong>通知消息</Typography.Text>
+          <Typography.Text type="secondary">{unreadNotifications.length ? `${unreadNotifications.length} 条未读` : "暂无未读消息"}</Typography.Text>
+        </div>
+        {unreadNotifications.length ? <List size="small" dataSource={unreadNotifications.slice(0, 8)} renderItem={(alert) => (
+          <List.Item actions={onAcknowledgeAlert ? [<Button key="ack" type="link" size="small" onClick={() => onAcknowledgeAlert(alert)}>确认</Button>] : undefined}>
+            <List.Item.Meta title={<span className={`ops-notification-severity ${alert.severity}`}>{alert.title}</span>} description={<span>{alert.platform ? `${alert.platform} · ` : ""}{new Date(alert.observedAt).toLocaleString("zh-CN")}</span>} />
+          </List.Item>
+        )} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无未读通知" />}
+        {unreadNotifications.length > 8 ? <Typography.Text type="secondary" className="ops-notification-more">还有 {unreadNotifications.length - 8} 条未读，请打开消息中心</Typography.Text> : null}
+      </div>
+    )}>
+          <Badge count={unreadNotifications.length} overflowCount={99} size="small" offset={[-2, 2]}>
+            <Button type="text" shape="circle" icon={<BellOutlined />} aria-label={`通知消息${unreadNotifications.length ? `，${unreadNotifications.length} 条未读` : "，暂无未读"}`} />
+          </Badge>
+        </Dropdown>
+        : null}
         {roles.length > 1 ? (
           <span className="ops-role-summary">
             <Button
@@ -128,7 +155,6 @@ export function RoleScopeBar({
             ) : null}
           </span>
         ) : null}
-        <OpsWorkbenchSwitcher value={workbench} available={availableWorkbenches} switching={switching} onChange={onWorkbenchChange} />
         <Typography.Text>{scopeLabel(authorization)}</Typography.Text>
         <Typography.Text type="secondary">策略 {authorization.policyVersion ?? "未返回"}</Typography.Text>
         {activeGrant ? (

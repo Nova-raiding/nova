@@ -177,7 +177,14 @@ printf '%s\n' Darwin
     expect(recharge).not.toContain('call("billing.recharge.create"')
     expect(recharge).not.toMatch(/data-amount|customAmount|createOrder/u)
     expect(recharge).toContain('服务端授权的恢复入口')
+    expect(recharge).toContain('余额状态待确认时会保持“待确认”')
+    expect(recharge).not.toContain('balance_state=unknown')
+    expect(recharge).not.toContain('unknown: "未知"')
     expect(recharge).toContain('call("billing.recharge.list"')
+    expect(recharge).toContain('function safePaymentUrl')
+    expect(recharge).toContain('打开支付入口')
+    expect(recharge).toContain('noopener noreferrer')
+    expect(recharge).toMatch(/url\.username.*url\.password.*url\.hash/su)
     // Detailed orders, transactions, usage and exports belong in the merchant
     // desktop workspace. The ChatGPT surface only exposes payment state and
     // a server-authorized recovery action.

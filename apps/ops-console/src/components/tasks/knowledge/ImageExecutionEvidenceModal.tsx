@@ -90,7 +90,7 @@ export function ImageExecutionEvidenceModal({
               <Alert
                 type="error"
                 showIcon
-                message="图片执行仍被阻断"
+                title="图片执行仍被阻断"
                 description={
                   <div>
                     <p>服务端还没有返回完整的 request / usage / cost / error evidence，桌面端只能展示诊断和恢复路径，不能把这次执行视为成功。</p>

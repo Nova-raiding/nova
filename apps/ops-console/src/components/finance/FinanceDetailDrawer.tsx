@@ -1,6 +1,7 @@
 import { Alert, Button, Descriptions, Drawer, Empty, Skeleton, Tag, Typography } from "antd";
 import { useEffect, useRef } from "react";
 import type { FinanceRecordDetail, FinanceSearchRecord } from "../../../../../packages/contracts/src/ops/finance-search.js";
+import { EnterpriseIdentity } from "../EnterpriseIdentity.js";
 
 interface FinanceDetailDrawerProps {
   selected?: FinanceSearchRecord;
@@ -39,7 +40,7 @@ export function FinanceDetailDrawer({ selected, detail, loading, error, onRetry,
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
           <Descriptions.Item label="记录类型"><Tag>{detail.label}</Tag></Descriptions.Item>
           <Descriptions.Item label="状态"><Tag>{detail.status}</Tag></Descriptions.Item>
-          <Descriptions.Item label="工作区"><Typography.Text copyable>{detail.workspaceId}</Typography.Text></Descriptions.Item>
+          <Descriptions.Item label="企业主体"><EnterpriseIdentity name={detail.enterpriseName} workspaceId={detail.workspaceId} /></Descriptions.Item>
           <Descriptions.Item label="记录号"><Typography.Text copyable>{detail.id}</Typography.Text></Descriptions.Item>
           <Descriptions.Item label="业务引用">{detail.reference ?? "—"}</Descriptions.Item>
           <Descriptions.Item label="金额">{detail.amountCny === undefined ? "—" : `¥${detail.amountCny.toFixed(2)}`}</Descriptions.Item>

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { App as AntApp } from "antd";
-import { OpsAntAppBoundary, OpsSessionRecoveryGuidance, accessDeniedEvidence, accessDeniedReasonCode, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
+import { OpsAntAppBoundary, OpsSessionRecoveryGuidance, accessDeniedEvidence, accessDeniedReasonCode, isExpectedUnauthenticatedSessionError, opsContentLoadingMessage, opsSessionGateState, selectStoreScope } from "./OpsConsoleController.js";
 import { opsLoadWarningPresentation } from "../components/opsErrorPresentation.js";
 import { openBrandStore } from "./StoresPage.js";
 
@@ -34,6 +34,12 @@ describe("Ops Ant Design runtime provider", () => {
       createElement(ErrorPathProbe),
     ))).not.toThrow();
   });
+
+  it("treats an unauthenticated session as a login state instead of a system error", () => {
+    expect(isExpectedUnauthenticatedSessionError({ code: "UNAUTHENTICATED" })).toBe(true);
+    expect(isExpectedUnauthenticatedSessionError({ code: "SESSION_EXPIRED" })).toBe(true);
+    expect(isExpectedUnauthenticatedSessionError({ code: "API_NETWORK_ERROR" })).toBe(false);
+  });
 });
 
 describe("desktop keyboard navigation", () => {
@@ -51,12 +57,14 @@ describe("desktop keyboard navigation", () => {
 });
 
 describe("managed session gate", () => {
-  it("gives the correct recovery path for managed and local identities while retaining diagnostics", () => {
+  it("uses the same account/password recovery path for every deployment mode", () => {
     const managed = renderToStaticMarkup(createElement(OpsSessionRecoveryGuidance, { managed: true, error: "AUTHZ_WORKBENCH_FORBIDDEN" }));
-    expect(managed).toContain("组织登录入口");
-    expect(managed).not.toContain("管理员提供的运营凭据");
+    expect(managed).toContain("顶部“平台运营账号登录”");
+    expect(managed).toContain("管理员提供的平台运营账号和密码");
+    expect(managed).not.toContain("组织 SSO");
+    expect(managed).not.toContain("组织登录入口");
     const local = renderToStaticMarkup(createElement(OpsSessionRecoveryGuidance, { managed: false, error: "AUTHZ_WORKBENCH_FORBIDDEN" }));
-    expect(local).toContain("右上角“登录 / 连接”");
+    expect(local).toContain("顶部“平台运营账号登录”");
     expect(local).toContain("商家登录凭据不能用于平台运营控制台");
     expect(local).toContain("<details>");
     expect(local).toContain("AUTHZ_WORKBENCH_FORBIDDEN");

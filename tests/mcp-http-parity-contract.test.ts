@@ -70,7 +70,7 @@ describe('MCP/HTTP parity contract', () => {
   it('keeps every identity HTTP operation bound to the same registered MCP policy', () => {
     expect(assertHttpOperationPolicyCoverage().registered).toBe(HTTP_OPERATION_POLICIES.length)
     const identityReferences = HTTP_OPERATION_POLICIES
-      .filter(operation => operation.authentication === 'identity')
+      .filter(operation => operation.authentication === 'identity' && !operation.identityOnly)
       .map(operation => operation.mcpMethod!)
     const registry = new Set<string>(MCP_METHODS)
     const references = new Set(identityReferences)

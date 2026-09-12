@@ -80,7 +80,7 @@ export function DangerActionModal({
         <Typography.Text type="secondary">提交后将写入审计记录；请确认对象、范围和影响均正确。</Typography.Text>
         {error ? (
           <div ref={errorRef} tabIndex={-1} role="alert" aria-live="assertive" aria-atomic="true" aria-label="危险操作失败" aria-describedby={errorId}>
-            <Alert type="error" showIcon message="操作未完成" description={<span id={errorId}>{error} 请检查原因后重试。</span>} />
+            <Alert type="error" showIcon title="操作未完成" description={<span id={errorId}>{error} 请检查原因后重试。</span>} />
           </div>
         ) : null}
         <label htmlFor={reasonId}>{reasonLabel}</label>

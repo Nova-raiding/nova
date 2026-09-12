@@ -41,7 +41,7 @@ describe("CommercialOperationsWorkspace", () => {
       earliestExpiresAt: null, verifiedAt: null, nextActions: [],
     } }} onRetry={vi.fn()} />);
     expect(html).toContain("CREATIVE_POINTS_UNAVAILABLE");
-    expect(html).toContain("未知");
+    expect(html).toContain("待确认");
     expect(html).not.toContain("可用点数 </span><strong[^>]*>0");
   });
 

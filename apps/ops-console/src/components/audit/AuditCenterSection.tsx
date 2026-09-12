@@ -73,11 +73,11 @@ export function AuditCenterSection({ controller, canExport, platformScope = fals
 
     <AuditFilters value={controller.filters} onChange={controller.setFilters} />
     {controller.error ? <div ref={errorRef} tabIndex={-1} role="alert" aria-labelledby="audit-load-error-title">
-      <Alert type="error" showIcon message={<span id="audit-load-error-title">审计记录加载失败</span>} description={controller.error}
+      <Alert type="error" showIcon title={<span id="audit-load-error-title">审计记录加载失败</span>} description={controller.error}
         action={<Button onClick={() => void controller.reload()} style={{ minHeight: 44 }}>重试</Button>} />
     </div> : null}
     {controller.exportError ? <div ref={exportErrorRef} tabIndex={-1} role="alert" aria-labelledby="audit-export-error-title">
-      <Alert type="error" showIcon message={<span id="audit-export-error-title">审计导出失败</span>} description={controller.exportError}
+      <Alert type="error" showIcon title={<span id="audit-export-error-title">审计导出失败</span>} description={controller.exportError}
         action={<Button onClick={() => void controller.downloadCsv()} style={{ minHeight: 44 }}>重试导出</Button>} />
     </div> : null}
     {!initialLoadFailed && !controller.loading ? <Alert type={staleRecords ? "warning" : controller.truncated ? "info" : "success"} showIcon title={staleRecords ? `读取失败，以下为上次结果（${controller.records.length} 条）` : controller.truncated ? `已加载 ${controller.records.length} / ${controller.totalRecords} 条审计记录` : `已加载全部 ${controller.totalRecords} 条审计记录`} description={staleRecords ? "本次刷新未成功；旧记录可能已过期，不代表当前筛选条件下的完整审计事实。请成功刷新后再导出或据此判断。" : controller.truncated ? platformScope ? "平台聚合结果按服务端上限返回；请缩小时间或租户筛选范围，记录内容为服务端脱敏投影。" : "当前结果按服务端游标分页，点击“加载更多”继续查看；总量来自同一租户和筛选条件。" : "当前结果已完整覆盖同一租户和筛选条件，记录内容为服务端脱敏投影。"} /> : null}

@@ -13,3 +13,17 @@ describe('migration 183 knowledge persistence', () => {
     for (const state of ['queued', 'indexing', 'ready', 'stale', 'failed', 'deleted']) expect(sql).toContain(`'${state}'`)
   })
 })
+
+describe('migration 184 knowledge audit fact hardening', () => {
+  it('registers append-only triggers and removes mutation privileges', async () => {
+    const migrations = await loadMigrations()
+    expect(migrations.find(item => item.version === 184)).toMatchObject({ name: 'harden_knowledge_audit_facts' })
+    const sql = await readFile(new URL('./migrations/184_harden_knowledge_audit_facts.sql', import.meta.url), 'utf8')
+    expect(sql).toContain('reject_knowledge_audit_fact_mutation')
+    for (const table of ['knowledge_index_events', 'knowledge_deletion_proofs']) {
+      expect(sql).toContain(`${table}_append_only`)
+      expect(sql).toContain(`${table}_no_truncate`)
+    }
+    expect(sql).toContain('REVOKE UPDATE, DELETE, TRUNCATE')
+  })
+})

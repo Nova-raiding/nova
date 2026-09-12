@@ -9,7 +9,7 @@ ARG VITE_WORKSPACE_ID
 ENV VITE_WORKSPACE_ID=$VITE_WORKSPACE_ID
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:e7623c006de0ea4716e763083668edd9b732371d5479653c2e709fd0696b0348
+FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
 COPY infra/nginx/merchant-studio.conf /etc/nginx/merchant-studio.conf.template
 COPY --chmod=0755 infra/nginx/merchant-studio-entrypoint.sh /docker-entrypoint.d/40-merchant-studio-token.sh
 COPY --from=build /app/dist /usr/share/nginx/html

@@ -13,4 +13,9 @@ describe('merchant knowledge consumption contract', () => {
     expect(app).toContain('本次实际使用的 Ops 知识和规则版本')
     expect(app).toContain('未将演示数据冒充为消费记录')
   })
+
+  it('labels the brief without implying that a video has already been rendered', () => {
+    expect(app).toContain('创意 Brief（脚本/分镜或静态素材）')
+    expect(app).not.toContain('视频已生成')
+  })
 })

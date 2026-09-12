@@ -41,7 +41,7 @@ import { ServiceFulfillmentPanel } from "./ServiceFulfillmentPanel.js";
 
 const dash = (value: string | number | null | undefined) => value === null || value === undefined || value === "" ? "—" : String(value);
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
-const point = (value: number | null | undefined) => value === null || value === undefined ? "未知" : value.toLocaleString();
+const point = (value: number | null | undefined) => value === null || value === undefined ? "待确认" : value.toLocaleString();
 
 function StateTag({ value, semanticValue }: { value: string; semanticValue?: string }) {
   const normalized = (semanticValue ?? value).toLowerCase();
@@ -438,7 +438,7 @@ function PrivateTrialOperationsPanel({ controller }: { controller: CommercialOpe
   const reason = "商业化方案：私测转正式人工核验";
   return <section aria-label="私测转正式与人工转账" className="commercial-manual-operations">
     <Typography.Title level={5}>私测转正式 / 人工转账开通</Typography.Title>
-    <Alert type="warning" showIcon message="正式开通 5000 元；1999 元仅为 7 天试用，验证后 7 天内补 3001 元，必须人工核验到账证据后开通。" description="每一步都会写入商业时间线和审计；不要只改前端状态。" />
+    <Alert type="warning" showIcon title="正式开通 5000 元；1999 元仅为 7 天试用，验证后 7 天内补 3001 元，必须人工核验到账证据后开通。" description="每一步都会写入商业时间线和审计；不要只改前端状态。" />
     <Space wrap>
       <Input aria-label="目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
       <Input aria-label="客户标识" placeholder="客户标识" value={customerRef} onChange={event => setCustomerRef(event.target.value)} />
@@ -487,7 +487,7 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   const reason = "商业化方案：订单退款人工审核";
   return <section aria-label="商业订单退款" className="commercial-manual-operations">
     <Typography.Title level={5}>商业订单退款 / 点数回滚</Typography.Title>
-    <Alert type="warning" showIcon message="退款必须经过双人审批、法律/补充协议证据和外部支付退款凭证；不会因为前端点击直接退款。" />
+    <Alert type="warning" showIcon title="退款必须经过双人审批、法律/补充协议证据和外部支付退款凭证；不会因为前端点击直接退款。" />
     <Space wrap>
       <Input aria-label="退款目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
       <Input aria-label="退款订单 ID" placeholder="订单 ID" value={orderId} onChange={event => setOrderId(event.target.value)} />

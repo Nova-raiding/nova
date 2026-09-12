@@ -9,7 +9,7 @@ describe('HTTP authorization policy registry', () => {
     expect(assertHttpOperationPolicyCoverage()).toEqual({ registered: HTTP_OPERATION_POLICIES.length, identity: HTTP_OPERATION_POLICIES.filter(policy => policy.authentication === 'identity').length })
     const methods = new Set<string>(MCP_METHODS)
     for (const policy of HTTP_OPERATION_POLICIES) {
-      if (policy.authentication === 'identity') {
+      if (policy.authentication === 'identity' && !policy.identityOnly) {
         expect(methods.has(policy.mcpMethod!), `${policy.operation} references an unknown MCP method`).toBe(true)
         expect(getMcpMethodPolicy(policy.mcpMethod!)).toBeDefined()
       }
@@ -29,6 +29,7 @@ describe('HTTP authorization policy registry', () => {
 
     for (const policy of HTTP_OPERATION_POLICIES) {
       if (policy.authentication !== 'identity') continue
+      if (policy.identityOnly) continue
       const mcpPolicy = getMcpMethodPolicy(policy.mcpMethod!)!
       const expectedEffect = readMethods.has(policy.method) ? 'read' : 'write'
       if (readTransportWriteOperations.has(policy.operation)) {

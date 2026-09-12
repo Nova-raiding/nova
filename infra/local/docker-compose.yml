@@ -90,7 +90,9 @@ services:
         OPS_CONSOLE_BUILD_MODE: local
         VITE_API_BASE: /api
         VITE_OPS_AUTH_MODE: local
-        VITE_OPS_LOCAL_SESSION: "true"
+        # Platform operations must start behind the real account login gate.
+        # Do not silently create actor_demo in the operator browser.
+        VITE_OPS_LOCAL_SESSION: "false"
     ports: ["127.0.0.1:${LOCAL_OPS_UI_PORT:-18082}:8080"]
     environment:
       OPS_API_UPSTREAM: http://api:8787
@@ -160,14 +162,21 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://127.0.0.1:18082,http://localhost:18082}
       # The local console receives an HttpOnly session cookie from this API;
       # the bearer value never enters browser storage or form fields.
-      OPS_LOCAL_SESSION_ENABLED: "true"
+      # Operator authentication is password-only. Local bearer sessions are
+      # intentionally disabled so the console cannot bypass /v1/auth/login.
+      OPS_LOCAL_SESSION_ENABLED: "false"
       # The ops console opens on the platform workbench by default. The
       # workspace-only token made /v1/ops/local-session succeed but caused the
       # first ops.session MCP call to return 403, leaving every admin page
       # stuck on "权限未验证". Keep the override for custom environments and
       # use the local pilot token, which is scoped to both workbenches.
-      OPS_LOCAL_SESSION_TOKEN: ${OPS_LOCAL_SESSION_TOKEN:-pilot-local-token}
+      OPS_LOCAL_SESSION_TOKEN: ${OPS_LOCAL_SESSION_TOKEN:-}
       OPS_LOCAL_SESSION_WORKSPACE_ID: ${OPS_LOCAL_SESSION_WORKSPACE_ID:-ws_demo}
+      # Optional local-only bootstrap for a real platform password account.
+      # The API accepts only a precomputed Argon2id hash; never pass a
+      # clear-text password through Compose or commit the hash to source.
+      PLATFORM_ACCOUNT_LOGIN: ${PLATFORM_ACCOUNT_LOGIN:-}
+      PLATFORM_ACCOUNT_PASSWORD_HASH: ${PLATFORM_ACCOUNT_PASSWORD_HASH:-}
       API_AUTH_TOKENS: '{"pilot-local-token":{"workspaces":["*"],"actor_id":"actor_demo","bootstrap":true,"workbenches":["platform","workspace"],"roles":["platform_ops","operator","workspace_owner","merchant_admin","rules_admin","knowledge_editor","knowledge_reader","competitor_reviewer"]},"workspace-local-token":{"workspaces":["*"],"actor_id":"workspace_admin_demo","bootstrap":true,"workbenches":["workspace"],"roles":["workspace_owner","merchant_admin"]}}'
       SESSION_ID_HASH_SECRET: ${SESSION_ID_HASH_SECRET:-pilot-local-session-hash-secret}
       ALLOW_WILDCARD_WORKSPACE_GRANT: "true"
@@ -189,6 +198,20 @@ services:
       MERCHANT_TEST_APPROVED_RATES: ${MERCHANT_TEST_APPROVED_RATES:-true}
       PERSISTENCE_MODE: ${PERSISTENCE_MODE:-postgres}
       ALLOW_LOCAL_PAYMENT_FIXTURE: "true"
+      # Optional provider-backed payment injection. Local defaults remain
+      # fixture; production must set provider mode and signed callback secrets
+      # through the external secret manager, never source-controlled files.
+      PAYMENT_MODE: ${PAYMENT_MODE:-fixture}
+      PAYMENT_PROVIDER_ADAPTERS: ${PAYMENT_PROVIDER_ADAPTERS:-}
+      PAYMENT_CALLBACK_BASE_URL: ${PAYMENT_CALLBACK_BASE_URL:-}
+      PAYMENT_PROVIDER_CHECKOUT_API_URL: ${PAYMENT_PROVIDER_CHECKOUT_API_URL:-}
+      PAYMENT_PROVIDER_QUERY_API_URL: ${PAYMENT_PROVIDER_QUERY_API_URL:-}
+      PAYMENT_PROVIDER_REFUND_API_URL: ${PAYMENT_PROVIDER_REFUND_API_URL:-}
+      PAYMENT_PROVIDER_API_KEY: ${PAYMENT_PROVIDER_API_KEY:-}
+      PAYMENT_PROVIDER_MERCHANT_ID: ${PAYMENT_PROVIDER_MERCHANT_ID:-}
+      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET:-}
+      PAYMENT_RECONCILIATION_ENABLED: ${PAYMENT_RECONCILIATION_ENABLED:-false}
+      PAYMENT_REFUND_ENABLED: ${PAYMENT_REFUND_ENABLED:-false}
       # Local acceptance exercises the same immutable V2 order/payment facts
       # through platform-reviewed manual transfer; production must override
       # this with a real provider adapter and verified callback.
@@ -235,21 +258,21 @@ services:
       MODEL_IMAGE_EDIT_MAX_REQUEST_CNY: ${MODEL_IMAGE_EDIT_MAX_REQUEST_CNY:-5.00}
       MODEL_OCR_MAX_REQUEST_CNY: ${MODEL_OCR_MAX_REQUEST_CNY:-2.00}
       MODEL_VIDEO_MAX_REQUEST_CNY: ${MODEL_VIDEO_MAX_REQUEST_CNY:-20.00}
-      MODEL_RELAY_COST_EVIDENCE: ${MODEL_RELAY_COST_EVIDENCE:-false}
-      MODEL_RELAY_TEXT_COST_EVIDENCE: ${MODEL_RELAY_TEXT_COST_EVIDENCE:-false}
+      MODEL_RELAY_COST_EVIDENCE: ${MODEL_RELAY_COST_EVIDENCE:-true}
+      MODEL_RELAY_TEXT_COST_EVIDENCE: ${MODEL_RELAY_TEXT_COST_EVIDENCE:-true}
       # OCR calls must settle against the relay pricing snapshot; leaving this
       # off makes successful provider responses remain pending forever.
       MODEL_RELAY_OCR_COST_EVIDENCE: ${MODEL_RELAY_OCR_COST_EVIDENCE:-true}
       MODEL_RELAY_IMAGE_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_COST_EVIDENCE:-true}
-      MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE:-false}
-      MODEL_RELAY_VIDEO_COST_EVIDENCE: ${MODEL_RELAY_VIDEO_COST_EVIDENCE:-false}
+      MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_EDIT_COST_EVIDENCE:-true}
+      MODEL_RELAY_VIDEO_COST_EVIDENCE: ${MODEL_RELAY_VIDEO_COST_EVIDENCE:-true}
       MODEL_RELAY_PRICING_DERIVATION_ENABLED: ${MODEL_RELAY_PRICING_DERIVATION_ENABLED:-true}
-      MODEL_RELAY_PRICING_GROUP: ${MODEL_RELAY_PRICING_GROUP:-SVIP}
+      MODEL_RELAY_PRICING_GROUP: ${MODEL_RELAY_PRICING_GROUP:-VIP}
       MODEL_RELAY_TEXT_PRICING_GROUP: ${MODEL_RELAY_TEXT_PRICING_GROUP:-VIP}
       MODEL_RELAY_OCR_PRICING_GROUP: ${MODEL_RELAY_OCR_PRICING_GROUP:-VIP}
-      MODEL_RELAY_IMAGE_PRICING_GROUP: ${MODEL_RELAY_IMAGE_PRICING_GROUP:-SVIP}
-      MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP: ${MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP:-SVIP}
-      MODEL_RELAY_VIDEO_PRICING_GROUP: ${MODEL_RELAY_VIDEO_PRICING_GROUP:-SVIP}
+      MODEL_RELAY_IMAGE_PRICING_GROUP: ${MODEL_RELAY_IMAGE_PRICING_GROUP:-VIP}
+      MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP: ${MODEL_RELAY_IMAGE_EDIT_PRICING_GROUP:-VIP}
+      MODEL_RELAY_VIDEO_PRICING_GROUP: ${MODEL_RELAY_VIDEO_PRICING_GROUP:-VIP}
       MODEL_RELAY_VIDEO_PRICING_OVERRIDES: '${MODEL_RELAY_VIDEO_PRICING_OVERRIDES:-{"happyhorse-1.1-t2v":0.4508,"happyhorse-1.1-i2v":0.4508,"happyhorse-1.1-r2v":0.4508,"wan3.0-video":0.25}}'
       PLUGIN_VERSION: ${PLUGIN_VERSION:-0.1.0+codex.20260831142726}
       SKILL_BUNDLE_VERSION: ${SKILL_BUNDLE_VERSION:-0.1.0+codex.20260831142726}
@@ -271,13 +294,11 @@ services:
       - merchant-assets:/var/lib/merchant-assets
     stop_grace_period: 30s
     healthcheck:
-      # A scanner configured for real callbacks must not advertise API
-      # readiness while the callback trust root is absent. This catches stale
-      # local containers after .env changes before uploads become pending.
-      # A ClamAV worker cannot complete signed callbacks without the API trust
-      # root. Keep local acceptance fail-closed too, so a direct Compose start
-      # cannot look healthy and only fail later during an asset upload.
-      test: ["CMD-SHELL", "(test \"$${ASSET_SCANNER_MODE}\" != clamav_worker || test -n \"$${ASSET_SCAN_TRUSTED_PUBLIC_KEYS}\") && wget -qO- http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
+      # The API probe measures API/runtime readiness only. Scanner trust and
+      # heartbeat readiness are enforced by the API /readyz contract in
+      # controlled environments and by worker-scan's own process probe; they
+      # must not make the local API container appear unhealthy in fixture mode.
+      test: ["CMD-SHELL", "wget -qO- --header=\"Authorization: Bearer $${MERCHANT_API_TOKEN:-workspace-local-token}\" http://127.0.0.1:8787/readyz >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -309,7 +330,11 @@ services:
       OTEL_SERVICE_NAME: merchant-api-replica
     networks:
       default:
-        aliases: [api-replica]
+        # `extends` inherits the primary API's merchant-api alias unless the
+        # list is explicitly replaced. Keep the replica addressable only as
+        # api-replica; otherwise the merchant UI load-balances auth requests
+        # across two containers with different runtime state.
+        aliases: !override [api-replica]
 
   worker-sync:
     <<: *worker-common
@@ -334,8 +359,8 @@ services:
       MODEL_RELAY_API_KEY: ${MODEL_RELAY_API_KEY:-}
       MODEL_RELAY_IMAGE_COST_EVIDENCE: ${MODEL_RELAY_IMAGE_COST_EVIDENCE:-true}
       MODEL_RELAY_PRICING_DERIVATION_ENABLED: ${MODEL_RELAY_PRICING_DERIVATION_ENABLED:-true}
-      MODEL_RELAY_PRICING_GROUP: ${MODEL_RELAY_PRICING_GROUP:-SVIP}
-      MODEL_RELAY_IMAGE_PRICING_GROUP: ${MODEL_RELAY_IMAGE_PRICING_GROUP:-SVIP}
+      MODEL_RELAY_PRICING_GROUP: ${MODEL_RELAY_PRICING_GROUP:-VIP}
+      MODEL_RELAY_IMAGE_PRICING_GROUP: ${MODEL_RELAY_IMAGE_PRICING_GROUP:-VIP}
       AI_MODEL: ${AI_MODEL:-}
       AI_THINKING_MODE: ${AI_THINKING_MODE:-}
       AI_MAX_INPUT_TOKENS: ${AI_MAX_INPUT_TOKENS:-4000}

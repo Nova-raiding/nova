@@ -1,6 +1,12 @@
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS source
 WORKDIR /source
-COPY services/payment-gateway ./services/payment-gateway
+# Copy only the files that are part of the gateway release contract.  Do not
+# copy the whole service directory into an intermediate layer: an accidentally
+# added .env, PEM, or local fixture must never enter the build cache.
+COPY services/payment-gateway/Dockerfile ./services/payment-gateway/Dockerfile
+COPY services/payment-gateway/index.mjs ./services/payment-gateway/index.mjs
+COPY services/payment-gateway/alipay.mjs ./services/payment-gateway/alipay.mjs
+COPY services/payment-gateway/alipay.d.mts ./services/payment-gateway/alipay.d.mts
 COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs
 RUN node infra/scripts/generate-container-source-manifest.mjs generate gateway /source \
   /source/.release-source/gateway.manifest /source/.release-source/gateway.manifest.sha256

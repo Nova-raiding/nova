@@ -9,6 +9,8 @@ export interface HttpOperationPolicy {
   pathTemplate: string
   authentication: HttpAuthenticationKind
   mcpMethod?: McpMethod
+  /** Authenticated operations route with no merchant MCP equivalent. */
+  identityOnly?: boolean
 }
 
 const identity = (method: HttpMethod, pathTemplate: string, mcpMethod: McpMethod): HttpOperationPolicy => ({
@@ -17,6 +19,13 @@ const identity = (method: HttpMethod, pathTemplate: string, mcpMethod: McpMethod
   pathTemplate,
   authentication: 'identity',
   mcpMethod,
+})
+const identityOnly = (method: HttpMethod, pathTemplate: string): HttpOperationPolicy => ({
+  operation: `http:${method}:${pathTemplate}`,
+  method,
+  pathTemplate,
+  authentication: 'identity',
+  identityOnly: true,
 })
 const machine = (method: HttpMethod, pathTemplate: string, authentication: Exclude<HttpAuthenticationKind, 'identity'>): HttpOperationPolicy => ({
   operation: `http:${method}:${pathTemplate}`,
@@ -31,6 +40,9 @@ const machine = (method: HttpMethod, pathTemplate: string, authentication: Exclu
  * scope, workbench, audit and obligation semantics have one source of truth.
  */
 export const HTTP_OPERATION_POLICIES = [
+  identityOnly('GET', '/v1/ops/merchant-registration-applications'),
+  identityOnly('POST', '/v1/ops/merchant-registration-applications/review'),
+  identityOnly('POST', '/v1/ops/merchant-accounts/authorize'),
   machine('GET', '/v1/public/assets/{assetId}/display', 'signed_asset'),
   // Capability evidence is a redacted merchant-facing read model; platform
   // settings and credential mutation remain governed by platform scope.
@@ -186,7 +198,7 @@ export function assertHttpOperationPolicyCoverage() {
   const duplicates = operations.filter((operation, index) => operations.indexOf(operation) !== index)
   if (duplicates.length) throw new Error(`duplicate HTTP operation policies: ${[...new Set(duplicates)].join(', ')}`)
   for (const policy of HTTP_OPERATION_POLICIES) {
-    if (policy.authentication === 'identity' && !policy.mcpMethod) throw new Error(`identity HTTP operation lacks MCP policy reference: ${policy.operation}`)
+    if (policy.authentication === 'identity' && !policy.mcpMethod && !policy.identityOnly) throw new Error(`identity HTTP operation lacks MCP policy reference: ${policy.operation}`)
     if (policy.authentication !== 'identity' && policy.mcpMethod) throw new Error(`machine HTTP operation must not reference an identity MCP policy: ${policy.operation}`)
   }
   return { registered: operations.length, identity: HTTP_OPERATION_POLICIES.filter(policy => policy.authentication === 'identity').length }

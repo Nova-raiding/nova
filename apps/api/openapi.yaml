@@ -23,7 +23,70 @@ tags:
   - name: OAuth
   - name: MCP
   - name: Commercial
+  - name: Platform Governance
 paths:
+  /v1/ops/merchant-registration-applications:
+    get:
+      tags: [Platform Governance]
+      operationId: listMerchantRegistrationApplications
+      description: Lists merchant registration applications for platform operations.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/ops/merchant-registration-applications/review:
+    post:
+      tags: [Platform Governance]
+      operationId: reviewMerchantRegistrationApplication
+      description: Approves or rejects a pending merchant registration application.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, decision, reason]
+              properties:
+                login: { type: string }
+                decision: { type: string, enum: [approved, rejected] }
+                reason: { type: string, minLength: 4 }
+                workspace_ids: { type: array, items: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
+  /v1/ops/merchant-accounts/authorize:
+    post:
+      tags: [Platform Governance]
+      operationId: authorizeMerchantAccount
+      description: Binds a reviewed merchant account to a workspace member role and an approved commercial SKU. Pending payment creates an auditable pending order and invited member without granting paid capabilities.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, workspace_id, member_role, sku_code, amount_fen, payment_status, idempotency_key, reason]
+              properties:
+                login: { type: string }
+                workspace_id: { type: string }
+                member_role: { type: string, enum: [workspace_owner, merchant_admin, operator, support, finance] }
+                sku_code: { type: string }
+                amount_fen: { type: integer, minimum: 0 }
+                payment_status: { type: string, enum: [pending, verified] }
+                payment_reference: { type: string }
+                paid_at: { type: string, format: date-time }
+                reason: { type: string, minLength: 4 }
+                idempotency_key: { type: string, minLength: 8 }
+      responses:
+        '201': { $ref: '#/components/responses/Envelope' }
+        '400': { $ref: '#/components/responses/ErrorEnvelope' }
+        '401': { $ref: '#/components/responses/ErrorEnvelope' }
+        '403': { $ref: '#/components/responses/ErrorEnvelope' }
   /v1/commercial/access:
     get:
       tags: [Commercial]

@@ -594,6 +594,14 @@ describe('API application wiring', () => {
     expect(shouldHydrateKnowledgeForMethod('knowledge.rule.list', true, true)).toBe(false)
   })
 
+  it('uses the same durable product-knowledge hydration boundary for MCP and REST generation', () => {
+    const source = readFileSync(new URL('./server.ts', import.meta.url), 'utf8')
+    expect(source).toContain('async function hydrateDurableKnowledgeForGeneration(')
+    expect((source.match(/await hydrateDurableKnowledgeForGeneration\(task\)/gu) ?? [])).toHaveLength(3)
+    expect(source).toContain('service.setDurableKnowledgeDocuments(task.id')
+    expect(source).toContain('productId: product.id')
+  })
+
   it('releases settled storage quota only after confirmed object deletion', async () => {
     const releases: string[] = []
     const quota = { releaseAfterPhysicalDeletion: async (input: { workspaceId: string; reservationKey: string }) => { releases.push(`${input.workspaceId}:${input.reservationKey}`) } } as never

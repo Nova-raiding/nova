@@ -57,7 +57,7 @@ export function AccessDeniedResult({
       title={<h1 ref={headingRef} tabIndex={-1} className="ops-result-heading">无权访问“{domainLabel}”</h1>}
       subTitle={<span id="access-denied-context">{accessContext}{requestId ? ` 请求 ID：${requestId}。` : ""}</span>}
       extra={<Space className="access-denied-actions" aria-busy={refreshing || undefined}>
-        <Button type="primary" onClick={onBack}>返回运营总览</Button>
+        <Button type="primary" onClick={onBack}>返回用户中心</Button>
         {onViewPermissions ? <Button type="link" onClick={onViewPermissions}>查看我的权限</Button> : null}
         <Button
           onClick={onRefresh}

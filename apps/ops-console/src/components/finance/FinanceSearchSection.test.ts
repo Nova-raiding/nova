@@ -44,6 +44,8 @@ describe("FinanceSearchSection", () => {
           totalRecords: 0,
           rechargeOrderCny: 0,
           subscriptionOrderCny: 0,
+          subscriptionOrderWorkspaceCount: 0,
+          subscriptionOrderBySku: {},
           walletNetCny: 0,
           walletCreditCny: 0,
           walletDebitCny: 0,
@@ -63,12 +65,25 @@ describe("FinanceSearchSection", () => {
   it("does not present a local cost snapshot as Provider-reconciled", () => {
     const html = render(controller({ page: {
       records: [],
-      summary: { totalRecords: 0, rechargeOrderCny: 0, subscriptionOrderCny: 0, walletNetCny: 0, walletCreditCny: 0, walletDebitCny: 0, usageUnits: 0, providerCostCny: 1.25, customerChargeCny: 0, providerCostStatus: "verified", providerStatementStatus: "not_checked", byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } },
+      summary: { totalRecords: 0, rechargeOrderCny: 0, subscriptionOrderCny: 0, subscriptionOrderWorkspaceCount: 0, subscriptionOrderBySku: {}, walletNetCny: 0, walletCreditCny: 0, walletDebitCny: 0, usageUnits: 0, providerCostCny: 1.25, customerChargeCny: 0, providerCostStatus: "verified", providerStatementStatus: "not_checked", byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } },
       snapshotAt: "2026-08-29T00:00:00.000Z", scope: { role: "platform_ops", workspaceCount: 1 },
     } }));
     expect(html).toContain("本地成本快照");
     expect(html).toContain("本次检索未执行 Provider 对账");
     expect(html).toContain("不代表全局已与 Provider 平账");
+  });
+
+  it("does not show workspace-only Provider reconciliation status in the platform view", () => {
+    const html = renderToStaticMarkup(createElement(FinanceSearchSection, {
+      controller: controller({ page: {
+        records: [],
+        summary: { totalRecords: 0, rechargeOrderCny: 0, subscriptionOrderCny: 0, subscriptionOrderWorkspaceCount: 0, subscriptionOrderBySku: {}, walletNetCny: 0, walletCreditCny: 0, walletDebitCny: 0, usageUnits: 0, providerCostCny: 1.25, customerChargeCny: 0, providerCostStatus: "verified", providerStatementStatus: "not_checked", byKind: { recharge_order: 0, wallet_transaction: 0, subscription_order: 0, usage_entry: 0, model_usage: 0 } },
+        snapshotAt: "2026-08-29T00:00:00.000Z", scope: { role: "platform_ops", workspaceCount: 1 },
+      } }),
+      showProviderStatementStatus: false,
+    }));
+    expect(html).not.toContain("本次检索未执行 Provider 对账");
+    expect(html).not.toContain("不代表全局已与 Provider 平账");
   });
 
   it("announces loading without replacing existing records", () => {

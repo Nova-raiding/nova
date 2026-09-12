@@ -469,6 +469,8 @@ export interface KnowledgeGenerationContext {
   rules: Array<{ id: string; content: string; version: string; sourceReference: string; effectiveFrom?: string; effectiveTo?: string }>
   assets: Array<{ id: string; kind: 'brand' | 'customer'; name: string; content: string | Record<string, unknown>; revision: number; confirmed: false }>
   confirmedLearningSuggestions: Array<{ id: string; summary: string; proposedRule: { content: string; scope: string; version: string } }>
+  /** Approved durable knowledge documents bound to the product/SKU scope. */
+  documents?: Array<{ id: string; title: string; content: string; revision: number }>
   /** Current workspace brand guidance, captured with the generation snapshot. */
   brandPreference?: { id: string; preferences: Record<string, unknown>; version: string; revision: number }
   /** Structured competitor observations are reference-only and never product facts. */
@@ -1335,6 +1337,7 @@ export class MerchantService {
   readonly generationJobs = new Map<string, GenerationJob>()
   readonly imageGenerationJobs = new Map<string, ImageGenerationJob>()
   readonly publishJobs = new Map<string, PublishJob>()
+  private readonly durableKnowledgeDocuments = new Map<string, KnowledgeGenerationContext['documents']>()
   readonly platformAccounts = new Map<string, PlatformAccount>()
   readonly ruleCenter = new RuleCenter(undefined, defaultRuleCenterSeeds)
   readonly brandProfiles = new Map<string, BrandProfile>()
@@ -1528,7 +1531,13 @@ export class MerchantService {
       },
     } : undefined
     const providedKnowledgeContext = this.options.knowledgeContextProvider?.({ workspaceId: task.workspaceId, platform: task.platform, ...(product.category ? { category: product.category } : {}), ...(brand?.name ? { brand: brand.name } : {}), ...(product.storeName ? { store: product.storeName } : {}), ...(generationCompetitorReference ? { competitorReference: generationCompetitorReference } : {}), asOf: rulesCheckedAt })
-    const knowledgeContext = providedKnowledgeContext ?? (competitorReference ? { rules: [], assets: [], confirmedLearningSuggestions: [] } : undefined)
+    const durableDocuments = this.durableKnowledgeDocuments.get(task.id)
+    const knowledgeContext = (providedKnowledgeContext || durableDocuments?.length || competitorReference)
+      ? {
+          ...(providedKnowledgeContext ?? { rules: [], assets: [], confirmedLearningSuggestions: [] }),
+          ...(durableDocuments?.length ? { documents: structuredClone(durableDocuments) } : {}),
+        }
+      : undefined
     const categoryFallbackRuleVersions = product.category ? [] : this.ruleCenter.list().filter(rule => rule.scope === 'category' && rule.status === 'active').map(rule => rule.version)
     const snapshot: TaskInputSnapshot = deepFreeze(structuredClone({
       id: snapshotId,
@@ -1559,6 +1568,11 @@ export class MerchantService {
     task.inputSnapshotId = snapshot.id
     task.inputSnapshot = snapshot
     return snapshot
+  }
+
+  /** Attach approved persistent knowledge documents before freezing a task snapshot. */
+  setDurableKnowledgeDocuments(taskId: string, documents: NonNullable<KnowledgeGenerationContext['documents']>): void {
+    this.durableKnowledgeDocuments.set(taskId, structuredClone(documents))
   }
 
   private taskSnapshot(task: Task) {
@@ -2011,6 +2025,8 @@ export class MerchantService {
       if (!Number.isFinite(sku.price) || sku.price < 0) throw new DomainError('PRODUCT_IMPORT_SKU_PRICE_INVALID', `SKU ${index + 1} 价格必须是非负金额`, 400)
       if (!Number.isInteger(sku.stock) || sku.stock < 0) throw new DomainError('PRODUCT_IMPORT_SKU_STOCK_INVALID', `SKU ${index + 1} 库存必须是非负整数`, 400)
     }
+    const skuIds = (input.skus ?? []).map(sku => sku.id.trim())
+    if (new Set(skuIds).size !== skuIds.length) throw new DomainError('PRODUCT_IMPORT_DUPLICATE_SKU', '同一商品内的 SKU ID 必须唯一', 409)
     if ((input.sellingPoints?.length ?? 0) > 3) throw new DomainError('SELLING_POINTS_LIMIT_EXCEEDED', '核心卖点最多只能配置 3 条', 400)
     const sellingPoints = input.sellingPoints?.map((point, index) => {
       const text = point.text.trim()
@@ -2699,6 +2715,7 @@ export class MerchantService {
       ? [
           ...knowledgeContext.rules.map(rule => `规则[${rule.version}] ${rule.content}`),
           ...knowledgeContext.assets.map(asset => `资产[${asset.name}] ${typeof asset.content === 'string' ? asset.content : JSON.stringify(asset.content)}`),
+          ...(knowledgeContext.documents ?? []).map(document => `商品知识[${document.title}] ${document.content}`),
           ...knowledgeContext.confirmedLearningSuggestions.map(item => `学习建议 ${item.summary}；拟规则：${item.proposedRule.content}`),
         ].map(value => value.trim()).filter(Boolean).slice(0, 16)
       : []
@@ -4360,6 +4377,27 @@ export class MerchantService {
     this.assertTaskState(task, ['plan_confirmed'])
     this.assertBrandVisualGenerationReady(task.workspaceId, task.platform, task.region)
     assertProductionReleaseMetadata()
+    // The plan-confirmation snapshot may have been frozen before the API had
+    // a chance to query durable product documents.  Enrich that snapshot once
+    // (without mutating the frozen object) so a restart-safe generation still
+    // carries the approved knowledge rows selected immediately before queueing.
+    const durableDocuments = this.durableKnowledgeDocuments.get(task.id)
+    const existingSnapshot = this.taskInputSnapshots.get(task.inputSnapshotId)
+    if (durableDocuments?.length && existingSnapshot && !existingSnapshot.knowledgeContext?.documents?.length) {
+      const knowledgeContext = {
+        ...(existingSnapshot.knowledgeContext ?? { rules: [], assets: [], confirmedLearningSuggestions: [] }),
+        documents: structuredClone(durableDocuments),
+      }
+      const enrichedSnapshot: TaskInputSnapshot = deepFreeze(structuredClone({
+        ...existingSnapshot,
+        id: `${existingSnapshot.id}:knowledge`,
+        capturedAt: now(),
+        knowledgeContext,
+      }))
+      this.taskInputSnapshots.set(enrichedSnapshot.id, enrichedSnapshot)
+      task.inputSnapshotId = enrichedSnapshot.id
+      task.inputSnapshot = enrichedSnapshot
+    }
     const snapshot = this.taskSnapshot(task)
     const product = snapshot.product
     const generationInput: ContentGenerationInput = {

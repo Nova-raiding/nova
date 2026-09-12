@@ -7,7 +7,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page, type Route } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
-import react from "@vitejs/plugin-react";
 
 describe("AuthorizationGovernanceSection", () => {
   const source = readFileSync(new URL("./AuthorizationGovernanceSection.tsx", import.meta.url), "utf8");
@@ -37,8 +36,8 @@ describe("AuthorizationGovernanceSection", () => {
   });
 
   it("describes an exact workspace scope without implying cross-tenant access", () => {
-    expect(describeGrantScope(" ws_42 ")).toBe("此 JIT 仅覆盖工作区 ws_42，不会自动扩展到其他工作区。");
-    expect(describeGrantScope(" ")).toContain("填写目标工作区 ID");
+    expect(describeGrantScope(" ws_42 ")).toBe("此 JIT 仅覆盖商家主体 ws_42，不会自动扩展到其他商家主体。");
+    expect(describeGrantScope(" ")).toContain("填写商家主体 ID");
   });
 
   it("surfaces local JIT lifecycle states for desktop operators", () => {
@@ -55,7 +54,7 @@ describe("AuthorizationGovernanceSection", () => {
     expect(source).toContain('onRetry={() => roleForm.submit()}');
     expect(source).toContain('onRetry={() => grantForm.submit()}');
     expect(source).toContain('role="status"');
-    expect(source).toContain("不会自动扩展到其他工作区");
+    expect(source).toContain("不会自动扩展到其他商家主体");
     expect(source).toContain("DangerActionModal");
     expect(source).toContain("triggerRef={revocationTriggerRef}");
     expect(source).toContain("最近一次 JIT 已撤销");
@@ -63,15 +62,15 @@ describe("AuthorizationGovernanceSection", () => {
     expect(source).toContain('title: "状态"');
   });
 
-  it("keeps the revoke receipt and both governance tab selections outside remountable panels", () => {
+  it("keeps the revoke receipt and renders governance sections in one page", () => {
     const workspaceSource = readFileSync(new URL("./UsersGovernanceWorkspace.tsx", import.meta.url), "utf8");
     const modelSource = readFileSync(new URL("../../hooks/useOpsConsoleModel.ts", import.meta.url), "utf8");
     expect(source).toContain("model.recordJitRevocation");
-    expect(source).toContain("activeKey={model.authorizationGovernanceTab}");
-    expect(workspaceSource).toContain("activeKey={model.usersGovernanceSection}");
+    expect(source).not.toContain("<Tabs");
+    expect(workspaceSource).not.toContain("<Tabs");
+    expect(workspaceSource).toContain('className="ops-users-sections"');
+    expect(workspaceSource).not.toContain("用户与权限工作台");
     expect(modelSource).toContain("jitRevocationReceipt");
-    expect(modelSource).toContain("authorizationGovernanceTab");
-    expect(modelSource).toContain("usersGovernanceSection");
   });
 });
 
@@ -99,7 +98,7 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
         "import.meta.env.VITE_OPS_LOCAL_SESSION": JSON.stringify("false"),
       },
       server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false },
-      plugins: [react(), {
+      plugins: [{
         name: "isolated-jit-form-regression",
         resolveId(id) { if (id === entryPath) return `\0${entryPath}`; },
         load(id) {
@@ -154,7 +153,7 @@ describe("AuthorizationGovernanceSection browser form submission", () => {
   async function fillGrantForm(page: Page) {
     await page.goto(`${baseUrl}/__jit-submit-test`);
     await page.getByRole("textbox", { name: "JIT 目标身份 ID", exact: true }).fill(" subject-jit-ui ");
-    await page.getByRole("textbox", { name: "JIT 目标工作区 ID", exact: true }).fill(" ws_jit_ui_fixture ");
+    await page.getByRole("textbox", { name: "JIT 目标商家主体 ID", exact: true }).fill(" ws_jit_ui_fixture ");
     const loaded = page.waitForResponse(response => response.url().endsWith("/api/mcp") && response.request().postDataJSON().method === "ops.authorization.grants.list");
     await page.getByRole("button", { name: "读取有效 JIT", exact: true }).click();
     await loaded;

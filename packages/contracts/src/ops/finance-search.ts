@@ -25,6 +25,7 @@ export interface FinanceSearchQuery {
 export interface FinanceSearchRecord {
   id: string
   kind: FinanceRecordKind
+  enterpriseName?: string
   workspaceId: string
   status: string
   label: string
@@ -43,7 +44,18 @@ export interface FinanceSearchRecord {
 export interface FinanceSearchSummary {
   totalRecords: number
   rechargeOrderCny: number
+  fixtureRechargeOrderCny?: number
+  verifiedRechargeOrderCny?: number
   subscriptionOrderCny: number
+  subscriptionOrderWorkspaceCount: number
+  subscriptionOrderBySku: Record<string, { orderCount: number; workspaceCount: number }>
+  commercialOrderBySku?: Record<string, { orderCount: number; workspaceCount: number }>
+  pointPackOrderCny?: number
+  pointPackOrderCount?: number
+  pointPackOrderWorkspaceCount?: number
+  onboardingOrderCny?: number
+  onboardingOrderCount?: number
+  onboardingOrderWorkspaceCount?: number
   walletCreditCny: number
   walletDebitCny: number
   walletNetCny: number

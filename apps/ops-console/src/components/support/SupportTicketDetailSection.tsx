@@ -42,7 +42,7 @@ export function SupportTicketDetailSection({ model }: { model: SupportDomainMode
       aria-busy={model.mutating || undefined}
     >
       {model.error || actionError ? <div ref={actionErrorRef} tabIndex={-1} role="alert" aria-labelledby="support-detail-error-title">
-        <Alert type="error" showIcon message={<span id="support-detail-error-title">工单操作失败</span>}
+        <Alert type="error" showIcon title={<span id="support-detail-error-title">工单操作失败</span>}
           description={actionError || model.error}
           action={<Button style={{ minHeight: 44 }} onClick={() => setActionError("")}>关闭提示</Button>} />
       </div> : null}

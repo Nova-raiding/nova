@@ -1,4 +1,4 @@
-export const merchantEntryPoints = ['knowledge', 'products', 'images', 'assets'] as const
+export const merchantEntryPoints = ['knowledge', 'products', 'images', 'assets', 'rules'] as const
 
 export type MerchantEntryPoint = (typeof merchantEntryPoints)[number]
 
@@ -14,5 +14,6 @@ export function assetMatchesEntry(mimeType: string, entry: MerchantEntryPoint): 
   if (entry === 'assets') return true
   if (entry === 'images') return mimeType.startsWith('image/')
   if (entry === 'knowledge') return !mimeType.startsWith('image/')
+  if (entry === 'rules') return false
   return false
 }

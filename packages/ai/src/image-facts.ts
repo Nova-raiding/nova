@@ -1,7 +1,7 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageFactsExtractor {
@@ -72,9 +72,12 @@ export class OpenAICompatibleImageFactsExtractor implements ImageFactsExtractor 
       if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
       let response: Response
       try {
-        response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}/chat/completions`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey }, body: requestBody, signal: controller.signal, redirect: 'error' })
+        response = await withProviderRequestRetry(async () => {
+          const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}/chat/completions`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey }, body: requestBody, signal: controller.signal, redirect: 'error' })
+          assertProviderResponseAccepted(candidate, providerKey, 'OCR provider')
+          return candidate
+        }, { signal: controller.signal })
       } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'OCR provider request') }
-      assertProviderResponseAccepted(response, providerKey, 'OCR provider')
       let responseText: string
       try { responseText = await readBoundedResponseText(response, MAX_OCR_RELAY_RESPONSE_BYTES, 'OCR response') }
       catch (error) { rethrowProviderTransportFailure(error, providerKey, 'OCR provider response') }

@@ -148,6 +148,20 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
+  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('advertises pagination for catalog search and task history (%s)', async (bridgePath) => {
+    const child = spawn(process.execPath, [bridgePath], { cwd: process.cwd(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'ignore'] })
+    try {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+      const tools = (await nextLine(child.stdout)).result.tools
+      for (const name of ['catalog.search', 'task.history']) {
+        const schema = tools.find((tool: { name: string }) => tool.name === name).inputSchema
+        expect(schema.properties).toMatchObject({ limit: { type: 'string' }, offset: { type: 'string' } })
+      }
+    } finally {
+      child.kill()
+    }
+  })
+
   it('advertises the customer-reply association requirement before the request reaches the API', async () => {
     const listSchema = async (bridgePath: string) => {
       const child = spawn(process.execPath, [bridgePath], { cwd: process.cwd(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -1129,7 +1143,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {}, resources: {}, resourceTemplates: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260907102000' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {}, resources: {}, resourceTemplates: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260912184110' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -1144,6 +1158,8 @@ describe('Codex stdio MCP bridge', () => {
       expect(rechargeUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' })
       expect(rechargeUi.result.contents[0].text).toContain('商业访问与账单')
       expect(rechargeUi.result.contents[0].text).toContain('服务端授权的恢复入口')
+      expect(rechargeUi.result.contents[0].text).toContain('余额状态待确认时会保持“待确认”')
+      expect(rechargeUi.result.contents[0].text).not.toContain('balance_state=unknown')
       expect(rechargeUi.result.contents[0].text).not.toContain('立即充值')
       expect(rechargeUi.result.contents[0].text).toContain('call("billing.status")')
       expect(rechargeUi.result.contents[0].text).not.toMatch(/call\("billing\.(?:transactions|model-usage\.statement|export)"/u)
@@ -1339,6 +1355,7 @@ describe('Codex stdio MCP bridge', () => {
       expect(called.result.isError).toBe(false)
       expect(requests[0]!.headers['x-workspace-id']).toBe('ws_test')
       expect(requests[0]!.headers['x-ops-workbench']).toBe('workspace')
+      expect(requests[0]!.headers['mcp-protocol-version']).toBe('2025-06-18')
       expect(requests[0]!.body.method).toBe('workspace.metrics')
       expect(requests[0]!.body.params).toEqual({
         date_from: '2026-08-18T00:00:00+08:00',

@@ -1,11 +1,15 @@
 {
   "id": "merchant-marketing",
   "name": "merchant-marketing",
-  "version": "0.1.0+codex.20260907102000",
-  "description": "\u5546\u5bb6\u8425\u9500\u5185\u5bb9\u52a9\u624b\uff1a\u540c\u6b65\u5546\u54c1\u4e8b\u5b9e\u3001\u751f\u6210\u53ef\u5ba1\u9605\u5185\u5bb9\uff0c\u5e76\u5728\u660e\u786e\u786e\u8ba4\u540e\u63d0\u4ea4\u53d1\u5e03\u3002",
+  "version": "0.1.0+codex.20260912184110",
+  "description": "商家营销内容助手：同步商品事实、生成可审阅内容，并在明确确认后提交发布。",
   "author": {
-    "name": "Merchant Marketing Team"
+    "name": "Merchant Marketing Team",
+    "email": "j594662770@sina.com",
+    "url": "https://yxsona.com/"
   },
+  "homepage": "https://yxsona.com/",
+  "repository": "https://github.com/Nova-raiding/nova",
   "license": "UNLICENSED",
   "keywords": [
     "merchant",
@@ -19,11 +23,14 @@
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "\u5927\u9ea6",
-    "shortDescription": "\u50cf\u804a\u5929\u4e00\u6837\u5b8c\u6210\u9009\u54c1\u3001\u5185\u5bb9\u3001\u5546\u54c1\u89c6\u9891\u811a\u672c\u5206\u955c\u3001\u4e3b\u56fe\u548c\u53d1\u5e03\u524d\u68c0\u67e5",
-    "longDescription": "\u901a\u8fc7\u539f\u751f\u5f15\u5bfc\u5f0f\u5bf9\u8bdd\u8fde\u63a5\u5546\u54c1\u76ee\u5f55\u3001\u5185\u5bb9\u7248\u672c\u3001\u89c4\u5219\u68c0\u67e5\u548c\u786e\u8ba4\u540e\u53d1\u5e03\u6d41\u7a0b\uff1b\u4ec5\u5728\u591a\u9009\u3001\u5bf9\u6bd4\u548c\u6700\u7ec8\u786e\u8ba4\u65f6\u5c55\u793a\u5fc5\u8981\u7684\u7ed3\u6784\u5316\u754c\u9762\u3002\u5546\u5bb6\u4e1a\u52a1\u7531\u670d\u52a1\u7aef\u521b\u610f\u70b9\u8d26\u672c\u7edf\u4e00\u51c6\u5165\uff1a\u4f59\u989d\u4e3a\u96f6\u3001\u672a\u77e5\u6216\u4e0d\u8db3\u65f6\u53ea\u663e\u793a\u7cbe\u786e\u6062\u590d\u5165\u53e3\uff0c\u65e7\u94b1\u5305\u548c\u4efb\u52a1\u989d\u5ea6\u4e0d\u53c2\u4e0e\u89e3\u9501\u3002\u771f\u5b9e\u5e73\u53f0\u5199\u5165\u59cb\u7ec8\u9700\u8981\u670d\u52a1\u7aef\u914d\u7f6e\u3001\u6743\u9650\u6821\u9a8c\u548c\u660e\u786e\u786e\u8ba4\u3002",
+    "displayName": "大麦",
+    "shortDescription": "像聊天一样完成选品、内容、商品视频脚本分镜、主图和发布前检查",
+    "longDescription": "通过原生引导式对话连接商品目录、内容版本、规则检查和确认后发布流程；仅在多选、对比和最终确认时展示必要的结构化界面。商家业务由服务端创意点账本统一准入：余额为零、未知或不足时只显示精确恢复入口，旧钱包和任务额度不参与解锁。真实平台写入始终需要服务端配置、权限校验和明确确认。",
     "developerName": "Merchant Marketing Team",
     "category": "Productivity",
+    "websiteURL": "https://yxsona.com/",
+    "privacyPolicyURL": "https://yxsona.com/privacy/",
+    "termsOfServiceURL": "https://yxsona.com/terms/",
     "capabilities": [
       "Catalog",
       "Content",
@@ -32,9 +39,9 @@
       "Creative Points Access"
     ],
     "defaultPrompt": [
-      "\u5982\u679c\u6211\u5df2\u4e0a\u4f20\u56fe\u7247\u5e76\u8981\u6c42\u751f\u6210\u6216\u4f18\u5316\uff0c\u76f4\u63a5\u4f7f\u7528\u4e0a\u4f20\u7d20\u6750\u751f\u6210\u672a\u7ed1\u5b9a\u5019\u9009\u56fe\uff0c\u4e0d\u8981\u5148\u8bfb\u53d6\u5e97\u94fa\u6216\u8981\u6c42\u6388\u6743\uff1b\u53ea\u6709\u540c\u6b65\u3001\u7ed1\u5b9a\u5546\u54c1\u6216\u53d1\u5e03\u65f6\u624d\u8fdb\u5165\u5e97\u94fa\u6d41\u7a0b",
-      "\u67e5\u770b\u5f53\u524d\u5de5\u4f5c\u533a\u7684\u521b\u610f\u70b9\u4f59\u989d\u548c\u51c6\u5165\u72b6\u6001\uff1b\u4f59\u989d\u4e3a\u96f6\u6216\u672a\u77e5\u65f6\u53ea\u663e\u793a\u670d\u52a1\u7aef\u6388\u6743\u7684\u6062\u590d\u5165\u53e3",
-      "\u5f00\u59cb\u5546\u54c1\u8425\u9500\u4e0e\u89c6\u9891\u7b56\u5212\uff1a\u5148\u8ba9\u6211\u9009\u62e9\u4e00\u4e2a\u5e73\u53f0\u548c\u5546\u54c1\uff0c\u7136\u540e\u6bcf\u4e00\u6b65\u90fd\u7b49\u6211\u786e\u8ba4"
+      "如果我已上传图片并要求生成或优化，直接使用上传素材生成未绑定候选图，不要先读取店铺或要求授权；只有同步、绑定商品或发布时才进入店铺流程",
+      "查看当前工作区的创意点余额和准入状态；余额为零或未知时只显示服务端授权的恢复入口",
+      "开始商品营销与视频策划：先让我选择一个平台和商品，然后每一步都等我确认"
     ],
     "brandColor": "#2563EB"
   }

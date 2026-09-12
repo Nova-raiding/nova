@@ -70,7 +70,7 @@ describe('MCP surface coverage', () => {
     const installedReadme = readFileSync(new URL('../.codex-marketplace/plugins/merchant-marketing/README.md', import.meta.url), 'utf8')
 
     expect(installedReadme).toBe(pluginReadme)
-    expect(merchantMethodCount).toBe(144)
+    expect(merchantMethodCount).toBe(146)
     expect(rootReadme).toContain(`商家插件当前实测为 ${merchantMethodCount} 个 MCP 工具`)
     expect(status).toContain(`bridge 当前实测为 ${merchantMethodCount} 个工具`)
     expect(pluginReadme).toContain(`当前 \`tools/list\` 实测为 ${merchantMethodCount} 个 MCP 工具`)

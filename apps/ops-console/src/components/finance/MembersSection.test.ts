@@ -21,7 +21,7 @@ describe("MembersSection", () => {
   it("renders an explicitly labelled, reason-required governance form", () => {
     const model = { opsSession: { actor_id: "owner_1", workspace_id: "ws_a", roles: ["workspace_owner"], workspace_granted: true, assignable_roles: ["merchant_admin", "operator", "support", "finance", "workspace_owner"] }, authorization: authorization(["workspace.member.manage", "workspace.status.update"]) } as OpsConsoleModel;
     const html = renderToStaticMarkup(createElement(MembersSection, { model, client }));
-    expect(html).toContain("邀请工作区成员");
+    expect(html).toContain("邀请企业主体成员");
     expect(html).toContain("邀请原因");
     expect(html).toContain("用于权限审计");
     expect(html).toContain("邀请成员");
@@ -30,8 +30,8 @@ describe("MembersSection", () => {
   it("keeps member governance discoverable for platform operations", () => {
     const model = { opsSession: { actor_id: "ops_1", workspace_id: "ws_a", roles: ["platform_ops"], workspace_granted: true, assignable_roles: ["merchant_admin", "operator", "support", "finance", "workspace_owner", "platform_ops"] }, authorization: authorization(["workspace.member.manage"]) } as OpsConsoleModel;
     const html = renderToStaticMarkup(createElement(MembersSection, { model, client }));
-    expect(html).toContain("当前租户成员");
-    expect(html).toContain("邀请工作区成员");
+    expect(html).toContain("当前企业主体成员");
+    expect(html).toContain("邀请企业主体成员");
     expect(html).toContain("邀请成员");
   });
 

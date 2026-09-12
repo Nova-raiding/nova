@@ -21,7 +21,7 @@ function contrast(foreground: string, background: string) {
 
 describe("ops RBAC desktop UI acceptance", () => {
   it("keeps the desktop action targets keyboard-sized and visibly focused", () => {
-    expect(styles).toMatch(/\.ops-connection-toggle, \.ops-refresh-button, \.ops-jit-status \.ant-btn\s*\{[^}]*min-height:\s*44px/s);
+    expect(styles).toMatch(/\.ops-account-trigger, \.ops-refresh-button, \.ops-jit-status \.ant-btn\s*\{[^}]*min-height:\s*44px/s);
     expect(styles).toMatch(/\.ops-role-summary-trigger\s*\{[^}]*min-height:\s*44px/s);
     expect(styles).toContain(":where(.ant-btn, .ant-input");
     expect(styles).toContain("outline: var(--ops-focus-width) solid var(--ops-focus-color)");
@@ -34,10 +34,13 @@ describe("ops RBAC desktop UI acceptance", () => {
   });
 
   it("exposes keyboard, async feedback, and recovery semantics", () => {
-    expect(header).toContain('aria-expanded={connectionOpen}');
-    expect(header).toContain('aria-controls="ops-connection-fields"');
-    expect(header).toContain('role="alert"');
-    expect(header).toContain('aria-invalid');
+    expect(header).toContain('className="ops-platform-login-trigger"');
+    expect(header).toContain('className="ops-account-trigger"');
+    expect(header).toContain("平台运营账号登录");
+    expect(header).toContain("退出登录");
+    expect(header).not.toContain("连接诊断");
+    expect(header).not.toContain("<Drawer");
+    expect(header).toContain("<Alert");
     expect(roleScope).toContain('aria-expanded={rolesOpen}');
     expect(roleScope).toContain('aria-controls={rolesPanelId}');
     expect(roleScope).toContain('aria-live="polite"');

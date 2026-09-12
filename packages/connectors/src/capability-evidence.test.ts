@@ -35,4 +35,22 @@ describe('platform capability evidence', () => {
     expect(result.reasons).toContain('MAPPING_EVIDENCE_MISSING')
     expect(result.reasons).toContain('CAPABILITY_EVIDENCE_UNATTRIBUTED')
   })
+
+  it('does not report media readiness when the upload implementation is absent', () => {
+    const capabilities = ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke', 'media_upload'] as const
+    const config: HttpConnectorConfig = {
+      clientId: 'jd-client',
+      oauth: { authorizeUrl: 'https://jd.test/a', tokenUrl: 'https://jd.test/t' },
+      api: { baseUrl: 'https://jd.test/api', syncPath: '/sync', createPath: '/create', updatePath: '/update', queryPath: '/query' },
+      signer: { kind: 'platform' as const, sign: async () => ({}) },
+      mapProducts: (() => []) as HttpConnectorConfig['mapProducts'],
+      mapWriteReceipt: (() => undefined) as unknown as HttpConnectorConfig['mapWriteReceipt'],
+      mapWriteStatus: (() => undefined) as unknown as HttpConnectorConfig['mapWriteStatus'],
+      mappingEvidence: { version: 'v1', evidenceRef: 'artifact://mapping', verifiedBy: 'qa', verifiedAt: '2026-08-22T00:00:00Z' },
+      capabilityEvidence: capabilities.map(capability => ({ platform: 'jd' as const, capability, state: 'test_e2e' as const, evidenceRef: 'artifact://capability', verifiedBy: 'qa', verifiedAt: '2026-08-22T00:00:00Z' })),
+    }
+    const result = validateConnectorReadiness('jd', config)
+    expect(result.ready).toBe(false)
+    expect(result.reasons).toEqual(expect.arrayContaining(['MEDIA_UPLOAD_PATH_MISSING', 'MEDIA_UPLOAD_MAPPING_MISSING', 'MEDIA_UPLOAD_EVIDENCE_MISSING']))
+  })
 })

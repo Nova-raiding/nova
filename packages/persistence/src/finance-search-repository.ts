@@ -30,7 +30,11 @@ export class FinanceRecordVersionConflictError extends Error {
   constructor() { super('finance record changed after the search result was loaded'); this.name = 'FinanceRecordVersionConflictError' }
 }
 
-const MAX_PLATFORM_WORKSPACES = 1_000
+// The platform overview is a cross-tenant operating surface. Keep a bounded
+// upper limit, but do not make a healthy tenant directory of 1,222 workspaces
+// look like a finance permission failure merely because the overview asks for
+// an aggregate summary without a workspace filter.
+const MAX_PLATFORM_WORKSPACES = 10_000
 const SEARCH_CONCURRENCY = 8
 const kindCounts = (): Record<FinanceRecordKind, number> => ({
   recharge_order: 0,
@@ -43,7 +47,18 @@ const kindCounts = (): Record<FinanceRecordKind, number> => ({
 const emptySummary = (): FinanceSearchSummary => ({
   totalRecords: 0,
   rechargeOrderCny: 0,
+  fixtureRechargeOrderCny: 0,
+  verifiedRechargeOrderCny: 0,
   subscriptionOrderCny: 0,
+  subscriptionOrderWorkspaceCount: 0,
+  subscriptionOrderBySku: {},
+  commercialOrderBySku: {},
+  pointPackOrderCny: 0,
+  pointPackOrderCount: 0,
+  pointPackOrderWorkspaceCount: 0,
+  onboardingOrderCny: 0,
+  onboardingOrderCount: 0,
+  onboardingOrderWorkspaceCount: 0,
   walletCreditCny: 0,
   walletDebitCny: 0,
   walletNetCny: 0,
@@ -57,6 +72,7 @@ type FinanceRow = {
   record_id: string
   kind: FinanceRecordKind
   sort_rank: number | string
+  enterprise_name: string | null
   workspace_id: string
   status: string
   label: string
@@ -76,6 +92,8 @@ type FinanceRow = {
 type SummaryRow = {
   total_records: number | string
   recharge_order_cny: number | string
+  fixture_recharge_order_cny: number | string
+  verified_recharge_order_cny: number | string
   subscription_order_cny: number | string
   wallet_credit_cny: number | string
   wallet_debit_cny: number | string
@@ -85,6 +103,15 @@ type SummaryRow = {
   recharge_order_count: number | string
   wallet_transaction_count: number | string
   subscription_order_count: number | string
+  subscription_order_workspace_count: number | string
+  subscription_order_by_sku: unknown
+  commercial_order_by_sku: unknown
+  point_pack_order_cny: number | string
+  point_pack_order_count: number | string
+  point_pack_order_workspace_count: number | string
+  onboarding_order_cny: number | string
+  onboarding_order_count: number | string
+  onboarding_order_workspace_count: number | string
   usage_entry_count: number | string
   model_usage_count: number | string
   missing_cost_evidence_count: number | string
@@ -108,6 +135,8 @@ const FINANCE_RECORDS_CTE = `WITH finance_records AS (
          NULL::bigint AS units, created_at AS occurred_at, updated_at,
          '支付渠道'::text AS attribute_name, channel AS attribute_value,
          jsonb_strip_nulls(jsonb_build_object('channel', channel, 'payment_mode', payment_mode, 'created_by_actor_id', created_by_actor_id)) AS safe_attributes,
+         NULL::text AS subscription_sku_code,
+         NULL::text AS commercial_kind,
          concat_ws(' ', id, workspace_id, channel, state, created_by_actor_id) AS search_text
     FROM billing_orders WHERE workspace_id = $1
   UNION ALL
@@ -117,6 +146,8 @@ const FINANCE_RECORDS_CTE = `WITH finance_records AS (
          NULL::numeric, NULL::numeric, NULL::bigint, created_at, created_at,
          '流水类型', type,
          jsonb_strip_nulls(jsonb_build_object('transaction_type', type, 'actor_id', actor_id, 'order_id', order_id)) AS safe_attributes,
+         NULL::text,
+         NULL::text,
          concat_ws(' ', id, workspace_id, type, order_id, actor_id)
     FROM billing_transactions WHERE workspace_id = $1
   UNION ALL
@@ -124,14 +155,37 @@ const FINANCE_RECORDS_CTE = `WITH finance_records AS (
          payment_amount_cny, NULL::text, NULL::numeric, NULL::numeric, NULL::bigint,
          created_at, COALESCE(paid_at, created_at), '套餐', plan_code,
          jsonb_strip_nulls(jsonb_build_object('plan_code', plan_code, 'billing_cycle', billing_cycle, 'payment_provider', payment_provider, 'created_by_actor_id', created_by_actor_id)) AS safe_attributes,
+         plan_code,
+         'monthly'::text,
          concat_ws(' ', id::text, workspace_id, order_no, plan_code, plan_name, status, payment_provider, created_by_actor_id)
     FROM workspace_subscription_orders WHERE workspace_id = $1
+  UNION ALL
+  SELECT o.id::text, 'subscription_order', 30, o.workspace_id,
+         CASE WHEN o.status = 'paid' AND EXISTS (
+           SELECT 1 FROM commercial_payment_events_v2 p
+            WHERE p.order_id = o.id AND p.workspace_id = o.workspace_id AND p.verified = true
+         ) THEN 'paid' ELSE o.status END,
+         CASE WHEN s.kind = 'point_pack' THEN '创意点包订单'
+              WHEN s.kind = 'onboarding' THEN '开通服务订单'
+              ELSE '商业化月度订单' END,
+         COALESCE(o.provider_order_id, o.id::text), o.amount_fen::numeric / 100,
+         NULL::text, NULL::numeric, NULL::numeric, NULL::bigint,
+         o.created_at, COALESCE(o.paid_at, o.created_at), 'SKU'::text, s.code,
+         jsonb_strip_nulls(jsonb_build_object('sku_code', s.code, 'sku_version_id', o.sku_version_id, 'payment_provider', o.payment_provider, 'created_by_actor_id', o.created_by_actor_id)) AS safe_attributes,
+         s.code,
+         s.kind,
+         concat_ws(' ', o.id::text, o.workspace_id, s.code, o.status, o.payment_provider, o.created_by_actor_id)
+    FROM commercial_orders_v2 o
+    JOIN commercial_catalog_skus s ON s.id = o.sku_id
+   WHERE o.workspace_id = $1
   UNION ALL
   SELECT id::text, 'usage_entry', 20, workspace_id,
          CASE WHEN refunded THEN 'refunded' ELSE 'consumed' END, '任务额度流水', task_id,
          NULL::numeric, NULL::text, NULL::numeric, NULL::numeric, units,
          created_at, COALESCE(refunded_at, created_at), '退款状态', refunded::text,
          jsonb_strip_nulls(jsonb_build_object('task_id', task_id, 'units', units, 'refunded', refunded)) AS safe_attributes,
+         NULL::text,
+         NULL::text,
          concat_ws(' ', id::text, workspace_id, task_id, CASE WHEN refunded THEN 'refunded' ELSE 'consumed' END)
     FROM workspace_usage_ledger WHERE workspace_id = $1
   UNION ALL
@@ -139,8 +193,16 @@ const FINANCE_RECORDS_CTE = `WITH finance_records AS (
          NULL::numeric, NULL::text, cost_cny, customer_charge_cny, total_tokens,
          observed_at, COALESCE(resolved_at, observed_at), '模型', concat_ws(' / ', modality, model),
          jsonb_strip_nulls(jsonb_build_object('action_id', action_id, 'modality', modality, 'model', model, 'total_tokens', total_tokens, 'settlement_status', settlement_status, 'budget_run_key', budget_run_key)) AS safe_attributes,
+         NULL::text,
+         NULL::text,
          concat_ws(' ', id, workspace_id, action_id, modality, model, settlement_status)
     FROM model_usage_ledger WHERE workspace_id = $1
+), finance_records_with_enterprise AS (
+  SELECT finance_records.*,
+         COALESCE(NULLIF(btrim(e.name), ''), '未命名企业主体') AS enterprise_name
+    FROM finance_records
+    JOIN workspaces w ON w.id = finance_records.workspace_id
+    JOIN enterprises e ON e.id = w.enterprise_id
 )`
 
 const FILTER_SQL = `occurred_at <= $2::timestamptz
@@ -183,6 +245,7 @@ function mapRecord(row: FinanceRow): FinanceSearchRecord {
   return {
     id: row.record_id,
     kind: row.kind,
+    ...(row.enterprise_name?.trim() ? { enterpriseName: row.enterprise_name.trim() } : {}),
     workspaceId: row.workspace_id,
     status: row.status,
     label: row.label,
@@ -256,7 +319,7 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
       const result = await client.query<{ id: string }>(requestedSet
         ? 'SELECT id FROM workspaces WHERE id = ANY($1::text[]) ORDER BY id LIMIT $2'
         : 'SELECT id FROM workspaces ORDER BY id LIMIT $1', values)
-      if (!requestedSet && result.rows.length > MAX_PLATFORM_WORKSPACES) throw new FinanceSearchAccessError('platform finance search requires a workspace filter above 1000 workspaces')
+      if (!requestedSet && result.rows.length > MAX_PLATFORM_WORKSPACES) throw new FinanceSearchAccessError(`platform finance search requires a workspace filter above ${MAX_PLATFORM_WORKSPACES} workspaces`)
       return result.rows.map(row => row.id)
     })
   }
@@ -278,15 +341,42 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
       values.push(query.limit + 1)
       const limitIndex = values.length
       const rows = await client.query<FinanceRow>(`${FINANCE_RECORDS_CTE}
-        SELECT record_id, kind, sort_rank, workspace_id, status, label, reference, amount_cny, direction,
+        SELECT record_id, kind, sort_rank, enterprise_name, workspace_id, status, label, reference, amount_cny, direction,
                provider_cost_cny, customer_charge_cny, units, occurred_at, updated_at, attribute_name, attribute_value, safe_attributes
-          FROM finance_records WHERE ${FILTER_SQL} ${cursorClause}
+          FROM finance_records_with_enterprise WHERE ${FILTER_SQL} ${cursorClause}
          ORDER BY occurred_at DESC, sort_rank DESC, workspace_id DESC, record_id DESC LIMIT $${limitIndex}`, values)
       if (!includeSummary) return { rows: rows.rows, summary: undefined }
       const summary = await client.query<SummaryRow>(`${FINANCE_RECORDS_CTE}
         SELECT count(*) AS total_records,
-          COALESCE(sum(amount_cny) FILTER (WHERE kind='recharge_order'),0) AS recharge_order_cny,
-          COALESCE(sum(amount_cny) FILTER (WHERE kind='subscription_order'),0) AS subscription_order_cny,
+          COALESCE(sum(amount_cny) FILTER (WHERE kind='recharge_order' AND status='paid'),0) AS recharge_order_cny,
+          COALESCE(sum(amount_cny) FILTER (WHERE kind='recharge_order' AND status='paid' AND safe_attributes->>'payment_mode' = 'fixture'),0) AS fixture_recharge_order_cny,
+          COALESCE(sum(amount_cny) FILTER (WHERE kind='recharge_order' AND status='paid' AND COALESCE(safe_attributes->>'payment_mode', '') <> 'fixture'),0) AS verified_recharge_order_cny,
+          COALESCE(sum(amount_cny) FILTER (WHERE kind='subscription_order' AND commercial_kind='monthly' AND status='paid'),0) AS subscription_order_cny,
+          count(DISTINCT workspace_id) FILTER (WHERE kind='subscription_order' AND commercial_kind='monthly' AND status='paid') AS subscription_order_workspace_count,
+          COALESCE((
+            SELECT jsonb_object_agg(by_sku.subscription_sku_code, jsonb_build_object('orderCount', by_sku.order_count, 'workspaceCount', by_sku.workspace_count))
+              FROM (
+                SELECT subscription_sku_code, count(*) AS order_count, count(DISTINCT workspace_id) AS workspace_count
+                  FROM finance_records_with_enterprise
+                 WHERE ${FILTER_SQL} AND kind='subscription_order' AND commercial_kind='monthly' AND status='paid' AND subscription_sku_code IS NOT NULL
+                 GROUP BY subscription_sku_code
+              ) by_sku
+          ), '{}'::jsonb) AS subscription_order_by_sku,
+          COALESCE((
+            SELECT jsonb_object_agg(by_sku.subscription_sku_code, jsonb_build_object('orderCount', by_sku.order_count, 'workspaceCount', by_sku.workspace_count))
+              FROM (
+                SELECT subscription_sku_code, count(*) AS order_count, count(DISTINCT workspace_id) AS workspace_count
+                  FROM finance_records_with_enterprise
+                 WHERE ${FILTER_SQL} AND kind='subscription_order' AND status='paid' AND commercial_kind IN ('monthly', 'point_pack', 'onboarding') AND subscription_sku_code IS NOT NULL
+                 GROUP BY subscription_sku_code
+              ) by_sku
+          ), '{}'::jsonb) AS commercial_order_by_sku,
+          COALESCE(sum(amount_cny) FILTER (WHERE kind='subscription_order' AND commercial_kind='point_pack' AND status='paid'),0) AS point_pack_order_cny,
+          count(*) FILTER (WHERE kind='subscription_order' AND commercial_kind='point_pack' AND status='paid') AS point_pack_order_count,
+          count(DISTINCT workspace_id) FILTER (WHERE kind='subscription_order' AND commercial_kind='point_pack' AND status='paid') AS point_pack_order_workspace_count,
+          COALESCE(sum(amount_cny) FILTER (WHERE kind='subscription_order' AND commercial_kind='onboarding' AND status='paid'),0) AS onboarding_order_cny,
+          count(*) FILTER (WHERE kind='subscription_order' AND commercial_kind='onboarding' AND status='paid') AS onboarding_order_count,
+          count(DISTINCT workspace_id) FILTER (WHERE kind='subscription_order' AND commercial_kind='onboarding' AND status='paid') AS onboarding_order_workspace_count,
           COALESCE(sum(amount_cny) FILTER (WHERE kind='wallet_transaction' AND direction='credit'),0) AS wallet_credit_cny,
           COALESCE(sum(amount_cny) FILTER (WHERE kind='wallet_transaction' AND direction='debit'),0) AS wallet_debit_cny,
           COALESCE(sum(provider_cost_cny),0) AS provider_cost_cny,
@@ -298,7 +388,7 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
           count(*) FILTER (WHERE kind='subscription_order') AS subscription_order_count,
           count(*) FILTER (WHERE kind='usage_entry') AS usage_entry_count,
           count(*) FILTER (WHERE kind='model_usage') AS model_usage_count
-        FROM finance_records WHERE ${FILTER_SQL}`, [workspaceId, ...common])
+        FROM finance_records_with_enterprise WHERE ${FILTER_SQL}`, [workspaceId, ...common])
       return { rows: rows.rows, summary: summary.rows[0] }
     }))
     const merged = perWorkspace.flatMap(value => value.rows).sort(compareRows)
@@ -310,7 +400,36 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
       if (!row) return total
       total.totalRecords += number(row.total_records)
       total.rechargeOrderCny += number(row.recharge_order_cny)
+      total.fixtureRechargeOrderCny = (total.fixtureRechargeOrderCny ?? 0) + number(row.fixture_recharge_order_cny)
+      total.verifiedRechargeOrderCny = (total.verifiedRechargeOrderCny ?? 0) + number(row.verified_recharge_order_cny)
       total.subscriptionOrderCny += number(row.subscription_order_cny)
+      total.subscriptionOrderWorkspaceCount += number(row.subscription_order_workspace_count)
+      if (row.subscription_order_by_sku && typeof row.subscription_order_by_sku === 'object' && !Array.isArray(row.subscription_order_by_sku)) {
+        for (const [sku, value] of Object.entries(row.subscription_order_by_sku as Record<string, unknown>)) {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+          const item = value as { orderCount?: unknown; workspaceCount?: unknown }
+          const current = total.subscriptionOrderBySku[sku] ?? { orderCount: 0, workspaceCount: 0 }
+          current.orderCount += number(item.orderCount as number | string | null | undefined)
+          current.workspaceCount += number(item.workspaceCount as number | string | null | undefined)
+          total.subscriptionOrderBySku[sku] = current
+        }
+      }
+      if (row.commercial_order_by_sku && typeof row.commercial_order_by_sku === 'object' && !Array.isArray(row.commercial_order_by_sku)) {
+        for (const [sku, value] of Object.entries(row.commercial_order_by_sku as Record<string, unknown>)) {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+          const item = value as { orderCount?: unknown; workspaceCount?: unknown }
+          const current = total.commercialOrderBySku?.[sku] ?? { orderCount: 0, workspaceCount: 0 }
+          current.orderCount += number(item.orderCount as number | string | null | undefined)
+          current.workspaceCount += number(item.workspaceCount as number | string | null | undefined)
+          total.commercialOrderBySku = { ...(total.commercialOrderBySku ?? {}), [sku]: current }
+        }
+      }
+      total.pointPackOrderCny = (total.pointPackOrderCny ?? 0) + number(row.point_pack_order_cny)
+      total.pointPackOrderCount = (total.pointPackOrderCount ?? 0) + number(row.point_pack_order_count)
+      total.pointPackOrderWorkspaceCount = (total.pointPackOrderWorkspaceCount ?? 0) + number(row.point_pack_order_workspace_count)
+      total.onboardingOrderCny = (total.onboardingOrderCny ?? 0) + number(row.onboarding_order_cny)
+      total.onboardingOrderCount = (total.onboardingOrderCount ?? 0) + number(row.onboarding_order_count)
+      total.onboardingOrderWorkspaceCount = (total.onboardingOrderWorkspaceCount ?? 0) + number(row.onboarding_order_workspace_count)
       total.walletCreditCny += number(row.wallet_credit_cny)
       total.walletDebitCny += number(row.wallet_debit_cny)
       total.providerCostCny = (total.providerCostCny ?? 0) + number(row.provider_cost_cny)
@@ -347,9 +466,9 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
     const snapshotAt = input.snapshotAt ?? this.now().toISOString()
     return withWorkspaceTransaction(this.pool, input.workspaceId, async client => {
       const result = await client.query<FinanceRow>(`${FINANCE_RECORDS_CTE}
-        SELECT record_id, kind, sort_rank, workspace_id, status, label, reference, amount_cny, direction,
+        SELECT record_id, kind, sort_rank, enterprise_name, workspace_id, status, label, reference, amount_cny, direction,
                provider_cost_cny, customer_charge_cny, units, occurred_at, updated_at, attribute_name, attribute_value, safe_attributes
-          FROM finance_records
+          FROM finance_records_with_enterprise
          WHERE kind=$3 AND record_id=$4 AND occurred_at <= $2::timestamptz LIMIT 1`, [input.workspaceId, snapshotAt, input.kind, input.id])
       const row = result.rows[0]
       if (!row) return undefined
@@ -383,7 +502,11 @@ export class PostgresFinanceSearchRepository implements FinanceSearchRepository 
 function totalMoney(summary: FinanceSearchSummary) {
   const round = (value: number) => Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000
   summary.rechargeOrderCny = round(summary.rechargeOrderCny)
+  summary.fixtureRechargeOrderCny = round(summary.fixtureRechargeOrderCny ?? 0)
+  summary.verifiedRechargeOrderCny = round(summary.verifiedRechargeOrderCny ?? 0)
   summary.subscriptionOrderCny = round(summary.subscriptionOrderCny)
+  summary.pointPackOrderCny = round(summary.pointPackOrderCny ?? 0)
+  summary.onboardingOrderCny = round(summary.onboardingOrderCny ?? 0)
   summary.walletCreditCny = round(summary.walletCreditCny)
   summary.walletDebitCny = round(summary.walletDebitCny)
   summary.walletNetCny = round(summary.walletCreditCny - summary.walletDebitCny)

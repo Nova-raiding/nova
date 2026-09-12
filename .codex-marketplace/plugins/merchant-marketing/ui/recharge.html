@@ -414,7 +414,7 @@
         <div class="balance-row">
           <div>
             <div class="balance-label">创意点准入状态</div>
-            <div class="balance"><span id="balance">未知</span></div>
+            <div class="balance"><span id="balance">待确认</span></div>
           </div>
           <div class="settlement" id="settlement">
             创意点是业务准入的唯一余额事实；旧钱包仅用于历史对账。
@@ -451,6 +451,16 @@
           data-tab="orders"
         >
           订单</button
+        ><button
+          class="tab"
+          id="tab-catalog"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-catalog"
+          tabindex="-1"
+          data-tab="catalog"
+        >
+          购买套餐
         </button>
       </nav>
       <div class="error" id="error" role="alert"></div>
@@ -466,17 +476,17 @@
             <p id="overviewText">正在读取账务状态…</p>
             <div class="metrics">
               <div class="metric">
-                <strong id="reservedPoints">未知</strong><span>账务状态</span>
+                <strong id="reservedPoints">待确认</strong><span>账务状态</span>
               </div>
               <div class="metric">
-                <strong id="accessRevision">未知</strong><span>准入修订</span>
+                <strong id="accessRevision">待确认</strong><span>准入修订</span>
               </div>
               <div class="metric">
                 <strong id="accessState">阻断</strong><span>业务准入</span>
               </div>
             </div>
             <div class="notice">
-              `balance_state=unknown` 会保持“未知”，绝不显示为 0。人民币钱包、历史任务额度和 add-on 不会解锁任何业务功能。
+              余额状态待确认时会保持“待确认”，绝不显示为 0。人民币钱包、历史任务额度和 add-on 不会解锁任何业务功能。
             </div>
           </article>
           <article class="card">
@@ -502,6 +512,19 @@
           <p>套餐、点包和旧充值订单只作为真实账务证据；历史未归属订单不会被猜测为本人订单。</p>
         </div>
         <div class="list" id="ordersList"></div>
+      </section>
+      <section
+        class="panel"
+        id="panel-catalog"
+        role="tabpanel"
+        aria-labelledby="tab-catalog"
+        hidden
+      >
+        <div class="section-head">
+          <h2>套餐与点数包</h2>
+          <p>价格、周期和权益全部来自服务端已批准 SKU。选择后创建待支付订单，支付后请回到“订单”查询到账与权益状态。</p>
+        </div>
+        <div class="list" id="catalogList"></div>
       </section>
       <div class="sr" id="live" role="status" aria-live="polite"></div>
     </main>
@@ -555,7 +578,7 @@
                 dateStyle: "medium",
                 timeStyle: "short",
               }).format(new Date(v))
-            : "时间未知",
+            : "时间待确认",
         short = (v) =>
           String(v ?? "")
             .replace(/^recharge_/, "")
@@ -597,15 +620,15 @@
           insufficient: "不足",
           exhausted: "已用尽",
           unavailable: "暂不可用",
-          unknown: "未知",
-        }[availability] ?? "未知";
+          unknown: "待确认",
+        }[availability] ?? "待确认";
         $("balance").textContent = availabilityLabel;
         $("reservedPoints").textContent = d.point_reservation_status === "settled" || d.settlement_status === "settled"
           ? "已结算"
           : d.point_reservation_status === "unknown" || d.settlement_status === "unknown"
             ? "待确认"
             : "未公开";
-        $("accessRevision").textContent = d.access_revision ?? "未知";
+        $("accessRevision").textContent = d.access_revision ?? "待确认";
         $("accessState").textContent = d.allowed === true ? "允许" : "阻断";
         $("overviewText").textContent = d.allowed === true
           ? "当前创意点事实允许继续业务操作；具体动作仍需执行各自权限和运行门禁。"
@@ -613,7 +636,7 @@
             ? "创意点已用尽，只开放服务端授权的恢复/控制入口。"
             : availability === "insufficient"
               ? "创意点准入不足，只开放服务端授权的恢复/控制入口。"
-              : "创意点准入状态未知，所有商家业务已安全阻断。";
+              : "创意点准入状态待确认，所有商家业务已安全阻断。";
         $("settlement").textContent = "创意点是业务准入的唯一余额事实；旧钱包与任务额度仅供历史对账。";
         const actions = Array.isArray(d.next_actions) ? d.next_actions : [];
         $("recoveryState").textContent = actions.length ? "以下入口由本次服务端 decision 精确授权。" : "当前没有可执行的恢复入口，请联系运营核对目录、支付或点数 grant。";
@@ -666,6 +689,77 @@
                 : "当前工作区还没有订单",
             );
       }
+      const purchaseKind = (type) => ({
+        onboarding: "onboarding_once",
+        monthly: "purchase",
+        point_pack: "point_pack",
+      }[type] || "purchase");
+      function catalogHtml(value) {
+        const items = Array.isArray(value) ? value : value?.catalog ?? value?.items ?? [];
+        const executable = items.filter((item) => item?.approval_state === "approved" && item?.executable === true && item?.visibility !== "private");
+        return executable.length
+          ? executable.map((item) => `<article class="item"><div class="item-head"><div><div class="item-title">${esc(item.name || item.sku_code)}</div><div class="item-meta">${esc(item.sku_code)} · ${esc(item.type)}</div></div><strong>${esc(item.price_label || "价格未决")}</strong></div><div class="item-detail">${esc(item.benefits_summary || "权益以服务端订单快照为准")}</div><div class="actions"><button class="btn primary" data-buy-sku="${esc(item.sku_code)}" data-buy-kind="${esc(purchaseKind(item.type))}">选择此套餐</button></div></article>`).join("")
+          : empty("当前没有可执行的公开套餐。服务端目录缺少批准、生效或支付条件时，不会展示为可购买。");
+      }
+      function safePaymentUrl(value) {
+        if (typeof value !== "string" || !value.trim()) return "";
+        try {
+          const url = new URL(value.trim());
+          const localFixture = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname);
+          const paymentDeepLink = url.protocol === "weixin:" || url.protocol === "alipays:";
+          if (url.protocol !== "https:" && !localFixture && !paymentDeepLink) return "";
+          if (url.username || url.password || url.hash) return "";
+          return url.toString();
+        } catch {
+          return "";
+        }
+      }
+      async function catalog() {
+        const el = $("catalogList");
+        el.innerHTML = '<div class="loading">正在读取套餐目录…</div>';
+        try {
+          el.innerHTML = catalogHtml(await call("commercial.catalog.get"));
+          el.querySelectorAll("[data-buy-sku]").forEach((button) => {
+            button.onclick = async () => {
+              button.disabled = true;
+              try {
+                const sku = button.dataset.buySku;
+                const kind = button.dataset.buyKind;
+                const key = `plugin-order-${sku}-${Date.now()}`;
+                const result = await call("commercial.order.create", {
+                  purchase_kind: kind,
+                  sku_code: sku,
+                  idempotency_key: key,
+                  reason: "商家在 ChatGPT 插件中选择商业化套餐",
+                });
+                const payment = safePaymentUrl(result?.payment_url || result?.paymentUrl || result?.checkout_url || result?.checkoutUrl);
+                const actions = button.closest(".actions");
+                if (payment && actions && !actions.querySelector("[data-payment-link]")) {
+                  const link = document.createElement("a");
+                  link.className = "btn primary";
+                  link.dataset.paymentLink = "true";
+                  link.href = payment;
+                  link.target = "_blank";
+                  link.rel = "noopener noreferrer";
+                  link.textContent = "打开支付入口";
+                  actions.append(link);
+                }
+                button.textContent = payment ? "支付入口已准备" : "订单已创建";
+                $("live").textContent = payment ? "支付入口已准备，请完成支付后查询订单" : "订单已创建，请回到订单查询状态";
+              } catch (e) {
+                button.disabled = false;
+                fail(e.message || "套餐订单创建失败");
+              }
+            };
+          });
+          fail();
+          $("live").textContent = "套餐目录已更新";
+        } catch (e) {
+          el.innerHTML = empty("套餐目录暂时无法读取");
+          fail(e.message || "套餐目录暂时无法读取");
+          $("live").textContent = "套餐目录读取失败";
+        }
+      }
       async function orders() {
         let el = $("ordersList");
         el.innerHTML = '<div class="loading">正在读取订单…</div>';
@@ -688,6 +782,7 @@
         try {
           if (S.tab === "overview") await loadStatus();
           if (S.tab === "orders") await orders();
+          if (S.tab === "catalog") await catalog();
         } finally {
           busy(false);
         }

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { assertProviderResponseAccepted, ProviderRequestFailedError, ProviderOutcomeUnknownError, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 import { composeMarketingImages } from './image-marketing-compositor.js'
 
@@ -354,14 +354,20 @@ export class OpenAICompatibleImageGenerator implements ImageGenerator {
       }
       let response: Response
       try {
-        if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-        response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${editing ? this.options.editPath ?? '/images/edits' : this.options.path ?? '/images/generations'}`, {
-          method: 'POST',
-          headers: { accept: 'application/json', ...(!editing ? { 'content-type': 'application/json' } : {}), authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
-          body: editBody ?? requestBody,
-          signal: controller.signal,
-          redirect: 'error',
-        })
+        response = await withProviderRequestRetry(async () => {
+          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+          const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${editing ? this.options.editPath ?? '/images/edits' : this.options.path ?? '/images/generations'}`, {
+            method: 'POST',
+            headers: { accept: 'application/json', ...(!editing ? { 'content-type': 'application/json' } : {}), authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
+            body: editBody ?? requestBody,
+            signal: controller.signal,
+            redirect: 'error',
+          })
+          // Defer non-429 error parsing below so provider diagnostics remain
+          // available; 429 must be classified before its body is consumed.
+          if (candidate.status === 429) assertProviderResponseAccepted(candidate, providerKey, 'image provider')
+          return candidate
+        }, { signal: controller.signal })
       } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image provider request') }
       let responseText: string
       try { responseText = await readBoundedResponseText(response, MAX_IMAGE_RELAY_RESPONSE_BYTES, 'image provider response') }

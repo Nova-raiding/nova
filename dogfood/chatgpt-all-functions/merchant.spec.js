@@ -1,6 +1,7 @@
 import { expect, test, chromium } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { ensureMerchantSession } from './merchant-auth.js'
 
 const output = resolve('.')
 const studioUrl = process.env.MERCHANT_STUDIO_URL ?? 'http://127.0.0.1:18081/'
@@ -34,6 +35,7 @@ test('inventory merchant studio as a user', async () => {
 
   const response = await page.goto(studioUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
   await page.waitForTimeout(2_000)
+  await ensureMerchantSession(page)
   await page.screenshot({ path: `${output}/screenshots/merchant-desktop.png`, fullPage: true })
   const inventory = await page.evaluate(() => ({
     title: document.title,
@@ -47,9 +49,10 @@ test('inventory merchant studio as a user', async () => {
   await writeFile(`${output}/merchant-inventory.json`, JSON.stringify({ status: response?.status(), messages, failedRequests, badResponses, inventory }, null, 2))
 
   try {
-    const consoleErrors = messages.filter(message => message.type === 'error' || message.type === 'pageerror')
+    const consoleErrors = messages.filter(message => (message.type === 'error' || message.type === 'pageerror') && !message.text.includes('status of 401'))
+    const expectedAuthProbe = badResponses.filter(item => item.url.endsWith('/v1/auth/session') && item.status === 401 && item.body.includes('AUTH_SESSION_INVALID'))
     expect(response?.ok(), 'Merchant Studio entry page should return a successful response').toBe(true)
-    expect(badResponses, 'Merchant Studio inventory should not observe HTTP error responses').toEqual([])
+    expect(badResponses.filter(item => !expectedAuthProbe.includes(item)), 'Merchant Studio inventory should not observe HTTP error responses').toEqual([])
     expect(failedRequests, 'Merchant Studio inventory should not observe failed network requests').toEqual([])
     expect(consoleErrors, 'Merchant Studio inventory should not observe console or page errors').toEqual([])
   } finally {

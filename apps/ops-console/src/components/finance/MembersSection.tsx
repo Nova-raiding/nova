@@ -13,8 +13,8 @@ type PendingAction =
   | { kind: "deactivate" | "reactivate"; member: WorkspaceMember };
 
 const roleLabels: Record<MemberRole, string> = {
-  workspace_owner: "工作区所有者",
-  merchant_admin: "商家管理员",
+  workspace_owner: "企业所有者",
+  merchant_admin: "企业管理员",
   operator: "运营",
   support: "支持",
   finance: "财务",
@@ -88,12 +88,13 @@ export function MembersSection({ model, client }: MembersSectionProps) {
   };
 
   return (
-    <Card title="当前租户成员" extra={<Typography.Text type="secondary" className="ops-token">{workspaceId ?? "未选择工作区"}</Typography.Text>} aria-busy={state.loading}>
+    <Card title="当前企业主体成员" extra={<Typography.Text type="secondary" className="ops-token">Workspace ID：{workspaceId ?? "未选择"}</Typography.Text>} aria-busy={state.loading}>
       <Space orientation="vertical" size="middle" className="full-width">
+        <Typography.Text strong>当前租户成员</Typography.Text>
         <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {state.loading ? "正在加载成员列表，请稍候" : state.members.length > 0 ? `已加载 ${state.members.length} 位成员` : ""}
         </span>
-        {!generalCapabilities.canManage && <Alert showIcon type="info" title="当前角色只有成员查看权限" description="只有工作区所有者、商家管理员或平台运营可以邀请成员和调整权限。" />}
+        {!generalCapabilities.canManage && <Alert showIcon type="info" title="当前角色只有成员查看权限" description="只有企业所有者、企业管理员或平台运营可以邀请成员和调整权限。" />}
         {assignmentPolicyUnavailable && <Alert role="alert" showIcon type="warning" title="成员角色策略尚未取得" description="服务端授权策略未返回前，邀请和角色调整入口保持关闭；请刷新会话后重试。" />}
         {state.error && <div ref={initialErrorRef} tabIndex={initialLoadFailed ? -1 : undefined} role="alert" aria-live="assertive" aria-atomic="true" aria-label={initialLoadFailed ? "成员列表加载错误摘要" : undefined}>
           <Alert showIcon type="error" title={initialLoadFailed ? "成员列表加载失败" : "成员操作失败"} description={<Space orientation="vertical"><span>{state.error}</span><Button style={{ minHeight: 44 }} aria-label="刷新成员列表" onClick={() => void state.load()}>刷新成员</Button></Space>} />
@@ -118,6 +119,7 @@ export function MembersSection({ model, client }: MembersSectionProps) {
             if (first) inviteForm.scrollToField(first, { block: "center", focus: true });
           }}
         >
+          <span className="sr-only">邀请企业主体成员</span>
           <Form.Item name="externalSubject" label="用户 ID" rules={[{ required: true, whitespace: true, message: "请输入用户 ID" }]}>
             <Input autoComplete="off" placeholder="例如 user_123" style={{ minHeight: 44 }} />
           </Form.Item>
@@ -134,7 +136,7 @@ export function MembersSection({ model, client }: MembersSectionProps) {
         {compact ? (
           <Spin spinning={state.loading} description="正在加载成员">
             <div role="list" aria-label="成员列表" aria-busy={state.loading}>
-              {!state.loading && !state.error && state.members.length === 0 ? <Typography.Text type="secondary">当前租户还没有成员</Typography.Text> : null}
+              {!state.loading && !state.error && state.members.length === 0 ? <Typography.Text type="secondary">当前企业主体还没有成员</Typography.Text> : null}
               <Space orientation="vertical" size={12} className="full-width">
                 {state.members.map((member) => (
                   <div role="listitem" key={member.id}>
@@ -152,7 +154,7 @@ export function MembersSection({ model, client }: MembersSectionProps) {
             </div>
           </Spin>
         ) : initialLoadFailed ? (
-          <Typography.Text type="secondary" role="status">成员数据尚未取得，请选择工作区后重试；当前状态不能解释为租户没有成员。</Typography.Text>
+          <Typography.Text type="secondary" role="status">成员数据尚未取得，请选择企业主体后重试；当前状态不能解释为企业主体没有成员。</Typography.Text>
         ) : (
           <Table<WorkspaceMember>
             aria-label="成员列表"
@@ -162,7 +164,7 @@ export function MembersSection({ model, client }: MembersSectionProps) {
             pagination={{ current: Math.floor(state.page.offset / state.page.limit) + 1, pageSize: state.page.limit, total: state.page.total, showSizeChanger: false, showTotal: (total) => `共 ${total} 位成员` }}
             onChange={(pagination) => void state.load(pagination.current ?? 1, state.page.limit)}
             dataSource={state.members}
-            locale={{ emptyText: "当前租户还没有成员" }}
+            locale={{ emptyText: "当前企业主体还没有成员" }}
             scroll={{ x: 960 }}
             columns={[
               { title: "身份标识", dataIndex: "externalSubject", width: 180, render: (value: string) => <span className="ops-token">{value}</span> },

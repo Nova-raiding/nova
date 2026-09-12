@@ -68,6 +68,9 @@ export type Member = {
 };
 export type PlatformUser = Member & {
   workspaceId: string;
+  enterpriseName?: string;
+  accountType?: "merchant" | "platform";
+  scope?: "workspace" | "platform";
   /** Membership revision required by the platform governance RPCs. */
   revision?: number;
   workspaceStatus: "active" | "disabled";
@@ -113,6 +116,7 @@ export type PlatformUserDetail = {
 };
 export type WorkspaceSummary = {
   workspaceId: string;
+  enterpriseName?: string;
   status: string;
   planName: string;
   monthlyPriceCny: number;

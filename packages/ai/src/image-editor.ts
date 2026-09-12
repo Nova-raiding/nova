@@ -1,7 +1,7 @@
 import { emitRelayUsage, type RelayUsageContext, type RelayUsageSink } from './relay-usage.js'
 import { relaySecurityFromEnv, assertRelayBaseUrl, assertRelayUrl, type RelaySecurityPolicy } from './relay-security.js'
 import { readBoundedResponseText } from '../../connectors/src/bounded-response.js'
-import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown } from './provider-request.js'
+import { assertProviderResponseAccepted, providerIdempotencyKey, rethrowProviderTransportFailure, throwProviderOutcomeUnknown, withProviderRequestRetry } from './provider-request.js'
 import { isPlaceholderModelConfiguration } from './platform-model-gate.js'
 
 export interface ImageEditInput {
@@ -83,16 +83,19 @@ export class OpenAICompatibleImageEditGenerator implements ImageEditGenerator {
       const providerKey = providerIdempotencyKey({ operation: 'image_edit', model: this.options.model, workspaceId: input.usageContext?.workspaceId, actionId: input.usageContext?.actionId, requestBody })
       let response: Response
       try {
-        if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
-        response = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/images/generations'}`, {
-          method: 'POST',
-          headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
-          body: requestBody,
-          signal: controller.signal,
-          redirect: 'error',
-        })
+        response = await withProviderRequestRetry(async () => {
+          if (this.options.relaySecurity?.environment || this.options.relaySecurity?.allowedHosts?.length) await assertRelayUrl(this.options.baseUrl, this.options.relaySecurity)
+          const candidate = await this.fetchImpl(`${this.options.baseUrl.replace(/\/$/u, '')}${this.options.path ?? '/images/generations'}`, {
+            method: 'POST',
+            headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}`, 'idempotency-key': providerKey },
+            body: requestBody,
+            signal: controller.signal,
+            redirect: 'error',
+          })
+          assertProviderResponseAccepted(candidate, providerKey, 'image edit provider')
+          return candidate
+        }, { signal: controller.signal })
       } catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image edit provider request') }
-      assertProviderResponseAccepted(response, providerKey, 'image edit provider')
       let responseText: string
       try { responseText = await readBoundedResponseText(response, MAX_IMAGE_EDIT_RESPONSE_BYTES, 'image edit response') }
       catch (error) { rethrowProviderTransportFailure(error, providerKey, 'image edit provider response') }

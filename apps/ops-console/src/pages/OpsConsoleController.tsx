@@ -1,14 +1,15 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, App as AntApp, Button, Layout, Modal, Result, Skeleton } from "antd";
 import { OpsHeader } from "../components/OpsHeader";
+import { PlatformOpsLoginPage } from "../components/PlatformOpsLogin.js";
 import { mainItems, OpsSidebar } from "../components/OpsSidebar";
 import { useOpsConsoleModel, type OpsConsoleModel } from "../hooks/useOpsConsoleModel";
 import { useOpsNavigation } from "../navigation/useOpsNavigation";
 import { opsPageRegistry } from "../navigation/opsPageRegistry.js";
 import { platformLabels } from "../types/ops";
-import { abortOpsRequests, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
+import { abortOpsRequests, hasOpsConnection, managedOpsSession, readOpsConnectionConfig, setOpsWorkbenchContext } from "../api/opsClient";
 import { OpsPageBoundary } from "../components/OpsPageBoundary";
-import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains } from "../navigation/opsNavigation.js";
+import { canViewOpsDomain, domainFromLocation, requiredWorkbenchForDomain, urlForDomain, visibleOpsDomains, type OpsDomain } from "../navigation/opsNavigation.js";
 import { AuthorizationProvider } from "../authz/AuthorizationProvider.js";
 import { AccessDeniedResult } from "../components/authz/AccessDeniedResult.js";
 import { domainReadCapabilities } from "../authz/authorization.js";
@@ -19,34 +20,11 @@ import { normalizeDiagnosticTokens, opsLoadWarningPresentation } from "../compon
 
 const { Content } = Layout;
 
-function opsAuthLink(kind: "login" | "register", managed = managedOpsSession): string | undefined {
-  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
-  const configured = kind === "login" ? env.VITE_OPS_LOGIN_URL : env.VITE_OPS_REGISTER_URL;
-  if (configured?.trim()) return configured.trim();
-  // In local Compose the API provides a fixture OAuth endpoint. Production
-  // deployments must inject the enterprise gateway URL; never invent one.
-  if (kind === "login" && !managed) {
-    const base = typeof window === "undefined" ? "/api" : (readOpsConnectionConfig().apiBase || "/api");
-    const callback = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "/";
-    const url = new URL(`${base.replace(/\/$/u, "")}/oauth/authorize`, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-    url.searchParams.set("redirect_uri", callback);
-    url.searchParams.set("state", "ops-local-login");
-    return url.toString();
-  }
-  return undefined;
-}
-
-export function OpsSessionRecoveryGuidance({ managed, error }: { managed: boolean; error?: string }) {
-  const loginUrl = opsAuthLink("login", managed);
-  const registerUrl = opsAuthLink("register", managed);
+export function OpsSessionRecoveryGuidance({ managed: _managed, error }: { managed: boolean; error?: string }) {
   return <div>
     <p>当前身份尚未通过运营权限验证，暂时无法打开运营页面或执行操作。</p>
-    {managed ? <>
-      <p>请使用组织 SSO 登录运营账号，再回到此页点击“重试权限验证”。运营账号由组织管理员邀请并分配角色。</p>
-      {loginUrl ? <p><strong>组织登录入口：</strong><a href={loginUrl} target="_self" rel="noreferrer">登录运营后台</a></p> : <p><strong>组织登录入口：</strong>当前部署未配置 SSO 登录入口，请联系管理员配置 VITE_OPS_LOGIN_URL。</p>}
-      {registerUrl ? <p><a href={registerUrl} target="_self" rel="noreferrer">申请运营账号</a></p> : <p><strong>注册方式：</strong>运营账号采用邀请制。请让平台管理员在“用户与成员”中发出邀请，接受邀请后再使用上面的组织登录；系统不会开放无审批的公共注册。</p>}
-    </>
-      : <><p>请点击右上角“登录 / 连接”，核对工作区，并使用管理员提供的运营凭据保存并刷新。商家登录凭据不能用于平台运营控制台。</p><p><strong>注册方式：</strong>本地安全会话不提供公共注册；由管理员在“用户与成员”中邀请成员，并为其分配角色。</p></>}
+    <p>请点击顶部“平台运营账号登录”，使用管理员提供的平台运营账号和密码登录。商家登录凭据不能用于平台运营控制台。</p>
+    <p><strong>注册方式：</strong>平台运营账号采用预配或邀请制；请由平台管理员在“用户与成员”中完成账号和角色配置。</p>
     <p><strong>绑定 ChatGPT 插件：</strong>在 ChatGPT 中启用“大麦商家营销”后回复“开始使用大麦”。插件会用当前登录身份创建或恢复工作区，并返回绑定状态；不要手工填写他人的工作区 ID 或 Token。</p>
     <p>若刚刚恢复网络或管理员已更新权限，可直接重试。</p>
     <details><summary>查看失败详情（供管理员排查）</summary><p>{error ?? "权限会话加载失败"}</p></details>
@@ -107,7 +85,7 @@ export function opsSessionGateState(
 ): "ready" | "loading" | "blocked" {
   if (sessionLoaded) return "ready";
   if (sessionError) return "blocked";
-  if (!managed) return "ready";
+  if (!managed) return "blocked";
   return "loading";
 }
 
@@ -120,6 +98,12 @@ export function opsContentLoadingMessage(
   if (sessionGate === "loading") return "正在验证运营权限";
   if (loading) return "正在刷新运营数据";
   return "";
+}
+
+export function isExpectedUnauthenticatedSessionError(
+  evidence: { code?: string } | undefined,
+): boolean {
+  return evidence?.code === "UNAUTHENTICATED" || evidence?.code === "SESSION_EXPIRED";
 }
 
 export function accessDeniedReasonCode(
@@ -182,15 +166,19 @@ function Dashboard({
   };
   const { activeDomain, navigate: navigateToRoute } = useOpsNavigation({ onPopstate: deferredPopstate });
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
-  const sessionError = !model.opsSession
-    ? model.dataSetError("ops.session")
-    : undefined;
   const sessionErrorEvidence = model.dataSetErrorEvidence("ops.session");
+  const sessionDataSetError = model.dataSetError("ops.session");
+  const expectedUnauthenticated = isExpectedUnauthenticatedSessionError(sessionErrorEvidence);
+  const sessionError = !model.opsSession && !expectedUnauthenticated
+    ? sessionDataSetError ?? (managedOpsSession && !hasOpsConnection() ? "尚未登录组织运营账号" : undefined)
+    : undefined;
   const sessionAccessDeniedEvidence = accessDeniedEvidence(sessionErrorEvidence);
   const sessionGate = opsSessionGateState(managedOpsSession, Boolean(model.opsSession), sessionError);
   const sessionErrorRef = useRef<HTMLDivElement>(null);
   const loadingMessage = opsContentLoadingMessage(sessionGate, switchingWorkbench, model.loading);
   const sessionReady = sessionGate === "ready";
+  // The operations landing page is the stable read-only entry point for every
+  // authenticated workbench. Its datasets still fail closed independently.
   const visibleDomains = visibleOpsDomains(model.authorization);
   const authorized = sessionReady && canViewOpsDomain(activeDomain, model.authorization);
   const ActivePage = opsPageRegistry[activeDomain];
@@ -202,6 +190,12 @@ function Dashboard({
     }
     navigateToRoute(domain);
   };
+  const canAutoLoadModelMarkup =
+    activeDomain === "models" &&
+    model.canModelMarkup &&
+    model.modelStatus?.state === "ready" &&
+    model.modelStatus.relay?.configured === true &&
+    readOpsConnectionConfig().workbench === "platform";
 
   useEffect(() => {
     if (model.opsSession?.available_workbenches?.length) {
@@ -220,7 +214,7 @@ function Dashboard({
       void model.loadRules();
     if (activeDomain === "knowledge" && activeWorkbench === "workspace" && canRead("knowledge"))
       void model.load();
-    if ((activeDomain === "overview" || activeDomain === "models") && model.canModelMarkup && readOpsConnectionConfig().workbench === "platform") void model.loadModelMarkup();
+    if (canAutoLoadModelMarkup) void model.loadModelMarkup();
     if (activeDomain === "users" && canRead("users")) {
       // loadUsers owns cancellation for its previous directory request. Do
       // not cancel here: this effect can rerun when the session projection
@@ -228,13 +222,28 @@ function Dashboard({
       // response look like a timeout in the directory.
       void model.loadUsers();
     }
-  }, [activeDomain, model.canUserGovernance, model.opsSession?.actor_id]);
+  }, [activeDomain, canAutoLoadModelMarkup, model.canUserGovernance, model.opsSession?.actor_id]);
 
   useEffect(() => {
     if (sessionGate !== "blocked") return;
     const focusTimer = window.requestAnimationFrame(() => sessionErrorRef.current?.focus({ preventScroll: true }));
     return () => window.cancelAnimationFrame(focusTimer);
   }, [sessionGate]);
+
+  if ((sessionGate === "blocked" && !managedOpsSession) || expectedUnauthenticated) {
+    return (
+      <PlatformOpsLoginPage
+        managedSession={false}
+        error={sessionError}
+        loading={model.loading}
+        onRetry={() => void model.load()}
+        onAuthenticated={() => {
+          model.clearAuthorizationScopedData();
+          void model.load();
+        }}
+      />
+    );
+  }
 
   return (
     <Layout className="ops-shell">
@@ -246,8 +255,6 @@ function Dashboard({
         stores={model.storeDirectory}
         platformLabels={platformLabels}
         selectedStoreScope={model.selectedStoreScope}
-        workspaceId={model.opsSession?.workspace_id}
-        scope={model.authorization.scope}
         onNavigate={navigateToDomain}
         onSelectStore={(scope) => selectStoreScope(model, scope)}
         visibleDomains={visibleDomains}
@@ -258,12 +265,14 @@ function Dashboard({
           managedSession={managedOpsSession}
           roles={model.opsSession?.roles}
           sessionLoaded={Boolean(model.opsSession)}
+          onSessionReset={model.clearAuthorizationScopedData}
           connectionError={sessionError}
           dataSource={model.dataSource}
           refreshing={model.loading}
           session={model.opsSession}
           authorization={model.authorization}
           alerts={model.alerts}
+          notifications={model.notifications}
           onAcknowledgeAlert={(alert) => void model.acknowledgeAlert(alert)}
           activeWorkbench={activeWorkbench}
           availableWorkbenches={availableWorkbenches}
@@ -273,7 +282,7 @@ function Dashboard({
           onJitExit={() => { model.clearJitRevocationReceipt(); model.clearAuthorizationScopedData(); void model.load(); }}
           onRefresh={() => {
             void model.load();
-            if (model.canModelMarkup && canViewOpsDomain("models", model.authorization) && readOpsConnectionConfig().workbench === "platform")
+            if (canAutoLoadModelMarkup && canViewOpsDomain("models", model.authorization))
               void model.loadModelMarkup();
             if (canViewOpsDomain("rules", model.authorization))
               void model.loadRules();
@@ -328,7 +337,7 @@ function Dashboard({
               reasonCode={accessDeniedReasonCode(sessionErrorEvidence)}
               decisionId={sessionAccessDeniedEvidence.decisionId}
               obligationsMissing={sessionAccessDeniedEvidence.obligationsMissing}
-              onBack={() => navigateToDomain("overview")}
+              onBack={() => navigateToDomain("users")}
               onViewPermissions={() => navigateToDomain("members")}
               onRefresh={() => void model.load()}
               refreshing={model.loading}

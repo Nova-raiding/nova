@@ -1,8 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { createHash, createHmac } from 'node:crypto'
-import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
+import { enableCommercialFixtureHarnessForTests, fixturePaymentAllowed, grantContinuousFeatureEntitlementForTests, grantCreativePointsForTests, oauthStates, requirePublishAuthorizationSnapshot, rollbackBatchProducts, server, service, setPasswordAuthRepositoryForTests, setPaymentProviderForTests, setRuleRepositoryForTests, workspaceMembers } from './server.js'
 import type { McpCanonicalProductConsistencyResult } from '../../../packages/contracts/src/index.js'
 import { trustedPlatformRuleTestRepository } from './platform-rule-test-fixture.js'
+import { MemoryPasswordAuthRepository } from '../../../packages/persistence/src/password-auth-repository.js'
+import { hashPassword } from '../../../packages/security/src/password-auth.js'
 
 type Envelope<T = unknown> = { request_id: string; trace_id: string; workspace_id: string; data: T | null; warnings: unknown[]; next_actions: unknown[]; error: { code: string; message: string } | null }
 
@@ -55,6 +57,241 @@ function generatedDecisionBody(title: string, detail: string, sellingPoints: str
 }
 
 describe('API HTTP vertical slice', () => {
+  it('closes the platform-provisioned merchant account and password-rotation HTTP loop', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.ensurePlatformAccount({ login: 'platform-e2e@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_admin'] })
+    setPasswordAuthRepositoryForTests(auth)
+    const base = await start()
+    try {
+      const platformLogin = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-host': 'ops.yxsona.com', 'x-forwarded-proto': 'https' },
+        body: JSON.stringify({ login: 'platform-e2e@example.com', password: 'PlatformPass123', account_type: 'platform' }),
+      })
+      expect(platformLogin.status).toBe(200)
+      expect(platformLogin.headers.get('set-cookie')).toContain('; Secure;')
+      const platformCookie = platformLogin.headers.get('set-cookie')!.split(';', 1)[0]!
+      const provision = await fetch(`${base}/v1/ops/merchant-accounts`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-provisioned-e2e@example.com',
+          password: 'MerchantInitial123',
+          enterprise_name: 'HTTP 企业',
+          contact_name: 'E2E 管理员',
+          workspace_ids: ['ws_http_provisioned'],
+          reason: 'E2E 验证平台开通闭环',
+        }),
+      }).then(json)
+      expect(provision.error).toBeNull()
+      expect(provision.data).toMatchObject({ onboarding_fee_fen: 500000, vip_access: 'pending_billing_verification', account: { accountType: 'merchant', status: 'active', workspaceIds: ['ws_http_provisioned'] } })
+
+      const authorization = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-provisioned-e2e@example.com',
+          workspace_id: 'ws_http_provisioned',
+          sku_code: 'sku-monthly-5000',
+          amount_fen: 500000,
+          payment_status: 'verified',
+          payment_reference: 'wechat-trade-e2e-5000',
+          paid_at: new Date().toISOString(),
+          idempotency_key: 'merchant-authz-e2e-0001',
+          reason: 'E2E 验证平台收款与商家全量权限开通',
+        }),
+      }).then(json)
+      expect(authorization.error).toBeNull()
+      expect(authorization.data).toMatchObject({
+        schema_version: 'merchant-account-authorization.v1',
+        login: 'merchant-provisioned-e2e@example.com',
+        workspace_id: 'ws_http_provisioned',
+        amount_fen: 500000,
+        payment_status: 'verified',
+        entitlement_status: 'granted',
+        member_role: 'merchant_admin',
+        member_status: 'active',
+        capabilities: expect.arrayContaining(['customer.content.update', 'customer.publish.execute', 'billing.workspace.read']),
+      })
+      const authorizationReplay = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-provisioned-e2e@example.com',
+          workspace_id: 'ws_http_provisioned',
+          sku_code: 'sku-monthly-5000',
+          amount_fen: 500000,
+          payment_status: 'verified',
+          payment_reference: 'wechat-trade-e2e-5000',
+          paid_at: new Date().toISOString(),
+          idempotency_key: 'merchant-authz-e2e-0001',
+          reason: 'E2E 验证平台收款与商家全量权限开通',
+        }),
+      }).then(json)
+      expect(authorizationReplay.data).toMatchObject({ replayed: true, amount_fen: 500000, payment_reference: 'wechat-trade-e2e-5000' })
+
+      const merchantLogin = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'merchant-provisioned-e2e@example.com', password: 'MerchantInitial123', account_type: 'merchant' }),
+      })
+      expect(merchantLogin.status).toBe(200)
+      const merchantCookie = merchantLogin.headers.get('set-cookie')!.split(';', 1)[0]!
+      const firstWorkspaceRequest = await fetch(`${base}/v1/platform-accounts`, { headers: { cookie: merchantCookie } }).then(json)
+      expect(firstWorkspaceRequest.error?.code).not.toBe('WORKSPACE_SCOPE_REQUIRED')
+      const changed = await fetch(`${base}/v1/auth/password/change`, {
+        method: 'POST',
+        headers: { cookie: merchantCookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ current_password: 'MerchantInitial123', new_password: 'MerchantRotated123' }),
+      }).then(json)
+      expect(changed.error).toBeNull()
+      expect(changed.data).toMatchObject({ changed: true, login_required: true })
+      const staleSession = await fetch(`${base}/v1/auth/session`, { headers: { cookie: merchantCookie } }).then(json)
+      expect(staleSession.error).toMatchObject({ code: 'AUTH_SESSION_INVALID' })
+      const rotatedLogin = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'merchant-provisioned-e2e@example.com', password: 'MerchantRotated123', account_type: 'merchant' }),
+      })
+      expect(rotatedLogin.status).toBe(200)
+    } finally {
+      setPasswordAuthRepositoryForTests()
+    }
+  })
+
+  it('fails closed for pending payment, validates payment evidence, and blocks merchant callers', async () => {
+    vi.stubEnv('AUTH_ENFORCEMENT', 'strict')
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.ensurePlatformAccount({ login: 'platform-authz-negative@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_ops'] })
+    await auth.createMerchantAccount({
+      login: 'merchant-pending-authz@example.com',
+      password: 'MerchantInitial123',
+      enterpriseName: '待核验企业',
+      contactName: '待核验管理员',
+      workspaceIds: ['ws_demo'],
+      actorId: 'seed-platform',
+      reason: '授权负向测试',
+    })
+    setPasswordAuthRepositoryForTests(auth)
+    const base = await start()
+    try {
+      const platformLogin = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'platform-authz-negative@example.com', password: 'PlatformPass123', account_type: 'platform' }),
+      })
+      const platformCookie = platformLogin.headers.get('set-cookie')!.split(';', 1)[0]!
+      const pending = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-pending-authz@example.com',
+          workspace_id: 'ws_demo',
+          sku_code: 'sku-monthly-2000',
+          amount_fen: 200000,
+          payment_status: 'pending',
+          idempotency_key: 'merchant-pending-authz-01',
+          reason: '等待支付凭证核验',
+        }),
+      }).then(json)
+      expect(pending.error).toBeNull()
+      expect(pending.data).toMatchObject({
+        payment_status: 'pending',
+        entitlement_status: 'pending_payment_verification',
+        member_role: 'merchant_admin',
+        member_status: 'invited',
+        capabilities: [],
+        payment_reference: null,
+        paid_at: null,
+      })
+
+      const mismatchedAmount = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-pending-authz@example.com',
+          workspace_id: 'ws_demo',
+          sku_code: 'sku-monthly-2000',
+          amount_fen: 500000,
+          payment_status: 'pending',
+          idempotency_key: 'merchant-mismatched-amount-01',
+          reason: '套餐金额不一致应被阻断',
+        }),
+      }).then(json)
+      expect(mismatchedAmount.error?.code).toBe('MERCHANT_PAYMENT_AMOUNT_MISMATCH')
+
+      const unknownSku = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-pending-authz@example.com',
+          workspace_id: 'ws_demo',
+          sku_code: 'sku-not-in-catalog',
+          amount_fen: 500000,
+          payment_status: 'pending',
+          idempotency_key: 'merchant-unknown-sku-01',
+          reason: '未知套餐应被阻断',
+        }),
+      }).then(json)
+      expect(unknownSku.error?.code).toBe('MERCHANT_AUTHORIZATION_SKU_INVALID')
+
+      const idempotencyConflict = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-pending-authz@example.com',
+          workspace_id: 'ws_demo',
+          sku_code: 'sku-monthly-2000',
+          amount_fen: 200000,
+          payment_status: 'pending',
+          idempotency_key: 'merchant-pending-authz-02',
+          reason: '重复授权意图应被拒绝',
+        }),
+      }).then(json)
+      expect(idempotencyConflict.error?.code).toBe('MERCHANT_AUTHORIZATION_IDEMPOTENCY_CONFLICT')
+
+      const missingEvidence = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: platformCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-pending-authz@example.com',
+          workspace_id: 'ws_demo',
+          sku_code: 'sku-monthly-5000',
+          amount_fen: 500000,
+          payment_status: 'verified',
+          idempotency_key: 'merchant-verified-authz-01',
+          reason: '缺少支付凭证不得开通',
+        }),
+      }).then(json)
+      expect(missingEvidence.error?.code).toBe('MERCHANT_PAYMENT_EVIDENCE_REQUIRED')
+
+      const merchantLogin = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login: 'merchant-pending-authz@example.com', password: 'MerchantInitial123', account_type: 'merchant' }),
+      })
+      const merchantCookie = merchantLogin.headers.get('set-cookie')!.split(';', 1)[0]!
+      const merchantAttempt = await fetch(`${base}/v1/ops/merchant-accounts/authorize`, {
+        method: 'POST',
+        headers: { cookie: merchantCookie, 'content-type': 'application/json', 'x-ops-workbench': 'platform', 'x-workspace-id': 'ws_demo' },
+        body: JSON.stringify({
+          login: 'merchant-pending-authz@example.com',
+          workspace_id: 'ws_demo',
+          sku_code: 'sku-monthly-5000',
+          amount_fen: 500000,
+          payment_status: 'verified',
+          payment_reference: 'forged-by-merchant',
+          paid_at: new Date().toISOString(),
+          idempotency_key: 'merchant-forbidden-authz-01',
+          reason: '商家不能自助开通平台权限',
+        }),
+      }).then(json)
+      expect(merchantAttempt.error?.code).toBe('FORBIDDEN')
+    } finally {
+      setPasswordAuthRepositoryForTests()
+    }
+  })
+
   it('exchanges the local operator token for an HttpOnly session cookie', async () => {
     vi.stubEnv('OPS_LOCAL_SESSION_ENABLED', 'true')
     vi.stubEnv('OPS_LOCAL_SESSION_TOKEN', 'pilot-local-token')
@@ -302,6 +539,8 @@ describe('API HTTP vertical slice', () => {
 
     const ownerWorkspace = await call('personal-billing-owner', 8, 'billing.recharge.list', { scope: 'workspace' })
     expect(ownerWorkspace.data?.result).toMatchObject({ scope: 'workspace', total: 2 })
+    const paidWorkspace = await call('personal-billing-owner', 8.1, 'billing.recharge.list', { scope: 'workspace', states: 'paid' })
+    expect(paidWorkspace.data?.result).toMatchObject({ scope: 'workspace', total: 2, returned: 2, summary: { pending: 0, paid: 2 } })
     const memberTransactions = await call('personal-billing-member', 9, 'billing.transactions')
     expect(memberTransactions.data?.result).toMatchObject({ scope: 'mine', wallet_scope: 'workspace', balance_cny: '30.00', transactions: [expect.objectContaining({ orderId: memberOrder.id })] })
     const status = await call('personal-billing-member', 10, 'billing.status')
@@ -1505,6 +1744,8 @@ describe('API HTTP vertical slice', () => {
     const publishId = (publish.data as { id: string }).id
     const observed = await fetch(`${base}/v1/publish-jobs/${publishId}/observation`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ status: { found: false, state: 'unknown', simulated: false } }) }).then(json)
     expect((observed.data as { state: string }).state).toBe('unknown')
+    const reobserved = await fetch(`${base}/v1/publish-jobs/${publishId}/observation`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': 'ws_demo' }, body: JSON.stringify({ source: 'reconcile', status: { found: false, state: 'unknown', simulated: false } }) }).then(json)
+    expect((reobserved.data as { state: string }).state).toBe('unknown')
     const unknownPublish = await fetch(`${base}/v1/publish-jobs/${publishId}`, { headers: { 'x-workspace-id': 'ws_demo' } }).then(json)
     expect((unknownPublish.data as { workflow: { status: { user_state: string; terminal: boolean }; next_action: { label: string; reason: string }; recovery: { retryable: boolean; reconciliation_required: boolean } } }).workflow).toMatchObject({ status: { user_state: '发布结果待确认', terminal: false }, next_action: { label: '查询发布状态', reason: '平台最终回执尚未确认，不能重复提交' }, recovery: { retryable: false, reconciliation_required: true } })
     const publishPage = await fetch(`${base}/v1/publish-jobs?limit=1&offset=0`, { headers: { 'x-workspace-id': 'ws_demo' } }).then(json)
@@ -1513,8 +1754,9 @@ describe('API HTTP vertical slice', () => {
     expect(timeline.error).toBeNull()
     expect((timeline.data as Array<{ event_type: string }>).map(item => item.event_type)).toEqual(expect.arrayContaining([
       'task.created', 'task.direction_selected', 'task.plan_confirmed', 'content.approved', 'publish.prepared',
-      'publish.requested', 'publish.observation',
+      'publish.requested', 'publish.observation', 'publish.reconcile_requested',
     ]))
+    expect((timeline.data as Array<{ event_type: string }>).filter(item => item.event_type === 'publish.reconcile_requested')).toHaveLength(2)
     const timelineDenied = await fetch(`${base}/v1/tasks/${taskId}/timeline`, { headers: { 'x-workspace-id': 'ws_other' } }).then(json)
     expect(timelineDenied.error?.code).toBe('WORKSPACE_SCOPE_MISMATCH')
     expect(service.listPublishJobs('ws_demo')).toHaveLength(1)
@@ -1924,5 +2166,24 @@ describe('API HTTP vertical slice', () => {
     } finally {
       vi.unstubAllEnvs()
     }
+  })
+
+  it('lists and reviews merchant registration applications over the platform HTTP boundary', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    await auth.ensurePlatformAccount({ login: 'platform-registration-review@example.com', passwordHash: await hashPassword('PlatformPass123'), roles: ['platform_ops'] })
+    setPasswordAuthRepositoryForTests(auth)
+    const base = await start()
+    try {
+      const registered = await fetch(`${base}/v1/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', password: 'MerchantPass123', enterprise_name: '申请企业', contact_name: '申请人', terms_agreed: true }) }).then(json)
+      expect(registered.error).toBeNull()
+      const login = await fetch(`${base}/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'platform-registration-review@example.com', password: 'PlatformPass123', account_type: 'platform' }) })
+      const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
+      const listed = await fetch(`${base}/v1/ops/merchant-registration-applications`, { headers: { cookie, 'x-ops-workbench': 'platform' } }).then(json)
+      expect(listed.data.items).toEqual(expect.arrayContaining([expect.objectContaining({ login: 'applicant@example.com', status: 'merchant_pending' })]))
+      const reviewed = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, { method: 'POST', headers: { cookie, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', decision: 'approved', workspace_ids: ['ws_demo'], reason: '资料核验通过' }) }).then(json)
+      expect(reviewed.error).toBeNull(); expect(reviewed.data).toMatchObject({ login: 'applicant@example.com', status: 'active', workspace_ids: ['ws_demo'] })
+      const replay = await fetch(`${base}/v1/ops/merchant-registration-applications/review`, { method: 'POST', headers: { cookie, 'x-ops-workbench': 'platform', 'content-type': 'application/json' }, body: JSON.stringify({ login: 'applicant@example.com', decision: 'rejected', reason: '重复审核' }) }).then(json)
+      expect(replay.error?.code).toBe('AUTH_REGISTRATION_STATE_INVALID')
+    } finally { setPasswordAuthRepositoryForTests() }
   })
 })

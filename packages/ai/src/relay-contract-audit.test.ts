@@ -20,7 +20,7 @@ describe('five-modality relay contract audit', () => {
     }
   })
 
-  it.each([400, 401, 403, 404, 422, 429])('records HTTP %s as an explicit failed provider outcome', status => {
+  it.each([400, 401, 403, 404, 422])('records HTTP %s as an explicit failed provider outcome', status => {
     expect(() => assertProviderResponseAccepted(new Response('', { status }), 'model_provider_audit', 'relay')).toThrowError(ProviderRequestFailedError)
     try {
       assertProviderResponseAccepted(new Response('', { status }), 'model_provider_audit', 'relay')
@@ -68,5 +68,15 @@ describe('five-modality relay contract audit', () => {
       new Headers(),
       { modality, model: `${modality}-model`, context: { providerAttemptId: `attempt-${modality}` } },
     )).rejects.toMatchObject({ code: 'MODEL_USAGE_EVIDENCE_MISSING', missing: 'cost', providerSucceeded: true })
+    })
   })
-})
+
+  it('marks 429 as bounded-retryable and preserves Retry-After evidence', () => {
+    try {
+      assertProviderResponseAccepted(new Response('', { status: 429, headers: { 'retry-after': '7' } }), 'model_provider_audit', 'relay')
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'MODEL_PROVIDER_REQUEST_FAILED', retryable: true, details: { retryable: true, retry_after_ms: 7000 } })
+      return
+    }
+    throw new Error('expected rate limit failure')
+  })

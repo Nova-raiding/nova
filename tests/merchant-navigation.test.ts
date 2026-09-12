@@ -5,9 +5,9 @@ describe('Merchant Studio navigation', () => {
   it.each([
     ['overview', 'overview'],
     ['products', 'products'],
-    ['tasks', 'task'],
-    ['publish', 'publish'],
-    ['rules', 'rules'],
+    ['tasks', 'products'],
+    ['publish', 'products'],
+    ['rules', 'products'],
   ] as const)('initializes /merchant/%s as %s', (path, page) => {
     expect(merchantRouteFromLocation({ pathname: `/merchant/${path}`, search: '', hash: '' }).page).toBe(page)
     expect(merchantRouteFromLocation({ pathname: `/console/merchant/${path}/`, search: '', hash: '' }).page).toBe(page)

@@ -77,14 +77,16 @@ const initialDataStates = (): { [K in CommercialView]: CommercialDataState<Comme
 
 function errorEvidence(cause: unknown): CommercialLoadError {
   const error = cause as Partial<OpsRequestError> | undefined;
+  const details = error?.details;
+  const nextActions = error?.nextActions;
   return {
     message: describeOpsError(cause),
     code: typeof error?.code === "string" ? error.code : "COMMERCIAL_OPERATIONS_UNAVAILABLE",
     ...(typeof error?.requestId === "string" ? { requestId: error.requestId } : {}),
     ...(typeof error?.traceId === "string" ? { traceId: error.traceId } : {}),
     ...(typeof error?.httpStatus === "number" ? { httpStatus: error.httpStatus } : {}),
-    ...(error?.details && typeof error.details === "object" ? { details: error.details } : {}),
-    ...(Array.isArray(error?.nextActions) ? { nextActions: error.nextActions } : {}),
+    ...(details && typeof details === "object" ? { details } : {}),
+    ...(Array.isArray(nextActions) ? { nextActions } : {}),
   };
 }
 
@@ -185,6 +187,7 @@ export function commercialQueryUrl(
 export function useCommercialOperations(
   authorization: AuthorizationProjection,
   client: CommercialOperationsClient = commercialOperationsClient,
+  enabled = true,
 ) {
   const [queryState, setQueryState] = useState<CommercialQueryState>(() => typeof window === "undefined"
     ? readCommercialQuery("") : readCommercialQuery(window.location.search));
@@ -239,7 +242,7 @@ export function useCommercialOperations(
   const loadSummary = useCallback(async () => {
     summaryControllerRef.current?.abort();
     const request = ++summaryRequestRef.current;
-    if (!authorization.can(commercialCapabilities.accessRead)) {
+    if (!enabled || !authorization.can(commercialCapabilities.accessRead)) {
       setSummary({ status: "forbidden" });
       return;
     }
@@ -259,10 +262,10 @@ export function useCommercialOperations(
         setSummary({ status: isForbiddenError(error) ? "forbidden" : "error", error });
       }
     }
-  }, [authorization, client, targetWorkspaceId]);
+  }, [authorization, client, enabled, targetWorkspaceId]);
 
   const loadView = useCallback(async (target: CommercialView = view) => {
-    if (!canLoadCommercialView(authorization, targetWorkspaceId, target)) {
+    if (!enabled || !canLoadCommercialView(authorization, targetWorkspaceId, target)) {
       controllerRef.current?.abort();
       requestRef.current += 1;
       setData((current) => ({ ...current, [target]: { status: "forbidden" } }));
@@ -296,7 +299,7 @@ export function useCommercialOperations(
         ? { status: "forbidden", error }
         : { status: "error", data: current[target].data, error } }));
     }
-  }, [authorization, client, privateSkuReadable, targetWorkspaceId, view]);
+  }, [authorization, client, enabled, privateSkuReadable, targetWorkspaceId, view]);
 
   useEffect(() => {
     void loadSummary();

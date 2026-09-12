@@ -13,13 +13,11 @@ vi.mock("./opsClient.js", () => mocks);
 
 import {
   auditCenterClient,
-  featureFlagsClient,
   financeSearchClient,
   incidentsClient,
   parseAuditCenterPage,
   parseAuditDetail,
   parseAuditExport,
-  parseFeatureFlagPage,
   parseIncidentPage,
   parseModelStatus,
   parseStorageReconciliationList,
@@ -52,15 +50,11 @@ const calls = (): WireCall[] => [
 describe("Ops domain protocol clients", () => {
   const financeRecord = { id: "record-1", kind: "recharge_order", workspaceId: "ws-1", status: "paid", label: "充值订单", occurredAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:00:00.000Z", version: "v1", redacted: true } as const;
   const auditRecord = { id: "audit-1", source: "operation", workspaceId: "ws-ops", actorId: "operator-1", action: "refund", resourceType: "order", resourceId: "order-1", reason: "approved", occurredAt: "2026-08-29T00:00:00.000Z", redacted: true } as const;
-  const flag = { id: "flag-1", key: "checkout.enabled", environment: "production", description: "Checkout rollout", defaultValue: { type: "boolean", value: true }, enabled: true, emergencyDisabled: false, targets: [], revision: 1, createdBy: "operator-1", updatedBy: "operator-1", createdAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:00:00.000Z" } as const;
   const incident = { id: "incident-1", workspaceId: "ws-ops", title: "Provider outage", summary: "Provider calls are failing", severity: "sev1", status: "investigating", affectedComponents: ["api"], affectedWorkspaceIds: ["ws-1"], revision: 1, createdBy: "operator-1", createdAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:00:00.000Z" } as const;
   const incidentEvent = { id: "event-1", workspaceId: "ws-ops", incidentId: "incident-1", kind: "created", body: "Created", actorId: "operator-1", incidentRevision: 1, createdAt: "2026-08-29T00:00:00.000Z" } as const;
   const ticket = { id: "ticket-1", workspaceId: "ws-ops", ticketNumber: "SUP-1", subject: "Payment missing", description: "Customer payment is not reflected", status: "open", priority: "urgent", customerId: "customer-1", customerName: "Customer One", tags: ["billing"], revision: 1, createdBy: "operator-1", createdAt: "2026-08-29T00:00:00.000Z", updatedAt: "2026-08-29T00:00:00.000Z" } as const;
   const ticketEvent = { id: "ticket-event-1", workspaceId: "ws-ops", ticketId: "ticket-1", sequence: 1, eventType: "created", actorId: "operator-1", idempotencyKey: "ticket-create-0001", payload: {}, createdAt: "2026-08-29T00:00:00.000Z" } as const;
   const responseFor = (method: string): unknown => {
-    if (method === "ops.feature-flags.list") return { items: [flag] };
-    if (method === "ops.feature-flag.upsert" || method === "ops.feature-flag.emergency.set") return { flag, replayed: false };
-    if (method === "ops.feature-flag.events") return [{ id: "flag-event-1", flagId: flag.id, eventType: "created", actorId: "operator-1", reason: "created", idempotencyKey: "flag-save-0001", after: flag, createdAt: flag.createdAt }];
     if (method === "ops.incidents.list") return { items: [incident] };
     if (method === "ops.incident.timeline") return { items: [incidentEvent] };
     if (method.startsWith("ops.incident.")) return { incident, event: incidentEvent };
@@ -84,24 +78,6 @@ describe("Ops domain protocol clients", () => {
   });
 
   it("uses the canonical MCP method and wire envelope for every exported client call", async () => {
-    await featureFlagsClient.list({ environment: "production", query: "checkout", cursor: "flag-cursor", limit: 50 });
-    await featureFlagsClient.save({
-      id: "flag-1",
-      key: "checkout.enabled",
-      environment: "production",
-      description: "Checkout rollout",
-      defaultValue: { type: "boolean", value: true },
-      enabled: true,
-      targets: [{ type: "workspace", value: "ws-target", enabled: true }],
-      validFrom: "2026-08-29T00:00:00.000Z",
-      validTo: "2026-09-29T00:00:00.000Z",
-      expectedRevision: 7,
-      idempotencyKey: "flag-save-0001",
-      reason: "Enable checkout rollout",
-    });
-    await featureFlagsClient.setEmergency({ id: "flag-1", disabled: true, expectedRevision: 8, idempotencyKey: "flag-stop-0001", reason: "Stop failed rollout" });
-    await featureFlagsClient.events("flag-1");
-
     await incidentsClient.list({ status: "investigating", severity: "sev1", cursor: "incident-cursor", limit: 50 });
     await incidentsClient.list({ platformScope: true, limit: 5 });
     await incidentsClient.timeline({ incidentId: "incident-1", cursor: "timeline-cursor", limit: 100 });
@@ -131,10 +107,6 @@ describe("Ops domain protocol clients", () => {
     await supportClient.report({ workspaceId: "ws-ops", periodStart: "2026-08-01T00:00:00.000Z", periodEnd: "2026-09-01T00:00:00.000Z", cutoffAt: "2026-09-03T00:00:00.000Z" });
 
     const expectedMethods = [
-      "ops.feature-flags.list",
-      "ops.feature-flag.upsert",
-      "ops.feature-flag.emergency.set",
-      "ops.feature-flag.events",
       "ops.incidents.list",
       "ops.incidents.list",
       "ops.incident.timeline",
@@ -172,20 +144,6 @@ describe("Ops domain protocol clients", () => {
     expect(mocks.rpcForWorkspace.mock.calls.every(([workspaceId]) => workspaceId === "ws-ops")).toBe(true);
     expect(calls().find(call => call.method === "ops.incidents.list" && call.params.platform_scope === "platform")).toBeTruthy();
     expect(calls().find(call => call.method === "ops.support.tickets.list" && call.params.platform_scope === "platform")).toBeTruthy();
-    expect(calls().find(call => call.method === "ops.feature-flag.upsert")?.params).toEqual({
-      id: "flag-1",
-      key: "checkout.enabled",
-      environment: "production",
-      description: "Checkout rollout",
-      default_value_json: JSON.stringify({ type: "boolean", value: true }),
-      enabled: "true",
-      targets_json: JSON.stringify([{ type: "workspace", value: "ws-target", enabled: true }]),
-      valid_from: "2026-08-29T00:00:00.000Z",
-      valid_to: "2026-09-29T00:00:00.000Z",
-      expected_revision: "7",
-      idempotency_key: "flag-save-0001",
-      reason: "Enable checkout rollout",
-    });
     expect(calls().find(call => call.method === "ops.incident.scope.update")?.params).toMatchObject({
       affected_components_json: JSON.stringify(["api", "worker"]),
       affected_workspace_ids_json: JSON.stringify(["ws-1", "ws-2"]),
@@ -235,8 +193,7 @@ describe("Ops domain protocol clients", () => {
     expect(() => parseAuditCenterPage({ records: [{ ...auditRecord, reason: "fixture seed" }], totalRecords: 1, truncated: false })).toThrow(/无效响应/);
   });
 
-  it("rejects malformed feature flag, incident, and support responses at the transport boundary", () => {
-    expect(() => parseFeatureFlagPage({ items: [{ ...flag, revision: 0 }] })).toThrow(/无效响应/);
+  it("rejects malformed incident and support responses at the transport boundary", () => {
     expect(() => parseIncidentPage({ items: [{ ...incident, affectedComponents: "api" }] })).toThrow(/无效响应/);
     expect(() => parseSupportPage({ items: [{ ...ticket, status: "invented" }] })).toThrow(/无效响应/);
   });
@@ -274,11 +231,8 @@ describe("Ops domain protocol clients", () => {
       "ops.incidents.transition",
       "ops.incidents.commander.assign",
       "ops.incidents.scope.update",
-      "ops.feature-flags.save",
-      "ops.feature-flags.emergency",
-      "ops.feature-flags.events",
     ];
-    const implementation = `${featureFlagsClient.list} ${featureFlagsClient.save} ${featureFlagsClient.setEmergency} ${featureFlagsClient.events} ${incidentsClient.list} ${incidentsClient.timeline} ${incidentsClient.create} ${incidentsClient.comment} ${incidentsClient.transition} ${incidentsClient.assignCommander} ${incidentsClient.updateScope} ${supportClient.list}`;
+    const implementation = `${incidentsClient.list} ${incidentsClient.timeline} ${incidentsClient.create} ${incidentsClient.comment} ${incidentsClient.transition} ${incidentsClient.assignCommander} ${incidentsClient.updateScope} ${supportClient.list}`;
     for (const method of deprecated) expect(implementation).not.toContain(`"${method}"`);
   });
 });

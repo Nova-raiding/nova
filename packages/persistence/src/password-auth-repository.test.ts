@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { MemoryPasswordAuthRepository } from './password-auth-repository.js'
 
 describe('password authentication', () => {
+  it('requires eight characters with letters and numbers', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    await expect(auth.register({ login: 'short@example.com', password: 'test123', enterpriseName: '企业', contactName: '管理员', termsAgreed: true })).rejects.toMatchObject({ code: 'AUTH_PASSWORD_POLICY_INVALID' })
+    await expect(auth.register({ login: 'valid@example.com', password: 'test1234', enterpriseName: '企业', contactName: '管理员', termsAgreed: true })).resolves.toMatchObject({ account: { login: 'valid@example.com' } })
+  })
+
   it('registers with an Argon2id hash, logs in with an opaque session, and rotates refresh', async () => {
     const auth = new MemoryPasswordAuthRepository()
     const registered = await auth.register({ login: 'merchant@example.com', password: 'CorrectHorse123', enterpriseName: '示例企业', contactName: '张三', termsAgreed: true })
     expect(registered.account.status).toBe('merchant_pending')
+    expect(registered.account.identityId).toBe(registered.account.id)
     expect(JSON.stringify(registered)).not.toContain('passwordHash')
     await expect(auth.login({ login: 'merchant@example.com', password: 'bad' })).rejects.toMatchObject({ code: 'AUTH_INVALID_CREDENTIALS' })
     await expect(auth.login({ login: 'merchant@example.com', password: 'CorrectHorse123' })).rejects.toMatchObject({ code: 'AUTH_ACCOUNT_NOT_ACTIVE' })
@@ -38,6 +45,55 @@ describe('password authentication', () => {
     const auth = new MemoryPasswordAuthRepository()
     expect(await auth.requestPasswordReset('unknown@example.com')).toEqual({ accepted: true })
     await auth.ensurePlatformAccount({ login: 'ops@example.com', passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$invalid$invalid' })
+    await expect(auth.listAccounts()).resolves.toEqual([
+      expect.objectContaining({ login: 'ops@example.com', accountType: 'platform', identityId: expect.any(String) }),
+    ])
     await expect(auth.register({ login: 'ops@example.com', password: 'CorrectHorse123', enterpriseName: '企业', contactName: '管理员', termsAgreed: true })).rejects.toMatchObject({ code: 'AUTH_LOGIN_ALREADY_EXISTS' })
+  })
+
+  it('keeps platform bootstrap idempotent after a partial initialization retry', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    const hash = '$argon2id$v=19$m=19456,t=2,p=1$invalid$invalid'
+    await auth.ensurePlatformAccount({ login: 'retry-ops@example.com', passwordHash: hash })
+    await auth.ensurePlatformAccount({ login: 'retry-ops@example.com', passwordHash: hash })
+    await expect(auth.listAccounts()).resolves.toEqual([
+      expect.objectContaining({ login: 'retry-ops@example.com', accountType: 'platform' }),
+    ])
+  })
+
+  it('lets platform provision an active merchant account and lets the merchant rotate its password', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    const account = await auth.createMerchantAccount({
+      login: 'provisioned@example.com',
+      password: 'InitialPass123',
+      enterpriseName: '已开通企业',
+      contactName: '企业管理员',
+      workspaceIds: ['ws_enterprise'],
+      actorId: 'platform_ops',
+      reason: '开通企业 VIP 账号',
+    })
+    expect(account).toMatchObject({ accountType: 'merchant', status: 'active', workspaceIds: ['ws_enterprise'] })
+    const logged = await auth.login({ login: account.login, password: 'InitialPass123' })
+    await auth.changePassword({ token: logged.token, currentPassword: 'InitialPass123', newPassword: 'RotatedPass123' })
+    await expect(auth.authenticate(logged.token)).resolves.toBeUndefined()
+    await expect(auth.login({ login: account.login, password: 'InitialPass123' })).rejects.toMatchObject({ code: 'AUTH_INVALID_CREDENTIALS' })
+    await expect(auth.login({ login: account.login, password: 'RotatedPass123' })).resolves.toBeDefined()
+    expect(auth.events.map(event => event.eventType)).toEqual(expect.arrayContaining(['auth.merchant_created', 'auth.password_changed']))
+  })
+
+  it('returns a stable password-policy code when changing a password', async () => {
+    const auth = new MemoryPasswordAuthRepository()
+    const account = await auth.createMerchantAccount({
+      login: 'policy@example.com',
+      password: 'InitialPass123',
+      enterpriseName: '企业',
+      contactName: '管理员',
+      workspaceIds: ['ws_policy'],
+      actorId: 'platform_ops',
+      reason: '测试密码策略',
+    })
+    const logged = await auth.login({ login: account.login, password: 'InitialPass123' })
+    await expect(auth.changePassword({ token: logged.token, currentPassword: 'InitialPass123', newPassword: 'short' }))
+      .rejects.toMatchObject({ code: 'AUTH_PASSWORD_POLICY_INVALID' })
   })
 })

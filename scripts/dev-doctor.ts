@@ -1,5 +1,5 @@
 import { accessSync, constants, existsSync, readFileSync, readdirSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { apiProbeReady, codexAppHostEvidenceAudit, commercialRuntimeAudit, commercialRuntimeReadiness, composeServiceHealth, modelRelayEvidenceAudit, parseComposeServiceStates, releaseReadiness } from './dev-doctor-runtime.js'
@@ -28,6 +28,39 @@ const run = (command: string, commandArgs: string[] = []) => spawnSync(command, 
 const commandReady = (command: string, commandArgs: string[] = []) => run(command, commandArgs).status === 0
 const root = process.cwd()
 const parseJsonFile = (path: string) => JSON.parse(readFileSync(resolve(root, path), 'utf8')) as unknown
+// Local doctor runs should inspect the same root .env that compose uses. Keep
+// production fail-closed: production checks must come from the deployment
+// environment/Secret Manager, never from a developer workstation file.
+if (!production) {
+  const dotenvPath = resolve(root, '.env')
+  if (existsSync(dotenvPath)) {
+    for (const rawLine of readFileSync(dotenvPath, 'utf8').split(/\r?\n/u)) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('#')) continue
+      const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/u.exec(line)
+      const key = match?.[1]
+      if (!match || !key || process.env[key]) continue
+      let value = match[2]!.trim()
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1)
+      }
+      process.env[key] = value
+    }
+  }
+}
+// The desktop plugin is launched by ChatGPT.app through the macOS user
+// launchd session. Mirror bridge.sh here so a local doctor run observes the
+// same endpoint/token contract without printing secret values. Production
+// still requires a public HTTPS endpoint below.
+if (process.platform === 'darwin') {
+  for (const name of ['MERCHANT_MCP_BASE_URL', 'MERCHANT_WORKSPACE_ID', 'MERCHANT_MCP_TOKEN']) {
+    if (process.env[name]?.trim()) continue
+    try {
+      const value = execFileSync('launchctl', ['getenv', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      if (value) process.env[name] = value
+    } catch { /* absent launchd value remains fail-closed */ }
+  }
+}
 // Compose resolves its implicit .env relative to the compose project
 // directory (infra/local here), not reliably relative to the repository
 // root. Keep the doctor aligned with the startup scripts so local secrets and
@@ -100,7 +133,7 @@ try {
   bridgeEndpointValid = (bridgeLoopback || parsed.protocol === 'https:') && !parsed.username && !parsed.password
     && !parsed.search && !parsed.hash && (parsed.pathname === '' || parsed.pathname === '/')
 } catch { /* missing or malformed is blocked below */ }
-const bridgeReady = bridgeEndpointValid && (bridgeLoopback || bridgeTokenPresent)
+const bridgeReady = bridgeEndpointValid && (production ? !bridgeLoopback && bridgeTokenPresent : bridgeLoopback || bridgeTokenPresent)
 add('plugin_bridge', bridgeReady ? 'pass' : production ? 'fail' : 'warn', bridgeReady
   ? `Bridge endpoint 已配置（${bridgeLoopback ? 'loopback' : 'HTTPS'}；token=${bridgeTokenPresent ? 'present' : 'not-required'}）`
   : 'Bridge endpoint/token 合同未就绪', '设置根 origin MERCHANT_MCP_BASE_URL；远程环境同时从 Secret Manager 注入 MERCHANT_MCP_TOKEN，禁止在输出中显示 token。')
@@ -178,7 +211,12 @@ try {
   add('commercial:platform_oauth', level(runtimeAudit?.platforms.ready), runtimeAudit
     ? `平台 OAuth ready=${String(runtimeAudit.platforms.ready)}, missing=${runtimeAudit.platforms.missingOAuthPlatforms.join(',') || 'none'}, blocked=${runtimeAudit.platforms.blockedPlatforms.join(',') || 'none'}`
     : '平台 OAuth readiness 不可解析', '补齐六平台官方 OAuth、回调地址、凭据提供器与只读/写入授权；未配置时保持 fail-closed。')
-  add('commercial:model_relay', level(readiness?.modelRelayReady), `五模态中转与成本门禁 ready=${String(readiness?.modelRelayReady)}`, '逐模态配置真实中转鉴权、usage、cost 与错误证据。')
+  const relayRuntimeReady = runtimeAudit?.relay.ready === true
+  const relayCheckReady = readiness?.mode === 'fixture' ? relayRuntimeReady : readiness?.modelRelayReady
+  const relayMessage = readiness?.mode === 'fixture'
+    ? `本地 fixture：五模态中转配置与计费契约 ready=${String(relayRuntimeReady)}；生产 usage/cost/错误证据另行校验`
+    : `五模态中转与成本门禁 ready=${String(relayCheckReady)}`
+  add('commercial:model_relay', level(relayCheckReady), relayMessage, '逐模态配置真实中转鉴权、usage、cost 与错误证据。')
   add('commercial:model_relay_contract', level(runtimeAudit?.relay.ready), runtimeAudit
     ? `relay contract ready=${String(runtimeAudit.relay.ready)}, costGate=${String(runtimeAudit.relay.costGateReady)}, blocked=${runtimeAudit.relay.blockedModalities.join(',') || 'none'}, providerMissing=${runtimeAudit.relay.missingProviderConfigured.join(',') || 'none'}`
     : 'relay runtime contract 不可解析', '逐模态补齐 provider 配置与成本门禁；未就绪时阻断真实模型调用。')

@@ -7,6 +7,7 @@ export interface PersistedRuleVersion {
   name: string
   version: string
   scope: string
+  category?: string | null
   status: string
   sourceKind: string
   sourceReference: string
@@ -41,7 +42,7 @@ export interface PersistedRuleAudit {
 }
 
 type RuleVersionRow = {
-  id: string; workspace_id: string; pack_id: string; name: string; version: string; scope: string; status: string
+  id: string; workspace_id: string; pack_id: string; name: string; version: string; scope: string; category?: string | null; status: string
   source_kind: string; source_reference: string; source_checked_at: string | Date; checksum: string
   checks: Record<string, unknown>; created_at: string | Date; updated_at: string | Date; created_by: string
   revision: number; effective_from?: string | Date | null; effective_to?: string | Date | null; severity?: string | null; action?: string | null; target_id?: string | null; scope_value?: string | null; activated_at?: string | Date | null; deactivated_at?: string | Date | null
@@ -55,7 +56,7 @@ type RuleAuditRow = {
 const asIso = (value: string | Date) => value instanceof Date ? value.toISOString() : String(value)
 const version = (row: RuleVersionRow): PersistedRuleVersion => ({
   id: row.id, workspaceId: row.workspace_id, packId: row.pack_id, name: row.name, version: row.version,
-  scope: row.scope, status: row.status, sourceKind: row.source_kind, sourceReference: row.source_reference,
+  scope: row.scope, ...(row.category ? { category: row.category } : {}), status: row.status, sourceKind: row.source_kind, sourceReference: row.source_reference,
   sourceCheckedAt: asIso(row.source_checked_at), checksum: row.checksum, checks: row.checks,
   createdAt: asIso(row.created_at), updatedAt: asIso(row.updated_at), createdBy: row.created_by, revision: row.revision,
   ...(row.effective_from ? { effectiveFrom: asIso(row.effective_from) } : {}), ...(row.effective_to ? { effectiveTo: asIso(row.effective_to) } : {}),
@@ -79,7 +80,7 @@ export class PostgresRuleRepository {
     const scope = requireWorkspaceScope(workspaceId)
     return withWorkspaceTransaction(this.pool, scope, async client => {
       const result = await client.query<RuleVersionRow>(
-        `SELECT id, workspace_id, pack_id, name, version, scope, status, source_kind, source_reference,
+        `SELECT id, workspace_id, pack_id, name, version, scope, category, status, source_kind, source_reference,
                 source_checked_at, checksum, checks, created_at, updated_at, created_by, revision, effective_from, effective_to, severity, action, target_id, scope_value,
                 activated_at, deactivated_at
            FROM rule_pack_versions
@@ -101,13 +102,13 @@ export class PostgresRuleRepository {
     const updatedAt = input.updatedAt ?? createdAt
     const result = await client.query<RuleVersionRow>(
       `INSERT INTO rule_pack_versions
-       (id, workspace_id, pack_id, name, version, scope, status, source_kind, source_reference, source_checked_at,
+       (id, workspace_id, pack_id, name, version, scope, category, status, source_kind, source_reference, source_checked_at,
         checksum, checks, created_at, updated_at, created_by, revision, effective_from, effective_to, severity, action, target_id, scope_value, activated_at, deactivated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
-       RETURNING id, workspace_id, pack_id, name, version, scope, status, source_kind, source_reference,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+       RETURNING id, workspace_id, pack_id, name, version, scope, category, status, source_kind, source_reference,
                  source_checked_at, checksum, checks, created_at, updated_at, created_by, revision, effective_from, effective_to, severity, action, target_id, scope_value,
                  activated_at, deactivated_at`,
-      [input.id, workspaceId, input.packId, input.name, input.version, input.scope, input.status, input.sourceKind,
+      [input.id, workspaceId, input.packId, input.name, input.version, input.scope, input.category ?? null, input.status, input.sourceKind,
         input.sourceReference, input.sourceCheckedAt, input.checksum, JSON.stringify(input.checks), createdAt, updatedAt,
         input.createdBy, input.revision, input.effectiveFrom ?? null, input.effectiveTo ?? null, input.severity ?? null, input.action ?? null, input.targetId ?? null, input.scopeValue ?? null, input.activatedAt ?? null, input.deactivatedAt ?? null],
     )

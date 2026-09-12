@@ -10,7 +10,7 @@ const stores = [
 describe("platform operations summary", () => {
   it("aggregates platform health without exposing store identities", () => {
     expect(summarizePlatforms([...stores])).toEqual([{ platform: "jd", storeCount: 2, officialApiCount: 1, attentionCount: 1 }]);
-    const markup = renderToStaticMarkup(<PlatformSummarySection stores={[...stores]} platformLabels={{ jd: "京东" }} onOpenSupport={vi.fn()} />);
+    const markup = renderToStaticMarkup(<PlatformSummarySection stores={[...stores]} platformLabels={{ jd: "京东" }} />);
     expect(markup).toContain("平台连接汇总");
     expect(markup).toContain("京东");
     expect(markup).not.toContain("客户店铺 A");
@@ -18,9 +18,9 @@ describe("platform operations summary", () => {
   });
 
   it("renders explicit empty and error states", () => {
-    const empty = renderToStaticMarkup(<PlatformSummarySection stores={[]} platformLabels={{}} onOpenSupport={vi.fn()} />);
+    const empty = renderToStaticMarkup(<PlatformSummarySection stores={[]} platformLabels={{}} />);
     expect(empty).toContain("暂无平台连接汇总");
-    const error = renderToStaticMarkup(<PlatformSummarySection stores={[]} error="权限不足" platformLabels={{}} onRetry={vi.fn()} onOpenSupport={vi.fn()} />);
+    const error = renderToStaticMarkup(<PlatformSummarySection stores={[]} error="权限不足" platformLabels={{}} onRetry={vi.fn()} />);
     expect(error).toContain('role="alert"');
     expect(error).toContain("权限不足");
     expect(error).toContain('tabindex="-1"');
@@ -28,7 +28,7 @@ describe("platform operations summary", () => {
   });
 
   it("keeps the last trusted summary visible while refreshing or reporting an error", () => {
-    const refreshing = renderToStaticMarkup(<PlatformSummarySection stores={[...stores]} loading error="连接暂时不可用" platformLabels={{ jd: "京东" }} onRetry={vi.fn()} onOpenSupport={vi.fn()} />);
+    const refreshing = renderToStaticMarkup(<PlatformSummarySection stores={[...stores]} loading error="连接暂时不可用" platformLabels={{ jd: "京东" }} onRetry={vi.fn()} />);
     expect(refreshing).toContain("上次可信的平台连接汇总");
     expect(refreshing).toContain("正在更新平台连接汇总");
     expect(refreshing).toContain('aria-busy="true"');

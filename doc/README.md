@@ -13,7 +13,7 @@
 - [能力矩阵](todo/quality/capability-matrix-2026-08-30.md)
 - [需求完成矩阵](todo/quality/requirements-completion-matrix-2026-08-25.md)
 - [实现状态与上线门禁](todo/quality/implementation-status.md)
-- [发布检查清单](todo/release/release-checklist-0.1.1.md)
+- [发布检查清单](todo/release/release-checklist-0.1.2.md)
 - [主链路架构](done/architecture/main-chain-architecture-2026-08-30.md)
 - [Canonical 切读设计](todo/data/canonical-product-cutover-design-2026-08-29.md)
 

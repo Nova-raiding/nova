@@ -36,10 +36,10 @@ class AppErrorBoundary extends React.Component<React.PropsWithChildren, AppError
       <div className="app-crash-card">
         <span className="section-kicker">WORKSPACE RECOVERY</span>
         <h1 id="app-crash-title">页面暂时无法显示</h1>
-        <p id="app-crash-description">当前任务状态没有被确认，已有服务端数据不会被当作成功。可以重新加载；如果仍失败，请回到商品范围重新选择。</p>
+        <p id="app-crash-description">当前任务状态没有被确认，已有服务端数据不会被当作成功。可以重新加载；如果仍失败，请回到知识库重新选择。</p>
         <div className="button-row">
           <button type="button" className="primary" onClick={this.reload}>重新加载</button>
-          <button type="button" className="secondary" onClick={this.backToProducts}>回到商品与素材</button>
+          <button type="button" className="secondary" onClick={this.backToProducts}>回到知识库</button>
         </div>
       </div>
     </main>

@@ -92,6 +92,46 @@ describe("workspace RPC boundary", () => {
     expect(headers).not.toHaveProperty("x-workspace-id");
   });
 
+  it("uses cookie credentials for password-session RPC restores and keeps bearer mode unchanged", async () => {
+    const values = new Map<string, string>([
+      ["ops_password_session_active", "true"],
+      ["ops_api_base", "http://ops.test/"],
+      ["ops_workbench", "platform"],
+    ]);
+    const local = storage();
+    vi.spyOn(local, "getItem").mockImplementation((key) => values.get(key) ?? "");
+    vi.spyOn(local, "setItem").mockImplementation((key, value) => { values.set(key, value); });
+    vi.spyOn(local, "removeItem").mockImplementation((key) => { values.delete(key); });
+    vi.stubGlobal("localStorage", local);
+    vi.stubGlobal("sessionStorage", storage());
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { jsonrpc: "2.0", id: "1", result: { actor_id: "actor_demo", roles: [] } } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await rpcWithMeta("ops.session");
+    expect(fetchMock).toHaveBeenCalledWith("http://ops.test/mcp", expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+      headers: expect.objectContaining({
+        "x-ops-workbench": "platform",
+      }),
+    }));
+
+    values.set("ops_workbench", "workspace");
+    values.set("ops_workspace_id", "ws-demo");
+    values.set("ops_password_session_active", "false");
+    values.set("ops_api_token", "token-rest");
+    const fetchMockWithToken = vi.fn(async () => new Response(JSON.stringify({ data: { jsonrpc: "2.0", id: "1", result: [] } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMockWithToken);
+    await rpcWithMeta("ops.members.list");
+    expect(fetchMockWithToken).toHaveBeenCalledWith("http://ops.test/mcp", expect.objectContaining({
+      credentials: "same-origin",
+      headers: expect.objectContaining({
+        "x-ops-workbench": "workspace",
+        authorization: "Bearer token-rest",
+      }),
+    }));
+  });
+
   it("keeps the previous valid configuration when a replacement is invalid and can clear it", () => {
     const values = new Map<string, string>();
     const local = storage();

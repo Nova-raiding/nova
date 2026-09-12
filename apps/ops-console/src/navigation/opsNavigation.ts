@@ -4,14 +4,11 @@ export const opsDomains = [
   "overview",
   "users",
   "members",
-  "support",
-  "incidents",
   "tasks",
   "knowledge",
   "stores",
   "rules",
   "models",
-  "feature-flags",
   "storage",
   "finance",
   "audit",
@@ -19,14 +16,11 @@ export const opsDomains = [
 
 export type OpsDomain = (typeof opsDomains)[number];
 
-/** Domains with one authoritative workbench; deep links must use that context. */
+/** Domains served by the platform operations console. Merchant operations are
+ * handled by Merchant Studio, so the Ops Console never switches workbench. */
 export function requiredWorkbenchForDomain(domain: OpsDomain): "platform" | "workspace" | undefined {
-  // Finance is intentionally dual-scope: platform operators use the
-  // cross-workspace search, while workspace operators use reconciliation,
-  // recharge orders and refunds. Keep the current workbench so the sidebar
-  // does not discard the workspace ledger context.
-  if (["users", "stores", "models", "feature-flags", "storage", "audit"].includes(domain)) return "platform";
-  if (["members", "tasks", "knowledge", "rules", "support", "incidents"].includes(domain)) return "workspace";
+  if (["users", "stores", "models", "storage", "audit"].includes(domain)) return "platform";
+  if (["members", "tasks", "knowledge", "rules"].includes(domain)) return "workspace";
   return undefined;
 }
 
@@ -51,11 +45,12 @@ export function domainFromLocation(
   location: Pick<Location, "hash" | "pathname">,
 ): OpsDomain {
   const pathDomain = location.pathname
-    .match(/\/ops\/(?:governance|overview|users|members|support|incidents|tasks|knowledge|stores|rules|models|feature-flags|storage|finance|audit)\/?$/u)?.[0]
+    .match(/\/ops\/(?:governance|overview|users|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u)?.[0]
     .split("/")
     .filter(Boolean)
     .at(-1);
   if (pathDomain === "governance") return "overview";
+  if (pathDomain === "overview") return "overview";
   if (pathDomain && isOpsDomain(pathDomain)) return pathDomain;
 
   // Keep old bookmarked hash links working during the route migration.
@@ -69,7 +64,7 @@ export function urlForDomain(
   domain: OpsDomain,
 ): string {
   const currentOpsRoute =
-    /\/ops\/(?:governance|overview|users|members|support|incidents|tasks|knowledge|stores|rules|models|feature-flags|storage|finance|audit)\/?$/u;
+    /\/ops\/(?:governance|overview|users|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u;
   const basePath = currentOpsRoute.test(location.pathname)
     ? location.pathname.replace(currentOpsRoute, "")
     : location.pathname.replace(/\/$/u, "");

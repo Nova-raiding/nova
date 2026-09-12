@@ -36,7 +36,6 @@ describe("ops console component architecture", () => {
 
   it("uses real domain pages instead of generic children wrappers", () => {
     for (const pageName of [
-      "OverviewPage.tsx",
       "UsersPage.tsx",
       "TasksPage.tsx",
       "StoresPage.tsx",
@@ -55,7 +54,6 @@ describe("ops console component architecture", () => {
       "utf8",
     );
     for (const pageName of [
-      "OverviewPage",
       "TasksPage",
       "StoresPage",
       "RulesPage",
@@ -67,11 +65,11 @@ describe("ops console component architecture", () => {
     }
     expect(registry).toContain('import { UsersPage } from "../pages/UsersPage.js"');
     expect(registry).toContain("users: lazy(async () => ({ default: UsersPage }))");
-    for (const routeName of ["SupportRoute", "IncidentsRoute", "FeatureFlagsRoute"]) {
-      expect(registry).toContain(`import("./routes/${routeName}.js")`);
-    }
+    expect(registry).not.toContain("SupportRoute");
+    expect(registry).not.toContain("IncidentsRoute");
+    expect(registry).not.toContain("FeatureFlagsRoute");
     expect(registry).toContain('storage: lazy(');
-    expect(registry.match(/lazy\(/gu)).toHaveLength(14);
+    expect(registry.match(/lazy\(/gu)).toHaveLength(11);
   });
 
   it("separates transport and domain types from React page files", () => {

@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Breadcrumb, Button, Card, Space, Statistic, Tag } from 'antd'
+import { Alert, Badge, Breadcrumb, Button, Card, Dropdown, Form, Input, List, Modal, Space, Statistic, Table, Tag } from 'antd'
 import './capability.css'
 import { nextImageJobPollDelay, shouldPollImageJob, visibleImageJobPollDelay, IMAGE_JOB_INITIAL_POLL_DELAY_MS } from './image-job-polling'
 import { getImageCandidatePage } from './image-candidate-pagination'
@@ -15,6 +15,7 @@ import {
   AlertCircle,
   ArrowLeftRight,
   ArrowRight,
+  Bell,
   BookOpen,
   Boxes,
   Check,
@@ -22,6 +23,7 @@ import {
   ChevronDown,
   CircleHelp,
   Clock3,
+  CreditCard,
   FileCheck2,
   FileText,
   FolderOpen,
@@ -30,20 +32,22 @@ import {
   Image as ImageIcon,
   LayoutDashboard,
   Link2,
+  LogOut,
   Menu,
   PackageSearch,
   PanelLeftClose,
   RefreshCw,
   Rocket,
   Search,
-  Settings,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
   Store,
   Upload,
+  UserRound,
   X,
   Zap,
+  WalletCards,
 } from 'lucide-react'
 import {
   answerTask,
@@ -64,7 +68,6 @@ import {
   extractBrandProfile,
   fetchApiHealth,
   fetchAssetBlob,
-  fetchAssetStorageQuota,
   fetchAssets,
   fetchBillingStatus,
   fetchCommercialCatalog,
@@ -77,6 +80,9 @@ import {
   fetchContentVersions,
   fetchPlatformAccounts,
   fetchPlatformModelStatus,
+  fetchMerchantSession,
+  logoutMerchantAccount,
+  changeMerchantPassword,
   fetchProduct,
   fetchProductAssetBindings,
   fetchProductsByAsset,
@@ -112,10 +118,10 @@ import {
   submitTaskFeedback,
   syncPlatform,
   understandTask,
+  configuredWorkspaceId,
   updateAssetRights,
   uploadAsset,
   type AssetMetadata,
-  type StorageQuotaProjection,
   type BrandCandidateFieldKey,
   type BrandExtraction,
   type BrandProfile,
@@ -146,7 +152,9 @@ import {
   type TaskTimelineEvent,
   type TaskUnderstanding,
   type WorkspaceMetrics,
+  type MerchantAuthAccount,
 } from './api'
+import { MerchantLoginPage } from './MerchantLoginPage'
 import { brandUnitSelectionMessage } from './brand-unit-selection'
 import { imageGenerationExecutionLabel, imageGenerationNeedsReconciliation, imageGenerationProviderCallStarted, imageGenerationRetryAllowed, isImageGenerationConfigurationError } from './image-generation-state'
 import { resolveStoreSyncTargets } from './store-sync'
@@ -207,7 +215,7 @@ const merchantReadOnly = MERCHANT_READ_ONLY_ROLES.has(merchantRole)
 
 function projectMerchantWriteControls(root: HTMLElement, readOnly: boolean) {
   const writeAction = /同步|授权|撤销|导入|上传|保存|充值|发布|生成|创建|绑定|解除|确认(?:需求|商品|方案|事实|选择)|修改|评价|解析|重试/iu
-  const readAction = /关闭|取消|查看|刷新|回到|返回|帮助|诊断|工作区信息|下一步/iu
+  const readAction = /关闭|取消|查看|刷新|回到|返回|帮助|诊断|下一步/iu
   root.querySelectorAll<HTMLElement>('button, input, select, textarea').forEach((control) => {
     if (!readOnly) {
       control.removeAttribute('data-permission-state')
@@ -248,46 +256,19 @@ const navItems: Array<{
   id: Page
   label: string
   icon: typeof LayoutDashboard
+  entry?: MerchantEntryPoint
+  description?: string
   badge?: string
 }> = [
   { id: 'overview', label: '运营概览', icon: LayoutDashboard },
-  { id: 'products', label: '商品与资产', icon: Boxes },
-  { id: 'task', label: '营销任务', icon: Sparkles },
-  { id: 'publish', label: '发布中心', icon: Rocket },
-  { id: 'rules', label: '规则与检查', icon: ShieldCheck },
+  // 商品资产不再作为独立工作台；相关能力收敛到知识库二级工作区。
+  { id: 'products', label: '知识库', icon: BookOpen, entry: 'knowledge' },
+  { id: 'products', label: '品牌资产', icon: ImageIcon, entry: 'assets' },
+  { id: 'products', label: '规则库', icon: ShieldCheck, entry: 'rules' },
+  { id: 'task', label: '营销任务', icon: Sparkles, description: '创建并生成商品内容' },
+  { id: 'publish', label: '发布中心', icon: Rocket, description: '审核后发布并查看回执' },
 ]
-
-const entryPointItems: Array<{
-  id: MerchantEntryPoint
-  label: string
-  description: string
-  icon: typeof BookOpen
-}> = [
-  {
-    id: 'knowledge',
-    label: '知识库',
-    description: '品牌资料与规则依据',
-    icon: BookOpen,
-  },
-  {
-    id: 'products',
-    label: '商品',
-    description: '选择平台商品开始任务',
-    icon: ShoppingBag,
-  },
-  {
-    id: 'images',
-    label: '图片',
-    description: '主图、副图与视觉检查',
-    icon: ImageIcon,
-  },
-  {
-    id: 'assets',
-    label: '素材',
-    description: '上传并确认权益与事实',
-    icon: FolderOpen,
-  },
-]
+// Compatibility marker for deep links that still address id: 'knowledge'.
 
 const platforms: Array<{
   name: Platform
@@ -444,7 +425,7 @@ export function WorkspaceDataIntegrityNotice({ metrics }: { metrics: WorkspaceMe
         {partial ? (
           <>
             <strong>总览不是完整快照</strong>
-            <span>数据源：{metrics.source ?? '未知'}；无效持久化快照：{invalidSnapshots}。请先修复数据恢复问题，再依据总览做经营决策。</span>
+            <span>数据源：{metrics.source ?? '待确认'}；无效持久化快照：{invalidSnapshots}。请先修复数据恢复问题，再依据总览做经营决策。</span>
           </>
         ) : null}
         {metrics.dataCoverage.fixtureDataPresent ? <span>当前包含 fixture 数据，仅用于本地验收，不代表真实平台生产数据。</span> : null}
@@ -822,40 +803,121 @@ function reviewEvidenceLabel(finding: ReviewFinding) {
   return `依据：任务确认时冻结的品牌档案${revision ? ` · 版本 r${revision}` : ''}`
 }
 
-type UtilityPanel = 'health' | 'help' | 'settings' | 'support'
+type UtilityPanel = 'health' | 'help' | 'support'
+
+function merchantWorkspaceLabel(account: MerchantAuthAccount | null) {
+  const workspaceIds = account?.workspaceIds?.filter(Boolean) ?? []
+  if (!workspaceIds.length) return '未分配商家工作区'
+  const enterpriseName = account?.enterpriseName?.trim()
+  if (workspaceIds.length === 1 && enterpriseName)
+    return `${enterpriseName}商家工作区`
+  if (workspaceIds.length === 1) return '商家工作区'
+  return `已授权 ${workspaceIds.length} 个商家工作区`
+}
 
 function Topbar({
   page,
+  activeEntry,
   openMenu,
   menuOpen,
   menuButtonRef,
   apiOnline,
   apiMode,
   apiBaseUrl,
+  account,
+  billing,
+  onLogout,
+  onPasswordChanged,
   onOpenUtility,
+  onOpenIssues,
   searchQuery,
   onSearchQuery,
   onSearch,
 }: {
   page: Page
+  activeEntry?: MerchantEntryPoint
   openMenu: () => void
   menuOpen: boolean
   menuButtonRef: React.RefObject<HTMLButtonElement | null>
   apiOnline: boolean | null
   apiMode: string | null
   apiBaseUrl?: string
+  account: MerchantAuthAccount | null
+  billing: BillingStatus | null
+  onLogout: () => void
+  onPasswordChanged: () => void
   onOpenUtility: (panel: UtilityPanel) => void
+  onOpenIssues: () => void
   searchQuery: string
   onSearchQuery: (value: string) => void
   onSearch: () => void
 }) {
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [issueMetrics, setIssueMetrics] = useState<WorkspaceMetrics | null>(null)
+  const [issueDetail, setIssueDetail] = useState<WorkspaceMetrics['riskItems'][number] | null>(null)
+  const [passwordForm] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
+  const accountMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!accountMenuOpen) return
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node))
+        setAccountMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAccountMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [accountMenuOpen])
+  useEffect(() => {
+    if (!apiBaseUrl) { setIssueMetrics(null); return }
+    let active = true
+    fetchWorkspaceMetrics(apiBaseUrl).then((result) => { if (active) setIssueMetrics(result) }).catch(() => { if (active) setIssueMetrics(null) })
+    return () => { active = false }
+  }, [apiBaseUrl])
   const titles: Record<Page, string> = {
     overview: '运营概览',
-    products: '商品与资产',
+    products: activeEntry === 'rules' ? '规则库' : activeEntry === 'assets' ? '品牌资产' : '知识库',
     task: '营销任务',
     publish: '发布中心',
     rules: '规则与检查',
   }
+  const displayName = account?.contactName?.trim() || '商家管理员'
+  const accountInitial = Array.from(displayName)[0] || '商'
+  const tenantName = account?.enterpriseName?.trim() || '商家工作区'
+  const workspaceName = merchantWorkspaceLabel(account)
+  const points = billing?.available_points
+  const balance = billing?.balance_cny
+  const walletUnavailable = !billing
+  const issueItems = issueMetrics?.riskItems ?? []
+  const issueCount = issueMetrics?.riskSummary.total ?? 0
+  const notificationPanel = (
+    <div className="merchant-notification-panel" role="region" aria-label="待处理问题">
+      <div className="merchant-notification-heading">
+        <div><strong>待处理问题</strong><span>{issueCount ? `${issueCount} 项需要关注` : '当前没有待处理问题'}</span></div>
+        <button type="button" className="text-button" onClick={onOpenIssues}>查看全部</button>
+      </div>
+      {issueItems.length ? <List
+        size="small"
+        dataSource={issueItems.slice(0, 8)}
+        renderItem={(item, index) => <List.Item className="merchant-notification-item" onClick={() => setIssueDetail(item)}>
+          <button type="button" className="merchant-notification-item-button" aria-label={`查看问题：${item.title ?? item.type}`}>
+            <span className={`merchant-notification-dot ${item.severity}`} aria-hidden="true" />
+            <span className="merchant-notification-copy"><strong>{item.title ?? item.type}</strong><small>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</small><em>{item.nextAction ?? '查看详情并处理'}</em></span>
+            <span className="merchant-notification-index">{index + 1}</span>
+          </button>
+        </List.Item>}
+      /> : <div className="merchant-notification-empty"><CheckCircle2 size={18} />暂无需要处理的问题</div>}
+      {issueCount > 8 ? <div className="merchant-notification-footer">还有 {issueCount - 8} 项问题，请打开商品与问题查看</div> : null}
+    </div>
+  )
   return (
     <header className="topbar">
       <button
@@ -915,16 +977,156 @@ function Topbar({
                 : '未读取'}
           </b>
         </button>
-        <button
-          className="avatar-button"
-          onClick={() => onOpenUtility('settings')}
-          aria-label="查看工作区信息"
-        >
-          林
-        </button>
+        <Dropdown trigger={['click']} placement="bottomRight" dropdownRender={() => notificationPanel}>
+          <Badge count={issueCount > 99 ? '99+' : issueCount} overflowCount={99} offset={[-2, 4]}>
+            <button type="button" className="icon-button notification-trigger" aria-label={`待处理问题${issueCount ? `，${issueCount} 项` : '，暂无'}`}>
+              <Bell size={18} aria-hidden="true" />
+            </button>
+          </Badge>
+        </Dropdown>
+        <div className="account-menu" ref={accountMenuRef}>
+          <button
+            className="account-trigger"
+            onClick={() => setAccountMenuOpen((open) => !open)}
+            aria-label="打开账号菜单"
+            aria-expanded={accountMenuOpen}
+            aria-haspopup="menu"
+          >
+            <span className="avatar-button" aria-hidden="true">{accountInitial}</span>
+            <span className="account-trigger-copy">
+              <strong>{displayName}</strong>
+              <small>{tenantName}</small>
+            </span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+          {accountMenuOpen && (
+            <div className="account-dropdown" role="menu" aria-label="账号菜单">
+              <div className="account-dropdown-header">
+                <span className="account-dropdown-avatar" aria-hidden="true">{accountInitial}</span>
+                <div>
+                  <strong>{displayName}</strong>
+                  <span>{account?.login || '当前为离线演示账号'}</span>
+                  <em><i />已登录</em>
+                </div>
+              </div>
+              <div className="account-dropdown-section">
+                <div className="account-dropdown-section-title"><UserRound size={15} />个人信息</div>
+                <dl className="account-dropdown-facts">
+                  <div><dt>登录账号</dt><dd>{account?.login || '未读取'}</dd></div>
+                  <div><dt>联系人</dt><dd>{account?.contactName || '未设置'}</dd></div>
+                </dl>
+              </div>
+              <div className="account-dropdown-section">
+                <div className="account-dropdown-section-title"><CreditCard size={15} />业务归属</div>
+                <dl className="account-dropdown-facts">
+                  <div><dt>当前租户</dt><dd>{tenantName}</dd></div>
+                  <div><dt>当前工作区</dt><dd>{workspaceName}</dd></div>
+                  <div><dt>角色</dt><dd>{account?.roles?.join('、') || '未分配'}</dd></div>
+                </dl>
+              </div>
+              <div className="account-dropdown-section account-wallet-section">
+                <div className="account-dropdown-section-title"><WalletCards size={15} />钱包信息</div>
+                {walletUnavailable ? (
+                  <div className="account-wallet-pending">正在读取服务端钱包状态…</div>
+                ) : (
+                  <div className="account-wallet-grid">
+                    <div><span>剩余创意点</span><strong>{points === null || points === undefined ? '待确认' : points.toLocaleString('zh-CN')}<small>{points === null || points === undefined ? '' : ' 点'}</small></strong></div>
+                    <div><span>钱包余额</span><strong>{balance ? `¥${balance}` : '待确认'}</strong></div>
+                  </div>
+                )}
+                <p className="account-wallet-note">每次生成、编辑和相关任务按服务端实际消耗扣除创意点。</p>
+              </div>
+              <div className="account-dropdown-actions">
+                {apiBaseUrl && account ? (
+                  <button
+                    className="account-secondary-button"
+                    type="button"
+                    onClick={() => {
+                      setPasswordError('')
+                      passwordForm.resetFields()
+                      setPasswordModalOpen(true)
+                    }}
+                  >
+                    修改密码
+                  </button>
+                ) : null}
+                <button className="account-logout-button" type="button" onClick={() => { setAccountMenuOpen(false); onLogout() }}>
+                  <LogOut size={16} />退出登录
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+      <Modal
+        title="修改商家账号密码"
+        open={passwordModalOpen}
+        okText="确认修改"
+        cancelText="取消"
+        confirmLoading={passwordSubmitting}
+        destroyOnHidden
+        onCancel={() => {
+          if (!passwordSubmitting) setPasswordModalOpen(false)
+        }}
+        onOk={() => void passwordForm.submit()}
+      >
+        <p className="account-password-help">修改成功后当前账号的其他登录会话会失效，需要重新登录。</p>
+        {passwordError ? <Alert type="error" showIcon title={passwordError} /> : null}
+        <Form
+          form={passwordForm}
+          layout="vertical"
+          onFinish={async (values) => {
+            if (!apiBaseUrl) return
+            setPasswordSubmitting(true)
+            setPasswordError('')
+            try {
+              await changeMerchantPassword(apiBaseUrl, {
+                currentPassword: values.current_password,
+                newPassword: values.new_password,
+              })
+              setPasswordModalOpen(false)
+              onPasswordChanged()
+            } catch (cause) {
+              setPasswordError(describeApiError(cause))
+            } finally {
+              setPasswordSubmitting(false)
+            }
+          }}
+        >
+          <Form.Item label="当前密码" name="current_password" rules={[{ required: true, message: '请输入当前密码' }]}>
+            <Input.Password autoComplete="current-password" />
+          </Form.Item>
+          <Form.Item label="新密码" name="new_password" rules={[{ required: true, message: '请输入新密码' }, { min: 12, message: '新密码至少 12 位' }]}>
+            <Input.Password autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            label="确认新密码"
+            name="confirm_password"
+            dependencies={['new_password']}
+            rules={[
+              { required: true, message: '请再次输入新密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  return !value || getFieldValue('new_password') === value
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('两次输入的新密码不一致'))
+                },
+              }),
+            ]}
+          >
+            <Input.Password autoComplete="new-password" />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal title="问题详情" open={Boolean(issueDetail)} onCancel={() => setIssueDetail(null)} footer={<Space><Button onClick={() => setIssueDetail(null)}>关闭</Button><Button type="primary" onClick={() => { setIssueDetail(null); onOpenIssues() }}>查看并处理</Button></Space>} destroyOnHidden>
+        {issueDetail ? <DescriptionsIssue item={issueDetail} /> : null}
+      </Modal>
     </header>
   )
+}
+
+function DescriptionsIssue({ item }: { item: WorkspaceMetrics['riskItems'][number] }) {
+  return <div className="merchant-notification-detail"><Tag color={item.severity === 'high' ? 'red' : 'orange'}>{item.severity === 'high' ? '高优先级' : '需要关注'}</Tag><h3>{item.title ?? item.type}</h3><p>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</p><div className="merchant-notification-next"><strong>建议下一步</strong><span>{item.nextAction ?? '打开商品与任务查看处理方式'}</span></div></div>
 }
 
 function EnvironmentStatusBanner({
@@ -1115,46 +1317,28 @@ function Sidebar({
           <div className="nav-label">工作台</div>
           {navItems.map((item) => {
             const Icon = item.icon
-            // Product sub-workspaces (knowledge, images and assets) are
-            // mutually exclusive entry points. Do not leave the parent
-            // "商品与资产" item highlighted at the same time as one of its
-            // children; the sidebar should always communicate one location.
-            const active = page === item.id && !(item.id === 'products' && activeEntry)
+            const active = item.entry
+              ? page === item.id && activeEntry === item.entry
+              : page === item.id && !(item.id === 'products' && activeEntry)
             return (
               <button
                 key={item.id}
                 className={active ? 'active' : ''}
-                onClick={() => closeForAction(() => setPage(item.id))}
+                onClick={() => closeForAction(() => item.entry ? onOpenEntry(item.entry) : setPage(item.id))}
+                title={item.description}
                 aria-current={active ? 'page' : undefined}
               >
                 <Icon size={19} />
-                <span>{item.label}</span>
+                <span>
+                  {item.label}
+                  {item.description && <small className="nav-description">{item.description}</small>}
+                </span>
                 {item.badge && <em>{item.badge}</em>}
               </button>
             )
           })}
         </nav>
-        <nav className="entry-nav" aria-label="新会话入口">
-          <div className="nav-label">新会话</div>
-          {entryPointItems.map((item) => {
-            const Icon = item.icon
-            const active = page === 'products' && activeEntry === item.id
-            return (
-              <button
-                key={item.id}
-                className={active ? 'active' : ''}
-                onClick={() => closeForAction(() => onOpenEntry(item.id))}
-                aria-current={active ? 'page' : undefined}
-              >
-                <Icon size={18} aria-hidden="true" />
-                <span>
-                  {item.label}
-                  <small>{item.description}</small>
-                </span>
-              </button>
-            )
-          })}
-        </nav>
+        <nav aria-label="新会话入口" className="sr-only" aria-hidden="true" />
         <section className="sidebar-context" aria-label="当前商品上下文">
           <div className="nav-label">当前上下文</div>
           {target ? (
@@ -1173,107 +1357,8 @@ function Sidebar({
             <p>尚未选择商品。进入“商品”后按商品、平台、店铺建立任务。</p>
           )}
         </section>
-        <div className="sidebar-bottom">
-          <button
-            onClick={() =>
-              closeForAction(() =>
-                onOpenUtility('support', open ? returnFocus : undefined),
-              )
-            }
-          >
-            <CircleHelp size={19} />
-            <span>客服回复</span>
-          </button>
-          <button
-            onClick={() =>
-              closeForAction(() =>
-                onOpenUtility('help', open ? returnFocus : undefined),
-              )
-            }
-          >
-            <CircleHelp size={19} />
-            <span>帮助与诊断</span>
-          </button>
-          <button
-            onClick={() =>
-              closeForAction(() =>
-                onOpenUtility('settings', open ? returnFocus : undefined),
-              )
-            }
-          >
-            <Settings size={19} />
-            <span>工作区信息</span>
-          </button>
-          <div className="capacity-card">
-            <div>
-              <span>工作区容量</span>
-              <b>实时读取</b>
-            </div>
-            <div className="capacity-track" aria-hidden="true" />
-            <small>由当前套餐与云端配置决定，请在账务入口查看</small>
-          </div>
-        </div>
       </aside>
     </>
-  )
-}
-
-function EntryPointCards({
-  onOpenEntry,
-  compact = false,
-}: {
-  onOpenEntry: (entry: MerchantEntryPoint) => void
-  compact?: boolean
-}) {
-  return (
-    <section
-      className={`entry-point-section ${compact ? 'compact' : ''}`}
-      aria-labelledby={compact ? 'task-entry-title' : 'entry-point-title'}
-    >
-      <div className="entry-point-heading">
-        <div>
-          <span className="section-kicker">NEW SESSION</span>
-          <h3 id={compact ? 'task-entry-title' : 'entry-point-title'}>
-            从你已有的内容开始
-          </h3>
-        </div>
-        <p>
-          按“知识库 → 商品 →
-          图片/素材”的顺序准备内容；每个入口都会保留到地址栏。
-        </p>
-      </div>
-      <div className="entry-point-grid">
-        {entryPointItems.map((item, index) => {
-          const Icon = item.icon
-          return (
-            <button
-              key={item.id}
-              data-testid={`entry-point-${item.id}`}
-              className="entry-point-card"
-              onClick={() => onOpenEntry(item.id)}
-              aria-label={entryPointActionLabel(
-                index,
-                item.label,
-                item.description,
-              )}
-            >
-              <span className="entry-point-step" aria-hidden="true">
-                {index + 1}
-              </span>
-              <span className={`entry-point-icon ${item.id}`}>
-                <Icon size={20} aria-hidden="true" />
-              </span>
-              <span>
-                <b>{item.label}</b>
-                <small>{item.description}</small>
-                <em>进入{item.label}</em>
-              </span>
-              <ArrowRight size={16} aria-hidden="true" />
-            </button>
-          )
-        })}
-      </div>
-    </section>
   )
 }
 
@@ -1298,54 +1383,20 @@ function UtilityPanel({
   const closeRef = useRef<HTMLButtonElement>(null)
   const closeAction = useRef(onClose)
   closeAction.current = onClose
-  const [account, setAccount] = useState<{ subject?: string; workspaceId?: string; expiresAt?: string; amr?: string[] } | null>(null)
-  const [accountState, setAccountState] = useState<'loading' | 'ready' | 'signed_out' | 'unavailable'>('loading')
-  const merchantLoginUrl = (import.meta.env.VITE_MERCHANT_LOGIN_URL as string | undefined)?.trim() || '/auth/login'
-  const merchantLogoutUrl = (import.meta.env.VITE_MERCHANT_LOGOUT_URL as string | undefined)?.trim() || '/auth/logout'
-  useEffect(() => {
-    if (panel !== 'settings' || typeof window === 'undefined') return
-    let cancelled = false
-    fetch('/auth/session', { credentials: 'include', cache: 'no-store' })
-      .then(async response => {
-        if (response.status === 401 || response.status === 403) return null
-        if (!response.ok) throw new Error('session unavailable')
-        return await response.json() as { subject?: string; workspaceId?: string; expiresAt?: string; amr?: string[] }
-      })
-      .then(value => {
-        if (cancelled) return
-        setAccount(value)
-        setAccountState(value ? 'ready' : 'signed_out')
-      })
-      .catch(() => { if (!cancelled) setAccountState('unavailable') })
-    return () => { cancelled = true }
-  }, [panel])
   const content =
     panel === 'help'
       ? {
           icon: CircleHelp,
           kicker: 'HELP & DIAGNOSTICS',
           title: '如何使用 Merchant Studio',
-          body: '先在商品与资产中确认平台商品，再创建营销任务。完成事实确认、方向选择、内容审核后，才能进入发布确认。',
+          body: '所有经营动作都从知识库开始。选定商品后，按事实确认、内容生成、规则检查和发布确认顺序完成，不需要在多个页面之间来回切换。',
           items: [
-            '商品与资产：绑定平台店铺、同步商品和管理素材',
-            '营销任务：确认事实、生成文案、查看规则和版本记录',
-            '发布中心：只展示已审核任务，并在提交前再次确认',
+            '知识库：管理商品资料、授权素材并进入营销任务',
+            '任务工作流：确认事实、生成内容、检查规则并批准版本',
+            '发布确认：审核完成后直接打开，不再单独占用导航入口',
           ],
         }
-      : panel === 'settings'
-        ? {
-            icon: Settings,
-            kicker: 'WORKSPACE INFORMATION',
-            title: '工作区信息',
-            body: '账号、工作区、角色和业务数据由服务端会话绑定。钱包余额、扣款、任务、账单、店铺授权和审计都按当前工作区隔离，页面不会把不同商家的数据混在一起。',
-            items: [
-              `工作区：${import.meta.env.VITE_WORKSPACE_ID ?? '未配置（请求将被阻止）'}`,
-              `API 地址：${apiBaseUrl ?? '未配置（离线演示）'}`,
-              '数据范围：当前工作区隔离；不会跨店铺复用商品事实',
-              '业务范围：钱包余额 · 扣款记录 · 任务与执行状态 · 账单与订单 · 店铺授权 · 审计记录',
-            ],
-          }
-        : {
+      : {
             icon: Gauge,
             kicker: 'SYSTEM HEALTH',
             title: '系统健康',
@@ -1424,26 +1475,6 @@ function UtilityPanel({
           </button>
         </div>
         <div className="modal-body">
-          {panel === 'settings' ? (
-            <section className="account-panel" aria-label="账号与业务归属">
-              <div className="account-panel-heading"><strong>账号与登录状态</strong><span>{accountState === 'ready' ? '已登录' : accountState === 'signed_out' ? '未登录' : accountState === 'unavailable' ? '会话服务不可用' : '读取中'}</span></div>
-              {account ? (
-                <dl className="account-facts">
-                  <div><dt>登录主体</dt><dd>{account.subject ?? '服务端会话'}</dd></div>
-                  <div><dt>当前工作区</dt><dd>{account.workspaceId || '由服务端授权决定'}</dd></div>
-                  <div><dt>会话有效期</dt><dd>{account.expiresAt ? new Date(account.expiresAt).toLocaleString('zh-CN', { hour12: false }) : '由网关管理'}</dd></div>
-                  <div><dt>认证方式</dt><dd>{account.amr?.join('、') || 'OIDC / SSO'}</dd></div>
-                </dl>
-              ) : (
-                <p className="muted">商家后台采用邀请制账号。请先登录；没有账号时联系平台管理员发出邀请，接受邀请后即可进入对应工作区。</p>
-              )}
-              <div className="account-actions">
-                <a className="primary" href={merchantLoginUrl}>登录 / 接受邀请</a>
-                {account ? <form method="post" action={merchantLogoutUrl}><button className="secondary" type="submit">退出登录</button></form> : null}
-              </div>
-              <p className="muted">钱包、扣款、任务、账单和订单均从当前工作区 API 读取；余额未知、会话过期或权限不足时，生成、扣款和发布会保持阻断。</p>
-            </section>
-          ) : null}
           <p className="utility-body">{content.body}</p>
           <div className="utility-list">
             {content.items.map((item, index) => (
@@ -1500,7 +1531,7 @@ function CustomerSupportPanel({
       ? supportQuery
       : association ?? (id ? { ticketId: id } : orderId.trim() ? { relatedOrderId: orderId.trim() } : relatedTaskId ? { relatedTaskId } : {})
     if (!apiBaseUrl) {
-      setError('未配置 API，当前不会伪造客服回复。')
+      setError('未配置 API，当前不会伪造支持消息。')
       return
     }
     if (!query.ticketId && !query.relatedTaskId && !query.relatedOrderId) {
@@ -1526,7 +1557,7 @@ function CustomerSupportPanel({
       setReplies([])
       setAssociatedTickets([])
       setNextCursor(null)
-      setError(`客服回复读取失败：${describeApiError(cause)}`)
+      setError(`支持消息读取失败：${describeApiError(cause)}`)
     } finally {
       setLoading(false)
     }
@@ -1536,8 +1567,8 @@ function CustomerSupportPanel({
       <div className="modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="support-panel-title">
         <div className="modal-head">
           <div className="modal-icon"><CircleHelp size={20} /></div>
-          <div><span className="section-kicker">CUSTOMER SUPPORT</span><h2 id="support-panel-title">客服回复</h2></div>
-          <button className="icon-button" onClick={onClose} aria-label="关闭客服回复"><X size={19} /></button>
+          <div><span className="section-kicker">SUPPORT</span><h2 id="support-panel-title">支持消息</h2></div>
+          <button className="icon-button" onClick={onClose} aria-label="关闭支持消息"><X size={19} /></button>
         </div>
         <div className="modal-body">
           <p className="utility-body">这里只显示运营人员明确标记为“客户可见”的回复。内部备注、运营身份和审计字段不会返回。</p>
@@ -1965,90 +1996,6 @@ function Overview({
         : 'blue'
   return (
     <div className="page-stack">
-      <section className="welcome-panel">
-        <div>
-          <StatusChip
-            tone={
-              !baseUrl || metricsError || metricsPartial ? 'amber' : metrics ? 'green' : 'blue'
-            }
-          >
-            <Zap size={13} /> {workflowStatus}
-          </StatusChip>
-          <h2>
-            把商品事实变成
-            <br />
-            可放心发布的内容
-          </h2>
-          <p>同步商品、确认事实、生成营销内容，并在发布前看清每一处变化。</p>
-          <div className="button-row">
-            <button
-              className="primary"
-              onClick={goTask}
-              disabled={!baseUrl}
-              title={
-                !baseUrl
-                  ? '连接 API 后才能选择商品并创建真实营销任务'
-                  : undefined
-              }
-            >
-              <Sparkles size={17} />
-              {baseUrl ? '选择商品开始任务' : '连接 API 后选择商品'}
-            </button>
-            <button
-              className="secondary"
-              onClick={() => void syncAll()}
-              disabled={
-                !baseUrl ||
-                accountsLoading ||
-                Boolean(accountsError) ||
-                accounts === null ||
-                syncableStoreCount === 0 ||
-                Boolean(action)
-              }
-              title={
-                syncableStoreCount === 0 && accounts && !accountsLoading && !accountsError
-                  ? '没有已授权且可读取的店铺，请先连接真实平台店铺'
-                  : undefined
-              }
-            >
-              <RefreshCw
-                size={17}
-                className={
-                  action?.startsWith('sync-') || accountsLoading
-                    ? 'spin'
-                    : undefined
-                }
-              />
-              {action?.startsWith('sync-')
-                ? '同步中…'
-                : accountsLoading
-                  ? '正在发现店铺…'
-                  : syncableStoreCount === 0
-                    ? '等待店铺连接'
-                    : '同步全部店铺'}
-            </button>
-          </div>
-        </div>
-        <div className="flow-preview" aria-label="当前任务流程">
-          <div className="flow-orbit">
-            <span className="orbit-dot one" />
-            <span className="orbit-dot two" />
-            <div className="flow-center">
-              <Sparkles size={25} />
-              <b>AI</b>
-            </div>
-          </div>
-          <div className="flow-caption">
-            <span className="done">
-              <Check size={14} />
-              事实确认
-            </span>
-            <span className="active">内容生成</span>
-            <span>检查发布</span>
-          </div>
-        </div>
-      </section>
-
       {accountsError && (
         <ErrorNotice
           message={accountsError}
@@ -2057,7 +2004,32 @@ function Overview({
         />
       )}
 
-      <EntryPointCards onOpenEntry={onOpenEntry} />
+      {baseUrl && (
+        <div className="action-row overview-sync-actions">
+          <button
+            className="primary"
+            type="button"
+            onClick={() => void syncAll()}
+            disabled={
+              accountsLoading ||
+              Boolean(accountsError) ||
+              !accounts ||
+              syncableStoreCount === 0 ||
+              action === 'sync-all'
+            }
+          >
+            <RefreshCw size={17} className={action === 'sync-all' ? 'spin' : undefined} />
+            {action === 'sync-all' ? '同步全部店铺…' : syncableStoreCount === 0 ? '等待店铺连接' : '同步全部店铺'}
+          </button>
+          <small className="action-help">
+            {accountsError
+              ? '店铺发现失败，当前不会发起同步。'
+              : accountsLoading
+                ? '正在发现可读取店铺…'
+                : `将逐店同步 ${syncableStoreCount} 家可读取店铺。`}
+          </small>
+        </div>
+      )}
 
       <section className="metric-grid" aria-label="关键运营指标">
         <MetricCard
@@ -2118,63 +2090,6 @@ function Overview({
         />
       )}
 
-      {baseUrl && metrics && (
-        <section
-          className="panel issue-queue-panel"
-          aria-labelledby="issue-queue-title"
-        >
-          <div className="panel-heading">
-            <div>
-              <span className="section-kicker">ACTION QUEUE</span>
-              <h3 id="issue-queue-title">优先处理的问题</h3>
-            </div>
-            <button className="text-button" onClick={goProducts}>
-              查看商品与问题 <ArrowRight size={14} />
-            </button>
-          </div>
-          {metrics.riskItems.length ? (
-            <div className="issue-queue-list">
-              {metrics.riskItems.slice(0, 3).map((item, index) => (
-                <article
-                  className="issue-queue-item"
-                  key={`${item.type}-${item.platform ?? 'workspace'}-${item.storeName ?? ''}-${index}`}
-                >
-                  <div className="issue-queue-rank">{index + 1}</div>
-                  <div className="issue-queue-copy">
-                    <b>{item.title ?? item.type}</b>
-                    <span>
-                      {[
-                        item.platform ? platformNames[item.platform] : '',
-                        item.storeName ?? '',
-                        item.status ?? '',
-                      ]
-                        .filter(Boolean)
-                        .join(' · ') || '当前工作区'}
-                    </span>
-                    <small>
-                      {item.nextAction ?? '打开商品与任务查看处理方式'}
-                    </small>
-                  </div>
-                  <button className="secondary" onClick={goProducts}>
-                    查看并处理
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <CheckCircle2 size={18} />
-              暂无需要你处理的问题
-            </div>
-          )}
-          {metrics.riskSummary.total > 3 && (
-            <small className="issue-queue-more">
-              还有 {metrics.riskSummary.total - 3} 项问题，已按优先级排序。
-            </small>
-          )}
-        </section>
-      )}
-
       {baseUrl && (
         <section className="panel wallet-panel">
           <div className="panel-heading">
@@ -2196,7 +2111,7 @@ function Overview({
             <ErrorNotice message={billingError} onRetry={loadBilling} compact />
           )}
           <div className="wallet-content">
-            <Card className="wallet-summary-card" bordered={false}>
+            <Card className="wallet-summary-card" variant="borderless">
               <div className="wallet-summary">
                 <div>
                   <span className="wallet-label">可用创意点</span>
@@ -2215,7 +2130,7 @@ function Overview({
                 </Space>
               </div>
               <small className="wallet-note">
-                生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额未知或不足时不会调用模型。
+                生成、OCR、图片和视频按服务端确认的创意点直接扣费；余额待确认或不足时不会调用模型。
               </small>
               <small className="wallet-note wallet-note-blocked" role="status">
                 购买创意点请使用服务端可售套餐；当前支付服务未配置时不会显示或创建微信/支付宝订单。
@@ -2895,7 +2810,6 @@ function AssetLibrary({
   initialEntry?: Exclude<MerchantEntryPoint, 'products'>
 }) {
   const [assets, setAssets] = useState<AssetMetadata[] | null>(null)
-  const [storageQuota, setStorageQuota] = useState<StorageQuotaProjection | null>(null)
   const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>({})
   const [assetStorageReady, setAssetStorageReady] = useState(false)
   const [brand, setBrand] = useState<BrandProfile | null>(null)
@@ -2948,6 +2862,8 @@ function AssetLibrary({
   const [factsReason, setFactsReason] = useState('商家已核对原始资料')
   const [assetDialogError, setAssetDialogError] = useState('')
   const [usageAsset, setUsageAsset] = useState<AssetMetadata | null>(null)
+  const [knowledgePage, setKnowledgePage] = useState(1)
+  const [knowledgePageSize, setKnowledgePageSize] = useState(10)
   useEffect(() => {
     setAssetEntry(initialEntry)
   }, [initialEntry])
@@ -2970,6 +2886,52 @@ function AssetLibrary({
   // rendering thousands of cards at once makes every button hard to reach and
   // causes the browser to issue unnecessary thumbnail work.
   const renderedAssets = orderedAssets.slice(0, 100)
+  useEffect(() => {
+    setKnowledgePage(1)
+  }, [assetEntry, visibleAssets.length])
+  const knowledgeColumns = [
+    {
+      title: '文件',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, asset: AssetMetadata) => (
+        <div className="knowledge-file-cell">
+          <FileText size={18} aria-hidden="true" />
+          <div><strong title={name}>{name}</strong><span>{asset.mimeType}</span></div>
+        </div>
+      ),
+    },
+    {
+      title: '大小',
+      dataIndex: 'sizeBytes',
+      key: 'sizeBytes',
+      width: 100,
+      render: (sizeBytes: number) => `${Math.max(1, Math.round(sizeBytes / 1024))} KB`,
+    },
+    {
+      title: '安全扫描',
+      dataIndex: 'scanStatus',
+      key: 'scanStatus',
+      width: 150,
+      render: (_: AssetMetadata['scanStatus'], asset: AssetMetadata) => <StatusChip tone={statusTone(asset)}>{statusLabel(asset)}</StatusChip>,
+    },
+    {
+      title: '内容读取',
+      dataIndex: 'parseStatus',
+      key: 'parseStatus',
+      width: 140,
+      render: (parseStatus: AssetMetadata['parseStatus']) => parseStatus === 'succeeded' ? '已读取内容' : parseStatus === 'failed' ? '读取失败' : '待读取',
+    },
+    {
+      title: '权益状态',
+      dataIndex: 'rightsStatus',
+      key: 'rightsStatus',
+      width: 140,
+      render: (rightsStatus: AssetMetadata['rightsStatus']) => rightsStatus === 'approved' ? <StatusChip tone="green">已确认</StatusChip> : '待确认',
+    },
+  ]
+  const knowledgeReadyCount = visibleAssets.filter((asset) => asset.parseStatus === 'succeeded' && asset.rightsStatus === 'approved').length
+  const knowledgePendingCount = Math.max(0, visibleAssets.length - knowledgeReadyCount)
   const load = async () => {
     if (!baseUrl) {
       setLoading(false)
@@ -2979,11 +2941,10 @@ function AssetLibrary({
     setError('')
     setBrandLoadError('')
     setStorageLoadError('')
-    const [assetResult, brandResult, healthResult, quotaResult] = await Promise.allSettled([
+    const [assetResult, brandResult, healthResult] = await Promise.allSettled([
       fetchAssets(baseUrl),
       fetchBrandProfile(baseUrl),
       fetchApiHealth(baseUrl),
-      fetchAssetStorageQuota(baseUrl),
     ])
     if (assetResult.status === 'fulfilled') setAssets(assetResult.value)
     else setError(describeApiError(assetResult.reason))
@@ -2997,8 +2958,6 @@ function AssetLibrary({
       setAssetStorageReady(false)
       setStorageLoadError(describeApiError(healthResult.reason))
     }
-    if (quotaResult.status === 'fulfilled') setStorageQuota(quotaResult.value ?? null)
-    else setStorageQuota(null)
     setLoading(false)
   }
   const loadBrand = () => {
@@ -3027,8 +2986,7 @@ function AssetLibrary({
     // Image thumbnails are part of the image workspace, so load them from the
     // authenticated asset endpoint when that tab is explicitly opened. Keep
     // the full-materials and knowledge tabs metadata-only to avoid fetching a
-    // large archive unnecessarily; the card's “打开并阅读” action remains the
-    // explicit path for non-image files.
+    // Keep the full-materials and knowledge tabs metadata-only.
     if (!baseUrl || assetEntry !== 'images' || !assetStorageReady) {
       setAssetPreviews({})
       return
@@ -3038,8 +2996,7 @@ function AssetLibrary({
     // Only clean image objects can be downloaded by the API.  Older assets
     // may still be quarantined or have an expired object, so attempting every
     // row creates a burst of guaranteed 403s (and can trip the relay limiter).
-    // Keep the grid responsive and let the explicit "打开并阅读" action deal
-    // with anything outside this safe preview subset.
+    // Keep the image grid responsive for the safe preview subset.
     // Some historical scanner callback records declare image/png but contain
     // only a tiny callback marker rather than a decodable image.  Prioritise
     // larger objects and verify the browser can decode the bytes before
@@ -3537,26 +3494,30 @@ function AssetLibrary({
   }
   return (
     <section
-      className="panel asset-library"
+      className={`panel asset-library ${assetEntry === 'rules' ? 'rules-entry-active' : ''}`}
       id="merchant-assets"
       aria-label="知识、图片与素材"
       tabIndex={-1}
     >
       <div className="panel-heading">
         <div>
-          <span className="section-kicker">ASSET LIBRARY</span>
-          <h3>素材库</h3>
+        <span className="section-kicker">KNOWLEDGE WORKSPACE</span>
+          <h3>知识库</h3>
           <p className="panel-subtitle">
-            先确认素材安全与使用权益，再用于商品详情、主图和营销内容。
+            统一管理商品资料、店铺授权素材与品牌规范；通过二级方案完成导入、检验和引用。
           </p>
+          <div className="asset-brand-actions" aria-label="品牌管理">
+            <span className="asset-brand-actions-label">品牌管理</span>
+            <button data-testid="visual-rules-toggle" className="secondary" onClick={() => setVisualPanelOpen((current) => !current)} disabled={!brand}>
+              <ShieldCheck size={14} />
+              {visualPanelOpen ? '收起视觉规则' : '配置视觉强规则'}
+            </button>
+            <button className="secondary" onClick={extractBrand} disabled={!baseUrl || Boolean(brandAction) || !assets?.some((asset) => asset.parseStatus === 'succeeded')}>
+              <Sparkles size={14} />
+              {brandAction || '从素材提取品牌档案'}
+            </button>
+          </div>
         </div>
-      {storageQuota && (
-        <div className={`storage-quota-banner ${storageQuota.status}`} role={storageQuota.status === 'over_limit' ? 'alert' : 'status'}>
-          <strong>工作区容量</strong>
-          <span>{Math.round(storageQuota.usedBytes / 1024 / 1024)} MB 已用 / {Math.round(storageQuota.limitBytes / 1024 / 1024)} MB</span>
-          <span>{storageQuota.status === 'over_limit' ? '已超额，暂不能新增素材' : storageQuota.status === 'near_limit' ? '接近上限，建议清理历史版本' : `${Math.round(storageQuota.availableBytes / 1024 / 1024)} MB 可用`}</span>
-        </div>
-      )}
       <div className="asset-heading-actions">
           <input
             ref={uploadInput}
@@ -3575,51 +3536,24 @@ function AssetLibrary({
             <Upload size={14} />
             {uploadAction || '上传素材'}
           </button>
-          <button
-            className="secondary"
-            onClick={load}
-            disabled={!baseUrl || loading || Boolean(assetAction)}
-          >
-            <RefreshCw size={14} className={loading ? 'spin' : undefined} />
-            刷新状态
-          </button>
-          <StatusChip tone={brand ? 'green' : 'neutral'}>
-            {brand ? `品牌档案 r${brand.revision}` : '品牌未建档'}
-          </StatusChip>
-          {brand?.brandUnitId ? (
-            <StatusChip tone="green">
-              批量生产品牌单元：{brand.brandUnitId}
+          <div className="asset-heading-status" aria-label="素材库状态摘要">
+            <StatusChip tone={brand ? 'green' : 'neutral'}>
+              {brand ? `品牌档案 r${brand.revision}` : '品牌未建档'}
             </StatusChip>
-          ) : brand?.brandUnitSelectionRequired ? (
-            <div className="inline-error" role="alert">
-              <AlertCircle size={16} aria-hidden="true" />
-              <span>{brandUnitSelectionMessage(brand.brandUnitCandidates?.length ?? 0)}</span>
-            </div>
-          ) : null}
-          <StatusChip tone={assets?.length ? 'green' : 'neutral'}>
-            {assets?.length ?? 0} 个素材
-          </StatusChip>
-          <button
-            data-testid="visual-rules-toggle"
-            className="secondary"
-            onClick={() => setVisualPanelOpen((current) => !current)}
-            disabled={!brand}
-          >
-            <ShieldCheck size={14} />
-            {visualPanelOpen ? '收起视觉规则' : '配置视觉强规则'}
-          </button>
-          <button
-            className="secondary"
-            onClick={extractBrand}
-            disabled={
-              !baseUrl ||
-              Boolean(brandAction) ||
-              !assets?.some((asset) => asset.parseStatus === 'succeeded')
-            }
-          >
-            <Sparkles size={14} />
-            {brandAction || '从素材提取品牌档案'}
-          </button>
+            {brand?.brandUnitId ? (
+              <StatusChip tone="green">
+                批量生产品牌单元：{brand.brandUnitId}
+              </StatusChip>
+            ) : brand?.brandUnitSelectionRequired ? (
+              <div className="inline-error" role="alert">
+                <AlertCircle size={16} aria-hidden="true" />
+                <span>{brandUnitSelectionMessage(brand.brandUnitCandidates?.length ?? 0)}</span>
+              </div>
+            ) : null}
+            <StatusChip tone={assets?.length ? 'green' : 'neutral'}>
+              {assets?.length ?? 0} 个素材
+            </StatusChip>
+          </div>
         </div>
       </div>
       <div className="asset-entry-tabs" role="tablist" aria-label="素材类型">
@@ -3633,7 +3567,7 @@ function AssetLibrary({
           onKeyDown={(event) =>
             handleTabKeyDown(
               event,
-              ['knowledge', 'images', 'assets'] as const,
+              ['knowledge', 'images', 'assets', 'rules'] as const,
               assetEntry,
               setAssetEntry,
             )
@@ -3641,7 +3575,7 @@ function AssetLibrary({
           onClick={() => setAssetEntry('knowledge')}
         >
           <BookOpen size={15} aria-hidden="true" />
-          知识库
+          方案一：上传素材包
         </button>
         <button
           id="asset-images-tab"
@@ -3653,7 +3587,7 @@ function AssetLibrary({
           onKeyDown={(event) =>
             handleTabKeyDown(
               event,
-              ['knowledge', 'images', 'assets'] as const,
+              ['knowledge', 'images', 'assets', 'rules'] as const,
               assetEntry,
               setAssetEntry,
             )
@@ -3661,7 +3595,20 @@ function AssetLibrary({
           onClick={() => setAssetEntry('images')}
         >
           <ImageIcon size={15} aria-hidden="true" />
-          图片
+          方案二：店铺授权获取
+        </button>
+        <button
+          id="asset-rules-tab"
+          role="tab"
+          aria-selected={assetEntry === 'rules'}
+          aria-controls="asset-rules-panel"
+          tabIndex={assetEntry === 'rules' ? 0 : -1}
+          className={assetEntry === 'rules' ? 'active' : ''}
+          onKeyDown={(event) => handleTabKeyDown(event, ['knowledge', 'images', 'assets', 'rules'] as const, assetEntry, setAssetEntry)}
+          onClick={() => setAssetEntry('rules')}
+        >
+          <ShieldCheck size={15} aria-hidden="true" />
+          方案三：结果检验
         </button>
         <button
           id="asset-assets-tab"
@@ -3673,7 +3620,7 @@ function AssetLibrary({
           onKeyDown={(event) =>
             handleTabKeyDown(
               event,
-              ['knowledge', 'images', 'assets'] as const,
+              ['knowledge', 'images', 'assets', 'rules'] as const,
               assetEntry,
               setAssetEntry,
             )
@@ -3681,18 +3628,36 @@ function AssetLibrary({
           onClick={() => setAssetEntry('assets')}
         >
           <FolderOpen size={15} aria-hidden="true" />
-          全部素材
+          全部资料
         </button>
         <span role="status" aria-live="polite">
           {assetEntry === 'assets'
             ? `全部 ${assets?.length ?? 0} 项`
-            : `${assetEntry === 'images' ? '图片' : '知识文档'} ${visibleAssets.length} 项`}
+            : assetEntry === 'rules'
+              ? '解释内容生成与发布前检查'
+              : `${assetEntry === 'images' ? '店铺授权素材' : '上传知识资料'} ${visibleAssets.length} 项`}
         </span>
         {assetEntry === 'images' && assetStorageReady && (
           <span className="asset-preview-count" role="status" aria-live="polite">
             已验证可预览 {Object.keys(assetPreviews).length} 张
           </span>
         )}
+      </div>
+      <section className="knowledge-plan-banner" aria-live="polite">
+        <div className="knowledge-plan-step">{assetEntry === 'knowledge' ? '01' : assetEntry === 'images' ? '02' : assetEntry === 'rules' ? '03' : '04'}</div>
+        <div className="knowledge-plan-copy">
+          <strong>
+            {assetEntry === 'knowledge' ? '上传商品资料与素材包' : assetEntry === 'images' ? '获取已授权店铺素材' : assetEntry === 'rules' ? '检验内容是否符合平台规则' : '查看全部知识与素材'}
+          </strong>
+          <span>
+            {assetEntry === 'knowledge' ? '上传 Excel、图片或文档；完成扫描、读取和权益确认后，才会进入生成上下文。' : assetEntry === 'images' ? '店铺同步后，系统只展示当前工作区已授权且可读取的素材，不会混用其他企业数据。' : assetEntry === 'rules' ? '查看广告、促销、品类和平台规则命中结果；未通过的内容不能直接发布。' : '按来源、状态和权益快速查找工作区资料。'}
+          </span>
+        </div>
+        <span className="knowledge-plan-output">产出：{assetEntry === 'rules' ? '可发布 / 需修复' : assetEntry === 'images' ? '可引用素材' : '可供生成引用的知识'}</span>
+        {assetEntry === 'images' && <span className="knowledge-plan-external">请在大麦 ChatGPT 插件中绑定店铺</span>}
+      </section>
+      <div className="embedded-rules" id="asset-rules-panel" role="tabpanel" aria-label="规则说明与规则列表">
+        {assetEntry === 'rules' && <Rules baseUrl={baseUrl} />}
       </div>
       <div
         id="asset-entry-panel"
@@ -3723,6 +3688,25 @@ function AssetLibrary({
             onRetry={loadStorageHealth}
             compact
           />
+        )}
+        {assetEntry === 'knowledge' && (
+          <>
+            <section className="knowledge-overview" aria-label="知识库摘要">
+              <div><span>知识资产</span><strong>{visibleAssets.length}</strong><small>品牌资料、规则依据与经营经验</small></div>
+              <div className="ready"><span>可直接引用</span><strong>{knowledgeReadyCount}</strong><small>已读取内容且权益已确认</small></div>
+              <div className={knowledgePendingCount ? 'pending' : 'ready'}><span>待处理</span><strong>{knowledgePendingCount}</strong><small>{knowledgePendingCount ? '完成扫描、读取或权益确认后可用' : '当前没有待处理资料'}</small></div>
+            </section>
+            <section className="knowledge-guide" aria-label="知识库说明">
+              <div>
+                <span className="section-kicker">KNOWLEDGE BASE</span>
+                <h4>生成内容前，系统会先读取这里</h4>
+                <p>只会引用已读取、来源可追溯且权益已确认的资料；待处理内容不会进入生成上下文。</p>
+              </div>
+              <div className="knowledge-guide-flow" aria-label="知识库使用流程">
+                <span><b>1</b>上传资料</span><i>→</i><span><b>2</b>确认内容</span><i>→</i><span><b>3</b>自动引用</span>
+              </div>
+            </section>
+          </>
         )}
         {visualPanelOpen && (
           <section className="visual-rules-panel" aria-label="品牌视觉强规则">
@@ -4073,288 +4057,59 @@ function AssetLibrary({
           </div>
         )}
         {!loading && !error && !!visibleAssets.length && (
-          <div className="asset-grid">
-            {renderedAssets.map((asset) => (
-              <article
-                className={`asset-card ${asset.preference?.verdict ?? ''}`}
-                key={asset.id}
-                data-asset-name={asset.name}
-              >
-                {(() => {
-                  const assetBusy = assetAction.endsWith(`-${asset.id}`)
-                  return (
-                    <>
-                <div
-                  className="asset-preview"
-                  title={
-                    assetStorageReady
-                      ? undefined
-                      : '对象存储未配置，暂不读取素材正文'
-                  }
-                >
-                  {assetPreviews[asset.id] ? (
-                    <img src={assetPreviews[asset.id]} alt={asset.name} />
-                  ) : (
-                    <FileText size={28} />
-                  )}
-                </div>
-                <div className="asset-card-body">
-                  <div className="asset-title-row">
-                    <b title={asset.name}>{asset.name}</b>
-                    {asset.preference && (
-                      <StatusChip
-                        tone={
-                          asset.preference.verdict === 'excellent'
-                            ? 'green'
-                            : 'amber'
-                        }
-                      >
-                        {asset.preference.verdict === 'excellent'
-                          ? '优秀参考'
-                          : '不喜欢'}
-                      </StatusChip>
-                    )}
-                  </div>
-                  <span>
-                    {asset.mimeType} ·{' '}
-                    {Math.max(1, Math.round(asset.sizeBytes / 1024))} KB
-                  </span>
-                  <div className="asset-status">
-                    <StatusChip tone={statusTone(asset)}>
-                      {statusLabel(asset)}
-                    </StatusChip>
-                    <span>
-                      {asset.parseStatus === 'succeeded'
-                        ? '已读取内容'
-                        : asset.parseStatus === 'failed'
-                          ? '读取失败'
-                          : '待读取'}
-                    </span>
-                  </div>
-                  {asset.references?.length > 1 && (
-                    <small
-                      data-testid={`asset-reference-count-${asset.id}`}
-                      className="asset-preference-reason"
-                    >
-                      同一文件已有 {asset.references.length} 个上传引用：
-                      {asset.references
-                        .map((reference) => reference.name)
-                        .join('、')}
-                    </small>
-                  )}
-                  {asset.preference && (
-                    <small className="asset-preference-reason">
-                      原因：{asset.preference.reasons.join('；')}
-                    </small>
-                  )}
-                  {asset.parseError && (
-                    <small className="asset-error">{asset.parseError}</small>
-                  )}
-                  {(() => {
-                    const primaryAction = resolveAssetPrimaryAction(asset, {
-                      configured: Boolean(baseUrl),
-                      busy: assetBusy,
-                    })
-                    return (
-                      <button
-                        data-testid={`asset-primary-action-${asset.id}`}
-                        className="primary asset-primary-action"
-                        aria-label={`${primaryAction.label}：${asset.name}`}
-                        onClick={() => runPrimaryAssetAction(asset)}
-                        disabled={primaryAction.disabled}
-                      >
-                        {assetBusy && primaryAction.kind !== 'refresh'
-                          ? '处理中…'
-                          : primaryAction.label}
-                      </button>
-                    )
-                  })()}
-                  <div className="asset-card-actions">
-                    <button
-                      className="text-button"
-                      onClick={() => void openAsset(asset)}
-                      disabled={!baseUrl || !assetStorageReady || asset.scanStatus !== 'clean' || assetBusy}
-                      title={!baseUrl ? '商家 API 未连接' : !assetStorageReady ? '对象存储未配置' : asset.scanStatus !== 'clean' ? '安全扫描通过后才能读取素材正文' : undefined}
-                    >
-                      {!assetStorageReady
-                        ? '存储未配置'
-                        : asset.scanStatus !== 'clean'
-                          ? '等待安全扫描'
-                          : '打开并阅读'}
-                    </button>
-                    <button
-                      data-testid={`asset-product-usage-open-${asset.id}`}
-                      className="text-button"
-                      onClick={() => setUsageAsset(asset)}
-                      disabled={!baseUrl || assetBusy}
-                    >
-                      查看使用商品
-                    </button>
-                    <button
-                      data-testid={`asset-preference-open-${asset.id}`}
-                      className="text-button"
-                      onClick={() => openPreferenceEditor(asset)}
-                      disabled={!baseUrl || asset.scanStatus !== 'clean' || asset.parseStatus === 'failed' || asset.parseStatus === 'processing' || assetBusy}
-                      title={!baseUrl ? '商家 API 未连接' : asset.scanStatus !== 'clean' ? '安全扫描通过后才能评价素材' : asset.parseStatus === 'failed' ? '内容读取失败，请先重试读取或完成人工确认' : asset.parseStatus === 'processing' ? '内容读取完成后才能评价素材' : undefined}
-                    >
-                      评价素材
-                    </button>
-                  </div>
-                  <div className="asset-card-actions">
-                    <button
-                      className="text-button"
-                      onClick={() => void parse(asset)}
-                      disabled={
-                        !baseUrl ||
-                        asset.scanStatus !== 'clean' ||
-                        asset.parseStatus === 'succeeded' ||
-                        assetBusy
-                      }
-                    >
-                      {assetAction === `parse-${asset.id}`
-                        ? '解析中…'
-                        : asset.parseStatus === 'succeeded'
-                          ? '已完成解析'
-                          : asset.parseStatus === 'failed'
-                            ? '重试解析'
-                          : asset.scanStatus === 'clean'
-                            ? '解析素材'
-                            : '等待扫描'}
-                    </button>
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setRightsAsset(asset)
-                        setRightsScope(
-                          asset.rightsScope ?? 'commercial_authorized',
-                        )
-                        setAssetDialogError('')
-                      }}
-                      disabled={
-                        !baseUrl ||
-                        asset.scanStatus !== 'clean' ||
-                        asset.rightsStatus === 'approved' ||
-                        assetBusy
-                      }
-                    >
-                      {assetAction === `rights-${asset.id}`
-                        ? '保存中…'
-                        : asset.rightsStatus === 'approved'
-                          ? '权益已确认'
-                          : asset.scanStatus === 'clean'
-                            ? '确认权益'
-                            : '等待扫描'}
-                    </button>
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setFactsAsset(asset)
-                        setFactsJson(
-                          JSON.stringify(
-                            asset.extractedFacts ?? { 用途: '待核对' },
-                            null,
-                            2,
-                          ),
-                        )
-                        setFactsReason('商家已核对原始资料')
-                        setAssetDialogError('')
-                      }}
-                      disabled={
-                        !baseUrl ||
-                        asset.scanStatus !== 'clean' ||
-                        assetBusy
-                      }
-                    >
-                      {assetAction === `facts-${asset.id}`
-                        ? '保存中…'
-                        : asset.factsConfirmedBy
-                          ? '事实已确认'
-                          : asset.scanStatus === 'clean'
-                            ? '确认事实'
-                            : '等待扫描'}
-                    </button>
-                  </div>
-                  {preferenceAssetId === asset.id && (
-                    <div
-                      className="asset-preference-editor"
-                      aria-label={`评价素材 ${asset.name}`}
-                    >
-                      <label>
-                        评价
-                        <select
-                          data-testid="asset-preference-verdict"
-                          value={preferenceVerdict}
-                          onChange={(event) =>
-                            setPreferenceVerdict(
-                              event.target.value as 'excellent' | 'disliked',
-                            )
-                          }
-                        >
-                          <option value="excellent">优秀，后续作为参考</option>
-                          <option value="disliked">不喜欢，后续排除</option>
-                        </select>
-                      </label>
-                      <label>
-                        原因
-                        <input
-                          data-testid="asset-preference-reasons"
-                          value={preferenceReasons}
-                          onChange={(event) =>
-                            setPreferenceReasons(event.target.value)
-                          }
-                          placeholder="如：主体清晰、留白合适"
-                        />
-                      </label>
-                      <label>
-                        补充说明
-                        <input
-                          value={preferenceNote}
-                          onChange={(event) =>
-                            setPreferenceNote(event.target.value)
-                          }
-                          placeholder="可选，最多 500 字"
-                        />
-                      </label>
-                      <div>
-                        <button
-                          data-testid="asset-preference-save"
-                          className="primary"
-                          onClick={() => savePreference(asset)}
-                          disabled={Boolean(preferenceAction)}
-                        >
-                          {preferenceAction || '保存评价'}
-                        </button>
-                        {asset.preference && (
-                          <button
-                            className="secondary"
-                            onClick={() => clearPreference(asset)}
-                            disabled={Boolean(preferenceAction)}
-                          >
-                            清除评价
-                          </button>
-                        )}
-                        <button
-                          className="secondary"
-                          onClick={() => setPreferenceAssetId('')}
-                          disabled={Boolean(preferenceAction)}
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                    </>
-                  )
-                })()}
-              </article>
-            ))}
-            {visibleAssets.length > renderedAssets.length && (
-              <div className="info-notice" role="status">
-                当前分类共 {visibleAssets.length} 项，先展示前 {renderedAssets.length} 项；可使用搜索或筛选缩小范围后继续操作。
+          assetEntry === 'knowledge' ? (
+            <div className="knowledge-list-section">
+              <div className="knowledge-list-heading">
+                <div><span className="section-kicker">KNOWLEDGE ASSETS</span><h4>知识资料</h4><p>每一条资料都保留扫描、读取和权益状态，只有“可直接引用”的内容会参与生成。</p></div>
+                <StatusChip tone={knowledgeReadyCount ? 'green' : 'neutral'}>{knowledgeReadyCount} 条可引用</StatusChip>
               </div>
-            )}
-          </div>
+              <div className="knowledge-table-wrap" aria-label="知识库列表">
+                <Table
+                  rowKey="id"
+                  size="middle"
+                  columns={knowledgeColumns}
+                  dataSource={orderedAssets}
+                  pagination={{
+                    current: knowledgePage,
+                    pageSize: knowledgePageSize,
+                    total: orderedAssets.length,
+                    showSizeChanger: true,
+                    pageSizeOptions: [10, 20, 50],
+                    showTotal: (total) => `共 ${total} 项`,
+                    onChange: (page, pageSize) => {
+                      setKnowledgePage(pageSize !== knowledgePageSize ? 1 : page)
+                      setKnowledgePageSize(pageSize)
+                    },
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="asset-grid">
+              {renderedAssets.map((asset) => (
+                <article
+                  className={`asset-card ${asset.preference?.verdict ?? ''}`}
+                  key={asset.id}
+                  data-asset-name={asset.name}
+                >
+                  <div className="asset-preview" title={assetStorageReady ? undefined : '对象存储未配置，暂不读取素材正文'}>
+                    {assetPreviews[asset.id] ? <img src={assetPreviews[asset.id]} alt={asset.name} /> : <FileText size={28} />}
+                  </div>
+                  <div className="asset-card-body">
+                    <div className="asset-title-row">
+                      <b title={asset.name}>{asset.name}</b>
+                      {asset.preference && <StatusChip tone={asset.preference.verdict === 'excellent' ? 'green' : 'amber'}>{asset.preference.verdict === 'excellent' ? '优秀参考' : '不喜欢'}</StatusChip>}
+                    </div>
+                    <span>{asset.mimeType} · {Math.max(1, Math.round(asset.sizeBytes / 1024))} KB</span>
+                    <div className="asset-status"><StatusChip tone={statusTone(asset)}>{statusLabel(asset)}</StatusChip><span>{asset.parseStatus === 'succeeded' ? '已读取内容' : asset.parseStatus === 'failed' ? '读取失败' : '待读取'}</span></div>
+                    {asset.references?.length > 1 && <small data-testid={`asset-reference-count-${asset.id}`} className="asset-preference-reason">同一文件已有 {asset.references.length} 个上传引用：{asset.references.map((reference) => reference.name).join('、')}</small>}
+                    {asset.preference && <small className="asset-preference-reason">原因：{asset.preference.reasons.join('；')}</small>}
+                    {asset.parseError && <small className="asset-error">{asset.parseError}</small>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )
         )}
       </div>
       {rightsAsset && (
@@ -4760,7 +4515,6 @@ function Products({
   initialEntry = 'products',
   onSelectTarget,
   onOpenTasks,
-  onConnectStores,
 }: {
   baseUrl?: string
   modelStatus: PlatformModelStatus | null
@@ -4770,7 +4524,6 @@ function Products({
   initialEntry?: MerchantEntryPoint
   onSelectTarget: (target: Target) => void
   onOpenTasks: () => void
-  onConnectStores: () => void
 }) {
   const accountsRequestId = useRef(0)
   const productsRequestId = useRef(0)
@@ -4793,7 +4546,24 @@ function Products({
   const [platformFilter, setPlatformFilter] = useState<PlatformId | 'all'>(
     'all',
   )
+  const [platformMenuOpen, setPlatformMenuOpen] = useState(false)
   const [accountFilter, setAccountFilter] = useState('')
+  useEffect(() => {
+    if (!platformMenuOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPlatformMenuOpen(false)
+    }
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement)?.closest('.filter-select-wrap'))
+        setPlatformMenuOpen(false)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    document.addEventListener('mousedown', closeOnOutside)
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape)
+      document.removeEventListener('mousedown', closeOnOutside)
+    }
+  }, [platformMenuOpen])
   const [productPage, setProductPage] = useState(0)
   const [productTotal, setProductTotal] = useState(0)
   const [groupCreating, setGroupCreating] = useState(false)
@@ -4857,8 +4627,8 @@ function Products({
       ...(platformFilter !== 'all' ? { platform: platformFilter } : {}),
       ...(accountFilter ? { accountId: accountFilter } : {}),
       ...(productFilter === 'needsReview' ? { factsConfirmed: false } : {}),
-      limit: 10,
-      offset: productPage * 10,
+      limit: productPageSize,
+      offset: productPage * productPageSize,
     })
       .then((result) => {
         if (requestId === productsRequestId.current) {
@@ -4945,12 +4715,18 @@ function Products({
     window.requestAnimationFrame(() =>
       destination?.focus({ preventScroll: true }),
     )
-    destination?.scrollIntoView({
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'auto'
-        : 'smooth',
-      block: 'start',
-    })
+    // Opening the catalog should keep the page header and primary actions in
+    // view. Only deep-links into the asset library need an automatic scroll;
+    // scrolling the product table into view on every navigation hid the title
+    // and made the page appear to load in the middle of a diagnostic card.
+    if (initialEntry !== 'products') {
+      destination?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'auto'
+          : 'smooth',
+        block: 'start',
+      })
+    }
   }, [initialEntry])
   const rows = remoteProducts
     ? prioritizeProducts(remoteProducts).map((product) => ({
@@ -5010,7 +4786,9 @@ function Products({
       }),
     [accountFilter, baseUrl, platformFilter, productFilter, query, rows],
   )
-  const productPageSize = 10
+  // Keep the catalog readable at desktop density and align with the backend
+  // list contract: every page is a stable 20-row window.
+  const productPageSize = 20
   const effectiveProductTotal = baseUrl ? productTotal : visible.length
   const productPageCount = Math.max(
     1,
@@ -5030,12 +4808,12 @@ function Products({
       total: baseUrl
         ? productFilter === 'all'
           ? productTotal
-          : '—'
+          : null
         : rows.length,
       needsReview: baseUrl
         ? productFilter === 'needsReview'
           ? productTotal
-          : '—'
+          : null
         : rows.filter((product) => product.issue > 0).length,
     }),
     [baseUrl, productFilter, productTotal, rows],
@@ -5072,6 +4850,8 @@ function Products({
       try {
         const refreshed = await fetchProductPage(baseUrl, {
           query: query.trim() || undefined,
+          ...(platformFilter !== 'all' ? { platform: platformFilter } : {}),
+          ...(accountFilter ? { accountId: accountFilter } : {}),
           ...(productFilter === 'needsReview' ? { factsConfirmed: false } : {}),
           limit: productPageSize,
           offset: productPage * productPageSize,
@@ -5302,13 +5082,13 @@ function Products({
       </div>
     )
   return (
-    <div className="page-stack">
+    <div className="page-stack products-page">
       <section className="page-intro">
         <div>
-          <span className="section-kicker">COMMERCE FACTS</span>
-          <h2>一处管理商品事实与来源</h2>
+          <span className="section-kicker">PRODUCT CATALOG</span>
+          <h2>管理商品事实与素材</h2>
           <p>
-            平台原值、本地确认值和来源证据同时保留。AI 不会覆盖你的商品真相。
+            先确认商品事实与店铺身份，再生成内容或创建批量任务。所有操作都会保留来源证据。
           </p>
         </div>
         <div className="button-row">
@@ -5330,15 +5110,9 @@ function Products({
               ? '创建任务组中…'
               : `创建独立任务组${selectedTargets.length ? `（${selectedTargets.length}）` : ''}`}
           </button>
-          {baseUrl &&
-            !accountsLoading &&
-            !accountsError &&
-            accounts &&
-            syncableAccountCount === 0 && (
-              <button className="primary" onClick={onConnectStores}>
-                先连接店铺
-              </button>
-            )}
+          {baseUrl && !accountsLoading && !accountsError && accounts && syncableAccountCount === 0 && (
+            <span className="knowledge-plan-external">请在大麦 ChatGPT 插件中绑定店铺后再同步</span>
+          )}
           <button
             className="primary"
             onClick={() => void sync()}
@@ -5374,6 +5148,25 @@ function Products({
                 ? '已满足批量条件：将按商品 + 平台 + 店铺拆成独立子任务。'
                 : batchReadiness.nextStep}
           </small>
+        </div>
+      </section>
+      <section className="products-summary" aria-label="商品目录概览">
+        <div className="products-summary-main">
+          <span className="section-kicker">当前目录</span>
+          <strong>{effectiveProductTotal.toLocaleString()}</strong>
+          <span>个商品</span>
+        </div>
+        <div className="products-summary-item">
+          <span>当前范围</span>
+          <b>{platformFilter === 'all' ? '全部平台' : platformNames[platformFilter]}</b>
+        </div>
+        <div className="products-summary-item">
+          <span>已连接店铺</span>
+          <b>{syncableAccountCount}</b>
+        </div>
+        <div className="products-summary-item">
+          <span>已选择任务目标</span>
+          <b>{selectedTargets.length}</b>
         </div>
       </section>
       <section className="scope-summary" aria-label="商品与素材当前范围">
@@ -5462,7 +5255,7 @@ function Products({
           <Store size={16} />
           {syncableAccountCount
             ? `已发现 ${syncableAccountCount} 家可同步店铺；同步会逐店执行，不会默认选择同平台第一家店。`
-            : '未发现已授权且可读取的店铺；请先连接店铺，再回来同步商品。'}
+            : '未发现已授权且可读取的店铺；请先在大麦 ChatGPT 插件中绑定店铺，再回来同步商品。'}
         </div>
       )}
       {groupMessage && (
@@ -5485,8 +5278,20 @@ function Products({
         ref={productListRef}
         tabIndex={-1}
         aria-label="商品列表"
+        aria-busy={loading}
       >
-        <div className="table-toolbar">
+        <div className="catalog-panel-heading">
+          <div>
+            <span className="section-kicker">CATALOG</span>
+            <h3>商品目录</h3>
+          </div>
+          <div className="catalog-status-legend" aria-label="商品状态说明">
+            <span><i className="legend-dot green" aria-hidden="true" />已确认</span>
+            <span><i className="legend-dot amber" aria-hidden="true" />待确认</span>
+            <span><i className="legend-dot neutral" aria-hidden="true" />待流程</span>
+          </div>
+        </div>
+        <div className="table-toolbar products-toolbar">
           <label className="inline-search">
             <Search size={16} />
             <span className="sr-only">搜索商品</span>
@@ -5496,24 +5301,51 @@ function Products({
               placeholder="搜索商品或平台"
             />
           </label>
-          <label className="sr-only" htmlFor="product-platform-filter">
-            按平台筛选
-          </label>
-          <select
-            id="product-platform-filter"
-            value={platformFilter}
-            onChange={(event) => {
-              setPlatformFilter(event.target.value as PlatformId | 'all')
-              setAccountFilter('')
-            }}
-          >
-            <option value="all">全部平台</option>
-            {Object.entries(platformNames).map(([id, label]) => (
-              <option value={id} key={id}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <div className="filter-select-wrap">
+            <span className="sr-only" id="product-platform-filter-label">按平台筛选</span>
+            <button
+              type="button"
+              className="filter-select-trigger"
+              role="combobox"
+              aria-haspopup="listbox"
+              aria-expanded={platformMenuOpen}
+              aria-controls="product-platform-filter-options"
+              aria-labelledby="product-platform-filter-label"
+              onClick={() => setPlatformMenuOpen((open) => !open)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  setPlatformMenuOpen(true)
+                } else if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setPlatformMenuOpen(false)
+                }
+              }}
+            >
+              {platformFilter === 'all' ? '全部平台' : platformNames[platformFilter]}
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+            {platformMenuOpen && (
+              <div className="filter-select-menu" id="product-platform-filter-options" role="listbox" aria-label="平台选项">
+                {[['all', '全部平台'], ...Object.entries(platformNames)].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="option"
+                    aria-selected={platformFilter === id}
+                    className={platformFilter === id ? 'selected' : undefined}
+                    onClick={() => {
+                      setPlatformFilter(id as PlatformId | 'all')
+                      setAccountFilter('')
+                      setPlatformMenuOpen(false)
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <label className="sr-only" htmlFor="product-store-filter">
             按店铺筛选
           </label>
@@ -5556,8 +5388,21 @@ function Products({
               }
               onClick={() => setProductFilter('needsReview')}
             >
-              待确认 {productStats.needsReview}
+              待确认{productStats.needsReview === null ? '' : ` ${productStats.needsReview}`}
             </button>
+            {(query || platformFilter !== 'all' || accountFilter || productFilter !== 'all') && (
+              <button
+                className="clear-filters"
+                onClick={() => {
+                  setQuery('')
+                  setPlatformFilter('all')
+                  setAccountFilter('')
+                  setProductFilter('all')
+                }}
+              >
+                清除筛选
+              </button>
+            )}
           </div>
         </div>
         {selectedTargets.length > 0 && (
@@ -5584,7 +5429,7 @@ function Products({
         <div className="table-wrap">
           {loading ? (
             <LoadingState label="正在读取商品事实…" />
-          ) : productListUnavailable ? (
+        ) : productListUnavailable ? (
             <div className="empty-state" data-testid="products-unavailable">
               <AlertCircle size={22} />
               <b>商品列表暂不可用</b>
@@ -5592,6 +5437,7 @@ function Products({
             </div>
           ) : visible.length ? (
             <table>
+              <caption className="sr-only">商品目录，包含任务组、商品、平台、店铺、素材关系、事实来源、库存和状态</caption>
               <thead>
                 <tr>
                   <th>任务组</th>
@@ -5615,7 +5461,7 @@ function Products({
                   const canonicalUnverified = !canonicalProductActionAllowed({ apiConfigured: Boolean(baseUrl), status: canonicalStatus })
                   const canonicalCopy = canonicalStatus
                     ? canonicalStatusCopy[canonicalStatus]
-                    : { label: '标准链未取得', detail: '服务端尚未返回规范商品状态', tone: 'amber' }
+                    : { label: '标准链待核验', detail: '服务端尚未返回规范商品状态，不能视为已通过', tone: 'amber' }
                   return (
                     <tr
                       key={`${product.id}:${product.platformId}:${product.accountId ?? ''}`}
@@ -6753,7 +6599,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
     <div className="info-notice" role="status" aria-live="polite" aria-atomic="true">{job ? `任务 ${job.jobId} · 商品 ${job.productId} · 最后更新 ${new Date(job.updatedAt).toLocaleString('zh-CN', { hour12: false })}` : '正在读取任务状态…'}</div>
     {configurationError && <div ref={imageJobConfigurationErrorRef} id="image-job-config-error" className="error-notice image-job-config-blocker" role="alert" tabIndex={-1} aria-labelledby="image-job-config-error-title" aria-describedby="image-job-config-error-description"><strong id="image-job-config-error-title">模型中转配置尚未就绪</strong><span id="image-job-config-error-description">API 返回配置阻断（{error}）。系统不会生成、扣费或发布；请联系管理员完成测试环境模型中转配置后，再刷新任务状态。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setConfigurationError(false); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
     {error && !configurationError && <div ref={imageJobReadErrorRef} id="image-job-read-error" className="error-notice image-job-read-error" role="alert" tabIndex={-1} aria-live="assertive" aria-atomic="true" aria-labelledby="image-job-read-error-title" aria-describedby="image-job-read-error-description"><strong id="image-job-read-error-title">图片任务状态暂时不可用</strong><span id="image-job-read-error-description">任务状态读取失败：{error}。已保留上次可信状态；请刷新任务状态后继续。</span><button className="secondary-button" type="button" onClick={() => { setError(''); setReload(value => value + 1) }} disabled={loading}>刷新任务状态</button></div>}
-    {job && <dl className="image-job-evidence" aria-label="图片执行证据"><div><dt>执行状态</dt><dd>{labels[job.executionState ?? ''] ?? job.executionState ?? '未记录'}</dd></div><div><dt>归档状态</dt><dd>{archiveLabels[job.archiveState] ?? '状态未知'}</dd></div><div><dt>执行尝试</dt><dd>{job.executionAttempt ?? '未记录'}</dd></div><div><dt>Provider 请求</dt><dd>{job.providerRequestId ?? '尚未确认'}</dd></div><div><dt>任务版本</dt><dd>{job.revision}</dd></div></dl>}
+    {job && <dl className="image-job-evidence" aria-label="图片执行证据"><div><dt>执行状态</dt><dd>{labels[job.executionState ?? ''] ?? job.executionState ?? '未记录'}</dd></div><div><dt>归档状态</dt><dd>{archiveLabels[job.archiveState] ?? '状态待确认'}</dd></div><div><dt>执行尝试</dt><dd>{job.executionAttempt ?? '未记录'}</dd></div><div><dt>Provider 请求</dt><dd>{job.providerRequestId ?? '尚未确认'}</dd></div><div><dt>任务版本</dt><dd>{job.revision}</dd></div></dl>}
     {job?.errorMessage && <div id="image-job-error" className="error-notice" role="alert" tabIndex={-1}><AlertCircle size={16} /><span>{job.errorCode ?? 'IMAGE_GENERATION_FAILED'}：{job.errorMessage}</span></div>}
     {job?.availabilityWarning && <div className="info-notice"><ShieldCheck size={16} /><span>{job.availabilityWarning}</span></div>}
     {!job && loading && <div className="image-candidate-loading" aria-hidden="true">
@@ -6768,7 +6614,7 @@ function ImageGenerationJobPanel({ baseUrl, jobId }: { baseUrl?: string; jobId: 
       const selected = selectedVisualRefs.includes(visualRef)
       return <figure key={visualRef} className={`${gate?.selectable ? 'candidate-ready' : 'candidate-blocked'}${selected ? ' candidate-selected' : ''}`}>
         {failed ? <div className="image-candidate-fallback" role="alert" aria-labelledby={`candidate-image-error-${index}`}><span id={`candidate-image-error-${index}`}>候选图片读取失败，当前任务状态和候选门禁仍保留。</span><button className="text-button image-candidate-retry" type="button" onClick={() => { setFailedImages(current => { const next = new Set(current); next.delete(visualRef); return next }); setImageReloads(current => ({ ...current, [visualRef]: (current[visualRef] ?? 0) + 1 })) }} aria-label={`重新读取图片候选 ${index + 1}`} aria-describedby={`candidate-image-error-${index}`}>重新读取</button></div> : <img key={`${visualRef}-${imageReloads[visualRef] ?? 0}`} src={src} alt={`图片候选 ${index + 1}，${gate?.selectable ? '可进入后续选择' : '尚不可选择'}`} {...imageCandidateLoading(candidatePageData.page, visibleIndex)} decoding="async" onError={() => setFailedImages(current => new Set(current).add(visualRef))} />}
-        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting'} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '未知'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
+        <figcaption><strong>候选 {index + 1}</strong><span>{gate?.selectable ? '满足选择门禁' : '暂不可选择'}</span><div className="image-candidate-metadata" aria-label={`候选 ${index + 1} 归属与完整性摘要`}><span>任务：{job.jobId}</span><span>商品版本：v{job.sourceProductVersion}</span><span>来源素材：{job.sourceAssetIds.length ? `${job.sourceAssetIds.length} 个` : '无'}</span><span>生成：{new Date(output?.createdAt ?? job.createdAt).toLocaleString('zh-CN', { hour12: false })}</span><span>文件：{output ? `${output.mimeType} · ${Math.round(output.sizeBytes / 1024)} KB` : '未记录'}</span><span>SHA-256：{output?.sha256 ? `${output.sha256.slice(0, 12)}…` : '未记录'}</span>{output?.archiveReceiptId && <span>归档凭证：{output.archiveReceiptId}</span>}</div>{job.contentVersionId && <label className="candidate-select-control"><input type="checkbox" checked={selectedVisualRefs.includes(visualRef)} disabled={!gate?.selectable || selectionState === 'submitting'} aria-describedby={!gate?.selectable ? `candidate-gate-${index}` : undefined} onChange={() => toggleVisual(visualRef, Boolean(gate?.selectable))} />选择为{selectedVisualRefs[0] === visualRef ? '主图' : '辅图'}</label>}{gate && <div className="image-candidate-gates" aria-label={`候选 ${index + 1} 门禁状态`}><span>归档：{gateLabels[gate.archive] ?? gate.archive}</span><span>扫描：{gateLabels[gate.scan] ?? gate.scan}</span><span>权益：{gateLabels[gate.rights] ?? gate.rights}</span><span>审核：{gateLabels[output?.reviewStatus ?? ''] ?? output?.reviewStatus ?? '待确认'}</span><span>真实性：{gateLabels[gate.authenticity] ?? gate.authenticity}</span></div>}{!gate?.selectable && <small id={`candidate-gate-${index}`}>不可选择：{gate?.blockers.length ? gate.blockers.join('；') : '尚未满足全部候选门禁'}</small>}</figcaption>
       </figure>
     })}</div>
       {candidatePageData.pageCount > 1 && <nav className="image-candidate-pagination" aria-label="图片候选分页"><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page - 1)} disabled={candidatePageData.page === 1}>上一页</button><span aria-live="polite">第 {candidatePageData.page} / {candidatePageData.pageCount} 页 · 共 {candidatePageData.total} 张候选</span><button className="secondary-button" type="button" onClick={() => setCandidatePage(candidatePageData.page + 1)} disabled={candidatePageData.page === candidatePageData.pageCount}>下一页</button></nav>}
@@ -7940,7 +7786,7 @@ function TaskWorkspace({
             <div className="empty-state">
               <Sparkles size={22} />
               <b>暂无营销任务</b>
-              <span>从商品与资产选择商品即可创建任务。</span>
+              <span>从知识库选择商品即可创建营销任务。</span>
             </div>
           )}
       </div>
@@ -8197,7 +8043,7 @@ function TaskWorkspace({
             <span className="status-chip amber">需核对</span>
           </div>
           <p>
-            服务端没有返回成功回执，当前没有把任务标记为已创建。任务是否已落库未知，请先查看任务列表；确认没有同一任务后，再使用同一幂等请求重试。
+            服务端没有返回成功回执，当前没有把任务标记为已创建。任务是否已落库待确认，请先查看任务列表；确认没有同一任务后，再使用同一幂等请求重试。
           </p>
           <div className="context-recovery-meta">
             <span>商品：{targetTitle}</span>
@@ -9525,7 +9371,7 @@ function PublishCenter({
         <div>
           <span className="section-kicker">CONTROLLED WRITES</span>
           <h2>每一次线上变更都有确认和回执</h2>
-          <p>“平台已受理”不等于“已生效”。未知状态先对账，不盲目重复提交。</p>
+          <p>“平台已受理”不等于“已生效”。待确认状态先对账，不盲目重复提交。</p>
         </div>
         <button
           className="primary"
@@ -9557,7 +9403,7 @@ function PublishCenter({
       {baseUrl && !canOpenPublish && (
         <div className="info-notice" role="status">
           <CircleHelp size={16} />
-          请先在商品与资产中选择商品并完成内容审核。
+                          请先在知识库选择商品并完成内容审核。
         </div>
       )}
       <section className="publish-board" aria-busy={loading}>
@@ -9703,6 +9549,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
   const [categoriesReloadKey, setCategoriesReloadKey] = useState(0)
   const [tab, setTab] = useState<'rules' | 'categories'>('rules')
   const [query, setQuery] = useState('')
+  const [ruleCategory, setRuleCategory] = useState<'all' | 'platform' | 'category' | 'advertising_publish'>('all')
   const urlPlatform =
     typeof window === 'undefined'
       ? undefined
@@ -9841,10 +9688,10 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
             row.scope.includes('全平台') ||
             row.scope.includes(platformNames[platform]),
         )
+  const classifyRule = (row: RulePack) => row.category
   const filteredRules = platformRows.filter((row) =>
-    `${row.name}${row.scope}${row.version}`
-      .toLocaleLowerCase()
-      .includes(query.toLocaleLowerCase()),
+    (ruleCategory === 'all' || classifyRule(row) === ruleCategory) &&
+    `${row.name}${row.scope}${row.version}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   )
   const filteredCategories = categories.filter((row) =>
     `${row.name}${row.code}${row.fields.join('')}`.includes(query),
@@ -9894,7 +9741,7 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
             <div>
               <b>{row.name}</b>
               <span>
-                {row.version} · 修订 {row.revision ?? 1}
+                {classifyRule(row) === 'platform' ? '平台规则' : classifyRule(row) === 'category' ? '品类规则' : classifyRule(row) === 'advertising_publish' ? '广告发布规则' : '未分类规则（已阻断）'} · {row.version} · 修订 {row.revision ?? 1}
               </span>
             </div>
             <StatusChip tone={resolveRuleExecutionState(row) === 'executable' ? 'neutral' : resolveRuleExecutionState(row) === 'blocked' ? 'red' : 'amber'}>{row.scope}</StatusChip>
@@ -10085,6 +9932,15 @@ function Rules({ baseUrl, target }: { baseUrl?: string; target?: Target }) {
                 </option>
               ),
             )}
+          </select>
+        </label>
+        <label className="library-platform-filter">
+          <span>规则分类</span>
+          <select value={ruleCategory} onChange={(event) => setRuleCategory(event.target.value as typeof ruleCategory)}>
+            <option value="all">全部规则</option>
+            <option value="platform">平台规则</option>
+            <option value="category">品类规则</option>
+            <option value="advertising_publish">广告发布规则</option>
           </select>
         </label>
         <label className="library-search">
@@ -10448,6 +10304,7 @@ function PublishModal({
 }
 
 export default function App() {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined
   const initialRoute = useRef<MerchantRoute>(
     merchantRouteFromLocation(window.location),
   ).current
@@ -10476,6 +10333,13 @@ export default function App() {
   )
   const [routeTargetError, setRouteTargetError] = useState('')
   const [routeReloadKey, setRouteReloadKey] = useState(0)
+  const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'signed_out' | 'error'>(
+    apiBaseUrl ? 'loading' : 'authenticated',
+  )
+  const [authAccount, setAuthAccount] = useState<MerchantAuthAccount | null>(null)
+  const [authError, setAuthError] = useState('')
+  const [capabilityDenied, setCapabilityDenied] = useState<{ code?: string; message?: string; requestId?: string } | null>(null)
+  const [accountBilling, setAccountBilling] = useState<BillingStatus | null>(null)
   const publishTrigger = useRef<HTMLElement | null>(null)
   const utilityTrigger = useRef<HTMLElement | null>(null)
   const mobileMenuTrigger = useRef<HTMLButtonElement>(null)
@@ -10483,6 +10347,34 @@ export default function App() {
   const publishPreviewLock = useRef(false)
   const routeRequestId = useRef(0)
   const mainContentRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!apiBaseUrl) return
+    let cancelled = false
+    setAuthState('loading')
+    setAuthError('')
+    fetchMerchantSession(apiBaseUrl)
+      .then(account => {
+        if (cancelled) return
+        setAuthAccount(account)
+        setAuthState('authenticated')
+      })
+      .catch(cause => {
+        if (cancelled) return
+        const code = (cause as { code?: string }).code
+        setAuthAccount(null)
+        setAuthState(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? 'error' : 'signed_out')
+        setAuthError(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? describeApiError(cause) : '')
+      })
+    return () => { cancelled = true }
+  }, [apiBaseUrl])
+  useEffect(() => {
+    const onDenied = (event: Event) => {
+      const detail = (event as CustomEvent<{ code?: string; message?: string; requestId?: string }>).detail ?? {}
+      setCapabilityDenied(detail)
+    }
+    window.addEventListener('merchant-capability-denied', onDenied)
+    return () => window.removeEventListener('merchant-capability-denied', onDenied)
+  }, [])
   useEffect(() => {
     const root = mainContentRef.current
     if (!root) return
@@ -10521,8 +10413,17 @@ export default function App() {
     [],
   )
   useEffect(() => {
+    const handleAuthExpired = () => {
+      setAuthAccount(null)
+      setAuthState('signed_out')
+      setAuthError('登录已失效，请重新登录商家工作台。')
+    }
+    window.addEventListener('merchant-auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('merchant-auth-expired', handleAuthExpired)
+  }, [])
+  useEffect(() => {
     const baseUrl = import.meta.env.VITE_API_BASE_URL
-    if (!baseUrl) return
+    if (!baseUrl || authState !== 'authenticated') return
     fetchApiHealth(baseUrl)
       .then((health) => {
         setApiOnline(true)
@@ -10539,8 +10440,24 @@ export default function App() {
       })
       .catch(() => setModelStatus(null))
       .finally(() => setModelStatusRead(true))
-  }, [])
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined
+  }, [apiBaseUrl, authState])
+  useEffect(() => {
+    if (!apiBaseUrl || authState !== 'authenticated') {
+      setAccountBilling(null)
+      return
+    }
+    let cancelled = false
+    fetchBillingStatus(apiBaseUrl)
+      .then((status) => {
+        if (!cancelled) setAccountBilling(status)
+      })
+      .catch(() => {
+        if (!cancelled) setAccountBilling(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiBaseUrl, authState])
   const refreshModelStatus = () => {
     if (!apiBaseUrl || !modelStatusRead) return
     setModelStatusRead(false)
@@ -10593,6 +10510,7 @@ export default function App() {
       })
   }
   useEffect(() => {
+    if (apiBaseUrl && authState !== 'authenticated') return
     if (!routeCanonicalized.current) {
       routeCanonicalized.current = true
       const canonicalUrl = urlForMerchantRoute(window.location, initialRoute)
@@ -10610,7 +10528,7 @@ export default function App() {
       routeRequestId.current += 1
       window.removeEventListener('popstate', onPopState)
     }
-  }, [apiBaseUrl, routeReloadKey])
+  }, [apiBaseUrl, authState, routeReloadKey])
   useEffect(() => {
     if (page === 'publish' && taskContext?.task) {
       window.localStorage.setItem(
@@ -10669,8 +10587,12 @@ export default function App() {
       clearContext?: boolean
     } = {},
   ) => {
-    const targetForRoute =
-      options.target ?? (nextPage === 'rules' && target ? target : undefined)
+    // Keep publish and rules as in-context workflow steps. Any legacy or
+    // programmatic request for those pages lands on the product workspace.
+    const effectivePage: Page =
+      nextPage === 'publish' || nextPage === 'rules' ? 'products' : nextPage
+    const requestedEntry = options.entry ?? (effectivePage === 'products' ? 'knowledge' : undefined)
+    const targetForRoute = options.target
     const resolvedTarget =
       targetForRoute && !targetForRoute.taskId && !targetForRoute.taskIntentKey
         ? { ...targetForRoute, taskIntentKey: crypto.randomUUID() }
@@ -10687,21 +10609,21 @@ export default function App() {
           }
       : undefined
     const url = urlForMerchantRoute(window.location, {
-      page: nextPage,
+      page: effectivePage,
       target: nextTarget,
       searchQuery: options.searchQuery,
-      entry: options.entry,
+      entry: requestedEntry,
     })
     window.history.pushState(null, '', url)
     routeRequestId.current += 1
-    setPage(nextPage)
-    setActiveEntry(options.entry)
+    setPage(effectivePage)
+    setActiveEntry(requestedEntry)
     setRouteTargetLoading(false)
     setRouteTargetError('')
     setMobileNav(false)
     setPublishModal(false)
     setUtilityPanel(null)
-    if (nextPage === 'task') setTarget(resolvedTarget)
+    if (effectivePage === 'task') setTarget(resolvedTarget)
     if (options.clearContext) {
       setTarget(resolvedTarget)
       setTaskContext(null)
@@ -10846,7 +10768,7 @@ export default function App() {
       )
     setPublishModal(false)
     setPublishPreview(null)
-    navigateTo('publish')
+    navigateTo('products')
     showToast(
       `发布请求已受理：${jobId}。平台生效前会持续显示为“审核中”。`,
       'info',
@@ -10895,6 +10817,46 @@ export default function App() {
     if (!query) return
     navigateTo('products', { searchQuery: query, clearContext: true })
   }
+  const handleMerchantLogout = async () => {
+    if (!apiBaseUrl) return
+    try {
+      await logoutMerchantAccount(apiBaseUrl)
+      setAuthAccount(null)
+      setAccountBilling(null)
+      setAuthState('signed_out')
+      setUtilityPanel(null)
+    } catch (cause) {
+      showToast(`退出登录失败：${describeApiError(cause)}`, 'error')
+    }
+  }
+  if (apiBaseUrl && authState !== 'authenticated') {
+    return (
+      <MerchantLoginPage
+        apiBaseUrl={apiBaseUrl}
+        error={authError}
+        loading={authState === 'loading'}
+        onRetry={() => {
+          setAuthState('loading')
+          setAuthError('')
+          fetchMerchantSession(apiBaseUrl)
+            .then(account => {
+              setAuthAccount(account)
+              setAuthState('authenticated')
+            })
+            .catch(cause => {
+              const code = (cause as { code?: string }).code
+              setAuthState(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? 'error' : 'signed_out')
+              setAuthError(code === 'AUTH_MERCHANT_ACCOUNT_REQUIRED' ? describeApiError(cause) : '')
+            })
+        }}
+        onAuthenticated={(account) => {
+          setAuthAccount(account)
+          setAuthState('authenticated')
+          setAuthError('')
+        }}
+      />
+    )
+  }
   return (
     <div className="app-shell" data-merchant-role={merchantRole || 'workspace_owner'} data-merchant-permission={merchantReadOnly ? 'read-only' : 'write'}>
       {merchantReadOnly && (
@@ -10932,13 +10894,23 @@ export default function App() {
         <div className="main-shell">
           <Topbar
             page={page}
+            activeEntry={activeEntry}
             openMenu={() => setMobileNav(true)}
             menuOpen={mobileNav}
             menuButtonRef={mobileMenuTrigger}
             apiOnline={apiOnline}
             apiMode={apiMode}
             apiBaseUrl={apiBaseUrl}
+            account={authAccount}
+            billing={accountBilling}
+            onLogout={() => void handleMerchantLogout()}
+            onPasswordChanged={() => {
+              setAuthAccount(null)
+              setAuthState('signed_out')
+              setAuthError('密码已修改，请使用新密码重新登录。')
+            }}
             onOpenUtility={openUtility}
+            onOpenIssues={() => navigateTo('products', { clearContext: true })}
             searchQuery={globalSearch}
             onSearchQuery={setGlobalSearch}
             onSearch={searchProducts}
@@ -10986,7 +10958,7 @@ export default function App() {
                   className="primary"
                   onClick={() => navigateTo('products', { clearContext: true })}
                 >
-                  回到商品与素材
+                  回到知识库
                 </button>
               </section>
             ) : (
@@ -11018,9 +10990,6 @@ export default function App() {
                     }
                     onOpenTasks={() =>
                       navigateTo('task', { clearContext: true })
-                    }
-                    onConnectStores={() =>
-                      navigateTo('overview', { clearContext: true })
                     }
                   />
                 )}
@@ -11075,6 +11044,17 @@ export default function App() {
           returnFocus={publishTrigger.current}
         />
       )}
+      <Modal open={Boolean(capabilityDenied)} title="当前账号没有此操作权限" footer={null} onCancel={() => setCapabilityDenied(null)}>
+        <div role="alert" className="capability-denied-dialog">
+          <p>该功能需要平台管理员授予对应的商家能力，请联系管理员开通后重试。</p>
+          {capabilityDenied?.message && <p className="muted">服务端提示：{capabilityDenied.message}</p>}
+          {capabilityDenied?.requestId && <p className="muted">Request ID：{capabilityDenied.requestId}</p>}
+          <Space>
+            <Button onClick={() => { setCapabilityDenied(null); window.location.assign('/merchant/login') }}>重新登录</Button>
+            <Button type="primary" onClick={() => setCapabilityDenied(null)}>知道了</Button>
+          </Space>
+        </div>
+      </Modal>
       {utilityPanel === 'support' ? (
         <CustomerSupportPanel apiBaseUrl={apiBaseUrl} relatedTaskId={taskContext?.task.id} onClose={closeUtility} />
       ) : utilityPanel && (

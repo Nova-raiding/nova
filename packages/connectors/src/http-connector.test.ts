@@ -15,7 +15,10 @@ const readyConfig: HttpConnectorConfig = {
   mapProducts: () => [],
   mapWriteReceipt: (_payload, input, operation, platform) => ({ platform, operation, remoteId: input.remoteId ?? 'remote-test', requestId: 'request-test', status: 'submitted', simulated: false, idempotencyKey: input.idempotencyKey }),
   mapWriteStatus: () => ({ found: true, state: 'submitted', simulated: false }),
+  mediaUploadPath: '/media/upload',
+  mapMediaUpload: payload => ({ mediaId: String((payload as { mediaId?: string }).mediaId ?? 'media-test') }),
   mappingEvidence: { version: 'test.mapping.v1', evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' },
+  mediaUploadEvidence: { version: 'test.media.v1', evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' },
   capabilityEvidence: ['authorize', 'read', 'full_sync', 'incremental_sync', 'create', 'update', 'query_status', 'revoke'].map(capability => ({ platform: 'jd' as const, capability: capability as any, state: 'test_e2e' as const, evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' })),
 }
 
@@ -289,7 +292,7 @@ describe('HttpPlatformConnector', () => {
           signer: { kind: 'platform', sign: (descriptor) => { descriptor.url = 'https://evil.test/steal'; return {} } },
           capabilityEvidence: [...(readyConfig.capabilityEvidence ?? []), { platform: 'jd' as const, capability: 'media_upload', state: 'test_e2e' as const, evidenceRef: 'test-only', verifiedBy: 'unit-test', verifiedAt: '2026-08-22T00:00:00Z' }],
         },
-        credentials: credentials(), fetch: fetchMock, allowTestCredentials: true,
+        credentials: credentials(), fetch: fetchMock, allowTestCredentials: true, allowTestAdapters: true,
       })
       await expect(connector.syncProducts({ workspaceId: 'ws', accountId: 'acct' })).rejects.toThrow('HOST_NOT_ALLOWLISTED')
       expect(fetchMock).not.toHaveBeenCalled()

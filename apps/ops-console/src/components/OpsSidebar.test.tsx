@@ -3,14 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { mainItems, OpsSidebar } from "./OpsSidebar.js";
 
 describe("OpsSidebar navigation", () => {
-  it("uses platform-operations wording for merchant store management", () => {
-    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({
-      domain: "stores",
-      label: "平台连接",
-    });
+  it("uses platform-governance wording for merchant workspace management", () => {
+    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["tasks", "stores", "rules"]));
     const markup = renderToStaticMarkup(
       <OpsSidebar
-        activeDomain="overview"
+        activeDomain="users"
         stores={[]}
         platformLabels={{}}
         selectedStoreScope=""
@@ -20,17 +17,12 @@ describe("OpsSidebar navigation", () => {
     );
     expect(markup).toContain("大麦运营中心");
     expect(markup).toContain("平台治理");
-    expect(markup).toContain("商家运营");
+    expect(markup).not.toContain("商家工作区治理");
+    expect(markup).not.toContain(">商家运营</h2>");
     expect(markup).toContain("模型与计费");
-    expect(markup).toContain("风险与系统");
-    expect(markup).toContain("当前操作范围");
-    expect(markup).toContain('role="region" aria-labelledby="ops-scope-panel-title"');
-    expect(markup).toContain('id="ops-scope-panel-title"');
-    expect(markup).toContain("平台级");
-    expect(markup).toContain("正在查看平台聚合与控制面数据");
-    expect(markup).toContain("未进入工作区");
-    expect(markup).toContain("全平台");
-    expect(markup).toContain("受控支持入口");
+    expect(markup).not.toContain("风险与系统");
+    expect(markup).not.toContain("当前操作范围");
+    expect(markup).not.toContain("受控支持入口");
     expect(markup).not.toContain("租户作用域");
     expect(markup).not.toContain("全部平台连接");
     expect(markup).not.toContain("京东一店");
@@ -45,55 +37,55 @@ describe("OpsSidebar navigation", () => {
     });
   });
 
-  it("exposes member governance as an independent destination", () => {
+  it("keeps member governance inside the user center", () => {
+    expect(mainItems.map(({ domain }) => domain)).not.toContain("members");
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toContainEqual({
-      domain: "members",
-      label: "成员与权限",
+      domain: "users",
+      label: "用户中心",
     });
   });
 
-  it("exposes platform rules and audit as first-class operations destinations", () => {
+  it("exposes platform rules as a first-class operations destination", () => {
     expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toEqual(
       expect.arrayContaining([
-        { domain: "rules", label: "平台规则" },
-        { domain: "audit", label: "审计中心" },
       ]),
     );
+    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["feature-flags", "storage", "audit"]));
   });
 
-  it("exposes support, incidents and feature flags as first-class destinations", () => {
-    expect(mainItems.map(({ domain, label }) => ({ domain, label }))).toEqual(
-      expect.arrayContaining([
-        { domain: "support", label: "客服" },
-        { domain: "incidents", label: "事故中心" },
-        { domain: "feature-flags", label: "功能开关" },
-      ]),
-    );
+  it("does not expose removed support, incident, or feature flag destinations", () => {
+    expect(mainItems.map(({ domain }) => domain)).not.toEqual(expect.arrayContaining(["support", "incidents", "feature-flags"]));
   });
 
   it("omits destinations outside the supplied role-aware visibility set", () => {
     const markup = renderToStaticMarkup(
       <OpsSidebar
-        activeDomain="overview"
+        activeDomain="users"
         stores={[]}
         platformLabels={{}}
         selectedStoreScope=""
-        visibleDomains={["overview", "support", "incidents", "audit"]}
+        visibleDomains={["users", "audit"]}
         onNavigate={() => undefined}
         onSelectStore={() => undefined}
       />,
     );
-    expect(markup).toContain("客服");
-    expect(markup).toContain("事故中心");
+    expect(markup).not.toContain("客服");
+    expect(markup).not.toContain("事故中心");
     expect(markup).not.toContain("账务与退款");
+    expect(markup).not.toContain("任务与内容");
+    expect(markup).not.toContain("平台连接");
+    expect(markup).not.toContain("平台规则");
     expect(markup).not.toContain("功能开关");
+    expect(markup).not.toContain("风险与系统");
+    expect(markup).not.toContain("存储与对账");
+    expect(markup).not.toContain("审计中心");
   });
 
   it("does not render customer store scope in the platform operations navigation", () => {
     const markup = renderToStaticMarkup(
       <OpsSidebar activeDomain="stores" stores={[{ platform: "jd", accountId: "store-1", label: "京东一店", state: "connected" }, { platform: "jd", accountId: "store-2", label: "京东二店", state: "refresh_required" }]} platformLabels={{ jd: "京东" }} selectedStoreScope="jd:store-1" onNavigate={() => undefined} onSelectStore={() => undefined} />,
     );
-    expect(markup).toContain("受控支持入口");
+    expect(markup).not.toContain("受控支持入口");
     expect(markup).not.toContain("京东一店");
     expect(markup).not.toContain("京东二店");
     expect(markup).toContain('aria-label="关闭运营导航"');
@@ -106,20 +98,15 @@ describe("OpsSidebar navigation", () => {
         stores={[]}
         platformLabels={{}}
         selectedStoreScope=""
-        workspaceId="workspace_ops"
-        scope={{ kind: "workspace", id: "workspace_ops" }}
-        visibleDomains={["overview", "finance"]}
+        visibleDomains={["users", "finance"]}
         onNavigate={() => undefined}
         onSelectStore={() => undefined}
       />,
     );
-    expect(markup).not.toContain("全平台");
-    expect(markup).toContain("workspace_ops");
-    expect(markup).toContain("工作区范围");
-    expect(markup).toContain("数据与操作仅限当前工作区");
+    expect(markup).not.toContain("当前操作范围");
     expect(markup).toContain("平台治理");
     expect(markup).toContain("模型与计费");
-    expect(markup).not.toContain("商家运营");
+    expect(markup).not.toContain("商家工作区治理");
     expect(markup).not.toContain("风险与系统");
     expect(markup).not.toContain("受控支持入口");
   });

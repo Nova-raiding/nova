@@ -70,6 +70,50 @@ describe('durable rule-center HTTP boundary', () => {
     vi.unstubAllEnvs()
   })
 
+  it('rejects manual official restrictions through both REST and MCP without writing data', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    vi.stubEnv('NODE_ENV', 'staging')
+    vi.stubEnv('API_AUTH_TOKENS', JSON.stringify({
+      'official-admin': { workspaces: ['ws_official_boundary'], roles: ['rules_admin'], workbenches: ['platform', 'workspace'], actor_id: 'official_admin' },
+    }))
+    await workspaceMembers.upsert({ workspaceId: 'ws_official_boundary', externalSubject: 'official_admin', displayName: '规则管理员', role: 'merchant_admin', status: 'active', invitedBy: 'test' })
+    await grantCreativePointsForTests('ws_official_boundary')
+    grantContinuousFeatureEntitlementForTests('ws_official_boundary')
+    const base = await start()
+    const headers = { authorization: 'Bearer official-admin', 'x-workspace-id': 'ws_official_boundary', 'x-ops-workbench': 'platform', 'content-type': 'application/json' }
+    for (const category of ['platform', 'category', 'advertising_publish', 'big_promotion']) {
+      const params = { pack_id: 'official-manual', name: '人工伪装的平台限制', version: '1', category, scope: 'category', scope_value: '服装', source_kind: 'internal', source_reference: 'https://rules.example/claim', source_checked_at: new Date().toISOString(), status: 'draft', reason: 'boundary test' }
+      const rest = await fetch(`${base}/v1/rules/official-manual/versions`, { method: 'POST', headers, body: JSON.stringify({ ...params, checks: {} }) }).then(json)
+      expect(rest.error?.code).toBe('OFFICIAL_RULE_IMPORT_REQUIRED')
+      const mcp = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: category, method: 'rule.publish', params: { ...params, checks_json: '{}' } }) }).then(json)
+      // The public MCP schema additionally rejects the unsupported category field.
+      expect(['OFFICIAL_RULE_IMPORT_REQUIRED', 'INVALID_REQUEST']).toContain(mcp.error?.code)
+    }
+    expect(repository.versions).toHaveLength(0)
+    expect(repository.audits).toHaveLength(0)
+  })
+
+  it('rejects caller-declared official sources and activation of historical manual official drafts', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const base = await start()
+    const workspaceId = 'ws_manual_official_lifecycle'
+    const headers = { 'x-workspace-id': workspaceId, 'x-actor-id': 'rules_admin_1', 'x-role': 'rules_admin', 'x-ops-workbench': 'workspace', 'content-type': 'application/json' }
+    const params = { pack_id: 'manual-official', name: '未验证官方规则', version: '1', scope: 'global', source_kind: 'official', source_reference: 'https://rules.example/official', source_checked_at: new Date().toISOString(), checks_json: '{}', reason: 'test' }
+    const created = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'rule.publish', params }) }).then(json)
+    expect(created.error?.code).toBe('OFFICIAL_RULE_IMPORT_REQUIRED')
+    expect(repository.versions).toHaveLength(0)
+    const draft = await repository.insertVersion({ id: 'legacy-manual-official', workspaceId, packId: 'manual-official', name: params.name, version: '1', scope: 'category', category: 'category', scopeValue: '服装', status: 'draft', sourceKind: 'official', sourceReference: params.source_reference, sourceCheckedAt: params.source_checked_at, checksum: 'a'.repeat(64), checks: {}, createdBy: 'rules_admin_1', revision: 1 })
+    const approval = { approval_ref: 'approval://test', approved_by: 'reviewer_2', approved_at: new Date().toISOString() }
+    const rest = await fetch(`${base}/v1/rules/manual-official/versions/1/status`, { method: 'POST', headers, body: JSON.stringify({ status: 'active', reason: 'test', approval }) }).then(json)
+    expect(rest.error?.code).toBe('OFFICIAL_RULE_IMPORT_REQUIRED')
+    const mcp = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'rule.status', params: { pack_id: 'manual-official', version: '1', status: 'active', reason: 'test', approval_json: JSON.stringify(approval) } }) }).then(json)
+    expect(mcp.error?.code).toBe('OFFICIAL_RULE_IMPORT_REQUIRED')
+    expect(draft.status).toBe('draft')
+    expect(repository.audits).toHaveLength(0)
+  })
+
   it('enforces token-bound tenant/admin/approver identities and appends readable audit', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
@@ -140,6 +184,20 @@ describe('durable rule-center HTTP boundary', () => {
     expect(repository.audits).toHaveLength(0)
   })
 
+  it('blocks a historical internal rule misclassified as an official category before generation', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = 'ws_misclassified_category'
+    await grantCreativePointsForTests(workspaceId)
+    grantContinuousFeatureEntitlementForTests(workspaceId)
+    const product = service.importProduct({ workspaceId, platform: 'taobao', category: '女装外套', title: '官方品类来源校验', stock: 1 })
+    await repository.insertVersion({ id: 'untrusted-category', workspaceId, packId: 'untrusted-category', name: '内部规则冒充官方品类', version: '1', scope: 'category', category: 'category', scopeValue: '女装外套', status: 'active', sourceKind: 'internal', sourceReference: 'internal://category', sourceCheckedAt: new Date().toISOString(), checksum: 'a'.repeat(64), checks: {}, createdBy: 'merchant', revision: 1 })
+    const base = await start()
+    const generated = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'multimodal.generate', params: { modality: 'text', prompt: '生成商品标题', context_json: JSON.stringify({ brand: { id: 'brand-1', version: '1' }, product: { id: product.id, version: '1' }, rules: [{ id: 'untrusted-category', version: '1' }] }) } }) }).then(json)
+    expect(generated.error?.code).toBe('PLATFORM_RULE_PREFLIGHT_BLOCKED')
+    expect(JSON.stringify(generated)).toContain('RULE_SOURCE_INVALID')
+  })
+
   it('persists and audits an explicit draft-to-active lifecycle', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
@@ -147,7 +205,7 @@ describe('durable rule-center HTTP boundary', () => {
     const headers = { 'x-workspace-id': 'ws_lifecycle', 'x-actor-id': 'rules_admin_1', 'x-role': 'rules_admin', 'x-ops-workbench': 'workspace', 'content-type': 'application/json' }
     const draft = await fetch(`${base}/v1/rules/catalog/versions`, {
       method: 'POST', headers,
-      body: JSON.stringify({ name: '商品规则', version: '3.0.0', scope: 'global', status: 'draft', source_kind: 'official', source_reference: 'official://rules/3', source_checked_at: '2026-08-23T01:00:00.000Z', checks: { max_title_length: 60 }, reason: '登记待审批版本' }),
+      body: JSON.stringify({ name: '内部商品规则', version: '3.0.0', scope: 'global', status: 'draft', source_kind: 'internal', source_reference: 'internal://rules/3', source_checked_at: '2026-08-23T01:00:00.000Z', checks: { max_title_length: 60 }, reason: '登记待审批版本' }),
     }).then(json)
     expect(draft.error).toBeNull()
     expect(repository.versions[0]?.status).toBe('draft')
@@ -317,6 +375,23 @@ describe('durable rule-center HTTP boundary', () => {
     expect([...service.generationJobs.values()].some(job => job.workspaceId === workspaceId)).toBe(false)
   })
 
+  it('blocks ordinary text generation when a persisted rule has an invalid effective window', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = `ws_persisted_malformed_rule_${Date.now()}`
+    const account = service.registerPlatformAccount({ workspaceId, platform: 'taobao', remoteAccountId: `persisted-malformed-store-${workspaceId}`, credentialRef: `vault://persisted-malformed/${workspaceId}` })
+    const product = service.importProduct({ workspaceId, platform: 'taobao', category: '女装外套', title: '非法规则日期商品', stock: 4 })
+    service.confirmProductFacts(workspaceId, product.id)
+    const task = service.createTask({ workspaceId, productId: product.id, platform: 'taobao', accountId: account.id })
+    service.selectDirection(task.id, 'A')
+    await repository.insertVersion({ id: `persisted-malformed-${workspaceId}`, workspaceId, packId: 'persisted-malformed', name: '非法日期淘宝规则', version: '1.0.0', scope: 'platform', targetId: 'taobao', status: 'active', sourceKind: 'official', sourceReference: 'official://platform/malformed', sourceCheckedAt: new Date().toISOString(), checksum: 'e'.repeat(64), checks: {}, createdBy: 'rules_admin', revision: 1, effectiveTo: 'not-a-date' })
+    const base = await start()
+    const generated = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'content.generate', params: { task_id: task.id } }) }).then(json)
+    expect(generated.error).toMatchObject({ code: 'PLATFORM_RULE_PREFLIGHT_BLOCKED' })
+    expect((generated.error as { details?: { rule_preflight?: { findings?: Array<{ code: string; ruleVersionId?: string }> } } }).details?.rule_preflight?.findings).toContainEqual(expect.objectContaining({ code: 'RULE_SOURCE_INVALID', ruleVersionId: `persisted-malformed-${workspaceId}` }))
+    expect([...service.generationJobs.values()].some(job => job.workspaceId === workspaceId)).toBe(false)
+  })
+
   it('applies persisted expiration policy and only reports exact normalized conflict keys', async () => {
     const repository = new MemoryRuleRepository()
     setRuleRepositoryForTests(repository)
@@ -352,5 +427,48 @@ describe('durable rule-center HTTP boundary', () => {
     expect(exactConflict.error?.code).toBe('PLATFORM_RULE_PREFLIGHT_BLOCKED')
     const conflictFinding = (exactConflict.error as unknown as { details: { rule_preflight: { findings: Array<{ code: string; message: string }> } } }).details.rule_preflight.findings.find(item => item.code === 'RULE_PRIORITY_CONFLICT')
     expect(conflictFinding?.message).toContain('field:product.title')
+  })
+
+  it('scans persisted category required fields against product attributes during import', async () => {
+    const repository = new MemoryRuleRepository()
+    setRuleRepositoryForTests(repository)
+    const workspaceId = `ws_import_required_fields_${Date.now()}`
+    const now = new Date().toISOString()
+    await repository.insertVersion({
+      id: `category-material-${workspaceId}`,
+      workspaceId,
+      packId: 'category-material',
+      name: '服装材质字段',
+      version: '1.0.0',
+      scope: 'category',
+      scopeValue: '女装外套',
+      status: 'active',
+      sourceKind: 'official',
+      sourceReference: 'official://category/apparel/material',
+      sourceCheckedAt: now,
+      checksum: 'f'.repeat(64),
+      checks: { required_fields: ['material'] },
+      createdBy: 'rules_admin',
+      revision: 1,
+    })
+    const base = await start()
+    const missing = await fetch(`${base}/v1/products/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ platform: 'taobao', category: '女装外套', title: '缺少材质字段', stock: 2 }),
+    }).then(json)
+    expect(missing.error).toBeNull()
+    expect((missing.data as { ruleScan: { status: string; findings: Array<{ code: string; field: string }> } }).ruleScan).toMatchObject({
+      status: 'blocked',
+      findings: expect.arrayContaining([expect.objectContaining({ code: 'REQUIRED_FIELD_MISSING', field: 'material' })]),
+    })
+
+    const present = await fetch(`${base}/v1/products/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workspace-id': workspaceId },
+      body: JSON.stringify({ platform: 'taobao', category: '女装外套', title: '包含材质字段', stock: 2, attributes: { material: '聚酯纤维' } }),
+    }).then(json)
+    expect(present.error).toBeNull()
+    expect((present.data as { ruleScan: { findings: Array<{ code: string; field: string }> } }).ruleScan.findings).not.toContainEqual(expect.objectContaining({ code: 'REQUIRED_FIELD_MISSING', field: 'material' }))
   })
 })

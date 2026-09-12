@@ -91,19 +91,13 @@ async function installSessionProjection(page, { initialWorkbench = 'platform', v
   }
 }
 
-test('covers platform and workspace workbenches through keyboard switching', async ({ page }) => {
+test('keeps the platform overview scoped to the platform workbench', async ({ page }) => {
   await installSessionProjection(page)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: '运营总览' })).toBeVisible({ timeout: 20_000 })
-  const switcher = page.getByRole('radiogroup', { name: '当前运营工作台' }).getByRole('radio', { name: '平台控制台' })
-  await expect(page.getByRole('radio', { name: '平台控制台' })).toBeChecked()
-  await switcher.focus()
-  await page.keyboard.press('ArrowRight')
-  await expect(page.getByRole('radio', { name: '商家工作区' })).toBeChecked({ timeout: 20_000 })
-  await expect(page.getByRole('radio', { name: '商家工作区' })).toBeEnabled({ timeout: 20_000 })
-  await page.getByRole('radio', { name: '商家工作区' }).focus()
-  await page.keyboard.press('ArrowLeft')
-  await expect(page.getByRole('radio', { name: '平台控制台' })).toBeChecked({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: '平台运营实时概况' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('radiogroup', { name: '当前运营工作台' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: '平台控制台' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: '商家工作区' })).toHaveCount(0)
 })
 
 test('shows controlled-support scope and exits a JIT grant from the keyboard', async ({ page }) => {

@@ -45,9 +45,9 @@ describe('PostgresOpsDataRepository', () => {
   })
 
   it('applies server-side filters and pagination inside the platform-scoped read transaction', async () => {
-    const client = new Client([{ workspaceId: 'ws_b', status: 'active', planName: 'Pro' }], 3)
+    const client = new Client([{ workspaceId: 'ws_b', enterpriseName: '演示企业', status: 'active', planName: 'Pro' }], 3)
     const page = await new PostgresOpsDataRepository(new Pool(client)).listWorkspaceDirectory({ query: 'Pro', status: 'active', subscriptionStatus: 'trialing', offset: 1, limit: 1 })
-    expect(page).toEqual({ items: [{ workspaceId: 'ws_b', status: 'active', planName: 'Pro' }], total: 3, offset: 1, limit: 1, hasMore: true })
+    expect(page).toEqual({ items: [{ workspaceId: 'ws_b', enterpriseName: '演示企业', status: 'active', planName: 'Pro' }], total: 3, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0, offset: 1, limit: 1, hasMore: true })
     const query = client.calls.findIndex(call => call.includes('OFFSET'))
     expect(client.values[query]).toEqual(['%Pro%', 'active', 'trialing', 1, 1])
     expect(client.calls[query]).not.toContain('count(*) OVER()')
@@ -57,7 +57,7 @@ describe('PostgresOpsDataRepository', () => {
   it('preserves the total when the requested offset is beyond the final page', async () => {
     const client = new Client([], 3)
     const page = await new PostgresOpsDataRepository(new Pool(client)).listWorkspaceDirectory({ offset: 3, limit: 2 })
-    expect(page).toEqual({ items: [], total: 3, offset: 3, limit: 2, hasMore: false })
+    expect(page).toEqual({ items: [], total: 3, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 0, offset: 3, limit: 2, hasMore: false })
     const countQuery = client.calls.find(call => call.includes('count(*)::integer'))
     expect(countQuery).toContain('FROM ops_workspace_summaries')
     expect(client.calls.filter(call => call.includes('FROM ops_workspace_summaries'))).toHaveLength(2)

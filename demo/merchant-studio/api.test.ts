@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, type Product } from './src/api.js'
+import { assertProductTargetIdentity, fetchImageGenerationJobs, fetchProduct, fetchProductAssetBindings, fetchProducts, fetchTasks, generateCampaignBatch, importProduct, registerMerchantAccount, type Product } from './src/api.js'
 import { resolveLibraryData } from './src/library-data.js'
 import { resolveTaskDirections } from './src/task-evidence.js'
 
@@ -105,6 +105,17 @@ describe('merchant product response normalization', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       method: 'campaign.batch.generate',
       params: { campaign_id: 'campaign_1', request_text: '按事实生成', idempotency_key: 'merchant-studio-campaign-generate-campaign_1' },
+    })
+  })
+
+  it('normalizes the registration application id returned by the HTTP API', async () => {
+    vi.stubGlobal('window', globalThis)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelope({ application_id: 'app_123', login: 'merchant@example.com', status: 'merchant_pending' }, 201)))
+
+    await expect(registerMerchantAccount('/api', { login: 'merchant@example.com', password: 'MerchantPass123!', enterpriseName: '测试企业', contactName: '联系人' })).resolves.toEqual({
+      applicationId: 'app_123',
+      login: 'merchant@example.com',
+      status: 'merchant_pending',
     })
   })
 })

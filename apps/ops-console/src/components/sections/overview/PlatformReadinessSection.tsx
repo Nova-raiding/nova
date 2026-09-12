@@ -43,12 +43,12 @@ export function platformAuthorizationPresentation(row: PlatformOperation) {
     };
   }
   if (row.state === "partially_connected") {
-    return {
-      color: "orange" as const,
-      label: `${row.connectedAccountCount ?? 0}/${accountCount} 个店铺已连接`,
-    };
+    const connectedCount = row.connectedAccountCount;
+    return connectedCount === undefined
+      ? { color: "orange" as const, label: `待确认（共 ${accountCount} 个店铺）` }
+      : { color: "orange" as const, label: `${connectedCount}/${accountCount} 个店铺已连接` };
   }
-  return { color: "orange" as const, label: row.state || "未知" };
+  return { color: "orange" as const, label: "状态待确认" };
 }
 
 export function platformReadPresentation(row: PlatformOperation) {
