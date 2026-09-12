@@ -9,7 +9,18 @@ ruby -e 'require "yaml"; ARGV.each { |p| YAML.load_file(p); puts "valid yaml: #{
   infra/observability/prometheus-alerts.example.yaml infra/observability/otel-collector.example.yaml \
   infra/backup/backup-policy.example.yaml
 docker compose -f infra/local/docker-compose.yml config --quiet
-for script in infra/scripts/*.sh; do sh -n "$script"; done
+# Validate each script with the interpreter it declares.  Most release
+# scripts intentionally target POSIX `sh`, while the secret-rotation helper
+# uses Bash arrays and `set -o pipefail`.  Calling `sh -n` unconditionally is
+# portable on macOS (where `/bin/sh` is Bash) but fails on Linux runners whose
+# `/bin/sh` is dash, so CI would reject an otherwise valid Bash script.
+for script in infra/scripts/*.sh; do
+  interpreter=$(sed -n '1s/^#![[:space:]]*//p' "$script")
+  case "$interpreter" in
+    *bash*) bash -n "$script" ;;
+    *) sh -n "$script" ;;
+  esac
+done
 test -f infra/scripts/validate-kubernetes-release.sh
 test -f packages/persistence/src/migrations/001_initial.sql
 test -f packages/persistence/src/migrations/006_brand_assets.sql

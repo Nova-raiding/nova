@@ -22,6 +22,14 @@ describe('deployment operation scripts', () => {
     expect(readFileSync('infra/local/docker-compose.ecs-pilot-release.yml', 'utf8')).toContain('${PILOT_RELEASE_ID:?PILOT_RELEASE_ID is required}')
   })
 
+  it('validates infrastructure scripts with their declared shell', () => {
+    const validator = readFileSync('infra/scripts/validate-config.sh', 'utf8')
+    expect(validator).toContain("interpreter=$(sed -n '1s/^#![[:space:]]*//p' \"$script\")")
+    expect(validator).toContain('case "$interpreter" in')
+    expect(validator).toContain('*bash*) bash -n "$script"')
+    expect(validator).toContain('*) sh -n "$script"')
+  })
+
   it('keeps read-only worker containers writable only through the readiness volume', () => {
     const manifest = readFileSync('infra/kubernetes/base/workers.yaml', 'utf8')
     expect(manifest.match(/automountServiceAccountToken: false/g)).toHaveLength(6)
