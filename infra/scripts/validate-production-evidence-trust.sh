@@ -28,8 +28,16 @@ resolved_trust_dir=$(CDPATH= cd -- "$trust_dir" && pwd -P)
 [ "$resolved_trust_dir" = "$trust_dir" ] || { echo "production evidence trust anchor path must be canonical and must not traverse symlinks" >&2; exit 1; }
 case "$resolved_trust_dir/" in "$repo_root/"*) echo "production evidence trust anchor must be provisioned outside the mutable repository" >&2; exit 1 ;; esac
 
-owner_of() { stat -f '%u' "$1" 2>/dev/null || stat -c '%u' "$1"; }
-mode_of() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+# BSD stat uses `-f` for a format string while GNU/Linux stat uses `-c`.
+# Probe the format supported by the host first; GNU stat accepts `-f` as a
+# filesystem query and may exit successfully with the wrong value, so a
+# simple `||` fallback is not safe here.
+owner_of() {
+  if stat -c '%u' "$1" >/dev/null 2>&1; then stat -c '%u' "$1"; else stat -f '%u' "$1"; fi
+}
+mode_of() {
+  if stat -c '%a' "$1" >/dev/null 2>&1; then stat -c '%a' "$1"; else stat -f '%Lp' "$1"; fi
+}
 validate_secure_owner_mode() {
   path=$1
   label=$2

@@ -217,7 +217,10 @@ function run(
   args = [apiRef, workerRef, apiDigest, workerDigest],
   env: Record<string, string> = {},
 ) {
-  return execFileSync("sh", [script, ...args], {
+  // Resolve the shell before applying the intentionally empty test PATH;
+  // otherwise Node cannot even start the child process and the assertion
+  // would test `spawnSync ENOENT` instead of the gate's Docker check.
+  return execFileSync("/bin/sh", [script, ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: { ...item.env, ...env },
@@ -248,7 +251,12 @@ describe("container source freshness gate", () => {
 
   it("fails closed when Docker is unavailable", () => {
     const item = fixture();
-    expect(() => run(item, undefined, { PATH: "/usr/bin:/bin" })).toThrow(
+    // Do not rely on a host-specific system PATH: GitHub runners ship Docker
+    // in /usr/bin while macOS runners do not. An empty, fixture-owned PATH
+    // deterministically hides Docker before the script checks any later tool.
+    const noDockerPath = join(item.root, "no-docker");
+    mkdirSync(noDockerPath, { recursive: true });
+    expect(() => run(item, undefined, { PATH: noDockerPath })).toThrow(
       /docker CLI is required/,
     );
   });
