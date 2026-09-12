@@ -64,6 +64,10 @@ jobs:
       - name: Build workspace packages for tests
         run: npm run build:packages
       - run: npm run check
+        env:
+          # The safe launcher defaults to five minutes; the full source suite
+          # is deliberately serial and can exceed that on shared runners.
+          SAFE_TEST_TIMEOUT_MS: 900000
       - name: Run explicit repository release gates
         run: npm run test:release-gates
       - name: Prepare isolated PostgreSQL acceptance images
