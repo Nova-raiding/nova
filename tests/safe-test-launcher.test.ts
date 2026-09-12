@@ -5,7 +5,7 @@ import { NON_HERMETIC_TEST_FILES } from './test-suite-isolation.js'
 describe('safe default test launcher', () => {
   it('passes only necessary system settings and never inherits business or execution credentials', () => {
     const environment = buildSafeTestEnvironment({
-      PATH: '/test/bin', HOME: '/test/home', TMPDIR: '/test/tmp', LANG: 'en_US.UTF-8', CI: 'true', FORCE_COLOR: '0',
+      PATH: '/test/bin', HOME: '/test/home', TMPDIR: '/test/tmp', LANG: 'en_US.UTF-8', CI: 'true', GITHUB_ACTIONS: 'true', SAFE_TEST_TIMEOUT_MS: '900000', FORCE_COLOR: '0',
       NODE_ENV: 'production', NODE_OPTIONS: '--import=/unsafe/preload.mjs', EXECUTE: 'true', KUBECONFIG: '/shared/kube',
       DATABASE_URL: 'postgres://shared/database', OPS_DATABASE_URL: 'postgres://shared/ops', REDIS_URL: 'redis://shared',
       PERSISTENCE_RELEASE_DATABASE_URL: 'postgres://shared/release', LEGACY_BACKFILL_DATABASE_URL: 'postgres://shared/legacy',
@@ -13,7 +13,7 @@ describe('safe default test launcher', () => {
       MODEL_RELAY_API_KEY: 'secret', VIDEO_MODEL_RELAY_API_KEY: 'secret', AWS_ACCESS_KEY_ID: 'secret',
       ASSET_STORAGE_ROOT: '/shared/objects', OPS_BASE_URL: 'https://shared.example', VITE_API_BASE: 'https://shared.example',
     }, '/test/tmp/merchant-safe-tests-owned')
-    expect(environment).toEqual({ PATH: '/test/bin', HOME: '/test/home', TMPDIR: '/test/tmp', LANG: 'en_US.UTF-8', CI: 'true', FORCE_COLOR: '0', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/test/tmp/merchant-safe-tests-owned' })
+    expect(environment).toEqual({ PATH: '/test/bin', HOME: '/test/home', TMPDIR: '/test/tmp', LANG: 'en_US.UTF-8', CI: 'true', GITHUB_ACTIONS: 'true', SAFE_TEST_TIMEOUT_MS: '900000', FORCE_COLOR: '0', NODE_ENV: 'test', ASSET_STORAGE_ROOT: '/test/tmp/merchant-safe-tests-owned' })
   })
 
   it('retains ordinary Vitest arguments while forcing a failing empty selection', () => {

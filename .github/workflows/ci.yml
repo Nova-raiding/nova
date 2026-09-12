@@ -64,6 +64,11 @@ jobs:
       - name: Build workspace packages for tests
         run: npm run build:packages
       - run: npm run check
+        env:
+          # The safe launcher keeps this non-secret test-control value while
+          # filtering credentials and deployment configuration. The complete
+          # serialized suite can exceed five minutes on shared runners.
+          SAFE_TEST_TIMEOUT_MS: '900000'
       - name: Run explicit repository release gates
         run: npm run test:release-gates
       - name: Prepare isolated PostgreSQL acceptance images

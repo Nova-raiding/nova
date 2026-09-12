@@ -7,7 +7,7 @@ import { NON_HERMETIC_TEST_FILES } from '../tests/test-suite-isolation.js'
 
 const SYSTEM_ENVIRONMENT_KEYS = [
   'PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LANGUAGE', 'LC_ALL', 'LC_CTYPE', 'LC_COLLATE', 'TZ',
-  'CI', 'TERM', 'COLORTERM', 'NO_COLOR', 'FORCE_COLOR', 'USER', 'LOGNAME',
+  'CI', 'GITHUB_ACTIONS', 'SAFE_TEST_TIMEOUT_MS', 'TERM', 'COLORTERM', 'NO_COLOR', 'FORCE_COLOR', 'USER', 'LOGNAME',
   'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT', 'NUMBER_OF_PROCESSORS',
 ] as const
 
@@ -79,7 +79,10 @@ const defaultRuntime: SafeTestRuntime = {
       // The complete repository suite is intentionally serialized for
       // isolation. Shared CI runners routinely need more than five minutes,
       // while local invocations should keep the shorter hang guard.
-      const defaultTimeoutMs = environment.CI === 'true' ? 900_000 : 300_000
+      const ciValue = environment.CI?.trim().toLowerCase()
+      const actionsValue = environment.GITHUB_ACTIONS?.trim().toLowerCase()
+      const isCi = ciValue === 'true' || ciValue === '1' || actionsValue === 'true'
+      const defaultTimeoutMs = isCi ? 900_000 : 300_000
       const requestedTimeoutMs = Number(environment.SAFE_TEST_TIMEOUT_MS ?? defaultTimeoutMs)
       const timeoutMs = Number.isFinite(requestedTimeoutMs)
         ? Math.max(10_000, requestedTimeoutMs)
