@@ -66,8 +66,12 @@ describe('migration 104 interactive confirmation tickets', () => {
       await expect(app.query(`UPDATE interactive_confirmation_tickets SET actor_id='other' WHERE nonce_hash=$1`, [second.nonceHash])).rejects.toThrow(/permission denied/u)
       await expect(app.query(`DELETE FROM interactive_confirmation_tickets WHERE nonce_hash=$1`, [second.nonceHash])).rejects.toThrow(/permission denied/u)
       await expect(app.query('BEGIN')).resolves.toBeDefined()
-      await expect(app.query(`SELECT set_config('app.workspace_id',$1,true)`, [second.workspaceId])).resolves.toBeDefined()
-      await expect(app.query(`UPDATE interactive_confirmation_tickets SET consumed_at=NULL WHERE nonce_hash=$1`, [second.nonceHash])).rejects.toThrow(/cannot be cleared/u)
+      await expect(app.query(`SELECT set_config('app.workspace_id',$1,true)`, [issued.workspaceId])).resolves.toBeDefined()
+      // The first ticket is already consumed; clearing that value must be
+      // rejected by the one-time trigger. The second ticket remains pending,
+      // so assigning NULL to it would be a legitimate no-op after the fencing
+      // hardening in migration 140.
+      await expect(app.query(`UPDATE interactive_confirmation_tickets SET consumed_at=NULL WHERE nonce_hash=$1`, [issued.nonceHash])).rejects.toThrow(/already consumed|cannot be cleared/u)
       await expect(app.query('ROLLBACK')).resolves.toBeDefined()
     } finally {
       await app?.end()

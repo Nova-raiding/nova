@@ -65,16 +65,24 @@ describe('migration 073 PostgreSQL release acceptance', () => {
       await expect(new PostgresOpsDataRepository(app).listWorkspaceSummaries()).resolves.toEqual([])
 
       await seed(fresh)
-      await expect(new PostgresOpsDataRepository(app).listWorkspaceSummaries()).resolves.toEqual([
+      const opsRepository = new PostgresOpsDataRepository(app)
+      await expect(opsRepository.listWorkspaceSummaries()).resolves.toEqual([
         {
-          workspaceId: 'ws_ops_configured', status: 'disabled', planName: 'Growth', monthlyPriceCny: 499,
+          workspaceId: 'ws_ops_configured', enterpriseName: '未命名企业主体', status: 'disabled', planName: 'Growth', monthlyPriceCny: 499,
           usedTasks: 12, includedTasks: 80, subscriptionStatus: 'active', memberCount: 2,
         },
         {
-          workspaceId: 'ws_ops_default', status: 'active', planName: 'Starter', monthlyPriceCny: 199,
+          workspaceId: 'ws_ops_default', enterpriseName: '未命名企业主体', status: 'active', planName: 'Starter', monthlyPriceCny: 199,
           usedTasks: 0, includedTasks: 30, subscriptionStatus: 'trialing', memberCount: 0,
         },
       ])
+      await expect(opsRepository.listWorkspaceDirectory!({ offset: 0, limit: 10 })).resolves.toMatchObject({
+        total: 2, merchantWorkspaceCount: 0, activeMemberWorkspaceCount: 1, offset: 0, limit: 10, hasMore: false,
+        items: [
+          expect.objectContaining({ workspaceId: 'ws_ops_configured', enterpriseName: '未命名企业主体' }),
+          expect.objectContaining({ workspaceId: 'ws_ops_default', enterpriseName: '未命名企业主体' }),
+        ],
+      })
 
       const tenant = await app.connect()
       try {

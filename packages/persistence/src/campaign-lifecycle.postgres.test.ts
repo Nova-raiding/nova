@@ -26,6 +26,12 @@ describe('durable campaign lifecycle across repository instances', () => {
       await database.query(`INSERT INTO canonical_products (id,workspace_id,brand_id,title) VALUES ('canonical_campaign','ws_campaign_a','brand_campaign','Campaign Product')`)
       await database.query(`INSERT INTO product_listings (id,workspace_id,brand_id,canonical_product_id,platform,platform_account_id) VALUES ('listing_campaign','ws_campaign_a','brand_campaign','canonical_campaign','taobao','acct_campaign')`)
       await database.query(`INSERT INTO products (id,workspace_id,platform,platform_account_id,remote_product_id,title,source) VALUES ('product_campaign','ws_campaign_a','taobao','acct_campaign','remote-product','Campaign Product','official_api')`)
+      // The repository validates each canonical campaign target by reading its
+      // listing before inserting the durable campaign item.  This historical
+      // prefix intentionally grants only the campaign tables in migration 068;
+      // grant that narrowly-scoped read here so the reconnect/CAS assertion
+      // exercises the real application role without broadening production ACLs.
+      await database.query('GRANT SELECT ON TABLE product_listings TO merchant_app')
       const appUrl = new URL(databaseUrl); appUrl.username = 'merchant_app'; appUrl.password = 'merchant_app_local_only'
       appA = new Pool({ connectionString: appUrl.toString(), max: 2 }); appB = new Pool({ connectionString: appUrl.toString(), max: 2 })
       const first = new PostgresBrandUnitRepository(appA)

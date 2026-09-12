@@ -146,10 +146,20 @@ GRANT USAGE ON SCHEMA public TO merchant_ops;
 -- tables receive the same grants once they exist; older fresh databases must
 -- not fail merely because those relations have not been created yet.
 DO $$
+DECLARE
+  relation_name TEXT;
 BEGIN
-  IF to_regclass('public.platform_identities') IS NOT NULL THEN
-    EXECUTE 'REVOKE ALL ON platform_identities, platform_identity_events, platform_auth_sessions, platform_password_accounts, platform_password_sessions, platform_password_reset_tokens FROM merchant_app';
-  END IF;
+  -- These identity relations are introduced across several migrations. Do
+  -- not let a historical-prefix bootstrap fail merely because a later table
+  -- is absent; revoke each relation only after checking that it exists.
+  FOREACH relation_name IN ARRAY ARRAY[
+    'platform_identities', 'platform_identity_events', 'platform_auth_sessions',
+    'platform_password_accounts', 'platform_password_sessions', 'platform_password_reset_tokens'
+  ] LOOP
+    IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON TABLE %I FROM merchant_app', relation_name);
+    END IF;
+  END LOOP;
   IF to_regclass('public.enterprises') IS NOT NULL THEN
     EXECUTE 'REVOKE ALL ON enterprises FROM merchant_app';
     EXECUTE 'GRANT SELECT ON enterprises TO merchant_ops';
