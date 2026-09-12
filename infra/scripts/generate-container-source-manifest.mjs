@@ -12,8 +12,25 @@ import {
 import { dirname, resolve, sep } from 'node:path'
 
 const profiles = Object.freeze({
-  api: Object.freeze(['apps/api', 'apps/plugin', 'packages']),
-  worker: Object.freeze(['apps/worker', 'packages']),
+  api: Object.freeze({
+    scopes: Object.freeze(['apps/api', 'apps/plugin', 'packages']),
+    includeRootMetadata: true,
+    requiredRootMetadata: Object.freeze(['package.json', 'package-lock.json', 'tsconfig.json']),
+  }),
+  worker: Object.freeze({
+    scopes: Object.freeze(['apps/worker', 'packages']),
+    includeRootMetadata: true,
+    requiredRootMetadata: Object.freeze(['package.json', 'package-lock.json', 'tsconfig.json']),
+  }),
+  // The gateway image runs the checked-in ESM service directly and does not
+  // install the workspace or invoke the TypeScript build. Its provenance is
+  // therefore intentionally scoped to the service directory, without root
+  // package/tsconfig metadata that is not part of that image's build inputs.
+  gateway: Object.freeze({
+    scopes: Object.freeze(['services/payment-gateway']),
+    includeRootMetadata: false,
+    requiredRootMetadata: Object.freeze([]),
+  }),
 })
 
 const excludedDirectories = new Set([
@@ -41,9 +58,9 @@ function fail(message) {
 
 function usage() {
   process.stderr.write(
-    'usage: generate-container-source-manifest.mjs generate <api|worker> <source-root> <manifest-output> <digest-output>\n' +
+    'usage: generate-container-source-manifest.mjs generate <api|worker|gateway> <source-root> <manifest-output> <digest-output>\n' +
       '       generate-container-source-manifest.mjs generate-pair <source-root> <api-output-prefix> <worker-output-prefix>\n' +
-      '       generate-container-source-manifest.mjs verify <api|worker> <manifest> <digest>\n',
+      '       generate-container-source-manifest.mjs verify <api|worker|gateway> <manifest> <digest>\n',
   )
   process.exit(2)
 }
@@ -83,13 +100,15 @@ function isExcluded(path, directory) {
   return false
 }
 
-function rootFileBelongs(path) {
-  return !path.includes('/') && (/^package.*\.json$/u.test(path) || /^tsconfig.*\.json$/u.test(path))
+function rootFileBelongs(path, profile) {
+  return Boolean(profiles[profile]?.includeRootMetadata) && !path.includes('/') && (/^package.*\.json$/u.test(path) || /^tsconfig.*\.json$/u.test(path))
 }
 
 function pathBelongsToProfile(path, profile) {
-  if (rootFileBelongs(path)) return true
-  return profiles[profile].some((scope) => path === scope || path.startsWith(`${scope}/`))
+  const config = profiles[profile]
+  if (!config) return false
+  if (rootFileBelongs(path, profile)) return true
+  return config.scopes.some((scope) => path === scope || path.startsWith(`${scope}/`))
 }
 
 function sourcePath(root, relativePath) {
@@ -140,10 +159,11 @@ function collectFiles(root, profile) {
     fail(`source root is missing: ${root}`)
   }
   const files = []
-  for (const scope of profiles[profile]) collectDirectory(canonicalRoot, scope, profile, files)
+  const config = profiles[profile]
+  for (const scope of config.scopes) collectDirectory(canonicalRoot, scope, profile, files)
   const rootMetadata = new Set()
   for (const entry of readdirSync(canonicalRoot, { withFileTypes: true })) {
-    if (!rootFileBelongs(entry.name) || isExcluded(entry.name, false)) continue
+    if (!rootFileBelongs(entry.name, profile) || isExcluded(entry.name, false)) continue
     assertSafeRelativePath(entry.name, profile)
     const stat = lstatSync(sourcePath(canonicalRoot, entry.name))
     if (stat.isSymbolicLink() || !stat.isFile()) {
@@ -152,7 +172,7 @@ function collectFiles(root, profile) {
     files.push(entry.name)
     rootMetadata.add(entry.name)
   }
-  for (const required of ['package.json', 'package-lock.json', 'tsconfig.json']) {
+  for (const required of config.requiredRootMetadata) {
     if (!rootMetadata.has(required)) fail(`required root build metadata is missing: ${required}`)
   }
   files.sort(compareUtf8)

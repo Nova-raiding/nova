@@ -20,6 +20,9 @@ function sourceFixture() {
   write(root, 'apps/api/src/server.ts', 'api\n')
   write(root, 'apps/plugin/mcp/bridge.mjs', 'plugin\n')
   write(root, 'apps/worker/src/main.ts', 'worker\n')
+  write(root, 'services/payment-gateway/Dockerfile', 'gateway dockerfile\n')
+  write(root, 'services/payment-gateway/alipay.mjs', 'gateway helper\n')
+  write(root, 'services/payment-gateway/index.mjs', 'gateway\n')
   write(root, 'packages/shared/src/index.ts', 'shared\n')
   write(root, 'package.json', '{}\n')
   write(root, 'package-lock.json', '{}\n')
@@ -27,7 +30,7 @@ function sourceFixture() {
   return root
 }
 
-function generate(root: string, profile: 'api' | 'worker') {
+function generate(root: string, profile: 'api' | 'worker' | 'gateway') {
   const output = join(root, 'output')
   const manifest = join(output, `${profile}.manifest`)
   const digest = join(output, `${profile}.manifest.sha256`)
@@ -40,10 +43,11 @@ afterEach(() => {
 })
 
 describe('deterministic container source manifest', () => {
-  it('uses fixed app-specific profiles while both profiles cover shared packages and root build metadata', () => {
+  it('uses fixed app-specific profiles while the gateway profile is isolated to its service tree', () => {
     const root = sourceFixture()
     const api = readFileSync(generate(root, 'api').manifest, 'utf8')
     const worker = readFileSync(generate(root, 'worker').manifest, 'utf8')
+    const gateway = readFileSync(generate(root, 'gateway').manifest, 'utf8')
 
     expect(api).toContain('apps/api/src/server.ts')
     expect(api).toContain('apps/plugin/mcp/bridge.mjs')
@@ -56,6 +60,25 @@ describe('deterministic container source manifest', () => {
       expect(manifest).toContain('package.json')
       expect(manifest).toContain('tsconfig.json')
     }
+    expect(gateway).toContain('services/payment-gateway/Dockerfile')
+    expect(gateway).toContain('services/payment-gateway/alipay.mjs')
+    expect(gateway).toContain('services/payment-gateway/index.mjs')
+    expect(gateway).not.toContain('apps/api/src/server.ts')
+    expect(gateway).not.toContain('apps/worker/src/main.ts')
+    expect(gateway).not.toContain('package-lock.json')
+    expect(gateway).not.toContain('package.json')
+    expect(gateway).not.toContain('tsconfig.json')
+  })
+
+  it('allows the gateway image to build from a service-only source root and fails closed when that scope is missing', () => {
+    const root = sourceFixture()
+    for (const metadata of ['package.json', 'package-lock.json', 'tsconfig.json']) rmSync(join(root, metadata))
+    const generated = generate(root, 'gateway')
+    execFileSync('node', [generator, 'verify', 'gateway', generated.manifest, generated.digest])
+
+    const missing = sourceFixture()
+    rmSync(join(missing, 'services/payment-gateway'), { recursive: true })
+    expect(() => generate(missing, 'gateway')).toThrow(/required gateway input is missing/)
   })
 
   it('generates both profiles in one process without changing either manifest', () => {
@@ -127,5 +150,15 @@ describe('deterministic container source manifest', () => {
     writeFileSync(manifest, unsafe)
     writeFileSync(digest, `sha256:${createHash('sha256').update(unsafe).digest('hex')}\n`)
     expect(() => execFileSync('node', [generator, 'verify', 'api', manifest, digest])).toThrow(/unsafe path/)
+  })
+
+  it('builds and embeds the gateway source manifest in the runtime image', () => {
+    const dockerfile = readFileSync('services/payment-gateway/Dockerfile', 'utf8')
+    expect(dockerfile).toContain('COPY services/payment-gateway ./services/payment-gateway')
+    expect(dockerfile).toContain('COPY infra/scripts/generate-container-source-manifest.mjs ./infra/scripts/generate-container-source-manifest.mjs')
+    expect(dockerfile).toContain('generate-container-source-manifest.mjs generate gateway /source')
+    expect(dockerfile).toContain('/source/.release-source/gateway.manifest /source/.release-source/gateway.manifest.sha256')
+    expect(dockerfile).toContain('COPY --from=source /source/.release-source/gateway.manifest /app/.release-source/gateway.manifest')
+    expect(dockerfile).toContain('COPY --from=source /source/.release-source/gateway.manifest.sha256 /app/.release-source/gateway.manifest.sha256')
   })
 })
