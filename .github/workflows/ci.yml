@@ -61,6 +61,8 @@ jobs:
           echo "${KUSTOMIZE_LINUX_AMD64_SHA256}  /tmp/${archive}" | sha256sum --check --strict
           sudo tar -xzf "/tmp/${archive}" -C /usr/local/bin kustomize
           kustomize version
+      - name: Build workspace packages for tests
+        run: npm run build:packages
       - run: npm run check
       - name: Run explicit repository release gates
         run: npm run test:release-gates
