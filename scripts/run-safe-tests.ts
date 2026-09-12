@@ -76,7 +76,14 @@ const defaultRuntime: SafeTestRuntime = {
       }
       const interrupt = () => { signalGroup('SIGINT') }
       const terminate = () => { signalGroup('SIGTERM') }
-      const timeoutMs = Math.max(10_000, Number(environment.SAFE_TEST_TIMEOUT_MS ?? 300_000))
+      // The complete repository suite is intentionally serialized for
+      // isolation. Shared CI runners routinely need more than five minutes,
+      // while local invocations should keep the shorter hang guard.
+      const defaultTimeoutMs = environment.CI === 'true' ? 900_000 : 300_000
+      const requestedTimeoutMs = Number(environment.SAFE_TEST_TIMEOUT_MS ?? defaultTimeoutMs)
+      const timeoutMs = Number.isFinite(requestedTimeoutMs)
+        ? Math.max(10_000, requestedTimeoutMs)
+        : defaultTimeoutMs
       const timeout = setTimeout(() => {
         console.error(`Safe test run exceeded ${timeoutMs}ms; terminating Vitest for diagnosability.`)
         signalGroup('SIGTERM')
