@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps ./apps
 COPY packages ./packages
+COPY services ./services
 COPY tests ./tests
 COPY demo ./demo
 COPY scripts ./scripts
