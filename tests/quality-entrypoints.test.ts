@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -78,6 +79,30 @@ describe('quality entrypoint coverage', () => {
     ]) {
       expect(releaseGate).toContain(contract)
     }
+  })
+
+  it('keeps the deliberately server-only feature-flag control plane explicit', () => {
+    const auditSource = readFileSync(resolve(root, 'scripts/audit-ops-surface.mjs'), 'utf8')
+    const serverOnly = [
+      'ops.feature-flags.list',
+      'ops.feature-flag.upsert',
+      'ops.feature-flag.emergency.set',
+      'ops.feature-flag.events',
+      'ops.feature-flag.evaluate',
+    ]
+    for (const method of serverOnly) expect(auditSource).toContain(`'${method}'`)
+
+    const report = JSON.parse(execFileSync(process.execPath, ['scripts/audit-ops-surface.mjs'], {
+      cwd: root,
+      encoding: 'utf8',
+    })) as {
+      server_only_methods?: string[]
+      unregistered_server_only?: string[]
+      unreferenced?: string[]
+    }
+    expect(report.server_only_methods).toEqual([...serverOnly].sort())
+    expect(report.unregistered_server_only).toEqual([])
+    expect(report.unreferenced).toEqual([])
   })
 
   it('keeps non-hermetic coverage explicit instead of silently passing it in the default suite', () => {
