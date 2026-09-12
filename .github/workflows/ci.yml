@@ -34,6 +34,9 @@ jobs:
         with:
           ruby-version: '3.3'
       - run: npm ci
+      - name: Install Merchant Studio dependencies
+        working-directory: demo/merchant-studio
+        run: npm ci
       - name: Install PostgreSQL 17 client for schema-dump acceptance
         run: |
           sudo install -d -m 0755 /etc/apt/keyrings
@@ -266,4 +269,4 @@ jobs:
       - run: npm audit --omit=dev
       - run: npm run infra:validate
       - working-directory: demo/merchant-studio
-        run: npm ci && npm run build
+        run: npm run build
