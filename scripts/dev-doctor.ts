@@ -207,7 +207,11 @@ try {
   const runtimeAudit = commercialRuntimeAudit(payload)
   const level = (ready: boolean | undefined): Level => ready ? 'pass' : production ? 'fail' : 'warn'
   add('commercial:persistence', level(readiness?.persistenceReady), `商业持久化 ready=${String(readiness?.persistenceReady)}`, '启动真 PostgreSQL，禁止用 memory/fixture 作为商业事实。')
-  add('commercial:payment', level(readiness?.paymentReady), `支付 mode=${readiness?.paymentMode ?? 'unknown'}, ready=${String(readiness?.paymentReady)}${runtimeAudit?.payment.reasons.length ? `, reasons=${runtimeAudit.payment.reasons.join(',')}` : ''}`, '配置真实 provider、验签、防重、查询与对账；fixture 不得标记生产 ready。')
+  const paymentReasons = runtimeAudit?.payment.reasons ?? []
+  const paymentMessage = readiness?.paymentMode === 'fixture'
+    ? `支付宝/微信适配器已由代码支持；当前运行实例为 fixture，provider 未加载，ready=false${paymentReasons.length ? `, reasons=${paymentReasons.join(',')}` : ''}`
+    : `支付 mode=${readiness?.paymentMode ?? 'unknown'}, ready=${String(readiness?.paymentReady)}${paymentReasons.length ? `, reasons=${paymentReasons.join(',')}` : ''}`
+  add('commercial:payment', level(readiness?.paymentReady), paymentMessage, '将 PAYMENT_MODE=provider 与真实 checkout/query/refund、商户号、回调验签、对账和退款配置注入 API；fixture 不得标记生产 ready。')
   add('commercial:platform_oauth', level(runtimeAudit?.platforms.ready), runtimeAudit
     ? `平台 OAuth ready=${String(runtimeAudit.platforms.ready)}, missing=${runtimeAudit.platforms.missingOAuthPlatforms.join(',') || 'none'}, blocked=${runtimeAudit.platforms.blockedPlatforms.join(',') || 'none'}`
     : '平台 OAuth readiness 不可解析', '补齐六平台官方 OAuth、回调地址、凭据提供器与只读/写入授权；未配置时保持 fail-closed。')
