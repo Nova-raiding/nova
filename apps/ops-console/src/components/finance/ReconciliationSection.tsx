@@ -48,6 +48,7 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
     type: "success" | "error";
     message: string;
   }>();
+  const [showReadinessDetails, setShowReadinessDetails] = useState(false);
   useEffect(() => {
     if (settlementValidationErrors.length) settlementErrorSummaryRef.current?.focus();
   }, [settlementValidationErrors]);
@@ -55,6 +56,14 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
   const settlementCounts = summarizeModelUsageSettlements(unsettled);
   const missingCostEvidenceCount = reconciliation?.model_usage?.missing_cost_evidence_count ?? 0;
   const externalStatementStatus = reconciliation?.model_usage?.external_provider_statement?.status;
+  const hasReadinessIssues = Boolean(reconciliation && (
+    reconciliation.provider?.mode !== "provider" ||
+    !reconciliation.provider?.ready ||
+    (externalStatementStatus && !["balanced", "not_applicable_personal_scope"].includes(externalStatementStatus)) ||
+    missingCostEvidenceCount > 0 ||
+    Boolean(reconciliation.model_usage?.unsettled_records) ||
+    (reconciliation.model_usage?.reconciliation_status && !["locally_consistent", "pending", "needs_review"].includes(reconciliation.model_usage.reconciliation_status))
+  ));
   const disabledActionReason = (
     action: ModelUsageSettlementDecision,
     callbackAvailable: boolean,
@@ -210,16 +219,6 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         />
       ) : null}
       {refreshing ? <Alert className="reconciliation-status-banner" type="info" showIcon role="status" aria-live="polite" title="正在刷新对账数据" description="页面暂时保留上次成功数据；刷新完成后会更新结果。" /> : null}
-      {reconciliation?.model_usage ? (
-        <Alert
-          className="reconciliation-status-banner"
-          type={reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "success" : reconciliation.model_usage.reconciliation_status === "pending" ? "warning" : "error"}
-          showIcon
-          role="status"
-          title={`模型用量对账状态：${reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "本地一致" : reconciliation.model_usage.reconciliation_status === "pending" ? "待结算" : reconciliation.model_usage.reconciliation_status === "needs_review" ? "需要复核" : "待确认状态（已阻断）"}`}
-          description={reconciliation.model_usage.reconciliation_status && !["locally_consistent", "pending", "needs_review"].includes(reconciliation.model_usage.reconciliation_status) ? "服务端返回了未识别状态，运营台不会将其视为已完成。" : "状态来自服务端对账结果；供应商账户级核验仍以外部 statement 为准。"}
-        />
-      ) : null}
       {reconciliation ? (
         <>
       <Alert
@@ -264,23 +263,11 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
           />
         </Col>
       </Row>
-      <Alert
-        type={reconciliation?.provider?.mode === "provider" && reconciliation.provider.ready ? "success" : "warning"}
-        showIcon
-          title={`支付 provider：${reconciliation?.provider?.mode === "fixture" ? "当前为 fixture（已阻断真实支付判断）" : reconciliation?.provider?.mode === "provider" && reconciliation.provider.ready ? "已就绪" : "未就绪或待确认"}`}
-        description={
-          reconciliation?.provider?.reasons?.join("、") ||
-          "生产充值必须经服务端 provider 下单并等待签名回调"
-        }
-      />
-      {reconciliation?.model_usage?.external_provider_statement && (
-        <Alert
-          type={externalStatementStatus === "balanced" ? "success" : externalStatementStatus === "externally_unverified" || externalStatementStatus === "not_applicable_personal_scope" ? "warning" : "error"}
-          showIcon
-          title={`外部中转站用量：${externalStatementStatus === "balanced" ? "已核对一致" : externalStatementStatus === "externally_unverified" ? "尚未核验" : externalStatementStatus === "not_applicable_personal_scope" ? "个人视图不适用" : externalStatementStatus === "needs_review" ? "存在差异（需复核）" : "状态不明确（已阻断）"}`}
-          description={<Space orientation="vertical" size={4}><span>{reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验；本页面不将本地一致视为供应商已平账。"}</span>{reconciliation.model_usage.reconciliation_checks && <span>核对异常：未识别用户 {reconciliation.model_usage.reconciliation_checks.unknown_actor_count}，孤立 action {reconciliation.model_usage.reconciliation_checks.orphan_action_count}，钱包金额不一致 {reconciliation.model_usage.reconciliation_checks.wallet_amount_mismatch_count}，任务键缺失 {reconciliation.model_usage.reconciliation_checks.missing_run_key_count ?? 0}，预算链路错配 {reconciliation.model_usage.reconciliation_checks.budget_link_mismatch_count ?? 0}。任务键或预算链路异常时不得重试上游，必须先修复链路。</span>}</Space>}
-        />
-      )}
+      {hasReadinessIssues && <div className="reconciliation-readiness-summary" role="status">
+        <Tag color="orange">存在运行阻断</Tag>
+        <Typography.Text type="secondary">支付、模型或供应商对账状态需要关注</Typography.Text>
+        <Button type="link" size="small" onClick={() => setShowReadinessDetails(true)}>查看详情</Button>
+      </div>}
       <Row gutter={[16, 16]} className="finance-summary">
         <Col xs={12} md={6}><Statistic title="模型调用" value={reconciliation?.model_usage?.record_count ?? "-"} /></Col>
         <Col xs={12} md={6}><Statistic title="模型 Tokens" value={reconciliation?.model_usage?.total_tokens ?? "-"} /></Col>
@@ -288,9 +275,6 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
         <Col xs={12} md={6}><Statistic title="缺成本证据" value={missingCostEvidenceCount} styles={missingCostEvidenceCount ? { content: { color: "#b91c1c" } } : undefined} /></Col>
         <Col xs={12} md={6}><Statistic title="待结算记录" value={reconciliation?.model_usage?.unsettled_records ?? "-"} styles={reconciliation?.model_usage?.unsettled_records ? { content: { color: "#b91c1c" } } : undefined} /></Col>
       </Row>
-      {missingCostEvidenceCount > 0 && (
-        <Alert type="error" showIcon title="Provider 成本证据不完整，成本合计已阻断" description="页面不会把缺失成本当作 ¥0，也不会按已结算口径出账；请先补齐中转站成本回执或转入人工处理。" />
-      )}
       {Boolean(reconciliation?.model_usage?.unsettled_records) && (
         <>
           <Row gutter={[16, 16]} className="finance-summary" aria-label="模型待结算状态汇总">
@@ -304,14 +288,15 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
               <Statistic title="当前列表 · 需要人工处理" value={settlementCounts.manual_attention} styles={{ content: { color: "#b91c1c" } }} />
             </Col>
           </Row>
-          <Alert
-            type={settlementCounts.manual_attention ? "error" : "warning"}
-            showIcon
-            title="存在模型未结算记录，禁止按已结算口径出账"
-            description="待补成本需要向中转站补取实际人民币成本；等待钱包结算只能重试扣款，不能重复调用模型；人工处理必须核对证据后再重试或豁免。"
-          />
         </>
       )}
+      <Modal title="账务与模型运行状态" open={showReadinessDetails} footer={null} onCancel={() => setShowReadinessDetails(false)}>
+        {reconciliation?.model_usage && <Alert type={reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "success" : reconciliation.model_usage.reconciliation_status === "pending" ? "warning" : "error"} showIcon title={`模型用量对账：${reconciliation.model_usage.reconciliation_status === "locally_consistent" ? "本地一致" : reconciliation.model_usage.reconciliation_status === "pending" ? "待结算" : reconciliation.model_usage.reconciliation_status === "needs_review" ? "需要复核" : "待确认状态（已阻断）"}`} description="状态来自服务端对账结果；供应商账户级核验仍以外部 statement 为准。" />}
+        {reconciliation?.provider && <Alert className="modal-alert" type={reconciliation.provider.mode === "provider" && reconciliation.provider.ready ? "success" : "warning"} showIcon title={`支付 provider：${reconciliation.provider.mode === "fixture" ? "当前为 fixture（已阻断真实支付判断）" : reconciliation.provider.mode === "provider" && reconciliation.provider.ready ? "已就绪" : "未就绪或待确认"}`} description={reconciliation.provider.reasons?.join("、") || "生产充值必须经服务端 provider 下单并等待签名回调"} />}
+        {reconciliation?.model_usage?.external_provider_statement && <Alert className="modal-alert" type={externalStatementStatus === "balanced" ? "success" : externalStatementStatus === "not_applicable_personal_scope" ? "warning" : "error"} showIcon title={`外部中转站用量：${externalStatementStatus === "balanced" ? "已核对一致" : externalStatementStatus === "externally_unverified" ? "尚未核验" : externalStatementStatus === "needs_review" ? "存在差异（需复核）" : "状态不明确（已阻断）"}`} description={reconciliation.model_usage.external_provider_statement.note ?? "供应商日志尚未完成账户级核验。"} />}
+        {missingCostEvidenceCount > 0 && <Alert className="modal-alert" type="error" showIcon title="Provider 成本证据不完整，成本合计已阻断" description="请先补齐中转站成本回执或转入人工处理。" />}
+        {Boolean(reconciliation?.model_usage?.unsettled_records) && <Alert className="modal-alert" type="warning" showIcon title="存在模型未结算记录，禁止按已结算口径出账" description="待补成本需向中转站补取实际成本；等待钱包结算不能重复调用模型。" />}
+      </Modal>
       {settlementFeedback && (
         <Alert
           className="settlement-feedback"

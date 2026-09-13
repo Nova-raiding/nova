@@ -405,6 +405,18 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
 @media (max-width: 575px) { .ops-campaign-control .ant-space-compact { display: grid; gap: 8px; } .ops-campaign-control .ant-space-compact > * { width: 100% !important; border-radius: 6px !important; } }
 .settlement-feedback { margin-top: 16px; }
 .reconciliation-status-banner { margin-top: 16px; }
+.reconciliation-readiness-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  padding: 8px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fffaf5;
+}
+.reconciliation-readiness-summary .ant-btn-link { padding-inline: 4px; }
+.modal-alert + .modal-alert { margin-top: 12px; }
 .ops-form-error-summary { margin-bottom: 16px; padding: 12px 16px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; color: #991b1b; }
 .ops-form-error-summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
 .ops-form-error-summary ul { margin: 6px 0 0; padding-left: 20px; }
