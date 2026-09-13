@@ -946,20 +946,6 @@ function Topbar({
         <h1>{titles[page]}</h1>
       </div>
       <div className="topbar-actions">
-        <label className="search-box">
-          <Search size={17} aria-hidden="true" />
-          <span className="sr-only">全局搜索</span>
-          <input
-            value={searchQuery}
-            onChange={(event) => onSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') onSearch()
-            }}
-            placeholder="搜索商品"
-            aria-label="搜索商品"
-          />
-          <kbd>⌘ K</kbd>
-        </label>
         <button
           className="health-button"
           onClick={() => onOpenUtility('health')}
@@ -995,7 +981,6 @@ function Topbar({
             <span className="avatar-button" aria-hidden="true">{accountInitial}</span>
             <span className="account-trigger-copy">
               <strong>{displayName}</strong>
-              <small>{tenantName}</small>
             </span>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
@@ -10392,20 +10377,6 @@ export default function App() {
         Boolean(document.querySelector('[role="dialog"][aria-modal="true"]')) ||
         Boolean(mainContentRef.current?.closest('[inert]')),
     )
-  useEffect(() => {
-    const closeNav = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.key.toLowerCase() === 'k' &&
-        !mobileNav
-      ) {
-        event.preventDefault()
-        document.querySelector<HTMLInputElement>('.search-box input')?.focus()
-      }
-    }
-    window.addEventListener('keydown', closeNav)
-    return () => window.removeEventListener('keydown', closeNav)
-  }, [mobileNav])
   useEffect(
     () => () => {
       if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
