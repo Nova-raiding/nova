@@ -38,6 +38,11 @@ describe("operations navigation", () => {
     expect(domainFromLocation({ pathname: "/ops/feature-flags", hash: "" })).toBe("overview");
   });
 
+  it("canonicalizes the legacy finance task link to the task queue", () => {
+    expect(domainFromLocation({ pathname: "/ops/finance/merchant/tasks", hash: "" })).toBe("tasks");
+    expect(urlForDomain({ pathname: "/ops/finance/merchant/tasks", search: "" }, "tasks")).toBe("/ops/tasks");
+  });
+
   it("replaces an existing Ops route instead of nesting it", () => {
     expect(urlForDomain(
       { pathname: "/console/ops/users/", search: "?tenant=demo" },

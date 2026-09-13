@@ -44,6 +44,9 @@ export function visibleOpsDomains(
 export function domainFromLocation(
   location: Pick<Location, "hash" | "pathname">,
 ): OpsDomain {
+  // Older finance links incorrectly nested the operations task queue under
+  // the finance route. Keep them usable, but canonicalize to /ops/tasks.
+  if (/\/ops\/finance\/merchant\/tasks\/?$/u.test(location.pathname)) return "tasks";
   const pathDomain = location.pathname
     .match(/\/ops\/(?:governance|overview|users|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u)?.[0]
     .split("/")
@@ -65,8 +68,11 @@ export function urlForDomain(
 ): string {
   const currentOpsRoute =
     /\/ops\/(?:governance|overview|users|members|tasks|knowledge|stores|rules|models|storage|finance|audit)\/?$/u;
+  const legacyMerchantTasksRoute = /\/ops\/finance\/merchant\/tasks\/?$/u;
   const basePath = currentOpsRoute.test(location.pathname)
     ? location.pathname.replace(currentOpsRoute, "")
+    : legacyMerchantTasksRoute.test(location.pathname)
+      ? location.pathname.replace(legacyMerchantTasksRoute, "")
     : location.pathname.replace(/\/$/u, "");
   return `${basePath}/ops/${domain}${location.search}`;
 }
