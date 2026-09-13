@@ -221,18 +221,18 @@ export function ReconciliationSection({ model }: ReconciliationSectionProps) {
       {refreshing ? <Alert className="reconciliation-status-banner" type="info" showIcon role="status" aria-live="polite" title="正在刷新对账数据" description="页面暂时保留上次成功数据；刷新完成后会更新结果。" /> : null}
       {reconciliation ? (
         <>
-      <Alert
-        type="info"
-        showIcon
-        title={`当前视图：${reconciliation.statement?.scope === "workspace" ? "工作区" : "本人"}`}
-        description={`余额范围：${reconciliation.balance_scope === "workspace" ? "工作区" : "未声明"}；钱包流水范围：${reconciliation.transaction_scope === "workspace" ? "工作区" : "本人"}；模型用量范围：${reconciliation.model_usage_scope === "workspace" ? "工作区" : "本人"}。不同范围不会被解释为同一账本。`}
-      />
-      {reconciliation.has_more_transactions ? <Alert
-        type="warning"
-        showIcon
-        title="交易流水已分页"
-        description={`摘要按当前期间的 ${reconciliation.transaction_count} 条流水统计；本页返回 ${reconciliation.returned_transaction_count ?? reconciliation.transactions.length} 条（接口上限 ${reconciliation.transaction_limit ?? "—"}），不要将列表行数当作账务总数。`}
-      /> : null}
+      <div className="reconciliation-context" aria-label="账务数据范围">
+        <Typography.Text type="secondary">
+          当前视图：{reconciliation.statement?.scope === "workspace" ? "工作区" : "本人"}
+          <span aria-hidden="true"> · </span>
+          余额：{reconciliation.balance_scope === "workspace" ? "工作区" : "未声明"}
+          <span aria-hidden="true"> · </span>
+          流水：{reconciliation.transaction_scope === "workspace" ? "工作区" : "本人"}
+          <span aria-hidden="true"> · </span>
+          模型用量：{reconciliation.model_usage_scope === "workspace" ? "工作区" : "本人"}
+        </Typography.Text>
+        {reconciliation.has_more_transactions && <Tag color="blue">流水已分页 · 共 {reconciliation.transaction_count} 条</Tag>}
+      </div>
       <Row gutter={[16, 16]} className="finance-summary">
         <Col xs={12} md={6}>
           <Statistic

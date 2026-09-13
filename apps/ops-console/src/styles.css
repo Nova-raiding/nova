@@ -415,6 +415,20 @@ body { height: 100%; margin: 0; min-width: 320px; overflow: hidden; background: 
   border-radius: 8px;
   background: #fffaf5;
 }
+.reconciliation-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 16px;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 22px;
+}
+.reconciliation-context .ant-tag { margin-inline-end: 0; }
+@media (max-width: 767px) {
+  .reconciliation-context { align-items: flex-start; flex-direction: column; gap: 4px; }
+}
 .reconciliation-readiness-summary .ant-btn-link { padding-inline: 4px; }
 .modal-alert + .modal-alert { margin-top: 12px; }
 .ops-form-error-summary { margin-bottom: 16px; padding: 12px 16px; border: 1px solid #fca5a5; border-radius: 8px; background: #fef2f2; color: #991b1b; }
