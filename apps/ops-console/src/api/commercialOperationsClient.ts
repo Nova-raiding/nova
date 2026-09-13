@@ -178,6 +178,7 @@ export interface CommercialCatalogItem {
   benefitsSummary: string;
   benefits?: Array<{ code: string; quantity: number | null; rawValue: string | null; rawUnit: string | null }>;
   approvalState: string;
+  executable?: boolean;
   validFrom: string | null;
   validTo: string | null;
   unresolved: string[];
@@ -364,6 +365,7 @@ export function parseCatalog(value: unknown): CommercialPage<CommercialCatalogIt
       return typeof item.code === "string" && item.code.trim() ? [{ code: item.code, quantity: typeof item.quantity === "number" && Number.isSafeInteger(item.quantity) ? item.quantity : null, rawValue: typeof item.raw_value === "string" ? item.raw_value : null, rawUnit: typeof item.raw_unit === "string" ? item.raw_unit : null }] : [];
     }) : [],
     approvalState: requiredText(row, method, "approval_state", "approval_state", "approvalState", "status"),
+    executable: boolean(row.executable) ?? false,
     validFrom: optionalText(pick(row, "valid_from", "validFrom")), validTo: optionalText(pick(row, "valid_to", "validTo")),
     unresolved: stringArray(row.unresolved),
   })) };
@@ -460,7 +462,7 @@ export const commercialOperationsClient = {
   entitlements: async (targetWorkspaceId: string, signal?: AbortSignal) => parseEntitlements(await rpc(commercialOperationsMethods.entitlements, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   ledger: async (targetWorkspaceId: string, signal?: AbortSignal) => parseLedger(await rpc(commercialOperationsMethods.ledger, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   catalog: async (_targetWorkspaceId: string, includePrivate: boolean, signal?: AbortSignal) => parseCatalog(await rpc(commercialOperationsMethods.catalog, { limit: "100", include_private: String(includePrivate) }, { signal })),
-  mutateCatalog: (input: { action: "create" | "retire"; code: string; kind?: string; visibility?: string; priceFen?: number | null; priceMode?: string; durationDays?: number | null; payload?: Record<string, unknown>; benefits?: unknown[]; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.catalogMutate, { action: input.action, code: input.code, ...(input.kind ? { kind: input.kind } : {}), ...(input.visibility ? { visibility: input.visibility } : {}), ...(input.priceFen !== undefined && input.priceFen !== null ? { price_fen: String(input.priceFen) } : {}), ...(input.priceMode ? { price_mode: input.priceMode } : {}), ...(input.durationDays ? { duration_days: String(input.durationDays) } : {}), ...(input.payload ? { payload_json: JSON.stringify(input.payload) } : {}), ...(input.benefits ? { benefits_json: JSON.stringify(input.benefits) } : {}), idempotency_key: operationId("catalog_mutation"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", action: input.action }) }, { signal }),
+  mutateCatalog: (input: { action: "create" | "approve" | "publish" | "retire"; code: string; kind?: string; visibility?: string; priceFen?: number | null; priceMode?: string; durationDays?: number | null; payload?: Record<string, unknown>; benefits?: unknown[]; reason: string }, signal?: AbortSignal) => rpc(commercialOperationsMethods.catalogMutate, { action: input.action, code: input.code, ...(input.kind ? { kind: input.kind } : {}), ...(input.visibility ? { visibility: input.visibility } : {}), ...(input.priceFen !== undefined && input.priceFen !== null ? { price_fen: String(input.priceFen) } : {}), ...(input.priceMode ? { price_mode: input.priceMode } : {}), ...(input.durationDays ? { duration_days: String(input.durationDays) } : {}), ...(input.payload ? { payload_json: JSON.stringify(input.payload) } : {}), ...(input.benefits ? { benefits_json: JSON.stringify(input.benefits) } : {}), idempotency_key: operationId("catalog_mutation"), reason: input.reason, evidence_json: JSON.stringify({ source: "ops_console", action: input.action }) }, { signal }),
   orders: async (targetWorkspaceId: string, signal?: AbortSignal) => parseOrders(await rpc(commercialOperationsMethods.orders, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),
   rates: async (_targetWorkspaceId: string, signal?: AbortSignal) => parseRates(await rpc(commercialOperationsMethods.rates, { limit: "100" }, { signal })),
   services: async (targetWorkspaceId: string, signal?: AbortSignal) => parseServices(await rpc(commercialOperationsMethods.services, { target_workspace_id: targetWorkspaceId, limit: "100" }, { signal })),

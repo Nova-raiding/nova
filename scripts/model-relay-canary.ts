@@ -187,7 +187,10 @@ export function evaluateVideoProbePayload(payload: unknown): { ready: boolean; p
   const status = (nonEmptyText(data.status) ?? nonEmptyText(nestedData.status) ?? nonEmptyText(nestedData.task_status) ?? nonEmptyText(nestedOutput.task_status))?.toLowerCase()
   const artifact = [data.result_url, data.video_url, data.output_url, data.url, nestedData.result_url, nestedData.video_url, nestedData.output_url, nestedData.url].some(value => typeof value === 'string' && /^https:\/\//u.test(value)) || hasHttpsOutput(nestedData.output)
   if (status && ['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_failed' }
-  if (status && ['queued', 'pending', 'processing', 'running', 'submitted'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_pending' }
+  // Wormhole's async wrapper reports the provider state as IN_PROGRESS while
+  // the nested output uses RUNNING. Treat both as pending; otherwise a valid
+  // job is incorrectly classified as "state missing" before it has finished.
+  if (status && ['queued', 'pending', 'processing', 'running', 'in_progress', 'submitted'].includes(status)) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_async_pending' }
   if (status && ['completed', 'succeeded', 'success'].includes(status) && !artifact) return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: 'video_completed_without_https_artifact' }
   if (artifact) return { ready: true, ...(providerJobId ? { providerJobId } : {}) }
   return { ready: false, ...(providerJobId ? { providerJobId } : {}), reason: providerJobId ? 'video_async_state_missing' : 'video_response_missing_job_or_artifact' }

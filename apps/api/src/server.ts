@@ -12780,8 +12780,13 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
     }
     case 'ops.commercial.catalog-v2.mutate': {
       if (!persistence.commercialCatalog) throw new DomainError('COMMERCIAL_CATALOG_REPOSITORY_UNAVAILABLE', 'V2 商业目录仓储未配置', 503)
-      const action = params.action === 'retire' ? 'retire' : params.action === 'create' ? 'create' : null
-      if (!action) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'action 必须是 create 或 retire', 400)
+      const action = params.action === 'retire' || params.action === 'create' || params.action === 'approve' || params.action === 'publish' ? params.action : null
+      if (!action) throw new DomainError(ERROR_CODES.INVALID_REQUEST, 'action 必须是 create、approve、publish 或 retire', 400)
+      if (action === 'approve' || action === 'publish') {
+        const principal = requestPrincipals.get(req)
+        const effective = effectiveAuthorizationProjection(principal, workspaceId)
+        if (!(effective.capabilities as readonly string[]).includes('commercial.catalog.publish')) throw new DomainError('FORBIDDEN', '当前账号没有套餐审批发布权限', 403)
+      }
       const input: CommercialCatalogMutationInput = {
         action,
         code: required(params, 'code'),
@@ -14125,6 +14130,12 @@ async function routeMcp(req: IncomingMessage, res: ServerResponse, input: JsonOb
         pushRisk({ key: `PUBLISH_STATUS:${job.taskId}`, type: rejected ? 'PUBLISH_REJECTED' : 'PUBLISH_UNKNOWN', severity: 'high', platform: job.platform, entityType: 'publish_job', entityId: job.id, title: rejected ? '未绑定店铺的发布被驳回' : '未绑定店铺的发布状态未知', status: state, observedAt: job.remoteObservedAt ?? job.createdAt, evidence: rejected ? { taskId: job.taskId, jobId: job.id, rawCode: job.rejection?.rawCode, fields: job.rejection?.fields.map(field => ({ path: field.path, rawCode: field.rawCode, message: field.message })) ?? [], unboundLocalData: true } : { taskId: job.taskId, jobId: job.id, unboundLocalData: true }, nextAction: '先在交互会话中确认发布所属店铺并核对平台回执，不要自动重发' })
       }
 
+      // Mark risks derived from local fixture stores so tenant UIs can avoid
+      // presenting seeded demo records as real merchant notifications.
+      const fixtureStoreKeys = new Set(stores.filter(store => store.connection.simulated).map(store => `${store.platform}:${store.accountId}`))
+      for (const item of riskItems) {
+        if (item.accountId && fixtureStoreKeys.has(`${item.platform}:${item.accountId}`)) item.evidence = { ...item.evidence, fixtureData: true }
+      }
       const severityOrder = { high: 0, medium: 1 } as const
       riskItems.sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity] || left.key.localeCompare(right.key))
       const metricDates = [...products.map(product => product.updatedAt), ...syncJobs.map(job => job.updatedAt), ...tasks.map(task => task.createdAt), ...publishJobs.map(job => job.remoteObservedAt ?? job.createdAt)].filter(Boolean).sort()

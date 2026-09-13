@@ -345,7 +345,7 @@ export interface WorkspaceMetrics {
   stores: Array<{ platform: PlatformId; accountId: string; connection?: { state: string; readable: boolean; dataMode: string }; product?: { total: number } }>
   productSummary: { total: number; lowStock: number; missingImages: number }
   riskSummary: { total: number; returned: number; truncated: boolean }
-  riskItems: Array<{ severity: 'high' | 'medium'; type: string; title?: string; platform?: PlatformId; storeName?: string; status?: string; nextAction?: string }>
+  riskItems: Array<{ severity: 'high' | 'medium'; type: string; title?: string; platform?: PlatformId; accountId?: string; storeName?: string; status?: string; nextAction?: string; evidence?: { unboundLocalData?: boolean; fixtureData?: boolean; [key: string]: unknown } }>
   taskFunnel: Record<string, number>
 }
 
@@ -934,7 +934,7 @@ export const fetchPlatformModelStatus = async (baseUrl: string): Promise<Platfor
   }
   return requestMcp<PlatformModelStatus>(baseUrl, 'platform.model.status')
 }
-export const fetchWorkspaceMetrics = (baseUrl: string) => requestMcp<WorkspaceMetrics>(baseUrl, 'workspace.metrics')
+export const fetchWorkspaceMetrics = (baseUrl: string) => requestMcp<WorkspaceMetrics>(baseUrl, 'workspace.metrics', { risk_limit: '100' })
 export const createRechargeOrder = (baseUrl: string, amountCny: string, channel: 'alipay' | 'wechat' = 'alipay') => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.create', { amount_cny: amountCny, channel, idempotency_key: `studio-${channel}-${amountCny}-${Date.now()}` })
 export const fetchRechargeOrder = (baseUrl: string, orderId: string) => requestMcp<RechargeOrder>(baseUrl, 'billing.recharge.get', { order_id: orderId })
 export const optimizeProductTitle = (baseUrl: string, input: { product_id: string; platform?: PlatformId; keyword?: string; objective?: string }) => requestMcp<{ product_id: string; platform: PlatformId; suggestions: Array<{ title: string; score: { seo: number; geo: number; total: number }; keywords: string[]; evidence: Array<{ source: string; value: string }>; risks: string[]; rankingGuarantee: false }>; humanConfirmationRequired: boolean; rankingGuarantee: false }>(baseUrl, 'catalog.title.optimize', input)

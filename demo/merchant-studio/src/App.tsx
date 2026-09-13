@@ -861,6 +861,7 @@ function Topbar({
   onSearch: () => void
 }) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [notificationOpen, setNotificationOpen] = useState(false)
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [passwordSubmitting, setPasswordSubmitting] = useState(false)
   const [passwordError, setPasswordError] = useState('')
@@ -914,12 +915,12 @@ function Topbar({
       {issueMetrics?.dataCoverage?.fixtureDataPresent ? <div className="merchant-notification-fixture-warning">当前工作区包含本地演示数据；未绑定或演示店铺的问题已隐藏，不计入工作区待处理问题。</div> : null}
       <div className="merchant-notification-heading">
         <div><strong>工作区待处理问题</strong><span>{issueCount ? `${issueCount} 项需要关注` : '当前没有待处理问题'}</span></div>
-        <button type="button" className="text-button" onClick={onOpenIssues}>查看全部</button>
+        <button type="button" className="text-button" onClick={() => { setNotificationOpen(false); onOpenIssues() }}>查看全部</button>
       </div>
       {issueItems.length ? <List
         size="small"
         dataSource={issueItems.slice(0, 8)}
-        renderItem={(item, index) => <List.Item className="merchant-notification-item" onClick={() => setIssueDetail(item)}>
+        renderItem={(item, index) => <List.Item className="merchant-notification-item" onClick={() => { setNotificationOpen(false); setIssueDetail(item) }}>
           <button type="button" className="merchant-notification-item-button" aria-label={`查看问题：${item.title ?? item.type}`}>
             <span className={`merchant-notification-dot ${item.severity}`} aria-hidden="true" />
             <span className="merchant-notification-copy"><strong>{item.title ?? item.type}</strong><small>{[item.platform ? platformNames[item.platform] : '', item.storeName ?? '', item.status ?? ''].filter(Boolean).join(' · ') || '当前工作区'}</small><em>{item.nextAction ?? '查看详情并处理'}</em></span>
@@ -975,7 +976,7 @@ function Topbar({
                 : '未读取'}
           </b>
         </button>
-        <Dropdown trigger={['click']} placement="bottomRight" dropdownRender={() => notificationPanel}>
+        <Dropdown trigger={['click']} placement="bottomRight" open={notificationOpen} onOpenChange={setNotificationOpen} dropdownRender={() => notificationPanel}>
           <Badge count={issueCount > 99 ? '99+' : issueCount} overflowCount={99} offset={[-2, 4]}>
             <button type="button" className="icon-button notification-trigger" aria-label={`工作区待处理问题${issueCount ? `，${issueCount} 项` : '，暂无'}`}>
               <Bell size={18} aria-hidden="true" />

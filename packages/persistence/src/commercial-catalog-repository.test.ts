@@ -37,6 +37,18 @@ describe('MemoryCommercialCatalogRepository', () => {
     await expect(repository.resolveApprovedExecutableSku('basic')).rejects.toBeInstanceOf(CommercialCatalogUnavailableError)
   })
 
+  it('appends the complete draft, approval, publish, and retirement lifecycle', async () => {
+    const repository = new MemoryCommercialCatalogRepository([], [], () => Date.now() + 1000)
+    const draft = await repository.mutate({ action: 'create', code: 'growth', kind: 'monthly', priceFen: 500000, payload: { name: '成长版' }, actorId: 'ops', reason: 'create', evidence: {} })
+    const approved = await repository.mutate({ action: 'approve', code: 'growth', actorId: 'ops', reason: 'approve', evidence: {} })
+    const published = await repository.mutate({ action: 'publish', code: 'growth', actorId: 'ops', reason: 'publish', evidence: {} })
+    const retired = await repository.mutate({ action: 'retire', code: 'growth', actorId: 'ops', reason: 'retire', evidence: {} })
+    expect([draft, approved, published, retired].map(item => [item.version, item.lifecycle, item.executable])).toEqual([
+      [1, 'draft', false], [2, 'approved', false], [3, 'approved', true], [4, 'retired', false],
+    ])
+    expect((await repository.resolveApprovedExecutableSku('growth')).version).toBe(3)
+  })
+
   it('fails closed for source draft image rates even when their numeric value is 1', async () => {
     const repository = new MemoryCommercialCatalogRepository([], [{
       rateCardId: 'draft-v1', version: 1, actionCode: 'image.generate.standard', unit: 'image',

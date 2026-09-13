@@ -13,11 +13,22 @@ import { useFinanceSearch } from "../hooks/useFinanceSearch.js";
 import { ReloadOutlined, SettingOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { currentCommercialCatalog, readableCatalogStatus } from "../components/sections/overview/CommercialOverviewSection.js";
+import { readableCatalogStatus } from "../components/sections/overview/CommercialOverviewSection.js";
 import { readableBenefits } from "../components/commercial/benefitLabels.js";
 import { packageCodeLabel, packageDisplayName } from "../components/commercial/packageLabels.js";
 import type { CommercialCatalogItem } from "../api/commercialOperationsClient.js";
 import { commercialOperationsClient } from "../api/commercialOperationsClient.js";
+
+function latestCatalogVersions(items: readonly CommercialCatalogItem[]): CommercialCatalogItem[] {
+  const bySku = new Map<string, CommercialCatalogItem>();
+  for (const item of items) {
+    const current = bySku.get(item.skuCode);
+    const version = Number.parseInt(item.version.replace(/^v/u, ""), 10);
+    const currentVersion = current ? Number.parseInt(current.version.replace(/^v/u, ""), 10) : -1;
+    if (!current || (Number.isFinite(version) ? version : -1) > currentVersion) bySku.set(item.skuCode, item);
+  }
+  return [...bySku.values()].sort((left, right) => left.skuCode.localeCompare(right.skuCode));
+}
 
 function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   const [query, setQuery] = useState("");
@@ -25,9 +36,10 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
   const [editor, setEditor] = useState<CommercialCatalogItem | null | false>(false);
   const [busy, setBusy] = useState(false);
   const [form] = Form.useForm();
-  const rows = currentCommercialCatalog(model.platformCommercialCatalog.filter(item => item.visibility !== "private"))
+  const rows = latestCatalogVersions(model.platformCommercialCatalog.filter(item => item.visibility !== "private"))
     .filter(item => !query.trim() || [item.name, item.skuCode, item.priceLabel, readableBenefits(item)].some(value => value.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
   const canWrite = model.authorization.can("commercial.catalog.draft");
+  const canPublish = model.authorization.can("commercial.catalog.publish");
   const openEditor = (row?: CommercialCatalogItem) => {
     setEditor(row ?? null);
     form.setFieldsValue({ code: row?.skuCode ?? "", name: row?.name ?? "", kind: row?.type ?? "monthly", priceFen: row ? Number((row.priceLabel.match(/[0-9.]+/)?.[0] ?? "0")) * 100 : 0 });
@@ -49,6 +61,15 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
     catch (error) { message.error(error instanceof Error ? error.message : "套餐下架失败"); }
     finally { setBusy(false); }
   };
+  const transition = async (row: CommercialCatalogItem, action: "approve" | "publish") => {
+    setBusy(true);
+    try {
+      await commercialOperationsClient.mutateCatalog({ action, code: row.skuCode, reason: action === "approve" ? "运营后台审批套餐版本" : "运营后台发布套餐版本", benefits: [] });
+      message.success(action === "approve" ? "套餐版本已审批通过" : "套餐版本已发布生效");
+      await model.load();
+    } catch (error) { message.error(error instanceof Error ? error.message : "套餐状态变更失败"); }
+    finally { setBusy(false); }
+  };
   return (
     <Card
       className="ops-finance-secondary-panel"
@@ -61,8 +82,8 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
       <Alert
         type="warning"
         showIcon
-        title="当前为目录只读模式"
-        description="套餐列表来自服务端版本化目录；当前只支持查询和详情核对，增删改、审批发布和撤销需要后端写入契约、revision 与审计证据后才能开放。"
+        title="目录采用版本化生命周期"
+        description="新增和编辑会创建新版本草稿；审批通过、发布生效与下架都会追加不可变版本并写入审计事件。"
         style={{ marginBottom: 16 }}
       />
       <Space wrap style={{ marginBottom: 12 }}>
@@ -80,8 +101,8 @@ function PlatformCatalogManagementPanel({ model }: { model: OpsConsoleModel }) {
           { title: "类型", dataIndex: "type", width: 110, render: (value: string) => ({ monthly: "月度订阅", point_pack: "点数包", onboarding: "正式开通", private_trial: "私测" }[value] ?? value) },
           { title: "价格", dataIndex: "priceLabel", width: 130 },
           { title: "套餐权益", width: 380, render: (_: unknown, row: CommercialCatalogItem) => <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{readableBenefits(row)}</Typography.Paragraph> },
-          { title: "商业状态", dataIndex: "approvalState", width: 120, render: (_: string, row: CommercialCatalogItem) => <Tag color={readableCatalogStatus(row) === "生效可售" ? "green" : "gold"}>{readableCatalogStatus(row)}</Tag> },
-          { title: "操作", fixed: "right", width: 210, render: (_: unknown, row: CommercialCatalogItem) => <Space><Button size="small" onClick={() => setSelected(row)}>详情</Button><Button size="small" disabled={!canWrite} onClick={() => openEditor(row)}>编辑新版本</Button><Tooltip title="删除采用不可变目录的退休语义"><Button danger size="small" disabled={!canWrite || readableCatalogStatus(row) === "已停售"} onClick={() => void retire(row)}>下架</Button></Tooltip></Space> },
+          { title: "商业状态", dataIndex: "approvalState", width: 120, render: (_: string, row: CommercialCatalogItem) => <Tag color={row.executable ? "green" : row.approvalState === "approved" ? "blue" : "gold"}>{readableCatalogStatus(row)}</Tag> },
+          { title: "操作", fixed: "right", width: 360, render: (_: unknown, row: CommercialCatalogItem) => <Space wrap><Button size="small" onClick={() => setSelected(row)}>详情</Button><Button size="small" disabled={!canWrite} onClick={() => openEditor(row)}>编辑新版本</Button>{row.approvalState === "draft" && <Button size="small" type="primary" disabled={!canPublish || busy} onClick={() => void transition(row, "approve")}>审批通过</Button>}{row.approvalState === "approved" && !row.executable && <Button size="small" type="primary" disabled={!canPublish || busy} onClick={() => void transition(row, "publish")}>发布生效</Button>}<Tooltip title="删除采用不可变目录的退休语义"><Button danger size="small" disabled={!canPublish || busy || readableCatalogStatus(row) === "已停售"} onClick={() => void retire(row)}>下架</Button></Tooltip></Space> },
         ]}
       /> : <Empty description={model.platformCommercialCatalog.length ? "没有匹配的套餐" : "服务端尚未返回套餐目录"} />}
       <Drawer title="套餐详情" open={Boolean(selected)} onClose={() => setSelected(null)} destroyOnHidden>

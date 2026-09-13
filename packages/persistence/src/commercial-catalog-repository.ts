@@ -192,7 +192,7 @@ export class MemoryCommercialCatalogRepository implements CommercialCatalogRepos
       ...base,
       versionId: `${base.id}-v${base.version + 1}-${randomUUID()}`,
       version: base.version + 1,
-      lifecycle: input.action === 'retire' ? 'retired' : input.action === 'approve' ? 'approved' : 'draft',
+      lifecycle: input.action === 'retire' ? 'retired' : input.action === 'create' ? 'draft' : 'approved',
       executable: input.action === 'publish',
       priceFen: input.action === 'retire' ? base.priceFen : (input.priceFen ?? base.priceFen),
       priceMode: input.action === 'retire' ? base.priceMode : (input.priceMode ?? base.priceMode),

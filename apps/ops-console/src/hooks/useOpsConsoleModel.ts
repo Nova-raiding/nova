@@ -715,16 +715,18 @@ export function useOpsConsoleModel() {
       // Resolve the managed session before constructing the rest of the load
       // matrix. Otherwise the first render can briefly issue workspace-scoped
       // requests before the canonical capability projection arrives from the gateway.
-      let resolvedSession = opsSessionRef.current;
-      let sessionAttempted = Boolean(resolvedSession);
-      if (!resolvedSession) {
-        const value = await optional("ops.session");
-        sessionAttempted = true;
-        if (value && typeof value === "object" && !Array.isArray(value)) {
-          recordOpsBootstrapTrace("session_received", { hasActor: typeof (value as Record<string, unknown>).actor_id === "string", hasCapabilities: Array.isArray((value as Record<string, unknown>).capabilities), workbench: (value as Record<string, unknown>).workbench });
-          resolvedSession = value as unknown as OpsSession;
-          loadCoordinatorRef.current.commit(loadRequest, () => { acceptLoadedSession(resolvedSession!); });
-        }
+      // Revalidate the server session on every top-level refresh. Keeping a
+      // cached session after its cookie expires makes the header say “已登录”
+      // while every protected dataset returns 403.
+      let resolvedSession: OpsSession | undefined;
+      const sessionAttempted = true;
+      const value = await optional("ops.session");
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        recordOpsBootstrapTrace("session_received", { hasActor: typeof (value as Record<string, unknown>).actor_id === "string", hasCapabilities: Array.isArray((value as Record<string, unknown>).capabilities), workbench: (value as Record<string, unknown>).workbench });
+        resolvedSession = value as unknown as OpsSession;
+        loadCoordinatorRef.current.commit(loadRequest, () => { acceptLoadedSession(resolvedSession!); });
+      } else if (firstOptionalError && ["SESSION_EXPIRED", "UNAUTHENTICATED"].includes(String((firstOptionalError as { code?: string }).code))) {
+        loadCoordinatorRef.current.commit(loadRequest, clearAuthorizationScopedData);
       }
       const resolvedAuthorization = createAuthorizationProjection(resolvedSession, managedOpsSession);
       const allowedHydrationMethods = allowedBackgroundHydrationMethods(resolvedAuthorization);
