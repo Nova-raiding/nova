@@ -1,6 +1,6 @@
 # 大麦 Codex 插件
 
-当前 `tools/list` 实测为 146 个 MCP 工具（即当前 `tools/list` 为 146 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
+当前 `tools/list` 实测为 147 个 MCP 工具（即当前 `tools/list` 为 147 个 MCP 工具），以运行态契约测试为准；数量可能随共享注册表变化，不作为生产就绪证明。
 
 这是可安装的 Codex Plugin 源目录，包含：
 
@@ -57,7 +57,7 @@ bridge 对缺失或未解析的 `${MERCHANT_MCP_BASE_URL}`、`${MERCHANT_WORKSPA
 
 插件中的 `READ_ONLY_METHODS` 只用于 MCP 工具注解和传输重试，`SAFE_WITHOUT_INTERACTIVE_WRITE` 只用于当前会话的人工写确认；两者都不是商业恢复白名单，不能绕过服务端 `CommercialAccessDecision`。零创意点、余额未知、点数不足、准入修订过期或费率不可用时，只显示共享 exact registry 中已启用且由服务端在 `next_actions` 授权的恢复入口。`platform.connect`、`catalog.sync`、`content.export` 是业务操作，不属于零点恢复。客户端门禁只改善交互，真实安全边界始终在 API/MCP、RLS 和 Worker 的服务端复核。
 
-共享 `COMMERCIAL_OPERATION_REGISTRY` 中所有 `surface=MCP + domain=COMMERCIAL + enabled=false` 的精确方法都不出现在 `tools/list`，直接调用也会在 API 前 fail-closed。这包括 `subscription.order.create`、`subscription.change`、接受任意人民币金额的旧 `billing.recharge.create`，以及当前因费率/生产证据未就绪而 disabled 的生成、编辑和预览类方法。未来的充值创建只能接受服务端发布的创意点包 SKU；Bridge 不生成 50/100/300 元等任意金额建议。
+共享 `COMMERCIAL_OPERATION_REGISTRY` 中所有 `surface=MCP + domain=COMMERCIAL + enabled=false` 的精确方法都不出现在 `tools/list`，直接调用也会在 API 前 fail-closed。这包括 `subscription.order.create`、`subscription.change`；充值创建仅在商家后台登录且 provider ready 时由服务端动态暴露，fixture/未配置环境仍隐藏。Bridge 不生成任意金额建议。
 
 ## 安装后第一步
 
@@ -95,7 +95,7 @@ npm run codex:relay:validate
 
 正式购买必须先调用 `commercial.catalog.get`，只展示服务端返回的公开、已批准、已生效且 `executable=true` 的 SKU。目录中的 `onboarding` 是一次性 ¥5000 开通，`monthly` 是月度订阅，`point_pack` 是创意点包；价格、周期、权益和版本都以服务端目录为准。随后调用 `commercial.order.create` 创建订单，再调用服务端提供的 checkout 入口。用户完成支付后，插件只能通过 `commercial.order.payment.get` 查询状态，并等待支付服务商签名回调、grant 到账和新的 `access_revision`，不能把“待支付”或“支付成功”直接说成“已到账”。
 
-微信和支付宝由 API 服务端的支付 provider 负责下单和验签，插件不接触商户密钥，也不接受客户端自定义金额、点数、价格或权益。当前本地 fixture 环境只允许演示订单状态；未配置真实 provider、HTTPS callback、签名密钥和对账证据时，充值必须显示为不可用并保持 `writes=false`。旧版 `billing.recharge.create` 任意金额充值仅保留兼容读写合同，不作为正式套餐入口。
+微信和支付宝由 API 服务端的支付 provider 负责下单和验签，插件不接触商户密钥，也不接受客户端自定义金额、点数、价格或权益。当前本地 fixture 环境只允许演示订单状态；未配置真实 provider、HTTPS callback、签名密钥和对账证据时，充值必须显示为不可用并保持 `writes=false`。`billing.recharge.create` 作为受登录与 provider 门禁保护的正式充值入口。
 
 对话示例：用户说“看看我的钱包”时调用 `billing.status`；用户说“有哪些套餐和点数包”时调用 `commercial.catalog.get` 并列出可执行的公开 SKU；用户选择套餐后调用 `commercial.order.create` 创建待支付订单并展示订单号，再通过 `commercial.order.payment.get` 查询支付状态。若服务端未提供正式 checkout 入口，插件必须明确提示“支付配置尚未就绪”，不能改用旧接口、猜测支付链接或要求用户把微信/支付宝密钥发给模型。
 
