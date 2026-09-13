@@ -197,3 +197,12 @@ describe('MemoryInteractiveConfirmationTicketRepository', () => {
     await expect(repository.consume(ticket)).resolves.toBe(true)
   })
 })
+
+describe('MemoryInteractiveConfirmationTicketRepository', () => {
+  it('does not accept the stored digest as a bearer', async () => {
+    const repository = new MemoryInteractiveConfirmationTicketRepository(() => now)
+    await repository.issue(ticket)
+    await expect(repository.consume({ ...ticket, nonceHash: 'd'.repeat(64), legacyNonceHash: ticket.nonceHash })).resolves.toBe(false)
+    await expect(repository.consume(ticket)).resolves.toBe(true)
+  })
+})
