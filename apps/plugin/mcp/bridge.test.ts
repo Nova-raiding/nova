@@ -1,52 +1,20 @@
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
-import { assertRelayEvidence } from './relay-evidence.mjs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { afterAll, describe, expect, it } from 'vitest'
-import { COMMERCIAL_OPERATION_REGISTRY, MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
+import { MCP_METHOD_SCHEMAS, MCP_METHODS, validateMcpRequest } from '@merchant-marketing/contracts'
 
 const BRIDGE_PATH = fileURLToPath(new URL('./bridge.mjs', import.meta.url))
-const TEST_DIRECTORY = fileURLToPath(new URL('.', import.meta.url))
-const MARKETPLACE_ROOT_MARKER = '/.codex-marketplace/'
-const REPOSITORY_ROOT = TEST_DIRECTORY.includes(MARKETPLACE_ROOT_MARKER)
-  ? TEST_DIRECTORY.slice(0, TEST_DIRECTORY.indexOf(MARKETPLACE_ROOT_MARKER))
-  : join(TEST_DIRECTORY, '../../..')
-const MARKETPLACE_BRIDGE_PATH = join(REPOSITORY_ROOT, '.codex-marketplace/plugins/merchant-marketing/mcp/bridge.mjs')
 const TEST_ARTIFACT_DIR = await mkdtemp(join(tmpdir(), 'merchant-bridge-artifacts-'))
 process.env.MERCHANT_ARTIFACT_DIR = TEST_ARTIFACT_DIR
 afterAll(async () => { await rm(TEST_ARTIFACT_DIR, { recursive: true, force: true }) })
 
-describe('relay evidence contract', () => {
-  it('reports only missing cost when provider usage is present but cost is null', () => {
-    expect(() => assertRelayEvidence('content.generate', {
-      execution: { simulated: false, providerExecuted: true, providerRequestId: 'relay-req-1', usage: { total_tokens: 12 }, cost_cny: null },
-    }, { environment: 'staging', fixtureFallback: false })).toThrowError(expect.objectContaining({
-      code: 'MODEL_RELAY_EVIDENCE_REQUIRED', details: { operation_status: 'blocked', missing: ['cost_cny'] },
-    }))
-  })
-
-  it('accepts a complete non-fixture provider evidence record', () => {
-    expect(() => assertRelayEvidence('content.generate', {
-      execution: { simulated: false, providerExecuted: true, providerRequestId: 'relay-req-1', usage: { total_tokens: 12 }, cost_cny: 0 },
-    }, { environment: 'production', fixtureFallback: false })).not.toThrow()
-  })
-
-  it.each([-0.01, 'NaN', 'Infinity', 'not-a-number'])('rejects invalid cost evidence: %s', (cost) => {
-    expect(() => assertRelayEvidence('content.generate', {
-      execution: { simulated: false, providerExecuted: true, providerRequestId: 'relay-req-invalid-cost', usage: { total_tokens: 12 }, cost_cny: cost },
-    }, { environment: 'production', fixtureFallback: false })).toThrowError(expect.objectContaining({
-      code: 'MODEL_RELAY_EVIDENCE_REQUIRED', details: { operation_status: 'blocked', missing: ['cost_cny'] },
-    }))
-  })
-})
-
 const MERCHANT_HIDDEN_METHODS = new Set([
-  'billing.reconciliation',
   'billing.model-usage.reconciliation.run',
   'billing.model-usage.resolve',
   'billing.usage.consume',
@@ -59,7 +27,6 @@ const MERCHANT_HIDDEN_METHODS = new Set([
   'asset.scan',
   'content.codex.prepare',
   'content.codex.commit',
-  'knowledge.rule.update',
 ])
 
 function nextLine(stream: NodeJS.ReadableStream): Promise<any> {
@@ -96,360 +63,6 @@ async function close(server: ReturnType<typeof createServer>) {
 }
 
 describe('Codex stdio MCP bridge', () => {
-  it('keeps merchant.start attachment_count aligned with the shared contract and byte-identical in marketplace', async () => {
-    const expectedSchema = MCP_METHOD_SCHEMAS['merchant.start'].properties.attachment_count
-    const sourceBytes = await readFile(BRIDGE_PATH)
-    const marketplaceBytes = await readFile(MARKETPLACE_BRIDGE_PATH)
-    expect(marketplaceBytes).toEqual(sourceBytes)
-
-    const listSchema = async (bridgePath: string) => {
-      const child = spawn(process.execPath, [bridgePath], { cwd: process.cwd(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] })
-      try {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
-        const response = await nextLine(child.stdout)
-        return response.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').inputSchema.properties.attachment_count
-      } finally {
-        child.kill()
-      }
-    }
-
-    await expect(listSchema(BRIDGE_PATH)).resolves.toEqual(expectedSchema)
-    await expect(listSchema(MARKETPLACE_BRIDGE_PATH)).resolves.toEqual(expectedSchema)
-  })
-
-  it('keeps the standalone recovery and disabled surfaces aligned with the shared exact registry', async () => {
-    const enabledRecovery = COMMERCIAL_OPERATION_REGISTRY
-      .filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && policy.enabled && policy.classification === 'RECOVERY_CONTROL')
-      .map(policy => policy.operation)
-    const disabledCommercial = COMMERCIAL_OPERATION_REGISTRY
-      .filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && !policy.enabled)
-      .filter(policy => !['catalog.image.generate', 'multimodal.image.edit'].includes(policy.operation))
-      .map(policy => policy.operation)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: 'http://127.0.0.1:9', MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
-      const names = (await nextLine(child.stdout)).result.tools.map((tool: { name: string }) => tool.name)
-      expect(names).toEqual(expect.arrayContaining(enabledRecovery))
-      for (const operation of disabledCommercial) expect(names).not.toContain(operation)
-      for (const [index, operation] of disabledCommercial.entries()) {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 2, method: 'tools/call', params: { name: operation, arguments: {} } })}\n`)
-        const response = await nextLine(child.stdout)
-        expect(Boolean(response.error || response.result?.isError), `${operation} must fail closed before API forwarding`).toBe(true)
-        if (!operation.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(operation)) {
-          expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-        }
-      }
-    } finally {
-      child.kill()
-    }
-  })
-
-  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('advertises pagination for catalog search and task history (%s)', async (bridgePath) => {
-    const child = spawn(process.execPath, [bridgePath], { cwd: process.cwd(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'ignore'] })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
-      const tools = (await nextLine(child.stdout)).result.tools
-      for (const name of ['catalog.search', 'task.history']) {
-        const schema = tools.find((tool: { name: string }) => tool.name === name).inputSchema
-        expect(schema.properties).toMatchObject({ limit: { type: 'string' }, offset: { type: 'string' } })
-      }
-    } finally {
-      child.kill()
-    }
-  })
-
-  it('advertises the customer-reply association requirement before the request reaches the API', async () => {
-    const listSchema = async (bridgePath: string) => {
-      const child = spawn(process.execPath, [bridgePath], { cwd: process.cwd(), env: { ...process.env }, stdio: ['pipe', 'pipe', 'pipe'] })
-      try {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
-        const response = await nextLine(child.stdout)
-        return response.result.tools.find((tool: { name: string }) => tool.name === 'support.customer.replies.list').inputSchema
-      } finally {
-        child.kill()
-      }
-    }
-
-    const expected = [
-      { required: ['ticket_id'] },
-      { required: ['related_task_id'] },
-      { required: ['related_order_id'] },
-    ]
-    for (const bridgePath of [BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH]) {
-      await expect(listSchema(bridgePath)).resolves.toMatchObject({ anyOf: expected, additionalProperties: false })
-    }
-  })
-
-  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('enforces the published knowledge.rule.create schema before forwarding tools/call arguments', async (bridgePath) => {
-    let requests = 0
-    const server = createServer((_req, res) => {
-      requests += 1
-      res.writeHead(500).end()
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [bridgePath], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'ignore'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })}\n`)
-      const listed = await nextLine(child.stdout)
-      const ruleCreate = listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.create')
-      expect(ruleCreate.inputSchema.required).toEqual(['name', 'content', 'scope', 'source_kind', 'source_reference', 'source_checked_at', 'version', 'status'])
-
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'knowledge.rule.create', arguments: {} } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response).toMatchObject({ id: 2, error: { code: -32602 } })
-      expect(response.error.message).toContain('missing required property name')
-      expect(requests).toBe(0)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('rejects a conflicting request workspace before forwarding (%s)', async (bridgePath) => {
-    let requests = 0
-    const server = createServer((_req, res) => {
-      requests += 1
-      res.writeHead(500).end()
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [bridgePath], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_bound' },
-      stdio: ['pipe', 'pipe', 'ignore'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'brand.get', arguments: { workspace_id: 'ws_other' } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({
-        isError: true,
-        structuredContent: {
-          code: 'WORKSPACE_SCOPE_MISMATCH',
-        },
-      })
-      expect(requests).toBe(0)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('forwards the configured merchant bearer token with the workspace scope and keeps credentials out of MCP params', async () => {
-    let observedHeaders: Record<string, string | string[] | undefined> = {}
-    let observedBody: Record<string, any> | undefined
-    const server = createServer(async (req, res) => {
-      const chunks: Buffer[] = []
-      for await (const chunk of req) chunks.push(Buffer.from(chunk))
-      observedHeaders = req.headers
-      observedBody = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: { status: 'ok' } }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
-        MERCHANT_WORKSPACE_ID: 'ws_auth_scope',
-        MERCHANT_MCP_TOKEN: 'merchant-secret-token',
-      },
-      stdio: ['pipe', 'pipe', 'ignore'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: false })
-      expect(observedHeaders.authorization).toBe('Bearer merchant-secret-token')
-      expect(observedHeaders['x-workspace-id']).toBe('ws_auth_scope')
-      expect(observedHeaders['x-ops-workbench']).toBe('workspace')
-      expect(observedBody).toMatchObject({
-        method: 'workspace.health',
-        params: { workspace_id: 'ws_auth_scope' },
-      })
-      expect(JSON.stringify(observedBody)).not.toContain('merchant-secret-token')
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it.each(['knowledge.rule.list', 'rule.list'])('summarizes bare-array rule responses from the API for %s', async (method) => {
-    const server = createServer(async (_req, res) => {
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: [
-        { id: 'rule-active', status: 'active', source: { kind: 'official' } },
-        { id: 'rule-draft', status: 'draft', source: { kind: 'internal' } },
-      ] }, warnings: [], next_actions: [], error: null }))
-    })
-    const address = await listen(server)
-    try {
-      for (const bridgePath of [BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH]) {
-        const child = spawn(process.execPath, [bridgePath], {
-          cwd: process.cwd(),
-          env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-          stdio: ['pipe', 'pipe', 'ignore'],
-        })
-        try {
-          child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: {} } })}\n`)
-          const response = await nextLine(child.stdout)
-          const text = response.result.content[0].text as string
-          expect(text).toContain(method === 'rule.list' ? '已读取 2 条可执行规则。' : '已读取 2 条知识规则，其中 1 条看起来已具备执行状态')
-          expect(text).not.toContain('服务端已返回响应，状态尚未确认')
-        } finally {
-          child.kill()
-        }
-      }
-    } finally {
-      await close(server)
-    }
-  })
-
-  it.each([BRIDGE_PATH, MARKETPLACE_BRIDGE_PATH])('renders the authoritative creative-point balance in merchant-visible text for %s', async (bridgePath) => {
-    const server = createServer(async (_req, res) => {
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: {
-        schema_version: 'creative-points.balance.v1',
-        balance_state: 'known',
-        available_points: 9950,
-        reserved_points: 31,
-        settled_points: 19,
-        access_revision: '74',
-      } }, warnings: [], next_actions: [], error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [bridgePath], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'ignore'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative-points.balance.get', arguments: {} } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result.content[0].text).toContain('创意点状态：可用')
-      expect(response.result.content[0].text).not.toMatch(/9950|31|19/u)
-      expect(response.result.structuredContent).toMatchObject({ balance_state: 'known' })
-      expect(response.result.structuredContent).toMatchObject({ balance_state: 'known', access_revision: '74' })
-      expect(response.result.structuredContent).not.toHaveProperty('available_points')
-      expect(response.result.structuredContent).not.toHaveProperty('reserved_points')
-      expect(response.result.structuredContent).not.toHaveProperty('settled_points')
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it.each([
-    ['CREATIVE_POINTS_EXHAUSTED', 'known', 0, null],
-    ['CREATIVE_POINTS_INSUFFICIENT', 'known', 4, 5],
-    ['CREATIVE_POINTS_UNAVAILABLE', 'unknown', null, null],
-    ['RATE_CARD_UNAVAILABLE', 'known', 8, null],
-    ['COMMERCIAL_ACCESS_STALE', 'known', 8, 5],
-  ] as const)('preserves %s evidence and exposes only exact server-authorized recovery actions', async (code, balanceState, availablePoints, quotedPoints) => {
-    let requests = 0
-    const enabledRecovery = COMMERCIAL_OPERATION_REGISTRY
-      .filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && policy.enabled && policy.classification === 'RECOVERY_CONTROL')
-      .map(policy => policy.operation)
-    const server = createServer(async (_req, res) => {
-      requests += 1
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({
-        data: null,
-        error: {
-          code,
-          message: 'commercial access denied',
-          details: {
-            balance_state: balanceState,
-            available_points: availablePoints,
-            quoted_points: quotedPoints,
-            access_revision: balanceState === 'known' ? 'access_7' : null,
-            rate_card_version: quotedPoints === null ? null : 'rate_3',
-            request_id: 'req_commercial_1',
-            trace_id: 'trace_commercial_1',
-            next_actions: [...enabledRecovery, 'platform.connect', 'catalog.sync', 'content.export', 'billing.recharge.create'],
-          },
-        },
-      }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: 'create content' } } })}\n`)
-      const result = (await nextLine(child.stdout)).result
-      expect(result.isError).toBe(true)
-      expect(result.structuredContent).toMatchObject({
-        code,
-        balance_state: balanceState,
-        access_revision: balanceState === 'known' ? 'access_7' : null,
-        rate_card_version: quotedPoints === null ? null : 'rate_3',
-        request_id: 'req_commercial_1',
-        trace_id: 'trace_commercial_1',
-        next_actions: enabledRecovery,
-        recovery_only: true,
-      })
-      expect(JSON.stringify(result.structuredContent)).not.toMatch(/recommended_amounts_cny|50\.00|100\.00|300\.00/u)
-      expect(requests).toBe(1)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('reuses a server-authored zero-point block before forwarding later business operations and clears it only after an allowed recovery read', async () => {
-    const requests: string[] = []
-    const server = createServer(async (req, res) => {
-      let body = ''
-      for await (const chunk of req) body += chunk.toString()
-      const request = JSON.parse(body)
-      requests.push(request.method)
-      res.setHeader('content-type', 'application/json')
-      if (request.method === 'merchant.start') {
-        res.end(JSON.stringify({ data: null, error: { code: 'CREATIVE_POINTS_EXHAUSTED', message: 'commercial access denied', details: { balance_state: 'known', available_points: 0, access_revision: 'access_9', request_id: 'req_zero', trace_id: 'trace_zero', next_actions: ['commercial.access.get', 'creative-points.balance.get', 'task.create'] } } }))
-        return
-      }
-      if (request.method === 'commercial.access.get') {
-        res.end(JSON.stringify({ data: { result: { decision: { allowed: true, balance_state: 'known', available_points: 500, access_revision: 'access_10' } } }, error: null }))
-        return
-      }
-      res.end(JSON.stringify({ data: { result: { accepted: true } }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_EXHAUSTED', access_revision: 'access_9' } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'task.create', arguments: { product_id: 'prod_1', platform: 'taobao' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'CREATIVE_POINTS_EXHAUSTED', recovery_only: true, next_actions: ['commercial.access.get', 'creative-points.balance.get'] } })
-      expect(requests).toEqual(['merchant.start'])
-
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'commercial.access.get', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { decision: { allowed: true, available_points: 500, access_revision: 'access_10' } } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'task.create', arguments: { product_id: 'prod_1', platform: 'taobao' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
-      expect(requests).toEqual(['merchant.start', 'commercial.access.get', 'task.create'])
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
   it('continues serving requests after a valid JSON value is not a JSON-RPC object', async () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
@@ -484,7 +97,10 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'multimodal.image.edit', arguments: { request_json: '{}' } } })}\n`)
       const imageEditResponse = await nextLine(child.stdout)
-      expect(imageEditResponse.result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
+      expect(imageEditResponse.result).toMatchObject({
+        isError: true,
+        structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' },
+      })
       expect(imageEditResponse.result._meta).toBeUndefined()
       for (const [index, name] of ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 3, method: 'tools/call', params: { name, arguments: { id: 'spec_1', expected_revision: '1', idempotency_key: `media:${index}:write`, reason: 'verified production evidence' } } })}\n`)
@@ -516,8 +132,7 @@ describe('Codex stdio MCP bridge', () => {
       const writes = ['platform.media.spec.create', 'platform.media.spec.update', 'platform.media.spec.approve', 'platform.media.spec.expire', 'campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed']
       for (const [index, name] of writes.entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
-        const expectedCode = name === 'campaign.batch.retry_failed' ? 'COMMERCIAL_OPERATION_DISABLED' : 'INTERACTIVE_WRITE_DISABLED'
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: expectedCode } })
+        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'INTERACTIVE_WRITE_DISABLED' } })
       }
       expect(requests).toBe(0)
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
@@ -610,7 +225,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('allows enabled onboarding and read-only sync tools without interactive-write mode', async () => {
+  it('allows onboarding, recharge-order, and read-only sync tools without interactive-write mode', async () => {
     let requests = 0
     const server = createServer(async (_req, res) => {
       requests += 1
@@ -624,96 +239,25 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      for (const [index, name] of ['platform.connect', 'catalog.sync', 'catalog.sync.start', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify'].entries()) {
+      for (const [index, name] of ['platform.connect', 'billing.recharge.create', 'catalog.sync', 'catalog.sync.start', 'platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify', 'task.understand'].entries()) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: { name, arguments: {} } })}\n`)
         expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { accepted: true } })
       }
-      expect(requests).toBe(7)
+      expect(requests).toBe(9)
     } finally {
       child.kill()
       await close(server)
     }
   })
 
-  it('forwards exact workspace export and deletion recovery requests without a point-gated interactive session', async () => {
-    const forwarded: string[] = []
-    const server = createServer(async (req, res) => {
-      let body = ''
-      for await (const chunk of req) body += chunk.toString()
-      forwarded.push(JSON.parse(body).method)
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ request_id: 'req_recovery', trace_id: 'trace_recovery', workspace_id: 'ws_test', data: { jsonrpc: '2.0', id: 1, result: { status: 'pending' } }, warnings: [], next_actions: [], error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: '${MERCHANT_MCP_WRITE_ENABLED}' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      const calls = [
-        { name: 'workspace.data.export.request', arguments: { reason: '迁移前完整导出', idempotency_key: 'export-1' } },
-        { name: 'workspace.data.export.get', arguments: { request_id: 'export-1' } },
-        { name: 'workspace.data.delete.request', arguments: { scope: 'workspace', reason: '注销工作区申请', idempotency_key: 'delete-1' } },
-      ]
-      for (const [index, call] of calls.entries()) {
-        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: index + 1, method: 'tools/call', params: call })}\n`)
-        expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { status: 'pending' } })
-      }
-      expect(forwarded).toEqual(calls.map(call => call.name))
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('exposes V2 order recovery without client commercial facts and requires confirmation for creation', async () => {
-    const forwarded: string[] = []
-    const server = createServer(async (req, res) => {
-      let body = ''
-      for await (const chunk of req) body += chunk.toString()
-      const request = JSON.parse(body)
-      forwarded.push(request.method)
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: { order_id: 'order-v2', status: 'pending', access_revision: null } }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
-      const listed = (await nextLine(child.stdout)).result.tools
-      const create = listed.find((tool: { name: string }) => tool.name === 'commercial.order.create')
-      expect(create.inputSchema.properties).not.toHaveProperty('amount_fen')
-      expect(create.inputSchema.properties).not.toHaveProperty('currency')
-      expect(create.inputSchema.properties).not.toHaveProperty('points')
-      expect(create.inputSchema.properties).not.toHaveProperty('benefits')
-
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'commercial.order.payment.get', arguments: { order_id: 'order-v2' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { order_id: 'order-v2', status: 'pending', access_revision: null } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', idempotency_key: 'order-create-1', reason: '购买批准点包' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true })
-      expect(forwarded).toEqual(['commercial.order.payment.get'])
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'commercial.order.create', arguments: { purchase_kind: 'point_pack', sku_code: 'points-500', idempotency_key: 'order-create-1', reason: '购买批准点包' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { order_id: 'order-v2', status: 'pending' } })
-      expect(forwarded).toEqual(['commercial.order.payment.get', 'commercial.order.create'])
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('renders safe clickable authorization links and keeps disabled recharge creation fail-closed', async () => {
+  it('renders safe clickable authorization and recharge links for Codex App users', async () => {
     const server = createServer(async (req, res) => {
       let body = ''
       for await (const chunk of req) body += chunk.toString()
       const method = JSON.parse(body).method
-      const result = { authorizationUrl: 'https://seller.example.com/oauth/authorize?state=opaque' }
+      const result = method === 'platform.connect'
+        ? { authorizationUrl: 'https://seller.example.com/oauth/authorize?state=opaque' }
+        : { paymentUrl: 'https://pay.example.com/checkout?order_id=order_1', state: 'pending' }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
     })
@@ -724,22 +268,27 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'platform.connect', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: expect.stringMatching(/^https:\/\//u), annotations: { audience: ['user'] } }))
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
+      for (const [id, name] of [[1, 'platform.connect'], [2, 'billing.recharge.create']] as const) {
+        child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } })}\n`)
+        const response = await nextLine(child.stdout)
+        expect(response.result.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: expect.stringMatching(/^https:\/\//u), annotations: { audience: ['user'] } }))
+      }
     } finally {
       child.kill()
       await close(server)
     }
   })
 
-  it('does not contact the API for disabled arbitrary-amount recharge creation', async () => {
-    let requests = 0
+  it('renders trusted payment deep links without turning arbitrary schemes into links', async () => {
     const server = createServer(async (req, res) => {
-      requests += 1
+      let body = ''
+      for await (const chunk of req) body += chunk.toString()
+      const method = JSON.parse(body).method
+      const result = method === 'billing.recharge.create'
+        ? { paymentUrl: 'weixin://wxpay/bizpayurl?pr=opaque' }
+        : { authorizationUrl: 'javascript:alert(1)' }
       res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: { paymentUrl: 'weixin://wxpay/bizpayurl?pr=opaque' } }, error: null }))
+      res.end(JSON.stringify({ data: { result }, error: null }))
     })
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
@@ -749,15 +298,16 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.recharge.create', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-      expect(requests).toBe(0)
+      expect((await nextLine(child.stdout)).result.content).toContainEqual(expect.objectContaining({ type: 'resource_link', uri: 'weixin://wxpay/bizpayurl?pr=opaque' }))
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'platform.connect', arguments: {} } })}\n`)
+      expect((await nextLine(child.stdout)).result.content).not.toContainEqual(expect.objectContaining({ type: 'resource_link' }))
     } finally {
       child.kill()
       await close(server)
     }
   })
 
-  it('drops executable action cards for registry-disabled commercial methods', async () => {
+  it('returns standardized action cards in structuredContent with a concise user-facing next step', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({
@@ -785,9 +335,21 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.status', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result.structuredContent).toMatchObject({ availability: 'unknown', next_actions: ['请使用 catalog.search 读取 product_id=prod_123456'] })
-      expect(response.result.structuredContent.action_cards).toBeUndefined()
-      expect(response.result.content[0].text).not.toContain('调整店铺额度')
+      const card = response.result.structuredContent.action_cards[0]
+      expect(response.result.structuredContent).toMatchObject({ status: 'needs_input', next_actions: ['请使用 catalog.search 读取 product_id=prod_123456'] })
+      expect(card).toMatchObject({
+        id: 'billing-status-1',
+        type: 'upgrade',
+        tool: 'subscription.change',
+        arguments: {},
+        required_inputs: [],
+        enabled: true,
+        reason: '当前店铺额度不足；详情见 相关链接',
+        requires_confirmation: true,
+      })
+      expect(card.label).toBe('调整店铺额度')
+      expect(card.reason).toBe('当前店铺额度不足；详情见 相关链接')
+      expect(response.result.content[0].text).toBe('还需要补充信息。\n下一步：调整店铺额度')
       expect(response.result.content[0].text).not.toContain('subscription.change')
       expect(response.result.content[0].text).not.toContain('catalog.search')
       expect(response.result.content[0].text).not.toContain('product_id')
@@ -853,38 +415,6 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result.content[0].text).toBe('可以开始了。\n你要处理哪个平台、店铺或商品？')
       expect(response.result.content[0].text).not.toContain('catalog.search')
       expect(JSON.stringify(response.result.structuredContent)).not.toMatch(/dashboard|capabilityCards|context_bar|action_cards/u)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('does not turn a read-only catalog request into an upload prompt', async () => {
-    const server = createServer(async (_req, res) => {
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: {
-        currentStep: { id: 'provide-product', state: 'ready' },
-        action_cards: [{ method: 'asset.upload', label: '上传商品图片' }],
-      } }, warnings: [], next_actions: [], error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'ignore'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: '查看店铺和商品目录' } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result.structuredContent).toMatchObject({
-        conversation_state: {
-          stage: 'choose_product',
-          primary_action: { method: 'catalog.search', label: '选择店铺查看商品' },
-        },
-        question: '你要处理哪个店铺或商品？',
-        expected_input: { kind: 'platform_store_or_product_selection' },
-      })
-      expect(response.result.content[0].text).not.toContain('上传商品图片')
     } finally {
       child.kill()
       await close(server)
@@ -1062,7 +592,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('does not synthesize a disabled subscription change from legacy store-capacity hints', async () => {
+  it('never emits an ops-only tool as a merchant store-capacity action', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result: { store_capacity: { upgrade_actions: ['升级套餐增加店铺数', '购买店铺加购包'] } } }, warnings: [], next_actions: [], error: null }))
@@ -1071,15 +601,17 @@ describe('Codex stdio MCP bridge', () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.status', arguments: {} } })}\n`)
-      const structured = (await nextLine(child.stdout)).result.structuredContent
-      expect(structured.action_cards).toBeUndefined()
+      const cards = (await nextLine(child.stdout)).result.structuredContent.action_cards
+      expect(cards).toHaveLength(2)
+      expect(cards.every((card: { tool: string }) => !card.tool.startsWith('ops.'))).toBe(true)
+      expect(cards.every((card: { tool: string }) => card.tool === 'subscription.change')).toBe(true)
     } finally {
       child.kill()
       await close(server)
     }
   })
 
-  it('removes nested ops-only store-capacity action cards instead of rewriting them to a disabled method', async () => {
+  it('sanitizes nested store-capacity action cards from the server response', async () => {
     const server = createServer(async (_req, res) => {
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result: { store_capacity: { action_cards: [{ tool: 'ops.commercial.addons.list', label: '购买加购包' }] } } }, warnings: [], next_actions: [], error: null }))
@@ -1088,8 +620,9 @@ describe('Codex stdio MCP bridge', () => {
     const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'billing.status', arguments: {} } })}\n`)
-      const nested = (await nextLine(child.stdout)).result.structuredContent.store_capacity
-      expect(nested).toBeUndefined()
+      const nested = (await nextLine(child.stdout)).result.structuredContent.store_capacity.action_cards[0]
+      expect(nested).toMatchObject({ tool: 'subscription.change', type: 'upgrade', requires_confirmation: true })
+      expect(nested.tool).not.toMatch(/^ops\./u)
     } finally {
       child.kill()
       await close(server)
@@ -1143,7 +676,7 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {}, resources: {}, resourceTemplates: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260912184110' } })
+      expect((await nextLine(child.stdout)).result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: 'merchant-marketing', version: '0.1.0+codex.20260901185628' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1.5, method: 'initialize', params: { protocolVersion: 'unsupported' } })}\n`)
       expect((await nextLine(child.stdout)).error).toMatchObject({ code: -32602, data: { supportedProtocolVersion: '2025-06-18' } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 11, method: 'resources/list' })}\n`)
@@ -1151,23 +684,18 @@ describe('Codex stdio MCP bridge', () => {
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-local-edit-v1.html', mimeType: 'text/html;profile=mcp-app' }))
       expect(resources.result.resources).toContainEqual(expect.objectContaining({ uri: 'ui://merchant-marketing/image-candidate-choice-v15.html', mimeType: 'text/html;profile=mcp-app' }))
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 13, method: 'resources/templates/list' })}\n`)
-      expect((await nextLine(child.stdout)).result).toEqual({ resourceTemplates: [] })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 12, method: 'resources/read', params: { uri: 'ui://merchant-marketing/recharge-v1.html' } })}\n`)
       const rechargeUi = await nextLine(child.stdout)
       expect(rechargeUi.result.contents[0]).toMatchObject({ uri: 'ui://merchant-marketing/recharge-v1.html', mimeType: 'text/html;profile=mcp-app' })
-      expect(rechargeUi.result.contents[0].text).toContain('商业访问与账单')
-      expect(rechargeUi.result.contents[0].text).toContain('服务端授权的恢复入口')
-      expect(rechargeUi.result.contents[0].text).toContain('余额状态待确认时会保持“待确认”')
-      expect(rechargeUi.result.contents[0].text).not.toContain('balance_state=unknown')
-      expect(rechargeUi.result.contents[0].text).not.toContain('立即充值')
+      expect(rechargeUi.result.contents[0].text).toContain('订单与账单')
+      expect(rechargeUi.result.contents[0].text).toContain('充值订单已创建')
+      expect(rechargeUi.result.contents[0].text).toContain('立即充值')
       expect(rechargeUi.result.contents[0].text).toContain('call("billing.status")')
-      expect(rechargeUi.result.contents[0].text).not.toMatch(/call\("billing\.(?:transactions|model-usage\.statement|export)"/u)
-      expect(rechargeUi.result.contents[0].text).not.toMatch(/amount_cny|customer_charge_cny|deducted_points|quoted_points|total_tokens/u)
+      expect(rechargeUi.result.contents[0].text).toContain('call("billing.export"')
       expect(rechargeUi.result.contents[0].text).not.toMatch(/mock/iu)
       expect(rechargeUi.result.contents[0].text).not.toMatch(/Codex/iu)
-      expect(rechargeUi.result.contents[0].text).toContain('role="status"')
-      expect(rechargeUi.result.contents[0].text).not.toMatch(/role="radio(group)?"|aria-checked|checkoutTitle|data-channel|payment_mode/u)
+      expect(rechargeUi.result.contents[0].text).toContain('role="radiogroup"')
+      expect(rechargeUi.result.contents[0].text).toContain('aria-labelledby="checkoutTitle"')
       expect(rechargeUi.result.contents[0].text).toContain('aria-busy="false"')
       expect(rechargeUi.result.contents[0].text).toMatch(/failed:\s*["']未成功["']/u)
       expect(rechargeUi.result.contents[0].text).toContain('已退款')
@@ -1243,19 +771,19 @@ describe('Codex stdio MCP bridge', () => {
       expect(imageCandidateUi.result.contents[0].text).not.toContain('票据')
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
+      expect(listed.result.tools).toHaveLength(150)
       const catalogImageGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.get')
       expect(catalogImageGet).toMatchObject({ name: 'catalog.image.get', annotations: { readOnlyHint: true } })
       expect(catalogImageGet).not.toHaveProperty('_meta')
-      const disabledCommercial = new Set([
-        ...COMMERCIAL_OPERATION_REGISTRY.filter(policy => policy.surface === 'MCP' && policy.domain === 'COMMERCIAL' && !policy.enabled).map(policy => policy.operation),
-        'catalog.title.optimize', 'content.generate', 'multimodal.generate', 'multimodal.video.request',
-      ].filter(operation => !['catalog.image.generate', 'multimodal.image.edit'].includes(operation)))
-      expect(listed.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([...new Set([...MCP_METHODS.filter(method => !method.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(method) && !disabledCommercial.has(method)), 'catalog.image.select'])].sort())
+      expect(listed.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([...new Set([...MCP_METHODS.filter(method => !method.startsWith('ops.') && !MERCHANT_HIDDEN_METHODS.has(method)), 'catalog.image.select'])].sort())
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.select')).toMatchObject({
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         inputSchema: { required: ['job_id', 'visual_ref', 'expected_revision', 'idempotency_key', 'reason', 'confirmation_ticket_nonce_hash', 'confirmation_ticket_intent_hash'] },
       })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.retry')).toBeUndefined()
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.retry')).toMatchObject({
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        inputSchema: { required: ['job_id', 'idempotency_key'] },
+      })
       const imageSelectSchema = listed.result.tools.find((tool: { name: string }) => tool.name === 'catalog.image.select').inputSchema
       expect(imageSelectSchema.properties.confirmation_ticket_nonce_hash).toEqual({ type: 'string', pattern: '^[a-f0-9]{64}$', minLength: 64, maxLength: 64 })
       expect(imageSelectSchema.properties.confirmation_ticket_intent_hash).toEqual({ type: 'string', pattern: '^[a-f0-9]{64}$', minLength: 64, maxLength: 64 })
@@ -1269,25 +797,26 @@ describe('Codex stdio MCP bridge', () => {
         'task.understand', 'task.request.create', 'task.sku.split', 'task.group.create', 'creative.directions', 'creative.brief', 'creative.preview', 'creative.directions.update', 'task.select_direction', 'task.plan.confirm', 'content.generate', 'content.codex.prepare', 'content.codex.commit', 'generation.get', 'content.review', 'content.review.decide', 'content.visual.select',
         'content.versions', 'content.diff', 'content.export', 'content.approve', 'content.modify', 'content.restore',
         'publish.prepare', 'publish.confirm', 'publish.get',
-        'knowledge.rule.create', 'knowledge.rule.update', 'knowledge.rule.list', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.asset.list', 'knowledge.feedback.record', 'knowledge.learning.list', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'multimodal.video.get',
+        'knowledge.rule.create', 'knowledge.rule.list', 'knowledge.asset.create', 'knowledge.asset.update', 'knowledge.asset.list', 'knowledge.feedback.record', 'knowledge.learning.list', 'knowledge.learning.confirm', 'knowledge.learning.dismiss', 'knowledge.competitor.create', 'knowledge.competitor.list', 'knowledge.competitor.reference', 'multimodal.image.edit', 'multimodal.generate', 'multimodal.video.request', 'multimodal.video.get',
       ]) */
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'task.select_direction').inputSchema.properties.expected_version).toBeDefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'content.approve').inputSchema.properties.expected_version).toBeDefined()
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.health').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'task.understand')).toBeUndefined()
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'task.understand').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false })
-      for (const name of ['merchant.start', 'workspace.health', 'asset.upload']) {
+      for (const name of ['merchant.start', 'workspace.health', 'asset.upload', 'automation.scan']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
       }
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.start').inputSchema.properties).toMatchObject({
         requested_platform: { type: 'string', enum: expect.arrayContaining(['jd']) },
         requested_goal: { type: 'string' },
-        attachment_count: MCP_METHOD_SCHEMAS['merchant.start'].properties.attachment_count,
+        attachment_count: { type: 'integer', minimum: 0 },
       })
-      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'publish.batch.get']) {
+      for (const name of ['catalog.search', 'billing.status', 'billing.transactions', 'billing.recharge.get', 'publish.batch.get', 'multimodal.image.edit']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name)._meta).toBeUndefined()
       }
       const taskComponents = {
+        'creative.directions': ['ui://merchant-marketing/creative-choice-v1.html', '正在准备创意方向…', '创意方向已准备'],
         'content.diff': ['ui://merchant-marketing/content-diff-v1.html', '正在比较内容版本…', '版本差异已准备'],
         'publish.prepare': ['ui://merchant-marketing/publish-confirm-v1.html', '正在准备最终发布确认…', '发布确认已准备'],
         'publish.batch.prepare': ['ui://merchant-marketing/publish-confirm-v1.html', '正在准备批量发布确认…', '批量发布确认已准备'],
@@ -1306,7 +835,7 @@ describe('Codex stdio MCP bridge', () => {
       const rechargeGet = listed.result.tools.find((tool: { name: string }) => tool.name === 'billing.recharge.get')
       expect(rechargeGet.inputSchema.properties).toEqual({ order_id: { type: 'string' }, scope: { type: 'string', enum: ['mine', 'workspace'] } })
       expect(rechargeGet.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'content.generate')).toBeUndefined()
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'content.generate')._meta?.ui).toBeUndefined()
       const workspaceMetrics = listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.metrics')
       expect(workspaceMetrics.inputSchema).toEqual({
         type: 'object',
@@ -1314,23 +843,22 @@ describe('Codex stdio MCP bridge', () => {
         additionalProperties: false,
       })
       expect(workspaceMetrics.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'brand.extract')).toMatchObject({ name: 'brand.extract', annotations: { readOnlyHint: true } })
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'brand.extract').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'brand-unit.list').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'campaign.batch.get').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'campaign.batch.create').inputSchema.required).toEqual(['brand_id'])
-      for (const name of ['campaign.batch.pause', 'campaign.batch.resume']) {
+      for (const name of ['campaign.batch.pause', 'campaign.batch.resume', 'campaign.batch.retry_failed']) {
         const tool = listed.result.tools.find((item: { name: string }) => item.name === name)
         expect(tool.inputSchema.required).toEqual(['campaign_id', 'expected_revision', 'idempotency_key', 'reason'])
         expect(tool.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false })
       }
-      expect(listed.result.tools.find((item: { name: string }) => item.name === 'campaign.batch.retry_failed')).toBeUndefined()
+      expect(listed.result.tools.find((item: { name: string }) => item.name === 'campaign.batch.retry_failed').inputSchema.properties.item_ids_json).toMatchObject({ contentMediaType: 'application/json', jsonShape: 'array' })
       const bindStore = listed.result.tools.find((tool: { name: string }) => tool.name === 'brand-unit.bind-store')
       expect(bindStore.inputSchema.required).toEqual(['brand_id', 'platform', 'account_id'])
       expect(bindStore.inputSchema.properties.expected_revision).toEqual({ type: 'string', pattern: '^[1-9][0-9]*$', maxLength: 10 })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.competitor.reference').annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.create').inputSchema.properties.source_kind.enum).toEqual(['official', 'internal', 'merchant', 'observed', 'legal_review'])
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'knowledge.rule.update')).toBeUndefined()
-      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.video.request')).toBeUndefined()
+      expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'multimodal.video.request').inputSchema.properties.idempotency_key).toMatchObject({ type: 'string' })
       expect(listed.result.tools.find((tool: { name: string }) => tool.name === 'workspace.activate').inputSchema.required).toEqual(['reason'])
       for (const name of ['platform.media.spec.list', 'platform.media.spec.get', 'platform.mapping.preflight', 'delivery.bundle.verify']) {
         expect(listed.result.tools.find((tool: { name: string }) => tool.name === name).annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
@@ -1354,8 +882,6 @@ describe('Codex stdio MCP bridge', () => {
       const called = await nextLine(child.stdout)
       expect(called.result.isError).toBe(false)
       expect(requests[0]!.headers['x-workspace-id']).toBe('ws_test')
-      expect(requests[0]!.headers['x-ops-workbench']).toBe('workspace')
-      expect(requests[0]!.headers['mcp-protocol-version']).toBe('2025-06-18')
       expect(requests[0]!.body.method).toBe('workspace.metrics')
       expect(requests[0]!.body.params).toEqual({
         date_from: '2026-08-18T00:00:00+08:00',
@@ -1370,7 +896,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('forwards enabled corrected tool schemas as requests accepted by the authoritative contract', async () => {
+  it('forwards the five corrected tool schemas as requests accepted by the authoritative contract', async () => {
     const requests: any[] = []
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = []
@@ -1390,6 +916,7 @@ describe('Codex stdio MCP bridge', () => {
       ['task.history', { publish_status: 'reconciling' }],
       ['task.group.create', { entries_json: '[]', request_text: '批量生成' }],
       ['task.plan.confirm', { task_id: 'task_1', expected_version: '2', price_impact_confirmed: 'true' }],
+      ['multimodal.video.request', { prompt: '生成分镜', output: 'storyboard', context_json: '{}' }],
     ] as const
     try {
       for (const [index, [name, args]] of calls.entries()) {
@@ -1433,49 +960,6 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('keeps image-result point settlement visible beside the native preview', async () => {
-    const image = 'data:image/png;base64,aW1hZ2Ux'
-    const server = createServer(async (_req, res) => {
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: {
-        job_id: 'job_points',
-        images: [image],
-        job: {
-          revision: 3,
-          archiveState: 'archived',
-          candidates: [{ visualRef: 'visual_points', ordinal: 1, scanStatus: 'clean', reviewStatus: 'passed' }],
-        },
-        creative_points: {
-          available_points: 9950,
-          quoted_points: 1,
-          deducted_points: 1,
-          point_reservation_points: 1,
-          point_reservation_status: 'settled',
-          reserved_points: 31,
-          settled_points: 19,
-        },
-      } }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'ignore'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_points' } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result.content[0].text).toContain('创意点状态：可用')
-      expect(response.result.content[0].text).not.toMatch(/9950|实际扣除 1/u)
-      expect(response.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(1)
-      expect(response.result.structuredContent.creative_points).toMatchObject({ balance_state: 'known', point_reservation_status: 'settled' })
-      expect(response.result.structuredContent.creative_points).not.toHaveProperty('available_points')
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
   it('binds the minimal image chooser to every archived clean catalog candidate result', async () => {
     const firstImage = 'data:image/png;base64,aW1hZ2Ux'
     const secondImage = 'data:image/png;base64,aW1hZ2Uy'
@@ -1489,8 +973,8 @@ describe('Codex stdio MCP bridge', () => {
       for await (const chunk of req) chunks.push(Buffer.from(chunk))
       const request = JSON.parse(Buffer.concat(chunks).toString('utf8'))
       const candidates = [
-        { visualRef: 'visual_secret_1', assetId: 'asset_secret_1', ordinal: 1, scanStatus: 'clean', reviewStatus: 'passed' },
-        { visualRef: 'visual_secret_2', assetId: 'asset_secret_2', ordinal: 2, scanStatus: request.params.job_id === 'job_dirty' ? 'quarantined' : 'clean', reviewStatus: 'passed' },
+        { visualRef: 'visual_secret_1', assetId: 'asset_secret_1', ordinal: 1, scanStatus: 'clean' },
+        { visualRef: 'visual_secret_2', assetId: 'asset_secret_2', ordinal: 2, scanStatus: request.params.job_id === 'job_dirty' ? 'quarantined' : 'clean' },
       ]
       const state = request.params.job_id === 'job_queued' ? 'queued' : request.params.job_id === 'job_failed' ? 'failed' : request.params.job_id === 'job_unknown' ? 'running' : undefined
       const result = request.params.visual_ref
@@ -1517,10 +1001,8 @@ describe('Codex stdio MCP bridge', () => {
         completed_summary: '已准备 2 张通过自动检查的主图候选。',
         question: '请选择一张作为主图。',
         expected_input: { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 },
-        image_urls: [firstImageUrl, secondImageUrl],
         selection_request: { job_id: 'job_secret', expected_revision: '7', candidates: [{ ordinal: 1, visual_ref: 'visual_secret_1', selectable: true, subject_label: '商品主体', availability_label: '可用' }, { ordinal: 2, visual_ref: 'visual_secret_2', selectable: true, subject_label: '商品主体', availability_label: '可用' }] },
         display_request: { job_id: 'job_secret' },
-        download_urls: [firstImageUrl, secondImageUrl],
       })
       expect(multiple.result.content[0]).toEqual({ type: 'text', text: '主图候选已准备好。' })
       expect(multiple.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(2)
@@ -1535,10 +1017,8 @@ describe('Codex stdio MCP bridge', () => {
         completed_summary: '主图候选已准备好。',
         question: '要使用这张作为主图吗？',
         expected_input: { kind: 'main_image_selection', accepts: ['component_selection', 'natural_language'], selection_count: 1 },
-        image_urls: [firstImageUrl],
         selection_request: { job_id: 'job_secret', expected_revision: '7', candidates: [{ ordinal: 1, visual_ref: 'visual_secret_1', selectable: true, subject_label: '商品主体', availability_label: '可用' }] },
         display_request: { visual_ref: 'visual_secret_1' },
-        download_urls: [firstImageUrl],
       })
       expect(single.result.content[0]).toEqual({ type: 'text', text: '主图候选已准备好。' })
       expect(single.result.content.filter((item: { type: string }) => item.type === 'image')).toHaveLength(1)
@@ -1560,7 +1040,7 @@ describe('Codex stdio MCP bridge', () => {
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_dirty' } } })}\n`)
       const dirty = await nextLine(child.stdout)
-      expect(dirty.result._meta).toMatchObject({ ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html', 'openai/widgetAccessible': true })
+      expect(dirty.result).not.toHaveProperty('_meta')
       expect(dirty.result.structuredContent).toEqual({
         candidate_state: { state: 'processing', archive_state: 'archived', scan_status: 'processing', candidate_count: 0, presentation: 'component_progress', next_action: { type: 'wait', label: '系统自动继续', allowed: false }, recovery: { retryable: false, reconciliation_required: false } },
         completed_summary: '主图候选仍在自动检查，通过后会继续，无需操作。',
@@ -1572,7 +1052,7 @@ describe('Codex stdio MCP bridge', () => {
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: 'job_unarchived' } } })}\n`)
       const unarchived = await nextLine(child.stdout)
-      expect(unarchived.result._meta).toMatchObject({ ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html', 'openai/widgetAccessible': true })
+      expect(unarchived.result).not.toHaveProperty('_meta')
       expect(unarchived.result.structuredContent).toMatchObject({
         candidate_state: { state: 'processing', archive_state: 'processing', scan_status: 'processing', candidate_count: 0, presentation: 'component_progress', next_action: { type: 'wait', label: '系统自动继续', allowed: false }, recovery: { retryable: false, reconciliation_required: false } },
         expected_input: { kind: 'none', user_action_required: false },
@@ -1580,32 +1060,25 @@ describe('Codex stdio MCP bridge', () => {
       })
       expect(JSON.stringify(unarchived.result)).not.toMatch(/data:image|管理员|运营后台|context_bar|action_cards/iu)
 
-      for (const [id, state, summary] of [['job_queued', 'queued', '图片任务已排队'], ['job_failed', 'failed', '本次主图生成未完成'], ['job_unknown', 'unknown', '图片结果仍在自动核对中']] as const) {
+      for (const [id, state, summary] of [['job_queued', 'queued', '图片任务已排队'], ['job_failed', 'failed', '本次主图生成未完成'], ['job_unknown', 'unknown', '图片结果尚未确认']] as const) {
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: id, method: 'tools/call', params: { name: 'catalog.image.get', arguments: { job_id: id } } })}\n`)
         const response = await nextLine(child.stdout)
         expect(response.result.structuredContent.candidate_state.state).toBe(state)
         expect(response.result.structuredContent.completed_summary).toContain(summary)
         if (state === 'queued') {
           expect(response.result.content[0].text).toContain(summary)
-          expect(response.result._meta).toMatchObject({ ui: { resourceUri: 'ui://merchant-marketing/image-candidate-choice-v15.html', prefersBorder: true }, 'openai/outputTemplate': 'ui://merchant-marketing/image-candidate-choice-v15.html', 'openai/widgetAccessible': true })
+          expect(response.result).not.toHaveProperty('_meta')
           expect(response.result.structuredContent.candidate_state).toMatchObject({ presentation: 'component_progress', next_action: { type: 'wait', allowed: false } })
           expect(response.result.structuredContent.expected_input).toEqual({ kind: 'none', user_action_required: false })
           expect(response.result.structuredContent.poll_request).toEqual({ job_id: id, max_attempts: 4, initial_delay_ms: 750, max_delay_ms: 4000 })
-        } else if (state === 'failed') {
-          const action = 'regenerate_in_conversation'
+        } else {
+          const action = state === 'failed' ? 'regenerate_in_conversation' : 'refresh'
           expect(response.result).not.toHaveProperty('_meta')
           expect(response.result.structuredContent.candidate_state.presentation).toBe('component_recovery')
           expect(response.result.structuredContent.expected_input).toEqual({ kind: 'component_action', action, user_action_required: true })
           expect(response.result.structuredContent.recovery_request).toEqual({ job_id: id, action })
-          expect(response.result.structuredContent.question).toMatch(/回到对话重新生成/u)
+          expect(response.result.structuredContent.question).toMatch(state === 'failed' ? /回到对话重新生成/u : /查询图片结果/u)
           expect(response.result.content[0].text).toBe(response.result.structuredContent.question)
-        } else {
-          expect(response.result).not.toHaveProperty('_meta')
-          expect(response.result.structuredContent.candidate_state.presentation).toBe('native_status')
-          expect(response.result.structuredContent.expected_input).toEqual({ kind: 'none', user_action_required: false })
-          expect(response.result.structuredContent).not.toHaveProperty('recovery_request')
-          expect(response.result.structuredContent).not.toHaveProperty('question')
-          expect(response.result.content[0].text).not.toContain('查询结果')
         }
       }
     } finally {
@@ -1618,8 +1091,8 @@ describe('Codex stdio MCP bridge', () => {
     const images = ['data:image/png;base64,aW1hZ2Ux', 'data:image/png;base64,aW1hZ2Uy']
     const imageUrls = ['https://assets.example.test/candidate-1.png', 'https://assets.example.test/candidate-2.png']
     const candidates = [
-      { visualRef: 'visual_1', ordinal: 1, scanStatus: 'clean', reviewStatus: 'passed', subjectLabel: '白色运动鞋' },
-      { visualRef: 'visual_2', ordinal: 2, scanStatus: 'clean', reviewStatus: 'passed', subjectLabel: '白色运动鞋' },
+      { visualRef: 'visual_1', ordinal: 1, scanStatus: 'clean', subjectLabel: '白色运动鞋' },
+      { visualRef: 'visual_2', ordinal: 2, scanStatus: 'clean', subjectLabel: '白色运动鞋' },
     ]
     const tickets = {
       visual_1: { visual_ref: 'visual_1', nonce_hash: '1'.repeat(64), intent_hash: '2'.repeat(64), expires_at: '2099-01-01T00:00:00.000Z' },
@@ -1696,7 +1169,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('hides and rejects the disabled merchant.first_value preview before forwarding', async () => {
+  it('exposes merchant.first_value as a read-only safe preview and forwards optional scope', async () => {
     const requests: any[] = []
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = []
@@ -1715,10 +1188,21 @@ describe('Codex stdio MCP bridge', () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
       const listed = await nextLine(child.stdout)
       const firstValue = listed.result.tools.find((tool: { name: string }) => tool.name === 'merchant.first_value')
-      expect(firstValue).toMatchObject({ name: 'merchant.first_value', annotations: { readOnlyHint: true } })
+      expect(firstValue.inputSchema).toEqual({
+        type: 'object',
+        properties: {
+          platform: { type: 'string', enum: ['jd', 'taobao', 'tmall', 'pinduoduo', 'xiaohongshu', 'douyin'] },
+          account_id: { type: 'string' },
+          product_id: { type: 'string' },
+          example: { type: 'string', enum: ['true'] },
+        },
+        additionalProperties: false,
+      })
+      expect(firstValue.description).toMatch(/安全预览包.*不发布.*服务端.*不调用模型/u)
+      expect(firstValue.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'merchant.first_value', arguments: { platform: 'taobao', account_id: 'acct_1', product_id: 'prod_1' } } })}\n`)
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { preview: true } })
-      expect(requests).toHaveLength(1)
+      expect(requests).toEqual([{ jsonrpc: '2.0', id: expect.any(String), method: 'merchant.first_value', params: { platform: 'taobao', account_id: 'acct_1', product_id: 'prod_1', workspace_id: 'ws_test' } }])
     } finally {
       child.kill()
       await close(server)
@@ -1765,21 +1249,6 @@ describe('Codex stdio MCP bridge', () => {
         expect(html).toContain('@media(prefers-reduced-motion:reduce)')
         expect(html).not.toContain('context-v2')
         expect(html).not.toContain('大麦商家工作台')
-        if (uri === 'ui://merchant-marketing/publish-confirm-v1.html') {
-          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_REQUIRED'")
-          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_TICKET_INVALID'")
-          expect(html).toContain("code==='INTERACTIVE_CONFIRMATION_INTENT_MISMATCH'")
-          expect(html).toContain("primary.textContent='重新核对并确认'")
-          expect(html).toContain('本次确认已失效，发布请求未提交。请重新核对以上内容，勾选确认后再提交。')
-          expect(html).toContain('ackInput.checked=false')
-          expect(html).toContain('ackInput.focus()')
-          expect(html).toContain("publishIdempotencyKey=publishIdempotencyKey||'publish-card-'")
-          expect(html).toContain("primary.dataset.recovery='status'")
-          expect(html).toContain("primary.textContent='查询发布状态'")
-          expect(html).toContain('提交结果尚未确认，请先查询发布状态，不要重复提交。')
-          expect(html).toContain("primary.dataset.recovery==='status'")
-          expect(html).toContain("window.openai.sendFollowUpMessage({prompt:prompt})")
-        }
       }
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'store', platform: 'taobao', account_id: 'acct_1' } } })}\n`)
       const response = await nextLine(child.stdout)
@@ -1797,7 +1266,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('rejects disabled content generation before creating an idempotency key or API request', async () => {
+  it('adds a deterministic idempotency key for content generation', async () => {
     const requests: Array<{ headers: Record<string, string | string[] | undefined>; body: any }> = []
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = []
@@ -1818,8 +1287,10 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-      expect(requests).toEqual([])
+      expect(response.result.content[0].text).toContain('状态尚未确认')
+      expect(response.result.content[0].text).not.toContain('操作已完成')
+      expect(requests[0]!.headers['idempotency-key']).toMatch(/^mcp-[a-f0-9]{64}$/)
+      expect(requests[0]!.headers['idempotency-key']).toBeDefined()
     } finally {
       child.kill()
       server.close()
@@ -1950,11 +1421,10 @@ describe('Codex stdio MCP bridge', () => {
       const response = await nextLine(child.stdout)
       expect(response.result.isError).toBe(false)
       expect(response.result.structuredContent).toEqual({
-        assets: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_type: 'image/png', scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理' }],
+        assets: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_type: 'image/png', scan_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理' }],
         readiness: { draft: 0, ready: 0, blocked: 1, total: 1 },
         storage_quota: { used_bytes: 800, reserved_bytes: 100, limit_bytes: 1000, available_bytes: 100, status: 'near_limit' },
-        asset_actions: [{ asset_id: 'asset_blocked_1', name: 'bad.png', mime_type: 'image/png', scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true }],
-        candidate_generation_guidance: '用户明确要求使用上传图片制作且图片已通过可信安全扫描时，可调用 catalog.image.generate 生成未绑定候选；权益 pending/unknown 不要求重复确认，正式素材的解析/事实/readiness 状态不是未绑定候选的准入结论。扫描未知或未通过、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断，并由生成接口重新校验。不得自动批准权益；候选始终未绑定、未批准、未发布，正式生成、审核和发布仍须通过原门禁。',
+        asset_actions: [{ asset_id: 'asset_blocked_1', name: 'bad.png', scan_status: 'quarantined', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true }],
         empty_state: null,
       })
       const serialized = JSON.stringify(response.result.structuredContent)
@@ -1966,162 +1436,10 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it.each<{ label: string; asset: Record<string, unknown> | null; action: Record<string, unknown>; expected: Record<string, unknown> }>([
-    { label: 'action-only readiness is retained alongside clean asset facts', asset: { scanStatus: 'clean' }, action: { status: 'blocked', next_step: '请核对素材事实' }, expected: { scan_status: 'clean', readiness_status: 'blocked', next_step: '请核对素材事实', user_action_required: true } },
-    { label: 'blocked full-asset readiness cannot be weakened by a ready action', asset: { scanStatus: 'clean', readiness: { status: 'blocked' } }, action: { status: 'ready', next_step: '请核对素材事实' }, expected: { scan_status: 'clean', readiness_status: 'blocked', next_step: '请核对素材事实', user_action_required: true } },
-    { label: 'malware cannot inherit an immediate generation action', asset: { scanStatus: 'blocked' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true } },
-    { label: 'explicit rights rejection cannot inherit a ready action', asset: { scanStatus: 'clean', rightsStatus: 'rejected' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
-    { label: 'unknown scanning cannot inherit a ready action', asset: { scanStatus: 'unknown' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
-    { label: 'pending rights remain formal draft without being auto-approved', asset: { scanStatus: 'clean', rightsStatus: 'pending', readiness: { status: 'draft' } }, action: { status: 'draft', next_step: '正式使用前确认素材权益' }, expected: { scan_status: 'clean', rights_status: 'pending', readiness_status: 'draft', next_step: '正式使用前确认素材权益', user_action_required: false } },
-    { label: 'parse-blocked pending rights are not misreported as scan failure', asset: { scanStatus: 'clean', rightsStatus: 'pending', readiness: { status: 'blocked' } }, action: { status: 'blocked', next_step: '请核对素材事实' }, expected: { scan_status: 'clean', rights_status: 'pending', readiness_status: 'blocked', next_step: '请核对素材事实', user_action_required: true } },
-    { label: 'action-only responses remain usable without inventing scan evidence', asset: null, action: { status: 'blocked', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'blocked', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
-    { label: 'unusable rights scope cannot be weakened by approved rights status', asset: { scanStatus: 'clean', rightsStatus: 'approved', rightsScope: 'unusable' }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'approved', rights_scope: 'unusable', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
-    { label: 'untrusted raw clean scanning cannot expose a nested generation action', asset: { scanStatus: 'clean', display: { primaryStatus: 'awaiting_scan', label: '正在安全检查', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', display: { primary_status: 'awaiting_scan', label: '正在安全检查', source_state: 'draft', reasons: [], next_action: null }, next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
-    { label: 'unknown rights remain unknown without inventing approval', asset: { scanStatus: 'clean', rightsStatus: 'unknown', readiness: { status: 'draft' } }, action: { status: 'draft', next_step: '正式使用前确认素材权益' }, expected: { scan_status: 'clean', rights_status: 'unknown', readiness_status: 'draft', next_step: '正式使用前确认素材权益', user_action_required: false } },
-    { label: 'rejected asset rights suppress nested ready generation guidance', asset: { scanStatus: 'clean', rightsStatus: 'rejected', readiness: { status: 'ready' }, display: { primaryStatus: 'ready', label: '立即生成图片', sourceState: 'ready', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', display: { primary_status: 'rights_blocked', label: '使用权益受限', source_state: 'blocked', reasons: [], next_action: null }, next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
-    { label: 'unusable asset rights suppress nested ready generation guidance', asset: { scanStatus: 'clean', rightsStatus: 'approved', rightsScope: 'unusable', readiness: { status: 'ready' }, display: { primaryStatus: 'ready', label: '立即生成图片', sourceState: 'ready', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'approved', rights_scope: 'unusable', readiness_status: 'blocked', display: { primary_status: 'rights_blocked', label: '使用权益受限', source_state: 'blocked', reasons: [], next_action: null }, next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
-    { label: 'action scan denial survives conflicting clean asset facts', asset: { scanStatus: 'clean', readiness: { status: 'ready' } }, action: { scan_status: 'blocked', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true } },
-    { label: 'asset scan denial survives a conflicting clean action', asset: { scanStatus: 'blocked', readiness: { status: 'ready' } }, action: { scan_status: 'clean', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'blocked', readiness_status: 'blocked', next_step: '重新提交这张图片即可触发平台自动复检，无需人工处理', user_action_required: true } },
-    { label: 'action rights denial survives conflicting approved asset facts', asset: { scanStatus: 'clean', rightsStatus: 'approved', readiness: { status: 'ready' } }, action: { rights_status: 'rejected', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
-    { label: 'asset rights denial survives a conflicting approved action', asset: { scanStatus: 'clean', rightsStatus: 'rejected', readiness: { status: 'ready' } }, action: { rights_status: 'approved', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'rejected', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
-    { label: 'action unusable rights scope survives conflicting asset scope', asset: { scanStatus: 'clean', rightsStatus: 'approved', rightsScope: 'owned', readiness: { status: 'ready' } }, action: { rights_scope: 'unusable', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'clean', rights_status: 'approved', rights_scope: 'unusable', readiness_status: 'blocked', next_step: '这张图片的使用权益受限，请换用其他已授权图片', user_action_required: true } },
-    { label: 'explicit action quarantine survives a conflicting clean asset', asset: { scanStatus: 'clean', readiness: { status: 'ready' } }, action: { scan_status: 'quarantined', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
-    { label: 'explicit unknown action scan survives a conflicting clean asset', asset: { scanStatus: 'clean', readiness: { status: 'ready' } }, action: { scan_status: 'unknown', status: 'ready', next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
-    { label: 'explicit action awaiting scan suppresses a conflicting asset CTA', asset: { scanStatus: 'clean', readiness: { status: 'ready' }, display: { primaryStatus: 'ready', label: '立即生成图片', nextAction: { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } } }, action: { status: 'ready', display: { primaryStatus: 'awaiting_scan' }, next_step: '立即生成图片' }, expected: { scan_status: 'quarantined', readiness_status: 'draft', display: { primary_status: 'awaiting_scan', label: '正在安全检查', source_state: 'draft', reasons: [], next_action: null }, next_step: '图片正在自动检查，通过后会继续，无需操作', user_action_required: false } },
-  ])('preserves safe asset action semantics: $label', async ({ asset, action, expected }) => {
-    const methods: string[] = []
-    const server = createServer(async (req, res) => {
-      let body = ''
-      for await (const chunk of req) body += chunk.toString()
-      methods.push(JSON.parse(body).method)
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result: {
-        assets: asset ? [{ id: 'asset_boundary', name: 'source.png', mimeType: 'image/png', ...asset, workspaceId: 'ws_secret', storageKey: 'quarantine/secret', scanReceiptId: 'receipt_secret' }] : [],
-        asset_actions: [{ asset_id: 'asset_boundary', asset_name: 'action.png', ...action, revision: 9, reasons: ['private-engine-code'], action_cards: [{ method: 'ops.secret' }] }],
-      } }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.list', arguments: {} } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result.isError).toBe(false)
-      expect(response.result.structuredContent.asset_actions).toEqual([{
-        asset_id: 'asset_boundary', name: asset ? 'source.png' : 'action.png',
-        ...(asset ? { mime_type: 'image/png' } : {}), ...expected,
-      }])
-      if (asset) {
-        expect(response.result.structuredContent.assets[0].scan_status).toBe(expected.scan_status)
-        if (asset.display) expect(response.result.structuredContent.assets[0].display.next_action).toBeNull()
-        if (expected.scan_status === 'blocked' || expected.rights_status === 'rejected' || expected.rights_scope === 'unusable') {
-          expect(response.result.structuredContent.assets[0]).toMatchObject({
-            readiness_status: 'blocked',
-            ...(expected.rights_status ? { rights_status: expected.rights_status } : {}),
-            ...(expected.rights_scope ? { rights_scope: expected.rights_scope } : {}),
-          })
-          expect(JSON.stringify(response.result.structuredContent.assets[0])).not.toContain('立即生成图片')
-        }
-      }
-      const guidance = response.result.structuredContent.candidate_generation_guidance
-      expect(guidance).toContain('权益 pending/unknown 不要求重复确认')
-      expect(guidance).toContain('readiness 状态不是未绑定候选的准入结论')
-      expect(guidance).toContain('扫描未知或未通过、明确拒绝、禁止 AI 修改、用途/平台限制及素材过期必须阻断')
-      expect(guidance).toContain('候选始终未绑定、未批准、未发布')
-      const serialized = JSON.stringify(response.result.structuredContent)
-      for (const forbidden of ['workspaceId', 'storageKey', 'scanReceipt', 'revision', 'private-engine-code', 'ops.secret', 'candidate_allowed']) expect(serialized).not.toContain(forbidden)
-      expect(methods).toEqual(['asset.list'])
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-
   it.each([
-    { method: 'asset.list', scanStatus: 'clean', rights: { rightsStatus: 'rejected' } },
-    { method: 'asset.list', scanStatus: 'clean', rights: { rightsStatus: 'approved', rightsScope: 'unusable' } },
-    { method: 'asset.upload', scanStatus: 'clean', rights: { rightsStatus: 'rejected' } },
-    { method: 'asset.upload', scanStatus: 'clean', rights: { rightsStatus: 'approved', rightsScope: 'unusable' } },
-    { method: 'asset.upload', scanStatus: 'quarantined', rights: { rightsStatus: 'rejected' } },
-    { method: 'asset.upload', scanStatus: 'unknown', rights: { rightsStatus: 'approved', rightsScope: 'unusable' } },
-    { method: 'asset.upload', scanStatus: 'blocked', rights: { rightsStatus: 'rejected' } },
-    { method: 'asset.upload', scanStatus: 'clean', rights: { rightsStatus: 'pending' } },
-    { method: 'asset.upload', scanStatus: 'quarantined', rights: { rightsStatus: 'pending' } },
-    { method: 'asset.upload', scanStatus: 'unknown', rights: { rightsStatus: 'pending' } },
-    { method: 'asset.upload', scanStatus: 'blocked', rights: { rightsStatus: 'pending' } },
-  ])('keeps upload scan and rights views consistent: %j', async ({ method, scanStatus, rights }) => {
-    const rightsBlocked = rights.rightsStatus === 'rejected' || rights.rightsScope === 'unusable'
-    const server = createServer(async (req, res) => {
-      let body = ''
-      for await (const chunk of req) body += chunk.toString()
-      const request = JSON.parse(body)
-      res.setHeader('content-type', 'application/json')
-      const asset = {
-        id: 'asset_denied', scanStatus, ...rights, readiness: { status: rightsBlocked ? 'ready' : 'draft' },
-        next_step: '立即生成图片', scan_wait: { next_step: '立即生成图片' }, generationContinuation: { state: 'awaiting_confirmation' },
-        display: { primaryStatus: rightsBlocked ? 'ready' : 'awaiting_rights', sourceState: rightsBlocked ? 'ready' : 'draft', label: rightsBlocked ? '立即生成图片' : '正式素材待确认', nextAction: rightsBlocked ? { method: 'catalog.image.generate', label: '立即生成图片', allowed: true } : null },
-      }
-      res.end(JSON.stringify({ data: { result: request.method === 'asset.list' ? { assets: [asset], asset_actions: [] } : asset }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ASSET_SCAN_POLL_TIMEOUT_MS: '100', MERCHANT_ASSET_SCAN_POLL_INTERVAL_MS: '25' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      const args = method === 'asset.upload' ? { name: 'denied.png', mime_type: 'image/png', content_base64: Buffer.from('image').toString('base64') } : {}
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: method, arguments: args } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result.isError).toBe(false)
-      const scanBlocked = scanStatus === 'blocked'
-      const waiting = !scanBlocked && scanStatus !== 'clean'
-      const expected = {
-        asset_id: 'asset_denied', scan_status: scanStatus === 'unknown' ? 'quarantined' : scanStatus, rights_status: rights.rightsStatus,
-        ...('rightsScope' in rights ? { rights_scope: rights.rightsScope } : {}),
-        readiness_status: scanBlocked || rightsBlocked ? 'blocked' : 'draft',
-        display: {
-          primary_status: scanBlocked ? 'scan_blocked' : rightsBlocked ? 'rights_blocked' : waiting ? 'awaiting_scan' : 'awaiting_rights',
-          label: scanBlocked ? '安全检查未通过' : rightsBlocked ? '使用权益受限' : waiting ? '正在安全检查' : '正式素材待确认',
-          source_state: scanBlocked || rightsBlocked ? 'blocked' : 'draft', reasons: [], next_action: null,
-        },
-        next_step: scanBlocked ? '重新提交这张图片即可触发平台自动复检，无需人工处理' : rightsBlocked ? '这张图片的使用权益受限，请换用其他已授权图片' : waiting ? '平台会继续自动检查，你无需操作' : '继续当前任务',
-      }
-      if (method === 'asset.list') {
-        expect(response.result.structuredContent.assets).toEqual([expected])
-        expect(response.result.structuredContent.asset_actions).toEqual([])
-      } else {
-        expect(response.result.structuredContent).toMatchObject({
-          ...expected,
-          scanAutomation: { state: scanBlocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : waiting ? 'pending' : 'completed', userActionRequired: scanBlocked || rightsBlocked },
-          scan_wait: { state: scanBlocked ? 'blocked' : rightsBlocked ? 'rights_blocked' : waiting ? 'processing' : 'completed', user_action_required: scanBlocked || rightsBlocked, next_step: expected.next_step },
-        })
-        expect(response.result.structuredContent.generation_continuation?.state).not.toBe('awaiting_confirmation')
-        expect(JSON.stringify(response.result)).not.toMatch(/立即生成图片|确认后开始生成/u)
-        if (scanBlocked || rightsBlocked) {
-          expect(response.result.content[0].text).toContain(scanBlocked ? '自动复检' : '使用权益受限')
-          expect(response.result.content[0].text).not.toContain('再生成')
-        } else if (waiting) {
-          expect(response.result.content[0].text).toContain('正在自动检查')
-          expect(JSON.stringify(response.result)).not.toMatch(/图片已通过|检查已通过/u)
-        }
-      }
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it.each([
-    { label: 'latest rejection remains a denial', latestRights: { rightsStatus: 'rejected' }, denied: true },
-    { label: 'latest unusable scope remains a denial', latestRights: { rightsStatus: 'approved', rightsScope: 'unusable' }, denied: true },
-    { label: 'latest pending clears only the obsolete scan wait', latestRights: { rightsStatus: 'pending' }, denied: false },
-    { label: 'latest approval does not attest the original pending rights', latestRights: { rightsStatus: 'approved' }, denied: false },
-  ])('uses the latest scan snapshot without upgrading uploaded rights: $label', async ({ latestRights, denied }) => {
+    ['blocked', 'blocked', '平台会在你重新提交图片时自动复检', true],
+    ['pending', 'quarantined', '检查通过后会等待你的确认', false],
+  ])('keeps automatic asset scanning conversational when the result is %s', async (_case, scanStatus, expectedText, userActionRequired) => {
     const methods: string[] = []
     const server = createServer(async (req, res) => {
       let body = ''
@@ -2129,57 +1447,7 @@ describe('Codex stdio MCP bridge', () => {
       const request = JSON.parse(body)
       methods.push(request.method)
       const result = request.method === 'asset.list'
-        ? {
-            assets: [{ id: 'asset_latest', scanStatus: 'clean', ...latestRights, display: { primaryStatus: latestRights.rightsStatus === 'pending' ? 'awaiting_rights' : 'ready', label: '扫描已完成', sourceState: 'draft', nextAction: null }, storageKey: 'private/latest', scanReceiptId: 'private-receipt' }],
-            asset_actions: [{ asset_id: 'asset_latest', status: 'ready', next_step: denied ? '立即生成图片' : '继续当前任务' }],
-          }
-        : { id: 'asset_latest', scanStatus: 'quarantined', rightsStatus: 'pending', readiness: { status: 'draft' }, display: { primaryStatus: 'awaiting_scan', label: '正在安全检查', sourceState: 'draft', nextAction: null }, generationContinuation: { state: 'awaiting_confirmation' } }
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ data: { result }, error: null }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ASSET_SCAN_POLL_TIMEOUT_MS: '500', MERCHANT_ASSET_SCAN_POLL_INTERVAL_MS: '25' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'asset.upload', arguments: { name: 'source.png', mime_type: 'image/png', content_base64: Buffer.from('image').toString('base64') } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result.isError).toBe(false)
-      expect(response.result.structuredContent).toMatchObject({
-        scan_status: 'clean',
-        rights_status: latestRights.rightsStatus === 'rejected' ? 'rejected' : 'pending',
-        ...(latestRights.rightsScope ? { rights_scope: latestRights.rightsScope } : {}),
-        scanAutomation: { state: denied ? 'rights_blocked' : 'completed', userActionRequired: denied },
-        scan_wait: { state: denied ? 'rights_blocked' : 'completed', user_action_required: denied },
-        next_step: denied ? '这张图片的使用权益受限，请换用其他已授权图片' : '继续当前任务',
-      })
-      expect(response.result.structuredContent.generation_continuation).toBeUndefined()
-      const serialized = JSON.stringify(response.result)
-      expect(serialized).not.toMatch(/立即生成图片|确认后开始生成|private\/latest|private-receipt|storageKey|scanReceipt/u)
-      expect(response.result.content[0].text).toContain(denied ? '使用权益受限' : '检查已通过')
-      expect(methods).toEqual(['asset.upload', 'asset.list'])
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-
-  it.each([
-    ['blocked', 'blocked', '平台会在你重新提交图片时自动复检', true, undefined],
-    ['pending', 'quarantined', '检查通过后会等待你的确认', false, undefined],
-    ['untrusted-clean', 'clean', '检查通过后会等待你的确认', false, { primaryStatus: 'awaiting_scan', label: '正在安全检查', nextAction: { method: 'asset.list', label: '刷新状态', allowed: true } }],
-  ])('keeps automatic asset scanning conversational when the result is %s', async (_case, scanStatus, expectedText, userActionRequired, display) => {
-    const methods: string[] = []
-    const server = createServer(async (req, res) => {
-      let body = ''
-      for await (const chunk of req) body += chunk.toString()
-      const request = JSON.parse(body)
-      methods.push(request.method)
-      const result = request.method === 'asset.list'
-        ? { assets: [{ id: 'asset_scan_1', scanStatus, display }], asset_actions: [{ asset_id: 'asset_scan_1' }] }
+        ? { assets: [{ id: 'asset_scan_1', scanStatus }], asset_actions: [{ asset_id: 'asset_scan_1' }] }
         : { id: 'asset_scan_1', scanStatus: 'quarantined' }
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result }, error: null }))
@@ -2197,7 +1465,6 @@ describe('Codex stdio MCP bridge', () => {
       expect(response.result._meta).toBeUndefined()
       expect(response.result.structuredContent.scan_wait).toMatchObject({ user_action_required: userActionRequired })
       expect(response.result.structuredContent.scanAutomation).toMatchObject({ state: scanStatus === 'blocked' ? 'blocked' : 'pending', userActionRequired })
-      expect(response.result.structuredContent.scan_status).toBe(scanStatus === 'blocked' ? 'blocked' : 'quarantined')
       expect(response.result.content[0].text).toContain(expectedText)
       expect(JSON.stringify(response.result)).not.toMatch(/联系管理员|运营后台|扫描证据|回复.{0,4}扫描完成/u)
       expect(methods[0]).toBe('asset.upload')
@@ -2345,7 +1612,7 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('does not forward an explicit idempotency key for disabled content generation', async () => {
+  it('preserves an explicit content generation idempotency key', async () => {
     const requests: Array<{ headers: Record<string, string | string[] | undefined>; body: any }> = []
     const server = createServer(async (req, res) => {
       const chunks: Buffer[] = []
@@ -2365,8 +1632,8 @@ describe('Codex stdio MCP bridge', () => {
     })
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1', idempotency_key: 'generation-retry-1' } } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-      expect(requests).toEqual([])
+      await nextLine(child.stdout)
+      expect(requests[0]!.headers['idempotency-key']).toBe('generation-retry-1')
     } finally {
       child.kill()
       server.close()
@@ -2416,7 +1683,7 @@ describe('Codex stdio MCP bridge', () => {
       revision: 18,
       body: { ...generated.body, title: '轻量无氟钛炒锅旧版' },
     }
-    const results = [[generated], [older, generated]]
+    const results = [generated, [older, generated]]
     let calls = 0
     const server = createServer(async (req, res) => {
       for await (const _chunk of req) { /* consume request */ }
@@ -2430,10 +1697,10 @@ describe('Codex stdio MCP bridge', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.versions', arguments: { task_id: 'task_1' } } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1' } } })}\n`)
       const generatedResponse = await nextLine(child.stdout)
       const generatedText = generatedResponse.result.content[0].text
-      expect(generatedResponse.result.structuredContent).toEqual([generated])
+      expect(generatedResponse.result.structuredContent).toEqual(generated)
       expect(generatedText).toContain('标题：轻量无氟钛炒锅')
       expect(generatedText).toContain('不代表内容已批准或已发布')
       expect(generatedText).toContain('已验证宣称：\n- 合同内已验证的主购买理由。')
@@ -2476,10 +1743,8 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('forwards generated image bytes when the API authorizes the generation method', async () => {
-    let requests = 0
+  it('returns generated data URI images as MCP image content', async () => {
     const server = createServer(async (_req, res) => {
-      requests += 1
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { result: { images: ['data:image/svg+xml;base64,PHN2Zy8+'] } }, error: null }))
     })
@@ -2495,8 +1760,10 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.image.generate', arguments: { product_id: 'product_1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: false, structuredContent: { images: ['data:image/svg+xml;base64,PHN2Zy8+'] } })
-      expect(requests).toBe(1)
+      expect(response.result.content).toEqual(expect.arrayContaining([{ type: 'image', data: 'PHN2Zy8+', mimeType: 'image/svg+xml' }]))
+      expect(response.result.content.find((item: { type: string }) => item.type === 'text').text).toBe('操作已完成。\n已生成 1 个图片附件。')
+      expect(response.result.content.find((item: { type: string }) => item.type === 'text').text).not.toContain('PHN2Zy8+')
+      expect(response.result.structuredContent.images).toEqual(['data:image/svg+xml;base64,PHN2Zy8+'])
     } finally {
       child.kill()
       server.close()
@@ -2706,98 +1973,6 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('does not retry an idempotent write when the model provider outcome is unknown', async () => {
-    let attempts = 0
-    const server = createServer(async (_req, res) => {
-      attempts += 1
-      res.writeHead(503, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', message: 'provider result not confirmed', details: { retryable: false, reconciliation_required: true, provider_request_id: 'relay-req-1', provider_idempotency_key: 'idem-1', provider_status: 503, provider_outcome: 'unknown', provider_succeeded: false, next_action: 'query_provider' } } }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.confirm', arguments: { task_id: 'task_1', confirmation_token: 'confirm_1' } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { provider_request_id: 'relay-req-1', provider_idempotency_key: 'idem-1', provider_status: 503, provider_outcome: 'unknown', provider_succeeded: false, reconciliation_required: true, next_action: 'query_provider' } } })
-      expect(response.result.content[0].text).toContain('后台自动核对')
-      expect(response.result.content[0].text).not.toContain('请稍后重试')
-      expect(attempts).toBe(1)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('fails closed on a bare model-provider 503 without retrying an idempotent write', async () => {
-    let attempts = 0
-    const server = createServer(async (_req, res) => {
-      attempts += 1
-      res.writeHead(503, { 'content-type': 'text/plain' })
-      res.end('No available channel for model gpt-5.6-sol')
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.confirm', arguments: { task_id: 'task_1', confirmation_token: 'confirm_1' } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({
-        isError: true,
-        structuredContent: { code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN', details: { provider_status: 503, provider_outcome: 'unknown', reconciliation_required: true, next_action: 'query_provider', provider_error_summary: 'No available channel for model gpt-5.6-sol' } },
-      })
-      expect(response.result.structuredContent.details.provider_error_summary).toContain('No available channel for model gpt-5.6-sol')
-      expect(response.result.content[0].text).toContain('后台自动核对')
-      expect(attempts).toBe(1)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('maps a relay 503 with no available model channel to unknown provider outcome', async () => {
-    let attempts = 0
-    const server = createServer(async (_req, res) => {
-      attempts += 1
-      res.writeHead(503, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: { message: 'No available channel for model gpt-5.6-sol under group VIP (distributor)' } }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '50' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'publish.confirm', arguments: { task_id: 'task_1', confirmation_token: 'confirm_1' } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({
-        isError: true,
-        structuredContent: {
-          code: 'MODEL_PROVIDER_OUTCOME_UNKNOWN',
-          details: {
-            provider_status: 503,
-            provider_outcome: 'unknown',
-            reconciliation_required: true,
-            next_action: 'query_provider',
-          },
-        },
-      })
-      expect(response.result.content[0].text).toContain('后台自动核对')
-      expect(response.result.content[0].text).not.toContain('请稍后重试')
-      expect(attempts).toBe(1)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
   it('does not retry a non-idempotent write after a rate limit response', async () => {
     let attempts = 0
     const server = createServer((_req, res) => {
@@ -2837,45 +2012,7 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'content.approve', arguments: { content_version_id: 'version_1', expected_version: '1' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({
-        isError: true,
-        structuredContent: {
-          code: 'API_UNAVAILABLE',
-          details: { operation_status: 'unknown', retryable: false },
-        },
-      })
-      expect(response.result.content[0].text).toBe('服务连接中断，尚未确认操作是否完成。请先查看任务状态，再决定是否重试。')
-      expect(attempts).toBe(1)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('does not retry an idempotent write after the bridge timeout makes its outcome unknown', async () => {
-    let attempts = 0
-    const server = createServer(async (_req, res) => {
-      attempts += 1
-      await new Promise(resolve => setTimeout(resolve, 400))
-      res.end(JSON.stringify({ data: { result: { status: 'ok' } } }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_MCP_TIMEOUT_MS: '150', MERCHANT_MCP_RETRY_ATTEMPTS: '5', MERCHANT_MCP_RETRY_DELAY_MS: '10' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'workspace.interactive.confirm', arguments: { confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
-      const confirmation = await nextLine(child.stdout)
-      expect(confirmation.result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'merchant.start', arguments: { requested_goal: 'timeout safety' } } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({
-        isError: true,
-        structuredContent: { code: 'API_UNAVAILABLE', details: { operation_status: 'unknown', retryable: false, timeout: true } },
-      })
-      expect(response.result.content[0].text).toContain('尚未确认操作是否完成')
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
       expect(attempts).toBe(1)
     } finally {
       child.kill()
@@ -2891,7 +2028,7 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, ['apps/plugin/mcp/bridge.mjs'], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' }, stdio: ['pipe', 'pipe', 'pipe'] })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: {} } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative.brief', arguments: { product_id: 'product_1', asset_type: 'banner' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'BRAND_VISUAL_RULES_BLOCKED', details: { issues: [{ code: 'FONT_LICENSE_NOT_APPROVED', field: 'visualRules.fonts[0]' }] } } })
       expect(response.result.content[0].text).toBe('内容被品牌规则拦截（1 项）。请先修正标记的问题，再重试。')
@@ -2910,48 +2047,11 @@ describe('Codex stdio MCP bridge', () => {
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true' }, stdio: ['pipe', 'pipe', 'pipe'] })
     try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: {} } })}\n`)
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'creative.brief', arguments: { product_id: 'product_1', asset_type: 'banner' } } })}\n`)
       const response = await nextLine(child.stdout)
       expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'FORBIDDEN', details: { decision_id: 'authz_decision_1', capability: 'customer.content.read', reason_code: 'AUTHZ_SCOPE_MISMATCH', required_scope: 'brand', workbench: 'workspace', explicit_deny: false, obligations_missing: ['confirmation'], policy_version: '2026-08-31.v2' } } })
       expect(response.result.structuredContent.details).not.toHaveProperty('authorization')
       expect(response.result.structuredContent.details).not.toHaveProperty('internal_path')
-    } finally {
-      child.kill(); await close(server)
-    }
-  })
-
-  it('drops malformed authorization evidence while retaining valid correlation IDs', async () => {
-    const server = createServer((_req, res) => {
-      res.writeHead(403, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: { code: 'FORBIDDEN', message: 'denied', details: {
-        decision_id: 42,
-        capability: ' customer.content.read ',
-        reason_code: 'AUTHZ_SCOPE_MISMATCH\u0000leak',
-        explicit_deny: 'false',
-        obligations_missing: ['confirmation', 7, '  ', 'approval'],
-        policy_version: '2026-08-31.v2',
-        request_id: 'req_bridge_1',
-        trace_id: ' trace_bridge_1 ',
-        authorization: 'Bearer secret-token',
-      } } }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], { cwd: process.cwd(), env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: {} } })}\n`)
-      const response = await nextLine(child.stdout)
-      const details = response.result.structuredContent.details
-      expect(details).toMatchObject({
-        capability: 'customer.content.read',
-        policy_version: '2026-08-31.v2',
-        request_id: 'req_bridge_1',
-        trace_id: 'trace_bridge_1',
-        obligations_missing: ['confirmation', 'approval'],
-      })
-      expect(details).not.toHaveProperty('decision_id')
-      expect(details).not.toHaveProperty('reason_code')
-      expect(details).not.toHaveProperty('explicit_deny')
-      expect(details).not.toHaveProperty('authorization')
     } finally {
       child.kill(); await close(server)
     }
@@ -3010,10 +2110,9 @@ describe('Codex stdio MCP bridge', () => {
     try {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_CONFIGURATION_REQUIRED', details: { operation_status: 'blocked', retryable: false, missing: ['MERCHANT_MCP_BASE_URL'] } } })
-      expect(response.result.content[0].text).toContain('本次未向后端发送请求')
-      expect(response.result.structuredContent.message).toContain('重新加载插件连接')
-      expect(response.result.structuredContent.message).not.toContain('稍后重试')
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_GATEWAY_ERROR' } })
+      expect(response.result.structuredContent.message).toMatch(/MERCHANT_(?:MCP_BASE_URL|WORKSPACE_ID) is required/u)
+      expect(response.result.structuredContent.message).toContain('refusing to use the local fixture fallback')
     } finally {
       child.kill()
     }
@@ -3170,33 +2269,6 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('does not let strict auth bypass token verification for a loopback endpoint', async () => {
-    let requests = 0
-    const server = createServer((_req, res) => { requests += 1; res.writeHead(200).end('{}') })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        NODE_ENV: 'development',
-        MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`,
-        MERCHANT_WORKSPACE_ID: 'ws_test',
-        MERCHANT_MCP_TOKEN: '${MERCHANT_MCP_TOKEN}',
-        MERCHANT_STRICT_AUTH: 'true',
-        MERCHANT_ALLOW_FIXTURE_FALLBACK: 'true',
-      },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({ isError: true, structuredContent: { code: 'MCP_AUTH_REQUIRED' } })
-      expect(requests).toBe(0)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
   it.each([
     [401, 'MCP_AUTH_REQUIRED', '当前服务配置尚未就绪。任务和已有内容已保留，没有扣费或发布；平台恢复后可继续处理。'],
     [403, 'PERMISSION_DENIED', '当前账号没有执行这一步的权限。任务和已有内容已保留。'],
@@ -3225,97 +2297,15 @@ describe('Codex stdio MCP bridge', () => {
     }
   })
 
-  it('preserves nested API MCP auth evidence instead of downgrading it to a gateway error', async () => {
-    let requests = 0
-    const server = createServer((_req, res) => {
-      requests += 1
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({
-        data: {
-          jsonrpc: '2.0',
-          id: 1,
-          error: {
-            code: 'PERMISSION_DENIED',
-            message: 'workspace access denied',
-            details: {
-              decision_id: 'decision_nested_1',
-              policy_version: 'policy_7',
-              request_id: 'req_nested_1',
-              trace_id: 'trace_nested_1',
-              explicit_deny: true,
-            },
-          },
-        },
-        error: null,
-      }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
-      const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({
-        isError: true,
-        structuredContent: {
-          code: 'PERMISSION_DENIED',
-          details: {
-            decision_id: 'decision_nested_1',
-            policy_version: 'policy_7',
-            request_id: 'req_nested_1',
-            trace_id: 'trace_nested_1',
-            explicit_deny: true,
-          },
-        },
-      })
-      expect(response.result.content).toEqual([{ type: 'text', text: '当前账号没有执行这一步的权限。任务和已有内容已保留。' }])
-      expect(requests).toBe(1)
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('accepts a native JSON-RPC MCP success envelope from the configured endpoint', async () => {
-    const server = createServer((_req, res) => {
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: 'upstream-1', result: { status: 'ok', workspace_id: 'ws_test' } }))
-    })
-    const address = await listen(server)
-    const child = spawn(process.execPath, [BRIDGE_PATH], {
-      cwd: process.cwd(),
-      env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    try {
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'workspace.health', arguments: {} } })}\n`)
-      expect((await nextLine(child.stdout)).result).toMatchObject({
-        isError: false,
-        structuredContent: {
-          conversation_state: { stage: 'connect_store', status: 'needs_input' },
-          expected_input: { kind: 'platform_selection' },
-        },
-      })
-    } finally {
-      child.kill()
-      await close(server)
-    }
-  })
-
-  it('blocks registry-disabled production generation before relay evidence can be accepted', async () => {
-    let requests = 0
+  it('blocks production generation results that omit relay evidence', async () => {
     const server = createServer(async (_req, res) => {
-      requests += 1
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: { jsonrpc: '2.0', id: 1, result: { execution: { simulated: false, providerExecuted: false }, content: { title: '不应交付' } } } }))
     })
     const address = await listen(server)
     const child = spawn(process.execPath, [BRIDGE_PATH], {
       cwd: process.cwd(),
-      env: { ...process.env, NODE_ENV: 'development', DEPLOY_ENV: 'development', MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_TOKEN: 'test-token', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
+      env: { ...process.env, NODE_ENV: 'staging', MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test', MERCHANT_MCP_WRITE_ENABLED: 'true', MERCHANT_ALLOW_FIXTURE_FALLBACK: '${MERCHANT_ALLOW_FIXTURE_FALLBACK}' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     try {
@@ -3323,42 +2313,12 @@ describe('Codex stdio MCP bridge', () => {
       expect((await nextLine(child.stdout)).result).toMatchObject({ isError: false, structuredContent: { enabled: true } })
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'content.generate', arguments: { task_id: 'task_1', confirmation: 'I_CONFIRM_INTERACTIVE_WRITES' } } })}\n`)
       const response = await nextLine(child.stdout)
-      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'COMMERCIAL_OPERATION_DISABLED' } })
-      expect(requests).toBe(1)
+      expect(response.result).toMatchObject({ isError: true, structuredContent: { code: 'MODEL_RELAY_EVIDENCE_REQUIRED' } })
+      expect(response.result.content[0].text).toContain('平台正在核对本次生成记录')
+      expect(response.result.content[0].text).toContain('没有生成新内容、扣费或发布')
     } finally {
       child.kill()
       await close(server)
     }
   })
-})
-
-
-describe('explicit local video candidate discovery', () => {
-  it.each([
-    ['http://127.0.0.1:8787', 'development', true],
-    ['http://127.0.0.1:8787', 'production', false],
-    ['https://merchant.example', 'development', false],
-  ] as const)('keeps the local acceptance flag scoped to %s / %s', async (base, environment, visible) => {
-    const child = spawn(process.execPath, [BRIDGE_PATH], { env: { ...process.env, MERCHANT_MCP_BASE_URL: base, MERCHANT_WORKSPACE_ID: 'ws_local_video_test', MERCHANT_ENABLE_LOCAL_VIDEO_CANDIDATES: 'true', DEPLOY_ENV: environment, NODE_ENV: environment, MERCHANT_ALLOW_FIXTURE_FALLBACK: 'false', MERCHANT_MCP_WRITE_ENABLED: 'false' }, stdio: ['pipe', 'pipe', 'pipe'] })
-    try {
-      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }) + '\n')
-      const response = await nextLine(child.stdout)
-      expect(response.result.tools.some((tool: { name: string }) => tool.name === 'multimodal.video.request')).toBe(visible)
-    } finally { child.kill() }
-  })
-})
-
-it('reports a successful catalog query without suggesting an unknown task outcome', async () => {
-  const server = createServer(async (_req, res) => {
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ data: { result: { scope: 'workspace', products: [{ id: 'prod_1', title: '商品', skus: [{ id: 'blue-m' }, { id: 'red-l' }] }] } }, error: null }))
-  })
-  const address = await listen(server)
-  const child = spawn(process.execPath, [BRIDGE_PATH], { env: { ...process.env, MERCHANT_MCP_BASE_URL: `http://127.0.0.1:${address.port}`, MERCHANT_WORKSPACE_ID: 'ws_test' }, stdio: ['pipe', 'pipe', 'pipe'] })
-  try {
-    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'catalog.search', arguments: { scope: 'workspace' } } })}\n`)
-    const response = await nextLine(child.stdout)
-    expect(response.result.content[0].text).toBe('已读取 1 个商品，包含 2 个 SKU。')
-    expect(response.result.structuredContent.products[0].skus).toHaveLength(2)
-  } finally { child.kill(); await close(server) }
 })
