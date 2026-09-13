@@ -40,6 +40,7 @@ import { PointAdjustmentPanel } from "./PointAdjustmentPanel.js";
 import { ServiceFulfillmentPanel } from "./ServiceFulfillmentPanel.js";
 import { readableBenefits } from "./benefitLabels.js";
 import { packageCodeLabel, packageDisplayName } from "./packageLabels.js";
+import { yuanToFen } from "../../utils/currency.js";
 
 const dash = (value: string | number | null | undefined) => value === null || value === undefined || value === "" ? "—" : String(value);
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString() : "—";
@@ -496,7 +497,7 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
   const [workspace, setWorkspace] = useState(controller.targetWorkspaceId);
   const [orderId, setOrderId] = useState("");
   const [requestId, setRequestId] = useState("");
-  const [amountFen, setAmountFen] = useState("");
+  const [amountYuan, setAmountYuan] = useState("");
   const [points, setPoints] = useState("0");
   const [refundKind, setRefundKind] = useState<CommercialRefundKind>("monthly_unused_points");
   const [requestEvidenceRef, setRequestEvidenceRef] = useState("");
@@ -516,13 +517,13 @@ function CommercialRefundOperationsPanel({ controller }: { controller: Commercia
       <Input aria-label="退款目标 Workspace" placeholder="目标 Workspace" value={workspace} onChange={event => setWorkspace(event.target.value)} />
       <Input aria-label="退款订单 ID" placeholder="订单 ID" value={orderId} onChange={event => setOrderId(event.target.value)} />
       <Input aria-label="退款请求 ID" placeholder="退款请求 ID（幂等）" value={requestId} onChange={event => setRequestId(event.target.value)} />
-      <Input aria-label="退款金额（分）" placeholder="退款金额（分）" value={amountFen} onChange={event => setAmountFen(event.target.value)} />
+      <Input aria-label="退款金额（元）" placeholder="退款金额（元，保留两位小数）" value={amountYuan} onChange={event => setAmountYuan(event.target.value)} inputMode="decimal" />
       <Input aria-label="回滚创意点" placeholder="回滚创意点，默认 0" value={points} onChange={event => setPoints(event.target.value)} />
       <Select aria-label="退款类型" value={refundKind} onChange={value => setRefundKind(value)} options={[
         { value: "onboarding_pre_deployment", label: "部署前实施费" }, { value: "monthly_unused_points", label: "月费未使用点数" }, { value: "point_pack_unused_points", label: "点数包未使用点数" }, { value: "outage_compensation", label: "故障补偿" }, { value: "custom_milestone", label: "定制里程碑" },
       ]} />
       <Input aria-label="退款申请证据引用" placeholder={refundKind === "monthly_unused_points" ? "补充协议编号" : refundKind === "point_pack_unused_points" ? "到期政策编号" : refundKind === "outage_compensation" ? "事故 ID" : refundKind === "custom_milestone" ? "里程碑 ID" : "部署前自动记录 not_started"} value={requestEvidenceRef} disabled={refundKind === "onboarding_pre_deployment"} onChange={event => setRequestEvidenceRef(event.target.value)} />
-      <Button loading={busy} disabled={!workspace || !orderId || !requestId || !amountFen || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => void run(() => controller.client.requestCommercialRefund({ workspace, orderId, requestId, kind: refundKind, amountFen: Number(amountFen), pointsToRevoke: Number(points || "0"), reason, evidenceRef: requestEvidenceRef }))}>提交退款申请</Button>
+      <Button loading={busy} disabled={!workspace || !orderId || !requestId || !amountYuan || (refundKind !== "onboarding_pre_deployment" && !requestEvidenceRef.trim())} onClick={() => void run(() => controller.client.requestCommercialRefund({ workspace, orderId, requestId, kind: refundKind, amountFen: yuanToFen(amountYuan), pointsToRevoke: Number(points || "0"), reason, evidenceRef: requestEvidenceRef }))}>提交退款申请</Button>
       <Input aria-label="政策审批证据 JSON" placeholder="政策审批证据 JSON" value={policyApproval} onChange={event => setPolicyApproval(event.target.value)} />
       <Button loading={busy} disabled={!workspace || !requestId || !policyApprovalReady} onClick={() => void run(() => controller.client.approveCommercialRefund(workspace, requestId, policyApproval, reason))}>双人审批</Button>
       <Input aria-label="外部退款凭证" placeholder="外部退款凭证 / 转账流水号" value={externalRefundId} onChange={event => setExternalRefundId(event.target.value)} />

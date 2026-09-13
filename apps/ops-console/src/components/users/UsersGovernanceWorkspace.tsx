@@ -8,6 +8,7 @@ import { WorkspaceGovernanceSection } from "./WorkspaceGovernanceSection";
 import { MembersSection } from "../finance/MembersSection";
 import { opsRestGet, opsRestPost, describeOpsError } from "../../api/opsClient.js";
 import { packageCodeLabel } from "../commercial/packageLabels.js";
+import { yuanToFen } from "../../utils/currency.js";
 
 type Registration = { application_id: string; login: string; enterprise_name: string | null; contact_name: string | null; status: string; workspace_ids: string[]; created_at: string; updated_at: string; revision: number };
 
