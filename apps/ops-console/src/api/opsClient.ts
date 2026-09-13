@@ -159,6 +159,9 @@ export function purgeLocalOpsCredentialsForManagedSession(
 }
 
 export const OPS_REQUEST_TIMEOUT_MS = 10_000;
+// Platform aggregates fan out across every authorized workspace. They are
+// still bounded, but must not be judged by the single-workspace request SLA.
+export const OPS_PLATFORM_AGGREGATE_TIMEOUT_MS = 30_000;
 export const MAX_OPS_RESPONSE_BYTES = 4 * 1024 * 1024;
 export const OPS_EXPORT_TIMEOUT_MS = 30_000;
 export const MAX_OPS_EXPORT_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -177,6 +180,14 @@ const isWarning = (value: unknown): value is RpcWarning =>
   isObject(value) && typeof value.code === "string" &&
   typeof value.message === "string" &&
   (value.details === undefined || isObject(value.details));
+
+const platformAggregateMethods = new Set([
+  "ops.finance.search",
+  "ops.tasks.summary",
+  "ops.marketing.summary",
+  "ops.model-usage.summary",
+  "ops.growth.funnel",
+]);
 
 const OPS_CONNECTION_CONFIG_KEY = "ops_connection_config_v1";
 const OPS_WORKBENCH_KEY = "ops_workbench";
@@ -528,9 +539,11 @@ async function rpcAtWorkspace<T>(
   if (options.signal?.aborted) abortFromCaller();
   else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   let timedOut = false;
+  const timeoutMs = options.timeoutMs
+    ?? (platformAggregateMethods.has(method) ? OPS_PLATFORM_AGGREGATE_TIMEOUT_MS : OPS_REQUEST_TIMEOUT_MS);
   const timeout = globalThis.setTimeout(
     () => { timedOut = true; controller.abort(); },
-    options.timeoutMs ?? OPS_REQUEST_TIMEOUT_MS,
+    timeoutMs,
   );
   try {
     recordOpsBootstrapTrace("rpc_fetch", { method, url: `${apiBase}/mcp` });
