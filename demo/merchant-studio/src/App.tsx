@@ -1312,7 +1312,7 @@ function Sidebar({
           {navItems.map((item) => {
             const Icon = item.icon
             const active = item.id === 'products'
-              ? page === 'products'
+              ? page === 'products' || page === 'task' || page === 'publish'
               : page === item.id
             return (
               <Fragment key={item.id}>

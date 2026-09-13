@@ -205,17 +205,25 @@ export class PostgresOpsDataRepository implements OpsDataRepository {
     try {
       const run = async (includeEnterprise: boolean) => {
         const parts = directorySqlParts(query, includeEnterprise)
-        const countResult = await client.query<{ totalCount: number; merchantWorkspaceCount: number; activeMemberWorkspaceCount: number }>(
+        const countResult = await client.query<{ totalCount: number }>(
           includeEnterprise ? modernDirectoryCountSql(parts) : legacyDirectoryCountSql(parts),
           parts.filterValues,
+        )
+        // Keep the headline counts global even when the table is filtered to
+        // merchant-linked workspaces. Otherwise "未开通" would always read 0
+        // on the default view and hide the stale/test-record problem.
+        const metricParts = directorySqlParts({ ...query, merchantOnly: false }, includeEnterprise)
+        const metricResult = await client.query<{ totalCount: number; merchantWorkspaceCount: number; activeMemberWorkspaceCount: number }>(
+          includeEnterprise ? modernDirectoryCountSql(metricParts) : legacyDirectoryCountSql(metricParts),
+          metricParts.filterValues,
         )
         const result = await client.query<OpsWorkspaceSummary>(
           directoryRowsSql(parts, includeEnterprise),
           parts.values,
         )
         const total = Number(countResult.rows[0]?.totalCount ?? 0)
-        const merchantWorkspaceCount = Number(countResult.rows[0]?.merchantWorkspaceCount ?? 0)
-        const activeMemberWorkspaceCount = Number(countResult.rows[0]?.activeMemberWorkspaceCount ?? 0)
+        const merchantWorkspaceCount = Number(metricResult.rows[0]?.merchantWorkspaceCount ?? 0)
+        const activeMemberWorkspaceCount = Number(metricResult.rows[0]?.activeMemberWorkspaceCount ?? 0)
         return { items: result.rows, total, merchantWorkspaceCount, activeMemberWorkspaceCount, offset: query.offset, limit: query.limit, hasMore: query.offset + result.rows.length < total }
       }
 

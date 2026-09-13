@@ -69,7 +69,7 @@ export interface CommercialCatalogReadOptions {
 }
 
 export interface CommercialCatalogMutationInput {
-  action: 'create' | 'retire'
+  action: 'create' | 'approve' | 'publish' | 'retire'
   code: string
   kind?: CommercialCatalogSkuSnapshot['kind']
   visibility?: CommercialCatalogVisibility
@@ -176,7 +176,7 @@ export class MemoryCommercialCatalogRepository implements CommercialCatalogRepos
 
   async mutate(input: CommercialCatalogMutationInput): Promise<CommercialCatalogSkuSnapshot> {
     const existing = this.mutableSnapshots.filter(item => item.code === input.code).sort((a, b) => b.version - a.version)[0]
-    if (input.action === 'retire' && !existing) throw new CommercialCatalogUnavailableError('catalog SKU does not exist')
+    if (input.action !== 'create' && !existing) throw new CommercialCatalogUnavailableError('catalog SKU does not exist')
     const base = existing ?? {
       id: `sku-${input.code}`,
       code: input.code,
@@ -192,14 +192,14 @@ export class MemoryCommercialCatalogRepository implements CommercialCatalogRepos
       ...base,
       versionId: `${base.id}-v${base.version + 1}-${randomUUID()}`,
       version: base.version + 1,
-      lifecycle: input.action === 'retire' ? 'retired' : 'draft',
-      executable: false,
+      lifecycle: input.action === 'retire' ? 'retired' : input.action === 'approve' ? 'approved' : 'draft',
+      executable: input.action === 'publish',
       priceFen: input.action === 'retire' ? base.priceFen : (input.priceFen ?? base.priceFen),
       priceMode: input.action === 'retire' ? base.priceMode : (input.priceMode ?? base.priceMode),
       durationDays: input.action === 'retire' ? base.durationDays : (input.durationDays ?? base.durationDays),
       payload,
       checksum: createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
-      effectiveAt: null,
+      effectiveAt: input.action === 'publish' ? new Date().toISOString() : null,
       benefits: input.action === 'retire' ? base.benefits : (input.benefits ?? base.benefits),
     }
     this.mutableSnapshots.push(snapshot)
@@ -464,14 +464,18 @@ export class PostgresCommercialCatalogRepository implements CommercialCatalogRep
       if (input.action === 'retire' && !row) throw new CommercialCatalogUnavailableError('catalog SKU does not exist')
       const skuId = row?.skuId ?? `sku-${input.code}`
       const baseVersion = row?.version ?? 0
-      const payload = input.action === 'retire' ? row!.payload : { ...(row?.payload ?? {}), ...(input.payload ?? {}) }
+      const payload = input.action === 'retire' || input.action === 'approve' || input.action === 'publish' ? row!.payload : { ...(row?.payload ?? {}), ...(input.payload ?? {}) }
       const checksum = createHash('sha256').update(JSON.stringify(payload)).digest('hex')
       const versionId = `${skuId}-v${baseVersion + 1}-${randomUUID()}`
       await client.query(`INSERT INTO commercial_catalog_skus (id, code, kind, visibility, required_capability) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (code) DO NOTHING`, [skuId, input.code, input.kind ?? row?.kind ?? 'monthly', input.visibility ?? row?.visibility ?? 'public', input.requiredCapability ?? row?.requiredCapability ?? null])
-      await client.query(`INSERT INTO commercial_catalog_sku_versions (id, sku_id, version, lifecycle, executable, price_fen, currency, price_mode, duration_days, payload, checksum, effective_at) VALUES ($1,$2,$3,$4,false,$5,'CNY',$6,$7,$8::jsonb,$9,NULL)`, [versionId, skuId, baseVersion + 1, input.action === 'retire' ? 'retired' : 'draft', input.action === 'retire' ? row!.priceFen : (input.priceFen ?? row?.priceFen ?? null), input.action === 'retire' ? row!.priceMode : (input.priceMode ?? row?.priceMode ?? 'fixed'), input.action === 'retire' ? row!.durationDays : (input.durationDays ?? row?.durationDays ?? null), JSON.stringify(payload), checksum])
-      const benefits = input.action === 'retire' ? (row?.benefits ?? []) : (input.benefits ?? row?.benefits ?? [])
+      const lifecycle = input.action === 'retire' ? 'retired' : input.action === 'approve' ? 'approved' : 'draft'
+      const executable = input.action === 'publish'
+      const effectiveAt = executable ? new Date().toISOString() : null
+      await client.query(`INSERT INTO commercial_catalog_sku_versions (id, sku_id, version, lifecycle, executable, price_fen, currency, price_mode, duration_days, payload, checksum, effective_at) VALUES ($1,$2,$3,$4,$5,$6,'CNY',$7,$8,$9::jsonb,$10,$11)`, [versionId, skuId, baseVersion + 1, lifecycle, executable, input.action === 'retire' || input.action === 'approve' || input.action === 'publish' ? row!.priceFen : (input.priceFen ?? row?.priceFen ?? null), input.action === 'retire' || input.action === 'approve' || input.action === 'publish' ? row!.priceMode : (input.priceMode ?? row?.priceMode ?? 'fixed'), input.action === 'retire' || input.action === 'approve' || input.action === 'publish' ? row!.durationDays : (input.durationDays ?? row?.durationDays ?? null), JSON.stringify(payload), checksum, effectiveAt])
+      const benefits = input.action === 'retire' || input.action === 'approve' || input.action === 'publish' ? (row?.benefits ?? []) : (input.benefits ?? row?.benefits ?? [])
       for (const benefit of benefits) await client.query(`INSERT INTO commercial_catalog_sku_benefits (id, sku_version_id, benefit_code, quantity, raw_value, raw_unit, normalized_value, policy_ref, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`, [randomUUID(), versionId, benefit.code, benefit.quantity, benefit.rawValue, benefit.rawUnit, benefit.normalizedValue, benefit.policyRef, JSON.stringify(benefit.metadata ?? {})])
-      await client.query(`INSERT INTO commercial_catalog_events_v2 (id, aggregate_type, aggregate_id, event_type, actor_id, reason, evidence, revision) VALUES ($1,'sku_version',$2,$3,$4,$5,$6::jsonb,$7)`, [randomUUID(), versionId, input.action === 'retire' ? 'retired' : 'source_imported', input.actorId, input.reason, JSON.stringify(input.evidence), baseVersion + 1])
+      const eventType = input.action === 'retire' ? 'retired' : input.action === 'approve' ? 'approved' : input.action === 'publish' ? 'published' : 'source_imported'
+      await client.query(`INSERT INTO commercial_catalog_events_v2 (id, aggregate_type, aggregate_id, event_type, actor_id, reason, evidence, revision) VALUES ($1,'sku_version',$2,$3,$4,$5,$6::jsonb,$7)`, [randomUUID(), versionId, eventType, input.actorId, input.reason, JSON.stringify(input.evidence), baseVersion + 1])
       await client.query('COMMIT')
       const rows = await this.queryCatalog('v.id = $1', [versionId])
       if (!rows[0]) throw new CommercialCatalogUnavailableError('catalog mutation was not readable after commit')
