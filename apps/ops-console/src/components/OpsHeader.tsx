@@ -65,7 +65,7 @@ export function OpsHeader({
   const shouldShowLogin = !hasSession || isDemoSession;
   const merchantNotificationsEnabled = (activeWorkbench ?? session?.workbench) === "workspace" || resolvedAuthorization.scope.kind !== "platform";
   const allNotifications = merchantNotificationsEnabled ? (notifications ?? alerts ?? []) : [];
-  const accountName = session?.actor_id ?? (isDemoSession ? "本机演示账号" : "平台运营账号");
+  const accountName = session?.account_login ?? (session ? platformLogin.trim() || "平台运营账号" : isDemoSession ? "本机演示账号" : "平台运营账号");
   const accountInitial = Array.from(accountName)[0] ?? "运";
   const workbenchLabel = session?.workbench === "platform" || activeWorkbench === "platform" ? "平台运营" : "商家工作区";
   const roleLabel = roles?.join("、") || session?.roles?.join("、") || "未声明";
@@ -97,14 +97,14 @@ export function OpsHeader({
         <span className="ops-account-popover-avatar" aria-hidden="true">{accountInitial}</span>
         <div className="ops-account-popover-identity">
           <strong>{accountName}</strong>
-          <span>{session?.actor_id ?? "当前为本机演示账号"}</span>
+          <span>{accountName}</span>
           <em><i />{hasSession ? "已登录" : "未登录"}</em>
         </div>
       </div>
       <div className="ops-account-popover-section">
         <div className="ops-account-popover-section-title"><UserOutlined />账号信息</div>
         <dl className="ops-account-popover-facts">
-          <div><dt>当前账号</dt><dd>{session?.actor_id ?? (isDemoSession ? "本机演示账号" : "未登录")}</dd></div>
+          <div><dt>当前账号</dt><dd>{accountName}</dd></div>
           <div><dt>当前工作台</dt><dd>{workbenchLabel}</dd></div>
           <div><dt>账号角色</dt><dd>{roleLabel}</dd></div>
         </dl>
